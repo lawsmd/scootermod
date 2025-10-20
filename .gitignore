@@ -1,0 +1,17 @@
+# WoW AddOn build artifacts
+*_retail_/Cache/**
+*_retail_/Logs/**
+*.log
+.DS_Store
+Thumbs.db
+
+# No binaries in repo
+*.zip
+*.pak
+*.nib
+*.icns
+*.slug
+*.slugo
+
+# Ignore game data mirror, keep addon
+!/_retail_/Interface/AddOns/ScooterMod/**

@@ -1,0 +1,29 @@
+## Interface: 110105
+## Title: ScooterMod
+## Notes: A modern, cosmetic-only UI addon.
+## Author: Scooter
+## Version: 0.1.0
+## OptionalDeps: Blizzard_Settings_Shared
+## SavedVariables: ScooterModDB
+## SlashCmd: /scoot
+
+libs/LibStub/LibStub.lua
+libs/CallbackHandler-1.0/CallbackHandler-1.0.xml
+libs/AceAddon-3.0/AceAddon-3.0.xml
+libs/AceEvent-3.0/AceEvent-3.0.xml
+libs/AceDB-3.0/AceDB-3.0.xml
+libs/AceConsole-3.0/AceConsole-3.0.xml
+libs/AceGUI-3.0/AceGUI-3.0.xml
+libs/AceConfig-3.0/AceConfig-3.0.xml
+libs/LibEditModeOverride/LibEditModeOverride.xml
+
+core/editmode.lua
+core/components.lua
+
+ui/Scooter_TabbedSection.xml
+ui/ScooterSettingsPanel.lua
+ui/settings.lua
+
+core/init.lua
+
+ScooterMod.lua
