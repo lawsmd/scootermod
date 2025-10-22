@@ -284,7 +284,8 @@ local function createComponentRenderer(componentId)
                             initDrop.reinitializeOnValueChanged = true
                             table.insert(init, initDrop)
                         elseif ui.widget == "checkbox" then
-                            local data = { setting = settingObj, name = label, tooltip = ui.tooltip }
+                            -- Pass an empty options table to avoid Blizzard tooltip code iterating a nil options list
+                            local data = { setting = settingObj, name = label, tooltip = ui.tooltip, options = {} }
                             table.insert(init, Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", data))
                         end
                     end

@@ -98,10 +98,6 @@ function addon:InitializeComponents()
             local width = self.db.iconWidth or self.settings.iconWidth.default
             local height = self.db.iconHeight or self.settings.iconHeight.default
             local spacing = self.db.iconPadding or self.settings.iconPadding.default
-            if frame.SetPadding then
-                frame:SetPadding(spacing)
-            end
-
             local borderTextures = {
                 square = "Interface\Buttons\UI-Panel-Border",
                 style_tooltip = "Interface\Tooltip\Tooltip-Border",
@@ -123,8 +119,27 @@ function addon:InitializeComponents()
                 end
             end
 
-            if frame.UpdateLayout then
-                frame:UpdateLayout()
+            -- Re-apply padding on the actual item container (matches RIPAuras behavior)
+            do
+                local ic = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
+                if ic then
+                    if ic.childXPadding ~= nil then ic.childXPadding = spacing end
+                    if ic.childYPadding ~= nil then ic.childYPadding = spacing end
+                    if ic.iconPadding ~= nil then ic.iconPadding = spacing end
+                    if type(ic.MarkDirty) == "function" then
+                        pcall(ic.MarkDirty, ic)
+                    end
+                end
+            end
+
+            if frame.UpdateLayout then pcall(frame.UpdateLayout, frame) end
+            local ic2 = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
+            if ic2 and type(ic2.UpdateLayout) == "function" then pcall(ic2.UpdateLayout, ic2) end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    local ic3 = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
+                    if ic3 and ic3.UpdateLayout then pcall(ic3.UpdateLayout, ic3) end
+                end)
             end
         end,
     })
