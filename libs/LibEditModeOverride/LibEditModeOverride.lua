@@ -44,6 +44,17 @@ local function GetParameterRestrictions(frame, setting)
   return nil
 end
 
+local function SliderIsIndexBased(frame, setting, restrictions)
+  if not restrictions or restrictions.type ~= Enum.EditModeSettingDisplayType.Slider or not restrictions.stepSize then
+    return false
+  end
+  -- Explicit allowlist: Only treat Cooldown Viewer Icon Size as index-based for our use case
+  if frame and frame.system == Enum.EditModeSystem.CooldownViewer and setting == Enum.EditModeCooldownViewerSetting.IconSize then
+    return true
+  end
+  return false
+end
+
 local function GetLayoutIndex(layoutName)
   for index, layout in ipairs(layoutInfo.layouts) do
     if layout.layoutName == layoutName then
@@ -92,8 +103,8 @@ function lib:SetFrameSetting(frame, setting, value)
   local restrictions = GetParameterRestrictions(frame, setting)
 
   if restrictions then
-    local min, max
     if restrictions.type == Enum.EditModeSettingDisplayType.Dropdown then
+      local min, max
       for _, option in pairs(restrictions.options) do
         if min == nil or min > option.value then
           min = option.value
@@ -102,21 +113,33 @@ function lib:SetFrameSetting(frame, setting, value)
           max = option.value
         end
       end
+      assert(min <= value and value <= max, string.format("Value %s invalid for this setting: min %s, max %s", value, min, max))
     elseif restrictions.type == Enum.EditModeSettingDisplayType.Checkbox then
-      min = 0
-      max = 1
+      assert(value == 0 or value == 1, string.format("Value %s invalid for this setting: min %s, max %s", value, 0, 1))
     elseif restrictions.type == Enum.EditModeSettingDisplayType.Slider then
-      if restrictions.stepSize then
-        min = 0
-        max = restrictions.maxValue - restrictions.minValue
+      if SliderIsIndexBased(frame, setting, restrictions) then
+        -- Slider with step size stores an index internally. Accept raw inputs and normalize to index.
+        local rawMin = restrictions.minValue
+        local rawMax = restrictions.maxValue
+        local step = restrictions.stepSize
+        local maxIndex = math.floor((rawMax - rawMin) / step + 0.5)
+        -- If the value looks like raw (within rawMin..rawMax), convert to index; otherwise assume caller provided index
+        if value >= rawMin and value <= rawMax then
+          local idx = math.floor(((value - rawMin) / step) + 0.5)
+          if idx < 0 then idx = 0 end
+          if idx > maxIndex then idx = maxIndex end
+          value = idx
+        end
+        assert(0 <= value and value <= maxIndex, string.format("Value %s invalid for this setting: min %s, max %s", value, 0, maxIndex))
       else
-        min = restrictions.minValue
-        max = restrictions.maxValue
+        -- No step size: treat as raw numeric within min/max
+        local min = restrictions.minValue
+        local max = restrictions.maxValue
+        assert(min <= value and value <= max, string.format("Value %s invalid for this setting: min %s, max %s", value, min, max))
       end
     else
       error("Internal Error: Unknown setting restrictions")
     end
-    assert(min <= value and value <= max, string.format("Value %s invalid for this setting: min %s, max %s", value, min, max))
   end
 
   for _, item in pairs(system.settings) do
@@ -133,6 +156,14 @@ function lib:GetFrameSetting(frame, setting)
 
   for _, item in pairs(system.settings) do
     if item.setting == setting then
+      local restrictions = GetParameterRestrictions(frame, setting)
+      if restrictions and SliderIsIndexBased(frame, setting, restrictions) then
+        -- Convert stored index to raw value for callers
+        local rawMin = restrictions.minValue
+        local step = restrictions.stepSize
+        local idx = item.value or 0
+        return rawMin + (idx * step)
+      end
       return item.value
     end
   end

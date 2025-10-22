@@ -20,7 +20,7 @@ libs/LibEditModeOverride/LibEditModeOverride.xml
 core/editmode.lua
 core/components.lua
 
-ui/Scooter_TabbedSection.xml
+ui/ScooterTabbedSection.xml
 ui/ScooterSettingsPanel.lua
 ui/settings.lua
 
