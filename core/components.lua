@@ -82,17 +82,17 @@ function addon:InitializeComponents()
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
-            -- Visibility
+            -- Visibility (Edit Mode controlled)
+            visibilityMode = { type = "editmode", default = "always", ui = {
+                label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
+            }},
             opacity = { type = "addon", default = 100, ui = {
-                label = "Opacity (%)", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 1
+                label = "Opacity (%)", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
-            visibilityMode = { type = "addon", default = "always", ui = {
-                label = "Visibility Mode", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 2
-            }},
-            showTimer = { type = "addon", default = true, ui = {
+            showTimer = { type = "editmode", default = true, ui = {
                 label = "Show Timer", widget = "checkbox", section = "Misc", order = 3
             }},
-            showTooltip = { type = "addon", default = true, ui = {
+            showTooltip = { type = "editmode", default = true, ui = {
                 label = "Show Tooltip", widget = "checkbox", section = "Misc", order = 4
             }},
         },
@@ -133,6 +133,63 @@ function addon:InitializeComponents()
                         addon.Borders.HideAll(child)
                     end
                 end
+
+                -- Apply text styling (Charges and Cooldowns)
+                do
+                    local defaultFace = (select(1, GameFontNormal:GetFont()))
+                    local function findFontStringOn(obj)
+                        if not obj then return nil end
+                        if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
+                        if obj.GetRegions then
+                            local n = (obj.GetNumRegions and obj.GetNumRegions(obj)) or 0
+                            for i = 1, n do
+                                local r = select(i, obj:GetRegions())
+                                if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
+                            end
+                        end
+                    end
+                    local stacksFS = findFontStringOn(child.ChargeCount)
+                    local cdFS = findFontStringOn(child.Cooldown)
+
+                    if stacksFS and stacksFS.SetFont then
+                        local cfg = self.db.textStacks or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+                        local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+                        pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
+                        stacksFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE")
+                        local c = cfg.color or {1,1,1,1}
+                        if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+                        if stacksFS.ClearAllPoints and stacksFS.SetPoint then
+                            stacksFS:ClearAllPoints()
+                            local ox = (cfg.offset and cfg.offset.x) or 0
+                            local oy = (cfg.offset and cfg.offset.y) or 0
+                            stacksFS:SetPoint("CENTER", child, "CENTER", ox, oy)
+                        end
+                    end
+
+                    if cdFS and cdFS.SetFont then
+                        local cfg = self.db.textCooldown or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+                        local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+                        pcall(cdFS.SetDrawLayer, cdFS, "OVERLAY", 10)
+                        cdFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE")
+                        local c = cfg.color or {1,1,1,1}
+                        if cdFS.SetTextColor then cdFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+                        if cdFS.ClearAllPoints and cdFS.SetPoint then
+                            cdFS:ClearAllPoints()
+                            local ox = (cfg.offset and cfg.offset.x) or 0
+                            local oy = (cfg.offset and cfg.offset.y) or 0
+                            cdFS:SetPoint("CENTER", child, "CENTER", ox, oy)
+                        end
+                    end
+                end
+
+                -- Apply timer text visibility and tooltip mouse enablement
+                do
+                    local showTimer = (self.db.showTimer ~= false)
+                    local showTooltips = (self.db.showTooltip ~= false)
+                    local cd = child.Cooldown
+                    if cd and cd.SetHideCountdownNumbers then pcall(cd.SetHideCountdownNumbers, cd, not showTimer) end
+                    if child.EnableMouse then pcall(child.EnableMouse, child, showTooltips) end
+                end
             end
 
             -- Re-apply padding on the actual item container (matches RIPAuras behavior)
@@ -156,6 +213,23 @@ function addon:InitializeComponents()
                     local ic3 = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
                     if ic3 and ic3.UpdateLayout then pcall(ic3.UpdateLayout, ic3) end
                 end)
+            end
+
+            -- Apply visibility (mode and opacity)
+            do
+                local mode = self.db.visibilityMode or self.settings.visibilityMode.default or "always"
+                if mode == "never" then
+                    if frame.Hide then pcall(frame.Hide, frame) end
+                elseif mode == "combat" then
+                    local show = (type(UnitAffectingCombat) == "function") and UnitAffectingCombat("player") or false
+                    if frame.SetShown then pcall(frame.SetShown, frame, show) end
+                else
+                    if frame.Show then pcall(frame.Show, frame) end
+                end
+                local pct = tonumber(self.db.opacity) or self.settings.opacity.default or 100
+                if pct < 50 then pct = 50 elseif pct > 100 then pct = 100 end
+                local a = pct / 100
+                if frame.SetAlpha then pcall(frame.SetAlpha, frame, a) end
             end
         end,
     })

@@ -377,10 +377,210 @@ local function createComponentRenderer(componentId)
                         expInitializer.GetExtent = function() return 30 end
                         table.insert(init, expInitializer)
 
+                        local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+                        local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+                            local options = Settings.CreateSliderOptions(minV, maxV, step)
+                            options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+                            local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+                            local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+                            local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+                            f.GetElementData = function() return initSlider end
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            initSlider:InitFrame(f)
+                            yRef.y = yRef.y - 34
+                        end
+                        local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+                            local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+                            local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+                            local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+                            f.GetElementData = function() return initDrop end
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            initDrop:InitFrame(f)
+                            -- If this is the Font dropdown, install font preview renderer
+                            if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown then
+                                if addon.InitFontDropdown then
+                                    addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+                                end
+                            end
+                            yRef.y = yRef.y - 34
+                        end
+                        local function addStyle(parent, label, getFunc, setFunc, yRef)
+                            local function styleOptions()
+                                local container = Settings.CreateControlTextContainer();
+                                container:Add("NONE", "Regular");
+                                container:Add("OUTLINE", "Outline");
+                                container:Add("THICKOUTLINE", "Thick Outline");
+                                return container:GetData()
+                            end
+                            addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+                        end
+                        local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+                            local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+                            f:SetHeight(26)
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            f.Text:SetText(label)
+                            local right = CreateFrame("Frame", nil, f)
+                            right:SetSize(250, 26)
+                            right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+                            f.Text:ClearAllPoints()
+                            f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+                            f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+                            f.Text:SetJustifyH("LEFT")
+                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+                            local function update()
+                                local r, g, b, a = getFunc()
+                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
+                                swatch.a = a or 1
+                            end
+                            swatch:SetScript("OnClick", function()
+                                local r, g, b, a = getFunc()
+                                ColorPickerFrame:SetupColorPickerAndShow({
+                                    r = r or 1, g = g or 1, b = b or 1,
+                                    hasOpacity = hasAlpha,
+                                    opacity = a or 1,
+                                    swatchFunc = function()
+                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                                        local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+                                        setFunc(nr, ng, nb, na)
+                                        update()
+                                    end,
+                                    cancelFunc = function(prev)
+                                        if prev then
+                                            setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
+                                            update()
+                                        end
+                                    end,
+                                })
+                            end)
+                            update()
+                            yRef.y = yRef.y - 34
+                        end
+
                         local data = { sectionTitle = "", tabAText = "Charges", tabBText = "Cooldowns" }
                         data.build = function(frame)
-                            local textA = frame.PageA:CreateFontString(nil, "OVERLAY", "GameFontNormal"); textA:SetPoint("TOPLEFT", 20, -20); textA:SetText("Charges text settings will be implemented here")
-                            local textB = frame.PageB:CreateFontString(nil, "OVERLAY", "GameFontNormal"); textB:SetPoint("TOPLEFT", 20, -20); textB:SetText("Cooldowns text settings will be implemented here")
+                            local yA = { y = -50 }
+                            local yB = { y = -50 }
+                            local db = component.db
+                            local function applyText()
+                                addon:ApplyStyles()
+                            end
+                            local function fontOptions()
+                                return addon.BuildFontOptionsContainer()
+                            end
+
+                            -- Charges page
+                            addDropdown(frame.PageA, "Charges Font", fontOptions,
+                                function() return (db.textStacks and db.textStacks.fontFace) or "FRIZQT__" end,
+                                function(v)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.fontFace = v
+                                    applyText()
+                                end,
+                                yA)
+                            addSlider(frame.PageA, "Charges Font Size", 8, 32, 1,
+                                function() return (db.textStacks and db.textStacks.size) or 16 end,
+                                function(v)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.size = tonumber(v) or 16
+                                    applyText()
+                                end,
+                                yA)
+                            addStyle(frame.PageA, "Charges Style",
+                                function() return (db.textStacks and db.textStacks.style) or "OUTLINE" end,
+                                function(v)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.style = v
+                                    applyText()
+                                end,
+                                yA)
+                            addColor(frame.PageA, "Charges Color", true,
+                                function()
+                                    local c = (db.textStacks and db.textStacks.color) or {1,1,1,1}
+                                    return c[1], c[2], c[3], c[4]
+                                end,
+                                function(r,g,b,a)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.color = { r, g, b, a }
+                                    applyText()
+                                end,
+                                yA)
+                            addSlider(frame.PageA, "Charges Offset X", -32, 32, 1,
+                                function() return (db.textStacks and db.textStacks.offset and db.textStacks.offset.x) or 0 end,
+                                function(v)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.offset = db.textStacks.offset or {}
+                                    db.textStacks.offset.x = tonumber(v) or 0
+                                    applyText()
+                                end,
+                                yA)
+                            addSlider(frame.PageA, "Charges Offset Y", -32, 32, 1,
+                                function() return (db.textStacks and db.textStacks.offset and db.textStacks.offset.y) or 0 end,
+                                function(v)
+                                    db.textStacks = db.textStacks or {}
+                                    db.textStacks.offset = db.textStacks.offset or {}
+                                    db.textStacks.offset.y = tonumber(v) or 0
+                                    applyText()
+                                end,
+                                yA)
+
+                            -- Cooldown page
+                            addDropdown(frame.PageB, "Cooldown Font", fontOptions,
+                                function() return (db.textCooldown and db.textCooldown.fontFace) or "FRIZQT__" end,
+                                function(v)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.fontFace = v
+                                    applyText()
+                                end,
+                                yB)
+                            addSlider(frame.PageB, "Cooldown Font Size", 8, 32, 1,
+                                function() return (db.textCooldown and db.textCooldown.size) or 16 end,
+                                function(v)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.size = tonumber(v) or 16
+                                    applyText()
+                                end,
+                                yB)
+                            addStyle(frame.PageB, "Cooldown Style",
+                                function() return (db.textCooldown and db.textCooldown.style) or "OUTLINE" end,
+                                function(v)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.style = v
+                                    applyText()
+                                end,
+                                yB)
+                            addColor(frame.PageB, "Cooldown Color", true,
+                                function()
+                                    local c = (db.textCooldown and db.textCooldown.color) or {1,1,1,1}
+                                    return c[1], c[2], c[3], c[4]
+                                end,
+                                function(r,g,b,a)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.color = { r, g, b, a }
+                                    applyText()
+                                end,
+                                yB)
+                            addSlider(frame.PageB, "Cooldown Offset X", -32, 32, 1,
+                                function() return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.x) or 0 end,
+                                function(v)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.offset = db.textCooldown.offset or {}
+                                    db.textCooldown.offset.x = tonumber(v) or 0
+                                    applyText()
+                                end,
+                                yB)
+                            addSlider(frame.PageB, "Cooldown Offset Y", -32, 32, 1,
+                                function() return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.y) or 0 end,
+                                function(v)
+                                    db.textCooldown = db.textCooldown or {}
+                                    db.textCooldown.offset = db.textCooldown.offset or {}
+                                    db.textCooldown.offset.y = tonumber(v) or 0
+                                    applyText()
+                                end,
+                                yB)
                         end
                         local initializer = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
                         initializer.GetExtent = function() return 260 end
@@ -456,7 +656,12 @@ local function createComponentRenderer(componentId)
                                 component.db[settingId] = finalValue
 
                                 if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                    if addon.EditMode.SyncComponentToEditMode then addon.EditMode.SyncComponentToEditMode(component) end
+                                    -- Debounce EM writes slightly to avoid re-entrant updates during list recycling
+                                    if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                        C_Timer.After(0, function()
+                                            if addon.EditMode then addon.EditMode.SyncComponentToEditMode(component) end
+                                        end)
+                                    end
                                 end
 
                                 if settingId == "orientation" then
@@ -498,7 +703,16 @@ local function createComponentRenderer(componentId)
                             else
                             local containerOpts = Settings.CreateControlTextContainer()
                             local orderedValues = {}
-                            if settingId == "orientation" then table.insert(orderedValues, "H"); table.insert(orderedValues, "V") else for val, _ in pairs(values) do table.insert(orderedValues, val) end end
+                            if settingId == "orientation" then
+                                table.insert(orderedValues, "H"); table.insert(orderedValues, "V")
+                            elseif settingId == "visibilityMode" then
+                                -- Preserve RIP sorting order: always, combat, never
+                                table.insert(orderedValues, "always")
+                                table.insert(orderedValues, "combat")
+                                table.insert(orderedValues, "never")
+                            else
+                                for val, _ in pairs(values) do table.insert(orderedValues, val) end
+                            end
                             for _, valKey in ipairs(orderedValues) do containerOpts:Add(valKey, values[valKey]) end
                                 data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
                             end

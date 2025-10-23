@@ -4,14 +4,74 @@ addon.EditMode = {}
 
 local LEO = LibStub("LibEditModeOverride-1.0")
 
+-- Cache for resolved Edit Mode setting IDs per system
+local _resolvedSettingIdCache = {}
+
+local function _lower(s)
+    if type(s) ~= "string" then return "" end
+    return string.lower(s)
+end
+
+-- Discover the numeric setting id at runtime to avoid stale hardcodes
+local function ResolveSettingId(frame, logicalKey)
+    if not frame or not frame.system or not _G.EditModeSettingDisplayInfoManager then return nil end
+    local sys = frame.system
+    _resolvedSettingIdCache[sys] = _resolvedSettingIdCache[sys] or {}
+    if _resolvedSettingIdCache[sys][logicalKey] ~= nil then
+        return _resolvedSettingIdCache[sys][logicalKey]
+    end
+
+    local entries = _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo and _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo[sys]
+    if type(entries) ~= "table" then return nil end
+
+    local lk = _lower(logicalKey)
+    local pick
+    for _, setup in ipairs(entries) do
+        local nm = _lower(setup.name or "")
+        local tp = setup.type
+        if lk == "visibility" then
+            if tp == Enum.EditModeSettingDisplayType.Dropdown then
+                local count = 0
+                if type(setup.options) == "table" then for _ in pairs(setup.options) do count = count + 1 end end
+                if (nm:find("visibility", 1, true) or count == 3) then pick = pick or setup end
+            end
+        elseif lk == "show_timer" or lk == "showtimer" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and (nm:find("timer", 1, true) or nm:find("countdown", 1, true)) then pick = pick or setup end
+        elseif lk == "show_tooltip" or lk == "showtooltip" or lk == "tooltips" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("tooltip", 1, true) then pick = pick or setup end
+        end
+    end
+    local id = pick and pick.setting or nil
+    _resolvedSettingIdCache[sys][logicalKey] = id
+    return id
+end
+
 -- Low-level wrappers for LibEditModeOverride
 function addon.EditMode.GetSetting(frame, settingId)
     if not LEO or not LEO.GetFrameSetting then return nil end
+    if not (LEO.IsReady and LEO:IsReady()) then return nil end
+    if LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
+        if LEO.LoadLayouts then
+            local ok = pcall(LEO.LoadLayouts, LEO)
+            if not ok then return nil end
+        else
+            return nil
+        end
+    end
     return LEO:GetFrameSetting(frame, settingId)
 end
 
 function addon.EditMode.SetSetting(frame, settingId, value)
     if not LEO or not LEO.SetFrameSetting then return nil end
+    if not (LEO.IsReady and LEO:IsReady()) then return nil end
+    if LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
+        if LEO.LoadLayouts then
+            local ok = pcall(LEO.LoadLayouts, LEO)
+            if not ok then return nil end
+        else
+            return nil
+        end
+    end
     LEO:SetFrameSetting(frame, settingId, value)
 end
 
@@ -32,9 +92,9 @@ end
 -- Helper functions
 function addon.EditMode.LoadLayouts()
     if not LEO or not LEO.LoadLayouts or not LEO.IsReady then return end
-    if LEO:IsReady() then
-        LEO:LoadLayouts()
-    end
+    if not LEO:IsReady() then return end
+    if LEO.AreLayoutsLoaded and LEO:AreLayoutsLoaded() then return end
+    pcall(LEO.LoadLayouts, LEO)
 end
 
 function addon.EditMode.SaveOnly()
@@ -47,7 +107,17 @@ function addon.EditMode.IsReady()
 end
 
 function addon.EditMode.HasEditModeSettings(frame)
-    return LEO and LEO.HasEditModeSettings and LEO:HasEditModeSettings(frame)
+    if not LEO then return false end
+    if not (LEO.IsReady and LEO:IsReady()) then return false end
+    if LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
+        if LEO.LoadLayouts then
+            local ok = pcall(LEO.LoadLayouts, LEO)
+            if not ok then return false end
+        else
+            return false
+        end
+    end
+    return LEO.HasEditModeSettings and LEO:HasEditModeSettings(frame)
 end
 
 --[[----------------------------------------------------------------------------
@@ -100,6 +170,18 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         if desiredRaw > 200 then desiredRaw = 200 end
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
+    elseif settingId == "visibilityMode" then
+        -- 0 = always, 1 = only in combat, 2 = hidden
+        local v = tostring(dbValue)
+        editModeValue = (v == "combat") and 1 or (v == "never" and 2 or 0)
+        -- Resolve dynamic setting id if not explicitly provided
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+    elseif settingId == "showTimer" then
+        editModeValue = (dbValue ~= false) and 1 or 0
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
+    elseif settingId == "showTooltip" then
+        editModeValue = (dbValue ~= false) and 1 or 0
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
     else
         editModeValue = tonumber(dbValue) or 0
     end
@@ -121,6 +203,12 @@ function addon.EditMode.SyncComponentToEditMode(component)
     local frame = _G[component.frameName]
     if not frame or not addon.EditMode.HasEditModeSettings(frame) then return end
 
+    if addon.EditMode._syncingEM then return end
+    addon.EditMode._syncingEM = true
+
+    -- Ensure layouts are loaded before we attempt to write
+    addon.EditMode.LoadLayouts()
+
     -- 1. Sync Position
     local x = component.db.positionX or 0
     local y = component.db.positionY or 0
@@ -135,6 +223,8 @@ function addon.EditMode.SyncComponentToEditMode(component)
 
     -- 3. Apply all changes atomically
     addon.EditMode.ApplyChanges()
+
+    addon.EditMode._syncingEM = false
 end
 
 
@@ -147,8 +237,19 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     local frame = _G[component.frameName]
     if not frame or not addon.EditMode.HasEditModeSettings(frame) then return false end
 
+    if addon.EditMode._syncingEM then return false end
+
     local setting = component.settings[settingId]
     if not setting or setting.type ~= "editmode" then return false end
+
+    -- Resolve dynamic ids if needed
+    if settingId == "visibilityMode" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+    elseif settingId == "showTimer" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
+    elseif settingId == "showTooltip" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
+    end
 
     local editModeValue = addon.EditMode.GetSetting(frame, setting.settingId)
     if editModeValue == nil then return false end
@@ -177,6 +278,19 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         else
             dbValue = v
         end
+    elseif settingId == "visibilityMode" then
+        -- 0 = always, 1 = only in combat, 2 = hidden. Fallback to frame.visibleSetting if API returned nil.
+        local v = editModeValue
+        if v == nil and frame and type(frame.visibleSetting) ~= "nil" then v = frame.visibleSetting end
+        if v == 1 then dbValue = "combat" elseif v == 2 then dbValue = "never" else dbValue = "always" end
+    elseif settingId == "showTimer" then
+        local v = editModeValue
+        if v == nil and frame and type(frame.timerShown) ~= "nil" then v = frame.timerShown and 1 or 0 end
+        dbValue = (tonumber(v) or 0) ~= 0
+    elseif settingId == "showTooltip" then
+        local v = editModeValue
+        if v == nil and frame and type(frame.tooltipsShown) ~= "nil" then v = frame.tooltipsShown and 1 or 0 end
+        dbValue = (tonumber(v) or 0) ~= 0
     else
         dbValue = tonumber(editModeValue) or 0
     end
@@ -223,11 +337,14 @@ end
 
 -- Centralized helper to run all back-sync operations
 function addon.EditMode.RefreshSyncAndNotify(origin)
-    if LEO and LEO:IsReady() then
-        LEO:LoadLayouts()
-    end
+    if LEO and LEO.IsReady and LEO:IsReady() and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
 
     addon:SyncAllEditModeSettings()
+
+    -- If settings UI is open, refresh the active category to reflect new values
+    if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
+        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
+    end
 
     if addon._dbgSync and origin then
         print("ScooterMod RefreshSyncAndNotify origin=" .. tostring(origin))
@@ -239,7 +356,8 @@ function addon.EditMode.Initialize()
     if not addon._hookedSave and type(_G.C_EditMode) == "table" and type(_G.C_EditMode.SaveLayouts) == "function" then
         hooksecurefunc(_G.C_EditMode, "SaveLayouts", function()
             C_Timer.After(0.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass1") end end)
-            C_Timer.After(0.3, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass2") end end)
+            C_Timer.After(0.25, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass2") end end)
+            C_Timer.After(0.6, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass3") end end)
         end)
         addon._hookedSave = true
     end
@@ -247,7 +365,9 @@ function addon.EditMode.Initialize()
     if _G.EventRegistry and not addon._editModeCBRegistered then
         local ER = _G.EventRegistry
         if type(ER.RegisterCallback) == "function" then
-            ER:RegisterCallback("EditMode.Enter", function() end, addon)
+            ER:RegisterCallback("EditMode.Enter", function()
+                -- Do not push on enter; it can cause recursion and frame churn as Blizzard initializes widgets.
+            end, addon)
             ER:RegisterCallback("EditMode.Exit", function()
                 C_Timer.After(0.1, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass1") end end)
                 C_Timer.After(0.5, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass2") end end)
