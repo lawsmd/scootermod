@@ -17,10 +17,12 @@ libs/AceGUI-3.0/AceGUI-3.0.xml
 libs/AceConfig-3.0/AceConfig-3.0.xml
 libs/LibEditModeOverride/LibEditModeOverride.xml
 
+core/borders.lua
 core/editmode.lua
 core/components.lua
 
 ui/ScooterTabbedSection.xml
+ui/ScooterExpandableSection.xml
 ui/ScooterSettingsPanel.lua
 ui/settings.lua
 

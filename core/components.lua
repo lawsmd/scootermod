@@ -70,11 +70,17 @@ function addon:InitializeComponents()
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Enable Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},
-            borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 2
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
             borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", values = { square = "Square", style_tooltip = "Tooltip", dialog = "Dialog", none = "None" }, section = "Border", order = 3
+                label = "Border Style", widget = "dropdown", values = { square = "Square", style_tooltip = "Tooltip", dialog = "Dialog", none = "None" }, section = "Border", order = 4
+            }},
+            borderThickness = { type = "addon", default = 1, ui = {
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
             -- Visibility
             opacity = { type = "addon", default = 100, ui = {
@@ -98,24 +104,34 @@ function addon:InitializeComponents()
             local width = self.db.iconWidth or self.settings.iconWidth.default
             local height = self.db.iconHeight or self.settings.iconHeight.default
             local spacing = self.db.iconPadding or self.settings.iconPadding.default
-            local borderTextures = {
-                square = "Interface\Buttons\UI-Panel-Border",
-                style_tooltip = "Interface\Tooltip\Tooltip-Border",
-                dialog = "Interface\DialogFrame\UI-DialogBox-Border",
-            }
-            local edgeFile = self.db.borderEnable and borderTextures[self.db.borderStyle] or nil
-
             for i, child in ipairs({ frame:GetChildren() }) do
                 child:SetSize(width, height)
-                if edgeFile and child.SetBackdrop then
-                    child:SetBackdrop({
-                        edgeFile = edgeFile,
-                        edgeSize = (self.db.borderThickness or 1) * 4, -- A guess
-                        insets = { left = (self.db.borderThickness or 1), right = (self.db.borderThickness or 1), top = (self.db.borderThickness or 1), bottom = (self.db.borderThickness or 1) },
-                    })
-                    child:SetBackdropBorderColor(1, 1, 1, 1)
-                elseif child.SetBackdrop then
-                    child:SetBackdrop(nil)
+                if self.db.borderEnable then
+                    local style = self.db.borderStyle or "square"
+                    if type(style) == "string" and style:find("^atlas:") and addon.Borders and addon.Borders.ApplyAtlas then
+                        local key = style:sub(7)
+                        if key and #key > 0 then
+                            local t = tonumber(self.db.borderThickness) or 1
+                            if t < 1 then t = 1 elseif t > 16 then t = 16 end
+                            local extra = -math.floor(((t - 1) / 15) * 2 + 0.5)
+                            local tint = (self.db.borderTintEnable and (self.db.borderTintColor or {1,1,1,1})) or nil
+                            addon.Borders.ApplyAtlas(child, { atlas = key, extraPadding = extra, tintColor = tint })
+                        else
+                            if addon.Borders and addon.Borders.ApplySquare then
+                                addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = {0,0,0,1} })
+                            end
+                        end
+                    elseif addon.Borders and addon.Borders.ApplySquare then
+                        local col = {0,0,0,1}
+                        if self.db.borderTintEnable and type(self.db.borderTintColor) == "table" then
+                            col = { self.db.borderTintColor[1] or 1, self.db.borderTintColor[2] or 1, self.db.borderTintColor[3] or 1, self.db.borderTintColor[4] or 1 }
+                        end
+                        addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = col })
+                    end
+                else
+                    if addon.Borders and addon.Borders.HideAll then
+                        addon.Borders.HideAll(child)
+                    end
                 end
             end
 
