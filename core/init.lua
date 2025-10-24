@@ -35,6 +35,7 @@ end
 function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+	self:RegisterEvent("ADDON_LOADED")
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
@@ -128,4 +129,181 @@ function addon:EDIT_MODE_LAYOUTS_UPDATED()
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("EDIT_MODE_LAYOUTS_UPDATED")
     self:ApplyStyles()
+end
+
+-- Debug Tools: Table Inspector copy support ----------------------------------
+
+local function Scooter_SafeCall(fn, ...)
+	local ok, a, b, c, d = pcall(fn, ...)
+	if ok then return a, b, c, d end
+	return nil
+end
+
+local function Scooter_GetDebugNameSafe(obj)
+	if not obj then return nil end
+	return Scooter_SafeCall(function() return obj.GetDebugName and obj:GetDebugName() or nil end)
+end
+
+local function Scooter_TableInspectorBuildDump(focusedTable)
+	if not focusedTable then return "[No Table Selected]" end
+	local attributes = {}
+	local childFrameDisplayed = {}
+
+	local function shouldShow(object)
+		-- Attempt to honor widget access checks if available; otherwise allow
+		local isWidget = Scooter_SafeCall(function() return C_Widget and C_Widget.IsWidget and C_Widget.IsWidget(object) end)
+		local canAccess = Scooter_SafeCall(function() return CanAccessObject and CanAccessObject(object) or true end)
+		if isWidget == nil then isWidget = false end
+		if canAccess == nil then canAccess = true end
+		return (not isWidget) or canAccess
+	end
+
+	for key, value in pairs(focusedTable) do
+		if shouldShow(key) and shouldShow(value) then
+			local vType = type(value)
+			local display
+			if vType == "number" or vType == "string" or vType == "boolean" then
+				display = tostring(value)
+			elseif vType == "table" and Scooter_GetDebugNameSafe(value) then
+				display = Scooter_GetDebugNameSafe(value)
+				vType = "childFrame"
+				childFrameDisplayed[value] = true
+			elseif vType == "nil" then
+				display = "nil"
+			else
+				display = "N/A"
+			end
+			table.insert(attributes, { key = key, type = vType, rawValue = value, displayValue = display })
+		end
+	end
+
+	if focusedTable.GetChildren then
+		local children = { focusedTable:GetChildren() }
+		for _, child in ipairs(children) do
+			if shouldShow(child) and not childFrameDisplayed[child] then
+				table.insert(attributes, { key = "N/A", type = "childFrame", rawValue = child, displayValue = Scooter_GetDebugNameSafe(child) or "<child>" })
+				childFrameDisplayed[child] = true
+			end
+		end
+	end
+
+	if focusedTable.GetRegions then
+		local regions = { focusedTable:GetRegions() }
+		for _, region in ipairs(regions) do
+			if shouldShow(region) then
+				table.insert(attributes, { key = "N/A", type = "region", rawValue = region, displayValue = Scooter_GetDebugNameSafe(region) or "<region>" })
+			end
+		end
+	end
+
+	local typeOrder = { childFrame = 10, boolean = 20, number = 30, string = 40, table = 50, region = 60, ["function"] = 70 }
+	table.sort(attributes, function(a, b)
+		local ao = typeOrder[a.type] or 500
+		local bo = typeOrder[b.type] or 500
+		if ao ~= bo then return ao < bo end
+		if a.key ~= b.key then return tostring(a.key) < tostring(b.key) end
+		return tostring(a.displayValue) < tostring(b.displayValue)
+	end)
+
+	local out = {}
+	local function push(line) table.insert(out, line) end
+	local title = Scooter_SafeCall(function() return TableAttributeDisplay and TableAttributeDisplay.TitleButton and TableAttributeDisplay.TitleButton.Text and TableAttributeDisplay.TitleButton.Text:GetText() end)
+	push(string.format("%s", title or "Table Attributes"))
+	push(string.rep("-", 60))
+	local lastType
+	for _, entry in ipairs(attributes) do
+		if entry.type ~= lastType then
+			push(string.format("%s(s)", entry.type))
+			lastType = entry.type
+		end
+		push(string.format("  %s = %s", tostring(entry.key), tostring(entry.displayValue)))
+	end
+	return table.concat(out, "\n")
+end
+
+local function Scooter_ShowCopyWindow(title, text)
+	if not addon.CopyWindow then
+		local f = CreateFrame("Frame", "ScooterCopyWindow", UIParent, "BasicFrameTemplateWithInset")
+		f:SetSize(740, 520)
+		f:SetPoint("CENTER")
+		f:SetFrameStrata("DIALOG")
+		f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", function() f:StartMoving() end)
+		f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+		f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		f.title:SetPoint("LEFT", f.TitleBg, "LEFT", 6, 0)
+		local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+		scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -36)
+		scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 42)
+		local eb = CreateFrame("EditBox", nil, scroll)
+		eb:SetMultiLine(true); eb:SetFontObject(ChatFontNormal); eb:SetAutoFocus(false)
+		eb:SetWidth(680)
+		eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+		scroll:SetScrollChild(eb)
+		f.EditBox = eb
+		local copyBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+		copyBtn:SetSize(100, 22)
+		copyBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 12)
+		copyBtn:SetText("Copy All")
+		copyBtn:SetScript("OnClick", function()
+			f.EditBox:HighlightText()
+			f.EditBox:SetFocus()
+		end)
+		local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+		closeBtn:SetSize(80, 22)
+		closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
+		closeBtn:SetText(CLOSE or "Close")
+		closeBtn:SetScript("OnClick", function() f:Hide() end)
+		addon.CopyWindow = f
+	end
+	local f = addon.CopyWindow
+	if f.title then f.title:SetText(title or "Copied Output") end
+	if f.EditBox then f.EditBox:SetText(text or "") end
+	f:Show()
+	if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
+end
+
+local function Scooter_AttachAttrCopyButton()
+	local parent = _G.TableAttributeDisplay
+	if not parent or parent.ScooterCopyButton then return end
+	local btn = CreateFrame("Button", "ScooterAttrCopyButton", parent, "UIPanelButtonTemplate")
+	btn:SetSize(80, 20)
+	btn:SetText("Copy")
+	-- Place just beneath the window, slightly offset
+	btn:ClearAllPoints()
+	btn:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -6)
+	btn:SetScript("OnClick", function()
+		local focused = parent.focusedTable
+		local dump = Scooter_TableInspectorBuildDump(focused)
+		local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
+		Scooter_ShowCopyWindow(title, dump)
+	end)
+	parent.ScooterCopyButton = btn
+end
+
+function addon:ADDON_LOADED(event, name)
+	if name == "Blizzard_DebugTools" then
+		C_Timer.After(0, function() Scooter_AttachAttrCopyButton() end)
+	end
+end
+
+-- Slash command to dump current inspector selection
+SLASH_ATTRCOPY1 = "/attrcopy"
+SlashCmdList.ATTRCOPY = function(msg)
+	local parent = _G.TableAttributeDisplay
+	if parent and parent:IsShown() and parent.focusedTable then
+		local dump = Scooter_TableInspectorBuildDump(parent.focusedTable)
+		local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
+		Scooter_ShowCopyWindow(title, dump)
+		return
+	end
+	-- Fallback: if framestack is active, try to inspect highlight and dump
+	local fs = _G.FrameStackTooltip
+	if fs and fs.highlightFrame then
+		local dump = Scooter_TableInspectorBuildDump(fs.highlightFrame)
+		local name = Scooter_GetDebugNameSafe(fs.highlightFrame) or "Frame"
+		Scooter_ShowCopyWindow("Frame Attributes - "..name, dump)
+		return
+	end
+	print("/attrcopy: No Table Inspector window or highlight frame found.")
 end

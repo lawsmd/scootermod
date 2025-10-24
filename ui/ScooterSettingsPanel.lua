@@ -936,6 +936,19 @@ local function ShowPanel()
         closeBtn:SetSize(96, 22); closeBtn:SetPoint("BOTTOMRIGHT", -16, 16)
         closeBtn.Text:SetText(SETTINGS_CLOSE)
         closeBtn:SetScript("OnClick", function() f:Hide() end)
+		-- Enable resizing via a bottom-right handle
+		f:SetResizable(true)
+		local resizeBtn = CreateFrame("Button", nil, f, "PanelResizeButtonTemplate")
+		resizeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+		-- Reasonable bounds to keep layout sane
+		resizeBtn:Init(f, 720, 480, 1600, 1200)
+		resizeBtn:SetOnResizeCallback(function()
+			-- Re-evaluate layout while dragging to keep list/canvas filling the area
+			if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
+		end)
+		resizeBtn:SetOnResizeStoppedCallback(function()
+			if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
+		end)
         local categoryList = CreateFrame("Frame", nil, f, "SettingsCategoryListTemplate")
         categoryList:SetSize(199, 569); categoryList:SetPoint("TOPLEFT", 18, -76); categoryList:SetPoint("BOTTOMLEFT", 178, 46)
         f.CategoryList = categoryList
