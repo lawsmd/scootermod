@@ -623,7 +623,11 @@ local function createComponentRenderer(componentId)
                         else
                         local settingObj = CreateLocalSetting(label, ui.type or "string",
                             function()
-                                return component.db[settingId] or setting.default
+                                -- Important: do NOT treat false as nil. Only fall back to defaults when the DB value is truly nil,
+                                -- otherwise Edit Mode–controlled checkboxes (false) will appear checked in Scoot after EM writes.
+                                local v = component.db[settingId]
+                                if v == nil then v = setting.default end
+                                return v
                             end,
                             function(v)
                                 local finalValue
@@ -656,11 +660,25 @@ local function createComponentRenderer(componentId)
                                 component.db[settingId] = finalValue
 
                                 if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                    -- Debounce EM writes slightly to avoid re-entrant updates during list recycling
-                                    if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
-                                        C_Timer.After(0, function()
-                                            if addon.EditMode then addon.EditMode.SyncComponentToEditMode(component) end
-                                        end)
+                                    -- For opacity, push immediately (no debounce) so EM owns alpha
+                                    if settingId == "opacity" then
+                                        if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
+                                            if addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+                                        end
+                                    elseif settingId == "showTimer" or settingId == "showTooltip" then
+                                        -- Push only this checkbox immediately to avoid list recycler bounce and accidental cross-toggles.
+                                        if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
+                                            if addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+                                        end
+                                    else
+                                        -- Debounce EM writes slightly for other settings
+                                        if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                            C_Timer.After(0.05, function()
+                                                if addon.EditMode then addon.EditMode.SyncComponentToEditMode(component) end
+                                            end)
+                                        end
                                     end
                                 end
 
@@ -685,6 +703,10 @@ local function createComponentRenderer(componentId)
                                     local snapped = math.floor(v / 10 + 0.5) * 10
                                     return tostring(snapped)
                                 end)
+                            elseif settingId == "opacity" then
+                                options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+                                    return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
+                                end)
                             else
                                 options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
                             end
@@ -693,8 +715,33 @@ local function createComponentRenderer(componentId)
                             initSlider:AddShownPredicate(function()
                                 return panel:IsSectionExpanded(component.id, sectionName)
                             end)
-                            initSlider.reinitializeOnValueChanged = true
+                            -- Avoid recycler bounce on per-tick updates like opacity steppers
+                            if settingId == "opacity" then
+                                initSlider.reinitializeOnValueChanged = false
+                            else
+                                initSlider.reinitializeOnValueChanged = true
+                            end
                             if settingId == "positionX" or settingId == "positionY" then ConvertSliderInitializerToTextInput(initSlider) end
+                            if settingId == "opacity" then
+                                -- Ensure the slider reflects the immediate write to EM by re-pulling DB on value change
+                                local baseInit = initSlider.InitFrame
+                                initSlider.InitFrame = function(self, frame)
+                                    if baseInit then baseInit(self, frame) end
+                                    if not frame.ScooterOpacityHooked then
+                                        local original = frame.OnSettingValueChanged
+                                        frame.OnSettingValueChanged = function(ctrl, setting, val)
+                                            if original then pcall(original, ctrl, setting, val) end
+                                            -- Pull latest from DB after EM write; reassign slider value to stop it sticking at 100
+                                            local cv = component.db.opacity or (component.settings.opacity and component.settings.opacity.default) or 100
+                                            local c = ctrl:GetSetting()
+                                            if c and c.SetValue and type(cv) == 'number' then
+                                                c:SetValue(cv)
+                                            end
+                                        end
+                                        frame.ScooterOpacityHooked = true
+                                    end
+                                end
+                            end
                             table.insert(init, initSlider)
                         elseif ui.widget == "dropdown" then
                             local data
@@ -755,10 +802,13 @@ local function createComponentRenderer(componentId)
                                 end
                                 table.insert(init, initCb)
                             else
+                                -- Generic checkbox initializer
                                 local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", data)
                                 initCb:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
                                 end)
+                                -- Avoid recycler-induced visual bounce on checkbox value change; we update the value without forcing reinit.
+                                initCb.reinitializeOnValueChanged = false
                                 table.insert(init, initCb)
                             end
                         elseif ui.widget == "color" then

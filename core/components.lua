@@ -82,18 +82,18 @@ function addon:InitializeComponents()
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
-            -- Visibility (Edit Mode controlled)
+            -- Visibility (Edit Mode synced)
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},
-            opacity = { type = "addon", default = 100, ui = {
-                label = "Opacity (%)", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
+            opacity = { type = "editmode", settingId = 5, default = 100, ui = {
+                label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
             showTimer = { type = "editmode", default = true, ui = {
                 label = "Show Timer", widget = "checkbox", section = "Misc", order = 3
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltip", widget = "checkbox", section = "Misc", order = 4
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 4
             }},
         },
         ApplyStyling = function(self)
@@ -181,15 +181,6 @@ function addon:InitializeComponents()
                         end
                     end
                 end
-
-                -- Apply timer text visibility and tooltip mouse enablement
-                do
-                    local showTimer = (self.db.showTimer ~= false)
-                    local showTooltips = (self.db.showTooltip ~= false)
-                    local cd = child.Cooldown
-                    if cd and cd.SetHideCountdownNumbers then pcall(cd.SetHideCountdownNumbers, cd, not showTimer) end
-                    if child.EnableMouse then pcall(child.EnableMouse, child, showTooltips) end
-                end
             end
 
             -- Re-apply padding on the actual item container (matches RIPAuras behavior)
@@ -215,7 +206,7 @@ function addon:InitializeComponents()
                 end)
             end
 
-            -- Apply visibility (mode and opacity)
+            -- Apply visibility (mode only)
             do
                 local mode = self.db.visibilityMode or self.settings.visibilityMode.default or "always"
                 if mode == "never" then
@@ -226,10 +217,13 @@ function addon:InitializeComponents()
                 else
                     if frame.Show then pcall(frame.Show, frame) end
                 end
-                local pct = tonumber(self.db.opacity) or self.settings.opacity.default or 100
-                if pct < 50 then pct = 50 elseif pct > 100 then pct = 100 end
-                local a = pct / 100
-                if frame.SetAlpha then pcall(frame.SetAlpha, frame, a) end
+            end
+
+            -- Apply opacity locally for immediate visual update; EM remains source of truth (50–100)
+            do
+                local op = tonumber(self.db.opacity or (self.settings.opacity and self.settings.opacity.default) or 100) or 100
+                if op < 50 then op = 50 elseif op > 100 then op = 100 end
+                if frame.SetAlpha then pcall(frame.SetAlpha, frame, op / 100) end
             end
         end,
     })

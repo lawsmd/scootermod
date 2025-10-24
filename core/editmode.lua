@@ -15,6 +15,19 @@ end
 -- Discover the numeric setting id at runtime to avoid stale hardcodes
 local function ResolveSettingId(frame, logicalKey)
     if not frame or not frame.system or not _G.EditModeSettingDisplayInfoManager then return nil end
+    -- Prefer stable enum constants when available
+    local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
+    if EM then
+        if logicalKey == "visibility" then return EM.VisibleSetting end
+        if logicalKey == "show_timer" then return EM.ShowTimer end
+        if logicalKey == "show_tooltip" then return EM.ShowTooltips end
+        if logicalKey == "orientation" then return EM.Orientation end
+        if logicalKey == "columns" then return EM.IconLimit end
+        if logicalKey == "direction" then return EM.IconDirection end
+        if logicalKey == "iconSize" then return EM.IconSize end
+        if logicalKey == "iconPadding" then return EM.IconPadding end
+        if logicalKey == "opacity" then return EM.Opacity end
+    end
     local sys = frame.system
     _resolvedSettingIdCache[sys] = _resolvedSettingIdCache[sys] or {}
     if _resolvedSettingIdCache[sys][logicalKey] ~= nil then
@@ -34,6 +47,15 @@ local function ResolveSettingId(frame, logicalKey)
                 local count = 0
                 if type(setup.options) == "table" then for _ in pairs(setup.options) do count = count + 1 end end
                 if (nm:find("visibility", 1, true) or count == 3) then pick = pick or setup end
+            end
+        elseif lk == "opacity" then
+            if tp == Enum.EditModeSettingDisplayType.Slider then
+                -- Identify by typical 50..100 range or name containing "opacity"
+                local minV = tonumber(setup.minValue)
+                local maxV = tonumber(setup.maxValue)
+                if (minV == 50 and maxV == 100) or nm:find("opacity", 1, true) then
+                    pick = pick or setup
+                end
             end
         elseif lk == "show_timer" or lk == "showtimer" then
             if tp == Enum.EditModeSettingDisplayType.Checkbox and (nm:find("timer", 1, true) or nm:find("countdown", 1, true)) then pick = pick or setup end
@@ -170,24 +192,56 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         if desiredRaw > 200 then desiredRaw = 200 end
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
+    elseif settingId == "opacity" then
+        -- Opacity notes:
+        -- - Blizzard shows 50..100 and applies alpha=v/100
+        -- - Some client/library combos persist this slider as an index-from-min internally
+        --   (i.e., write/read expects 0..50). Our embedded LEO exposes a compatibility flag.
+        -- Here we write either raw percent or (v-50) depending on the active mode.
+        local v = tonumber(dbValue) or 100
+        if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        local idxMode = false
+        do
+            local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
+            if LEO_local and LEO_local._forceIndexBased and frame and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCooldownViewerSetting then
+                local sys = frame.system
+                local setId = _G.Enum.EditModeCooldownViewerSetting.Opacity
+                idxMode = LEO_local._forceIndexBased[sys] and LEO_local._forceIndexBased[sys][setId]
+            end
+        end
+        editModeValue = idxMode and (v - 50) or v
+        -- Always resolve the EM setting id for opacity to avoid stale hardcodes
+        local resolved = ResolveSettingId(frame, "opacity")
+        if resolved then setting.settingId = resolved end
     elseif settingId == "visibilityMode" then
         -- 0 = always, 1 = only in combat, 2 = hidden
         local v = tostring(dbValue)
         editModeValue = (v == "combat") and 1 or (v == "never" and 2 or 0)
-        -- Resolve dynamic setting id if not explicitly provided
         setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
     elseif settingId == "showTimer" then
-        editModeValue = (dbValue ~= false) and 1 or 0
+        -- Checkbox mapping for Edit Mode: true/false -> 1/0. We resolve the dynamic setting id so we don't rely on stale enums.
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
+        local v = not not dbValue
+        editModeValue = v and 1 or 0
     elseif settingId == "showTooltip" then
-        editModeValue = (dbValue ~= false) and 1 or 0
+        -- Checkbox mapping for Edit Mode: true/false -> 1/0. Same dynamic id resolution as above.
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
+        local v = not not dbValue
+        editModeValue = v and 1 or 0
     else
         editModeValue = tonumber(dbValue) or 0
     end
 
     if editModeValue ~= nil then
-        -- Skip write if no change (prevents unnecessary churn and odd UI snaps)
+        -- Opacity: unconditionally write, and immediately refresh the system mixin so alpha updates
+        if settingId == "opacity" then
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
+                pcall(frame.UpdateSystemSettingOpacity, frame)
+            end
+            return true
+        end
+        -- Others: skip write if no change
         local current = addon.EditMode.GetSetting(frame, setting.settingId)
         if current ~= editModeValue then
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
@@ -224,7 +278,15 @@ function addon.EditMode.SyncComponentToEditMode(component)
     -- 3. Apply all changes atomically
     addon.EditMode.ApplyChanges()
 
-    addon.EditMode._syncingEM = false
+    -- Hold the syncing guard briefly to avoid back-sync races from SaveLayouts callbacks
+    local function clearGuard()
+        addon.EditMode._syncingEM = false
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.35, clearGuard)
+    else
+        clearGuard()
+    end
 end
 
 
@@ -249,6 +311,12 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
     elseif settingId == "showTooltip" then
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
+    elseif settingId == "opacity" then
+        -- Use stable enum if present; fallback unnecessary for opacity since it is fixed index 5
+        if not setting.settingId then
+            local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
+            if EM and EM.Opacity then setting.settingId = EM.Opacity else setting.settingId = 5 end
+        end
     end
 
     local editModeValue = addon.EditMode.GetSetting(frame, setting.settingId)
@@ -278,19 +346,30 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         else
             dbValue = v
         end
+    elseif settingId == "opacity" then
+        -- Read percent 50..100; LEO already returns raw percent even in index mode
+        do
+            local resolved = ResolveSettingId(frame, "opacity")
+            if resolved then setting.settingId = resolved end
+        end
+        local v = tonumber(editModeValue)
+        if v == nil then return false end
+        v = math.floor(v + 0.5)
+        if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        dbValue = v
     elseif settingId == "visibilityMode" then
-        -- 0 = always, 1 = only in combat, 2 = hidden. Fallback to frame.visibleSetting if API returned nil.
-        local v = editModeValue
+        -- 0 = always, 1 = only in combat, 2 = hidden
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
         if v == nil and frame and type(frame.visibleSetting) ~= "nil" then v = frame.visibleSetting end
+        if v == nil then return false end
         if v == 1 then dbValue = "combat" elseif v == 2 then dbValue = "never" else dbValue = "always" end
     elseif settingId == "showTimer" then
-        local v = editModeValue
-        if v == nil and frame and type(frame.timerShown) ~= "nil" then v = frame.timerShown and 1 or 0 end
-        dbValue = (tonumber(v) or 0) ~= 0
+        -- Back-sync from Edit Mode: 1/0 -> true/false
+        dbValue = (tonumber(editModeValue) or 0) == 1 and true or false
     elseif settingId == "showTooltip" then
-        local v = editModeValue
-        if v == nil and frame and type(frame.tooltipsShown) ~= "nil" then v = frame.tooltipsShown and 1 or 0 end
-        dbValue = (tonumber(v) or 0) ~= 0
+        -- Back-sync from Edit Mode: 1/0 -> true/false
+        dbValue = (tonumber(editModeValue) or 0) == 1 and true or false
     else
         dbValue = tonumber(editModeValue) or 0
     end
@@ -353,6 +432,15 @@ end
 
 -- Initialize Edit Mode integration
 function addon.EditMode.Initialize()
+    -- Enable compatibility mode for opacity: treat as index-based in LEO to match client persistence
+    local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
+    if LEO_local and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCooldownViewerSetting then
+        local sys = _G.Enum.EditModeSystem.CooldownViewer
+        local setting = _G.Enum.EditModeCooldownViewerSetting.Opacity
+        LEO_local._forceIndexBased = LEO_local._forceIndexBased or {}
+        LEO_local._forceIndexBased[sys] = LEO_local._forceIndexBased[sys] or {}
+        LEO_local._forceIndexBased[sys][setting] = true
+    end
     if not addon._hookedSave and type(_G.C_EditMode) == "table" and type(_G.C_EditMode.SaveLayouts) == "function" then
         hooksecurefunc(_G.C_EditMode, "SaveLayouts", function()
             C_Timer.After(0.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass1") end end)
@@ -371,6 +459,7 @@ function addon.EditMode.Initialize()
             ER:RegisterCallback("EditMode.Exit", function()
                 C_Timer.After(0.1, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass1") end end)
                 C_Timer.After(0.5, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass2") end end)
+                C_Timer.After(1.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass3") end end)
             end, addon)
             addon._editModeCBRegistered = true
         end

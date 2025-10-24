@@ -1,5 +1,17 @@
 -- Copyright 2022-2023 plusmouse. Licensed under terms found in LICENSE file.
 
+-- NOTE (ScooterMod local modifications):
+-- We embed a lightly customized copy of this library. Changes include:
+--  1) A per-setting compatibility flag to force index-based slider semantics
+--     (some client builds appear to store Cooldown Viewer Opacity as index-from-min).
+--  2) Post SetFrameSetting immediate refresh for common Cooldown Viewer settings to
+--     ensure visible updates without requiring ApplyChanges/UI reopen.
+-- Rationale: In late 2025, the upstream v8 changed slider validation to use real
+-- min/max ranges. That fixed Icon Padding (2..10) and Icon Size (50..200) but exposed
+-- an opacity persistence quirk for certain clients. Our opt-in flag allows select
+-- settings (Opacity) to be handled as index-based while leaving others raw.
+-- Maintenance: Treat this as a local fork. Updating the library from upstream will
+-- overwrite these helpers; consider a git-managed fork if further divergence is needed.
 local lib = LibStub:NewLibrary("LibEditModeOverride-1.0", 10)
 
 if not lib then return end
@@ -44,9 +56,20 @@ local function GetParameterRestrictions(frame, setting)
   return nil
 end
 
+-- Optional per-setting compatibility override (ScooterMod local):
+-- Allow callers to force index-based handling for specific (system, setting) pairs.
+lib._forceIndexBased = lib._forceIndexBased or {}
+
 local function SliderIsIndexBased(frame, setting, restrictions)
   if not restrictions or restrictions.type ~= Enum.EditModeSettingDisplayType.Slider or not restrictions.stepSize then
     return false
+  end
+  -- Caller-provided override (compat mode). When true, sliders are treated as index-based:
+  --  - SetFrameSetting: raw inputs within [min,max] are normalized to index 0..N
+  --  - GetFrameSetting: stored index is converted back to raw via min + idx*step
+  local sys = frame and frame.system
+  if sys and lib._forceIndexBased and lib._forceIndexBased[sys] and lib._forceIndexBased[sys][setting] then
+    return true
   end
   -- Explicit allowlist: Only treat Cooldown Viewer Icon Size as index-based for our use case
   if frame and frame.system == Enum.EditModeSystem.CooldownViewer and setting == Enum.EditModeCooldownViewerSetting.IconSize then
@@ -146,6 +169,29 @@ function lib:SetFrameSetting(frame, setting, value)
     if item.setting == setting then
       item.value = value
     end
+  end
+
+  -- Proactively refresh the live frame for well-known settings to ensure visible updates without requiring UI reopen.
+  -- Note: immediate calls prevent visual desync and checkbox 'bounce' in external settings UIs.
+  if frame and frame.system == Enum.EditModeSystem.CooldownViewer then
+    if setting == Enum.EditModeCooldownViewerSetting.Opacity and frame.UpdateSystemSettingOpacity then
+      pcall(frame.UpdateSystemSettingOpacity, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.IconSize and frame.UpdateSystemSettingIconSize then
+      pcall(frame.UpdateSystemSettingIconSize, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.IconPadding and frame.UpdateSystemSettingIconPadding then
+      pcall(frame.UpdateSystemSettingIconPadding, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.IconDirection and frame.UpdateSystemSettingIconDirection then
+      pcall(frame.UpdateSystemSettingIconDirection, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.IconLimit and frame.UpdateSystemSettingIconLimit then
+      pcall(frame.UpdateSystemSettingIconLimit, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.Orientation and frame.UpdateSystemSettingOrientation then
+      pcall(frame.UpdateSystemSettingOrientation, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.ShowTimer and frame.UpdateSystemSettingShowTimer then
+      pcall(frame.UpdateSystemSettingShowTimer, frame)
+    elseif setting == Enum.EditModeCooldownViewerSetting.ShowTooltips and frame.UpdateSystemSettingShowTooltips then
+      pcall(frame.UpdateSystemSettingShowTooltips, frame)
+    end
+    if frame.UpdateLayout then pcall(frame.UpdateLayout, frame) end
   end
 end
 
