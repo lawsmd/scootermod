@@ -21,12 +21,15 @@ local function ResolveSettingId(frame, logicalKey)
         if logicalKey == "visibility" then return EM.VisibleSetting end
         if logicalKey == "show_timer" then return EM.ShowTimer end
         if logicalKey == "show_tooltip" then return EM.ShowTooltips end
+        -- No stable enum seen for "Hide when inactive"; fall through to dynamic resolver
         if logicalKey == "orientation" then return EM.Orientation end
         if logicalKey == "columns" then return EM.IconLimit end
         if logicalKey == "direction" then return EM.IconDirection end
         if logicalKey == "iconSize" then return EM.IconSize end
         if logicalKey == "iconPadding" then return EM.IconPadding end
         if logicalKey == "opacity" then return EM.Opacity end
+        -- Tracked Bars specific (bar content/display mode)
+        if logicalKey == "bar_content" then return EM.BarContent end
     end
     local sys = frame.system
     _resolvedSettingIdCache[sys] = _resolvedSettingIdCache[sys] or {}
@@ -57,10 +60,21 @@ local function ResolveSettingId(frame, logicalKey)
                     pick = pick or setup
                 end
             end
+        elseif lk == "bar_content" or lk == "display_mode" then
+            if tp == Enum.EditModeSettingDisplayType.Dropdown then
+                -- 3-way dropdown; look for name including display/content
+                local count = 0
+                if type(setup.options) == "table" then for _ in pairs(setup.options) do count = count + 1 end end
+                if count == 3 and (nm:find("display", 1, true) or nm:find("content", 1, true)) then
+                    pick = pick or setup
+                end
+            end
         elseif lk == "show_timer" or lk == "showtimer" then
             if tp == Enum.EditModeSettingDisplayType.Checkbox and (nm:find("timer", 1, true) or nm:find("countdown", 1, true)) then pick = pick or setup end
         elseif lk == "show_tooltip" or lk == "showtooltip" or lk == "tooltips" then
             if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("tooltip", 1, true) then pick = pick or setup end
+        elseif lk == "hide_when_inactive" or lk == "hideinactive" or lk == "inactive" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and (nm:find("inactive", 1, true) or nm:find("hide", 1, true)) then pick = pick or setup end
         end
     end
     local id = pick and pick.setting or nil
@@ -213,6 +227,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         -- Always resolve the EM setting id for opacity to avoid stale hardcodes
         local resolved = ResolveSettingId(frame, "opacity")
         if resolved then setting.settingId = resolved end
+    elseif settingId == "displayMode" then
+        -- Map addon values to bar content dropdown: both/icon/name
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_content") or ResolveSettingId(frame, "display_mode") or setting.settingId
+        local v = tostring(dbValue)
+        -- Assume EM dropdown values: 0=Both,1=IconOnly,2=NameOnly (feature-detected at runtime when possible)
+        if setting.settingId then
+            editModeValue = (v == "icon") and 1 or (v == "name" and 2 or 0)
+        end
     elseif settingId == "visibilityMode" then
         -- 0 = always, 1 = only in combat, 2 = hidden
         local v = tostring(dbValue)
@@ -226,6 +248,11 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
     elseif settingId == "showTooltip" then
         -- Checkbox mapping for Edit Mode: true/false -> 1/0. Same dynamic id resolution as above.
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
+        local v = not not dbValue
+        editModeValue = v and 1 or 0
+    elseif settingId == "hideWhenInactive" then
+        -- Resolve dynamically; map boolean to 1/0 for Edit Mode API
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_when_inactive") or setting.settingId
         local v = not not dbValue
         editModeValue = v and 1 or 0
     else
@@ -245,6 +272,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         local current = addon.EditMode.GetSetting(frame, setting.settingId)
         if current ~= editModeValue then
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if settingId == "hideWhenInactive" and frame and type(frame.UpdateSystemSettingHideWhenInactive) == "function" then
+                pcall(frame.UpdateSystemSettingHideWhenInactive, frame)
+            end
             return true
         end
         return false
@@ -311,6 +341,8 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
     elseif settingId == "showTooltip" then
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
+    elseif settingId == "hideWhenInactive" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_when_inactive") or setting.settingId
     elseif settingId == "opacity" then
         -- Use stable enum if present; fallback unnecessary for opacity since it is fixed index 5
         if not setting.settingId then
@@ -370,6 +402,16 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     elseif settingId == "showTooltip" then
         -- Back-sync from Edit Mode: 1/0 -> true/false
         dbValue = (tonumber(editModeValue) or 0) == 1 and true or false
+    elseif settingId == "hideWhenInactive" then
+        -- Back-sync from Edit Mode: 1/0 -> true/false
+        dbValue = (tonumber(editModeValue) or 0) == 1 and true or false
+    elseif settingId == "displayMode" then
+        -- Back-sync from Edit Mode dropdown to addon values: 0=both,1=icon,2=name (fallback assumption)
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_content") or ResolveSettingId(frame, "display_mode") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        if v == 1 then dbValue = "icon" elseif v == 2 then dbValue = "name" else dbValue = "both" end
+        if component.db[settingId] ~= dbValue then component.db[settingId] = dbValue return true end
+        return false
     else
         dbValue = tonumber(editModeValue) or 0
     end

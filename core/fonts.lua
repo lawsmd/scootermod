@@ -60,6 +60,12 @@ function addon.InitFontDropdown(dropdown, setting, optionsProvider)
     end
     local initTooltip = _G.Settings.CreateOptionsInitTooltip(setting, setting and setting:GetName() or "Font", nil, optionsProvider)
     _G.Settings.InitDropdown(dropdown, setting, Inserter, initTooltip)
+    -- Force a deferred redraw to ensure all option initializers have run before first open
+    if dropdown and dropdown.Update then
+        C_Timer.After(0, function()
+            if dropdown and dropdown.Update then pcall(dropdown.Update, dropdown) end
+        end)
+    end
     dropdown._ScooterFontPreviewInit = true
 end
 

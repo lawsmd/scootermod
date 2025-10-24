@@ -198,7 +198,7 @@ local function ConvertSliderInitializerToTextInput(initializer)
     if not initializer or initializer._scooterTextInput then return initializer end
     local baseInitFrame = initializer.InitFrame
     initializer.InitFrame = function(self, frame)
-        baseInitFrame(self, frame)
+        if baseInitFrame then baseInitFrame(self, frame) end
         if frame.SliderWithSteppers then frame.SliderWithSteppers:Hide() end
         local input = frame.ScooterTextInput
         if not input then
@@ -208,8 +208,8 @@ local function ConvertSliderInitializerToTextInput(initializer)
             input:SetPoint("LEFT", frame, "CENTER", -40, 0)
             frame.ScooterTextInput = input
             local function restore()
-                local setting = frame:GetSetting()
-                local value = setting and setting:GetValue()
+                local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+                local value = setting and setting.GetValue and setting:GetValue() or nil
                 input:SetText(value == nil and "" or string.format("%.0f", value))
             end
             local function commit()
@@ -220,15 +220,15 @@ local function ConvertSliderInitializerToTextInput(initializer)
                     if options.minValue ~= nil then num = math.max(options.minValue, num) end
                     if options.maxValue ~= nil then num = math.min(options.maxValue, num) end
                 end
-                local setting = frame:GetSetting()
-                if setting and setting:GetValue() ~= num then setting:SetValue(num) else input:SetText(string.format("%.0f", num)) end
+                local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+                if setting and setting.GetValue and setting:GetValue() ~= num then setting:SetValue(num) else input:SetText(string.format("%.0f", num)) end
             end
             input:SetScript("OnEnterPressed", function(b) commit(); b:ClearFocus() end)
             input:SetScript("OnEditFocusLost", function(b) commit(); b:HighlightText(0, 0) end)
             input:SetScript("OnEscapePressed", function(b) b:ClearFocus(); restore() end)
         end
-        local setting = frame:GetSetting()
-        local value = setting and setting:GetValue()
+        local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+        local value = setting and setting.GetValue and setting:GetValue() or nil
         frame.ScooterTextInput:SetText(value == nil and "" or string.format("%.0f", value))
         if frame.ScooterTextInput then frame.ScooterTextInput:Show() end
         if not frame.ScooterOriginalOnSettingValueChanged then
@@ -241,7 +241,7 @@ local function ConvertSliderInitializerToTextInput(initializer)
                 end
             end
         end
-        if frame.ScooterTextInput then frame.ScooterTextInput:SetEnabled(SettingsControlMixin.IsEnabled(frame)) end
+        if frame.ScooterTextInput and SettingsControlMixin and SettingsControlMixin.IsEnabled then frame.ScooterTextInput:SetEnabled(SettingsControlMixin.IsEnabled(frame)) end
     end
     initializer._scooterTextInput = true
     return initializer
@@ -366,7 +366,8 @@ local function createComponentRenderer(componentId)
             end
             for _, sectionName in ipairs(orderedSections) do
                 if sectionName == "Text" then
-                    if component.id == "essentialCooldowns" then
+                    local supportsText = component and component.settings and component.settings.supportsText
+                    if supportsText then
                         -- Collapsible header for Text section, no extra header inside the tabbed control
                         local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
                             name = "Text",
@@ -460,7 +461,15 @@ local function createComponentRenderer(componentId)
                             yRef.y = yRef.y - 34
                         end
 
-                        local data = { sectionTitle = "", tabAText = "Charges", tabBText = "Cooldowns" }
+                        local tabAName, tabBName
+                        if component and component.id == "trackedBuffs" then
+                            tabAName, tabBName = "Stacks", "Cooldown"
+                        elseif component and component.id == "trackedBars" then
+                            tabAName, tabBName = "Name", "Duration"
+                        else
+                            tabAName, tabBName = "Charges", "Cooldowns"
+                        end
+                        local data = { sectionTitle = "", tabAText = tabAName, tabBText = tabBName }
                         data.build = function(frame)
                             local yA = { y = -50 }
                             local yB = { y = -50 }
@@ -472,112 +481,264 @@ local function createComponentRenderer(componentId)
                                 return addon.BuildFontOptionsContainer()
                             end
 
-                            -- Charges page
-                            addDropdown(frame.PageA, "Charges Font", fontOptions,
-                                function() return (db.textStacks and db.textStacks.fontFace) or "FRIZQT__" end,
-                                function(v)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.fontFace = v
-                                    applyText()
-                                end,
-                                yA)
-                            addSlider(frame.PageA, "Charges Font Size", 8, 32, 1,
-                                function() return (db.textStacks and db.textStacks.size) or 16 end,
-                                function(v)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.size = tonumber(v) or 16
-                                    applyText()
-                                end,
-                                yA)
-                            addStyle(frame.PageA, "Charges Style",
-                                function() return (db.textStacks and db.textStacks.style) or "OUTLINE" end,
-                                function(v)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.style = v
-                                    applyText()
-                                end,
-                                yA)
-                            addColor(frame.PageA, "Charges Color", true,
+                            -- Page A labels vary per component
+                            local labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY
+                            if component and component.id == "trackedBuffs" then
+                                labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Stacks Font", "Stacks Font Size", "Stacks Style", "Stacks Color", "Stacks Offset X", "Stacks Offset Y"
+                            elseif component and component.id == "trackedBars" then
+                                labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Name Font", "Name Font Size", "Name Style", "Name Color", "Name Offset X", "Name Offset Y"
+                            else
+                                labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Charges Font", "Charges Font Size", "Charges Style", "Charges Color", "Charges Offset X", "Charges Offset Y"
+                            end
+
+                            addDropdown(frame.PageA, labelA_Font, fontOptions,
                                 function()
-                                    local c = (db.textStacks and db.textStacks.color) or {1,1,1,1}
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textName and db.textName.fontFace) or "FRIZQT__"
+                                    elseif component and component.id == "trackedBuffs" then
+                                        return (db.textStacks and db.textStacks.fontFace) or "FRIZQT__"
+                                    else
+                                        return (db.textStacks and db.textStacks.fontFace) or "FRIZQT__"
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.fontFace = v
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.fontFace = v
+                                    end
+                                    applyText()
+                                end,
+                                yA)
+                            addSlider(frame.PageA, labelA_Size, 8, 32, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textName and db.textName.size) or 14
+                                    else
+                                        return (db.textStacks and db.textStacks.size) or 16
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.size = tonumber(v) or 14
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.size = tonumber(v) or 16
+                                    end
+                                    applyText()
+                                end,
+                                yA)
+                            addStyle(frame.PageA, labelA_Style,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textName and db.textName.style) or "OUTLINE"
+                                    else
+                                        return (db.textStacks and db.textStacks.style) or "OUTLINE"
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.style = v
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.style = v
+                                    end
+                                    applyText()
+                                end,
+                                yA)
+                            addColor(frame.PageA, labelA_Color, true,
+                                function()
+                                    local c
+                                    if component and component.id == "trackedBars" then
+                                        c = (db.textName and db.textName.color) or {1,1,1,1}
+                                    else
+                                        c = (db.textStacks and db.textStacks.color) or {1,1,1,1}
+                                    end
                                     return c[1], c[2], c[3], c[4]
                                 end,
                                 function(r,g,b,a)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.color = { r, g, b, a }
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.color = { r, g, b, a }
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.color = { r, g, b, a }
+                                    end
                                     applyText()
                                 end,
                                 yA)
-                            addSlider(frame.PageA, "Charges Offset X", -32, 32, 1,
-                                function() return (db.textStacks and db.textStacks.offset and db.textStacks.offset.x) or 0 end,
+                            addSlider(frame.PageA, labelA_OffsetX, -50, 50, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textName and db.textName.offset and db.textName.offset.x) or 0
+                                    else
+                                        return (db.textStacks and db.textStacks.offset and db.textStacks.offset.x) or 0
+                                    end
+                                end,
                                 function(v)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.offset = db.textStacks.offset or {}
-                                    db.textStacks.offset.x = tonumber(v) or 0
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.offset = db.textName.offset or {}
+                                        db.textName.offset.x = tonumber(v) or 0
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.offset = db.textStacks.offset or {}
+                                        db.textStacks.offset.x = tonumber(v) or 0
+                                    end
                                     applyText()
                                 end,
                                 yA)
-                            addSlider(frame.PageA, "Charges Offset Y", -32, 32, 1,
-                                function() return (db.textStacks and db.textStacks.offset and db.textStacks.offset.y) or 0 end,
+                            addSlider(frame.PageA, labelA_OffsetY, -50, 50, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textName and db.textName.offset and db.textName.offset.y) or 0
+                                    else
+                                        return (db.textStacks and db.textStacks.offset and db.textStacks.offset.y) or 0
+                                    end
+                                end,
                                 function(v)
-                                    db.textStacks = db.textStacks or {}
-                                    db.textStacks.offset = db.textStacks.offset or {}
-                                    db.textStacks.offset.y = tonumber(v) or 0
+                                    if component and component.id == "trackedBars" then
+                                        db.textName = db.textName or {}
+                                        db.textName.offset = db.textName.offset or {}
+                                        db.textName.offset.y = tonumber(v) or 0
+                                    else
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.offset = db.textStacks.offset or {}
+                                        db.textStacks.offset.y = tonumber(v) or 0
+                                    end
                                     applyText()
                                 end,
                                 yA)
 
-                            -- Cooldown page
-                            addDropdown(frame.PageB, "Cooldown Font", fontOptions,
-                                function() return (db.textCooldown and db.textCooldown.fontFace) or "FRIZQT__" end,
-                                function(v)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.fontFace = v
-                                    applyText()
-                                end,
-                                yB)
-                            addSlider(frame.PageB, "Cooldown Font Size", 8, 32, 1,
-                                function() return (db.textCooldown and db.textCooldown.size) or 16 end,
-                                function(v)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.size = tonumber(v) or 16
-                                    applyText()
-                                end,
-                                yB)
-                            addStyle(frame.PageB, "Cooldown Style",
-                                function() return (db.textCooldown and db.textCooldown.style) or "OUTLINE" end,
-                                function(v)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.style = v
-                                    applyText()
-                                end,
-                                yB)
-                            addColor(frame.PageB, "Cooldown Color", true,
+                            -- Page B (Cooldown or Duration)
+                            local labelB_Font = (component and component.id == "trackedBars") and "Duration Font" or "Cooldown Font"
+                            local labelB_Size = (component and component.id == "trackedBars") and "Duration Font Size" or "Cooldown Font Size"
+                            local labelB_Style = (component and component.id == "trackedBars") and "Duration Style" or "Cooldown Style"
+                            local labelB_Color = (component and component.id == "trackedBars") and "Duration Color" or "Cooldown Color"
+                            local labelB_OffsetX = (component and component.id == "trackedBars") and "Duration Offset X" or "Cooldown Offset X"
+                            local labelB_OffsetY = (component and component.id == "trackedBars") and "Duration Offset Y" or "Cooldown Offset Y"
+
+                            addDropdown(frame.PageB, labelB_Font, fontOptions,
                                 function()
-                                    local c = (db.textCooldown and db.textCooldown.color) or {1,1,1,1}
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textDuration and db.textDuration.fontFace) or "FRIZQT__"
+                                    else
+                                        return (db.textCooldown and db.textCooldown.fontFace) or "FRIZQT__"
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.fontFace = v
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.fontFace = v
+                                    end
+                                    applyText()
+                                end,
+                                yB)
+                            addSlider(frame.PageB, labelB_Size, 8, 32, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textDuration and db.textDuration.size) or 14
+                                    else
+                                        return (db.textCooldown and db.textCooldown.size) or 16
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.size = tonumber(v) or 14
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.size = tonumber(v) or 16
+                                    end
+                                    applyText()
+                                end,
+                                yB)
+                            addStyle(frame.PageB, labelB_Style,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textDuration and db.textDuration.style) or "OUTLINE"
+                                    else
+                                        return (db.textCooldown and db.textCooldown.style) or "OUTLINE"
+                                    end
+                                end,
+                                function(v)
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.style = v
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.style = v
+                                    end
+                                    applyText()
+                                end,
+                                yB)
+                            addColor(frame.PageB, labelB_Color, true,
+                                function()
+                                    local c
+                                    if component and component.id == "trackedBars" then
+                                        c = (db.textDuration and db.textDuration.color) or {1,1,1,1}
+                                    else
+                                        c = (db.textCooldown and db.textCooldown.color) or {1,1,1,1}
+                                    end
                                     return c[1], c[2], c[3], c[4]
                                 end,
                                 function(r,g,b,a)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.color = { r, g, b, a }
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.color = { r, g, b, a }
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.color = { r, g, b, a }
+                                    end
                                     applyText()
                                 end,
                                 yB)
-                            addSlider(frame.PageB, "Cooldown Offset X", -32, 32, 1,
-                                function() return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.x) or 0 end,
+                            addSlider(frame.PageB, labelB_OffsetX, -50, 50, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.x) or 0
+                                    else
+                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.x) or 0
+                                    end
+                                end,
                                 function(v)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.offset = db.textCooldown.offset or {}
-                                    db.textCooldown.offset.x = tonumber(v) or 0
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.offset = db.textDuration.offset or {}
+                                        db.textDuration.offset.x = tonumber(v) or 0
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.offset = db.textCooldown.offset or {}
+                                        db.textCooldown.offset.x = tonumber(v) or 0
+                                    end
                                     applyText()
                                 end,
                                 yB)
-                            addSlider(frame.PageB, "Cooldown Offset Y", -32, 32, 1,
-                                function() return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.y) or 0 end,
+                            addSlider(frame.PageB, labelB_OffsetY, -50, 50, 1,
+                                function()
+                                    if component and component.id == "trackedBars" then
+                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.y) or 0
+                                    else
+                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.y) or 0
+                                    end
+                                end,
                                 function(v)
-                                    db.textCooldown = db.textCooldown or {}
-                                    db.textCooldown.offset = db.textCooldown.offset or {}
-                                    db.textCooldown.offset.y = tonumber(v) or 0
+                                    if component and component.id == "trackedBars" then
+                                        db.textDuration = db.textDuration or {}
+                                        db.textDuration.offset = db.textDuration.offset or {}
+                                        db.textDuration.offset.y = tonumber(v) or 0
+                                    else
+                                        db.textCooldown = db.textCooldown or {}
+                                        db.textCooldown.offset = db.textCooldown.offset or {}
+                                        db.textCooldown.offset.y = tonumber(v) or 0
+                                    end
                                     applyText()
                                 end,
                                 yB)
@@ -589,7 +750,7 @@ local function createComponentRenderer(componentId)
                         end)
                         table.insert(init, initializer)
                     end
-                elseif sections[sectionName] and #sections[sectionName] > 0 then
+                elseif (sections[sectionName] and #sections[sectionName] > 0) or (sectionName == "Border" and component and component.settings and component.settings.supportsEmptyBorderSection) then
                     local headerName = (sectionName == "Misc") and "Visibility" or sectionName
 
                     -- Collapsible section header (expand/collapse like Keybindings)
@@ -602,7 +763,7 @@ local function createComponentRenderer(componentId)
                     expInitializer.GetExtent = function() return 30 end
                     table.insert(init, expInitializer)
 
-                    for _, item in ipairs(sections[sectionName]) do
+                    for _, item in ipairs(sections[sectionName] or {}) do
                         local settingId = item.id
                         local setting = item.setting
                         local ui = setting.ui
@@ -660,17 +821,24 @@ local function createComponentRenderer(componentId)
                                 component.db[settingId] = finalValue
 
                                 if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                    -- For opacity, push immediately (no debounce) so EM owns alpha
+                                    -- Avoid UI flicker by preferring single-setting writes + SaveOnly for Visibility-area controls
+                                    local function safeSaveOnly()
+                                        if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+                                    end
                                     if settingId == "opacity" then
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
-                                            if addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+                                            safeSaveOnly()
                                         end
-                                    elseif settingId == "showTimer" or settingId == "showTooltip" then
-                                        -- Push only this checkbox immediately to avoid list recycler bounce and accidental cross-toggles.
+                                    elseif settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            if addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+                                            safeSaveOnly()
+                                        end
+                                    elseif settingId == "visibilityMode" or settingId == "displayMode" then
+                                        if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
+                                            safeSaveOnly()
                                         end
                                     else
                                         -- Debounce EM writes slightly for other settings
@@ -767,7 +935,11 @@ local function createComponentRenderer(componentId)
                             initDrop:AddShownPredicate(function()
                                 return panel:IsSectionExpanded(component.id, sectionName)
                             end)
-                            initDrop.reinitializeOnValueChanged = true
+                            if settingId == "visibilityMode" then
+                                initDrop.reinitializeOnValueChanged = false
+                            else
+                                initDrop.reinitializeOnValueChanged = true
+                            end
                             table.insert(init, initDrop)
                         elseif ui.widget == "checkbox" then
                             local data = { setting = settingObj, name = label, tooltip = ui.tooltip, options = {} }
@@ -804,11 +976,14 @@ local function createComponentRenderer(componentId)
                             else
                                 -- Generic checkbox initializer
                                 local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", data)
+                                if settingId == "visibilityMode" or settingId == "opacity" or settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
+                                    -- Avoid recycler flicker: do not reinitialize the control when value changes
+                                    initCb.reinitializeOnValueChanged = false
+                                end
                                 initCb:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
                                 end)
-                                -- Avoid recycler-induced visual bounce on checkbox value change; we update the value without forcing reinit.
-                                initCb.reinitializeOnValueChanged = false
+                                -- Avoid recycler-induced visual bounce on checkbox value change; we keep default false above
                                 table.insert(init, initCb)
                             end
                         elseif ui.widget == "color" then
@@ -900,8 +1075,9 @@ local function BuildCategories()
     end
     createCategory("Cooldown Manager", "Essential Cooldowns", 11, renderEssentialCooldowns())
     createCategory("Cooldown Manager", "Utility Cooldowns", 12, renderUtilityCooldowns())
-    createCategory("Cooldown Manager", "Tracked Bars", 13, renderTrackedBars())
-    createCategory("Cooldown Manager", "Tracked Buffs", 14, renderTrackedBuffs())
+    -- Reorder: Tracked Buffs third, Tracked Bars last
+    createCategory("Cooldown Manager", "Tracked Buffs", 13, renderTrackedBuffs())
+    createCategory("Cooldown Manager", "Tracked Bars", 14, renderTrackedBars())
     categoryList:RegisterCallback(SettingsCategoryListMixin.Event.OnCategorySelected, function(_, category)
         f.CurrentCategory = category
         local entry = catRenderers[category]
