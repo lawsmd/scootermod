@@ -8,24 +8,48 @@ local function hideLegacy(frame)
     if frame.ScootSquareBorder and frame.ScootSquareBorder.edges then
         for _, tex in pairs(frame.ScootSquareBorder.edges) do tex:Hide() end
     end
+    if frame.ScootSquareBorderEdges then
+        for _, tex in pairs(frame.ScootSquareBorderEdges) do if tex.Hide then tex:Hide() end end
+    end
+    if frame.ScootSquareBorderContainer then frame.ScootSquareBorderContainer:Hide() end
     if frame.ScootAtlasBorder then frame.ScootAtlasBorder:Hide() end
 end
 
-local function ensureSquare(frame)
-    if not frame.ScootSquareBorder then
-        local f = CreateFrame("Frame", nil, frame)
-        f:SetAllPoints(frame)
-        f:SetFrameStrata("BACKGROUND")
-        f:SetFrameLevel((frame:GetFrameLevel() or 0) + 1)
-        f.edges = {
-            Top = f:CreateTexture(nil, "ARTWORK"),
-            Bottom = f:CreateTexture(nil, "ARTWORK"),
-            Left = f:CreateTexture(nil, "ARTWORK"),
-            Right = f:CreateTexture(nil, "ARTWORK"),
-        }
-        frame.ScootSquareBorder = f
+local function ensureContainer(frame, strata, levelOffset, parent)
+    local f = frame.ScootSquareBorderContainer
+    if not f then
+        f = CreateFrame("Frame", nil, parent or UIParent)
+        frame.ScootSquareBorderContainer = f
     end
-    return frame.ScootSquareBorder
+    local valid = { BACKGROUND=true, LOW=true, MEDIUM=true, HIGH=true, DIALOG=true, FULLSCREEN=true, FULLSCREEN_DIALOG=true, TOOLTIP=true }
+    local desiredStrata = valid[strata or ""] and strata or (frame.GetFrameStrata and frame:GetFrameStrata()) or "BACKGROUND"
+    local lvlOffset = tonumber(levelOffset) or 5
+    f:ClearAllPoints();
+    f:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    f:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    f:SetFrameStrata(desiredStrata)
+    f:SetFrameLevel((frame:GetFrameLevel() or 0) + lvlOffset)
+    f:Show()
+    return f
+end
+
+local function ensureSquare(frame, layer, sublevel, container)
+    local anchor = container or frame
+    local edges = anchor.ScootSquareBorderEdges
+    if not edges then
+        edges = {
+            Top = anchor:CreateTexture(nil, layer or "ARTWORK"),
+            Bottom = anchor:CreateTexture(nil, layer or "ARTWORK"),
+            Left = anchor:CreateTexture(nil, layer or "ARTWORK"),
+            Right = anchor:CreateTexture(nil, layer or "ARTWORK"),
+        }
+        anchor.ScootSquareBorderEdges = edges
+    end
+    -- Ensure desired draw layer
+    local lyr = layer or "ARTWORK"
+    local lvl = tonumber(sublevel) or 0
+    for _, t in pairs(edges) do if t and t.SetDrawLayer then pcall(t.SetDrawLayer, t, lyr, lvl) end end
+    return edges
 end
 
 local function colorEdges(edges, r, g, b, a)
@@ -38,17 +62,24 @@ function Borders.ApplySquare(frame, opts)
     local size = math.max(1, tonumber(opts.size) or 1)
     local col = opts.color or {0, 0, 0, 1}
     local r, g, b, a = col[1] or 0, col[2] or 0, col[3] or 0, col[4] or 1
-    local f = ensureSquare(frame)
-    f:SetFrameStrata("BACKGROUND")
-    f:SetFrameLevel((frame:GetFrameLevel() or 0) + 1)
-    local e = f.edges
+    local layer = (type(opts.layer) == "string") and opts.layer or "ARTWORK"
+    local layerSublevel = tonumber(opts.layerSublevel) or 0
+    local container
+    if opts.containerStrata then
+        container = ensureContainer(frame, opts.containerStrata, opts.levelOffset, opts.containerParent)
+    end
+    local e = ensureSquare(frame, layer, layerSublevel, container)
     colorEdges(e, r, g, b, a)
-    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0);       e.Top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0);     e.Top:SetHeight(size)
-    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0); e.Bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); e.Bottom:SetHeight(size)
-    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0);       e.Left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0);   e.Left:SetWidth(size)
-    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0);    e.Right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); e.Right:SetWidth(size)
-    for _, t in pairs(e) do t:Show() end
-    f:Show()
+    local anchor = container or frame
+    local expand = tonumber(opts.expand) or 0
+    local ex = tonumber(opts.expandX) or expand
+    local ey = tonumber(opts.expandY) or expand
+    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey);       e.Top:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey);     e.Top:SetHeight(size)
+    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", -ex, -ey); e.Bottom:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", ex, -ey); e.Bottom:SetHeight(size)
+    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey);       e.Left:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", -ex, -ey);   e.Left:SetWidth(size)
+    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey);    e.Right:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", ex, -ey); e.Right:SetWidth(size)
+    for _, t in pairs(e) do if t.Show then t:Show() end end
+    if container and container.Show then container:Show() end
 end
 
 function Borders.HideAll(frame)
@@ -56,17 +87,7 @@ function Borders.HideAll(frame)
 end
 
 local ATLAS_PRESETS = {
-    { key = "UI-HUD-ActionBar-IconFrame",               name = "Default Blizzard Border",            size = {46,45}, padding = {0,0} },
-    { key = "UI-HUD-CoolDownManager-IconOverlay",       name = "Cooldown Manager",                   size = {60,60}, padding = {-6,-6} },
-    { key = "wowlabs-ability-icon-frame",               name = "Wowlabs Ability",                    size = {50,50}, padding = {-2,-2} },
-    { key = "wowlabs-in-world-item-common",             name = "Wowlabs Item Border",                size = {55,55}, padding = {-4,-4} },
-    { key = "plunderstorm-actionbar-slot-border",       name = "Plunderstorm",                        size = {58,58}, padding = {-4,-4} },
-    { key = "talents-node-choiceflyout-square-gray",    name = "Talents Gray",                        size = {45,45}, padding = {0,0} },
-    { key = "cyphersetupgrade-leftitem-border-empty",   name = "Cypher",                              size = {54,62}, padding = {-5,-5} },
-    { key = "Professions-ChoiceReagent-Frame",          name = "Professions",                         size = {50,50}, padding = {-2,-2} },
-    { key = "Relicforge-Slot-frame",                    name = "Relicforge",                          size = {62,62}, padding = {-5,-5} },
-    { key = "runecarving-icon-reagent-selected",        name = "Runecarving",                         size = {55,55}, padding = {-3,-3} },
-    { key = "Soulbinds_Collection_SpecBorder_Primary",  name = "Soulbinds",                           size = {68,68}, padding = {-7,-7} },
+    -- Intentionally empty for now; icon atlas borders are disabled for bar borders testing
 }
 
 local function getAtlasPreset(key)
@@ -119,16 +140,10 @@ function addon.BuildBorderOptionsContainer()
         local out = {
             { value = "square", text = "Default" },
         }
-        for _, it in ipairs(ATLAS_PRESETS) do
-            table.insert(out, { value = "atlas:" .. it.key, text = it.name })
-        end
         return out
     end
     local c = create()
     c:Add("square", "Default")
-    for _, it in ipairs(ATLAS_PRESETS) do
-        c:Add("atlas:" .. it.key, it.name)
-    end
     return c:GetData()
 end
 

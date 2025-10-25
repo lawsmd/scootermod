@@ -207,23 +207,12 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
     elseif settingId == "opacity" then
-        -- Opacity notes:
-        -- - Blizzard shows 50..100 and applies alpha=v/100
-        -- - Some client/library combos persist this slider as an index-from-min internally
-        --   (i.e., write/read expects 0..50). Our embedded LEO exposes a compatibility flag.
-        -- Here we write either raw percent or (v-50) depending on the active mode.
+        -- Write RAW percent (50..100). Library will normalize to index internally if needed.
         local v = tonumber(dbValue) or 100
         if v < 50 then v = 50 elseif v > 100 then v = 100 end
-        local idxMode = false
-        do
-            local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
-            if LEO_local and LEO_local._forceIndexBased and frame and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCooldownViewerSetting then
-                local sys = frame.system
-                local setId = _G.Enum.EditModeCooldownViewerSetting.Opacity
-                idxMode = LEO_local._forceIndexBased[sys] and LEO_local._forceIndexBased[sys][setId]
-            end
-        end
-        editModeValue = idxMode and (v - 50) or v
+        local emSetting = ResolveSettingId(frame, "opacity")
+        if emSetting then setting.settingId = emSetting end
+        editModeValue = v
         -- Always resolve the EM setting id for opacity to avoid stale hardcodes
         local resolved = ResolveSettingId(frame, "opacity")
         if resolved then setting.settingId = resolved end
@@ -260,12 +249,45 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
     end
 
     if editModeValue ~= nil then
+        local wrote = false
+        local function persist()
+            if addon.EditMode and addon.EditMode.ApplyChanges then
+                addon.EditMode.ApplyChanges() -- wraps SaveOnly in combat; forces EM UI to refresh when out of combat
+            end
+        end
+
         -- Opacity: unconditionally write, and immediately refresh the system mixin so alpha updates
         if settingId == "opacity" then
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
                 pcall(frame.UpdateSystemSettingOpacity, frame)
             end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "displayMode" then
+            -- Write and immediately update bar content on the viewer so icon/name hide/show applies without Edit Mode roundtrip
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingBarContent) == "function" then
+                pcall(frame.UpdateSystemSettingBarContent, frame)
+            end
+            -- Nudged relayout to ensure children positions and anchors update
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "visibilityMode" then
+            -- Write and immediately update visible state on the viewer
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then
+                pcall(frame.UpdateSystemSettingVisibleSetting, frame)
+            end
+            wrote = true
+            persist()
             return true
         end
         -- Others: skip write if no change
@@ -275,6 +297,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if settingId == "hideWhenInactive" and frame and type(frame.UpdateSystemSettingHideWhenInactive) == "function" then
                 pcall(frame.UpdateSystemSettingHideWhenInactive, frame)
             end
+            wrote = true
+            persist()
             return true
         end
         return false
@@ -379,11 +403,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             dbValue = v
         end
     elseif settingId == "opacity" then
-        -- Read percent 50..100; LEO already returns raw percent even in index mode
-        do
-            local resolved = ResolveSettingId(frame, "opacity")
-            if resolved then setting.settingId = resolved end
-        end
+        -- Read RAW percent (50..100). Library returns raw even if internally stored as index.
+        local resolved = ResolveSettingId(frame, "opacity")
+        if resolved then setting.settingId = resolved end
         local v = tonumber(editModeValue)
         if v == nil then return false end
         v = math.floor(v + 0.5)

@@ -3,6 +3,18 @@ local addonName, addon = ...
 addon.SettingsPanel = {}
 local panel = addon.SettingsPanel
 
+-- Optional refresh suspension to avoid flicker when visibility-related settings write to Edit Mode
+panel._suspendRefresh = false
+function panel.SuspendRefresh(seconds)
+    panel._suspendRefresh = true
+    local delay = tonumber(seconds) or 0.2
+    if C_Timer and C_Timer.After then
+        C_Timer.After(delay, function() panel._suspendRefresh = false end)
+    else
+        panel._suspendRefresh = false
+    end
+end
+
 -- Collapsible section header (Keybindings-style) ---------------------------------
 ScooterExpandableSectionMixin = {}
 
@@ -103,6 +115,7 @@ end
 function panel.RefreshCurrentCategory()
     local f = panel and panel.frame
     if not f or not f:IsShown() then return end
+    if panel._suspendRefresh then return end
     local cat = f.CurrentCategory
     if not cat or not f.CatRenderers then return end
     local entry = f.CatRenderers[cat]
@@ -115,6 +128,17 @@ function panel.RefreshCurrentCategory()
     elseif sb and sb.GetScrollPercentage then
         percent = sb:GetScrollPercentage()
     end
+    -- Remember tab (if any) for tabbed sections before rerender
+    local activeTabIndex
+    if settingsList and settingsList:GetNumChildren() > 0 then
+        for i = 1, settingsList:GetNumChildren() do
+            local child = select(i, settingsList:GetChildren())
+            if child and child.TabA and child.TabB and child.tabsGroup and child.tabsGroup.GetSelectedIndex then
+                activeTabIndex = child.tabsGroup:GetSelectedIndex()
+                break
+            end
+        end
+    end
     entry.render()
     if percent and sb and sb.SetScrollPercentage then
         C_Timer.After(0, function()
@@ -123,10 +147,25 @@ function panel.RefreshCurrentCategory()
             end
         end)
     end
+    -- Restore tab after rerender
+    if activeTabIndex and settingsList and settingsList:GetNumChildren() > 0 then
+        C_Timer.After(0, function()
+            for i = 1, settingsList:GetNumChildren() do
+                local child = select(i, settingsList:GetChildren())
+                if child and child.tabsGroup and child.tabsGroup.SelectAtIndex then
+                    child.tabsGroup:SelectAtIndex(activeTabIndex)
+                    break
+                end
+            end
+        end)
+    end
 end
 
 function panel.RefreshCurrentCategoryDeferred()
-    C_Timer.After(0, function() if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end end)
+    if panel._suspendRefresh then return end
+    C_Timer.After(0, function()
+        if panel and not panel._suspendRefresh and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
+    end)
 end
 
 function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText)
@@ -953,16 +992,19 @@ local function createComponentRenderer(componentId)
                                         if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
                                     end
                                     if settingId == "opacity" then
+                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
                                             safeSaveOnly()
                                         end
                                     elseif settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
+                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                                             safeSaveOnly()
                                         end
                                     elseif settingId == "visibilityMode" or settingId == "displayMode" then
+                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                                             safeSaveOnly()
@@ -1026,7 +1068,7 @@ local function createComponentRenderer(componentId)
                                         local original = frame.OnSettingValueChanged
                                         frame.OnSettingValueChanged = function(ctrl, setting, val)
                                             if original then pcall(original, ctrl, setting, val) end
-                                            -- Pull latest from DB after EM write; reassign slider value to stop it sticking at 100
+                                            -- Pull latest from DB after EM write (raw percent expected)
                                             local cv = component.db.opacity or (component.settings.opacity and component.settings.opacity.default) or 100
                                             local c = ctrl:GetSetting()
                                             if c and c.SetValue and type(cv) == 'number' then
@@ -1034,6 +1076,18 @@ local function createComponentRenderer(componentId)
                                             end
                                         end
                                         frame.ScooterOpacityHooked = true
+                                    end
+                                    -- Also guard the underlying slider display to snap to multiples of 1 within 50..100
+                                    if frame.SliderWithSteppers and frame.SliderWithSteppers.Slider then
+                                        local s = frame.SliderWithSteppers.Slider
+                                        if not s.ScooterBoundariesHooked then
+                                            s:HookScript("OnValueChanged", function(slider, value)
+                                                local v = math.max(50, math.min(100, math.floor((tonumber(value) or 0) + 0.5)))
+                                                local c = frame:GetSetting()
+                                                if c and c.SetValue and c:GetValue() ~= v then c:SetValue(v) end
+                                            end)
+                                            s.ScooterBoundariesHooked = true
+                                        end
                                     end
                                 end
                             end

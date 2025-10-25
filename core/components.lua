@@ -4,41 +4,202 @@ addon.Components = {}
 
 local Component = {}
 
+-- Public helper: apply Tracked Bar visuals to a single item frame (icon/bar gap, bar width, textures)
+function addon.ApplyTrackedBarVisualsForChild(component, child)
+    if not component or not child then return end
+    if component.id ~= "trackedBars" then return end
+    local barFrame = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
+    local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
+    if not barFrame or not iconFrame then return end
+
+    local isActive = (child.IsActive and child:IsActive()) or child.isActive
+
+    -- Compute desired gap between icon and bar, and optional width override
+    local desiredPad = tonumber(component.db and component.db.iconBarPadding) or (component.settings.iconBarPadding and component.settings.iconBarPadding.default) or 0
+    desiredPad = tonumber(desiredPad) or 0
+    local desiredWidthOverride = tonumber(component.db and component.db.barWidth)
+
+    -- Measure current state
+    local currentWidth = (barFrame.GetWidth and barFrame:GetWidth()) or nil
+    local currentGap
+    if barFrame.GetLeft and iconFrame.GetRight then
+        local bl = barFrame:GetLeft()
+        local ir = iconFrame:GetRight()
+        if bl and ir then currentGap = bl - ir end
+    end
+
+    local deltaPad = (currentGap and (desiredPad - currentGap)) or 0
+    local deltaWidth = 0
+    if desiredWidthOverride and desiredWidthOverride > 0 and currentWidth then
+        deltaWidth = desiredWidthOverride - currentWidth
+    end
+
+    -- Re-anchor bar: keep RIGHT anchored, adjust by pad+width delta
+    if barFrame.ClearAllPoints and barFrame.SetPoint then
+        local rightPoint, rightRelTo, rightRelPoint, rx, ry
+        if barFrame.GetNumPoints and barFrame.GetPoint then
+            local n = barFrame:GetNumPoints()
+            for i = 1, n do
+                local p, rt, rp, ox, oy = barFrame:GetPoint(i)
+                if p == "RIGHT" then rightPoint, rightRelTo, rightRelPoint, rx, ry = p, rt, rp, ox, oy break end
+            end
+        end
+        barFrame:ClearAllPoints()
+        if rightPoint and rightRelTo then
+            barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad + deltaWidth, ry or 0)
+        else
+            barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad + deltaWidth, 0)
+        end
+        -- LEFT anchor depends on display mode: if icon is hidden (Name Only), anchor to the item itself
+        local anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = iconFrame, "RIGHT", "RIGHT"
+        if iconFrame.IsShown and not iconFrame:IsShown() then
+            anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = child, "LEFT", "LEFT"
+        end
+        barFrame:SetPoint("LEFT", anchorLeftTo, anchorLeftPoint, desiredPad, 0)
+    end
+
+    -- Apply ScooterMod bar textures and tints if enabled
+    if addon.Media and addon.Media.ApplyBarTexturesToBarFrame then
+        local useCustom = (component.db and component.db.styleEnableCustom) ~= false
+        if useCustom then
+            local fg = component.db and component.db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default)
+            local bg = component.db and component.db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default)
+            addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg)
+            local fgCol = (component.db and component.db.styleForegroundColor) or {1,1,1,1}
+            local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+            if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, fgCol[1] or 1, fgCol[2] or 1, fgCol[3] or 1, fgCol[4] or 1) end
+            local bgCol = (component.db and component.db.styleBackgroundColor) or {1,1,1,0.9}
+            if barFrame.ScooterModBG and barFrame.ScooterModBG.SetVertexColor then
+                pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, bgCol[1] or 1, bgCol[2] or 1, bgCol[3] or 1, bgCol[4] or 1)
+            end
+        else
+            -- Revert to Blizzard defaults
+            if barFrame.ScooterModBG then barFrame.ScooterModBG:Hide() end
+            local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+            if tex and tex.SetAtlas then pcall(tex.SetAtlas, tex, "UI-HUD-CoolDownManager-Bar", true) end
+            if barFrame.SetStatusBarAtlas then pcall(barFrame.SetStatusBarAtlas, barFrame, "UI-HUD-CoolDownManager-Bar") end
+            if tex then
+                if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1.0, 0.5, 0.25, 1.0) end
+                if tex.SetAlpha then pcall(tex.SetAlpha, tex, 1.0) end
+                if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
+            end
+            -- Restore stock background/overlay alphas
+            for _, region in ipairs({ barFrame:GetRegions() }) do
+                if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                    pcall(region.SetAlpha, region, 1.0)
+                end
+            end
+        end
+    end
+
+    -- Apply or hide bar border (uses a high strata container to sit above the bar fill)
+    local wantBorder = component.db and component.db.borderEnable
+    if wantBorder then
+        local thickness = tonumber(component.db.borderThickness) or 1
+        if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+        local color = {0, 0, 0, 1}
+        if component.db.borderTintEnable and type(component.db.borderTintColor) == "table" then
+            local c = component.db.borderTintColor
+            color = { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
+        end
+        if addon.Borders and addon.Borders.ApplySquare then
+            addon.Borders.ApplySquare(barFrame, {
+                size = thickness,
+                color = color,
+                layer = "OVERLAY",
+                layerSublevel = 8,
+                containerStrata = "TOOLTIP",
+                levelOffset = 1000,
+                containerParent = barFrame,
+                expandX = 1,
+                expandY = 2,
+            })
+        end
+    else
+        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
+    end
+end
+
 -- Shared styling for Cooldown Viewer-style components (icons, borders, text, padding, visibility, opacity)
 local function ApplyCooldownViewerStyling(self)
     local frame = _G[self.frameName]
     if not frame then return end
 
+    -- Local constants for Tracked Bars border rendering (easy to tune later)
+    local TB_BORDER_STRATA = "TOOLTIP"
+    local TB_BORDER_LEVEL_OFFSET = 1000
+    local TB_BORDER_LAYER = "OVERLAY"
+    local TB_BORDER_SUBLEVEL = 8
+    local TB_BORDER_EXPAND_X = 1
+    local TB_BORDER_EXPAND_Y = 2
+
     local width = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
     local height = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
     local spacing = self.db.iconPadding or (self.settings.iconPadding and self.settings.iconPadding.default)
 
+    -- For Tracked Bars, hook viewer lifecycle once so new/relayout items also get styled immediately (handles "always on" buffs on reload)
+    if self.id == "trackedBars" and not frame._ScooterTBHooked then
+        if hooksecurefunc then
+            -- When the viewer acquires an item, apply visuals to that child right away
+            if frame.OnAcquireItemFrame then
+                hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
+                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, itemFrame) end
+                end)
+            end
+            -- After a relayout, apply visuals to all current children
+            if frame.RefreshLayout then
+                hooksecurefunc(frame, "RefreshLayout", function()
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0, function()
+                            if not addon or not addon.Components or not addon.Components.trackedBars then return end
+                            local f = _G[addon.Components.trackedBars.frameName]
+                            if not f then return end
+                            for _, child in ipairs({ f:GetChildren() }) do
+                                if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, child) end
+                            end
+                        end)
+                    end
+                end)
+            end
+        end
+        frame._ScooterTBHooked = true
+    end
+
+    -- Tracked Bars: also set display mode at the viewer level so icon/name visibility updates immediately
+    if self.id == "trackedBars" then
+        local mode = self.db.displayMode or (self.settings.displayMode and self.settings.displayMode.default) or "both"
+        local emVal = (mode == "icon") and 1 or (mode == "name" and 2 or 0)
+        if frame.SetBarContent then pcall(frame.SetBarContent, frame, emVal) end
+    end
+
     for _, child in ipairs({ frame:GetChildren() }) do
         if width and height and child.SetSize then child:SetSize(width, height) end
-        if self.db.borderEnable then
-            local style = self.db.borderStyle or "square"
-            if type(style) == "string" and style:find("^atlas:") and addon.Borders and addon.Borders.ApplyAtlas then
-                local key = style:sub(7)
-                if key and #key > 0 then
-                    local t = tonumber(self.db.borderThickness) or 1
-                    if t < 1 then t = 1 elseif t > 16 then t = 16 end
-                    local extra = -math.floor(((t - 1) / 15) * 2 + 0.5)
-                    local tint = (self.db.borderTintEnable and (self.db.borderTintColor or {1,1,1,1})) or nil
-                    addon.Borders.ApplyAtlas(child, { atlas = key, extraPadding = extra, tintColor = tint })
-                else
-                    if addon.Borders and addon.Borders.ApplySquare then
-                        addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = {0,0,0,1} })
+        if self.id ~= "trackedBars" then
+            if self.db.borderEnable then
+                local style = self.db.borderStyle or "square"
+                if type(style) == "string" and style:find("^atlas:") and addon.Borders and addon.Borders.ApplyAtlas then
+                    local key = style:sub(7)
+                    if key and #key > 0 then
+                        local t = tonumber(self.db.borderThickness) or 1
+                        if t < 1 then t = 1 elseif t > 16 then t = 16 end
+                        local extra = -math.floor(((t - 1) / 15) * 2 + 0.5)
+                        local tint = (self.db.borderTintEnable and (self.db.borderTintColor or {1,1,1,1})) or nil
+                        addon.Borders.ApplyAtlas(child, { atlas = key, extraPadding = extra, tintColor = tint })
+                    else
+                        if addon.Borders and addon.Borders.ApplySquare then
+                            addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = {0,0,0,1} })
+                        end
                     end
+                elseif addon.Borders and addon.Borders.ApplySquare then
+                    local col = {0,0,0,1}
+                    if self.db.borderTintEnable and type(self.db.borderTintColor) == "table" then
+                        col = { self.db.borderTintColor[1] or 1, self.db.borderTintColor[2] or 1, self.db.borderTintColor[3] or 1, self.db.borderTintColor[4] or 1 }
+                    end
+                    addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = col })
                 end
-            elseif addon.Borders and addon.Borders.ApplySquare then
-                local col = {0,0,0,1}
-                if self.db.borderTintEnable and type(self.db.borderTintColor) == "table" then
-                    col = { self.db.borderTintColor[1] or 1, self.db.borderTintColor[2] or 1, self.db.borderTintColor[3] or 1, self.db.borderTintColor[4] or 1 }
-                end
-                addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = col })
+            else
+                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
             end
-        else
-            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
         end
 
         -- Text styling (Charges/Cooldowns for icon viewers; Name/Duration for bar viewers)
@@ -182,99 +343,55 @@ local function ApplyCooldownViewerStyling(self)
         if self.id == "trackedBars" then
             local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar
             local iconFrame = child.GetIconFrame and child:GetIconFrame() or child.Icon
-            if barFrame and iconFrame then
-                local desiredPad = tonumber(self.db.iconBarPadding or (self.settings.iconBarPadding and self.settings.iconBarPadding.default) or 0) or 0
-                local desiredWidthOverride = tonumber(self.db.barWidth)
-                local desiredHeightOverride = self.settings.barHeight and tonumber(self.db.barHeight) or nil
 
-                -- Capture current layout state
-                local rightPoint, rightRelTo, rightRelPoint, rx, ry
-                if barFrame.GetNumPoints and barFrame.GetPoint then
-                    local n = barFrame:GetNumPoints()
-                    for i = 1, n do
-                        local p, rt, rp, ox, oy = barFrame:GetPoint(i)
-                        if p == "RIGHT" then rightPoint, rightRelTo, rightRelPoint, rx, ry = p, rt, rp, ox, oy break end
-                    end
-                end
-                local currentWidth = (barFrame.GetWidth and barFrame:GetWidth()) or nil
-                local currentHeight = (barFrame.GetHeight and barFrame:GetHeight()) or nil
-                local currentGap
-                if barFrame.GetLeft and iconFrame.GetRight then
-                    local bl = barFrame:GetLeft()
-                    local ir = iconFrame:GetRight()
-                    if bl and ir then currentGap = bl - ir end
-                end
-                local deltaPad = (currentGap and (desiredPad - currentGap)) or 0
-                local deltaWidth = 0
-                if desiredWidthOverride and desiredWidthOverride > 0 and currentWidth then
-                    deltaWidth = desiredWidthOverride - currentWidth
-                end
-                local heightChanged = false
-                if desiredHeightOverride and desiredHeightOverride > 0 and currentHeight and math.abs(desiredHeightOverride - currentHeight) > 0.1 then
-                    -- Apply to the bar frame itself
-                    if barFrame.SetFixedHeight then pcall(barFrame.SetFixedHeight, barFrame, desiredHeightOverride) end
-                    if barFrame.SetHeight then pcall(barFrame.SetHeight, barFrame, desiredHeightOverride) end
-                    -- Apply to common overlay children (border/background containers)
-                    for _, sub in ipairs({ barFrame:GetChildren() }) do
-                        if sub and sub.SetFixedHeight then pcall(sub.SetFixedHeight, sub, desiredHeightOverride) end
-                        if sub and sub.SetHeight then pcall(sub.SetHeight, sub, desiredHeightOverride) end
-                    end
-                    heightChanged = true
-                end
-
-                -- Re-anchor to maintain width while changing gap (and optionally apply width override)
-                if barFrame.ClearAllPoints and barFrame.SetPoint then
-                    barFrame:ClearAllPoints()
-                    -- Shift RIGHT by deltaPad and deltaWidth to keep overall width while changing left gap, then apply desired width change
-                    if rightPoint and rightRelTo then
-                        barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad + deltaWidth, ry or 0)
-                    else
-                        barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad + deltaWidth, 0)
-                    end
-                    -- Set LEFT gap to icon
-                    barFrame:SetPoint("LEFT", iconFrame, "RIGHT", desiredPad, 0)
-                end
-                if heightChanged then
-                    -- Nudge a layout refresh on the item and viewer to avoid visual seams on borders
-                    if child.RefreshLayout then pcall(child.RefreshLayout, child) end
-                    if child.UpdateLayout then pcall(child.UpdateLayout, child) end
-                end
-
-                -- Apply ScooterMod bar textures (foreground/background)
-                if addon.Media and addon.Media.ApplyBarTexturesToBarFrame then
-                    local useCustom = self.db.styleEnableCustom ~= false
-                    if useCustom then
-                        local fg = self.db.styleForegroundTexture or (self.settings.styleForegroundTexture and self.settings.styleForegroundTexture.default)
-                        local bg = self.db.styleBackgroundTexture or (self.settings.styleBackgroundTexture and self.settings.styleBackgroundTexture.default)
-                        addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg)
-                        -- Apply tint colors if provided
-                        local fgCol = self.db.styleForegroundColor or {1,1,1,1}
-                        local tex = barFrame:GetStatusBarTexture()
-                        if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, fgCol[1] or 1, fgCol[2] or 1, fgCol[3] or 1, fgCol[4] or 1) end
-                        local bgCol = self.db.styleBackgroundColor or {1,1,1,0.9}
-                        if barFrame.ScooterModBG and barFrame.ScooterModBG.SetVertexColor then
-                            pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, bgCol[1] or 1, bgCol[2] or 1, bgCol[3] or 1, bgCol[4] or 1)
-                        end
-                    else
-                        -- Revert to Blizzard defaults
-                        if barFrame.ScooterModBG then barFrame.ScooterModBG:Hide() end
-                        -- Default atlas and vertex color per CooldownViewer XML
-                        local tex = barFrame:GetStatusBarTexture()
-                        if tex and tex.SetAtlas then pcall(tex.SetAtlas, tex, "UI-HUD-CoolDownManager-Bar", true) end
-                        if barFrame.SetStatusBarAtlas then pcall(barFrame.SetStatusBarAtlas, barFrame, "UI-HUD-CoolDownManager-Bar") end
-                        if tex then
-                            if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1.0, 0.5, 0.25, 1.0) end
-                            if tex.SetAlpha then pcall(tex.SetAlpha, tex, 1.0) end
-                            if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
-                        end
-                        -- Restore stock background/overlay alphas
-                        for _, region in ipairs({ barFrame:GetRegions() }) do
-                            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                                pcall(region.SetAlpha, region, 1.0)
+            -- Hook active-state changes so borders respond immediately to active transitions
+            if barFrame and not child._ScootBordersActiveHooked then
+                if child.SetIsActive then
+                    hooksecurefunc(child, "SetIsActive", function(f, active)
+                        if not active then
+                            -- Only hide borders on deactivate when user wants bars hidden while inactive
+                            if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
+                                local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
+                                if bf then addon.Borders.HideAll(bf) end
+                            end
+                        else
+                            if C_Timer and C_Timer.After then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, f) end
+                                end)
+                            elseif addon and addon.ApplyTrackedBarVisualsForChild then
+                                addon.ApplyTrackedBarVisualsForChild(self, f)
                             end
                         end
-                    end
+                    end)
                 end
+                if child.OnActiveStateChanged then
+                    hooksecurefunc(child, "OnActiveStateChanged", function(f)
+                        local isActive = (f.IsActive and f:IsActive()) or f.isActive
+                        if not isActive then
+                            if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
+                                local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
+                                if bf then addon.Borders.HideAll(bf) end
+                            end
+                        else
+                            if C_Timer and C_Timer.After then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, f) end
+                                end)
+                            elseif addon and addon.ApplyTrackedBarVisualsForChild then
+                                addon.ApplyTrackedBarVisualsForChild(self, f)
+                            end
+                        end
+                    end)
+                end
+                child._ScootBordersActiveHooked = true
+            end
+
+            if barFrame and iconFrame then
+                -- Ensure any legacy item-level borders are hidden so only the bar border is shown
+                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
+                -- Delegate to shared helper so we can also call it from viewer hooks
+                if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, child) end
             end
         end
     end
@@ -300,16 +417,21 @@ local function ApplyCooldownViewerStyling(self)
         end)
     end
 
-    -- Visibility (mode only)
+    -- Visibility (mode only) with border cleanup when viewer hides
     do
         local mode = self.db.visibilityMode or (self.settings.visibilityMode and self.settings.visibilityMode.default) or "always"
-        if mode == "never" then
-            if frame.Hide then pcall(frame.Hide, frame) end
-        elseif mode == "combat" then
-            local show = (type(UnitAffectingCombat) == "function") and UnitAffectingCombat("player") or false
-            if frame.SetShown then pcall(frame.SetShown, frame, show) end
-        else
-            if frame.Show then pcall(frame.Show, frame) end
+        local wantShown
+        if mode == "never" then wantShown = false
+        elseif mode == "combat" then wantShown = (type(UnitAffectingCombat) == "function") and UnitAffectingCombat("player") or false
+        else wantShown = true end
+        local wasShown = frame:IsShown() and true or false
+        if frame.SetShown then pcall(frame.SetShown, frame, wantShown) end
+        -- If we just hid the viewer, proactively hide any lingering bar borders
+        if wasShown and not wantShown then
+            for _, child in ipairs({ frame:GetChildren() }) do
+                local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar
+                if barFrame and addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
+            end
         end
     end
 
@@ -612,6 +734,22 @@ function addon:InitializeComponents()
             }},
             styleBackgroundColor = { type = "addon", default = {1,1,1,0.9}, ui = {
                 label = "Background Color", widget = "color", section = "Style", order = 4
+            }},
+            -- Border (reusing icon border UX)
+            borderEnable = { type = "addon", default = false, ui = {
+                label = "Enable Border", widget = "checkbox", section = "Border", order = 1
+            }},
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 3
+            }},
+            borderStyle = { type = "addon", default = "square", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 4
+            }},
+            borderThickness = { type = "addon", default = 1, ui = {
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
             -- Visibility / Misc (Edit Mode)
             visibilityMode = { type = "editmode", default = "always", ui = {

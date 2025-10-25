@@ -119,6 +119,18 @@ end
 function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     -- Initialize Edit Mode integration
     addon.EditMode.Initialize()
+    -- Force index-mode for Opacity on Cooldown Viewer systems (compat path); safe no-op if already set
+    do
+        local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO_local and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCooldownViewerSetting then
+            local sys = _G.Enum.EditModeSystem.CooldownViewer
+            local setting = _G.Enum.EditModeCooldownViewerSetting.Opacity
+            LEO_local._forceIndexBased = LEO_local._forceIndexBased or {}
+            LEO_local._forceIndexBased[sys] = LEO_local._forceIndexBased[sys] or {}
+            -- Enable compat mode so both write/read paths use raw<->index consistently under the hood
+            LEO_local._forceIndexBased[sys][setting] = true
+        end
+    end
     
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("PLAYER_ENTERING_WORLD")

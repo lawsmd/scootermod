@@ -60,6 +60,15 @@ end
 -- Allow callers to force index-based handling for specific (system, setting) pairs.
 lib._forceIndexBased = lib._forceIndexBased or {}
 
+-- SliderIsIndexBased(frame, setting, restrictions)
+-- Determines whether a slider should be treated as index-based for both Set/Get operations.
+-- This function is the SINGLE source of truth for the index-mode decision so callers do not
+-- duplicate conversions. When true:
+--   - SetFrameSetting accepts raw and normalizes to index 0..N (based on step/min/max)
+--   - GetFrameSetting converts the stored index back to raw for callers
+-- Notes for ScooterMod maintainers:
+--   - We only force index mode for Cooldown Viewer Opacity (compat flag below) and Icon Size (allowlist)
+--   - Do not re-convert in addon code; rely on this function + overrides to perform all translations
 local function SliderIsIndexBased(frame, setting, restrictions)
   if not restrictions or restrictions.type ~= Enum.EditModeSettingDisplayType.Slider or not restrictions.stepSize then
     return false
@@ -68,6 +77,7 @@ local function SliderIsIndexBased(frame, setting, restrictions)
   --  - SetFrameSetting: raw inputs within [min,max] are normalized to index 0..N
   --  - GetFrameSetting: stored index is converted back to raw via min + idx*step
   local sys = frame and frame.system
+  -- Allow ScooterMod to force index-based handling (used for Cooldown Viewer Opacity on affected clients)
   if sys and lib._forceIndexBased and lib._forceIndexBased[sys] and lib._forceIndexBased[sys][setting] then
     return true
   end
@@ -192,6 +202,10 @@ function lib:SetFrameSetting(frame, setting, value)
       pcall(frame.UpdateSystemSettingShowTooltips, frame)
     end
     if frame.UpdateLayout then pcall(frame.UpdateLayout, frame) end
+    -- Nudge Edit Mode Manager to re-evaluate control values when it's open
+    if _G.EditModeManagerFrame and _G.EditModeManagerFrame:IsShown() and _G.EditModeManagerFrame.RefreshSystems then
+      pcall(_G.EditModeManagerFrame.RefreshSystems, _G.EditModeManagerFrame)
+    end
   end
 end
 
@@ -209,6 +223,17 @@ function lib:GetFrameSetting(frame, setting)
         local step = restrictions.stepSize
         local idx = item.value or 0
         return rawMin + (idx * step)
+      end
+      -- IMPORTANT: Some edit-mode UIs internally store Opacity as an index but present raw percent.
+      -- We normalize here to raw when we can infer the typical 50..100 range with step 1.
+      if restrictions and restrictions.type == Enum.EditModeSettingDisplayType.Slider and setting == Enum.EditModeCooldownViewerSetting.Opacity then
+        local v = item.value
+        -- If value looks like index (0..50), convert to 50..100;
+        -- if it already looks raw (50..100), pass through.
+        if type(v) == "number" then
+          if v >= 0 and v <= 50 then return 50 + v end
+          if v >= 50 and v <= 100 then return v end
+        end
       end
       return item.value
     end
