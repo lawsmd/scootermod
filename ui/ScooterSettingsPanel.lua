@@ -358,7 +358,7 @@ local function createComponentRenderer(componentId)
                 table.sort(sectionSettings, function(a, b) return (a.setting.ui.order or 999) < (b.setting.ui.order or 999) end)
             end
 
-            local orderedSections = {"Positioning", "Sizing", "Border", "Text", "Misc"}
+            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Text", "Misc"}
             local function RefreshCurrentCategoryDeferred()
                 if panel and panel.RefreshCurrentCategoryDeferred then
                     panel.RefreshCurrentCategoryDeferred()
@@ -399,10 +399,32 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             initDrop:InitFrame(f)
+                            -- If this dropdown is for a bar texture, swap to a WowStyle dropdown with custom menu entries
+                            if addon.Media and addon.Media.GetBarTextureMenuEntries and string.find(string.lower(label or ""), "texture", 1, true) then
+                                local dd = f.Control and f.Control.Dropdown
+                                if dd and dd.SetupMenu then
+                                    dd:SetupMenu(function(menu, root)
+                                        local entries = addon.Media.GetBarTextureMenuEntries()
+                                        for _, e in ipairs(entries) do
+                                            root:CreateRadio(e.text, function()
+                                                return setting:GetValue() == e.key
+                                            end, function()
+                                                setting:SetValue(e.key)
+                                            end)
+                                        end
+                                    end)
+                                end
+                            end
                             -- If this is the Font dropdown, install font preview renderer
                             if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown then
                                 if addon.InitFontDropdown then
                                     addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+                                end
+                            end
+                            -- If this is a Bar Texture dropdown, attach a live preview swatch to the control row
+                            if type(label) == "string" and string.find(string.lower(label), "texture", 1, true) and f.Control and f.Control.Dropdown then
+                                if addon.InitBarTextureDropdown then
+                                    addon.InitBarTextureDropdown(f.Control, setting)
                                 end
                             end
                             yRef.y = yRef.y - 34
@@ -750,6 +772,111 @@ local function createComponentRenderer(componentId)
                         end)
                         table.insert(init, initializer)
                     end
+                elseif sectionName == "Style" and component and component.id == "trackedBars" then
+                    -- Render Style as a tabbed section (Foreground / Background)
+                    local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                        name = "Style",
+                        sectionKey = "Style",
+                        componentId = component.id,
+                        expanded = panel:IsSectionExpanded(component.id, "Style"),
+                    })
+                    expInitializer.GetExtent = function() return 30 end
+                    table.insert(init, expInitializer)
+
+                    local data = { sectionTitle = "", tabAText = "Foreground", tabBText = "Background" }
+                    data.build = function(frame)
+                        local yA = { y = -50 }
+                        local yB = { y = -50 }
+                        local db = component.db
+                        local function refresh()
+                            addon:ApplyStyles()
+                        end
+                        -- Add master toggle above tabs
+                        do
+                            local setting = CreateLocalSetting("Enable Custom Textures", "boolean",
+                                function() return db.styleEnableCustom ~= false end,
+                                function(v) db.styleEnableCustom = not not v; refresh() end,
+                                db.styleEnableCustom ~= false)
+                            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Enable Custom Textures", setting = setting, options = {} })
+                            local fchk = CreateFrame("Frame", nil, frame, "SettingsCheckboxControlTemplate")
+                            fchk.GetElementData = function() return row end
+                            fchk:SetPoint("TOPLEFT", 4, 0)
+                            fchk:SetPoint("TOPRIGHT", -16, 0)
+                            row:InitFrame(fchk)
+                        end
+                        local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+                            local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+                            local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+                            local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+                            f.GetElementData = function() return initDrop end
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            initDrop:InitFrame(f)
+                            -- Keep the standard Settings options provider rendering. The provider strings carry |T previews.
+                            if addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, setting) end
+                            yRef.y = yRef.y - 34
+                        end
+                        local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+                            local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+                            f:SetHeight(26)
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            f.Text:SetText(label)
+                            local right = CreateFrame("Frame", nil, f)
+                            right:SetSize(250, 26)
+                            right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+                            f.Text:ClearAllPoints()
+                            f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+                            f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+                            f.Text:SetJustifyH("LEFT")
+                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+                            local function update()
+                                local r, g, b, a = getFunc()
+                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
+                                swatch.a = a or 1
+                            end
+                            swatch:SetScript("OnClick", function()
+                                local r, g, b, a = getFunc()
+                                ColorPickerFrame:SetupColorPickerAndShow({
+                                    r = r or 1, g = g or 1, b = b or 1,
+                                    hasOpacity = true,
+                                    opacity = a or 1,
+                                    swatchFunc = function()
+                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                                        local na = ColorPickerFrame:GetColorAlpha()
+                                        setFunc(nr, ng, nb, na)
+                                        update(); refresh()
+                                    end,
+                                    cancelFunc = function(prev)
+                                        if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update(); refresh() end
+                                    end,
+                                })
+                            end)
+                            update()
+                            yRef.y = yRef.y - 34
+                        end
+                        -- Foreground tab controls
+                        addDropdown(frame.PageA, "Foreground Texture", addon.BuildBarTextureOptionsContainer,
+                            function() return db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default) end,
+                            function(v) db.styleForegroundTexture = v; refresh() end, yA)
+                        addColor(frame.PageA, "Foreground Color", true,
+                            function() local c = db.styleForegroundColor or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+                            function(r,g,b,a) db.styleForegroundColor = {r,g,b,a}; end, yA)
+                        -- Background tab controls
+                        addDropdown(frame.PageB, "Background Texture", addon.BuildBarTextureOptionsContainer,
+                            function() return db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default) end,
+                            function(v) db.styleBackgroundTexture = v; refresh() end, yB)
+                        addColor(frame.PageB, "Background Color", true,
+                            function() local c = db.styleBackgroundColor or {1,1,1,0.9}; return c[1], c[2], c[3], c[4] end,
+                            function(r,g,b,a) db.styleBackgroundColor = {r,g,b,a}; end, yB)
+                    end
+                    local initializer = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
+                    initializer.GetExtent = function() return 160 end
+                    initializer:AddShownPredicate(function()
+                        return panel:IsSectionExpanded(component.id, "Style")
+                    end)
+                    table.insert(init, initializer)
                 elseif (sections[sectionName] and #sections[sectionName] > 0) or (sectionName == "Border" and component and component.settings and component.settings.supportsEmptyBorderSection) then
                     local headerName = (sectionName == "Misc") and "Visibility" or sectionName
 
@@ -915,6 +1042,8 @@ local function createComponentRenderer(componentId)
                             local data
                             if settingId == "borderStyle" and addon.BuildBorderOptionsContainer then
                                 data = { setting = settingObj, options = addon.BuildBorderOptionsContainer, name = label }
+                            elseif ui.optionsProvider and type(ui.optionsProvider) == "function" then
+                                data = { setting = settingObj, options = ui.optionsProvider, name = label }
                             else
                             local containerOpts = Settings.CreateControlTextContainer()
                             local orderedValues = {}

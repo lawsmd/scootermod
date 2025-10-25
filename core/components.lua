@@ -185,6 +185,7 @@ local function ApplyCooldownViewerStyling(self)
             if barFrame and iconFrame then
                 local desiredPad = tonumber(self.db.iconBarPadding or (self.settings.iconBarPadding and self.settings.iconBarPadding.default) or 0) or 0
                 local desiredWidthOverride = tonumber(self.db.barWidth)
+                local desiredHeightOverride = self.settings.barHeight and tonumber(self.db.barHeight) or nil
 
                 -- Capture current layout state
                 local rightPoint, rightRelTo, rightRelPoint, rx, ry
@@ -196,6 +197,7 @@ local function ApplyCooldownViewerStyling(self)
                     end
                 end
                 local currentWidth = (barFrame.GetWidth and barFrame:GetWidth()) or nil
+                local currentHeight = (barFrame.GetHeight and barFrame:GetHeight()) or nil
                 local currentGap
                 if barFrame.GetLeft and iconFrame.GetRight then
                     local bl = barFrame:GetLeft()
@@ -206,6 +208,18 @@ local function ApplyCooldownViewerStyling(self)
                 local deltaWidth = 0
                 if desiredWidthOverride and desiredWidthOverride > 0 and currentWidth then
                     deltaWidth = desiredWidthOverride - currentWidth
+                end
+                local heightChanged = false
+                if desiredHeightOverride and desiredHeightOverride > 0 and currentHeight and math.abs(desiredHeightOverride - currentHeight) > 0.1 then
+                    -- Apply to the bar frame itself
+                    if barFrame.SetFixedHeight then pcall(barFrame.SetFixedHeight, barFrame, desiredHeightOverride) end
+                    if barFrame.SetHeight then pcall(barFrame.SetHeight, barFrame, desiredHeightOverride) end
+                    -- Apply to common overlay children (border/background containers)
+                    for _, sub in ipairs({ barFrame:GetChildren() }) do
+                        if sub and sub.SetFixedHeight then pcall(sub.SetFixedHeight, sub, desiredHeightOverride) end
+                        if sub and sub.SetHeight then pcall(sub.SetHeight, sub, desiredHeightOverride) end
+                    end
+                    heightChanged = true
                 end
 
                 -- Re-anchor to maintain width while changing gap (and optionally apply width override)
@@ -219,6 +233,47 @@ local function ApplyCooldownViewerStyling(self)
                     end
                     -- Set LEFT gap to icon
                     barFrame:SetPoint("LEFT", iconFrame, "RIGHT", desiredPad, 0)
+                end
+                if heightChanged then
+                    -- Nudge a layout refresh on the item and viewer to avoid visual seams on borders
+                    if child.RefreshLayout then pcall(child.RefreshLayout, child) end
+                    if child.UpdateLayout then pcall(child.UpdateLayout, child) end
+                end
+
+                -- Apply ScooterMod bar textures (foreground/background)
+                if addon.Media and addon.Media.ApplyBarTexturesToBarFrame then
+                    local useCustom = self.db.styleEnableCustom ~= false
+                    if useCustom then
+                        local fg = self.db.styleForegroundTexture or (self.settings.styleForegroundTexture and self.settings.styleForegroundTexture.default)
+                        local bg = self.db.styleBackgroundTexture or (self.settings.styleBackgroundTexture and self.settings.styleBackgroundTexture.default)
+                        addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg)
+                        -- Apply tint colors if provided
+                        local fgCol = self.db.styleForegroundColor or {1,1,1,1}
+                        local tex = barFrame:GetStatusBarTexture()
+                        if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, fgCol[1] or 1, fgCol[2] or 1, fgCol[3] or 1, fgCol[4] or 1) end
+                        local bgCol = self.db.styleBackgroundColor or {1,1,1,0.9}
+                        if barFrame.ScooterModBG and barFrame.ScooterModBG.SetVertexColor then
+                            pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, bgCol[1] or 1, bgCol[2] or 1, bgCol[3] or 1, bgCol[4] or 1)
+                        end
+                    else
+                        -- Revert to Blizzard defaults
+                        if barFrame.ScooterModBG then barFrame.ScooterModBG:Hide() end
+                        -- Default atlas and vertex color per CooldownViewer XML
+                        local tex = barFrame:GetStatusBarTexture()
+                        if tex and tex.SetAtlas then pcall(tex.SetAtlas, tex, "UI-HUD-CoolDownManager-Bar", true) end
+                        if barFrame.SetStatusBarAtlas then pcall(barFrame.SetStatusBarAtlas, barFrame, "UI-HUD-CoolDownManager-Bar") end
+                        if tex then
+                            if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1.0, 0.5, 0.25, 1.0) end
+                            if tex.SetAlpha then pcall(tex.SetAlpha, tex, 1.0) end
+                            if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
+                        end
+                        -- Restore stock background/overlay alphas
+                        for _, region in ipairs({ barFrame:GetRegions() }) do
+                            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                                pcall(region.SetAlpha, region, 1.0)
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -528,6 +583,35 @@ function addon:InitializeComponents()
             }},
             barWidth = { type = "addon", default = 220, ui = {
                 label = "Bar Width", widget = "slider", min = 120, max = 480, step = 2, section = "Sizing", order = 2
+            }},
+            -- NOTE: Bar Height (exploratory) temporarily removed from UI; border didn't scale with fill reliably.
+            -- We'll revisit when we can safely resize the full framed bar (including border) without seams.
+            --[[
+            barHeight = { type = "addon", default = 14, ui = {
+                label = "Bar Height", widget = "slider", min = 8, max = 36, step = 1, section = "Sizing", order = 3
+            }},
+            ]]
+            -- Style (foreground/background bar textures)
+            styleEnableCustom = { type = "addon", default = true, ui = {
+                label = "Enable Custom Textures", widget = "checkbox", section = "Style", order = 0
+            }},
+            styleForegroundTexture = { type = "addon", default = "bevelled", ui = {
+                label = "Foreground Texture", widget = "dropdown", section = "Style", order = 1, optionsProvider = function()
+                    if addon.BuildBarTextureOptionsContainer then return addon.BuildBarTextureOptionsContainer() end
+                    local c = Settings.CreateControlTextContainer(); c:Add("bevelled", "Bevelled"); return c:GetData()
+                end
+            }},
+            styleBackgroundTexture = { type = "addon", default = "bevelledGrey", ui = {
+                label = "Background Texture", widget = "dropdown", section = "Style", order = 2, optionsProvider = function()
+                    if addon.BuildBarTextureOptionsContainer then return addon.BuildBarTextureOptionsContainer() end
+                    local c = Settings.CreateControlTextContainer(); c:Add("bevelledGrey", "Bevelled Grey"); return c:GetData()
+                end
+            }},
+            styleForegroundColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Foreground Color", widget = "color", section = "Style", order = 3
+            }},
+            styleBackgroundColor = { type = "addon", default = {1,1,1,0.9}, ui = {
+                label = "Background Color", widget = "color", section = "Style", order = 4
             }},
             -- Visibility / Misc (Edit Mode)
             visibilityMode = { type = "editmode", default = "always", ui = {

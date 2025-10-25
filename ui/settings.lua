@@ -1,3 +1,0 @@
-local addonName, addon = ...
-
--- This file will be used to define the settings structure for the custom UI.
