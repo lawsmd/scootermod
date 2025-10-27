@@ -13,6 +13,32 @@ local function hideLegacy(frame)
     end
     if frame.ScootSquareBorderContainer then frame.ScootSquareBorderContainer:Hide() end
     if frame.ScootAtlasBorder then frame.ScootAtlasBorder:Hide() end
+    if frame.ScootTextureBorder then frame.ScootTextureBorder:Hide() end
+    -- Also clear any tint overlays created by icon-border tinting. If these remain visible or keep their
+    -- atlas/texture, they can continue to tint even after the base border is re-applied.
+    if frame.ScootAtlasBorderTintOverlay then
+        frame.ScootAtlasBorderTintOverlay:Hide()
+        if frame.ScootAtlasBorderTintOverlay.SetTexture then pcall(frame.ScootAtlasBorderTintOverlay.SetTexture, frame.ScootAtlasBorderTintOverlay, nil) end
+        if frame.ScootAtlasBorderTintOverlay.SetAtlas then pcall(frame.ScootAtlasBorderTintOverlay.SetAtlas, frame.ScootAtlasBorderTintOverlay, nil) end
+    end
+    if frame.ScootTextureBorderTintOverlay then
+        frame.ScootTextureBorderTintOverlay:Hide()
+        if frame.ScootTextureBorderTintOverlay.SetTexture then pcall(frame.ScootTextureBorderTintOverlay.SetTexture, frame.ScootTextureBorderTintOverlay, nil) end
+        if frame.ScootTextureBorderTintOverlay.SetAtlas then pcall(frame.ScootTextureBorderTintOverlay.SetAtlas, frame.ScootTextureBorderTintOverlay, nil) end
+    end
+    -- Clear mask textures as well (if present) so overlays cannot re-attach and tint unexpectedly.
+    if frame.ScootAtlasBorderTintMask and frame.ScootAtlasBorderTintOverlay then
+        pcall(frame.ScootAtlasBorderTintOverlay.RemoveMaskTexture, frame.ScootAtlasBorderTintOverlay, frame.ScootAtlasBorderTintMask)
+        if frame.ScootAtlasBorderTintMask.Hide then frame.ScootAtlasBorderTintMask:Hide() end
+        if frame.ScootAtlasBorderTintMask.SetAtlas then pcall(frame.ScootAtlasBorderTintMask.SetAtlas, frame.ScootAtlasBorderTintMask, nil) end
+        if frame.ScootAtlasBorderTintMask.SetTexture then pcall(frame.ScootAtlasBorderTintMask.SetTexture, frame.ScootAtlasBorderTintMask, nil) end
+    end
+    if frame.ScootTextureBorderTintMask and frame.ScootTextureBorderTintOverlay then
+        pcall(frame.ScootTextureBorderTintOverlay.RemoveMaskTexture, frame.ScootTextureBorderTintOverlay, frame.ScootTextureBorderTintMask)
+        if frame.ScootTextureBorderTintMask.Hide then frame.ScootTextureBorderTintMask:Hide() end
+        if frame.ScootTextureBorderTintMask.SetAtlas then pcall(frame.ScootTextureBorderTintMask.SetAtlas, frame.ScootTextureBorderTintMask, nil) end
+        if frame.ScootTextureBorderTintMask.SetTexture then pcall(frame.ScootTextureBorderTintMask.SetTexture, frame.ScootTextureBorderTintMask, nil) end
+    end
 end
 
 local function ensureContainer(frame, strata, levelOffset, parent)
@@ -96,45 +122,121 @@ local function getAtlasPreset(key)
     end
 end
 
+local function applyTextureInternal(frame, textureObject, params)
+    if not frame or not textureObject then return end
+    local expandX = tonumber(params.expandX) or tonumber(params.expand) or 0
+    local expandY = tonumber(params.expandY) or tonumber(params.expand) or expandX
+    local layer = params.layer or "OVERLAY"
+    local layerSublevel = tonumber(params.layerSublevel) or 7
+    if layerSublevel > 7 then
+        layerSublevel = 7
+    elseif layerSublevel < -8 then
+        layerSublevel = -8
+    end
+
+    textureObject:SetDrawLayer(layer, layerSublevel)
+    if params.setAtlas then
+        textureObject:SetAtlas(params.setAtlas, true)
+    elseif params.setTexture then
+        textureObject:SetTexture(params.setTexture)
+    end
+
+    local tint = params.color
+    local r = 1
+    local g = 1
+    local b = 1
+    local a = 1
+    if tint and type(tint) == "table" then
+        r = tonumber(tint[1]) or 1
+        g = tonumber(tint[2]) or 1
+        b = tonumber(tint[3]) or 1
+        a = tonumber(tint[4]) or 1
+    end
+    textureObject:SetVertexColor(r, g, b, a)
+
+    local offsets = params.offsets
+    local topLeftX, topLeftY, bottomRightX, bottomRightY
+    if offsets then
+        topLeftX = offsets.left or 0
+        topLeftY = offsets.top or 0
+        bottomRightX = offsets.right or 0
+        bottomRightY = offsets.bottom or 0
+    else
+        topLeftX = -(expandX)
+        topLeftY = expandY
+        bottomRightX = expandX
+        bottomRightY = -(expandY)
+    end
+
+    textureObject:ClearAllPoints()
+    textureObject:SetPoint("TOPLEFT", frame, "TOPLEFT", topLeftX, topLeftY)
+    textureObject:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", bottomRightX, bottomRightY)
+    textureObject:Show()
+end
+
 function Borders.ApplyAtlas(frame, opts)
     if not frame or not opts or type(opts.atlas) ~= "string" then return end
     hideLegacy(frame)
     if not frame.ScootAtlasBorder then
         frame.ScootAtlasBorder = frame:CreateTexture(nil, "OVERLAY")
     end
-    local tex = frame.ScootAtlasBorder
-    tex:SetDrawLayer("OVERLAY", 7)
-    tex:SetAtlas(opts.atlas, true)
-    do
-        local r, g, b, a = 1, 1, 1, 1
-        local tc = opts.tintColor
-        if tc and type(tc) == "table" then
-            r = tonumber(tc[1]) or 1
-            g = tonumber(tc[2]) or 1
-            b = tonumber(tc[3]) or 1
-            a = tonumber(tc[4]) or 1
-        end
-        tex:SetVertexColor(r, g, b, a)
-    end
-    tex:ClearAllPoints()
+
     local preset = getAtlasPreset(opts.atlas)
-    local px, py = 0, 0
+    local px = 0
+    local py = 0
     if preset and preset.padding then
         px = tonumber(preset.padding[1]) or 0
         py = tonumber(preset.padding[2]) or 0
     end
-    local extra = tonumber(opts.extraPadding) or 0
-    if extra ~= 0 then
-        if extra < -4 then extra = -4 elseif extra > 4 then extra = 4 end
+
+    local extra = tonumber(opts.extraPadding)
+    if extra then
+        if extra < -8 then extra = -8 elseif extra > 8 then extra = 8 end
         px = px + extra
         py = py + extra
     end
-    tex:SetPoint("TOPLEFT", frame, "TOPLEFT", px, -py)
-    tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -px, py)
-    tex:Show()
+
+    if opts.expandX ~= nil then
+        px = -(tonumber(opts.expandX) or 0)
+    end
+    if opts.expandY ~= nil then
+        py = -(tonumber(opts.expandY) or 0)
+    elseif opts.expandX ~= nil then
+        py = -(tonumber(opts.expandX) or 0)
+    end
+
+    local params = {
+        setAtlas = opts.atlas,
+        color = opts.tintColor or opts.color or opts.defaultColor,
+        layer = opts.layer or "OVERLAY",
+        layerSublevel = opts.layerSublevel or 7,
+        offsets = opts.offsets or { left = px, top = -py, right = -px, bottom = py },
+    }
+
+    applyTextureInternal(frame, frame.ScootAtlasBorder, params)
 end
 
-function addon.BuildBorderOptionsContainer()
+function Borders.ApplyTexture(frame, opts)
+    if not frame or not opts or type(opts.texture) ~= "string" then return end
+    hideLegacy(frame)
+    if not frame.ScootTextureBorder then
+        frame.ScootTextureBorder = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    local params = {
+        setTexture = opts.texture,
+        color = opts.tintColor or opts.color or opts.defaultColor,
+        expandX = opts.expandX,
+        expandY = opts.expandY,
+        layer = opts.layer or "OVERLAY",
+        layerSublevel = opts.layerSublevel or 7,
+        offsets = opts.offsets,
+    }
+
+    applyTextureInternal(frame, frame.ScootTextureBorder, params)
+end
+
+function addon.BuildBarBorderOptionsContainer()
     if addon.BarBorders and addon.BarBorders.GetDropdownEntries then
         return addon.BarBorders.GetDropdownEntries({
             previewHeight = 18,
@@ -150,3 +252,22 @@ function addon.BuildBorderOptionsContainer()
     return c:GetData()
 end
 
+function addon.BuildIconBorderOptionsContainer()
+    if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
+        return addon.IconBorders.GetDropdownEntries()
+    end
+    local create = Settings and Settings.CreateControlTextContainer
+    if create then
+        local container = create()
+        container:Add("square", "Default")
+        container:Add("blizzard", "Blizzard Default")
+        return container:GetData()
+    end
+    return {
+        { value = "square", text = "Default" },
+        { value = "blizzard", text = "Blizzard Default" },
+    }
+end
+
+-- Backwards compatibility for legacy callers
+addon.BuildBorderOptionsContainer = addon.BuildBarBorderOptionsContainer

@@ -34,6 +34,297 @@ local function HideDefaultBarTextures(barFrame, restore)
     end
 end
 
+local function ToggleDefaultIconOverlay(iconFrame, restore)
+    if not iconFrame or not iconFrame.GetRegions then return end
+    for _, region in ipairs({ iconFrame:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            if region.GetAtlas and region:GetAtlas() == "UI-HUD-CoolDownManager-IconOverlay" then
+                region:SetAlpha(restore and 1 or 0)
+            end
+        end
+    end
+end
+
+function addon.ApplyIconBorderStyle(frame, styleKey, opts)
+    if not frame then return "none" end
+
+    local key = styleKey or "square"
+
+    local styleDef = addon.IconBorders and addon.IconBorders.GetStyle(key)
+    local tintEnabled = opts and opts.tintEnabled
+    local requestedColor = opts and opts.color
+    local dbTable = opts and opts.db
+    local thicknessKey = opts and opts.thicknessKey
+    local tintColorKey = opts and opts.tintColorKey
+    local defaultThicknessSetting = opts and opts.defaultThickness or 1
+    local thickness = tonumber(opts and opts.thickness) or defaultThicknessSetting
+    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+
+    if not styleDef then
+        if addon.Borders and addon.Borders.ApplySquare then
+            addon.Borders.ApplySquare(frame, {
+                size = thickness,
+                color = tintEnabled and requestedColor or {0, 0, 0, 1},
+                layer = "OVERLAY",
+                layerSublevel = 7,
+            })
+        end
+        return "square"
+    end
+
+    if styleDef.type == "none" then
+        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
+        return "none"
+    end
+
+    if styleDef.allowThicknessInset and dbTable and thicknessKey then
+        local stored = tonumber(dbTable[thicknessKey])
+        if stored then
+            thickness = stored
+        end
+        if styleDef.defaultThickness and styleDef.defaultThickness ~= defaultThicknessSetting then
+            if not stored or stored == defaultThicknessSetting then
+                thickness = styleDef.defaultThickness
+                dbTable[thicknessKey] = thickness
+            end
+        end
+    elseif dbTable and thicknessKey then
+        dbTable[thicknessKey] = thickness
+    end
+
+    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+
+    if dbTable and thicknessKey then
+        dbTable[thicknessKey] = thickness
+    end
+
+    local function copyColor(color)
+        if type(color) ~= "table" then
+            return {1, 1, 1, 1}
+        end
+        return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
+    end
+
+    local defaultColor = copyColor(styleDef.defaultColor or (styleDef.type == "square" and {0, 0, 0, 1}) or {1, 1, 1, 1})
+    if type(requestedColor) ~= "table" then
+        if dbTable and tintColorKey and type(dbTable[tintColorKey]) == "table" then
+            requestedColor = dbTable[tintColorKey]
+        else
+            requestedColor = defaultColor
+        end
+    end
+
+    local baseColor = copyColor(defaultColor)
+    local tintColor = copyColor(requestedColor)
+    local baseApplyColor = copyColor(baseColor)
+    if styleDef.type == "square" then
+        baseApplyColor = tintEnabled and tintColor or baseColor
+    end
+
+    local function clamp(val, min, max)
+        if val < min then return min end
+        if val > max then return max end
+        return val
+    end
+
+    local baseExpandX = styleDef.expandX or 0
+    local baseExpandY = styleDef.expandY or baseExpandX
+    local insetAdjust = 0
+    if styleDef.allowThicknessInset then
+        local step = styleDef.insetStep or 0.2
+        local centre = styleDef.insetCenter or (styleDef.defaultThickness or 1)
+        local defaultThickness = styleDef.defaultThickness or 1
+        insetAdjust = (thickness - centre) * step
+        local defaultAdjust = (defaultThickness - centre) * step
+        insetAdjust = insetAdjust - defaultAdjust
+    end
+    local expandX = clamp(baseExpandX + insetAdjust, -8, 8)
+    local expandY = clamp(baseExpandY + insetAdjust, -8, 8)
+
+    local appliedTexture
+
+    if styleDef.type == "atlas" then
+        addon.Borders.ApplyAtlas(frame, {
+            atlas = styleDef.atlas,
+            color = baseApplyColor,
+            tintColor = baseApplyColor,
+            expandX = expandX,
+            expandY = expandY,
+            layer = styleDef.layer or "OVERLAY",
+            layerSublevel = styleDef.layerSublevel or 7,
+        })
+        appliedTexture = frame.ScootAtlasBorder
+    elseif styleDef.type == "texture" then
+        addon.Borders.ApplyTexture(frame, {
+            texture = styleDef.texture,
+            color = baseApplyColor,
+            tintColor = baseApplyColor,
+            expandX = expandX,
+            expandY = expandY,
+            layer = styleDef.layer or "OVERLAY",
+            layerSublevel = styleDef.layerSublevel or 7,
+        })
+        appliedTexture = frame.ScootTextureBorder
+    else
+        addon.Borders.ApplySquare(frame, {
+            size = thickness,
+            color = baseApplyColor or {0, 0, 0, 1},
+            layer = styleDef.layer or "OVERLAY",
+            layerSublevel = styleDef.layerSublevel or 7,
+        })
+        local container = frame.ScootSquareBorderContainer or frame
+        local edges = (container and container.ScootSquareBorderEdges) or frame.ScootSquareBorderEdges
+        if edges then
+            for _, edge in pairs(edges) do
+                if edge and edge.SetColorTexture then
+                    edge:SetColorTexture(baseApplyColor[1] or 0, baseApplyColor[2] or 0, baseApplyColor[3] or 0, (baseApplyColor[4] == nil and 1) or baseApplyColor[4])
+                end
+            end
+        end
+        if frame.ScootAtlasBorderTintOverlay then frame.ScootAtlasBorderTintOverlay:Hide() end
+        if frame.ScootTextureBorderTintOverlay then frame.ScootTextureBorderTintOverlay:Hide() end
+    end
+
+    if appliedTexture then
+        if styleDef.type == "square" and baseApplyColor then
+            appliedTexture:SetVertexColor(baseApplyColor[1] or 0, baseApplyColor[2] or 0, baseApplyColor[3] or 0, baseApplyColor[4] or 1)
+        else
+            appliedTexture:SetVertexColor(baseColor[1] or 1, baseColor[2] or 1, baseColor[3] or 1, baseColor[4] or 1)
+        end
+        appliedTexture:SetAlpha(baseColor[4] or 1)
+        if appliedTexture.SetDesaturated then pcall(appliedTexture.SetDesaturated, appliedTexture, false) end
+        if appliedTexture.SetBlendMode then pcall(appliedTexture.SetBlendMode, appliedTexture, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
+
+        local overlay
+        if styleDef.type == "atlas" then
+            overlay = frame.ScootAtlasBorderTintOverlay
+        elseif styleDef.type == "texture" then
+            overlay = frame.ScootTextureBorderTintOverlay
+        end
+
+        local function clampSublevel(val)
+            if val == nil then return nil end
+            if val > 7 then return 7 end
+            if val < -8 then return -8 end
+            return val
+        end
+
+        local function ensureOverlay()
+            if overlay and overlay:IsObjectType("Texture") then return overlay end
+            local layer, sublevel = appliedTexture:GetDrawLayer()
+            layer = layer or (styleDef.layer or "OVERLAY")
+            sublevel = clampSublevel((sublevel or (styleDef.layerSublevel or 7)) + 1) or clampSublevel((styleDef.layerSublevel or 7))
+            local tex = frame:CreateTexture(nil, layer)
+            tex:SetDrawLayer(layer, sublevel or 0)
+            tex:SetAllPoints(appliedTexture)
+            tex:SetVertexColor(1, 1, 1, 1)
+            tex:Hide()
+            if styleDef.type == "atlas" then
+                frame.ScootAtlasBorderTintOverlay = tex
+            else
+                frame.ScootTextureBorderTintOverlay = tex
+            end
+            return tex
+        end
+
+        if tintEnabled then
+            -- Tint approach:
+            --  - Render the SAME border art (atlas/texture) on a separate overlay and vertex-tint it.
+            --  - Earlier attempts used ALPHAKEY and then a mask+solid fill; ALPHAKEY produced a white "cross"
+            --    artifact on some assets and mask+fill drew a full-rect overlay because normal atlases aren't
+            --    valid masks. This approach keeps the source shape and makes white visible without artifacts.
+            overlay = ensureOverlay()
+            local layer, sublevel = appliedTexture:GetDrawLayer()
+            local desiredSub = clampSublevel((sublevel or 0) + 1)
+            if layer then overlay:SetDrawLayer(layer, desiredSub or clampSublevel(sublevel) or 0) end
+            overlay:ClearAllPoints()
+            overlay:SetAllPoints(appliedTexture)
+            -- Revert to rendering the same border art on the overlay, tinted and blended
+            local r = tintColor[1] or 1
+            local g = tintColor[2] or 1
+            local b = tintColor[3] or 1
+            local a = tintColor[4] or 1
+            if styleDef.type == "atlas" and styleDef.atlas then
+                overlay:SetAtlas(styleDef.atlas, true)
+            elseif styleDef.type == "texture" and styleDef.texture then
+                overlay:SetTexture(styleDef.texture)
+            end
+            -- Choose a blend mode that keeps colors vivid and makes white visible
+            local avg = (r + g + b) / 3
+            local blend = styleDef.tintBlendMode or ((avg >= 0.85) and "ADD" or "BLEND")
+            if overlay.SetBlendMode then pcall(overlay.SetBlendMode, overlay, blend) end
+            -- For near-white, push a tiny bit above grey by desaturating first
+            if overlay.SetDesaturated then pcall(overlay.SetDesaturated, overlay, (avg >= 0.85)) end
+            overlay:SetVertexColor(r, g, b, a)
+            overlay:SetAlpha(a)
+            overlay:Show()
+            appliedTexture:SetAlpha(0)
+        else
+            -- Reset approach when tint is disabled:
+            --  - Overlays can remain attached due to Settings list recycling, so hide+clear both overlays.
+            --  - Then aggressively drop all ScooterMod border textures and re-apply the base style art.
+            --    This guarantees the stock/default colors return immediately and persist across reloads.
+            -- Ensure both possible overlay textures are fully hidden and cleared to avoid lingering tints
+            local overlays = {
+                frame.ScootAtlasBorderTintOverlay,
+                frame.ScootTextureBorderTintOverlay,
+            }
+            for _, ov in ipairs(overlays) do
+                if ov then
+                    ov:Hide()
+                    if ov.SetTexture then pcall(ov.SetTexture, ov, nil) end
+                    if ov.SetAtlas then pcall(ov.SetAtlas, ov, nil) end
+                    if ov.SetVertexColor then pcall(ov.SetVertexColor, ov, 1, 1, 1, 0) end
+                    if ov.SetBlendMode then pcall(ov.SetBlendMode, ov, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
+                end
+            end
+
+            -- Aggressive reset: fully clear any custom border textures and rebuild the base art fresh
+            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
+
+            if styleDef.type == "atlas" and styleDef.atlas then
+                addon.Borders.ApplyAtlas(frame, {
+                    atlas = styleDef.atlas,
+                    color = baseColor,
+                    tintColor = baseColor,
+                    expandX = expandX,
+                    expandY = expandY,
+                    layer = styleDef.layer or "OVERLAY",
+                    layerSublevel = styleDef.layerSublevel or 7,
+                })
+                appliedTexture = frame.ScootAtlasBorder
+            elseif styleDef.type == "texture" and styleDef.texture then
+                addon.Borders.ApplyTexture(frame, {
+                    texture = styleDef.texture,
+                    color = baseColor,
+                    tintColor = baseColor,
+                    expandX = expandX,
+                    expandY = expandY,
+                    layer = styleDef.layer or "OVERLAY",
+                    layerSublevel = styleDef.layerSublevel or 7,
+                })
+                appliedTexture = frame.ScootTextureBorder
+            else
+                addon.Borders.ApplySquare(frame, {
+                    size = thickness,
+                    color = baseColor or {0, 0, 0, 1},
+                    layer = styleDef.layer or "OVERLAY",
+                    layerSublevel = styleDef.layerSublevel or 7,
+                })
+            end
+
+            if appliedTexture then
+                appliedTexture:SetAlpha(baseColor[4] or 1)
+                if appliedTexture.SetDesaturated then pcall(appliedTexture.SetDesaturated, appliedTexture, false) end
+                if appliedTexture.SetBlendMode then pcall(appliedTexture.SetBlendMode, appliedTexture, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
+                appliedTexture:SetVertexColor(baseColor[1] or 1, baseColor[2] or 1, baseColor[3] or 1, baseColor[4] or 1)
+            end
+        end
+    end
+
+    return styleDef.type
+end
+
 -- Public helper: apply Tracked Bar visuals to a single item frame (icon/bar gap, bar width, textures)
 function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not component or not child then return end
@@ -41,6 +332,31 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     local barFrame = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
     local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
     if not barFrame or not iconFrame then return end
+
+    local function getSettingValue(key)
+        if not component then return nil end
+        if component.db and component.db[key] ~= nil then return component.db[key] end
+        if component.settings and component.settings[key] then return component.settings[key].default end
+        return nil
+    end
+
+    -- Apply icon sizing overrides before measuring spacing
+    local iconWidth = tonumber(getSettingValue("iconWidth"))
+    local iconHeight = tonumber(getSettingValue("iconHeight"))
+    if iconWidth and iconHeight and iconFrame.SetSize then
+        iconWidth = math.max(8, math.min(32, iconWidth))
+        iconHeight = math.max(8, math.min(32, iconHeight))
+        if component.db then
+            component.db.iconWidth = iconWidth
+            component.db.iconHeight = iconHeight
+        end
+        iconFrame:SetSize(iconWidth, iconHeight)
+        -- Ensure contained texture/mask follow the resized frame
+        local tex = iconFrame.Icon or (child.GetIconTexture and child:GetIconTexture())
+        if tex and tex.SetAllPoints then tex:SetAllPoints(iconFrame) end
+        local mask = iconFrame.Mask or iconFrame.IconMask
+        if mask and mask.SetAllPoints then mask:SetAllPoints(iconFrame) end
+    end
 
     local isActive = (child.IsActive and child:IsActive()) or child.isActive
 
@@ -162,7 +478,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                     size = thickness,
                     color = color,
                     layer = "OVERLAY",
-                    layerSublevel = 8,
+                    layerSublevel = 7,
                     containerStrata = "TOOLTIP",
                     levelOffset = 1000,
                     containerParent = barFrame,
@@ -176,6 +492,45 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
         HideDefaultBarTextures(barFrame, true)
+    end
+
+    -- Icon border styling (independent from bar border)
+    local function shouldShowIconBorder()
+        local mode = tostring(getSettingValue("displayMode") or "both")
+        if mode == "name" then return false end
+        if iconFrame.IsShown and not iconFrame:IsShown() then return false end
+        return true
+    end
+
+    local iconBorderEnabled = not not getSettingValue("iconBorderEnable")
+    local iconStyle = tostring(getSettingValue("iconBorderStyle") or "square")
+    if iconStyle == "none" then
+        iconStyle = "square"
+        if component.db then component.db.iconBorderStyle = iconStyle end
+    end
+    local iconThickness = tonumber(getSettingValue("iconBorderThickness")) or 1
+    iconThickness = math.max(1, math.min(16, iconThickness))
+    local iconTintEnabled = not not getSettingValue("iconBorderTintEnable")
+    local tintRaw = getSettingValue("iconBorderTintColor")
+    local tintColor = {1, 1, 1, 1}
+    if type(tintRaw) == "table" then
+        tintColor = { tintRaw[1] or 1, tintRaw[2] or 1, tintRaw[3] or 1, tintRaw[4] or 1 }
+    end
+
+    if iconBorderEnabled and shouldShowIconBorder() then
+        ToggleDefaultIconOverlay(iconFrame, false)
+        addon.ApplyIconBorderStyle(iconFrame, iconStyle, {
+            thickness = iconThickness,
+            color = iconTintEnabled and tintColor or nil,
+            tintEnabled = iconTintEnabled,
+            db = component.db,
+            thicknessKey = "iconBorderThickness",
+            tintColorKey = "iconBorderTintColor",
+            defaultThickness = component.settings and component.settings.iconBorderThickness and component.settings.iconBorderThickness.default or 1,
+        })
+    else
+        ToggleDefaultIconOverlay(iconFrame, true)
+        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(iconFrame) end
     end
 
     local function promoteFontLayer(font)
@@ -232,33 +587,40 @@ local function ApplyCooldownViewerStyling(self)
     end
 
     for _, child in ipairs({ frame:GetChildren() }) do
-        if width and height and child.SetSize then child:SetSize(width, height) end
+        if width and height and child.SetSize and self.id ~= "trackedBars" then child:SetSize(width, height) end
         if self.id ~= "trackedBars" then
             if self.db.borderEnable then
-                local style = self.db.borderStyle or "square"
-                if type(style) == "string" and style:find("^atlas:") and addon.Borders and addon.Borders.ApplyAtlas then
-                    local key = style:sub(7)
-                    if key and #key > 0 then
-                        local t = tonumber(self.db.borderThickness) or 1
-                        if t < 1 then t = 1 elseif t > 16 then t = 16 end
-                        local extra = -math.floor(((t - 1) / 15) * 2 + 0.5)
-                        local tint = (self.db.borderTintEnable and (self.db.borderTintColor or {1,1,1,1})) or nil
-                        addon.Borders.ApplyAtlas(child, { atlas = key, extraPadding = extra, tintColor = tint })
-                    else
-                        if addon.Borders and addon.Borders.ApplySquare then
-                            addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = {0,0,0,1} })
-                        end
-                    end
-                elseif addon.Borders and addon.Borders.ApplySquare then
-                    local col = {0,0,0,1}
-                    if self.db.borderTintEnable and type(self.db.borderTintColor) == "table" then
-                        col = { self.db.borderTintColor[1] or 1, self.db.borderTintColor[2] or 1, self.db.borderTintColor[3] or 1, self.db.borderTintColor[4] or 1 }
-                    end
-                    addon.Borders.ApplySquare(child, { size = self.db.borderThickness or 1, color = col })
+                local styleKey = self.db.borderStyle or "square"
+                if styleKey == "none" then
+                    styleKey = "square"
+                    self.db.borderStyle = styleKey
                 end
+                local thickness = tonumber(self.db.borderThickness) or 1
+                if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                local tintEnabled = self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
+                local tintColor
+                if tintEnabled then
+                    tintColor = {
+                        self.db.borderTintColor[1] or 1,
+                        self.db.borderTintColor[2] or 1,
+                        self.db.borderTintColor[3] or 1,
+                        self.db.borderTintColor[4] or 1,
+                    }
+                end
+                addon.ApplyIconBorderStyle(child, styleKey, {
+                    thickness = thickness,
+                    color = tintColor,
+                    tintEnabled = tintEnabled,
+                    db = self.db,
+                    thicknessKey = "borderThickness",
+                    tintColorKey = "borderTintColor",
+                    defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
+                })
             else
                 if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
             end
+        elseif addon and addon.ApplyTrackedBarVisualsForChild then
+            addon.ApplyTrackedBarVisualsForChild(self, child)
         end
 
         -- Text styling (Charges/Cooldowns for icon viewers; Name/Duration for bar viewers)
@@ -412,6 +774,11 @@ local function ApplyCooldownViewerStyling(self)
                             if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
                                 local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
                                 if bf then addon.Borders.HideAll(bf) end
+                                local ic = (f.GetIconFrame and f:GetIconFrame()) or f.Icon
+                                if ic then
+                                    addon.Borders.HideAll(ic)
+                                    ToggleDefaultIconOverlay(ic, true)
+                                end
                             end
                         else
                             if C_Timer and C_Timer.After then
@@ -431,6 +798,11 @@ local function ApplyCooldownViewerStyling(self)
                             if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
                                 local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
                                 if bf then addon.Borders.HideAll(bf) end
+                                local ic = (f.GetIconFrame and f:GetIconFrame()) or f.Icon
+                                if ic then
+                                    addon.Borders.HideAll(ic)
+                                    ToggleDefaultIconOverlay(ic, true)
+                                end
                             end
                         else
                             if C_Timer and C_Timer.After then
@@ -575,7 +947,13 @@ function addon:InitializeComponents()
                 label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
             borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", values = { square = "Square", style_tooltip = "Tooltip", dialog = "Dialog", none = "None" }, section = "Border", order = 4
+                label = "Border Style", widget = "dropdown", section = "Border", order = 4,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
@@ -645,7 +1023,13 @@ function addon:InitializeComponents()
                 label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
             borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", values = { square = "Square", style_tooltip = "Tooltip", dialog = "Dialog", none = "None" }, section = "Border", order = 4
+                label = "Border Style", widget = "dropdown", section = "Border", order = 4,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
@@ -712,7 +1096,13 @@ function addon:InitializeComponents()
                 label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
             borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", values = { square = "Square", style_tooltip = "Tooltip", dialog = "Dialog", none = "None" }, section = "Border", order = 4
+                label = "Border Style", widget = "dropdown", section = "Border", order = 4,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
@@ -794,7 +1184,7 @@ function addon:InitializeComponents()
             styleBackgroundColor = { type = "addon", default = {1,1,1,0.9}, ui = {
                 label = "Background Color", widget = "color", section = "Style", order = 4
             }},
-            -- Border (reusing icon border UX)
+            -- Bar Border
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Enable Border", widget = "checkbox", section = "Border", order = 1
             }},
@@ -808,14 +1198,42 @@ function addon:InitializeComponents()
                 label = "Border Style", widget = "dropdown", section = "Border", order = 4,
                 optionsProvider = function()
                     -- Only the default option is available until new bar border assets are wired up.
-                    if addon.BuildBorderOptionsContainer then
-                        return addon.BuildBorderOptionsContainer()
+                    if addon.BuildBarBorderOptionsContainer then
+                        return addon.BuildBarBorderOptionsContainer()
                     end
                     return {}
                 end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
+            }},
+            -- Icon
+            iconWidth = { type = "addon", default = 30, ui = {
+                label = "Icon Width", widget = "slider", min = 8, max = 32, step = 1, section = "Icon", order = 1
+            }},
+            iconHeight = { type = "addon", default = 30, ui = {
+                label = "Icon Height", widget = "slider", min = 8, max = 32, step = 1, section = "Icon", order = 2
+            }},
+            iconBorderEnable = { type = "addon", default = false, ui = {
+                label = "Enable Border", widget = "checkbox", section = "Icon", order = 3
+            }},
+            iconBorderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Icon", order = 4
+            }},
+            iconBorderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Icon", order = 5
+            }},
+            iconBorderStyle = { type = "addon", default = "square", ui = {
+                label = "Border Style", widget = "dropdown", section = "Icon", order = 6,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
+            }},
+            iconBorderThickness = { type = "addon", default = 1, ui = {
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Icon", order = 7
             }},
             -- Visibility / Misc (Edit Mode)
             visibilityMode = { type = "editmode", default = "always", ui = {
@@ -838,7 +1256,6 @@ function addon:InitializeComponents()
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
-            -- Note: Border section intentionally left empty for now (exploratory later)
         },
         ApplyStyling = ApplyCooldownViewerStyling,
     })

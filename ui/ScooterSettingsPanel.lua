@@ -357,6 +357,16 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
             if ctrl.ScooterInlineSwatch then
                 ctrl.ScooterInlineSwatch:SetShown((effective and true) or false)
             end
+            -- The Settings list recycles controls heavily; we observed cases where the checkbox visual toggled
+            -- but the underlying setting did not persist (causing tint to remain enabled and re-check on reload).
+            -- Mirror the live checkbox state to the setting here to guarantee DB updates on every toggle.
+            local current = settingObj and settingObj.GetValue and settingObj:GetValue()
+            if current ~= effective then
+                if settingObj and settingObj.SetValue then pcall(settingObj.SetValue, settingObj, effective) end
+            end
+            if addon and addon.ApplyStyles then
+                addon:ApplyStyles()
+            end
         end
         frame.ScooterInlineSwatchBase = baseOnSettingValueChanged
         frame.ScooterInlineSwatchWrapper = scooterInlineSwatchWrapper
@@ -371,6 +381,15 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
                 local function updateFromCheckbox(ownerFrame, newValue)
                     if ownerFrame and ownerFrame.ScooterInlineSwatch then
                         ownerFrame.ScooterInlineSwatch:SetShown((newValue and true) or false)
+                    end
+                    -- Mirror the state into the setting immediately to guarantee persistence even if the
+                    -- base template skips a SetValue call for recycler reasons.
+                    local st = ownerFrame and ownerFrame.GetSetting and ownerFrame:GetSetting() or settingObj
+                    if st and st.GetValue and st.SetValue and st:GetValue() ~= newValue then
+                        pcall(st.SetValue, st, newValue)
+                    end
+                    if addon and addon.ApplyStyles then
+                        addon:ApplyStyles()
                     end
                 end
                 cb.ScooterInlineSwatchCallbackOwner = frame
@@ -425,7 +444,7 @@ local function createComponentRenderer(componentId)
                 table.sort(sectionSettings, function(a, b) return (a.setting.ui.order or 999) < (b.setting.ui.order or 999) end)
             end
 
-            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Text", "Misc"}
+            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Icon", "Text", "Misc"}
             local function RefreshCurrentCategoryDeferred()
                 if panel and panel.RefreshCurrentCategoryDeferred then
                     panel.RefreshCurrentCategoryDeferred()
@@ -1006,7 +1025,7 @@ local function createComponentRenderer(componentId)
                         end
 
                         -- Skip dedicated color row for tint color; swatch is inline with the checkbox row
-                        if sectionName == "Border" and settingId == "borderTintColor" then
+                        if (sectionName == "Border" and settingId == "borderTintColor") or (sectionName == "Icon" and settingId == "iconBorderTintColor") then
                             -- Skip: handled by unified tint row above
                         else
                         local settingObj = CreateLocalSetting(label, ui.type or "string",
@@ -1091,7 +1110,9 @@ local function createComponentRenderer(componentId)
 
                                 addon:ApplyStyles()
 
-                                if ui.dynamicLabel or ui.dynamicValues or settingId == "orientation" then
+                                if ui.dynamicLabel or ui.dynamicValues or settingId == "orientation"
+                                    or settingId == "iconBorderEnable" or settingId == "iconBorderTintEnable"
+                                    or settingId == "iconBorderStyle" then
                                     RefreshCurrentCategoryDeferred()
                                 end
                             end, setting.default)                        if ui.widget == "slider" then
@@ -1113,6 +1134,13 @@ local function createComponentRenderer(componentId)
                             initSlider:AddShownPredicate(function()
                                 return panel:IsSectionExpanded(component.id, sectionName)
                             end)
+                            if settingId == "iconBorderThickness" then
+                                initSlider:AddShownPredicate(function()
+                                    local db = component and component.db
+                                    if not db or not db.iconBorderEnable then return false end
+                                    return panel:IsSectionExpanded(component.id, sectionName)
+                                end)
+                            end
                             -- Avoid recycler bounce on per-tick updates like opacity steppers
                             if settingId == "opacity" then
                                 initSlider.reinitializeOnValueChanged = false
@@ -1157,8 +1185,14 @@ local function createComponentRenderer(componentId)
                             local data
                             if ui.optionsProvider and type(ui.optionsProvider) == "function" then
                                 data = { setting = settingObj, options = ui.optionsProvider, name = label }
-                            elseif settingId == "borderStyle" and addon.BuildBorderOptionsContainer then
-                                data = { setting = settingObj, options = addon.BuildBorderOptionsContainer, name = label }
+                            elseif settingId == "borderStyle" then
+                                if component and component.id == "trackedBars" then
+                                    if addon.BuildBarBorderOptionsContainer then
+                                        data = { setting = settingObj, options = addon.BuildBarBorderOptionsContainer, name = label }
+                                    end
+                                elseif addon.BuildIconBorderOptionsContainer then
+                                    data = { setting = settingObj, options = addon.BuildIconBorderOptionsContainer, name = label }
+                                end
                             else
                             local containerOpts = Settings.CreateControlTextContainer()
                             local orderedValues = {}
@@ -1180,9 +1214,13 @@ local function createComponentRenderer(componentId)
                                 if not panel:IsSectionExpanded(component.id, sectionName) then
                                     return false
                                 end
-                                if component.id == "trackedBars" and settingId == "borderStyle" then
+                                if component and component.id == "trackedBars" and settingId == "borderStyle" then
                                     local db = component and component.db
                                     return not db or db.styleEnableCustom ~= false
+                                end
+                                if settingId == "iconBorderStyle" then
+                                    local db = component and component.db
+                                    return db and db.iconBorderEnable and db.iconBorderEnable ~= false
                                 end
                                 return true
                             end
@@ -1195,20 +1233,32 @@ local function createComponentRenderer(componentId)
                             table.insert(init, initDrop)
                         elseif ui.widget == "checkbox" then
                             local data = { setting = settingObj, name = label, tooltip = ui.tooltip, options = {} }
-                            if settingId == "borderTintEnable" then
+                            if settingId == "borderTintEnable" or settingId == "iconBorderTintEnable" then
                                 -- Use the reusable factory for checkbox + swatch
+                                local colorKey = (settingId == "iconBorderTintEnable") and "iconBorderTintColor" or "borderTintColor"
                                 local initCb = CreateCheckboxWithSwatchInitializer(
                                     settingObj,
                                     label,
-                                    function() return component.db.borderTintColor or {1,1,1,1} end,
+                                    function()
+                                        local val = component.db[colorKey]
+                                        if val == nil and component.settings and component.settings[colorKey] then
+                                            val = component.settings[colorKey].default
+                                        end
+                                        return val or {1,1,1,1}
+                                    end,
                                     function(r, g, b, a)
-                                        component.db.borderTintColor = { r, g, b, a }
+                                        component.db[colorKey] = { r, g, b, a }
                                         addon:ApplyStyles()
                                     end,
                                     8
                                 )
                                 initCb:AddShownPredicate(function()
-                                    return panel:IsSectionExpanded(component.id, sectionName)
+                                    if not panel:IsSectionExpanded(component.id, sectionName) then return false end
+                                    if settingId == "iconBorderTintEnable" then
+                                        local db = component and component.db
+                                        return db and db.iconBorderEnable
+                                    end
+                                    return true
                                 end)
                                 -- Ensure swatch visibility updates on checkbox change without reopening the panel
                                 local baseInit = initCb.InitFrame
@@ -1399,7 +1449,7 @@ local function ShowPanel()
                 panel._expanded = panel._expanded or {}
                 panel._expanded[cid] = panel._expanded[cid] or {}
                 -- Collapse known sections for this component
-                for _, key in ipairs({"Positioning","Sizing","Border","Text","Misc","Visibility"}) do
+                for _, key in ipairs({"Positioning","Sizing","Style","Border","Icon","Text","Misc","Visibility"}) do
                     panel._expanded[cid][key] = false
                 end
                 panel.RefreshCurrentCategory()
