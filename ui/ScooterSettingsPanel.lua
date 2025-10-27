@@ -1276,7 +1276,8 @@ local function createComponentRenderer(componentId)
                                 end
                                 table.insert(init, initCb)
                             else
-                                -- Generic checkbox initializer
+                                -- Generic checkbox initializer (no inline swatch). The Settings list recycles frames,
+                                -- so make sure any swatch/callbacks from prior rows are fully hidden/removed here.
                                 local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", data)
                                 if settingId == "visibilityMode" or settingId == "opacity" or settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
                                     -- Avoid recycler flicker: do not reinitialize the control when value changes
@@ -1285,6 +1286,24 @@ local function createComponentRenderer(componentId)
                                 initCb:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
                                 end)
+                                local baseInitFrame = initCb.InitFrame
+                                initCb.InitFrame = function(self, frame)
+                                    if baseInitFrame then baseInitFrame(self, frame) end
+                                    -- Hide any stray inline swatch from a previously-recycled tint row
+                                    if frame.ScooterInlineSwatch then
+                                        frame.ScooterInlineSwatch:Hide()
+                                    end
+                                    -- Restore original value-change wrapper if a tint row replaced it earlier
+                                    if frame.ScooterInlineSwatchWrapper and frame.OnSettingValueChanged == frame.ScooterInlineSwatchWrapper then
+                                        frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase
+                                    end
+                                    -- Detach swatch-specific checkbox callbacks so this row behaves like a normal checkbox
+                                    local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
+                                    if cb and cb.UnregisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event and cb.ScooterInlineSwatchCallbackOwner then
+                                        cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
+                                        cb.ScooterInlineSwatchCallbackOwner = nil
+                                    end
+                                end
                                 -- Avoid recycler-induced visual bounce on checkbox value change; we keep default false above
                                 table.insert(init, initCb)
                             end

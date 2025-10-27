@@ -26,19 +26,7 @@ local function hideLegacy(frame)
         if frame.ScootTextureBorderTintOverlay.SetTexture then pcall(frame.ScootTextureBorderTintOverlay.SetTexture, frame.ScootTextureBorderTintOverlay, nil) end
         if frame.ScootTextureBorderTintOverlay.SetAtlas then pcall(frame.ScootTextureBorderTintOverlay.SetAtlas, frame.ScootTextureBorderTintOverlay, nil) end
     end
-    -- Clear mask textures as well (if present) so overlays cannot re-attach and tint unexpectedly.
-    if frame.ScootAtlasBorderTintMask and frame.ScootAtlasBorderTintOverlay then
-        pcall(frame.ScootAtlasBorderTintOverlay.RemoveMaskTexture, frame.ScootAtlasBorderTintOverlay, frame.ScootAtlasBorderTintMask)
-        if frame.ScootAtlasBorderTintMask.Hide then frame.ScootAtlasBorderTintMask:Hide() end
-        if frame.ScootAtlasBorderTintMask.SetAtlas then pcall(frame.ScootAtlasBorderTintMask.SetAtlas, frame.ScootAtlasBorderTintMask, nil) end
-        if frame.ScootAtlasBorderTintMask.SetTexture then pcall(frame.ScootAtlasBorderTintMask.SetTexture, frame.ScootAtlasBorderTintMask, nil) end
-    end
-    if frame.ScootTextureBorderTintMask and frame.ScootTextureBorderTintOverlay then
-        pcall(frame.ScootTextureBorderTintOverlay.RemoveMaskTexture, frame.ScootTextureBorderTintOverlay, frame.ScootTextureBorderTintMask)
-        if frame.ScootTextureBorderTintMask.Hide then frame.ScootTextureBorderTintMask:Hide() end
-        if frame.ScootTextureBorderTintMask.SetAtlas then pcall(frame.ScootTextureBorderTintMask.SetAtlas, frame.ScootTextureBorderTintMask, nil) end
-        if frame.ScootTextureBorderTintMask.SetTexture then pcall(frame.ScootTextureBorderTintMask.SetTexture, frame.ScootTextureBorderTintMask, nil) end
-    end
+    -- No mask textures used in the final design, so nothing else to clear here.
 end
 
 local function ensureContainer(frame, strata, levelOffset, parent)
