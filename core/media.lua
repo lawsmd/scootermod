@@ -2,19 +2,31 @@ local addonName, addon = ...
 
 addon.Media = addon.Media or {}
 
+local BAR_MEDIA_PREFIX = "Interface\\AddOns\\ScooterMod\\media\\bar\\"
+
 -- Registry of bar textures bundled with ScooterMod. Keys are stable identifiers.
--- File paths use WoW UI paths so they load regardless of OS.
 local BAR_TEXTURES = {
-	bevelled               = "Interface\\AddOns\\ScooterMod\\media\\bar\\bevelled.png",
-	bevelledGrey           = "Interface\\AddOns\\ScooterMod\\media\\bar\\bevelled-grey.png",
-	fadeTop                = "Interface\\AddOns\\ScooterMod\\media\\bar\\fade-top.png",
-	fadeBottom             = "Interface\\AddOns\\ScooterMod\\media\\bar\\fade-bottom.png",
-	fadeLeft               = "Interface\\AddOns\\ScooterMod\\media\\bar\\fade-left.png",
-	powerSoftActive        = "Interface\\AddOns\\ScooterMod\\media\\bar\\power-soft-active.png",
-	powerSoftInactive      = "Interface\\AddOns\\ScooterMod\\media\\bar\\power-soft-inactive.png",
-	powerGradientActive    = "Interface\\AddOns\\ScooterMod\\media\\bar\\power-gradient-active.png",
-	powerGradientInactive  = "Interface\\AddOns\\ScooterMod\\media\\bar\\power-gradient-inactive.png",
-	blizzardCastBar        = "Interface\\AddOns\\ScooterMod\\media\\bar\\blizzard-cast-bar.png",
+	bevelled               = BAR_MEDIA_PREFIX .. "bevelled.png",
+	bevelledGrey           = BAR_MEDIA_PREFIX .. "bevelled-grey.png",
+	fadeTop                = BAR_MEDIA_PREFIX .. "fade-top.png",
+	fadeBottom             = BAR_MEDIA_PREFIX .. "fade-bottom.png",
+	fadeLeft               = BAR_MEDIA_PREFIX .. "fade-left.png",
+	blizzardCastBar        = BAR_MEDIA_PREFIX .. "blizzard-cast-bar.png",
+	mmtA1                  = BAR_MEDIA_PREFIX .. "a1.tga",
+	mmtA2                  = BAR_MEDIA_PREFIX .. "a2.tga",
+	mmtA3                  = BAR_MEDIA_PREFIX .. "a3.tga",
+	mmtA4                  = BAR_MEDIA_PREFIX .. "a4.tga",
+	mmtA5                  = BAR_MEDIA_PREFIX .. "a5.tga",
+	mmtA6                  = BAR_MEDIA_PREFIX .. "a6.tga",
+	mmtA7                  = BAR_MEDIA_PREFIX .. "a7.tga",
+	mmtA8                  = BAR_MEDIA_PREFIX .. "a8.tga",
+	mmtA9                  = BAR_MEDIA_PREFIX .. "a9.tga",
+	mmtA10                 = BAR_MEDIA_PREFIX .. "a10.tga",
+	mmtA11                 = BAR_MEDIA_PREFIX .. "a11.tga",
+	mmtA12                 = BAR_MEDIA_PREFIX .. "a12.tga",
+	mmtA13                 = BAR_MEDIA_PREFIX .. "a13.tga",
+	mmtA14                 = BAR_MEDIA_PREFIX .. "a14.tga",
+	mmtA15                 = BAR_MEDIA_PREFIX .. "a15.tga",
 }
 
 local BAR_DISPLAY_NAMES = {
@@ -23,34 +35,68 @@ local BAR_DISPLAY_NAMES = {
 	fadeTop = "Fade Top",
 	fadeBottom = "Fade Bottom",
 	fadeLeft = "Fade Left",
-	powerSoftActive = "Soft (Active)",
-	powerSoftInactive = "Soft (Inactive)",
-	powerGradientActive = "Gradient (Active)",
-	powerGradientInactive = "Gradient (Inactive)",
 	blizzardCastBar = "Blizzard Cast Bar",
+	mmtA1 = "mMediaTag A1",
+	mmtA2 = "mMediaTag A2",
+	mmtA3 = "mMediaTag A3",
+	mmtA4 = "mMediaTag A4",
+	mmtA5 = "mMediaTag A5",
+	mmtA6 = "mMediaTag A6",
+	mmtA7 = "mMediaTag A7",
+	mmtA8 = "mMediaTag A8",
+	mmtA9 = "mMediaTag A9",
+	mmtA10 = "mMediaTag A10",
+	mmtA11 = "mMediaTag A11",
+	mmtA12 = "mMediaTag A12",
+	mmtA13 = "mMediaTag A13",
+	mmtA14 = "mMediaTag A14",
+	mmtA15 = "mMediaTag A15",
+}
+
+local BAR_TEXTURE_ORDER = {
+	"bevelled",
+	"bevelledGrey",
+	"fadeTop",
+	"fadeBottom",
+	"fadeLeft",
+	"blizzardCastBar",
+	"mmtA1",
+	"mmtA2",
+	"mmtA3",
+	"mmtA4",
+	"mmtA5",
+	"mmtA6",
+	"mmtA7",
+	"mmtA8",
+	"mmtA9",
+	"mmtA10",
+	"mmtA11",
+	"mmtA12",
+	"mmtA13",
+	"mmtA14",
+	"mmtA15",
 }
 
 -- Public: build a Settings container for dropdowns listing bar textures
 function addon.BuildBarTextureOptionsContainer()
-    local container = Settings.CreateControlTextContainer()
-    local function add(key, label)
+    local create = Settings and Settings.CreateControlTextContainer
+    if not create then
+        local fallback = {}
+        for _, key in ipairs(BAR_TEXTURE_ORDER) do
+            fallback[#fallback + 1] = { value = key, text = addon.Media.GetBarTextureDisplayName(key) or key }
+        end
+        return fallback
+    end
+
+    local container = create()
+    for _, key in ipairs(BAR_TEXTURE_ORDER) do
         local path = BAR_TEXTURES[key]
         if path then
-            -- Menu entry shows preview only (no name)
-            local previewOnly = string.format("|T%s:%d:%d|t", path, 12, 180)
-            container:Add(key, previewOnly)
+            local label = addon.Media.GetBarTextureDisplayName(key)
+            local preview = string.format("%s  |T%s:%d:%d|t", label, path, 12, 180)
+            container:Add(key, preview)
         end
     end
-    add("bevelled", "Bevelled")
-    add("bevelledGrey", "Bevelled Grey")
-    add("fadeTop", "Fade Top")
-    add("fadeBottom", "Fade Bottom")
-    add("fadeLeft", "Fade Left")
-    add("powerSoftActive", "Soft (Active)")
-    add("powerSoftInactive", "Soft (Inactive)")
-    add("powerGradientActive", "Gradient (Active)")
-    add("powerGradientInactive", "Gradient (Inactive)")
-    add("blizzardCastBar", "Blizzard Cast Bar")
     return container:GetData()
 end
 
@@ -65,9 +111,8 @@ end
 
 -- Build menu entries suitable for WowStyle dropdowns with inline preview in the menu items
 function addon.Media.GetBarTextureMenuEntries()
-	local order = { "bevelled", "bevelledGrey", "fadeTop", "fadeBottom", "fadeLeft", "powerSoftActive", "powerSoftInactive", "powerGradientActive", "powerGradientInactive", "blizzardCastBar" }
 	local entries = {}
-	for _, key in ipairs(order) do
+	for _, key in ipairs(BAR_TEXTURE_ORDER) do
 		local path = BAR_TEXTURES[key]
 		if path then
 			local label = addon.Media.GetBarTextureDisplayName(key)
@@ -117,5 +162,3 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		end
 	end
 end
-
-

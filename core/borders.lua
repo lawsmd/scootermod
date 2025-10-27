@@ -135,16 +135,18 @@ function Borders.ApplyAtlas(frame, opts)
 end
 
 function addon.BuildBorderOptionsContainer()
+    if addon.BarBorders and addon.BarBorders.GetDropdownEntries then
+        return addon.BarBorders.GetDropdownEntries({
+            previewHeight = 18,
+            previewWidth = 160,
+        })
+    end
     local create = _G.Settings and _G.Settings.CreateControlTextContainer
     if not create then
-        local out = {
-            { value = "square", text = "Default" },
-        }
-        return out
+        return { { value = "square", text = "Default (Square)" } }
     end
     local c = create()
-    c:Add("square", "Default")
+    c:Add("square", "Default (Square)")
     return c:GetData()
 end
-
 

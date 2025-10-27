@@ -4,6 +4,36 @@ addon.Components = {}
 
 local Component = {}
 
+local function HideDefaultBarTextures(barFrame, restore)
+    if not barFrame or not barFrame.GetRegions then return end
+    local function matchesDefaultTexture(region)
+        if not region or not region.GetObjectType or region:GetObjectType() ~= "Texture" then return false end
+        local tex = region.GetTexture and region:GetTexture()
+        if type(tex) == "string" and tex:find("UI%-HUD%-CoolDownManager") then
+            return true
+        end
+        if region.GetAtlas then
+            local atlas = region:GetAtlas()
+            if type(atlas) == "string" and atlas:find("UI%-HUD%-CoolDownManager") then
+                return true
+            end
+        end
+        return false
+    end
+    for _, region in ipairs({ barFrame:GetRegions() }) do
+        if region and region ~= barFrame.ScooterModBG and region ~= barFrame.ScooterStyledBorder and region ~= (barFrame.ScooterStyledBorder and barFrame.ScooterStyledBorder.Texture) then
+            if region.GetObjectType and region:GetObjectType() == "Texture" then
+                local layer = region:GetDrawLayer()
+                if layer == "OVERLAY" or layer == "ARTWORK" or layer == "BORDER" then
+                    if matchesDefaultTexture(region) then
+                        region:SetAlpha(restore and 1 or 0)
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Public helper: apply Tracked Bar visuals to a single item frame (icon/bar gap, bar width, textures)
 function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not component or not child then return end
@@ -89,49 +119,78 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                     pcall(region.SetAlpha, region, 1.0)
                 end
             end
+            HideDefaultBarTextures(barFrame, true)
         end
     end
 
     -- Apply or hide bar border (uses a high strata container to sit above the bar fill)
     local wantBorder = component.db and component.db.borderEnable
+    local styleKey = component.db and component.db.borderStyle or "square"
     if wantBorder then
         local thickness = tonumber(component.db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-        local color = {0, 0, 0, 1}
-        if component.db.borderTintEnable and type(component.db.borderTintColor) == "table" then
+        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+        local tintEnabled = component.db.borderTintEnable and type(component.db.borderTintColor) == "table"
+        local color
+        if tintEnabled then
             local c = component.db.borderTintColor
-            color = { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
+            color = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+        else
+            if styleDef then
+                color = {1, 1, 1, 1}
+            else
+                color = {0, 0, 0, 1}
+            end
         end
-        if addon.Borders and addon.Borders.ApplySquare then
-            addon.Borders.ApplySquare(barFrame, {
-                size = thickness,
+
+        local handled = false
+        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+            handled = addon.BarBorders.ApplyToBarFrame(barFrame, styleKey, {
                 color = color,
-                layer = "OVERLAY",
-                layerSublevel = 8,
-                containerStrata = "TOOLTIP",
-                levelOffset = 1000,
-                containerParent = barFrame,
-                expandX = 1,
-                expandY = 2,
+                thickness = thickness,
+                component = component,
             })
         end
+
+        if handled then
+            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
+            HideDefaultBarTextures(barFrame)
+        else
+            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
+            if addon.Borders and addon.Borders.ApplySquare then
+                addon.Borders.ApplySquare(barFrame, {
+                    size = thickness,
+                    color = color,
+                    layer = "OVERLAY",
+                    layerSublevel = 8,
+                    containerStrata = "TOOLTIP",
+                    levelOffset = 1000,
+                    containerParent = barFrame,
+                    expandX = 1,
+                    expandY = 2,
+                })
+            end
+            HideDefaultBarTextures(barFrame, true)
+        end
     else
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
+        HideDefaultBarTextures(barFrame, true)
     end
+
+    local function promoteFontLayer(font)
+        if font and font.SetDrawLayer then
+            font:SetDrawLayer("OVERLAY", 5)
+        end
+    end
+    promoteFontLayer((child.GetNameLabel and child:GetNameLabel()) or child.Name or child.Text or child.Label)
+    promoteFontLayer((child.GetDurationLabel and child:GetDurationLabel()) or child.Duration or child.DurationText or child.Timer or child.TimerText)
 end
 
 -- Shared styling for Cooldown Viewer-style components (icons, borders, text, padding, visibility, opacity)
 local function ApplyCooldownViewerStyling(self)
     local frame = _G[self.frameName]
     if not frame then return end
-
-    -- Local constants for Tracked Bars border rendering (easy to tune later)
-    local TB_BORDER_STRATA = "TOOLTIP"
-    local TB_BORDER_LEVEL_OFFSET = 1000
-    local TB_BORDER_LAYER = "OVERLAY"
-    local TB_BORDER_SUBLEVEL = 8
-    local TB_BORDER_EXPAND_X = 1
-    local TB_BORDER_EXPAND_Y = 2
 
     local width = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
     local height = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
@@ -746,7 +805,14 @@ function addon:InitializeComponents()
                 label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
             borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", section = "Border", order = 4
+                label = "Border Style", widget = "dropdown", section = "Border", order = 4,
+                optionsProvider = function()
+                    -- Only the default option is available until new bar border assets are wired up.
+                    if addon.BuildBorderOptionsContainer then
+                        return addon.BuildBorderOptionsContainer()
+                    end
+                    return {}
+                end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5

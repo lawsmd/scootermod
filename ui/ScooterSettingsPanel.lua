@@ -340,25 +340,53 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
                 end,
             })
         end)
-        if not frame.ScooterInlineSwatchHooked then
-            local original = frame.OnSettingValueChanged
-            frame.OnSettingValueChanged = function(ctrl, setting, val)
-                if original then pcall(original, ctrl, setting, val) end
-                if ctrl.ScooterInlineSwatch then
-                    local show = (val ~= nil) and (val and true or false) or (settingObj:GetValue() and true or false)
-                    ctrl.ScooterInlineSwatch:SetShown(show)
+        -- Re-wrap the recycler-provided frame each time; the Settings list reuses controls aggressively.
+        -- We stash the original handler so we can reapply it and append our swatch visibility updater safely.
+        if frame.ScooterInlineSwatchWrapper and frame.OnSettingValueChanged == frame.ScooterInlineSwatchWrapper then
+            frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase
+        end
+        local baseOnSettingValueChanged = frame.OnSettingValueChanged
+        local function scooterInlineSwatchWrapper(ctrl, setting, val)
+            if baseOnSettingValueChanged then
+                pcall(baseOnSettingValueChanged, ctrl, setting, val)
+            end
+            local effective = val
+            if effective == nil then
+                effective = settingObj:GetValue()
+            end
+            if ctrl.ScooterInlineSwatch then
+                ctrl.ScooterInlineSwatch:SetShown((effective and true) or false)
+            end
+        end
+        frame.ScooterInlineSwatchBase = baseOnSettingValueChanged
+        frame.ScooterInlineSwatchWrapper = scooterInlineSwatchWrapper
+        frame.OnSettingValueChanged = scooterInlineSwatchWrapper
+        if cb then
+            -- Prefer the checkbox mixin’s callback API so we get notified even when the control reuses the same frame.
+            local canUseCallback = cb.RegisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event
+            if canUseCallback and cb.ScooterInlineSwatchCallbackOwner and cb.UnregisterCallback then
+                cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
+            end
+            if canUseCallback then
+                local function updateFromCheckbox(ownerFrame, newValue)
+                    if ownerFrame and ownerFrame.ScooterInlineSwatch then
+                        ownerFrame.ScooterInlineSwatch:SetShown((newValue and true) or false)
+                    end
+                end
+                cb.ScooterInlineSwatchCallbackOwner = frame
+                cb:RegisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, updateFromCheckbox, frame)
+            else
+                cb.ScooterInlineSwatchCallbackOwner = nil
+                -- Fallback for templates that don’t expose RegisterCallback (shouldn’t happen in retail, but guarded anyway).
+                if not cb.ScooterInlineSwatchFallbackHooked then
+                    cb:HookScript("OnClick", function(button)
+                        if frame and frame.ScooterInlineSwatch then
+                            frame.ScooterInlineSwatch:SetShown((button:GetChecked() and true) or false)
+                        end
+                    end)
+                    cb.ScooterInlineSwatchFallbackHooked = true
                 end
             end
-            frame.ScooterInlineSwatchHooked = true
-        end
-        -- Also update visibility immediately on checkbox clicks (some templates delay the OnSettingValueChanged)
-        if cb and not cb.ScooterInlineSwatchClickHooked then
-            cb:HookScript("OnClick", function()
-                if frame and frame.ScooterInlineSwatch then
-                    frame.ScooterInlineSwatch:SetShown((cb.GetChecked and cb:GetChecked()) and true or false)
-                end
-            end)
-            cb.ScooterInlineSwatchClickHooked = true
         end
     end
     init.reinitializeOnValueChanged = false
@@ -831,17 +859,50 @@ local function createComponentRenderer(componentId)
                             addon:ApplyStyles()
                         end
                         -- Add master toggle above tabs
-                        do
-                            local setting = CreateLocalSetting("Enable Custom Textures", "boolean",
-                                function() return db.styleEnableCustom ~= false end,
-                                function(v) db.styleEnableCustom = not not v; refresh() end,
-                                db.styleEnableCustom ~= false)
-                            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Enable Custom Textures", setting = setting, options = {} })
-                            local fchk = CreateFrame("Frame", nil, frame, "SettingsCheckboxControlTemplate")
-                            fchk.GetElementData = function() return row end
-                            fchk:SetPoint("TOPLEFT", 4, 0)
-                            fchk:SetPoint("TOPRIGHT", -16, 0)
-                            row:InitFrame(fchk)
+        do
+            -- Building the master toggle manually gives us tighter control over layout/state than a recycled initializer.
+            local row = frame.EnableCustomTexturesRow
+            if not row then
+                row = CreateFrame("Frame", nil, frame, "SettingsCheckboxControlTemplate")
+                row:SetPoint("TOPLEFT", 4, 0)
+                row:SetPoint("TOPRIGHT", -16, 0)
+                                frame.EnableCustomTexturesRow = row
+                                if row.Checkbox then
+                                    row.Checkbox:SetHitRectInsets(0, -220, 0, 0)
+                                end
+                            end
+
+                            if row.Text then
+                                row.Text:SetText("Enable Custom Textures")
+                            end
+
+                            local checkbox = row.Checkbox
+                            if checkbox then
+                                -- Persist DB + trigger ApplyStyles + refresh layout so dependent controls (border style) hide/show.
+                                checkbox:SetChecked(db.styleEnableCustom ~= false)
+                                checkbox.ScooterCustomTexturesDB = db
+                                checkbox.ScooterCustomTexturesRefresh = refresh
+                                checkbox.ScooterCustomTexturesRefreshLayout = RefreshCurrentCategoryDeferred
+                                if not checkbox.ScooterCustomTexturesHooked then
+                                    checkbox:HookScript("OnClick", function(btn)
+                                        local checked = btn:GetChecked() and true or false
+                                        local targetDb = btn.ScooterCustomTexturesDB
+                                        if targetDb then
+                                            targetDb.styleEnableCustom = checked
+                                            if not checked then
+                                                targetDb.borderStyle = "square"
+                                            end
+                                        end
+                                        if btn.ScooterCustomTexturesRefresh then
+                                            btn.ScooterCustomTexturesRefresh()
+                                        end
+                                        if btn.ScooterCustomTexturesRefreshLayout then
+                                            btn.ScooterCustomTexturesRefreshLayout()
+                                        end
+                                    end)
+                                    checkbox.ScooterCustomTexturesHooked = true
+                                end
+                            end
                         end
                         local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
                             local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
@@ -1094,10 +1155,10 @@ local function createComponentRenderer(componentId)
                             table.insert(init, initSlider)
                         elseif ui.widget == "dropdown" then
                             local data
-                            if settingId == "borderStyle" and addon.BuildBorderOptionsContainer then
-                                data = { setting = settingObj, options = addon.BuildBorderOptionsContainer, name = label }
-                            elseif ui.optionsProvider and type(ui.optionsProvider) == "function" then
+                            if ui.optionsProvider and type(ui.optionsProvider) == "function" then
                                 data = { setting = settingObj, options = ui.optionsProvider, name = label }
+                            elseif settingId == "borderStyle" and addon.BuildBorderOptionsContainer then
+                                data = { setting = settingObj, options = addon.BuildBorderOptionsContainer, name = label }
                             else
                             local containerOpts = Settings.CreateControlTextContainer()
                             local orderedValues = {}
@@ -1115,9 +1176,17 @@ local function createComponentRenderer(componentId)
                                 data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
                             end
                             local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", data)
-                            initDrop:AddShownPredicate(function()
-                                return panel:IsSectionExpanded(component.id, sectionName)
-                            end)
+                            local function shouldShowDropdown()
+                                if not panel:IsSectionExpanded(component.id, sectionName) then
+                                    return false
+                                end
+                                if component.id == "trackedBars" and settingId == "borderStyle" then
+                                    local db = component and component.db
+                                    return not db or db.styleEnableCustom ~= false
+                                end
+                                return true
+                            end
+                            initDrop:AddShownPredicate(shouldShowDropdown)
                             if settingId == "visibilityMode" then
                                 initDrop.reinitializeOnValueChanged = false
                             else

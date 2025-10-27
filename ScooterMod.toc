@@ -19,6 +19,7 @@ libs/LibEditModeOverride/LibEditModeOverride.xml
 
 core/media.lua
 core/fonts.lua
+core/barborders.lua
 core/borders.lua
 core/editmode.lua
 core/components.lua
