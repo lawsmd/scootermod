@@ -3,6 +3,30 @@ local addonName, addon = ...
 addon.SettingsPanel = {}
 local panel = addon.SettingsPanel
 
+local function PlayerInCombat()
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        return true
+    end
+    if type(UnitAffectingCombat) == "function" then
+        local inCombat = UnitAffectingCombat("player")
+        if inCombat then
+            return true
+        end
+    end
+    return false
+end
+
+local function ShouldBlockForCombat()
+    if panel._combatLocked then return true end
+    return PlayerInCombat()
+end
+
+local function NotifyCombatLocked()
+    if addon and addon.Print then
+        addon:Print("ScooterMod will reopen once combat ends.")
+    end
+end
+
 -- Optional refresh suspension to avoid flicker when visibility-related settings write to Edit Mode
 panel._suspendRefresh = false
 function panel.SuspendRefresh(seconds)
@@ -1056,6 +1080,10 @@ local function createComponentRenderer(componentId)
                                     else
                                         -- For all other sliders (e.g., iconPadding), round to nearest integer.
                                         finalValue = math.floor(finalValue + 0.5)
+                                        if settingId == "opacityOutOfCombat" then
+                                            if ui.min then finalValue = math.max(ui.min, finalValue) end
+                                            if ui.max then finalValue = math.min(ui.max, finalValue) end
+                                        end
                                     end
                                 else
                                     -- Fallback: attempt numeric, else raw
@@ -1122,7 +1150,7 @@ local function createComponentRenderer(componentId)
                                     local snapped = math.floor(v / 10 + 0.5) * 10
                                     return tostring(snapped)
                                 end)
-                            elseif settingId == "opacity" then
+                            elseif settingId == "opacity" or settingId == "opacityOutOfCombat" then
                                 options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
                                     return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
                                 end)
@@ -1499,5 +1527,26 @@ local function ShowPanel()
 end
 
 function panel:Toggle()
-    if panel.frame and panel.frame:IsShown() then panel.frame:Hide() else ShowPanel() end
+    if panel.frame and panel.frame:IsShown() then
+        panel._shouldReopenAfterCombat = false
+        panel.frame:Hide()
+        return
+    end
+
+    if ShouldBlockForCombat() then
+        panel._shouldReopenAfterCombat = true
+        NotifyCombatLocked()
+        return
+    end
+
+    ShowPanel()
+end
+
+function panel:Open()
+    if ShouldBlockForCombat() then
+        panel._shouldReopenAfterCombat = true
+        NotifyCombatLocked()
+        return
+    end
+    ShowPanel()
 end

@@ -45,6 +45,28 @@ local function ToggleDefaultIconOverlay(iconFrame, restore)
     end
 end
 
+local function PlayerInCombat()
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        return true
+    end
+    if type(UnitAffectingCombat) == "function" then
+        local inCombat = UnitAffectingCombat("player")
+        if inCombat then return true end
+    end
+    return false
+end
+
+local function ClampOpacity(value, minValue)
+    local v = tonumber(value) or 100
+    local minClamp = tonumber(minValue) or 50
+    if v < minClamp then
+        v = minClamp
+    elseif v > 100 then
+        v = 100
+    end
+    return v
+end
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 
@@ -868,9 +890,15 @@ local function ApplyCooldownViewerStyling(self)
 
     -- Opacity immediate local visual update
     do
-        local op = tonumber(self.db.opacity or (self.settings.opacity and self.settings.opacity.default) or 100) or 100
-        if op < 50 then op = 50 elseif op > 100 then op = 100 end
-        if frame.SetAlpha then pcall(frame.SetAlpha, frame, op / 100) end
+        local baseRaw = self.db and self.db.opacity or (self.settings.opacity and self.settings.opacity.default) or 100
+        local baseOpacity = ClampOpacity(baseRaw, 50)
+        local overrideRaw = self.db and self.db.opacityOutOfCombat
+        if overrideRaw == nil and self.settings and self.settings.opacityOutOfCombat then
+            overrideRaw = self.settings.opacityOutOfCombat.default
+        end
+        local overrideOpacity = ClampOpacity(overrideRaw or baseOpacity, 1)
+        local applied = PlayerInCombat() and baseOpacity or overrideOpacity
+        if frame.SetAlpha then pcall(frame.SetAlpha, frame, applied / 100) end
     end
 end
 
@@ -965,11 +993,14 @@ function addon:InitializeComponents()
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+            }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 3
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 4
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 4
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 5
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
@@ -1041,11 +1072,14 @@ function addon:InitializeComponents()
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+            }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 3
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 4
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 4
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 5
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
@@ -1114,14 +1148,17 @@ function addon:InitializeComponents()
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+            }},
             hideWhenInactive = { type = "editmode", default = false, ui = {
-                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 3
+                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 4
             }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 4
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 5
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
@@ -1242,17 +1279,20 @@ function addon:InitializeComponents()
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+            }},
             displayMode = { type = "editmode", default = "both", ui = {
-                label = "Display Mode", widget = "dropdown", values = { both = "Icon & Name", icon = "Icon Only", name = "Name Only" }, section = "Misc", order = 3
+                label = "Display Mode", widget = "dropdown", values = { both = "Icon & Name", icon = "Icon Only", name = "Name Only" }, section = "Misc", order = 4
             }},
             hideWhenInactive = { type = "editmode", default = false, ui = {
-                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 4
+                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 5
             }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 6
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 7
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
