@@ -23,6 +23,7 @@ core/barborders.lua
 core/iconborders.lua
 core/borders.lua
 core/editmode.lua
+core/profiles.lua
 core/components.lua
 
 ui/ScooterTabbedSection.xml

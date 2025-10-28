@@ -484,6 +484,10 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
 
     addon:SyncAllEditModeSettings()
 
+    if addon and addon.Profiles and addon.Profiles.RefreshFromEditMode then
+        addon.Profiles:RefreshFromEditMode(origin)
+    end
+
     -- If settings UI is open, refresh the active category to reflect new values
     if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
         addon.SettingsPanel.RefreshCurrentCategoryDeferred()

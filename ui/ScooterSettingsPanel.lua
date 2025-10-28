@@ -1409,6 +1409,488 @@ local function renderUtilityCooldowns() return createComponentRenderer("utilityC
 local function renderTrackedBars() return createComponentRenderer("trackedBars")() end
 local function renderTrackedBuffs() return createComponentRenderer("trackedBuffs")() end
 
+local function EnsureCallbackContainer(frame)
+    if not frame then return end
+    if not frame.cbrHandles then
+        if Settings and Settings.CreateCallbackHandleContainer then
+            frame.cbrHandles = Settings.CreateCallbackHandleContainer()
+        else
+            frame.cbrHandles = {
+                Unregister = function() end,
+                RegisterCallback = function() end,
+                AddHandle = function() end,
+                SetOnValueChangedCallback = function() end,
+                IsEmpty = function() return true end,
+            }
+        end
+    end
+end
+
+local function renderProfilesManage()
+    local function scaleFont(fs, baseFont, scale)
+        if not fs or not baseFont then return end
+        local face, size, flags = baseFont:GetFont()
+        if face and size then
+            fs:SetFont(face, math.floor(size * (scale or 1.0) + 0.5), flags)
+        end
+    end
+
+    local function render()
+        local f = panel.frame
+        if not f or not f.SettingsList then return end
+        local settingsList = f.SettingsList
+        settingsList.Header.Title:SetText("Manage Profiles")
+
+        local init = {}
+        local widgets = panel._profileWidgets or {}
+        panel._profileWidgets = widgets
+
+        local function buildLayoutEntries()
+            if not addon.Profiles or not addon.Profiles.GetLayoutMenuEntries then
+                return {}
+            end
+            return addon.Profiles:GetLayoutMenuEntries()
+        end
+
+        local function getActiveProfileKey()
+            if addon.Profiles and addon.Profiles.GetActiveProfile then
+                return addon.Profiles:GetActiveProfile()
+            end
+            if addon.db and addon.db.GetCurrentProfile then
+                return addon.db:GetCurrentProfile()
+            end
+            return nil
+        end
+
+        local function refreshActiveDropdown(dropdown)
+            if not dropdown then return end
+            local activeKey = getActiveProfileKey()
+            local entries = buildLayoutEntries()
+            local activeText = nil
+            UIDropDownMenu_Initialize(dropdown, function(self)
+                for _, entry in ipairs(entries) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = entry.text
+                    info.value = entry.key
+                    info.func = function()
+                        if entry.preset then
+                            CloseDropDownMenus()
+                            local currentKey = getActiveProfileKey()
+                            addon.Profiles:PromptClonePreset(entry.key, dropdown, entry.text, currentKey)
+                            return
+                        end
+                        local key = entry.key
+                        if addon.Profiles and addon.Profiles.SwitchToProfile then
+                            addon.Profiles:SwitchToProfile(key, { reason = "ManageProfilesDropdown" })
+                        end
+                        UIDropDownMenu_SetSelectedValue(dropdown, key)
+                        UIDropDownMenu_SetText(dropdown, entry.text)
+                        if panel and panel.RefreshCurrentCategoryDeferred then
+                            panel.RefreshCurrentCategoryDeferred()
+                        end
+                    end
+                    info.checked = (activeKey == entry.key)
+                    info.notCheckable = false
+                    info.isNotRadio = false
+                    info.keepShownOnClick = false
+                    UIDropDownMenu_AddButton(info)
+                    if activeKey == entry.key then
+                        activeText = entry.text
+                    end
+                end
+            end)
+            UIDropDownMenu_SetWidth(dropdown, 220)
+            UIDropDownMenu_SetSelectedValue(dropdown, activeKey)
+            UIDropDownMenu_SetText(dropdown, activeText or activeKey or "Select a layout")
+            addon.SettingsPanel._profileDropdown = dropdown
+            if addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
+                addon.SettingsPanel.UpdateProfileActionButtons()
+            end
+        end
+
+        local function refreshSpecDropdown(dropdown, specID)
+            if not dropdown or not specID then return end
+            local assigned = addon.Profiles and addon.Profiles.GetSpecAssignment and addon.Profiles:GetSpecAssignment(specID) or nil
+            local entries = buildLayoutEntries()
+            UIDropDownMenu_Initialize(dropdown, function(self)
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "Use active layout"
+                info.value = ""
+                info.func = function()
+                    if addon.Profiles and addon.Profiles.SetSpecAssignment then
+                        addon.Profiles:SetSpecAssignment(specID, nil)
+                    end
+                    UIDropDownMenu_SetSelectedValue(dropdown, "")
+                    if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled() then
+                        if addon.Profiles.OnPlayerSpecChanged then
+                            addon.Profiles:OnPlayerSpecChanged()
+                        end
+                    end
+                    if panel and panel.RefreshCurrentCategoryDeferred then
+                        panel.RefreshCurrentCategoryDeferred()
+                    end
+                end
+                info.checked = assigned == nil
+                info.notCheckable = false
+                info.isNotRadio = false
+                UIDropDownMenu_AddButton(info)
+
+                for _, entry in ipairs(entries) do
+                    local dropdownInfo = UIDropDownMenu_CreateInfo()
+                    dropdownInfo.text = entry.text
+                    dropdownInfo.value = entry.key
+                    dropdownInfo.func = function()
+                        local key = entry.key
+                        if addon.Profiles and addon.Profiles.SetSpecAssignment then
+                            addon.Profiles:SetSpecAssignment(specID, key)
+                        end
+                        UIDropDownMenu_SetSelectedValue(dropdown, key)
+                        UIDropDownMenu_SetText(dropdown, entry.text)
+                        if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled() then
+                            if addon.Profiles.OnPlayerSpecChanged then
+                                addon.Profiles:OnPlayerSpecChanged()
+                            end
+                        end
+                        if panel and panel.RefreshCurrentCategoryDeferred then
+                            panel.RefreshCurrentCategoryDeferred()
+                        end
+                    end
+                    dropdownInfo.checked = (assigned == entry.key)
+                    dropdownInfo.notCheckable = false
+                    dropdownInfo.isNotRadio = false
+                    UIDropDownMenu_AddButton(dropdownInfo)
+                end
+            end)
+            UIDropDownMenu_SetWidth(dropdown, 220)
+            if assigned then
+                local display = nil
+                for _, entry in ipairs(entries) do
+                    if entry.key == assigned then
+                        display = entry.text
+                        break
+                    end
+                end
+                UIDropDownMenu_SetSelectedValue(dropdown, assigned)
+                UIDropDownMenu_SetText(dropdown, display or assigned)
+            else
+                UIDropDownMenu_SetSelectedValue(dropdown, "")
+                UIDropDownMenu_SetText(dropdown, "Use active layout")
+            end
+        end
+
+        do
+            local infoRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            infoRow.GetExtent = function() return 56 end
+            infoRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if not frame.InfoText then
+                    local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                    text:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, 4)
+                    text:SetWidth(420)
+                    text:SetJustifyH("LEFT")
+                    text:SetJustifyV("TOP")
+                    text:SetWordWrap(true)
+                    text:SetText("ScooterMod profiles stay synchronized with Edit Mode layouts. Switch layouts here or via Edit Mode and ScooterMod will keep them in sync.")
+                    scaleFont(text, GameFontHighlight, 1.2)
+                    frame.InfoText = text
+                end
+            end
+            table.insert(init, infoRow)
+        end
+
+        do
+            local activeRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            activeRow.GetExtent = function() return 48 end
+            activeRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if not frame.ActiveLabel then
+                    local label = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+                    label:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    label:SetText("Active Layout")
+                    scaleFont(label, GameFontNormal, 1.3)
+                    frame.ActiveLabel = label
+
+                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+                    dropdown:SetPoint("LEFT", label, "RIGHT", 24, -2)
+                    dropdown.align = "LEFT"
+                    dropdown:SetScale(1.15)
+                    frame.ActiveDropdown = dropdown
+                end
+                refreshActiveDropdown(frame.ActiveDropdown)
+            end
+            table.insert(init, activeRow)
+        end
+
+        do
+            local actionsRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            actionsRow.GetExtent = function() return 40 end
+            actionsRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if frame.ButtonContainer then
+                    frame.ButtonContainer:Hide()
+                    frame.ButtonContainer:SetAlpha(0)
+                    frame.ButtonContainer:EnableMouse(false)
+                end
+                if frame.EnableMouse then
+                    frame:EnableMouse(false)
+                end
+                local function updateButtons()
+                    local current = getActiveProfileKey()
+                    local isPreset = current and addon.Profiles and addon.Profiles:IsPreset(current)
+                    if frame.RenameBtn then frame.RenameBtn:SetEnabled(not not current and not isPreset) end
+                    if frame.DeleteBtn then frame.DeleteBtn:SetEnabled(not not current and not isPreset) end
+                    if frame.CopyBtn then frame.CopyBtn:SetEnabled(not not current) end
+                end
+
+                if not frame.RenameBtn then
+                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    btn:SetSize(100, 28)
+                    btn:SetText("Rename")
+                    btn:SetMotionScriptsWhileDisabled(true)
+                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
+                    btn:SetScript("OnClick", function()
+                        CloseDropDownMenus()
+                        local current = getActiveProfileKey()
+                        addon.Profiles:PromptRenameLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                    end)
+                    frame.RenameBtn = btn
+                end
+
+                if not frame.CopyBtn then
+                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetSize(100, 28)
+                    btn:SetPoint("LEFT", frame.RenameBtn, "RIGHT", 10, 0)
+                    btn:SetText("Copy")
+                    btn:SetMotionScriptsWhileDisabled(true)
+                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
+                    btn:SetScript("OnClick", function()
+                        CloseDropDownMenus()
+                        local current = getActiveProfileKey()
+                        if not current then return end
+                        if addon.Profiles and addon.Profiles:IsPreset(current) then
+                            addon.Profiles:PromptClonePreset(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown, addon.Profiles:GetLayoutDisplayText(current), current)
+                        else
+                            addon.Profiles:PromptCopyLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                        end
+                    end)
+                    frame.CopyBtn = btn
+                end
+
+                if not frame.DeleteBtn then
+                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetSize(100, 28)
+                    btn:SetPoint("LEFT", frame.CopyBtn, "RIGHT", 10, 0)
+                    btn:SetText(DELETE)
+                    btn:SetMotionScriptsWhileDisabled(true)
+                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
+                    btn:SetScript("OnClick", function()
+                        CloseDropDownMenus()
+                        local current = getActiveProfileKey()
+                        addon.Profiles:ConfirmDeleteLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                    end)
+                    frame.DeleteBtn = btn
+                end
+
+                function frame:UpdateButtons()
+                    updateButtons()
+                end
+
+                updateButtons()
+                addon.SettingsPanel.UpdateProfileActionButtons = function()
+                    if frame and frame.UpdateButtons then
+                        frame:UpdateButtons()
+                    end
+                end
+            end
+            table.insert(init, actionsRow)
+        end
+
+        do
+            local buttonRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            buttonRow.GetExtent = function() return 40 end
+            buttonRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if frame.ButtonContainer then
+                    frame.ButtonContainer:Hide()
+                    frame.ButtonContainer:SetAlpha(0)
+                    frame.ButtonContainer:EnableMouse(false)
+                end
+                if not frame.OpenEditModeBtn then
+                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    btn:SetSize(200, 30)
+                    btn:SetText("Open Edit Mode")
+                    btn:EnableMouse(true)
+                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
+                    btn:SetMotionScriptsWhileDisabled(true)
+                    btn:SetScript("OnClick", function()
+                        if InCombatLockdown and InCombatLockdown() then
+                            if addon and addon.Print then
+                                addon:Print("Cannot open Edit Mode during combat.")
+                            end
+                            return
+                        end
+                        if SlashCmdList and SlashCmdList["EDITMODE"] then
+                            SlashCmdList["EDITMODE"]("")
+                        elseif RunBinding then
+                            RunBinding("TOGGLE_EDIT_MODE")
+                        else
+                            addon:Print("Use /editmode to open the layout manager.")
+                        end
+                        if panel and panel.frame and panel.frame:IsShown() then
+                            panel.frame:Hide()
+                        end
+                    end)
+                    frame.OpenEditModeBtn = btn
+                end
+            end
+            table.insert(init, buttonRow)
+        end
+
+        do
+            local specHeader = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            specHeader.GetExtent = function() return 30 end
+            specHeader.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if not frame.SpecHeader then
+                    local text = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+                    text:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    text:SetText("Specialization Profiles")
+                    scaleFont(text, GameFontNormal, 1.3)
+                    frame.SpecHeader = text
+                end
+            end
+            table.insert(init, specHeader)
+        end
+
+        do
+            local enabledRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            enabledRow.GetExtent = function() return 34 end
+            enabledRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if not frame.SpecCheckbox then
+                    local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+                    cb:SetPoint("LEFT", frame, "LEFT", 16, -2)
+                    cb.Text:SetText("Enable spec profiles")
+                    cb:SetScale(1.2)
+                    cb:SetScript("OnClick", function(button)
+                        if addon.Profiles and addon.Profiles.SetSpecProfilesEnabled then
+                            addon.Profiles:SetSpecProfilesEnabled(button:GetChecked())
+                        end
+                        if panel and panel.RefreshCurrentCategoryDeferred then
+                            panel.RefreshCurrentCategoryDeferred()
+                        end
+                        if addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
+                            addon.Profiles:OnPlayerSpecChanged()
+                        end
+                    end)
+                    frame.SpecCheckbox = cb
+                end
+                if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled then
+                    frame.SpecCheckbox:SetChecked(addon.Profiles:IsSpecProfilesEnabled())
+                else
+                    frame.SpecCheckbox:SetChecked(false)
+                end
+            end
+            table.insert(init, enabledRow)
+        end
+
+        local specOptions = addon.Profiles and addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions() or {}
+        for _, spec in ipairs(specOptions) do
+            local specRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            specRow.GetExtent = function() return 42 end
+            specRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                if frame.Text then frame.Text:Hide() end
+                if not frame.SpecName then
+                    local icon = frame:CreateTexture(nil, "ARTWORK")
+                    icon:SetSize(28, 28)
+                    icon:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    frame.SpecIcon = icon
+
+                    local name = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+                    name:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+                    scaleFont(name, GameFontNormal, 1.2)
+                    frame.SpecName = name
+
+                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+                    dropdown:SetPoint("LEFT", name, "RIGHT", 16, -2)
+                    dropdown.align = "LEFT"
+                    dropdown:SetScale(1.1)
+                    frame.SpecDropdown = dropdown
+                end
+                if frame.SpecIcon then
+                    if spec.icon then
+                        frame.SpecIcon:SetTexture(spec.icon)
+                        frame.SpecIcon:Show()
+                    else
+                        frame.SpecIcon:Hide()
+                    end
+                end
+                if frame.SpecName then
+                    frame.SpecName:SetText(spec.name or ("Spec " .. tostring(spec.specIndex)))
+                end
+                refreshSpecDropdown(frame.SpecDropdown, spec.specID)
+            end
+            specRow:AddShownPredicate(function()
+                return addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled()
+            end)
+            table.insert(init, specRow)
+        end
+
+        settingsList:Display(init)
+        if settingsList.RepairDisplay then
+            pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end })
+        end
+        settingsList:Show()
+        if f.Canvas then
+            f.Canvas:Hide()
+        end
+    end
+
+    return { mode = "list", render = render, componentId = "profilesManage" }
+end
+
+local function renderProfilesPresets()
+    local function render()
+        local f = panel.frame
+        if not f or not f.SettingsList then return end
+        local settingsList = f.SettingsList
+        settingsList.Header.Title:SetText("Presets")
+        local init = {}
+        local messageRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+        messageRow.GetExtent = function() return 40 end
+        messageRow.InitFrame = function(self, frame)
+            EnsureCallbackContainer(frame)
+            if not frame.MessageText then
+                local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
+                text:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                text:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                text:SetJustifyH("LEFT")
+                text:SetText("Preset collections are coming soon. For now, use Edit Mode to swap between Blizzard's Modern and Classic presets.")
+                frame.MessageText = text
+            end
+        end
+        table.insert(init, messageRow)
+
+        settingsList:Display(init)
+        if settingsList.RepairDisplay then
+            pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end })
+        end
+        settingsList:Show()
+        if f.Canvas then
+            f.Canvas:Hide()
+        end
+    end
+    return { mode = "list", render = render, componentId = "profilesPresets" }
+end
+
 local function BuildCategories()
     local f = panel.frame
     local categoryList = f.CategoryList
@@ -1422,6 +1904,8 @@ local function BuildCategories()
         table.insert(createdCategories, category)
         return category
     end
+    createCategory("Profiles", "Manage Profiles", 1, renderProfilesManage())
+    createCategory("Profiles", "Presets", 2, renderProfilesPresets())
     createCategory("Cooldown Manager", "Essential Cooldowns", 11, renderEssentialCooldowns())
     createCategory("Cooldown Manager", "Utility Cooldowns", 12, renderUtilityCooldowns())
     -- Reorder: Tracked Buffs third, Tracked Bars last

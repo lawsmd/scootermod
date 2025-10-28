@@ -8,6 +8,10 @@ function addon:OnInitialize()
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
 
+    if self.Profiles and self.Profiles.Initialize then
+        self.Profiles:Initialize()
+    end
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
@@ -19,6 +23,12 @@ function addon:GetDefaults()
     local defaults = {
         profile = {
             components = {}
+        },
+        char = {
+            specProfiles = {
+                enabled = false,
+                assignments = {}
+            }
         }
     }
 
@@ -36,6 +46,7 @@ function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	self:RegisterEvent("ADDON_LOADED")
+    self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
@@ -134,13 +145,33 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("PLAYER_ENTERING_WORLD")
+    if self.Profiles then
+        if self.Profiles.TryPendingSync then
+            self.Profiles:TryPendingSync()
+        end
+        if self.Profiles.OnPlayerSpecChanged then
+            self.Profiles:OnPlayerSpecChanged()
+        end
+    end
     self:ApplyStyles()
 end
 
 function addon:EDIT_MODE_LAYOUTS_UPDATED()
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("EDIT_MODE_LAYOUTS_UPDATED")
+    if self.Profiles and self.Profiles.RequestSync then
+        self.Profiles:RequestSync("EDIT_MODE_LAYOUTS_UPDATED")
+    end
     self:ApplyStyles()
+end
+
+function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
+    if unit and unit ~= "player" then
+        return
+    end
+    if self.Profiles and self.Profiles.OnPlayerSpecChanged then
+        self.Profiles:OnPlayerSpecChanged()
+    end
 end
 
 -- Debug Tools: Table Inspector copy support ----------------------------------
