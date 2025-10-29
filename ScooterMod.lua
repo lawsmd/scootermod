@@ -90,9 +90,9 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         end
         if not source then addon:Print("Source layout not found: "..src) return end
         if C_EditMode.IsValidLayoutName and not C_EditMode.IsValidLayoutName(dest) then addon:Print("Invalid new name.") return end
-        if EditModeManagerFrame.MakeNewLayout then
+            if EditModeManagerFrame.MakeNewLayout then
             EditModeManagerFrame:MakeNewLayout(source, source.layoutType or Enum.EditModeLayoutType.Character, dest, false)
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             addon:Print("Copied layout '"..src.."' -> '"..dest.."'")
         else
             addon:Print("Copy failed: manager unavailable.")

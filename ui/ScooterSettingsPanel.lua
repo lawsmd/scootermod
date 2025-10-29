@@ -1601,31 +1601,42 @@ local function renderProfilesManage()
 
         do
             local activeRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            activeRow.GetExtent = function() return 48 end
+            activeRow.GetExtent = function() return 64 end
             activeRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
                 if frame.Text then frame.Text:Hide() end
                 if not frame.ActiveLabel then
                     local label = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                    label:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    label:SetText("Active Layout")
+                    label:SetPoint("LEFT", frame, "LEFT", 16, -6)
+                    label:SetText("Active Layout:")
                     scaleFont(label, GameFontNormal, 1.3)
                     frame.ActiveLabel = label
-
                     local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-                    dropdown:SetPoint("LEFT", label, "RIGHT", 24, -2)
+                    dropdown:SetPoint("LEFT", label, "RIGHT", 14, -2)
                     dropdown.align = "LEFT"
                     dropdown:SetScale(1.15)
+                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 110) end
+                    if dropdown.SetWidth then dropdown:SetWidth(110) end
                     frame.ActiveDropdown = dropdown
+                    if not frame.TopDivider then
+                        local div = frame:CreateTexture(nil, "ARTWORK")
+                        div:SetColorTexture(1, 1, 1, 0.12)
+                        div:SetHeight(1)
+                        div:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -16)
+                        div:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -16)
+                        frame.TopDivider = div
+                    end
                 end
                 refreshActiveDropdown(frame.ActiveDropdown)
+                if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(frame.ActiveDropdown, 110) end
+                if frame.ActiveDropdown and frame.ActiveDropdown.SetWidth then frame.ActiveDropdown:SetWidth(110) end
             end
             table.insert(init, activeRow)
         end
 
         do
             local actionsRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            actionsRow.GetExtent = function() return 40 end
+            actionsRow.GetExtent = function() return 56 end
             actionsRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
                 if frame.Text then frame.Text:Hide() end
@@ -1693,6 +1704,15 @@ local function renderProfilesManage()
                         addon.Profiles:ConfirmDeleteLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
                     end)
                     frame.DeleteBtn = btn
+                end
+
+                if not frame.BottomDivider then
+                    local div = frame:CreateTexture(nil, "ARTWORK")
+                    div:SetColorTexture(1, 1, 1, 0.12)
+                    div:SetHeight(1)
+                    div:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
+                    div:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 12)
+                    frame.BottomDivider = div
                 end
 
                 function frame:UpdateButtons()

@@ -1,3 +1,9 @@
+-- Central suppression check (used only during short post-copy window)
+local function _ShouldSuppressWrites()
+    local prof = addon and addon.Profiles
+    if not prof or not prof.IsPostCopySuppressed then return false end
+    return prof:IsPostCopySuppressed()
+end
 local addonName, addon = ...
 
 addon.EditMode = {}
@@ -118,6 +124,7 @@ end
 
 function addon.EditMode.ApplyChanges()
     if not LEO or not LEO.ApplyChanges then return end
+    if _ShouldSuppressWrites() then return end
     if not InCombatLockdown() then
         LEO:ApplyChanges()
     else
@@ -135,6 +142,7 @@ end
 
 function addon.EditMode.SaveOnly()
     if not LEO or not LEO.SaveOnly then return end
+    if _ShouldSuppressWrites() then return end
     LEO:SaveOnly()
 end
 
