@@ -622,6 +622,64 @@ function Profiles:EnsurePopups()
         preferredIndex = 3,
     }
 
+    StaticPopupDialogs["SCOOTERMOD_CREATE_LAYOUT"] = {
+        text = "Create layout:",
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        hasEditBox = true,
+        maxLetters = 32,
+        enterClicksFirstButton = true,
+        OnShow = function(self, data)
+            local edit = self.editBox or self.EditBox
+            if edit then
+                local defaultName = (data and data.suggestedName) or "New Layout"
+                edit:SetText(defaultName)
+                edit:HighlightText()
+            end
+        end,
+        OnAccept = function(self, data)
+            local edit = self.editBox or self.EditBox
+            local newName = edit and edit:GetText()
+            local success, err = addon.Profiles:PerformCreateLayout(newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                self:Hide()
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptCreateLayout(data and data.dropdown, newName)
+                end)
+            end
+        end,
+        OnCancel = function(self, data)
+            if data and data.dropdown and addon and addon.Profiles and addon.Profiles.db then
+                local current = addon.Profiles.db:GetCurrentProfile()
+                addon.Profiles:RestoreDropdownSelection(data.dropdown, current, addon.Profiles:GetLayoutDisplayText(current))
+            end
+        end,
+        OnHide = function(self)
+            local edit = self.editBox or self.EditBox
+            if edit then edit:SetText("") end
+        end,
+        EditBoxOnEnterPressed = function(self, data)
+            -- Mirror OnAccept exactly to ensure Enter performs the create
+            local parent = self:GetParent()
+            local edit = parent and (parent.editBox or parent.EditBox)
+            local newName = edit and edit:GetText()
+            local success, err = addon.Profiles:PerformCreateLayout(newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                if parent and parent.Hide then parent:Hide() end
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptCreateLayout((data and data.dropdown) or (parent and parent.data and parent.data.dropdown), newName)
+                end)
+            else
+                if parent and parent.Hide then parent:Hide() end
+            end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        preferredIndex = 3,
+    }
+
     Profiles._popupsInitialized = true
 end
 
@@ -665,6 +723,14 @@ function Profiles:PromptCopyLayout(sourceName, dropdown, suggested)
     StaticPopup_Show("SCOOTERMOD_COPY_LAYOUT", sourceName, nil, {
         sourceName = sourceName,
         sourceText = self:GetLayoutDisplayText(sourceName),
+        dropdown = dropdown,
+        suggestedName = suggested,
+    })
+end
+
+function Profiles:PromptCreateLayout(dropdown, suggested)
+    self:EnsurePopups()
+    StaticPopup_Show("SCOOTERMOD_CREATE_LAYOUT", nil, nil, {
         dropdown = dropdown,
         suggestedName = suggested,
     })
@@ -1052,6 +1118,73 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
     return true
 end
 
+function Profiles:PerformCreateLayout(rawNewName)
+    if isCombatLocked() then return false, "Cannot create layouts during combat." end
+    if not ensureLayoutsLoaded() then return false, "Edit Mode layouts are not ready." end
+
+    local newName = normalizeName(rawNewName)
+    if not newName then return false, "A name is required." end
+    if C_EditMode and C_EditMode.IsValidLayoutName and not C_EditMode.IsValidLayoutName(newName) then
+        return false, HUD_EDIT_MODE_INVALID_LAYOUT_NAME or "Invalid layout name." end
+    if self._layoutLookup and self._layoutLookup[newName] then
+        return false, "A layout with that name already exists." end
+
+    if not C_EditMode or not C_EditMode.GetLayouts or not C_EditMode.SaveLayouts then
+        return false, "C_EditMode API unavailable." end
+
+    local layoutInfo = C_EditMode.GetLayouts()
+    if not layoutInfo or not layoutInfo.layouts then
+        return false, "Unable to read layouts." end
+
+    -- Choose a base: prefer Modern preset; fallback to active; fallback to any preset
+    local base
+    for _, l in ipairs(layoutInfo.layouts) do
+        if l.layoutType == Enum.EditModeLayoutType.Preset and l.layoutName == "Modern" then base = l break end
+    end
+    if not base and layoutInfo.activeLayout and layoutInfo.layouts[layoutInfo.activeLayout] then
+        base = layoutInfo.layouts[layoutInfo.activeLayout]
+    end
+    if not base and EditModePresetLayoutManager and EditModePresetLayoutManager.GetCopyOfPresetLayouts then
+        local presets = EditModePresetLayoutManager:GetCopyOfPresetLayouts() or {}
+        base = presets[1]
+    end
+    if not base then return false, "Unable to locate a base layout for creation." end
+
+    local newLayout = CopyTable(base)
+    newLayout.layoutName = newName
+    newLayout.layoutType = Enum.EditModeLayoutType.Character
+    newLayout.isPreset = nil
+    newLayout.isModified = nil
+
+    table.insert(layoutInfo.layouts, newLayout)
+    C_EditMode.SaveLayouts(layoutInfo)
+
+    if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
+    postMutationSync(self, "CreateLayout")
+
+    -- Create AceDB profile using template defaults
+    addLayoutToCache(self, newName)
+    self.db.profiles[newName] = deepCopy(self._profileTemplate)
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.1, function()
+            self:SwitchToProfile(newName, { reason = "DeferredCreateSwitch", force = true })
+            if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
+                addon.SettingsPanel.UpdateProfileActionButtons()
+            end
+            if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
+                local current = self.db:GetCurrentProfile()
+                self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
+            end
+            notifyUI()
+        end)
+    else
+        self:SwitchToProfile(newName, { reason = "CreateLayout", force = true })
+    end
+
+    return true
+end
+
 function Profiles:PerformDeleteLayout(layoutName)
     if not layoutName then return false, "Select a layout to delete." end
     if self:IsPreset(layoutName) then return false, "Preset layouts cannot be deleted." end
@@ -1406,6 +1539,10 @@ function Profiles:_setActiveProfile(profileKey, opts)
         return
     end
     opts = opts or {}
+    -- If switching due to a live spec change, briefly suppress settings panel refresh to avoid flicker
+    if opts.reason == "SpecChanged" and addon and addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then
+        addon.SettingsPanel.SuspendRefresh(0.4)
+    end
     local current = self.db:GetCurrentProfile()
     Debug("_setActiveProfile", profileKey, "current=" .. tostring(current), opts.skipLayout and "[skipLayout]" or "", opts.force and "[force]" or "")
 
@@ -1631,6 +1768,8 @@ function Profiles:OnPlayerSpecChanged()
     if not self._layoutLookup[targetProfile] then
         return
     end
+    -- Hint the chat suppression wrapper about the impending desired layout
+    self._pendingSpecTarget = targetProfile
     self:SwitchToProfile(targetProfile, { reason = "SpecChanged" })
 end
 

@@ -23,7 +23,7 @@ end
 
 local function NotifyCombatLocked()
     if addon and addon.Print then
-        addon:Print("ScooterMod will reopen once combat ends.")
+        addon:Print("ScooterMod will open once combat ends.")
     end
 end
 
@@ -67,6 +67,18 @@ function panel.UpdateCollapseButtonVisibility()
         -- Profiles pages do not have collapsible component sections
         if entry and (entry.componentId == "profilesManage" or entry.componentId == "profilesPresets") then
             hide = true
+        end
+        -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
+        local cdmBtn = f.SettingsList.Header.ScooterCDMButton
+        if cdmBtn then
+            local onCDMTab = false
+            if entry and entry.componentId then
+                local id = tostring(entry.componentId)
+                if id == "essentialCooldowns" or id == "utilityCooldowns" or id == "trackedBuffs" or id == "trackedBars" then
+                    onCDMTab = true
+                end
+            end
+            cdmBtn:SetShown(onCDMTab and not hide)
         end
     end
     btn:SetShown(not hide)
@@ -183,11 +195,15 @@ function panel.RefreshCurrentCategory()
     if not entry or not entry.render then return end
     local settingsList = f.SettingsList
     local sb = settingsList and settingsList.ScrollBox
-    local percent
-    if sb and sb.GetDerivedScrollPercentage then
-        percent = sb:GetDerivedScrollPercentage()
-    elseif sb and sb.GetScrollPercentage then
-        percent = sb:GetScrollPercentage()
+    -- Prefer a previously captured percent (from a deferred request) to avoid
+    -- double-refresh sequences snapping to the top.
+    local percent = panel._desiredScrollPercent
+    if percent == nil then
+        if sb and sb.GetDerivedScrollPercentage then
+            percent = sb:GetDerivedScrollPercentage()
+        elseif sb and sb.GetScrollPercentage then
+            percent = sb:GetScrollPercentage()
+        end
     end
     -- Remember tab (if any) for tabbed sections before rerender
     local activeTabIndex
@@ -201,10 +217,12 @@ function panel.RefreshCurrentCategory()
         end
     end
     entry.render()
-    if percent and sb and sb.SetScrollPercentage then
+    if percent ~= nil and sb and sb.SetScrollPercentage then
         C_Timer.After(0, function()
             if panel and panel.frame and panel.frame:IsShown() then
                 pcall(sb.SetScrollPercentage, sb, percent)
+                -- Clear the one-shot desired percent once applied
+                panel._desiredScrollPercent = nil
             end
         end)
     end
@@ -224,6 +242,22 @@ end
 
 function panel.RefreshCurrentCategoryDeferred()
     if panel._suspendRefresh then return end
+    -- Capture current scroll percent immediately so we can restore it even if
+    -- multiple deferred refreshes get queued.
+    do
+        local f = panel and panel.frame
+        local settingsList = f and f.SettingsList
+        local sb = settingsList and settingsList.ScrollBox
+        local percent
+        if sb and sb.GetDerivedScrollPercentage then
+            percent = sb:GetDerivedScrollPercentage()
+        elseif sb and sb.GetScrollPercentage then
+            percent = sb:GetScrollPercentage()
+        end
+        if percent ~= nil then
+            panel._desiredScrollPercent = percent
+        end
+    end
     C_Timer.After(0, function()
         if panel and not panel._suspendRefresh and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
     end)
@@ -1554,6 +1588,17 @@ local function renderProfilesManage()
                 info.text = "Use active layout"
                 info.value = ""
                 info.func = function()
+                    if panel and panel.SuspendRefresh then
+                        local currentSpecID
+                        if type(GetSpecialization) == "function" and type(GetSpecializationInfo) == "function" then
+                            local idx = GetSpecialization()
+                            if idx then currentSpecID = select(1, GetSpecializationInfo(idx)) end
+                        end
+                        -- Longer suppression if changing assignment for the CURRENT spec,
+                        -- since a live switch will apply Edit Mode and trigger sync passes.
+                        local dur = (currentSpecID and currentSpecID == specID) and 0.4 or 0.15
+                        panel.SuspendRefresh(dur)
+                    end
                     if addon.Profiles and addon.Profiles.SetSpecAssignment then
                         addon.Profiles:SetSpecAssignment(specID, nil)
                     end
@@ -1562,9 +1607,6 @@ local function renderProfilesManage()
                         if addon.Profiles.OnPlayerSpecChanged then
                             addon.Profiles:OnPlayerSpecChanged()
                         end
-                    end
-                    if panel and panel.RefreshCurrentCategoryDeferred then
-                        panel.RefreshCurrentCategoryDeferred()
                     end
                 end
                 info.checked = assigned == nil
@@ -1578,6 +1620,15 @@ local function renderProfilesManage()
                     dropdownInfo.value = entry.key
                     dropdownInfo.func = function()
                         local key = entry.key
+                        if panel and panel.SuspendRefresh then
+                            local currentSpecID
+                            if type(GetSpecialization) == "function" and type(GetSpecializationInfo) == "function" then
+                                local idx = GetSpecialization()
+                                if idx then currentSpecID = select(1, GetSpecializationInfo(idx)) end
+                            end
+                            local dur = (currentSpecID and currentSpecID == specID) and 0.4 or 0.15
+                            panel.SuspendRefresh(dur)
+                        end
                         if addon.Profiles and addon.Profiles.SetSpecAssignment then
                             addon.Profiles:SetSpecAssignment(specID, key)
                         end
@@ -1587,9 +1638,6 @@ local function renderProfilesManage()
                             if addon.Profiles.OnPlayerSpecChanged then
                                 addon.Profiles:OnPlayerSpecChanged()
                             end
-                        end
-                        if panel and panel.RefreshCurrentCategoryDeferred then
-                            panel.RefreshCurrentCategoryDeferred()
                         end
                     end
                     dropdownInfo.checked = (assigned == entry.key)
@@ -1625,6 +1673,16 @@ local function renderProfilesManage()
                 -- hide any fields created by other tabs to prevent overlap when
                 -- switching between "Presets" and "Manage Profiles".
                 if frame.MessageText then frame.MessageText:Hide() end
+                if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
+                if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+                if frame.RenameBtn then frame.RenameBtn:Hide() end
+                if frame.CopyBtn then frame.CopyBtn:Hide() end
+                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+                if frame.CreateBtn then frame.CreateBtn:Hide() end
+                if frame.SpecEnableCheck then frame.SpecEnableCheck:Hide() end
+                if frame.SpecIcon then frame.SpecIcon:Hide() end
+                if frame.SpecName then frame.SpecName:Hide() end
+                if frame.SpecDropdown then frame.SpecDropdown:Hide() end
                 if not frame.InfoText then
                     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
                     text:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, 4)
@@ -1656,13 +1714,14 @@ local function renderProfilesManage()
 
 		-- Active Layout content: dropdown on left, stacked Rename/Copy/Delete on right
 		do
-            -- Use a Scooter-specific list element template to keep a separate frame pool
-            -- from other rows (prevents recycled widgets leaking across sections).
-            local sectionRow = Settings.CreateElementInitializer("ScooterListElementTemplate")
-            sectionRow.GetExtent = function() return 150 end
+			-- Use a per-section template to keep a separate frame pool from other rows
+			-- (prevents recycled widgets leaking across sections).
+			local sectionRow = Settings.CreateElementInitializer("ScooterActiveListElementTemplate")
+            sectionRow.GetExtent = function() return 190 end
 			sectionRow.InitFrame = function(self, frame)
 				EnsureCallbackContainer(frame)
 				if frame.Text then frame.Text:Hide() end
+                if frame.InfoText then frame.InfoText:Hide() end
 				if frame.ButtonContainer then frame.ButtonContainer:Hide() end
                 -- Clean up recycled widgets from other initializers (e.g., Spec Profiles message row)
                 if frame.MessageText then frame.MessageText:Hide() end
@@ -1710,10 +1769,27 @@ local function renderProfilesManage()
                     end
                 end
 
-                if not frame.RenameBtn then
+
+				-- Create at the top
+				if not frame.CreateBtn then
+					local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetSize(120, 28)
+					btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -6)
+					btn:SetText("Create")
+					btn:SetMotionScriptsWhileDisabled(true)
+					btn:SetScript("OnClick", function()
+						CloseDropDownMenus()
+						addon.Profiles:PromptCreateLayout(addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+					end)
+                    frame.CreateBtn = btn
+                    scaleButton(btn)
+				end
+
+				-- Rename below Create
+				if not frame.RenameBtn then
 					local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 					btn:SetSize(120, 28)
-					btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -6)
+					btn:SetPoint("TOPRIGHT", frame.CreateBtn, "BOTTOMRIGHT", 0, -8)
 					btn:SetText("Rename")
 					btn:SetMotionScriptsWhileDisabled(true)
 					btn:SetScript("OnClick", function()
@@ -1722,7 +1798,7 @@ local function renderProfilesManage()
 						addon.Profiles:PromptRenameLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
 					end)
 					frame.RenameBtn = btn
-                    scaleButton(btn)
+					scaleButton(btn)
 				end
 
 				if not frame.CopyBtn then
@@ -1784,6 +1860,17 @@ local function renderProfilesManage()
 			spacer.InitFrame = function(self, frame)
 				EnsureCallbackContainer(frame)
 				if frame.Text then frame.Text:Hide() end
+				if frame.InfoText then frame.InfoText:Hide() end
+				if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
+				if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+				if frame.RenameBtn then frame.RenameBtn:Hide() end
+				if frame.CopyBtn then frame.CopyBtn:Hide() end
+				if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+				if frame.CreateBtn then frame.CreateBtn:Hide() end
+				if frame.SpecEnableCheck then frame.SpecEnableCheck:Hide() end
+				if frame.SpecIcon then frame.SpecIcon:Hide() end
+				if frame.SpecName then frame.SpecName:Hide() end
+				if frame.SpecDropdown then frame.SpecDropdown:Hide() end
 			end
 			table.insert(init, spacer)
 		end
@@ -1817,76 +1904,158 @@ local function renderProfilesManage()
 			table.insert(init, exp)
 		end
 
-        -- Remove old text header row; replaced by expandable header above
+		-- Enable checkbox row
+		do
+			-- Use a dedicated pool for the Spec Enable row
+			local enableRow = Settings.CreateElementInitializer("ScooterSpecEnableListElementTemplate")
+			enableRow.GetExtent = function() return 45 end
+			enableRow.InitFrame = function(self, frame)
+				EnsureCallbackContainer(frame)
+				if frame.Text then frame.Text:Hide() end
+				if frame.InfoText then frame.InfoText:Hide() end
+				-- Prevent the row itself from intercepting mouse clicks
+				if frame.EnableMouse then frame:EnableMouse(false) end
+				-- Guard against recycled ButtonContainer overlay intercepting clicks
+				if frame.ButtonContainer then
+					frame.ButtonContainer:Hide()
+					frame.ButtonContainer:SetAlpha(0)
+					frame.ButtonContainer:EnableMouse(false)
+				end
+				-- Mark for duplicate cleanup scan
+				frame.IsScooterSpecEnabledRow = true
+				-- Hide recycled widgets from Active Layout rows
+				if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+				if frame.RenameBtn then frame.RenameBtn:Hide() end
+				if frame.CopyBtn then frame.CopyBtn:Hide() end
+				if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+				if frame.CreateBtn then frame.CreateBtn:Hide() end
+				if frame.MessageText then frame.MessageText:Hide() end
+				if not frame.SpecEnableCheck then
+					local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+					cb.Text:SetText("Enable Spec Profiles")
+					cb:SetPoint("LEFT", frame, "LEFT", 16, 0)
+					cb:SetScale(1.25)
+					cb:EnableMouse(true)
+					-- Ensure checkbox renders above any recycled overlays
+					local lvl = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
+					cb:SetFrameLevel(lvl + 100)
+					if cb.SetFrameStrata then cb:SetFrameStrata("DIALOG") end
+					-- Widen clickable area to include the label
+					if cb.SetHitRectInsets then cb:SetHitRectInsets(0, -160, 0, 0) end
+					cb:SetScript("OnClick", function(btn)
+						local enabled = btn:GetChecked()
+						if addon.Profiles and addon.Profiles.SetSpecProfilesEnabled then
+							addon.Profiles:SetSpecProfilesEnabled(enabled)
+						end
+						-- If enabling, immediately evaluate current spec mapping
+						if enabled and addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
+							addon.Profiles:OnPlayerSpecChanged()
+						end
+						if panel and panel.RefreshCurrentCategoryDeferred then
+							panel.RefreshCurrentCategoryDeferred()
+						end
+					end)
+					frame.SpecEnableCheck = cb
+				end
+				if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled then
+					frame.SpecEnableCheck:SetChecked(addon.Profiles:IsSpecProfilesEnabled())
+				else
+					frame.SpecEnableCheck:SetChecked(false)
+				end
+			end
+			enableRow:AddShownPredicate(function()
+				return panel:IsSectionExpanded("profilesManage", "SpecProfiles")
+			end)
+			table.insert(init, enableRow)
+		end
 
-        do
-            local messageRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            messageRow.GetExtent = function() return 32 end
-            messageRow.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                -- Hide any Active Layout widgets if this frame was recycled
-                if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
-                if frame.RenameBtn then frame.RenameBtn:Hide() end
-                if frame.CopyBtn then frame.CopyBtn:Hide() end
-                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
-                if not frame.MessageText then
-                    local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-                    text:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    text:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
-                    text:SetJustifyH("LEFT")
-                    text:SetText("Spec profiles are coming soon.")
-                    frame.MessageText = text
-                else
-                    frame.MessageText:Show()
-                end
-            end
-            messageRow:AddShownPredicate(function()
-                return panel:IsSectionExpanded("profilesManage", "SpecProfiles")
-            end)
-            table.insert(init, messageRow)
-        end
-
-        local specOptions = {} -- not implemented yet; render nothing for now
+		-- Spec assignment rows (shown only when enabled)
+		local specOptions = (addon.Profiles and addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions()) or {}
+		-- Scale constants for this section (25% larger content)
+		local SPEC_ROW_SCALE = 1.25
+		local NAME_SCALE = 1.2 * SPEC_ROW_SCALE -- previously 1.2, now +25% => 1.5
+		local DROPDOWN_SCALE = 1.1 * SPEC_ROW_SCALE -- previously 1.1, now +25% => 1.375
+		local ICON_BASE = 28
+		local ICON_SIZE = math.floor(ICON_BASE * SPEC_ROW_SCALE + 0.5)
+		-- Compute a consistent max width for the spec name column so dropdowns align
+			local specNameMaxWidth = 0
+		if #specOptions > 0 then
+			local measurer = panel._specMeasureFS
+			if not measurer then
+					measurer = UIParent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+					measurer:SetAlpha(0)
+					measurer:Hide()
+				panel._specMeasureFS = measurer
+			end
+			for _, s in ipairs(specOptions) do
+				measurer:SetText(s.name or ("Spec " .. tostring(s.specIndex)))
+				local w = measurer:GetStringWidth() or 0
+				if w > specNameMaxWidth then specNameMaxWidth = w end
+			end
+			-- Account for the NAME_SCALE and a small padding so text doesn't clip
+			specNameMaxWidth = math.floor(specNameMaxWidth * NAME_SCALE + 8.5)
+		end
 		for _, spec in ipairs(specOptions) do
-            local specRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            specRow.GetExtent = function() return 42 end
-            specRow.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                if not frame.SpecName then
-                    local icon = frame:CreateTexture(nil, "ARTWORK")
-                    icon:SetSize(28, 28)
-                    icon:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    frame.SpecIcon = icon
+			-- Use a dedicated pool for spec rows
+			local specRow = Settings.CreateElementInitializer("ScooterSpecRowListElementTemplate")
+			specRow.GetExtent = function() return 52 end
+			specRow.InitFrame = function(self, frame)
+				EnsureCallbackContainer(frame)
+				if frame.Text then frame.Text:Hide() end
+				if frame.InfoText then frame.InfoText:Hide() end
+				-- Guard against recycled ButtonContainer overlay intercepting clicks
+				if frame.ButtonContainer then
+					frame.ButtonContainer:Hide()
+					frame.ButtonContainer:SetAlpha(0)
+					frame.ButtonContainer:EnableMouse(false)
+				end
+				-- Hide unrelated recycled widgets
+				if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+				if frame.RenameBtn then frame.RenameBtn:Hide() end
+				if frame.CopyBtn then frame.CopyBtn:Hide() end
+				if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+				if frame.CreateBtn then frame.CreateBtn:Hide() end
+				if frame.MessageText then frame.MessageText:Hide() end
+				if not frame.SpecName then
+					local icon = frame:CreateTexture(nil, "ARTWORK")
+					icon:SetSize(ICON_SIZE, ICON_SIZE)
+					icon:SetPoint("LEFT", frame, "LEFT", 16, 0)
+					frame.SpecIcon = icon
 
-                    local name = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                    name:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-                    scaleFont(name, GameFontNormal, 1.2)
-                    frame.SpecName = name
+					local name = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+					name:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+					scaleFont(name, GameFontNormal, NAME_SCALE)
+					name:SetJustifyH("LEFT")
+					name:SetWordWrap(false)
+					if specNameMaxWidth and specNameMaxWidth > 0 then
+						name:SetWidth(specNameMaxWidth)
+					end
+					frame.SpecName = name
 
-                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-                    dropdown:SetPoint("LEFT", name, "RIGHT", 16, -2)
-                    dropdown.align = "LEFT"
-                    dropdown:SetScale(1.1)
-                    frame.SpecDropdown = dropdown
-                end
-                if frame.SpecIcon then
-                    if spec.icon then
-                        frame.SpecIcon:SetTexture(spec.icon)
-                        frame.SpecIcon:Show()
-                    else
-                        frame.SpecIcon:Hide()
-                    end
-                end
-                if frame.SpecName then
-                    frame.SpecName:SetText(spec.name or ("Spec " .. tostring(spec.specIndex)))
-                end
-                refreshSpecDropdown(frame.SpecDropdown, spec.specID)
-            end
-            specRow:AddShownPredicate(function() return false end)
-            table.insert(init, specRow)
-        end
+					local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+					dropdown:SetPoint("LEFT", name, "RIGHT", 16, -2)
+					dropdown.align = "LEFT"
+					dropdown:SetScale(DROPDOWN_SCALE)
+					frame.SpecDropdown = dropdown
+				end
+				if frame.SpecIcon then
+					if spec.icon then
+						frame.SpecIcon:SetTexture(spec.icon)
+						frame.SpecIcon:Show()
+					else
+						frame.SpecIcon:Hide()
+					end
+				end
+				if frame.SpecName then
+					frame.SpecName:SetText(spec.name or ("Spec " .. tostring(spec.specIndex)))
+				end
+				refreshSpecDropdown(frame.SpecDropdown, spec.specID)
+			end
+			specRow:AddShownPredicate(function()
+				return panel:IsSectionExpanded("profilesManage", "SpecProfiles") and addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled()
+			end)
+			table.insert(init, specRow)
+		end
 
         settingsList:Display(init)
         if settingsList.RepairDisplay then
@@ -2011,12 +2180,72 @@ local function BuildCategories()
     end)
 end
 
-local function ShowPanel()
-    if not panel.frame then
-        local f = CreateFrame("Frame", "ScooterSettingsPanel", UIParent, "SettingsFrameTemplate")
-        f:Hide(); f:SetSize(920, 724); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
-        f.NineSlice.Text:SetText("ScooterMod Settings")
-        f:SetMovable(true); f:SetClampedToScreen(true)
+		local function ShowPanel()
+	    if not panel.frame then
+	        local f = CreateFrame("Frame", "ScooterSettingsPanel", UIParent, "SettingsFrameTemplate")
+	        f:Hide(); f:SetSize(920, 724); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
+	        -- Remove default title text; we'll render a custom title area
+	        if f.NineSlice and f.NineSlice.Text then f.NineSlice.Text:SetText("") end
+
+	        -- Increase window background opacity with a subtle overlay (no true blur available in WoW UI API)
+        do
+            local bg = f:CreateTexture(nil, "BACKGROUND")
+            bg:SetColorTexture(0, 0, 0, 0.65) -- bring back some transparency
+	            -- Inset slightly so NineSlice borders remain visible
+	            bg:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
+	            bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+	            f._ScooterBgOverlay = bg
+	        end
+
+	        -- Custom title area: circular icon overlapping top-left + green "ScooterMod" label in Roboto Bold
+	        do
+	            local fonts = addon and addon.Fonts or nil
+	            local titleRegion = CreateFrame("Frame", nil, f)
+	            titleRegion:SetSize(400, 56)
+	            titleRegion:SetPoint("TOPLEFT", f, "TOPLEFT", -6, 10) -- nudge outwards to overlap corner
+
+	            -- Circular icon
+            local icon = titleRegion:CreateTexture(nil, "OVERLAY")
+	            icon:SetSize(56, 56)
+	            icon:SetPoint("LEFT", titleRegion, "LEFT", 0, -6) -- drop a bit to straddle the title bar
+	            -- Try multiple extensions so the asset can be provided as TGA/BLP/PNG; prefer TGA for production
+            local function trySetIcon(base)
+                -- Prefer PNG for header rendering to avoid conversion artifacts; fall back to TGA/BLP
+                local candidates = { base .. ".png", base .. ".tga", base .. ".blp" }
+	                for _, p in ipairs(candidates) do
+	                    local ok = pcall(icon.SetTexture, icon, p)
+	                    if ok and icon:GetTexture() then return true end
+	                end
+	            end
+            trySetIcon("Interface\\AddOns\\ScooterMod\\Scooter")
+            -- Use a circular alpha mask
+            pcall(icon.SetMask, icon, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+
+            -- No backdrop/band for the title per design
+
+	            -- Title text
+            local title = titleRegion:CreateFontString(nil, "OVERLAY")
+            -- Start just to the right of the circular icon; lift to align with title bar
+            title:SetPoint("LEFT", icon, "RIGHT", 2, 10)
+	            title:SetJustifyH("LEFT")
+	            -- Use bundled Roboto Bold if available, else fall back; set font BEFORE text
+            if fonts and fonts.ROBOTO_BLD then
+                title:SetFont(fonts.ROBOTO_BLD, 20, "THICKOUTLINE")
+            else
+                title:SetFont("Fonts\\ARIALN.TTF", 20, "THICKOUTLINE")
+            end
+            title:SetShadowColor(0, 0, 0, 1)
+            title:SetShadowOffset(1, -1)
+	            title:SetTextColor(0.2, 0.9, 0.3, 1)
+	            title:SetText("ScooterMod")
+
+            -- No backdrop sizing needed
+
+	            -- Keep region above header drag area for clicks to pass through appropriately
+	            titleRegion:SetFrameLevel((f:GetFrameLevel() or 0) + 10)
+	            f._ScooterTitleRegion = titleRegion
+	        end
+	        f:SetMovable(true); f:SetClampedToScreen(true)
         local headerDrag = CreateFrame("Frame", nil, f)
         headerDrag:SetPoint("TOPLEFT", 7, -2); headerDrag:SetPoint("TOPRIGHT", -3, -2); headerDrag:SetHeight(25)
         headerDrag:EnableMouse(true); headerDrag:RegisterForDrag("LeftButton")
@@ -2053,12 +2282,14 @@ local function ShowPanel()
             end
             if panel and panel.frame and panel.frame:IsShown() then panel.frame:Hide() end
         end)
-		-- Enable resizing via a bottom-right handle
-		f:SetResizable(true)
+				-- Enable resizing via a bottom-right handle
+				f:SetResizable(true)
+				-- Set a slightly larger minimum size to avoid extreme recycling artifacts
+				if f.SetMinResize then f:SetMinResize(820, 560) end
 		local resizeBtn = CreateFrame("Button", nil, f, "PanelResizeButtonTemplate")
 		resizeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
-		-- Reasonable bounds to keep layout sane
-		resizeBtn:Init(f, 720, 480, 1600, 1200)
+				-- Reasonable bounds to keep layout sane (min increased)
+				resizeBtn:Init(f, 820, 560, 1600, 1200)
 		resizeBtn:SetOnResizeCallback(function()
 			-- Re-evaluate layout while dragging to keep list/canvas filling the area
 			if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
@@ -2093,6 +2324,53 @@ local function ShowPanel()
                 end
                 panel.RefreshCurrentCategory()
             end)
+            -- Insert a new button to open Blizzard's Advanced Cooldown Settings to the LEFT of Collapse All
+            do
+                local cdmBtn = f.SettingsList.Header.ScooterCDMButton
+                if not cdmBtn then
+                    cdmBtn = CreateFrame("Button", nil, f.SettingsList.Header, "UIPanelButtonTemplate")
+                    cdmBtn:SetSize(200, 22)
+                    cdmBtn.Text:SetText("Cooldown Manager Settings")
+                    cdmBtn:ClearAllPoints()
+                    cdmBtn:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+                    cdmBtn:SetScript("OnClick", function()
+                        if InCombatLockdown and InCombatLockdown() then
+                            if addon and addon.Print then addon:Print("Cannot open Settings during combat.") end
+                            return
+                        end
+                        local opened = false
+                        -- Prefer opening the dedicated Cooldown Viewer Settings frame directly
+                        do
+                            if _G and _G.CooldownViewerSettings == nil then
+                                if C_AddOns and C_AddOns.LoadAddOn then
+                                    pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
+                                    pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
+                                end
+                            end
+                            local frame = _G and _G.CooldownViewerSettings
+                            if frame then
+                                if frame.TogglePanel then
+                                    opened = pcall(frame.TogglePanel, frame) or opened
+                                end
+                                if not opened and type(ShowUIPanel) == "function" then
+                                    opened = pcall(ShowUIPanel, frame) or opened
+                                end
+                                if not opened and frame.Show then
+                                    opened = pcall(frame.Show, frame) or opened
+                                end
+                            end
+                        end
+                        if not opened then
+                            -- Final fallback: open Blizzard Settings to a broad search for "Cooldown"
+                            local S = _G and _G.Settings
+                            if _G.SettingsPanel and _G.SettingsPanel.Open then pcall(_G.SettingsPanel.Open, _G.SettingsPanel) end
+                            if S and S.OpenToSearch then pcall(S.OpenToSearch, S, "Cooldown") end
+                        end
+                        if panel and panel.frame and panel.frame:IsShown() then panel.frame:Hide() end
+                    end)
+                    f.SettingsList.Header.ScooterCDMButton = cdmBtn
+                end
+            end
             -- Evaluate initial visibility for the current page (manage/presets should hide)
             if panel and panel.UpdateCollapseButtonVisibility then
                 panel.UpdateCollapseButtonVisibility()

@@ -128,7 +128,7 @@ function addon:HandleCombatStarted()
     if panel.frame and panel.frame:IsShown() then
         panel._shouldReopenAfterCombat = true
         panel.frame:Hide()
-        self:Print("ScooterMod will reopen once combat ends.")
+        self:Print("ScooterMod will open once combat ends.")
     end
 end
 

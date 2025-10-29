@@ -51,4 +51,8 @@
   <!-- A thin wrapper around SettingsListElementTemplate to give us a unique
        frame pool per row type and avoid cross-template recycling artifacts. -->
   <Frame name="ScooterListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
+  <!-- Separate pools for rows in Manage Profiles to avoid cross-section reuse -->
+  <Frame name="ScooterActiveListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
+  <Frame name="ScooterSpecEnableListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
+  <Frame name="ScooterSpecRowListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
 </Ui>

@@ -143,6 +143,30 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         end
     end
     
+    -- Install a lightweight suppression wrapper so Blizzard doesn't announce the wrong layout name
+    -- on spec-driven switches where we immediately apply our assigned profile.
+    if _G.EditModeManagerFrame and not addon._chatHooked then
+        local originalNotify = _G.EditModeManagerFrame.NotifyChatOfLayoutChange
+        if type(originalNotify) == "function" then
+            _G.EditModeManagerFrame.NotifyChatOfLayoutChange = function(self, ...)
+				local desired = addon and addon.Profiles and addon.Profiles._pendingSpecTarget
+				local info = self.GetActiveLayoutInfo and self:GetActiveLayoutInfo()
+				local activeName = info and info.layoutName
+				if desired then
+					if activeName ~= desired then
+						-- Skip this one incorrect announcement; our subsequent apply will print correctly.
+						addon.Profiles._pendingSpecTarget = nil
+						return
+					end
+					-- Clear flag when allowing correct announcement as well
+					addon.Profiles._pendingSpecTarget = nil
+				end
+				return originalNotify(self, ...)
+            end
+            addon._chatHooked = true
+        end
+    end
+    
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("PLAYER_ENTERING_WORLD")
     if self.Profiles then
