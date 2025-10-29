@@ -39,6 +39,21 @@ function panel.SuspendRefresh(seconds)
     end
 end
 
+-- Profiles section visibility helper (ensures section contents hide immediately even if
+-- the Settings list doesn't re-evaluate predicates quickly enough)
+function panel.UpdateProfilesSectionVisibility()
+    local widgets = panel._profileWidgets
+    if not widgets then return end
+    local showActive = panel:IsSectionExpanded("profilesManage", "ActiveLayout")
+    if widgets.ActiveLayoutRow and widgets.ActiveLayoutRow:IsShown() ~= showActive then
+        widgets.ActiveLayoutRow:SetShown(showActive)
+    end
+    local showSpec = panel:IsSectionExpanded("profilesManage", "SpecProfiles")
+    if widgets.SpecEnabledRow and widgets.SpecEnabledRow:IsShown() ~= showSpec then
+        widgets.SpecEnabledRow:SetShown(showSpec)
+    end
+end
+
 -- Collapsible section header (Keybindings-style) ---------------------------------
 ScooterExpandableSectionMixin = {}
 
@@ -107,8 +122,12 @@ function ScooterExpandableSectionMixin:OnExpandedChanged(expanded)
         end
     end
     self:SetExpanded(expanded)
-    if not self._initializing and addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
+    if not self._initializing and addon and addon.SettingsPanel then
+        if addon.SettingsPanel.RefreshCurrentCategory then addon.SettingsPanel.RefreshCurrentCategory() end
+    end
+    -- Nudge profiles section rows immediately
+    if addon and addon.SettingsPanel and type(addon.SettingsPanel.UpdateProfilesSectionVisibility) == "function" then
+        addon.SettingsPanel:UpdateProfilesSectionVisibility()
     end
 end
 
@@ -1599,139 +1618,155 @@ local function renderProfilesManage()
             table.insert(init, infoRow)
         end
 
-        do
-            local activeRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            activeRow.GetExtent = function() return 64 end
-            activeRow.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                if not frame.ActiveLabel then
-                    local label = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                    label:SetPoint("LEFT", frame, "LEFT", 16, -6)
-                    label:SetText("Active Layout:")
-                    scaleFont(label, GameFontNormal, 1.3)
-                    frame.ActiveLabel = label
-                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-                    dropdown:SetPoint("LEFT", label, "RIGHT", 14, -2)
-                    dropdown.align = "LEFT"
-                    dropdown:SetScale(1.15)
-                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 110) end
-                    if dropdown.SetWidth then dropdown:SetWidth(110) end
-                    frame.ActiveDropdown = dropdown
-                    if not frame.TopDivider then
-                        local div = frame:CreateTexture(nil, "ARTWORK")
-                        div:SetColorTexture(1, 1, 1, 0.12)
-                        div:SetHeight(1)
-                        div:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -16)
-                        div:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -16)
-                        frame.TopDivider = div
-                    end
-                end
-                refreshActiveDropdown(frame.ActiveDropdown)
-                if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(frame.ActiveDropdown, 110) end
-                if frame.ActiveDropdown and frame.ActiveDropdown.SetWidth then frame.ActiveDropdown:SetWidth(110) end
-            end
-            table.insert(init, activeRow)
-        end
+		-- Section: Active Layout (expandable header like ActionBarsEnhanced)
+		do
+			local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+				name = "Active Layout",
+				sectionKey = "ActiveLayout",
+				componentId = "profilesManage",
+				expanded = panel:IsSectionExpanded("profilesManage", "ActiveLayout"),
+			})
+			exp.GetExtent = function() return 30 end
+			table.insert(init, exp)
+		end
 
-        do
-            local actionsRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            actionsRow.GetExtent = function() return 56 end
-            actionsRow.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                if frame.ButtonContainer then
-                    frame.ButtonContainer:Hide()
-                    frame.ButtonContainer:SetAlpha(0)
-                    frame.ButtonContainer:EnableMouse(false)
+		-- Active Layout content: dropdown on left, stacked Rename/Copy/Delete on right
+		do
+            -- Use a Scooter-specific list element template to keep a separate frame pool
+            -- from other rows (prevents recycled widgets leaking across sections).
+            local sectionRow = Settings.CreateElementInitializer("ScooterListElementTemplate")
+            sectionRow.GetExtent = function() return 150 end
+			sectionRow.InitFrame = function(self, frame)
+				EnsureCallbackContainer(frame)
+				if frame.Text then frame.Text:Hide() end
+				if frame.ButtonContainer then frame.ButtonContainer:Hide() end
+                -- Clean up recycled widgets from other initializers (e.g., Spec Profiles message row)
+                if frame.MessageText then frame.MessageText:Hide() end
+                if frame.SpecIcon then frame.SpecIcon:Hide() end
+                if frame.SpecName then frame.SpecName:Hide() end
+                if frame.SpecDropdown then frame.SpecDropdown:Hide() end
+                -- mark so we can manage visibility reliably
+                frame.IsScooterActiveLayoutRow = true
+
+				-- Dropdown (left)
+                if not frame.ActiveDropdown then
+                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+                    dropdown:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    dropdown.align = "LEFT"
+                    dropdown:SetScale(1.5)
+                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 170) end
+                    if dropdown.SetWidth then dropdown:SetWidth(170) end
+                    frame.ActiveDropdown = dropdown
+                else
+                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(frame.ActiveDropdown, 170) end
+                    if frame.ActiveDropdown.SetWidth then frame.ActiveDropdown:SetWidth(170) end
                 end
-                if frame.EnableMouse then
-                    frame:EnableMouse(false)
-                end
-                local function updateButtons()
-                    local current = getActiveProfileKey()
-                    local isPreset = current and addon.Profiles and addon.Profiles:IsPreset(current)
-                    if frame.RenameBtn then frame.RenameBtn:SetEnabled(not not current and not isPreset) end
-                    if frame.DeleteBtn then frame.DeleteBtn:SetEnabled(not not current and not isPreset) end
-                    if frame.CopyBtn then frame.CopyBtn:SetEnabled(not not current) end
+				refreshActiveDropdown(frame.ActiveDropdown)
+				-- Keep a handle so we can force-hide on header collapse if needed
+				local widgets = panel._profileWidgets or {}
+				panel._profileWidgets = widgets
+				widgets.ActiveLayoutRow = frame
+
+				-- Right-side vertical buttons
+				local function updateButtons()
+					local current = getActiveProfileKey()
+					local isPreset = current and addon.Profiles and addon.Profiles:IsPreset(current)
+					if frame.RenameBtn then frame.RenameBtn:SetEnabled(not not current and not isPreset) end
+					if frame.DeleteBtn then frame.DeleteBtn:SetEnabled(not not current and not isPreset) end
+					if frame.CopyBtn then frame.CopyBtn:SetEnabled(not not current) end
+				end
+
+                local function scaleButton(btn)
+                    if not btn then return end
+                    local w, h = btn:GetSize()
+                    btn:SetSize(math.floor(w * 1.25), math.floor(h * 1.25))
+                    if btn.Text and btn.Text.GetFont then
+                        local face, size, flags = btn.Text:GetFont()
+                        if size then btn.Text:SetFont(face, math.floor(size * 1.25 + 0.5), flags) end
+                    end
                 end
 
                 if not frame.RenameBtn then
-                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    btn:SetSize(100, 28)
-                    btn:SetText("Rename")
-                    btn:SetMotionScriptsWhileDisabled(true)
-                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
-                    btn:SetScript("OnClick", function()
-                        CloseDropDownMenus()
-                        local current = getActiveProfileKey()
-                        addon.Profiles:PromptRenameLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
-                    end)
-                    frame.RenameBtn = btn
-                end
+					local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+					btn:SetSize(120, 28)
+					btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -6)
+					btn:SetText("Rename")
+					btn:SetMotionScriptsWhileDisabled(true)
+					btn:SetScript("OnClick", function()
+						CloseDropDownMenus()
+						local current = getActiveProfileKey()
+						addon.Profiles:PromptRenameLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+					end)
+					frame.RenameBtn = btn
+                    scaleButton(btn)
+				end
 
-                if not frame.CopyBtn then
-                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(100, 28)
-                    btn:SetPoint("LEFT", frame.RenameBtn, "RIGHT", 10, 0)
-                    btn:SetText("Copy")
-                    btn:SetMotionScriptsWhileDisabled(true)
-                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
-                    btn:SetScript("OnClick", function()
-                        CloseDropDownMenus()
-                        local current = getActiveProfileKey()
-                        if not current then return end
-                        if addon.Profiles and addon.Profiles:IsPreset(current) then
-                            addon.Profiles:PromptClonePreset(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown, addon.Profiles:GetLayoutDisplayText(current), current)
-                        else
-                            addon.Profiles:PromptCopyLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
-                        end
+				if not frame.CopyBtn then
+					local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetSize(120, 28)
+					btn:SetPoint("TOPRIGHT", frame.RenameBtn, "BOTTOMRIGHT", 0, -8)
+					btn:SetText("Copy")
+					btn:SetMotionScriptsWhileDisabled(true)
+					btn:SetScript("OnClick", function()
+						CloseDropDownMenus()
+						local current = getActiveProfileKey()
+						if not current then return end
+						if addon.Profiles and addon.Profiles:IsPreset(current) then
+							addon.Profiles:PromptClonePreset(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown, addon.Profiles:GetLayoutDisplayText(current), current)
+						else
+							addon.Profiles:PromptCopyLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+						end
                     end)
                     frame.CopyBtn = btn
-                end
+                    scaleButton(btn)
+				end
 
-                if not frame.DeleteBtn then
-                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(100, 28)
-                    btn:SetPoint("LEFT", frame.CopyBtn, "RIGHT", 10, 0)
-                    btn:SetText(DELETE)
-                    btn:SetMotionScriptsWhileDisabled(true)
-                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
-                    btn:SetScript("OnClick", function()
-                        CloseDropDownMenus()
-                        local current = getActiveProfileKey()
-                        addon.Profiles:ConfirmDeleteLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
-                    end)
+				if not frame.DeleteBtn then
+					local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+                    btn:SetSize(120, 28)
+					btn:SetPoint("TOPRIGHT", frame.CopyBtn, "BOTTOMRIGHT", 0, -8)
+					btn:SetText(DELETE)
+					btn:SetMotionScriptsWhileDisabled(true)
+					btn:SetScript("OnClick", function()
+						CloseDropDownMenus()
+						local current = getActiveProfileKey()
+						addon.Profiles:ConfirmDeleteLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+					end)
                     frame.DeleteBtn = btn
-                end
+                    scaleButton(btn)
+				end
 
-                if not frame.BottomDivider then
-                    local div = frame:CreateTexture(nil, "ARTWORK")
-                    div:SetColorTexture(1, 1, 1, 0.12)
-                    div:SetHeight(1)
-                    div:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 12)
-                    div:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 12)
-                    frame.BottomDivider = div
-                end
+				function frame:UpdateButtons()
+					updateButtons()
+				end
+				updateButtons()
+				addon.SettingsPanel.UpdateProfileActionButtons = function()
+					if frame and frame.UpdateButtons then frame:UpdateButtons() end
+				end
+			end
+			sectionRow:AddShownPredicate(function()
+				return panel:IsSectionExpanded("profilesManage", "ActiveLayout")
+			end)
+			table.insert(init, sectionRow)
+		end
 
-                function frame:UpdateButtons()
-                    updateButtons()
-                end
+        -- Hide legacy active/actions rows (superseded by the section above)
+        -- Intentionally removed from the initializer list
 
-                updateButtons()
-                addon.SettingsPanel.UpdateProfileActionButtons = function()
-                    if frame and frame.UpdateButtons then
-                        frame:UpdateButtons()
-                    end
-                end
-            end
-            table.insert(init, actionsRow)
-        end
+		-- Small spacer between sections
+		do
+			local spacer = Settings.CreateElementInitializer("SettingsListElementTemplate")
+			spacer.GetExtent = function() return 12 end
+			spacer.InitFrame = function(self, frame)
+				EnsureCallbackContainer(frame)
+				if frame.Text then frame.Text:Hide() end
+			end
+			table.insert(init, spacer)
+		end
 
         do
             local buttonRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            buttonRow.GetExtent = function() return 40 end
+            buttonRow.GetExtent = function() return 0 end
             buttonRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
                 if frame.Text then frame.Text:Hide() end
@@ -1740,89 +1775,56 @@ local function renderProfilesManage()
                     frame.ButtonContainer:SetAlpha(0)
                     frame.ButtonContainer:EnableMouse(false)
                 end
-                if not frame.OpenEditModeBtn then
-                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    btn:SetSize(200, 30)
-                    btn:SetText("Open Edit Mode")
-                    btn:EnableMouse(true)
-                    btn:SetFrameLevel((frame:GetFrameLevel() or 0) + 2)
-                    btn:SetMotionScriptsWhileDisabled(true)
-                    btn:SetScript("OnClick", function()
-                        if InCombatLockdown and InCombatLockdown() then
-                            if addon and addon.Print then
-                                addon:Print("Cannot open Edit Mode during combat.")
-                            end
-                            return
-                        end
-                        if SlashCmdList and SlashCmdList["EDITMODE"] then
-                            SlashCmdList["EDITMODE"]("")
-                        elseif RunBinding then
-                            RunBinding("TOGGLE_EDIT_MODE")
-                        else
-                            addon:Print("Use /editmode to open the layout manager.")
-                        end
-                        if panel and panel.frame and panel.frame:IsShown() then
-                            panel.frame:Hide()
-                        end
-                    end)
-                    frame.OpenEditModeBtn = btn
-                end
+                frame:Hide()
             end
+            buttonRow:AddShownPredicate(function() return false end)
             table.insert(init, buttonRow)
         end
 
-        do
-            local specHeader = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            specHeader.GetExtent = function() return 30 end
-            specHeader.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if not frame.SpecHeader then
-                    local text = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-                    text:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    text:SetText("Specialization Profiles")
-                    scaleFont(text, GameFontNormal, 1.3)
-                    frame.SpecHeader = text
-                end
-            end
-            table.insert(init, specHeader)
-        end
+		-- Section: Spec Profiles (expandable header)
+		do
+			local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+				name = "Spec Profiles",
+				sectionKey = "SpecProfiles",
+				componentId = "profilesManage",
+				expanded = panel:IsSectionExpanded("profilesManage", "SpecProfiles"),
+			})
+			exp.GetExtent = function() return 30 end
+			table.insert(init, exp)
+		end
+
+        -- Remove old text header row; replaced by expandable header above
 
         do
-            local enabledRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            enabledRow.GetExtent = function() return 34 end
-            enabledRow.InitFrame = function(self, frame)
+            local messageRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            messageRow.GetExtent = function() return 32 end
+            messageRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
                 if frame.Text then frame.Text:Hide() end
-                if not frame.SpecCheckbox then
-                    local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-                    cb:SetPoint("LEFT", frame, "LEFT", 16, -2)
-                    cb.Text:SetText("Enable spec profiles")
-                    cb:SetScale(1.2)
-                    cb:SetScript("OnClick", function(button)
-                        if addon.Profiles and addon.Profiles.SetSpecProfilesEnabled then
-                            addon.Profiles:SetSpecProfilesEnabled(button:GetChecked())
-                        end
-                        if panel and panel.RefreshCurrentCategoryDeferred then
-                            panel.RefreshCurrentCategoryDeferred()
-                        end
-                        if addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
-                            addon.Profiles:OnPlayerSpecChanged()
-                        end
-                    end)
-                    frame.SpecCheckbox = cb
-                end
-                if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled then
-                    frame.SpecCheckbox:SetChecked(addon.Profiles:IsSpecProfilesEnabled())
+                -- Hide any Active Layout widgets if this frame was recycled
+                if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+                if frame.RenameBtn then frame.RenameBtn:Hide() end
+                if frame.CopyBtn then frame.CopyBtn:Hide() end
+                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+                if not frame.MessageText then
+                    local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                    text:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    text:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                    text:SetJustifyH("LEFT")
+                    text:SetText("Spec profiles are coming soon.")
+                    frame.MessageText = text
                 else
-                    frame.SpecCheckbox:SetChecked(false)
+                    frame.MessageText:Show()
                 end
             end
-            table.insert(init, enabledRow)
+            messageRow:AddShownPredicate(function()
+                return panel:IsSectionExpanded("profilesManage", "SpecProfiles")
+            end)
+            table.insert(init, messageRow)
         end
 
-        local specOptions = addon.Profiles and addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions() or {}
-        for _, spec in ipairs(specOptions) do
+        local specOptions = {} -- not implemented yet; render nothing for now
+		for _, spec in ipairs(specOptions) do
             local specRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
             specRow.GetExtent = function() return 42 end
             specRow.InitFrame = function(self, frame)
@@ -1858,9 +1860,7 @@ local function renderProfilesManage()
                 end
                 refreshSpecDropdown(frame.SpecDropdown, spec.specID)
             end
-            specRow:AddShownPredicate(function()
-                return addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled()
-            end)
+            specRow:AddShownPredicate(function() return false end)
             table.insert(init, specRow)
         end
 
@@ -1871,6 +1871,26 @@ local function renderProfilesManage()
         settingsList:Show()
         if f.Canvas then
             f.Canvas:Hide()
+        end
+        if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfilesSectionVisibility then
+            addon.SettingsPanel:UpdateProfilesSectionVisibility()
+        end
+
+        -- Defensive: remove duplicate spec-enabled rows if recycling created extras
+        do
+            local seen = false
+            if settingsList and settingsList.GetNumChildren then
+                for i = 1, settingsList:GetNumChildren() do
+                    local child = select(i, settingsList:GetChildren())
+                    if child and child.IsScooterSpecEnabledRow then
+                        if seen then
+                            child:Hide(); child:SetParent(nil)
+                        else
+                            seen = true
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -1965,6 +1985,33 @@ local function ShowPanel()
         closeBtn:SetSize(96, 22); closeBtn:SetPoint("BOTTOMRIGHT", -16, 16)
         closeBtn.Text:SetText(SETTINGS_CLOSE)
         closeBtn:SetScript("OnClick", function() f:Hide() end)
+        -- Header Edit Mode button placed ~10% from right edge
+        local headerEditBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate")
+        headerEditBtn:SetSize(140, 22)
+        headerEditBtn.Text:SetText("Open Edit Mode")
+        local function PositionHeaderEditBtn()
+            local inset = math.floor((f:GetWidth() or 0) * 0.10)
+            headerEditBtn:ClearAllPoints()
+            headerEditBtn:SetPoint("RIGHT", headerDrag, "RIGHT", -inset, 0)
+        end
+        PositionHeaderEditBtn()
+        f:HookScript("OnSizeChanged", function() PositionHeaderEditBtn() end)
+        headerEditBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
+        headerEditBtn:EnableMouse(true)
+        headerEditBtn:SetScript("OnClick", function()
+            if InCombatLockdown and InCombatLockdown() then
+                if addon and addon.Print then addon:Print("Cannot open Edit Mode during combat.") end
+                return
+            end
+            if SlashCmdList and SlashCmdList["EDITMODE"] then
+                SlashCmdList["EDITMODE"]("")
+            elseif RunBinding then
+                RunBinding("TOGGLE_EDIT_MODE")
+            else
+                addon:Print("Use /editmode to open the layout manager.")
+            end
+            if panel and panel.frame and panel.frame:IsShown() then panel.frame:Hide() end
+        end)
 		-- Enable resizing via a bottom-right handle
 		f:SetResizable(true)
 		local resizeBtn = CreateFrame("Button", nil, f, "PanelResizeButtonTemplate")

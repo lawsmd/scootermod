@@ -47,4 +47,8 @@
       <OnLoad method="OnLoad"/>
     </Scripts>
   </EventFrame>
+  
+  <!-- A thin wrapper around SettingsListElementTemplate to give us a unique
+       frame pool per row type and avoid cross-template recycling artifacts. -->
+  <Frame name="ScooterListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
 </Ui>
