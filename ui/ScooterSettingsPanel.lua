@@ -54,6 +54,24 @@ function panel.UpdateProfilesSectionVisibility()
     end
 end
 
+-- Header button visibility helper: hide "Collapse All" for non-component pages
+function panel.UpdateCollapseButtonVisibility()
+    local f = panel and panel.frame
+    if not f or not f.SettingsList or not f.SettingsList.Header then return end
+    local btn = f.SettingsList.Header.DefaultsButton
+    if not btn then return end
+    local hide = false
+    local cat = f.CurrentCategory
+    if cat and f.CatRenderers then
+        local entry = f.CatRenderers[cat]
+        -- Profiles pages do not have collapsible component sections
+        if entry and (entry.componentId == "profilesManage" or entry.componentId == "profilesPresets") then
+            hide = true
+        end
+    end
+    btn:SetShown(not hide)
+end
+
 -- Collapsible section header (Keybindings-style) ---------------------------------
 ScooterExpandableSectionMixin = {}
 
@@ -1603,6 +1621,10 @@ local function renderProfilesManage()
             infoRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
                 if frame.Text then frame.Text:Hide() end
+                -- Frames in SettingsList are recycled across categories. Explicitly
+                -- hide any fields created by other tabs to prevent overlap when
+                -- switching between "Presets" and "Manage Profiles".
+                if frame.MessageText then frame.MessageText:Hide() end
                 if not frame.InfoText then
                     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
                     text:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, 4)
@@ -1613,6 +1635,8 @@ local function renderProfilesManage()
                     text:SetText("ScooterMod profiles stay synchronized with Edit Mode layouts. Switch layouts here or via Edit Mode and ScooterMod will keep them in sync.")
                     scaleFont(text, GameFontHighlight, 1.2)
                     frame.InfoText = text
+                else
+                    frame.InfoText:Show()
                 end
             end
             table.insert(init, infoRow)
@@ -1908,6 +1932,12 @@ local function renderProfilesPresets()
         messageRow.GetExtent = function() return 40 end
         messageRow.InitFrame = function(self, frame)
             EnsureCallbackContainer(frame)
+            -- Hide recycled fields from other categories (e.g., Manage Profiles info)
+            if frame.InfoText then frame.InfoText:Hide() end
+            if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+            if frame.RenameBtn then frame.RenameBtn:Hide() end
+            if frame.CopyBtn then frame.CopyBtn:Hide() end
+            if frame.DeleteBtn then frame.DeleteBtn:Hide() end
             if not frame.MessageText then
                 local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
                 text:SetPoint("LEFT", frame, "LEFT", 16, 0)
@@ -1915,6 +1945,8 @@ local function renderProfilesPresets()
                 text:SetJustifyH("LEFT")
                 text:SetText("Preset collections are coming soon. For now, use Edit Mode to swap between Blizzard's Modern and Classic presets.")
                 frame.MessageText = text
+            else
+                frame.MessageText:Show()
             end
         end
         table.insert(init, messageRow)
@@ -1956,6 +1988,10 @@ local function BuildCategories()
         local entry = catRenderers[category]
         if entry and entry.mode == "list" then
             entry.render()
+            -- Ensure header button visibility matches the selected page
+            if panel and panel.UpdateCollapseButtonVisibility then
+                panel.UpdateCollapseButtonVisibility()
+            end
             -- Some parts of the list evaluate shown predicates lazily; force a second pass like the user's second click
             if f.SettingsList and f.SettingsList.RepairDisplay then
                 C_Timer.After(0, function()
@@ -1967,7 +2003,12 @@ local function BuildCategories()
         end
     end, f)
     f.CategoriesBuilt, f.CatRenderers, f.CreatedCategories = true, catRenderers, createdCategories
-    C_Timer.After(0, function() if createdCategories[1] then categoryList:SetCurrentCategory(createdCategories[1]) end end)
+    C_Timer.After(0, function()
+        if createdCategories[1] then
+            categoryList:SetCurrentCategory(createdCategories[1])
+            if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
+        end
+    end)
 end
 
 local function ShowPanel()
@@ -2052,6 +2093,10 @@ local function ShowPanel()
                 end
                 panel.RefreshCurrentCategory()
             end)
+            -- Evaluate initial visibility for the current page (manage/presets should hide)
+            if panel and panel.UpdateCollapseButtonVisibility then
+                panel.UpdateCollapseButtonVisibility()
+            end
         end
         local canvas = CreateFrame("Frame", nil, container)
         canvas:SetAllPoints(container); canvas:SetClipsChildren(true); canvas:Hide()
