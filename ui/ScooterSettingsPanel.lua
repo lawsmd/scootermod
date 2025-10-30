@@ -84,6 +84,166 @@ function panel.UpdateCollapseButtonVisibility()
     btn:SetShown(not hide)
 end
 
+-- Lightweight theming helpers --------------------------------------------------
+do
+    local fonts = addon and addon.Fonts or nil
+    local brandR, brandG, brandB = 0.20, 0.90, 0.30 -- Scooter green
+
+    -- Apply Roboto + green to a FontString (idempotent)
+    function panel.ApplyGreenRoboto(fs, size, flags)
+        if not fs or not fs.SetFont then return end
+        local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+        local _, currentSize, currentFlags = fs:GetFont()
+        fs:SetFont(face, size or currentSize or 12, flags or currentFlags or "")
+        if fs.SetTextColor then fs:SetTextColor(brandR, brandG, brandB, 1) end
+    end
+
+    -- Apply Roboto but preserve current color
+    function panel.ApplyRoboto(fs, size, flags)
+        if not fs or not fs.SetFont then return end
+        local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+        local r, g, b, a = 1, 1, 1, 1
+        if fs.GetTextColor then r, g, b, a = fs:GetTextColor() end
+        local _, currentSize, currentFlags = fs:GetFont()
+        fs:SetFont(face, size or currentSize or 12, flags or currentFlags or "")
+        if fs.SetTextColor then fs:SetTextColor(r, g, b, a) end
+    end
+
+    -- Apply Roboto and force white
+    function panel.ApplyRobotoWhite(fs, size, flags)
+        if not fs then return end
+        panel.ApplyRoboto(fs, size, flags)
+        if fs.SetTextColor then fs:SetTextColor(1, 1, 1, 1) end
+    end
+
+    -- Desaturate/tint a button's textures to neutral gray while keeping volume
+    local function tintTexture(tex, gray)
+        if not tex or not tex.SetVertexColor then return end
+        pcall(tex.SetDesaturated, tex, true)
+        tex:SetVertexColor(gray, gray, gray)
+    end
+
+    function panel.ApplyButtonTheme(btn)
+        if not btn then return end
+        -- Text styling
+        if btn.Text then
+            local _, sz, fl = btn.Text:GetFont()
+            panel.ApplyGreenRoboto(btn.Text, sz, fl)
+        end
+        -- Texture tinting (covers classic Set*Texture and modern nine-slice pieces)
+        tintTexture(btn.GetNormalTexture and btn:GetNormalTexture() or nil, 0.97)
+        tintTexture(btn.GetPushedTexture and btn:GetPushedTexture() or nil, 0.93)
+        do
+            -- Stock-style hover highlight for better visibility
+            if btn.SetHighlightTexture then pcall(btn.SetHighlightTexture, btn, "Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD") end
+            local hl = btn.GetHighlightTexture and btn:GetHighlightTexture() or nil
+            if hl then hl:SetDesaturated(false); hl:SetVertexColor(1, 1, 1); hl:SetAlpha(0.45) end
+        end
+        tintTexture(btn.GetDisabledTexture and btn:GetDisabledTexture() or nil, 0.90)
+        -- Fall back: iterate all textures on the button (e.g., nine-slice pieces)
+        local regions = { btn:GetRegions() }
+        for i = 1, #regions do
+            local r = regions[i]
+            if r and r.IsObjectType and r:IsObjectType("Texture") then
+                tintTexture(r, 0.97)
+            end
+        end
+    end
+
+    -- Theme control rows: Roboto for text, green tint for arrow buttons
+    local function forEachDescendant(frame, fn, depth)
+        if not frame or (depth and depth <= 0) then return end
+        if frame.GetRegions then
+            local regions = { frame:GetRegions() }
+            for i = 1, #regions do fn(regions[i]) end
+        end
+        if frame.GetChildren then
+            local children = { frame:GetChildren() }
+            for i = 1, #children do fn(children[i]); forEachDescendant(children[i], fn, (depth and depth-1) or 2) end
+        end
+    end
+
+    local function isFontString(obj)
+        return obj and obj.IsObjectType and obj:IsObjectType("FontString")
+    end
+
+    function panel.ApplyControlTheme(root)
+        if not root then return end
+        forEachDescendant(root, function(obj)
+            if isFontString(obj) then
+                panel.ApplyRoboto(obj) -- keep original color for control content
+            elseif obj and obj.IsObjectType and obj:IsObjectType("Button") then
+                local function tint(tex)
+                    if tex and tex.SetVertexColor then tex:SetDesaturated(true); tex:SetVertexColor(brandR, brandG, brandB) end
+                end
+                tint(obj.GetNormalTexture and obj:GetNormalTexture() or nil)
+                tint(obj.GetPushedTexture and obj:GetPushedTexture() or nil)
+                if obj.SetHighlightTexture then pcall(obj.SetHighlightTexture, obj, "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD") end
+                local hl = obj.GetHighlightTexture and obj:GetHighlightTexture() or nil
+                if hl then hl:SetDesaturated(false); hl:SetVertexColor(1,1,1); hl:SetAlpha(0.25) end
+            end
+        end, 3)
+    end
+
+    -- Dropdown helpers: style label and menu items (idempotent via base-size caching)
+    function panel.StyleDropdownLabel(dropdown, scale)
+        if not dropdown or not dropdown.Text or not dropdown.Text.GetFont then return end
+        local face, sz, flags = dropdown.Text:GetFont()
+        if not dropdown.Text._ScooterBaseFont then
+            dropdown.Text._ScooterBaseFont = { face, sz or 12, flags }
+        end
+        local baseSize = (dropdown.Text._ScooterBaseFont and dropdown.Text._ScooterBaseFont[2]) or (sz or 12)
+        local newSize = math.floor(baseSize * (scale or 1.25) + 0.5)
+        panel.ApplyRobotoWhite(dropdown.Text, newSize, flags)
+    end
+
+    if not panel._dropdownMenuHooked then
+        panel._dropdownMenuHooked = true
+        hooksecurefunc("ToggleDropDownMenu", function(level)
+            local function styleLevel(lvl)
+                local list = _G["DropDownList" .. tostring(lvl)]
+                if not list or not list:IsShown() then return end
+                local i = 1
+                while true do
+                    local btn = _G[list:GetName() .. "Button" .. i]
+                    if not btn then break end
+                    local fs = (btn.GetFontString and btn:GetFontString()) or btn.NormalText
+                    if fs and fs.GetFont then
+                        local face, sz, flags = fs:GetFont()
+                        if not fs._ScooterBaseFont then
+                            fs._ScooterBaseFont = { face, sz or 12, flags }
+                        end
+                        local baseSize = (fs._ScooterBaseFont and fs._ScooterBaseFont[2]) or (sz or 12)
+                        panel.ApplyRobotoWhite(fs, math.floor(baseSize * 1.25 + 0.5), flags)
+                    end
+                    i = i + 1
+                end
+            end
+            C_Timer.After(0, function() styleLevel(level or 1) end)
+        end)
+    end
+
+    -- Sidebar category list skinning (visible buttons only)
+    function panel.SkinCategoryList(categoryList)
+        if not categoryList or not categoryList.ScrollBox or not categoryList.ScrollBox.ScrollTarget then return end
+        local target = categoryList.ScrollBox.ScrollTarget
+        local children = { target:GetChildren() }
+        for i = 1, #children do
+            local b = children[i]
+            local fs = (b and (b.Text or b.Name or b.Label))
+            if fs then
+                local _, size, flags = fs:GetFont()
+                local text = fs.GetText and fs:GetText() or ""
+                local isHeader = (b and (b.isHeader == true or b.Header or b.HeaderText)) or text == "Profiles" or text == "Cooldown Manager"
+                panel.ApplyGreenRoboto(fs, size, flags)
+                if not isHeader and fs.SetTextColor then
+                    fs:SetTextColor(1, 1, 1, 1)
+                end
+            end
+        end
+    end
+end
+
 -- Collapsible section header (Keybindings-style) ---------------------------------
 ScooterExpandableSectionMixin = {}
 
@@ -101,7 +261,7 @@ function ScooterExpandableSectionMixin:Init(initializer)
     self._initializing = true
     self.sectionKey = data.sectionKey
     self.componentId = data.componentId
-    -- Increase header text size by ~30% (idempotent). Cache original font so we don't re-scale.
+    -- Increase header text size by ~30% and apply Roboto + green (idempotent)
     if self.Button and self.Button.Text and self.Button.Text.GetFont then
         if not self._origHeaderFont then
             local fp, fh, ff = self.Button.Text:GetFont()
@@ -112,7 +272,10 @@ function ScooterExpandableSectionMixin:Init(initializer)
             local fp, fh, ff = self._origHeaderFont[1], self._origHeaderFont[2], self._origHeaderFont[3]
             if fh then
                 local bigger = math.max(1, math.floor((fh * 1.3) + 0.5))
-                self.Button.Text:SetFont(fp, bigger, ff)
+                -- Prefer bundled Roboto; fall back to original face
+                local face = (addon and addon.Fonts and (addon.Fonts.ROBOTO_MED or addon.Fonts.ROBOTO_REG)) or fp
+                self.Button.Text:SetFont(face, bigger, ff)
+                if self.Button.Text.SetTextColor then self.Button.Text:SetTextColor(0.20, 0.90, 0.30, 1) end
             end
             self._headerFontScaled = true
         end
@@ -180,8 +343,10 @@ function ScooterTabbedSectionMixin:OnLoad()
     self.tabsGroup:RegisterCallback(ButtonGroupBaseMixin.Event.Selected, function(_, btn)
         self:EvaluateVisibility(btn)
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        if self.UpdateTabTheme then self:UpdateTabTheme() end
     end, self)
     self:EvaluateVisibility(self.TabA)
+    if self.UpdateTabTheme then self:UpdateTabTheme() end
 end
 
 -- Public: Re-render the currently selected category and preserve scroll position
@@ -279,12 +444,30 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText)
             self.TabB:SetWidth(self.TabB.Text:GetStringWidth() + 40)
         end
     end
+    if self.UpdateTabTheme then self:UpdateTabTheme() end
 end
 
 function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
     local showA = selected == self.TabA
     if self.PageA then self.PageA:SetShown(showA) end
     if self.PageB then self.PageB:SetShown(not showA) end
+end
+
+-- Roboto for tab text; selected=white, unselected=green
+function ScooterTabbedSectionMixin:UpdateTabTheme()
+    local brandR, brandG, brandB = 0.20, 0.90, 0.30
+    local function style(btn, selected)
+        if not btn or not btn.Text then return end
+        if panel and panel.ApplyRoboto then panel.ApplyRoboto(btn.Text) end
+        if selected then
+            btn.Text:SetTextColor(1, 1, 1, 1)
+        else
+            btn.Text:SetTextColor(brandR, brandG, brandB, 1)
+        end
+    end
+    local selectedIndex = (self.tabsGroup and self.tabsGroup.GetSelectedIndex) and self.tabsGroup:GetSelectedIndex() or 1
+    style(self.TabA, selectedIndex == 1)
+    style(self.TabB, selectedIndex ~= 1)
 end
 
 function ScooterTabbedSectionMixin:Init(initializer)
@@ -392,6 +575,9 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
         if baseInit then baseInit(self, frame) end
         local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
         local swatch = frame.ScooterInlineSwatch
+        -- Ensure label uses Roboto + white regardless of which region owns the text
+        if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
+        if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
         if not swatch then
             swatch = CreateFrame("Button", nil, frame, "ColorSwatchTemplate")
             swatch:SetSize(18, 18)
@@ -401,6 +587,9 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
             -- Color texture already exists in the template and is sized/centered via OnShow
             frame.ScooterInlineSwatch = swatch
         end
+        if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+        -- Force checkbox label to white for consistency with sliders
+        if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
         swatch:ClearAllPoints()
         local dx = tonumber(offset) or 8
         -- Prefer anchoring to the checkbox's Text region so the swatch sits after the label
@@ -467,7 +656,7 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
         frame.ScooterInlineSwatchWrapper = scooterInlineSwatchWrapper
         frame.OnSettingValueChanged = scooterInlineSwatchWrapper
         if cb then
-            -- Prefer the checkbox mixin’s callback API so we get notified even when the control reuses the same frame.
+            -- Prefer the checkbox mixin's callback API so we get notified even when the control reuses the same frame.
             local canUseCallback = cb.RegisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event
             if canUseCallback and cb.ScooterInlineSwatchCallbackOwner and cb.UnregisterCallback then
                 cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
@@ -491,7 +680,7 @@ local function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, 
                 cb:RegisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, updateFromCheckbox, frame)
             else
                 cb.ScooterInlineSwatchCallbackOwner = nil
-                -- Fallback for templates that don’t expose RegisterCallback (shouldn’t happen in retail, but guarded anyway).
+                -- Fallback for templates that don't expose RegisterCallback (shouldn't happen in retail, but guarded anyway).
                 if not cb.ScooterInlineSwatchFallbackHooked then
                     cb:HookScript("OnClick", function(button)
                         if frame and frame.ScooterInlineSwatch then
@@ -570,6 +759,7 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             initSlider:InitFrame(f)
+                            if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
                             yRef.y = yRef.y - 34
                         end
                         local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
@@ -580,6 +770,8 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             initDrop:InitFrame(f)
+                            local lbl = f and (f.Text or f.Label)
+                            if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
                             -- If this dropdown is for a bar texture, swap to a WowStyle dropdown with custom menu entries
                             if addon.Media and addon.Media.GetBarTextureMenuEntries and string.find(string.lower(label or ""), "texture", 1, true) then
                                 local dd = f.Control and f.Control.Dropdown
@@ -626,6 +818,7 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             f.Text:SetText(label)
+                            if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
                             local right = CreateFrame("Frame", nil, f)
                             right:SetSize(250, 26)
                             right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
@@ -988,6 +1181,7 @@ local function createComponentRenderer(componentId)
 
                             if row.Text then
                                 row.Text:SetText("Enable Custom Textures")
+                                if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
                             end
 
                             local checkbox = row.Checkbox
@@ -1277,6 +1471,30 @@ local function createComponentRenderer(componentId)
                                             s.ScooterBoundariesHooked = true
                                         end
                                     end
+                                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+                                end
+                            end
+                            -- Always apply control theming after any previous InitFrame logic
+                            do
+                                local prev = initSlider.InitFrame
+                                initSlider.InitFrame = function(self, frame)
+                                    if prev then prev(self, frame) end
+                                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+                                    -- Force label to white for readability
+                                    local lbl = frame and (frame.Text or frame.Label)
+                                    if not lbl then
+                                        -- Fallback: find a left-anchored FontString
+                                        if frame and frame.GetRegions then
+                                            local regions = { frame:GetRegions() }
+                                            for i = 1, #regions do
+                                                local r = regions[i]
+                                                if r and r.IsObjectType and r:IsObjectType("FontString") then
+                                                    lbl = r; break
+                                                end
+                                            end
+                                        end
+                                    end
+                                    if lbl and lbl.SetTextColor then panel.ApplyRobotoWhite(lbl) end
                                 end
                             end
                             table.insert(init, initSlider)
@@ -1328,6 +1546,15 @@ local function createComponentRenderer(componentId)
                                 initDrop.reinitializeOnValueChanged = false
                             else
                                 initDrop.reinitializeOnValueChanged = true
+                            end
+                            -- Keep dropdown visuals default, but set label to Roboto + white
+                            do
+                                local prev = initDrop.InitFrame
+                                initDrop.InitFrame = function(self, frame)
+                                    if prev then prev(self, frame) end
+                                    local lbl = frame and (frame.Text or frame.Label)
+                                    if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                                end
                             end
                             table.insert(init, initDrop)
                         elseif ui.widget == "checkbox" then
@@ -1402,6 +1629,9 @@ local function createComponentRenderer(componentId)
                                         cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
                                         cb.ScooterInlineSwatchCallbackOwner = nil
                                     end
+                                    -- Force label to Roboto + white
+                                    if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
+                                    if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
                                 end
                                 -- Avoid recycler-induced visual bounce on checkbox value change; we keep default false above
                                 table.insert(init, initCb)
@@ -1734,8 +1964,8 @@ local function renderProfilesManage()
 				-- Dropdown (left)
                 if not frame.ActiveDropdown then
                     local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-                    dropdown:SetPoint("LEFT", frame, "LEFT", 16, 0)
-                    dropdown.align = "LEFT"
+                    dropdown:SetPoint("LEFT", frame, "LEFT", 28, 0)
+                    dropdown.align = "RIGHT"
                     dropdown:SetScale(1.5)
                     if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 170) end
                     if dropdown.SetWidth then dropdown:SetWidth(170) end
@@ -1745,6 +1975,9 @@ local function renderProfilesManage()
                     if frame.ActiveDropdown.SetWidth then frame.ActiveDropdown:SetWidth(170) end
                 end
 				refreshActiveDropdown(frame.ActiveDropdown)
+                if UIDropDownMenu_SetAnchor then UIDropDownMenu_SetAnchor(frame.ActiveDropdown, 0, 0, "TOPRIGHT", frame.ActiveDropdown, "BOTTOMRIGHT") end
+                if panel and panel.StyleDropdownLabel then panel.StyleDropdownLabel(frame.ActiveDropdown, 1.25) end
+                if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame.ActiveDropdown) end
 				-- Keep a handle so we can force-hide on header collapse if needed
 				local widgets = panel._profileWidgets or {}
 				panel._profileWidgets = widgets
@@ -1783,6 +2016,7 @@ local function renderProfilesManage()
 					end)
                     frame.CreateBtn = btn
                     scaleButton(btn)
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
 				end
 
 				-- Rename below Create
@@ -1799,6 +2033,7 @@ local function renderProfilesManage()
 					end)
 					frame.RenameBtn = btn
 					scaleButton(btn)
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
 				end
 
 				if not frame.CopyBtn then
@@ -1819,6 +2054,7 @@ local function renderProfilesManage()
                     end)
                     frame.CopyBtn = btn
                     scaleButton(btn)
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
 				end
 
 				if not frame.DeleteBtn then
@@ -1834,6 +2070,7 @@ local function renderProfilesManage()
 					end)
                     frame.DeleteBtn = btn
                     scaleButton(btn)
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
 				end
 
 				function frame:UpdateButtons()
@@ -1932,7 +2169,8 @@ local function renderProfilesManage()
 				if frame.MessageText then frame.MessageText:Hide() end
 				if not frame.SpecEnableCheck then
 					local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-					cb.Text:SetText("Enable Spec Profiles")
+                    cb.Text:SetText("Enable Spec Profiles")
+                    if cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
 					cb:SetPoint("LEFT", frame, "LEFT", 16, 0)
 					cb:SetScale(1.25)
 					cb:EnableMouse(true)
@@ -2022,9 +2260,10 @@ local function renderProfilesManage()
 					icon:SetPoint("LEFT", frame, "LEFT", 16, 0)
 					frame.SpecIcon = icon
 
-					local name = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+                    local name = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 					name:SetPoint("LEFT", icon, "RIGHT", 8, 0)
 					scaleFont(name, GameFontNormal, NAME_SCALE)
+                    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(name) end
 					name:SetJustifyH("LEFT")
 					name:SetWordWrap(false)
 					if specNameMaxWidth and specNameMaxWidth > 0 then
@@ -2170,12 +2409,15 @@ local function BuildCategories()
                 end)
             end
         end
+        -- Re-apply sidebar theming whenever selection changes (buttons are recycled)
+        if panel and panel.SkinCategoryList then panel.SkinCategoryList(categoryList) end
     end, f)
     f.CategoriesBuilt, f.CatRenderers, f.CreatedCategories = true, catRenderers, createdCategories
     C_Timer.After(0, function()
         if createdCategories[1] then
             categoryList:SetCurrentCategory(createdCategories[1])
             if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
+            if panel and panel.SkinCategoryList then panel.SkinCategoryList(categoryList) end
         end
     end)
 end
@@ -2188,9 +2430,9 @@ end
 	        if f.NineSlice and f.NineSlice.Text then f.NineSlice.Text:SetText("") end
 
 	        -- Increase window background opacity with a subtle overlay (no true blur available in WoW UI API)
-        do
-            local bg = f:CreateTexture(nil, "BACKGROUND")
-            bg:SetColorTexture(0, 0, 0, 0.65) -- bring back some transparency
+	        do
+	            local bg = f:CreateTexture(nil, "BACKGROUND")
+	            bg:SetColorTexture(0.3, 0.3, 0.3, 0.5) -- midpoint between original and lighter gray
 	            -- Inset slightly so NineSlice borders remain visible
 	            bg:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
 	            bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
@@ -2265,6 +2507,7 @@ end
             headerEditBtn:SetPoint("RIGHT", headerDrag, "RIGHT", -inset, 0)
         end
         PositionHeaderEditBtn()
+        if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(headerEditBtn) end
         f:HookScript("OnSizeChanged", function() PositionHeaderEditBtn() end)
         headerEditBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
         headerEditBtn:EnableMouse(true)
@@ -2310,6 +2553,7 @@ end
         if f.SettingsList and f.SettingsList.Header and f.SettingsList.Header.DefaultsButton then
             local btn = f.SettingsList.Header.DefaultsButton
             btn.Text:SetText("Collapse All")
+            if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
             btn:SetScript("OnClick", function()
                 local current = f.CurrentCategory
                 if not current or not f.CatRenderers then return end
@@ -2333,6 +2577,7 @@ end
                     cdmBtn.Text:SetText("Cooldown Manager Settings")
                     cdmBtn:ClearAllPoints()
                     cdmBtn:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(cdmBtn) end
                     cdmBtn:SetScript("OnClick", function()
                         if InCombatLockdown and InCombatLockdown() then
                             if addon and addon.Print then addon:Print("Cannot open Settings during combat.") end
