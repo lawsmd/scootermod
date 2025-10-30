@@ -794,6 +794,50 @@ local function createComponentRenderer(componentId)
                                     addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
                                 end
                             end
+							-- If this is the Font Style dropdown, normalize per-item rendering via a custom menu
+							if type(label) == "string" and string.find(string.lower(label), "style", 1, true) and f.Control and f.Control.Dropdown then
+								local dd = f.Control.Dropdown
+								if dd and dd.SetupMenu then
+									dd:SetupMenu(function(menu, root)
+										local options = {
+											{ key = "NONE", text = "Regular" },
+											{ key = "OUTLINE", text = "Outline" },
+											{ key = "THICKOUTLINE", text = "Thick Outline" },
+										}
+										for _, e in ipairs(options) do
+											local desc = root:CreateRadio(e.text, function()
+												return setting:GetValue() == e.key
+											end, function()
+												setting:SetValue(e.key)
+											end)
+											desc:AddInitializer(function(button)
+												local face = (addon and addon.Fonts and (addon.Fonts.ROBOTO_MED or addon.Fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+												if button and button.Text and button.Text.GetFont then
+													local _, sz = button.Text:GetFont()
+													button.Text:SetFont(face, sz or 12, "")
+													if button.Text.SetTextColor then button.Text:SetTextColor(1, 1, 1, 1) end
+												end
+												if button and button.HookScript then
+													button:HookScript("OnShow", function()
+														if button.Text and button.Text.GetFont then
+															local _, sz = button.Text:GetFont()
+															button.Text:SetFont(face, sz or 12, "")
+															if button.Text.SetTextColor then button.Text:SetTextColor(1, 1, 1, 1) end
+														end
+													end)
+												end
+												if C_Timer and C_Timer.After then C_Timer.After(0, function()
+													if button and button.Text and button.Text.GetFont then
+														local _, sz = button.Text:GetFont()
+														button.Text:SetFont(face, sz or 12, "")
+														if button.Text.SetTextColor then button.Text:SetTextColor(1, 1, 1, 1) end
+													end
+												end) end
+											end)
+										end
+									end)
+								end
+							end
                             -- If this is a Bar Texture dropdown, attach a live preview swatch to the control row
                             if type(label) == "string" and string.find(string.lower(label), "texture", 1, true) and f.Control and f.Control.Dropdown then
                                 if addon.InitBarTextureDropdown then

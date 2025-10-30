@@ -43,28 +43,76 @@ end
 -- Apply font preview to a Settings dropdown by rendering each option in its font
 function addon.InitFontDropdown(dropdown, setting, optionsProvider)
     if not dropdown or dropdown._ScooterFontPreviewInit then return end
-    local function Inserter(rootDescription, isSelected, setSelected)
-        local optionData = type(optionsProvider) == 'function' and optionsProvider() or optionsProvider
-        for _, option in ipairs(optionData) do
-            local optionDescription = rootDescription:CreateTemplate("SettingsDropdownButtonTemplate")
-            _G.Settings.CreateDropdownButton(optionDescription, option, isSelected, setSelected)
-            optionDescription:AddInitializer(function(button)
-                local value = option.value
-                local face = addon.ResolveFontFace(value)
-                if face and button and button.Text and button.Text.GetFont then
-                    local _, sz, flags = button.Text:GetFont()
-                    button.Text:SetFont(face, sz or 12, flags or "")
-                end
+    -- Prefer building the menu at open-time to ensure initializers run on first open after game launch.
+    if dropdown.SetupMenu then
+        dropdown:SetupMenu(function(menu, root)
+            local optionData = type(optionsProvider) == 'function' and optionsProvider() or optionsProvider
+            for _, option in ipairs(optionData) do
+                local optionDescription = root:CreateTemplate("SettingsDropdownButtonTemplate")
+                _G.Settings.CreateDropdownButton(optionDescription, option,
+                    function()
+                        return setting and setting.GetValue and (setting:GetValue() == option.value)
+                    end,
+                    function()
+                        if setting and setting.SetValue then setting:SetValue(option.value) end
+                    end
+                )
+                optionDescription:AddInitializer(function(button)
+                    local function applyFont()
+                        local value = option.value
+                        local face = addon.ResolveFontFace(value)
+                        if face and button and button.Text and button.Text.GetFont then
+                            local _, sz = button.Text:GetFont()
+                            button.Text:SetFont(face, sz or 12, "")
+                            if button.Text.SetTextColor then button.Text:SetTextColor(1, 1, 1, 1) end
+                            if button.Text.SetShadowOffset then button.Text:SetShadowOffset(0, 0) end
+                            if button.Text.SetShadowColor then button.Text:SetShadowColor(0, 0, 0, 0) end
+                        end
+                    end
+                    applyFont()
+                    if button and button.HookScript then
+                        button:HookScript("OnShow", function() applyFont() end)
+                    end
+                    C_Timer.After(0, applyFont)
+                    C_Timer.After(0.05, applyFont)
+                end)
+            end
+        end)
+    else
+        -- Fallback for environments without SetupMenu
+        local function Inserter(rootDescription, isSelected, setSelected)
+            local optionData = type(optionsProvider) == 'function' and optionsProvider() or optionsProvider
+            for _, option in ipairs(optionData) do
+                local optionDescription = rootDescription:CreateTemplate("SettingsDropdownButtonTemplate")
+                _G.Settings.CreateDropdownButton(optionDescription, option, isSelected, setSelected)
+                optionDescription:AddInitializer(function(button)
+                    local function applyFont()
+                        local value = option.value
+                        local face = addon.ResolveFontFace(value)
+                        if face and button and button.Text and button.Text.GetFont then
+                            local _, sz = button.Text:GetFont()
+                            button.Text:SetFont(face, sz or 12, "")
+                            if button.Text.SetTextColor then button.Text:SetTextColor(1, 1, 1, 1) end
+                            if button.Text.SetShadowOffset then button.Text:SetShadowOffset(0, 0) end
+                            if button.Text.SetShadowColor then button.Text:SetShadowColor(0, 0, 0, 0) end
+                        end
+                    end
+                    applyFont()
+                    if button and button.HookScript then
+                        button:HookScript("OnShow", function() applyFont() end)
+                    end
+                    C_Timer.After(0, applyFont)
+                    C_Timer.After(0.05, applyFont)
+                end)
+            end
+        end
+        local initTooltip = _G.Settings.CreateOptionsInitTooltip(setting, setting and setting:GetName() or "Font", nil, optionsProvider)
+        _G.Settings.InitDropdown(dropdown, setting, Inserter, initTooltip)
+        if dropdown and dropdown.Update then
+            C_Timer.After(0, function()
+                if dropdown and dropdown.Update then pcall(dropdown.Update, dropdown) end
             end)
         end
-    end
-    local initTooltip = _G.Settings.CreateOptionsInitTooltip(setting, setting and setting:GetName() or "Font", nil, optionsProvider)
-    _G.Settings.InitDropdown(dropdown, setting, Inserter, initTooltip)
-    -- Force a deferred redraw to ensure all option initializers have run before first open
-    if dropdown and dropdown.Update then
-        C_Timer.After(0, function()
-            if dropdown and dropdown.Update then pcall(dropdown.Update, dropdown) end
-        end)
     end
     dropdown._ScooterFontPreviewInit = true
 end
@@ -91,5 +139,27 @@ do
     f.ROBOTO_TITA  = base .. "Roboto-ThinItalic.ttf"
     -- (Removed) Roboto Condensed variants to keep the list concise
 end
+
+
+-- Preload font faces once to ensure consistent first-use rendering after game launch.
+-- This avoids cases where certain Roboto variants appear unstyled until a second open.
+function addon.PreloadFonts()
+    if addon._fontsPreloaded then return end
+    addon._fontsPreloaded = true
+    local holder = CreateFrame("Frame")
+    holder:Hide()
+    local fs = holder:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local size = 14
+    local warmup = "The quick brown fox jumps over the lazy dog 0123456789 !@#%^&*()[]{}"
+    for _, path in pairs(addon.Fonts or {}) do
+        if type(path) == "string" and path ~= "" then
+            pcall(fs.SetFont, fs, path, size, "")
+            fs:SetText(warmup)
+            pcall(fs.GetStringWidth, fs)
+            fs:SetText("")
+        end
+    end
+end
+
 
 

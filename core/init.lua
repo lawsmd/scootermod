@@ -2,6 +2,8 @@ local addonName, addon = ...
 
 function addon:OnInitialize()
     C_AddOns.LoadAddOn("Blizzard_Settings")
+    -- Warm up bundled fonts early to avoid first-open rendering differences
+    if addon.PreloadFonts then addon.PreloadFonts() end
     -- 1. Define components and populate self.Components
     self:InitializeComponents()
 
@@ -130,6 +132,8 @@ end
 function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     -- Initialize Edit Mode integration
     addon.EditMode.Initialize()
+    -- Ensure fonts are preloaded even if initialization order changes
+    if addon.PreloadFonts then addon.PreloadFonts() end
     -- Force index-mode for Opacity on Cooldown Viewer systems (compat path); safe no-op if already set
     do
         local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
