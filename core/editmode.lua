@@ -177,6 +177,31 @@ function addon.EditMode.ApplyChanges()
     end
 end
 
+-- Coalesced ApplyChanges helper: collapse multiple writes into a single apply
+local _pendingApplyTimer
+function addon.EditMode.RequestApplyChanges(delay)
+    local d = tonumber(delay) or 0.2
+    -- Cancel any previously scheduled apply
+    if _pendingApplyTimer and _pendingApplyTimer.Cancel then
+        _pendingApplyTimer:Cancel()
+    end
+    -- Do not attempt to apply during combat; SaveOnly is handled at write time
+    if InCombatLockdown and InCombatLockdown() then return end
+    if C_Timer and C_Timer.NewTimer then
+        _pendingApplyTimer = C_Timer.NewTimer(d, function()
+            if addon and addon.EditMode and addon.EditMode.ApplyChanges then
+                addon.EditMode.ApplyChanges()
+            end
+            _pendingApplyTimer = nil
+        end)
+    else
+        -- Fallback: immediate apply if timer API is unavailable
+        if addon and addon.EditMode and addon.EditMode.ApplyChanges then
+            addon.EditMode.ApplyChanges()
+        end
+    end
+end
+
 -- Helper functions
 function addon.EditMode.LoadLayouts()
     if not LEO or not LEO.LoadLayouts or not LEO.IsReady then return end
@@ -309,9 +334,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
     if editModeValue ~= nil then
         local wrote = false
         local function persist()
-            if addon.EditMode and addon.EditMode.ApplyChanges then
-                addon.EditMode.ApplyChanges() -- wraps SaveOnly in combat; forces EM UI to refresh when out of combat
-            end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
         end
 
         -- Opacity: unconditionally write, and immediately refresh the system mixin so alpha updates
@@ -366,7 +390,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         elseif settingId == "columns" and type(component.id) == "string" and component.id:match("^actionBar%d$") then
             -- Action Bars: "# Rows/Columns" maps to NumRows setting
@@ -388,7 +413,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         elseif settingId == "numIcons" then
             local value = tonumber(component.db.numIcons)
@@ -408,7 +434,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         elseif settingId == "visibilityMode" then
             -- Write and immediately update visible state on the viewer
@@ -467,7 +494,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         elseif settingId == "iconPadding" then
             -- Write raw 2..10 (library handles raw for this slider), then refresh and apply
@@ -528,8 +556,9 @@ function addon.EditMode.SyncComponentToEditMode(component)
         end
     end
 
-    -- 3. Apply all changes atomically
-    addon.EditMode.ApplyChanges()
+    -- 3. Coalesce apply to avoid per-tick stalls during rapid changes
+    if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
 
     -- Hold the syncing guard briefly to avoid back-sync races from SaveLayouts callbacks
     local function clearGuard()

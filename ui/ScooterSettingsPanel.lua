@@ -877,34 +877,41 @@ local function createComponentRenderer(componentId)
                                 component.db[settingId] = finalValue
 
                                 if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                    -- Avoid UI flicker by preferring single-setting writes + SaveOnly for Visibility-area controls
+                                    -- Avoid UI flicker by preferring single-setting writes + SaveOnly and coalesced ApplyChanges
                                     local function safeSaveOnly()
                                         if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
                                     end
-                                    if settingId == "opacity" then
+                                    local function requestApply()
+                                        if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+                                    end
+                                    if settingId == "positionX" or settingId == "positionY" then
+                                        if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                            addon.EditMode.SyncComponentToEditMode(component)
+                                            safeSaveOnly(); requestApply()
+                                        end
+                                    elseif settingId == "opacity" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
-                                            safeSaveOnly()
+                                            safeSaveOnly(); requestApply()
                                         end
                                     elseif settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            safeSaveOnly()
+                                            safeSaveOnly(); requestApply()
                                         end
                                     elseif settingId == "visibilityMode" or settingId == "displayMode" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            safeSaveOnly()
+                                            safeSaveOnly(); requestApply()
                                         end
                                     else
-                                        -- Debounce EM writes slightly for other settings
-                                        if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
-                                            C_Timer.After(0.05, function()
-                                                if addon.EditMode then addon.EditMode.SyncComponentToEditMode(component) end
-                                            end)
+                                        -- For other Edit Mode settings, write just this setting + SaveOnly, then coalesce ApplyChanges
+                                        if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
+                                            safeSaveOnly(); requestApply()
                                         end
                                     end
                                 end
