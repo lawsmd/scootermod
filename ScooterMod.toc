@@ -26,11 +26,18 @@ core/borders.lua
 core/editmode.lua
 core/profiles.lua
 core/components.lua
+core/debug.lua
 
 ui/ScooterTabbedSection.xml
 ui/ScooterExpandableSection.xml
+ui/panel/theme.lua
+ui/panel/mixins.lua
+ui/panel/controls.lua
 ui/ScooterSettingsPanel.lua
 ui/SettingsEnhancements.lua
+ui/panel/builders.lua
+ui/panel/profiles_manage.lua
+ui/panel/profiles_presets.lua
 
 core/init.lua
 

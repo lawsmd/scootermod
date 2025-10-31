@@ -1302,6 +1302,81 @@ function addon:InitializeComponents()
     self:RegisterComponent(trackedBars)
 end
 
+-- Action Bars (1–8): minimal components to expose Edit Mode Positioning > Orientation
+do
+    local function abComponent(id, name, frameName, defaultOrientation)
+        return Component:New({
+            id = id,
+            name = name,
+            frameName = frameName,
+            settings = {
+                -- Positioning (Edit Mode)
+                orientation = { type = "editmode", settingId = 0, default = defaultOrientation, ui = {
+                    label = "Orientation", widget = "dropdown", values = { H = "Horizontal", V = "Vertical" }, section = "Positioning", order = 1
+                }},
+                columns = { type = "editmode", default = 1, ui = {
+                    label = "# Columns/Rows", widget = "slider", min = 1, max = 4, step = 1, section = "Positioning", order = 2, dynamicLabel = true
+                }},
+                numIcons = { type = "editmode", default = 12, ui = {
+                    label = "# of Icons", widget = "slider", min = 6, max = 12, step = 1, section = "Positioning", order = 3
+                }},
+                iconPadding = { type = "editmode", default = 2, ui = {
+                    label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 4
+                }},
+                -- Sizing
+                iconSize = { type = "editmode", default = 100, ui = {
+                    label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
+                }},
+                -- Position (addon-side; neutral defaults)
+                positionX = { type = "addon", default = 0, ui = {
+                    label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
+                }},
+                positionY = { type = "addon", default = 0, ui = {
+                    label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 99
+                }},
+            },
+            -- No-op styling for now; we will expand with borders/text later
+            ApplyStyling = function() end,
+        })
+    end
+
+    local defs = {
+        { "actionBar1", "Action Bar 1", "MainMenuBar",         "H", false },
+        { "actionBar2", "Action Bar 2", "MultiBarBottomLeft",  "H", true },
+        { "actionBar3", "Action Bar 3", "MultiBarBottomRight", "H", true },
+        { "actionBar4", "Action Bar 4", "MultiBarRight",       "V", true },
+        { "actionBar5", "Action Bar 5", "MultiBarLeft",        "V", true },
+        { "actionBar6", "Action Bar 6", "MultiBar5",           "H", true },
+        { "actionBar7", "Action Bar 7", "MultiBar6",           "H", true },
+        { "actionBar8", "Action Bar 8", "MultiBar7",           "H", true },
+    }
+
+    for _, d in ipairs(defs) do
+        local comp = abComponent(d[1], d[2], d[3], d[4])
+        if d[5] then
+            comp.settings.barVisibility = { type = "editmode", default = "always", ui = {
+                label = "Bar Visible", widget = "dropdown", values = { always = "Always", combat = "In Combat", not_in_combat = "Not In Combat", hidden = "Hidden" }, section = "Misc", order = 1
+            }}
+            comp.settings.alwaysShowButtons = { type = "editmode", default = true, ui = {
+                label = "Always Show Buttons", widget = "checkbox", section = "Misc", order = 2
+            }}
+        else
+            comp.supportsEmptyVisibilitySection = true
+            -- Action Bar 1 exclusive visibility checkboxes
+            comp.settings.alwaysShowButtons = { type = "editmode", default = true, ui = {
+                label = "Always Show Buttons", widget = "checkbox", section = "Misc", order = 1
+            }}
+            comp.settings.hideBarArt = { type = "editmode", default = false, ui = {
+                label = "Hide Bar Art", widget = "checkbox", section = "Misc", order = 2
+            }}
+            comp.settings.hideBarScrolling = { type = "editmode", default = false, ui = {
+                label = "Hide Bar Scrolling", widget = "checkbox", section = "Misc", order = 3
+            }}
+        end
+        addon:RegisterComponent(comp)
+    end
+end
+
 function addon:LinkComponentsToDB()
     for id, component in pairs(self.Components) do
         if not self.db.profile.components[id] then

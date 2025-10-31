@@ -21,9 +21,11 @@ end
 -- Discover the numeric setting id at runtime to avoid stale hardcodes
 local function ResolveSettingId(frame, logicalKey)
     if not frame or not frame.system or not _G.EditModeSettingDisplayInfoManager then return nil end
-    -- Prefer stable enum constants when available
+    -- Ensure layouts are loaded so the display info table is populated
+    if addon and addon.EditMode and addon.EditMode.LoadLayouts then addon.EditMode.LoadLayouts() end
+    -- Prefer stable enum constants only for Cooldown Viewer systems
     local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
-    if EM then
+    if EM and frame and frame.system == (_G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.CooldownViewer) then
         if logicalKey == "visibility" then return EM.VisibleSetting end
         if logicalKey == "show_timer" then return EM.ShowTimer end
         if logicalKey == "show_tooltip" then return EM.ShowTooltips end
@@ -55,7 +57,10 @@ local function ResolveSettingId(frame, logicalKey)
             if tp == Enum.EditModeSettingDisplayType.Dropdown then
                 local count = 0
                 if type(setup.options) == "table" then for _ in pairs(setup.options) do count = count + 1 end end
-                if (nm:find("visibility", 1, true) or count == 3) then pick = pick or setup end
+                -- Accept both 3-option (CDM) and 4-option (Action Bars 2-8) dropdowns whose name includes visibility/visible
+                if nm:find("visibility", 1, true) or nm:find("visible", 1, true) or count == 3 or count == 4 then
+                    pick = pick or setup
+                end
             end
         elseif lk == "opacity" then
             if tp == Enum.EditModeSettingDisplayType.Slider then
@@ -81,6 +86,42 @@ local function ResolveSettingId(frame, logicalKey)
             if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("tooltip", 1, true) then pick = pick or setup end
         elseif lk == "hide_when_inactive" or lk == "hideinactive" or lk == "inactive" then
             if tp == Enum.EditModeSettingDisplayType.Checkbox and (nm:find("inactive", 1, true) or nm:find("hide", 1, true)) then pick = pick or setup end
+        elseif lk == "orientation" then
+            if tp == Enum.EditModeSettingDisplayType.Dropdown then
+                if nm:find("orientation", 1, true) then
+                    pick = pick or setup
+                end
+            end
+        elseif lk == "num_rows" then
+            if tp == Enum.EditModeSettingDisplayType.Slider then
+                if nm:find("row", 1, true) or nm:find("column", 1, true) then
+                    pick = pick or setup
+                end
+            end
+        elseif lk == "num_icons" then
+            if tp == Enum.EditModeSettingDisplayType.Slider and nm:find("icon", 1, true) then
+                pick = pick or setup
+            end
+        elseif lk == "icon_size" then
+            if tp == Enum.EditModeSettingDisplayType.Slider and (nm:find("icon", 1, true) and nm:find("size", 1, true)) then
+                pick = pick or setup
+            end
+        elseif lk == "icon_padding" then
+            if tp == Enum.EditModeSettingDisplayType.Slider and nm:find("padding", 1, true) then
+                pick = pick or setup
+            end
+        elseif lk == "hide_bar_art" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("hide", 1, true) and nm:find("art", 1, true) then
+                pick = pick or setup
+            end
+        elseif lk == "hide_bar_scrolling" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("hide", 1, true) and nm:find("scroll", 1, true) then
+                pick = pick or setup
+            end
+        elseif lk == "always_show_buttons" then
+            if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("always", 1, true) and nm:find("button", 1, true) then
+                pick = pick or setup
+            end
         end
     end
     local id = pick and pick.setting or nil
@@ -126,6 +167,10 @@ function addon.EditMode.ApplyChanges()
     if not LEO or not LEO.ApplyChanges then return end
     if _ShouldSuppressWrites() then return end
     if not InCombatLockdown() then
+        if addon and addon.SettingsPanel then
+            addon.SettingsPanel._protectVisibility = true
+            if addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+        end
         LEO:ApplyChanges()
     else
         LEO:SaveOnly()
@@ -191,9 +236,13 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
     end
     if dbValue == nil then return false end
 
+    -- (removed global-propagation of Orientation; each bar updates independently)
+
     local editModeValue
     -- Convert addon DB value to the value Edit Mode expects
     if settingId == "orientation" then
+        -- Resolve orientation setting id dynamically for non-CooldownViewer systems
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "orientation") or setting.settingId
         editModeValue = (dbValue == "H") and 0 or 1
     elseif settingId == "columns" then
         editModeValue = tonumber(dbValue) or 12
@@ -208,7 +257,8 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         -- WRITING to the library requires the RAW value.
         editModeValue = tonumber(dbValue) or 2
     elseif settingId == "iconSize" then
-        -- Always send raw percentage (50..200), rounded to nearest 10
+        -- Resolve id for non-CDM systems and send raw percent (50..200), snapped to 10
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_size") or setting.settingId
         local desiredRaw = tonumber(dbValue) or 100
         if desiredRaw < 50 then desiredRaw = 50 end
         if desiredRaw > 200 then desiredRaw = 200 end
@@ -288,6 +338,78 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             wrote = true
             persist()
             return true
+        elseif settingId == "orientation" then
+            -- Write and immediately update orientation + layout, then apply layout changes
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "orientation") or setting.settingId
+            if not setting.settingId then
+                -- Fallback for Action Bars: orientation is typically the first setting; use 0 when resolution fails
+                if type(component.id) == "string" and component.id:match("^actionBar%d$") then
+                    setting.settingId = 0
+                end
+            end
+            local emVal = (component.db.orientation == "H") and 0 or 1
+            addon.EditMode.SetSetting(frame, setting.settingId, emVal)
+            if frame and type(frame.UpdateSettingMap) == "function" then
+                pcall(frame.UpdateSettingMap, frame)
+            end
+            if frame and type(frame.UpdateSystemSettingOrientation) == "function" then
+                pcall(frame.UpdateSystemSettingOrientation, frame)
+            end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            -- Action Bars prefer grid relayout APIs; Cooldown Viewer uses Refresh/UpdateLayout
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            return true
+        elseif settingId == "columns" and type(component.id) == "string" and component.id:match("^actionBar%d$") then
+            -- Action Bars: "# Rows/Columns" maps to NumRows setting
+            local value = tonumber(component.db.columns)
+            if not value then value = 1 end
+            value = math.floor(math.max(1, math.min(4, value)))
+            -- Resolve rows setting id dynamically
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "num_rows") or setting.settingId
+            addon.EditMode.SetSetting(frame, setting.settingId, value)
+            if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
+            if frame and type(frame.UpdateSystemSettingNumRows) == "function" then pcall(frame.UpdateSystemSettingNumRows, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            return true
+        elseif settingId == "numIcons" then
+            local value = tonumber(component.db.numIcons)
+            if not value then value = 12 end
+            value = math.floor(math.max(6, math.min(12, value)))
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "num_icons") or setting.settingId
+            addon.EditMode.SetSetting(frame, setting.settingId, value)
+            if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
+            if frame and type(frame.UpdateSystemSettingNumIcons) == "function" then pcall(frame.UpdateSystemSettingNumIcons, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            return true
         elseif settingId == "visibilityMode" then
             -- Write and immediately update visible state on the viewer
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
@@ -296,6 +418,75 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             end
             wrote = true
             persist()
+            return true
+        elseif settingId == "barVisibility" then
+            -- Action Bars (2..8): 4-option visibility
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+            local map = { always = 0, combat = 1, not_in_combat = 2, hidden = 3 }
+            local idx = map[tostring(dbValue)]
+            if idx == nil then idx = 0 end
+            addon.EditMode.SetSetting(frame, setting.settingId, idx)
+            if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then pcall(frame.UpdateSystemSettingVisibleSetting, frame) end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "hideBarArt" then
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_art") or setting.settingId
+            local v = not not dbValue
+            addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
+            if frame and type(frame.UpdateSystemSettingHideBarArt) == "function" then pcall(frame.UpdateSystemSettingHideBarArt, frame) end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "hideBarScrolling" then
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_scrolling") or setting.settingId
+            local v = not not dbValue
+            addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
+            if frame and type(frame.UpdateSystemSettingHideBarScrolling) == "function" then pcall(frame.UpdateSystemSettingHideBarScrolling, frame) end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "alwaysShowButtons" then
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "always_show_buttons") or setting.settingId
+            local v = not not dbValue
+            addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
+            if frame and type(frame.UpdateSystemSettingAlwaysShowButtons) == "function" then pcall(frame.UpdateSystemSettingAlwaysShowButtons, frame) end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "iconSize" then
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            return true
+        elseif settingId == "iconPadding" then
+            -- Write raw 2..10 (library handles raw for this slider), then refresh and apply
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_padding") or setting.settingId
+            local pad = tonumber(component.db.iconPadding) or 2
+            if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+            addon.EditMode.SetSetting(frame, setting.settingId, pad)
+            if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
+            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
             return true
         end
         -- Others: skip write if no change
@@ -383,6 +574,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         end
     end
 
+    if settingId == "orientation" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "orientation") or setting.settingId
+    end
     local editModeValue = addon.EditMode.GetSetting(frame, setting.settingId)
     if editModeValue == nil then return false end
 
@@ -391,7 +585,19 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     if settingId == "orientation" then
         dbValue = (editModeValue == 0) and "H" or "V"
     elseif settingId == "columns" then
-        dbValue = math.max(1, math.min(20, tonumber(editModeValue) or 12))
+        if type(component.id) == "string" and component.id:match("^actionBar%d$") then
+            -- Action Bars: back-sync #Rows/Columns from the NumRows setting
+            local rowsSetting = ResolveSettingId(frame, "num_rows")
+            local v = rowsSetting and addon.EditMode.GetSetting(frame, rowsSetting) or editModeValue
+            dbValue = math.max(1, math.min(4, tonumber(v) or 1))
+        else
+            -- Cooldown Viewer: standard 1..20 columns/rows
+            dbValue = math.max(1, math.min(20, tonumber(editModeValue) or 12))
+        end
+    elseif settingId == "numIcons" then
+        local iconsSetting = ResolveSettingId(frame, "num_icons")
+        local v = iconsSetting and addon.EditMode.GetSetting(frame, iconsSetting) or editModeValue
+        dbValue = math.max(6, math.min(12, tonumber(v) or 12))
     elseif settingId == "direction" then
         local orientation = component.db.orientation or "H"
         if orientation == "H" then
@@ -403,13 +609,11 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         -- Library now returns raw value (2-10); store directly
         dbValue = tonumber(editModeValue) or 2
     elseif settingId == "iconSize" then
-        -- Adaptive read: support either index (0-15) or raw (50-200)
-        local v = tonumber(editModeValue) or 100
-        if v <= 15 then
-            dbValue = (v * 10) + 50
-        else
-            dbValue = v
-        end
+        -- Resolve id for non-CDM systems (Action Bars), then adaptive read index/raw
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_size") or setting.settingId
+        local raw = addon.EditMode.GetSetting(frame, setting.settingId)
+        local v = tonumber(raw) or tonumber(editModeValue) or 100
+        if v <= 15 then dbValue = (v * 10) + 50 else dbValue = v end
     elseif settingId == "opacity" then
         -- Read RAW percent (50..100). Library returns raw even if internally stored as index.
         local resolved = ResolveSettingId(frame, "opacity")
@@ -426,6 +630,24 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         if v == nil and frame and type(frame.visibleSetting) ~= "nil" then v = frame.visibleSetting end
         if v == nil then return false end
         if v == 1 then dbValue = "combat" elseif v == 2 then dbValue = "never" else dbValue = "always" end
+    elseif settingId == "barVisibility" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        if v == nil and frame and type(frame.visibleSetting) ~= "nil" then v = frame.visibleSetting end
+        if v == nil then return false end
+        if v == 1 then dbValue = "combat" elseif v == 2 then dbValue = "not_in_combat" elseif v == 3 then dbValue = "hidden" else dbValue = "always" end
+    elseif settingId == "hideBarArt" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_art") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        dbValue = (tonumber(v) or 0) == 1 and true or false
+    elseif settingId == "hideBarScrolling" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_scrolling") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        dbValue = (tonumber(v) or 0) == 1 and true or false
+    elseif settingId == "alwaysShowButtons" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "always_show_buttons") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        dbValue = (tonumber(v) or 0) == 1 and true or false
     elseif settingId == "showTimer" then
         -- Back-sync from Edit Mode: 1/0 -> true/false
         dbValue = (tonumber(editModeValue) or 0) == 1 and true or false
@@ -538,6 +760,34 @@ function addon.EditMode.Initialize()
                 C_Timer.After(1.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass3") end end)
             end, addon)
             addon._editModeCBRegistered = true
+        end
+    end
+
+    -- Compatibility: Action Bars Icon Size behaves like an index slider internally on some clients.
+    -- Force index-based handling in our embedded LEO so raw 50..200 maps to the correct index.
+    local LEO_local2 = LibStub and LibStub("LibEditModeOverride-1.0")
+    if LEO_local2 and _G and _G.Enum and _G.Enum.EditModeSystem then
+        local candidates = {
+            "MainMenuBar",
+            "MultiBarBottomLeft",
+            "MultiBarBottomRight",
+            "MultiBarRight",
+            "MultiBarLeft",
+            "MultiBar5",
+            "MultiBar6",
+            "MultiBar7",
+        }
+        for _, name in ipairs(candidates) do
+            local fr = _G[name]
+            if fr and addon.EditMode.HasEditModeSettings(fr) then
+                local settingId = ResolveSettingId(fr, "icon_size")
+                if settingId then
+                    local sys = fr.system
+                    LEO_local2._forceIndexBased = LEO_local2._forceIndexBased or {}
+                    LEO_local2._forceIndexBased[sys] = LEO_local2._forceIndexBased[sys] or {}
+                    LEO_local2._forceIndexBased[sys][settingId] = true
+                end
+            end
         end
     end
 end
