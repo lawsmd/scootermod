@@ -902,6 +902,124 @@ local function ApplyCooldownViewerStyling(self)
     end
 end
 
+-- Action Bars: addon-only styling (Icon Width/Height) with safe relayout nudges
+-- Removed: Action Bars non-uniform icon sizing and holder styling (see ACTIONBARS.md limitation)
+
+local function ApplyActionBarStyling(self)
+	local bar = _G[self.frameName]
+	if not bar then return end
+
+	local function enumerateButtons()
+		local buttons = {}
+		local prefix
+		if self.frameName == "MainMenuBar" then
+			prefix = "ActionButton"
+		else
+			prefix = tostring(self.frameName) .. "Button"
+		end
+		for i = 1, 12 do
+			local btn = _G[prefix .. i]
+			if btn then buttons[#buttons + 1] = btn end
+		end
+		-- Fallback: include any button-like direct children
+		if #buttons == 0 and bar.GetChildren then
+			for _, child in ipairs({ bar:GetChildren() }) do
+				local t = child.GetObjectType and child:GetObjectType()
+				if t == "Button" or t == "CheckButton" then
+					buttons[#buttons + 1] = child
+				end
+			end
+		end
+		return buttons
+	end
+
+	local function toggleDefaultButtonArt(button, restore)
+		if not button or not button.GetRegions then return end
+		-- Try explicit getters first
+		if button.GetNormalTexture then
+			local nt = button:GetNormalTexture()
+			if nt and nt.SetAlpha then pcall(nt.SetAlpha, nt, restore and 1 or 0) end
+		end
+		-- Scan textures by common region names
+		for _, r in ipairs({ button:GetRegions() }) do
+			if r and r.GetObjectType and r:GetObjectType() == "Texture" then
+				local nm = r.GetName and (r:GetName() or "") or ""
+				if nm:find("Border", 1, true) or nm:find("BorderShadow", 1, true) or nm:find("SlotArt", 1, true)
+					or nm:find("SlotBackground", 1, true) or nm:find("NormalTexture", 1, true) then
+					pcall(r.SetAlpha, r, restore and 1 or 0)
+				end
+			end
+		end
+	end
+
+	local wantBorder = self.db and self.db.borderEnable
+	local disableAll = self.db and self.db.borderDisableAll
+	local styleKey = (self.db and self.db.borderStyle) or "square"
+	if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
+	local thickness = tonumber(self.db and self.db.borderThickness) or 1
+	if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+	local tintEnabled = self.db and self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
+	local tintColor
+	if tintEnabled then
+		local c = self.db.borderTintColor or {1,1,1,1}
+		tintColor = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+	end
+
+	for _, btn in ipairs(enumerateButtons()) do
+		if disableAll then
+			if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
+			toggleDefaultButtonArt(btn, false)
+		elseif wantBorder then
+			if styleKey == "square" and addon.Borders and addon.Borders.ApplySquare then
+				if addon.Borders.HideAll then addon.Borders.HideAll(btn) end
+				local col = tintEnabled and tintColor or {0, 0, 0, 1}
+				addon.Borders.ApplySquare(btn, {
+					size = thickness,
+					color = col,
+					layer = "OVERLAY",
+					layerSublevel = 7,
+					-- Action Bars only: nudge inward to meet Blizzard backdrop
+					expandX = -1,
+					expandY = -1,
+				})
+				-- Additional right-side-only tighten (smallest gap on right)
+				local container = btn.ScootSquareBorderContainer or btn
+				local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
+				if edges and edges.Right then
+					edges.Right:ClearAllPoints()
+					edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, -1)
+					edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 1)
+				end
+				-- Keep top/bottom endpoints flush with adjusted right edge to avoid small overhangs
+				if edges and edges.Top then
+					edges.Top:ClearAllPoints()
+					edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 1, -1)
+					edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, -1)
+				end
+				if edges and edges.Bottom then
+					edges.Bottom:ClearAllPoints()
+					edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 1, 1)
+					edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 1)
+				end
+			else
+				addon.ApplyIconBorderStyle(btn, styleKey, {
+					thickness = thickness,
+					color = tintColor,
+					tintEnabled = tintEnabled,
+					db = self.db,
+					thicknessKey = "borderThickness",
+					tintColorKey = "borderTintColor",
+					defaultThickness = (self.settings and self.settings.borderThickness and self.settings.borderThickness.default) or 1,
+				})
+			end
+			toggleDefaultButtonArt(btn, false)
+		else
+			if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
+			toggleDefaultButtonArt(btn, true)
+		end
+	end
+end
+
 function Component:New(o)
     o = o or {}
     setmetatable(o, self)
@@ -966,7 +1084,7 @@ function addon:InitializeComponents()
             }},
             -- Border
             borderEnable = { type = "addon", default = false, ui = {
-                label = "Enable Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
+                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},
             borderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Border", order = 2
@@ -1045,7 +1163,7 @@ function addon:InitializeComponents()
             }},
             -- Border
             borderEnable = { type = "addon", default = false, ui = {
-                label = "Enable Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
+                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},
             borderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Border", order = 2
@@ -1121,7 +1239,7 @@ function addon:InitializeComponents()
             }},
             -- Border
             borderEnable = { type = "addon", default = false, ui = {
-                label = "Enable Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
+                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},
             borderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Border", order = 2
@@ -1223,7 +1341,7 @@ function addon:InitializeComponents()
             }},
             -- Bar Border
             borderEnable = { type = "addon", default = false, ui = {
-                label = "Enable Border", widget = "checkbox", section = "Border", order = 1
+                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1
             }},
             borderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Border", order = 2
@@ -1305,7 +1423,7 @@ end
 -- Action Bars (1–8): minimal components to expose Edit Mode Positioning > Orientation
 do
     local function abComponent(id, name, frameName, defaultOrientation)
-        return Component:New({
+		return Component:New({
             id = id,
             name = name,
             frameName = frameName,
@@ -1327,6 +1445,32 @@ do
                 iconSize = { type = "editmode", default = 100, ui = {
                     label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
                 }},
+                -- Removed addon-only per-axis sizing (see ACTIONBARS.md limitation)
+				-- Border (Addon-only; applies to each button's icon area)
+				borderDisableAll = { type = "addon", default = false, ui = {
+					label = "Disable Border", widget = "checkbox", section = "Border", order = 1, tooltip = "Hide all button border art (stock and custom)."
+				}},
+				borderEnable = { type = "addon", default = false, ui = {
+					label = "Use Custom Border", widget = "checkbox", section = "Border", order = 2, tooltip = ""
+				}},
+				borderTintEnable = { type = "addon", default = false, ui = {
+					label = "Border Tint", widget = "checkbox", section = "Border", order = 3
+				}},
+				borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+					label = "Tint Color", widget = "color", section = "Border", order = 4
+				}},
+				borderStyle = { type = "addon", default = "square", ui = {
+					label = "Border Style", widget = "dropdown", section = "Border", order = 5,
+					optionsProvider = function()
+						if addon.BuildIconBorderOptionsContainer then
+							return addon.BuildIconBorderOptionsContainer()
+						end
+						return {}
+					end
+				}},
+				borderThickness = { type = "addon", default = 1, ui = {
+					label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 6
+				}},
                 -- Position (addon-side; neutral defaults)
                 positionX = { type = "addon", default = 0, ui = {
                     label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
@@ -1335,8 +1479,8 @@ do
                     label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 99
                 }},
             },
-            -- No-op styling for now; we will expand with borders/text later
-            ApplyStyling = function() end,
+			-- Apply icon borders on action bar buttons when enabled
+			ApplyStyling = ApplyActionBarStyling,
         })
     end
 

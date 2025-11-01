@@ -25,7 +25,7 @@ local ICON_BORDER_DEFINITIONS = {
 
     -- Blizzard atlas selections (always available)
     { key = "blizzard", label = "Blizzard Default", type = "atlas", atlas = "UI-HUD-ActionBar-IconFrame", order = 100, expandX = 0, expandY = 0, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
-    { key = "cooldownOverlay", label = "Cooldown Manager Overlay", type = "atlas", atlas = "UI-HUD-CoolDownManager-IconOverlay", order = 110, expandX = 3, expandY = 3, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
+    { key = "cooldownOverlay", label = "Cooldown Manager Overlay", type = "atlas", atlas = "UI-HUD-CoolDownManager-IconOverlay", order = 110, expandX = 8, expandY = 8, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
     { key = "bagsGlow", label = "Bags Glow", type = "atlas", atlas = "bags-glow-white", order = 120, expandX = 2, expandY = 2, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
     { key = "gearEnchant", label = "Gear Enchant", type = "atlas", atlas = "GearEnchant_IconBorder", order = 130, expandX = 1.5, expandY = 1.5, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
     { key = "talentsGray", label = "Talents Gray", type = "atlas", atlas = "talents-node-choiceflyout-square-gray", order = 140, expandX = 1.5, expandY = 1.5, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },

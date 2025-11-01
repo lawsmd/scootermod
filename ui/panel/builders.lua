@@ -25,7 +25,7 @@ local function createComponentRenderer(componentId)
             local init = {}
             local sections = {}
             for settingId, setting in pairs(component.settings) do
-                if setting.ui then
+                if setting.ui and not setting.ui.hidden then
                     local section = setting.ui.section or "General"
                     if not sections[section] then sections[section] = {} end
                     table.insert(sections[section], {id = settingId, setting = setting})
@@ -729,6 +729,8 @@ local function createComponentRenderer(componentId)
                                         end
                                     end
 
+                                    -- Removed: Action Bars addon-only width/height handling (see ACTIONBARS.md limitation)
+
                                     if settingId == "orientation" then
                                         local dir = component.db.direction or "right"
                                         if v == "H" then
@@ -742,7 +744,9 @@ local function createComponentRenderer(componentId)
 
                                     if ui.dynamicLabel or ui.dynamicValues or settingId == "orientation"
                                         or settingId == "iconBorderEnable" or settingId == "iconBorderTintEnable"
-                                        or settingId == "iconBorderStyle" then
+                                        or settingId == "iconBorderStyle"
+                                        or settingId == "borderEnable" or settingId == "borderTintEnable"
+                                        or settingId == "borderStyle" or settingId == "borderDisableAll" then
                                         RefreshCurrentCategoryDeferred()
                                     end
                                 end, setting.default)
@@ -766,11 +770,16 @@ local function createComponentRenderer(componentId)
                                 initSlider:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
                                 end)
-                                if settingId == "iconBorderThickness" then
+                                if settingId == "iconBorderThickness" or settingId == "borderThickness" then
                                     initSlider:AddShownPredicate(function()
                                         local db = component and component.db
-                                        if not db or not db.iconBorderEnable then return false end
-                                        return panel:IsSectionExpanded(component.id, sectionName)
+                                        if settingId == "iconBorderThickness" then
+                                            if not db or not db.iconBorderEnable then return false end
+                                            return panel:IsSectionExpanded(component.id, sectionName)
+                                        else
+                                            if not db or not db.borderEnable or db.borderDisableAll then return false end
+                                            return panel:IsSectionExpanded(component.id, sectionName)
+                                        end
                                     end)
                                 end
                                 if settingId == "opacity" then
@@ -864,11 +873,16 @@ local function createComponentRenderer(componentId)
                                     end
                                     if component and component.id == "trackedBars" and settingId == "borderStyle" then
                                         local db = component and component.db
-                                        return not db or db.styleEnableCustom ~= false
+                                        if not db or db.styleEnableCustom == false then return false end
+                                        return db.borderEnable and db.borderEnable ~= false
                                     end
                                     if settingId == "iconBorderStyle" then
                                         local db = component and component.db
                                         return db and db.iconBorderEnable and db.iconBorderEnable ~= false
+                                    end
+                                    if settingId == "borderStyle" then
+                                        local db = component and component.db
+                                        return db and db.borderEnable and db.borderEnable ~= false and not db.borderDisableAll
                                     end
                                     return true
                                 end
@@ -912,6 +926,9 @@ local function createComponentRenderer(componentId)
                                         if settingId == "iconBorderTintEnable" then
                                             local db = component and component.db
                                             return db and db.iconBorderEnable
+                                        elseif settingId == "borderTintEnable" then
+                                            local db = component and component.db
+                                            return db and db.borderEnable and not db.borderDisableAll
                                         end
                                         return true
                                     end)
