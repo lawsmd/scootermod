@@ -425,7 +425,7 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yA)
-                            addSlider(frame.PageA, labelA_Size, 8, 32, 1,
+                            addSlider(frame.PageA, labelA_Size, 6, 32, 1,
                                 function()
                                     if component and component.id == "trackedBars" then
                                         return (db.textName and db.textName.size) or 14
@@ -554,7 +554,7 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yB)
-                            addSlider(frame.PageB, labelB_Size, 8, 32, 1,
+                            addSlider(frame.PageB, labelB_Size, 6, 32, 1,
                                 function()
                                     if component and component.id == "trackedBars" then
                                         return (db.textDuration and db.textDuration.size) or 14
@@ -657,7 +657,7 @@ local function createComponentRenderer(componentId)
                                 yB)
                         end
                         local initializer = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-                        initializer.GetExtent = function() return 260 end
+                        initializer.GetExtent = function() return 315 end
                         initializer:AddShownPredicate(function()
                             return panel:IsSectionExpanded(component.id, "Text")
                         end)

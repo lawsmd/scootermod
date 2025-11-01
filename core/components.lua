@@ -892,12 +892,18 @@ local function ApplyCooldownViewerStyling(self)
     do
         local baseRaw = self.db and self.db.opacity or (self.settings.opacity and self.settings.opacity.default) or 100
         local baseOpacity = ClampOpacity(baseRaw, 50)
-        local overrideRaw = self.db and self.db.opacityOutOfCombat
-        if overrideRaw == nil and self.settings and self.settings.opacityOutOfCombat then
-            overrideRaw = self.settings.opacityOutOfCombat.default
+        local oocRaw = self.db and self.db.opacityOutOfCombat
+        if oocRaw == nil and self.settings and self.settings.opacityOutOfCombat then
+            oocRaw = self.settings.opacityOutOfCombat.default
         end
-        local overrideOpacity = ClampOpacity(overrideRaw or baseOpacity, 1)
-        local applied = PlayerInCombat() and baseOpacity or overrideOpacity
+        local oocOpacity = ClampOpacity(oocRaw or baseOpacity, 1)
+        local tgtRaw = self.db and self.db.opacityWithTarget
+        if tgtRaw == nil and self.settings and self.settings.opacityWithTarget then
+            tgtRaw = self.settings.opacityWithTarget.default
+        end
+        local tgtOpacity = ClampOpacity(tgtRaw or baseOpacity, 1)
+        local hasTarget = (UnitExists and UnitExists("target")) and true or false
+        local applied = hasTarget and tgtOpacity or (PlayerInCombat() and baseOpacity or oocOpacity)
         if frame.SetAlpha then pcall(frame.SetAlpha, frame, applied / 100) end
     end
 end
@@ -908,6 +914,23 @@ end
 local function ApplyActionBarStyling(self)
 	local bar = _G[self.frameName]
 	if not bar then return end
+
+	-- Apply overall bar opacity (addon-only, target > combat > out-of-combat)
+	local baseOp = tonumber(self.db and self.db.barOpacity)
+	if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
+	baseOp = tonumber(baseOp) or 100
+	if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
+	local oocOp = tonumber(self.db and self.db.barOpacityOutOfCombat)
+	if oocOp == nil and self.settings and self.settings.barOpacityOutOfCombat then oocOp = self.settings.barOpacityOutOfCombat.default end
+	oocOp = tonumber(oocOp) or baseOp
+	if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
+	local tgtOp = tonumber(self.db and self.db.barOpacityWithTarget)
+	if tgtOp == nil and self.settings and self.settings.barOpacityWithTarget then tgtOp = self.settings.barOpacityWithTarget.default end
+	tgtOp = tonumber(tgtOp) or baseOp
+	if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
+	local hasTarget = (UnitExists and UnitExists("target")) and true or false
+	local appliedOp = hasTarget and tgtOp or ((PlayerInCombat and PlayerInCombat()) and baseOp or oocOp)
+	if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
 
 	local function enumerateButtons()
 		local buttons = {}
@@ -1039,6 +1062,86 @@ local function ApplyActionBarStyling(self)
                 end
             end
         end
+
+		-- Text styling: Charges (Count), Cooldown numbers, Hotkey, Macro Name
+		do
+			local defaultFace = (select(1, GameFontNormal:GetFont()))
+			local function applyTextToFontString(fs, cfg, justify, anchorPoint, relTo)
+				if not fs or not fs.SetFont then return end
+				local size = tonumber(cfg.size) or 14
+				local style = cfg.style or "OUTLINE"
+				local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+				pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
+				fs:SetFont(face, size, style)
+				local c = cfg.color or {1,1,1,1}
+				if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+				if justify and fs.SetJustifyH then pcall(fs.SetJustifyH, fs, justify) end
+				local ox = (cfg.offset and cfg.offset.x) or 0
+				local oy = (cfg.offset and cfg.offset.y) or 0
+				if (ox ~= 0 or oy ~= 0) and fs.ClearAllPoints and fs.SetPoint then
+					fs:ClearAllPoints()
+					fs:SetPoint(anchorPoint or "CENTER", relTo or btn, anchorPoint or "CENTER", ox, oy)
+				end
+			end
+
+			-- Charges / Count
+			if btn.Count then
+				local cfg = self.db.textStacks or { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
+				applyTextToFontString(btn.Count, cfg, "CENTER", "CENTER", btn)
+			end
+
+			-- Cooldown numbers overlay
+			local cdOwner = btn.cooldown or btn.Cooldown or btn.CooldownFrame or nil
+			local cdText
+			if cdOwner then
+				-- Try to find a fontstring under the cooldown frame
+				local function findFS(obj)
+					if not obj then return nil end
+					if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
+					if obj.GetRegions then
+						local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
+						for i = 1, n do
+							local r = select(i, obj:GetRegions())
+							if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
+						end
+					end
+					return nil
+				end
+				cdText = findFS(cdOwner)
+			end
+			if cdText then
+				local cfg = self.db.textCooldown or { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
+				applyTextToFontString(cdText, cfg, "CENTER", "CENTER", btn)
+			end
+
+			-- Hotkey text
+			if btn.HotKey then
+				local txt = (btn.HotKey.GetText and btn.HotKey:GetText()) or nil
+				local rangeIndicator = (_G and _G.RANGE_INDICATOR) or "RANGE_INDICATOR"
+				local isEmpty = (txt == nil or txt == "")
+				local isRange = (txt == rangeIndicator or txt == "•")
+				local hiddenByUser = self.db and self.db.textHotkeyHidden
+				local shouldShow = (not hiddenByUser) and (not isEmpty) and (not isRange)
+				pcall(btn.HotKey.SetShown, btn.HotKey, shouldShow)
+				if shouldShow then
+					local cfg = self.db.textHotkey or { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
+					applyTextToFontString(btn.HotKey, cfg, "RIGHT", "TOPRIGHT", btn)
+				end
+			end
+
+			-- Macro name text
+			if btn.Name then
+				local txt = (btn.Name.GetText and btn.Name:GetText()) or nil
+				local isEmpty = (txt == nil or txt == "")
+				local hiddenByUser = self.db and self.db.textMacroHidden
+				local shouldShow = (not hiddenByUser) and (not isEmpty)
+				pcall(btn.Name.SetShown, btn.Name, shouldShow)
+				if shouldShow then
+					local cfg = self.db.textMacro or { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
+					applyTextToFontString(btn.Name, cfg, "CENTER", "BOTTOM", btn)
+				end
+			end
+		end
 	end
 end
 
@@ -1126,22 +1229,25 @@ function addon:InitializeComponents()
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
-            -- Visibility (Edit Mode synced)
+    -- Visibility (Edit Mode synced)
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
-            opacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
-            }},
-            showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 4
-            }},
-            showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 5
-            }},
+    opacityOutOfCombat = { type = "addon", default = 100, ui = {
+        label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+    }},
+    opacityWithTarget = { type = "addon", default = 100, ui = {
+        label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
+    }},
+    showTimer = { type = "editmode", default = true, ui = {
+        label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
+    }},
+    showTooltip = { type = "editmode", default = true, ui = {
+        label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
+    }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
         },
@@ -1205,22 +1311,25 @@ function addon:InitializeComponents()
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
             }},
-            -- Visibility / Misc
+    -- Visibility / Misc
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},
             opacity = { type = "editmode", settingId = 5, default = 100, ui = {
                 label = "Opacity", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 2
             }},
-            opacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
-            }},
-            showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 4
-            }},
-            showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 5
-            }},
+    opacityOutOfCombat = { type = "addon", default = 100, ui = {
+        label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+    }},
+    opacityWithTarget = { type = "addon", default = 100, ui = {
+        label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
+    }},
+    showTimer = { type = "editmode", default = true, ui = {
+        label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
+    }},
+    showTooltip = { type = "editmode", default = true, ui = {
+        label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
+    }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
         },
@@ -1291,14 +1400,17 @@ function addon:InitializeComponents()
             opacityOutOfCombat = { type = "addon", default = 100, ui = {
                 label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
             }},
+            opacityWithTarget = { type = "addon", default = 100, ui = {
+                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
+            }},
             hideWhenInactive = { type = "editmode", default = false, ui = {
-                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 4
+                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 5
             }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 6
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 7
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
@@ -1422,17 +1534,20 @@ function addon:InitializeComponents()
             opacityOutOfCombat = { type = "addon", default = 100, ui = {
                 label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
             }},
+            opacityWithTarget = { type = "addon", default = 100, ui = {
+                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
+            }},
             displayMode = { type = "editmode", default = "both", ui = {
-                label = "Display Mode", widget = "dropdown", values = { both = "Icon & Name", icon = "Icon Only", name = "Name Only" }, section = "Misc", order = 4
+                label = "Display Mode", widget = "dropdown", values = { both = "Icon & Name", icon = "Icon Only", name = "Name Only" }, section = "Misc", order = 5
             }},
             hideWhenInactive = { type = "editmode", default = false, ui = {
-                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 5
+                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 6
             }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 6
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 7
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 7
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 8
             }},
             -- Marker: enable Text section in settings UI for this component
             supportsText = { type = "addon", default = true },
@@ -1518,6 +1633,18 @@ do
                 backdropOpacity = { type = "addon", default = 100, ui = {
                     label = "Backdrop Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Backdrop", order = 6
                 }},
+				-- Visibility (Addon-only)
+				barOpacity = { type = "addon", default = 100, ui = {
+					label = "Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+				}},
+				barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
+					label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+				}},
+				barOpacityWithTarget = { type = "addon", default = 100, ui = {
+					label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+				}},
+				-- Marker: enable Text section (4 tabs) in settings UI for Action Bars
+				supportsText = { type = "addon", default = true },
                 -- Position (addon-side; neutral defaults)
                 positionX = { type = "addon", default = 0, ui = {
                     label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98

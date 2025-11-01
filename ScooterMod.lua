@@ -117,11 +117,13 @@ end
 function addon:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "HandleCombatStarted")
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "HandleCombatEnded")
+    self:RegisterEvent("PLAYER_TARGET_CHANGED", "HandleTargetChanged")
 end
 
 function addon:OnDisable()
     self:UnregisterEvent("PLAYER_REGEN_DISABLED")
     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    self:UnregisterEvent("PLAYER_TARGET_CHANGED")
 end
 
 function addon:HandleCombatStarted()
@@ -153,5 +155,11 @@ function addon:HandleCombatEnded()
     panel._shouldReopenAfterCombat = false
     if shouldReopen and panel.Open then
         panel:Open()
+    end
+end
+
+function addon:HandleTargetChanged()
+    if self.ApplyStyles then
+        self:ApplyStyles()
     end
 end

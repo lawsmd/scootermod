@@ -204,6 +204,11 @@ local function createComponentRenderer(componentId)
                             yRef.y = yRef.y - 34
                         end
 
+                        local function isActionBar()
+                            local id = tostring(component and component.id or "")
+                            return id:find("actionBar", 1, true) == 1
+                        end
+
                         local tabAName, tabBName
                         if component and component.id == "trackedBuffs" then
                             tabAName, tabBName = "Stacks", "Cooldown"
@@ -212,10 +217,19 @@ local function createComponentRenderer(componentId)
                         else
                             tabAName, tabBName = "Charges", "Cooldowns"
                         end
-                        local data = { sectionTitle = "", tabAText = tabAName, tabBText = tabBName }
+
+                        local data
+                        if isActionBar() then
+                            data = { sectionTitle = "", tabAText = "Charges", tabBText = "Cooldowns", tabCText = "Hotkey", tabDText = "Macro Name" }
+                        else
+                            data = { sectionTitle = "", tabAText = tabAName, tabBText = tabBName }
+                        end
+
                         data.build = function(frame)
                             local yA = { y = -50 }
                             local yB = { y = -50 }
+                            local yC = { y = -50 }
+                            local yD = { y = -50 }
                             local db = component.db
                             local function applyText()
                                 addon:ApplyStyles()
@@ -254,7 +268,7 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yA)
-                            addSlider(frame.PageA, labelA_Size, 8, 32, 1,
+                            addSlider(frame.PageA, labelA_Size, 6, 32, 1,
                                 function()
                                     if component and component.id == "trackedBars" then
                                         return (db.textName and db.textName.size) or 14
@@ -382,7 +396,7 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yB)
-                            addSlider(frame.PageB, labelB_Size, 8, 32, 1,
+                            addSlider(frame.PageB, labelB_Size, 6, 32, 1,
                                 function()
                                     if component and component.id == "trackedBars" then
                                         return (db.textDuration and db.textDuration.size) or 14
@@ -483,9 +497,91 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yB)
+
+                            -- Action Bars only: Page C (Hotkey) and Page D (Macro Name)
+                            if isActionBar() then
+                                -- Hotkey
+                                do
+                                    local setting = CreateLocalSetting("Hide Hotkey", "boolean",
+                                        function() return not not db.textHotkeyHidden end,
+                                        function(v) db.textHotkeyHidden = not not v; applyText() end,
+                                        db.textHotkeyHidden)
+                                    local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Hotkey", setting = setting, options = {} })
+                                    local f = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+                                    f.GetElementData = function() return initCb end
+                                    f:SetPoint("TOPLEFT", 4, yC.y)
+                                    f:SetPoint("TOPRIGHT", -16, yC.y)
+                                    initCb:InitFrame(f)
+                                    yC.y = yC.y - 34
+                                end
+                                addDropdown(frame.PageC, "Hotkey Font", fontOptions,
+                                    function() return (db.textHotkey and db.textHotkey.fontFace) or "FRIZQT__" end,
+                                    function(v) db.textHotkey = db.textHotkey or {}; db.textHotkey.fontFace = v; applyText() end,
+                                    yC)
+                                addSlider(frame.PageC, "Hotkey Font Size", 6, 32, 1,
+                                    function() return (db.textHotkey and db.textHotkey.size) or 14 end,
+                                    function(v) db.textHotkey = db.textHotkey or {}; db.textHotkey.size = tonumber(v) or 14; applyText() end,
+                                    yC)
+                                addStyle(frame.PageC, "Hotkey Style",
+                                    function() return (db.textHotkey and db.textHotkey.style) or "OUTLINE" end,
+                                    function(v) db.textHotkey = db.textHotkey or {}; db.textHotkey.style = v; applyText() end,
+                                    yC)
+                                addColor(frame.PageC, "Hotkey Color", true,
+                                    function() local c = (db.textHotkey and db.textHotkey.color) or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+                                    function(r,g,b,a) db.textHotkey = db.textHotkey or {}; db.textHotkey.color = {r,g,b,a}; applyText() end,
+                                    yC)
+                                addSlider(frame.PageC, "Hotkey Offset X", -50, 50, 1,
+                                    function() return (db.textHotkey and db.textHotkey.offset and db.textHotkey.offset.x) or 0 end,
+                                    function(v) db.textHotkey = db.textHotkey or {}; db.textHotkey.offset = db.textHotkey.offset or {}; db.textHotkey.offset.x = tonumber(v) or 0; applyText() end,
+                                    yC)
+                                addSlider(frame.PageC, "Hotkey Offset Y", -50, 50, 1,
+                                    function() return (db.textHotkey and db.textHotkey.offset and db.textHotkey.offset.y) or 0 end,
+                                    function(v) db.textHotkey = db.textHotkey or {}; db.textHotkey.offset = db.textHotkey.offset or {}; db.textHotkey.offset.y = tonumber(v) or 0; applyText() end,
+                                    yC)
+
+                                -- Macro Name
+                                do
+                                    local setting = CreateLocalSetting("Hide Macro Name", "boolean",
+                                        function() return not not db.textMacroHidden end,
+                                        function(v) db.textMacroHidden = not not v; applyText() end,
+                                        db.textMacroHidden)
+                                    local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Macro Name", setting = setting, options = {} })
+                                    local f = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+                                    f.GetElementData = function() return initCb end
+                                    f:SetPoint("TOPLEFT", 4, yD.y)
+                                    f:SetPoint("TOPRIGHT", -16, yD.y)
+                                    initCb:InitFrame(f)
+                                    yD.y = yD.y - 34
+                                end
+                                addDropdown(frame.PageD, "Macro Name Font", fontOptions,
+                                    function() return (db.textMacro and db.textMacro.fontFace) or "FRIZQT__" end,
+                                    function(v) db.textMacro = db.textMacro or {}; db.textMacro.fontFace = v; applyText() end,
+                                    yD)
+                                addSlider(frame.PageD, "Macro Name Font Size", 6, 32, 1,
+                                    function() return (db.textMacro and db.textMacro.size) or 14 end,
+                                    function(v) db.textMacro = db.textMacro or {}; db.textMacro.size = tonumber(v) or 14; applyText() end,
+                                    yD)
+                                addStyle(frame.PageD, "Macro Name Style",
+                                    function() return (db.textMacro and db.textMacro.style) or "OUTLINE" end,
+                                    function(v) db.textMacro = db.textMacro or {}; db.textMacro.style = v; applyText() end,
+                                    yD)
+                                addColor(frame.PageD, "Macro Name Color", true,
+                                    function() local c = (db.textMacro and db.textMacro.color) or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+                                    function(r,g,b,a) db.textMacro = db.textMacro or {}; db.textMacro.color = {r,g,b,a}; applyText() end,
+                                    yD)
+                                addSlider(frame.PageD, "Macro Name Offset X", -50, 50, 1,
+                                    function() return (db.textMacro and db.textMacro.offset and db.textMacro.offset.x) or 0 end,
+                                    function(v) db.textMacro = db.textMacro or {}; db.textMacro.offset = db.textMacro.offset or {}; db.textMacro.offset.x = tonumber(v) or 0; applyText() end,
+                                    yD)
+                                addSlider(frame.PageD, "Macro Name Offset Y", -50, 50, 1,
+                                    function() return (db.textMacro and db.textMacro.offset and db.textMacro.offset.y) or 0 end,
+                                    function(v) db.textMacro = db.textMacro or {}; db.textMacro.offset = db.textMacro.offset or {}; db.textMacro.offset.y = tonumber(v) or 0; applyText() end,
+                                    yD)
+                            end
                         end
                         local initializer = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-                        initializer.GetExtent = function() return 260 end
+                        -- Increased extent to accommodate up to 7 rows on Hotkey/Macro pages
+                        initializer.GetExtent = function() return 315 end
                         initializer:AddShownPredicate(function()
                             return panel:IsSectionExpanded(component.id, "Text")
                         end)
@@ -672,7 +768,7 @@ local function createComponentRenderer(componentId)
                                             finalValue = clampPositionValue(finalValue)
                                         else
                                             finalValue = math.floor(finalValue + 0.5)
-                                            if settingId == "opacityOutOfCombat" then
+                                            if settingId == "opacityOutOfCombat" or settingId == "opacityWithTarget" or settingId == "barOpacityOutOfCombat" or settingId == "barOpacityWithTarget" then
                                                 if ui.min then finalValue = math.max(ui.min, finalValue) end
                                                 if ui.max then finalValue = math.min(ui.max, finalValue) end
                                             end
@@ -758,7 +854,7 @@ local function createComponentRenderer(componentId)
                                         local snapped = math.floor(v / 10 + 0.5) * 10
                                         return tostring(snapped)
                                     end)
-                                elseif settingId == "opacity" or settingId == "opacityOutOfCombat" then
+                                elseif settingId == "opacity" or settingId == "opacityOutOfCombat" or settingId == "opacityWithTarget" or settingId == "barOpacity" or settingId == "barOpacityOutOfCombat" or settingId == "barOpacityWithTarget" then
                                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
                                         return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
                                     end)

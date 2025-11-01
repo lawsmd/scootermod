@@ -93,18 +93,24 @@ ScooterTabbedSectionMixin = {}
 
 function ScooterTabbedSectionMixin:OnLoad()
     self.tabsGroup = self.tabsGroup or CreateRadioButtonGroup()
-    self.tabsGroup:AddButtons({ self.TabA, self.TabB })
+    local buttons = {}
+    if self.TabA then table.insert(buttons, self.TabA) end
+    if self.TabB then table.insert(buttons, self.TabB) end
+    if self.TabC then table.insert(buttons, self.TabC) end
+    if self.TabD then table.insert(buttons, self.TabD) end
+    if #buttons == 0 then return end
+    self.tabsGroup:AddButtons(buttons)
     self.tabsGroup:SelectAtIndex(1)
     self.tabsGroup:RegisterCallback(ButtonGroupBaseMixin.Event.Selected, function(_, btn)
         self:EvaluateVisibility(btn)
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
         if self.UpdateTabTheme then self:UpdateTabTheme() end
     end, self)
-    self:EvaluateVisibility(self.TabA)
+    self:EvaluateVisibility(self.TabA or buttons[1])
     if self.UpdateTabTheme then self:UpdateTabTheme() end
 end
 
-function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText)
+function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, tabCText, tabDText)
     if self.TitleFS then self.TitleFS:SetText(sectionTitle or "") end
     if self.TabA then
         self.TabA.tabText = tabAText or "Tab A"
@@ -120,13 +126,37 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText)
             self.TabB:SetWidth(self.TabB.Text:GetStringWidth() + 40)
         end
     end
+    if self.TabC then
+        self.TabC.tabText = tabCText or (self.TabC.tabText or "Tab C")
+        if self.TabC.Text then
+            self.TabC.Text:SetText(self.TabC.tabText)
+            self.TabC:SetWidth(self.TabC.Text:GetStringWidth() + 40)
+        end
+    end
+    if self.TabD then
+        self.TabD.tabText = tabDText or (self.TabD.tabText or "Tab D")
+        if self.TabD.Text then
+            self.TabD.Text:SetText(self.TabD.tabText)
+            self.TabD:SetWidth(self.TabD.Text:GetStringWidth() + 40)
+        end
+    end
     if self.UpdateTabTheme then self:UpdateTabTheme() end
 end
 
 function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
-    local showA = selected == self.TabA
-    if self.PageA then self.PageA:SetShown(showA) end
-    if self.PageB then self.PageB:SetShown(not showA) end
+    local index = 1
+    if self.tabsGroup and self.tabsGroup.GetSelectedIndex then
+        index = self.tabsGroup:GetSelectedIndex() or index
+    else
+        if selected == self.TabA then index = 1
+        elseif selected == self.TabB then index = 2
+        elseif selected == self.TabC then index = 3
+        elseif selected == self.TabD then index = 4 end
+    end
+    local pages = { self.PageA, self.PageB, self.PageC, self.PageD }
+    for i = 1, #pages do
+        if pages[i] then pages[i]:SetShown(i == index) end
+    end
 end
 
 function ScooterTabbedSectionMixin:UpdateTabTheme()
@@ -141,13 +171,15 @@ function ScooterTabbedSectionMixin:UpdateTabTheme()
         end
     end
     local selectedIndex = (self.tabsGroup and self.tabsGroup.GetSelectedIndex) and self.tabsGroup:GetSelectedIndex() or 1
-    style(self.TabA, selectedIndex == 1)
-    style(self.TabB, selectedIndex ~= 1)
+    local tabs = { self.TabA, self.TabB, self.TabC, self.TabD }
+    for i = 1, #tabs do
+        style(tabs[i], selectedIndex == i)
+    end
 end
 
 function ScooterTabbedSectionMixin:Init(initializer)
     local data = initializer and initializer.data or {}
-    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B")
+    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText)
     local function ClearChildren(frame)
         if not frame or not frame.GetNumChildren then return end
         for i = frame:GetNumChildren(), 1, -1 do
@@ -157,6 +189,8 @@ function ScooterTabbedSectionMixin:Init(initializer)
     end
     ClearChildren(self.PageA)
     ClearChildren(self.PageB)
+    ClearChildren(self.PageC)
+    ClearChildren(self.PageD)
     if type(data.build) == "function" then
         data.build(self)
     end
