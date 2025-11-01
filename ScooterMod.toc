@@ -22,6 +22,7 @@ core/media.lua
 core/fonts.lua
 core/barborders.lua
 core/iconborders.lua
+core/iconbackdrops.lua
 core/borders.lua
 core/editmode.lua
 core/profiles.lua

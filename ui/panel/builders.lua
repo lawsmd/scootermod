@@ -36,7 +36,7 @@ local function createComponentRenderer(componentId)
                 table.sort(sectionSettings, function(a, b) return (a.setting.ui.order or 999) < (b.setting.ui.order or 999) end)
             end
 
-            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Icon", "Text", "Misc"}
+            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Backdrop", "Icon", "Text", "Misc"}
             local function RefreshCurrentCategoryDeferred()
                 if panel and panel.RefreshCurrentCategoryDeferred then
                     panel.RefreshCurrentCategoryDeferred()
@@ -746,7 +746,7 @@ local function createComponentRenderer(componentId)
                                         or settingId == "iconBorderEnable" or settingId == "iconBorderTintEnable"
                                         or settingId == "iconBorderStyle"
                                         or settingId == "borderEnable" or settingId == "borderTintEnable"
-                                        or settingId == "borderStyle" or settingId == "borderDisableAll" then
+                                        or settingId == "borderStyle" then
                                         RefreshCurrentCategoryDeferred()
                                     end
                                 end, setting.default)
@@ -777,7 +777,7 @@ local function createComponentRenderer(componentId)
                                             if not db or not db.iconBorderEnable then return false end
                                             return panel:IsSectionExpanded(component.id, sectionName)
                                         else
-                                            if not db or not db.borderEnable or db.borderDisableAll then return false end
+                                            if not db or not db.borderEnable then return false end
                                             return panel:IsSectionExpanded(component.id, sectionName)
                                         end
                                     end)
@@ -882,7 +882,7 @@ local function createComponentRenderer(componentId)
                                     end
                                     if settingId == "borderStyle" then
                                         local db = component and component.db
-                                        return db and db.borderEnable and db.borderEnable ~= false and not db.borderDisableAll
+                                        return db and db.borderEnable and db.borderEnable ~= false
                                     end
                                     return true
                                 end
@@ -903,8 +903,9 @@ local function createComponentRenderer(componentId)
                                 table.insert(init, initDrop)
                             elseif ui.widget == "checkbox" then
                                 local data = { setting = settingObj, name = label, tooltip = ui.tooltip, options = {} }
-                                if settingId == "borderTintEnable" or settingId == "iconBorderTintEnable" then
+                                if settingId == "borderTintEnable" or settingId == "iconBorderTintEnable" or settingId == "backdropTintEnable" then
                                     local colorKey = (settingId == "iconBorderTintEnable") and "iconBorderTintColor" or "borderTintColor"
+                                    if settingId == "backdropTintEnable" then colorKey = "backdropTintColor" end
                                     local initCb = CreateCheckboxWithSwatchInitializer(
                                         settingObj,
                                         label,
@@ -926,9 +927,13 @@ local function createComponentRenderer(componentId)
                                         if settingId == "iconBorderTintEnable" then
                                             local db = component and component.db
                                             return db and db.iconBorderEnable
-                                        elseif settingId == "borderTintEnable" then
+                                    elseif settingId == "borderTintEnable" then
                                             local db = component and component.db
-                                            return db and db.borderEnable and not db.borderDisableAll
+                                        return db and db.borderEnable
+                                        elseif settingId == "backdropTintEnable" then
+                                            local db = component and component.db
+                                            if not db or db.backdropDisable then return false end
+                                            return true
                                         end
                                         return true
                                     end)
@@ -974,7 +979,7 @@ local function createComponentRenderer(componentId)
                                     table.insert(init, initCb)
                                 end
                             elseif ui.widget == "color" then
-                                if settingId ~= "borderTintColor" then
+                                if settingId ~= "borderTintColor" and settingId ~= "backdropTintColor" then
                                     local colorRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
                                     colorRow.GetExtent = function() return 28 end
                                     colorRow.InitFrame = function(self, frame)

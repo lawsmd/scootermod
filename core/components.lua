@@ -1017,6 +1017,28 @@ local function ApplyActionBarStyling(self)
 			if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
 			toggleDefaultButtonArt(btn, true)
 		end
+
+        -- Apply Backdrop selection
+        do
+            local disableBackdrop = self.db and self.db.backdropDisable
+            local style = (self.db and self.db.backdropStyle) or (self.settings and self.settings.backdropStyle and self.settings.backdropStyle.default) or "blizzardBg"
+            local opacity = tonumber(self.db and self.db.backdropOpacity) or 100
+            local inset = tonumber(self.db and self.db.backdropInset) or 0
+            local tintEnabled = self.db and self.db.backdropTintEnable and type(self.db.backdropTintColor) == "table"
+            local tintColor
+            if tintEnabled then
+                local c = self.db.backdropTintColor or {1,1,1,1}
+                tintColor = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+            end
+            if disableBackdrop then
+                local bg = btn and btn.SlotBackground
+                if bg and bg.SetAlpha then pcall(bg.SetAlpha, bg, 0) end
+            else
+                if addon and addon.ApplyIconBackdropToActionButton then
+                    addon.ApplyIconBackdropToActionButton(btn, style, opacity, inset, tintColor)
+                end
+            end
+        end
 	end
 end
 
@@ -1471,6 +1493,31 @@ do
 				borderThickness = { type = "addon", default = 1, ui = {
 					label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 6
 				}},
+                -- Backdrop (Addon-only)
+                backdropDisable = { type = "addon", default = false, ui = {
+                    label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
+                }},
+                backdropStyle = { type = "addon", default = "blizzardBg", ui = {
+                    label = "Backdrop Style", widget = "dropdown", section = "Backdrop", order = 2,
+                    optionsProvider = function()
+                        if addon.BuildIconBackdropOptionsContainer then
+                            return addon.BuildIconBackdropOptionsContainer()
+                        end
+                        return {}
+                    end
+                }},
+                backdropInset = { type = "addon", default = 0, ui = {
+                    label = "Backdrop Inset", widget = "slider", min = -6, max = 8, step = 1, section = "Backdrop", order = 3
+                }},
+                backdropTintEnable = { type = "addon", default = false, ui = {
+                    label = "Backdrop Tint", widget = "checkbox", section = "Backdrop", order = 4
+                }},
+                backdropTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                    label = "Tint Color", widget = "color", section = "Backdrop", order = 5
+                }},
+                backdropOpacity = { type = "addon", default = 100, ui = {
+                    label = "Backdrop Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Backdrop", order = 6
+                }},
                 -- Position (addon-side; neutral defaults)
                 positionX = { type = "addon", default = 0, ui = {
                     label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
