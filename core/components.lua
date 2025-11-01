@@ -1712,6 +1712,74 @@ function addon:ApplyStyles()
     end
 end
 
+-- Copy all settings from one Action Bar to another (both Edit Mode and addon-only)
+-- Skips keys that do not exist on the destination bar (handles AB1-only and AB2-8-only options)
+function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
+    if type(sourceComponentId) ~= "string" or type(destComponentId) ~= "string" then return end
+    if sourceComponentId == destComponentId then return end
+    local src = addon.Components and addon.Components[sourceComponentId]
+    local dst = addon.Components and addon.Components[destComponentId]
+    if not src or not dst then return end
+    if not (sourceComponentId:match("^actionBar%d$") and destComponentId:match("^actionBar%d$")) then return end
+
+    -- Defensive: ensure DB links exist
+    if not src.db or not dst.db then return end
+
+    -- Helper to deep-copy simple tables (e.g., color arrays, offset tables)
+    local function deepcopy(v)
+        if type(v) ~= "table" then return v end
+        local out = {}
+        for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+        return out
+    end
+
+    -- 1) Copy values into destination DB (only keys the destination knows about)
+    for key, def in pairs(dst.settings or {}) do
+        -- Skip marker keys that are not real settings
+        if key ~= "supportsText" and key ~= "supportsEmptyVisibilitySection" then
+            local srcHasSetting = src.settings and src.settings[key] ~= nil
+            local srcVal = src.db and (src.db[key])
+            if srcVal == nil and srcHasSetting then
+                srcVal = src.settings[key] and src.settings[key].default
+            end
+            if srcVal ~= nil then
+                dst.db[key] = deepcopy(srcVal)
+            end
+        end
+    end
+
+    -- 1b) Copy Action Bar text styling keys that are stored only in DB (not declared under settings)
+    do
+        local textKeys = {
+            "textStacks", "textCooldown",
+            "textHotkeyHidden", "textHotkey",
+            "textMacroHidden",  "textMacro",
+        }
+        for _, k in ipairs(textKeys) do
+            if src.db[k] ~= nil then
+                dst.db[k] = deepcopy(src.db[k])
+            else
+                -- Explicitly clear to revert to defaults when source uses defaults
+                dst.db[k] = nil
+            end
+        end
+    end
+
+    -- 2) Push Edit Mode–managed settings to the game for the destination bar
+    if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+        for key, setting in pairs(dst.settings or {}) do
+            if setting and setting.type == "editmode" then
+                pcall(addon.EditMode.SyncComponentSettingToEditMode, dst, key)
+            end
+        end
+    end
+
+    -- 3) Persist and coalesce apply; then re-style locally
+    if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    addon:ApplyStyles()
+end
+
 function addon:SyncAllEditModeSettings()
     local anyChanged = false
     for id, component in pairs(self.Components) do

@@ -1128,6 +1128,95 @@ local function createComponentRenderer(componentId)
             local f = panel.frame
             local settingsList = f.SettingsList
             settingsList.Header.Title:SetText(component.name or component.id)
+            -- Ensure header "Copy from" control for Action Bars (1-8)
+            do
+                local isAB = type(component and component.id) == "string" and component.id:match("^actionBar%d$") ~= nil
+                local header = settingsList and settingsList.Header
+                local collapseBtn = header and header.DefaultsButton
+                if header and collapseBtn then
+                    -- Create once
+                    if not header.ScooterCopyFromLabel then
+                        local lbl = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                        lbl:SetText("Copy from:")
+                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                        header.ScooterCopyFromLabel = lbl
+                    end
+                    if not header.ScooterCopyFromDropdown then
+                        local dd = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+                        dd:SetSize(180, 22)
+                        header.ScooterCopyFromDropdown = dd
+                    end
+                    local lbl = header.ScooterCopyFromLabel
+                    local dd = header.ScooterCopyFromDropdown
+                    -- Position: label to the left of dropdown; dropdown just left of Collapse All
+                    dd:ClearAllPoints()
+                    dd:SetPoint("RIGHT", collapseBtn, "LEFT", -24, 0)
+                    lbl:ClearAllPoints()
+                    lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+
+                    -- Populate dropdown only on Action Bar tabs
+                    if isAB and dd and dd.SetupMenu then
+                        -- One-time confirmation dialog registration
+                        if _G and _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] then
+                            _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] = {
+                                text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
+                                button1 = "Copy",
+                                button2 = CANCEL,
+                                OnAccept = function(self, data)
+                                    if data and addon and addon.CopyActionBarSettings then
+                                        addon.CopyActionBarSettings(data.sourceId, data.destId)
+                                        if data.dropdown then
+                                            data.dropdown._ScooterSelectedId = data.sourceId
+                                            if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
+                                        end
+                                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                    end
+                                end,
+                                OnCancel = function(self, data) end,
+                                timeout = 0,
+                                whileDead = 1,
+                                hideOnEscape = 1,
+                                preferredIndex = 3,
+                            }
+                        end
+                        local currentId = component.id
+                        dd:SetupMenu(function(menu, root)
+                            -- Build a list of other action bars
+                            for i = 1, 8 do
+                                local id = "actionBar" .. tostring(i)
+                                if id ~= currentId then
+                                    local comp = addon.Components and addon.Components[id]
+                                    local text = (comp and comp.name) or ("Action Bar " .. tostring(i))
+                                    local desc = root:CreateRadio(text, function()
+                                        -- Show checked state if last chosen matches
+                                        return dd._ScooterSelectedId == id
+                                    end, function()
+                                        -- Confirmation before destructive overwrite
+                                        local which = "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
+                                        local destName = component.name or component.id
+                                        local data = { sourceId = id, destId = currentId, sourceName = text, destName = destName, dropdown = dd }
+                                        if _G and _G.StaticPopup_Show then
+                                            _G.StaticPopup_Show(which, text, destName, data)
+                                        else
+                                            -- Fallback: perform copy directly if popup system is unavailable
+                                            if addon and addon.CopyActionBarSettings then addon.CopyActionBarSettings(id, currentId) end
+                                            dd._ScooterSelectedId = id
+                                            if dd.SetText then dd:SetText(text) end
+                                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Ensure a neutral prompt if nothing selected yet
+                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a bar...") end
+                    end
+
+                    -- Visibility per tab
+                    if lbl then lbl:SetShown(isAB) end
+                    if dd then dd:SetShown(isAB) end
+                end
+            end
             settingsList:Display(init)
             local currentCategory = f.CurrentCategory
             if currentCategory and f.CatRenderers then
