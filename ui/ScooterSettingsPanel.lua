@@ -1252,65 +1252,248 @@ end
 -- renderProfilesPresets moved to ui/panel/profiles_presets.lua
 
 local function BuildCategories()
-    local f = panel.frame
-    local categoryList = f.CategoryList
-    if f.CategoriesBuilt then return end
-    local catRenderers, createdCategories = {}, {}
-    local function createCategory(groupText, name, order, renderer)
-        local category = CreateFromMixins(SettingsCategoryMixin)
-        category:Init(name); category:SetOrder(order or 10)
-        categoryList:AddCategory(category, groupText, false)
-        catRenderers[category] = renderer
-        table.insert(createdCategories, category)
-        return category
-    end
-    createCategory("Profiles", "Manage Profiles", 1, addon.SettingsPanel.RenderProfilesManage())
-    createCategory("Profiles", "Presets", 2, addon.SettingsPanel.RenderProfilesPresets())
-    createCategory("Cooldown Manager", "Essential Cooldowns", 11, addon.SettingsPanel.RenderEssentialCooldowns())
-    createCategory("Cooldown Manager", "Utility Cooldowns", 12, addon.SettingsPanel.RenderUtilityCooldowns())
-    -- Reorder: Tracked Buffs third, Tracked Bars last
-    createCategory("Cooldown Manager", "Tracked Buffs", 13, addon.SettingsPanel.RenderTrackedBuffs())
-    createCategory("Cooldown Manager", "Tracked Bars", 14, addon.SettingsPanel.RenderTrackedBars())
-    -- Action Bars group
-    createCategory("Action Bars", "Action Bar 1", 21, addon.SettingsPanel.RenderActionBar1())
-    createCategory("Action Bars", "Action Bar 2", 22, addon.SettingsPanel.RenderActionBar2())
-    createCategory("Action Bars", "Action Bar 3", 23, addon.SettingsPanel.RenderActionBar3())
-    createCategory("Action Bars", "Action Bar 4", 24, addon.SettingsPanel.RenderActionBar4())
-    createCategory("Action Bars", "Action Bar 5", 25, addon.SettingsPanel.RenderActionBar5())
-    createCategory("Action Bars", "Action Bar 6", 26, addon.SettingsPanel.RenderActionBar6())
-    createCategory("Action Bars", "Action Bar 7", 27, addon.SettingsPanel.RenderActionBar7())
-    createCategory("Action Bars", "Action Bar 8", 28, addon.SettingsPanel.RenderActionBar8())
-    createCategory("Action Bars", "Stance Bar", 29, addon.SettingsPanel.RenderStanceBar())
-    createCategory("Action Bars", "Micro Bar", 30, addon.SettingsPanel.RenderMicroBar())
-    categoryList:RegisterCallback(SettingsCategoryListMixin.Event.OnCategorySelected, function(_, category)
-        f.CurrentCategory = category
-        local entry = catRenderers[category]
-        if entry and entry.mode == "list" then
-            entry.render()
-            -- Ensure header button visibility matches the selected page
-            if panel and panel.UpdateCollapseButtonVisibility then
-                panel.UpdateCollapseButtonVisibility()
-            end
-            -- Some parts of the list evaluate shown predicates lazily; force a second pass like the user's second click
-            if f.SettingsList and f.SettingsList.RepairDisplay then
-                C_Timer.After(0, function()
-                    if f and f:IsShown() then
-                        pcall(f.SettingsList.RepairDisplay, f.SettingsList, { EnumerateInitializers = function() return ipairs(entry and entry._lastInitializers or {}) end, GetInitializers = function() return entry and entry._lastInitializers or {} end })
-                    end
-                end)
-            end
-        end
-        -- Re-apply sidebar theming whenever selection changes (buttons are recycled)
-        if panel and panel.SkinCategoryList then panel.SkinCategoryList(categoryList) end
-    end, f)
-    f.CategoriesBuilt, f.CatRenderers, f.CreatedCategories = true, catRenderers, createdCategories
-    C_Timer.After(0, function()
-        if createdCategories[1] then
-            categoryList:SetCurrentCategory(createdCategories[1])
-            if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
-            if panel and panel.SkinCategoryList then panel.SkinCategoryList(categoryList) end
-        end
-    end)
+	local f = panel.frame
+	if f.CategoriesBuilt then return end
+
+	-- Persist sidebar expanded state per parent name within this session
+	panel._sidebarExpanded = panel._sidebarExpanded or {}
+
+	-- Build renderers mapping keyed by stable string keys
+	local catRenderers = {}
+
+	local function addEntry(key, renderer)
+		catRenderers[key] = renderer
+	end
+
+	-- Profiles children
+	addEntry("profilesManage", addon.SettingsPanel.RenderProfilesManage())
+	addEntry("profilesPresets", addon.SettingsPanel.RenderProfilesPresets())
+
+	-- Cooldown Manager children
+	addEntry("essentialCooldowns", addon.SettingsPanel.RenderEssentialCooldowns())
+	addEntry("utilityCooldowns", addon.SettingsPanel.RenderUtilityCooldowns())
+	addEntry("trackedBuffs", addon.SettingsPanel.RenderTrackedBuffs())
+	addEntry("trackedBars", addon.SettingsPanel.RenderTrackedBars())
+
+	-- Action Bars children
+	addEntry("actionBar1", addon.SettingsPanel.RenderActionBar1())
+	addEntry("actionBar2", addon.SettingsPanel.RenderActionBar2())
+	addEntry("actionBar3", addon.SettingsPanel.RenderActionBar3())
+	addEntry("actionBar4", addon.SettingsPanel.RenderActionBar4())
+	addEntry("actionBar5", addon.SettingsPanel.RenderActionBar5())
+	addEntry("actionBar6", addon.SettingsPanel.RenderActionBar6())
+	addEntry("actionBar7", addon.SettingsPanel.RenderActionBar7())
+	addEntry("actionBar8", addon.SettingsPanel.RenderActionBar8())
+	addEntry("stanceBar", addon.SettingsPanel.RenderStanceBar())
+	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
+
+	-- Build nav model (parents + children). Parents: Profiles (always expanded), CDM, Action Bars
+	local navModel = {
+		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = false, children = {
+			{ type = "child", key = "profilesManage", label = "Manage Profiles" },
+			{ type = "child", key = "profilesPresets", label = "Presets" },
+		}},
+		{ type = "parent", key = "Cooldown Manager", label = "Cooldown Manager", collapsible = true, children = {
+			{ type = "child", key = "essentialCooldowns", label = "Essential Cooldowns" },
+			{ type = "child", key = "utilityCooldowns", label = "Utility Cooldowns" },
+			{ type = "child", key = "trackedBuffs", label = "Tracked Buffs" },
+			{ type = "child", key = "trackedBars", label = "Tracked Bars" },
+		}},
+		{ type = "parent", key = "Action Bars", label = "Action Bars", collapsible = true, children = {
+			{ type = "child", key = "actionBar1", label = "Action Bar 1" },
+			{ type = "child", key = "actionBar2", label = "Action Bar 2" },
+			{ type = "child", key = "actionBar3", label = "Action Bar 3" },
+			{ type = "child", key = "actionBar4", label = "Action Bar 4" },
+			{ type = "child", key = "actionBar5", label = "Action Bar 5" },
+			{ type = "child", key = "actionBar6", label = "Action Bar 6" },
+			{ type = "child", key = "actionBar7", label = "Action Bar 7" },
+			{ type = "child", key = "actionBar8", label = "Action Bar 8" },
+			{ type = "child", key = "stanceBar", label = "Stance Bar" },
+			{ type = "child", key = "microBar", label = "Micro Bar" },
+		}},
+	}
+
+	-- Initialize expand state defaults (Profiles always expanded)
+	for _, parent in ipairs(navModel) do
+		if parent.type == "parent" then
+			local key = parent.key
+			if panel._sidebarExpanded[key] == nil then
+				panel._sidebarExpanded[key] = (parent.collapsible ~= true) and true or true
+			end
+		end
+	end
+
+	-- Row factory helpers ------------------------------------------------------
+	local function styleLabel(fs, isHeader)
+		if not fs then return end
+		if isHeader then
+			if panel and panel.ApplyGreenRoboto then panel.ApplyGreenRoboto(fs, 14, "OUTLINE") end
+		else
+			if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(fs, 12, "") end
+		end
+	end
+
+		local function createParentRow(parentFrame, parentNode)
+		local row = CreateFrame("Button", nil, parentFrame)
+			row:SetHeight(panel.NavLayout.parentRowHeight or 24)
+		row:SetPoint("LEFT", parentFrame, "LEFT", 0, 0)
+		row:SetPoint("RIGHT", parentFrame, "RIGHT", 0, 0)
+			-- Dark backdrop for header rows to contrast the green label
+			if not row.Bg then
+				local bg = row:CreateTexture(nil, "BACKGROUND")
+				bg:SetAllPoints(row)
+				bg:SetColorTexture(0.10, 0.10, 0.10, 0.85)
+				row.Bg = bg
+			end
+			local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		label:SetPoint("LEFT", row, "LEFT", 10, 0)
+		label:SetJustifyH("LEFT")
+			label:SetText(parentNode.label or parentNode.key)
+		styleLabel(label, true)
+		row.Label = label
+		local glyph = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		glyph:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+		styleLabel(glyph, true)
+		row.Glyph = glyph
+			row.NodeKey = parentNode.key
+			row.IsParent = true
+			row.Collapsible = parentNode.collapsible and true or false
+			if not row._clickHooked then
+				row:SetScript("OnClick", function(self)
+					if self.Collapsible then
+						panel._sidebarExpanded[self.NodeKey] = not not (not panel._sidebarExpanded[self.NodeKey])
+						panel.RebuildNav()
+					end
+				end)
+				row._clickHooked = true
+			end
+			row.UpdateState = function(self)
+				local expanded = panel._sidebarExpanded[self.NodeKey]
+				self.Glyph:SetText(self.Collapsible and (expanded and "−" or "+") or " ")
+			end
+		row:UpdateState()
+		return row
+	end
+
+		local function createChildRow(parentFrame, childNode)
+		local row = CreateFrame("Button", nil, parentFrame)
+			row:SetHeight(panel.NavLayout.childRowHeight or 20)
+		row:SetPoint("LEFT", parentFrame, "LEFT", 0, 0)
+		row:SetPoint("RIGHT", parentFrame, "RIGHT", 0, 0)
+			local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		label:SetPoint("LEFT", row, "LEFT", 22, 0)
+		label:SetJustifyH("LEFT")
+			label:SetText(childNode.label or childNode.key)
+		styleLabel(label, false)
+		row.Label = label
+			row.NodeKey = childNode.key
+		row.IsParent = false
+		row.Highlight = row:CreateTexture(nil, "BACKGROUND")
+		row.Highlight:SetAllPoints(row)
+		row.Highlight:SetColorTexture(0.2, 0.9, 0.3, 0.15)
+		row.Highlight:Hide()
+			if not row._clickHooked then
+				row:SetScript("OnClick", function(self)
+					panel.SelectCategory(self.NodeKey)
+				end)
+				row._clickHooked = true
+			end
+			row.UpdateSelected = function(self)
+				local selected = (panel._selectedCategory == self.NodeKey)
+				self.Highlight:SetShown(selected)
+			end
+		row:UpdateSelected()
+		return row
+	end
+
+	-- Build nav content once; reuse rows and toggle visibility -----------------
+	local function ensureNav()
+		if f.Nav and f.NavScroll and f.NavContent then return end
+		-- Container created in ShowPanel
+		-- Guard if ShowPanel created them already
+	end
+
+	panel.RebuildNav = function()
+		ensureNav()
+		local container = f.NavContent
+		container._rows = container._rows or {}
+		local y = -2
+		local rowIndex = 1
+		local function acquireRow()
+			local r = container._rows[rowIndex]
+			if not r then
+				r = {}
+				container._rows[rowIndex] = r
+			end
+			rowIndex = rowIndex + 1
+			return r
+		end
+		-- Hide all existing rows (we will re-show as we lay out)
+		for i = 1, #container._rows do
+			local r = container._rows[i]
+			if r.Parent then r.Parent:Hide() end
+			if r.Child then r.Child:Hide() end
+		end
+		-- Lay out parents and visible children
+		for _, parent in ipairs(navModel) do
+			local slot = acquireRow()
+			if not slot.Parent then slot.Parent = createParentRow(container, parent) end
+			-- Reinitialize parent row properties on reuse
+			slot.Parent.NodeKey = parent.key
+			slot.Parent.Collapsible = parent.collapsible and true or false
+			slot.Parent.Label:SetText(parent.label or parent.key)
+			slot.Parent:ClearAllPoints(); slot.Parent:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
+			slot.Parent:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
+			slot.Parent:Show(); slot.Parent:UpdateState()
+			y = y - (panel.NavLayout.parentRowHeight or 24)
+			local expanded = panel._sidebarExpanded[parent.key]
+			if expanded then
+				-- Optional gap between header and first child
+				y = y - (panel.NavLayout.headerToFirstChildGap or 6)
+				for _, child in ipairs(parent.children or {}) do
+					local cslot = acquireRow()
+					if not cslot.Child then cslot.Child = createChildRow(container, child) end
+					-- Reinitialize child row properties on reuse
+					cslot.Child.NodeKey = child.key
+					cslot.Child.Label:SetText(child.label or child.key)
+					cslot.Child:ClearAllPoints(); cslot.Child:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
+					cslot.Child:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
+					cslot.Child:Show(); cslot.Child:UpdateSelected()
+					y = y - (panel.NavLayout.childRowHeight or 20)
+				end
+			end
+			-- Spacer under each parent to control gaps; adjustable via NavLayout
+			local gapExp = panel.NavLayout.gapAfterExpanded or 10
+			local gapCol = panel.NavLayout.gapAfterCollapsed or 4
+			y = y - (expanded and gapExp or gapCol)
+		end
+		container:SetHeight(math.max(0, -y + 4))
+		-- No heavy rebuild; the scroll frame will just update content extents
+		if f.NavScroll and f.NavScroll.UpdateScrollChildRect then f.NavScroll:UpdateScrollChildRect() end
+	end
+
+	panel.SelectCategory = function(key)
+		panel._selectedCategory = key
+		if f.NavContent and f.NavContent._rows then
+			for _, slot in ipairs(f.NavContent._rows) do
+				if slot.Child and slot.Child.UpdateSelected then slot.Child:UpdateSelected() end
+			end
+		end
+		f.CurrentCategory = key
+		local entry = catRenderers[key]
+		if entry and entry.mode == "list" and entry.render then
+			entry.render()
+			if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
+		end
+	end
+
+	-- Expose mapping for rest of panel
+	f.CategoriesBuilt, f.CatRenderers = true, catRenderers
+	-- Initial selection: first child of first parent (Manage Profiles)
+	C_Timer.After(0, function()
+		panel.RebuildNav()
+		panel.SelectCategory("profilesManage")
+	end)
 end
 
 		local function ShowPanel()
@@ -1434,11 +1617,45 @@ end
 		resizeBtn:SetOnResizeStoppedCallback(function()
 			if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
 		end)
-	        local categoryList = CreateFrame("Frame", nil, f, "SettingsCategoryListTemplate")
-        categoryList:SetSize(199, 569); categoryList:SetPoint("TOPLEFT", 18, -76); categoryList:SetPoint("BOTTOMLEFT", 178, 46)
-        f.CategoryList = categoryList
-        local container = CreateFrame("Frame", nil, f)
-        container:ClearAllPoints(); container:SetPoint("TOPLEFT", categoryList, "TOPRIGHT", 16, 0); container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 46)
+		-- Custom left navigation (pure-visibility model, no data-provider rebuilds)
+		local nav = CreateFrame("Frame", nil, f)
+		nav:SetSize(199, 569)
+		nav:SetPoint("TOPLEFT", 18, -76)
+		nav:SetPoint("BOTTOMLEFT", 18, 46)
+		f.Nav = nav
+		local navScroll = CreateFrame("ScrollFrame", nil, nav, "UIPanelScrollFrameTemplate")
+		navScroll:SetAllPoints(nav)
+		f.NavScroll = navScroll
+		local navContent = CreateFrame("Frame", nil, navScroll)
+		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)
+		navContent:SetHeight(10)
+		navScroll:SetScrollChild(navContent)
+		f.NavContent = navContent
+		-- Layout knobs for the nav and right pane spacing (tweak as desired)
+		panel.NavLayout = panel.NavLayout or {
+			-- Horizontal gap between the nav (including its scrollbar) and the right-side content area
+			rightPaneLeftOffset = 36,
+			-- Row heights
+			parentRowHeight = 24,
+			childRowHeight = 20,
+			-- Extra vertical space between a section header and its first child when expanded
+			headerToFirstChildGap = 8,
+			-- Vertical gap after a group: larger gap when the group is expanded vs collapsed
+			gapAfterExpanded = 18,
+			gapAfterCollapsed = 8,
+		}
+		local function UpdateNavContentWidth()
+			local w = (nav:GetWidth() or 199) - 24
+			if w < 80 then w = 80 end
+			navContent:SetWidth(w)
+			if navScroll and navScroll.UpdateScrollChildRect then navScroll:UpdateScrollChildRect() end
+		end
+		UpdateNavContentWidth()
+		nav:SetScript("OnSizeChanged", function()
+			UpdateNavContentWidth()
+		end)
+		local container = CreateFrame("Frame", nil, f)
+		container:ClearAllPoints(); container:SetPoint("TOPLEFT", nav, "TOPRIGHT", panel.NavLayout.rightPaneLeftOffset or 24, 0); container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 46)
         f.Container = container
         local settingsList = CreateFrame("Frame", nil, container, "SettingsListTemplate")
         settingsList:SetAllPoints(container); settingsList:SetClipsChildren(true)

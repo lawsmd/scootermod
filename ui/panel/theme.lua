@@ -139,20 +139,122 @@ do
     function panel.SkinCategoryList(categoryList)
         if not categoryList or not categoryList.ScrollBox or not categoryList.ScrollBox.ScrollTarget then return end
         local target = categoryList.ScrollBox.ScrollTarget
-        local children = { target:GetChildren() }
-        for i = 1, #children do
-            local b = children[i]
-            local fs = (b and (b.Text or b.Name or b.Label))
-            if fs then
-                local _, size, flags = fs:GetFont()
-                local text = fs.GetText and fs:GetText() or ""
-                local isHeader = (b and (b.isHeader == true or b.Header or b.HeaderText)) or text == "Profiles" or text == "Cooldown Manager" or text == "Action Bars"
-                panel.ApplyGreenRoboto(fs, size, flags)
-                if not isHeader and fs.SetTextColor then
-                    fs:SetTextColor(1, 1, 1, 1)
-                end
-            end
+        -- Sidebar layout knobs (tweak as desired)
+        panel.SidebarLayout = panel.SidebarLayout or { itemSpacing = 2, gapHeaderToList = 10, gapHeaderToHeader = 0 }
+		-- Tighten global vertical spacing for the sidebar list without touching top/left/right padding
+        do
+            local view = categoryList.ScrollBox.GetView and categoryList.ScrollBox:GetView()
+            local pad = view and view.GetPadding and view:GetPadding()
+            local desiredSpacing = (panel.SidebarLayout and panel.SidebarLayout.itemSpacing) or 2
+            if pad and pad.SetSpacing then pcall(pad.SetSpacing, pad, desiredSpacing) end
         end
+		local children = { target:GetChildren() }
+		for i = 1, #children do
+			local f = children[i]
+			local label = (f and (f.Text or f.Name or f.Label))
+			if label then
+				local _, size, flags = label:GetFont()
+				local text = label.GetText and label:GetText() or ""
+				local isHeader = (f and f.Toggle == nil and f.Background ~= nil) -- header has no Toggle but has a Background
+				panel.ApplyGreenRoboto(label, size, flags)
+				if not isHeader and label.SetTextColor then
+					label:SetTextColor(1, 1, 1, 1)
+				end
+
+				-- Attach green '+' to header right edge to control our parent category (skip for Profiles)
+				if isHeader and panel._sidebarParents and text and panel._sidebarParents[text] and text ~= "Profiles" then
+					local parentCat = panel._sidebarParents[text]
+					if not f.ScooterCollapse then
+						local btn = CreateFrame("Button", nil, f)
+						btn:SetSize(16, 16)
+						btn:SetPoint("RIGHT", f, "RIGHT", -6, 0)
+						-- Create a minimal button with no Blizzard textures
+						-- Avoid calling SetNormalTexture(nil) which errors on some clients
+						local glyph = btn:CreateFontString(nil, "OVERLAY")
+						glyph:SetPoint("CENTER")
+						panel.ApplyGreenRoboto(glyph, 16, "OUTLINE")
+						btn._glyph = glyph
+						btn:SetScript("OnClick", function()
+							if not parentCat then return end
+							-- Prefer native toggle path to minimize churn
+							local elementData = categoryList.FindCategoryElementData and categoryList:FindCategoryElementData(parentCat)
+							local sb = categoryList and categoryList.ScrollBox
+							local button = elementData and sb and sb.FindFrame and sb:FindFrame(elementData) or nil
+							if button and button.Toggle and button.Toggle.Click then
+								button.Toggle:Click()
+							else
+								local newState = not (parentCat.IsExpanded and parentCat:IsExpanded())
+								parentCat:SetExpanded(newState)
+								if categoryList.CreateCategories then pcall(categoryList.CreateCategories, categoryList) end
+							end
+							panel._sidebarExpanded = panel._sidebarExpanded or {}
+							panel._sidebarExpanded[text] = (parentCat and parentCat.IsExpanded and parentCat:IsExpanded()) and true or false
+							-- Skin after recycle
+							if panel and panel.SkinCategoryList then
+								C_Timer.After(0, function() panel.SkinCategoryList(categoryList) end)
+							end
+						end)
+						f.ScooterCollapse = btn
+					end
+					-- Update glyph per state: '+' collapsed, '−' expanded
+					if f.ScooterCollapse and f.ScooterCollapse._glyph and parentCat then
+						f.ScooterCollapse._glyph:SetText(parentCat:IsExpanded() and "−" or "+")
+					end
+				end
+
+				-- Hide the duplicate parent row label & default chevron; set measured extent based on expanded/collapsed
+				if f.GetElementData then
+					local ok, init = pcall(f.GetElementData, f)
+					local category = ok and init and init.data and init.data.category or nil
+					local isOurParent = false
+					local parentCat
+					if category and panel._sidebarParents then
+						local name = category.GetName and category:GetName() or nil
+						parentCat = (name and panel._sidebarParents[name]) or nil
+						isOurParent = parentCat ~= nil
+					end
+					if isOurParent then
+								if f.Toggle then f.Toggle:Hide() end
+								if f.Texture then f.Texture:Hide() end
+							if f.NewFeature then f.NewFeature:Hide() end
+                                if label and label.SetText then label:SetText(" ") end
+                                -- Drive the visual gap by directly setting the row height so net gap matches target
+                                do
+                                    local gaps = panel.SidebarLayout or {}
+								local expanded = (parentCat and parentCat.IsExpanded and parentCat:IsExpanded()) and true or false
+                                    local desired = expanded and (gaps.gapHeaderToList or 4) or (gaps.gapHeaderToHeader or 10)
+                                    local itemSpacing = (panel.SidebarLayout and panel.SidebarLayout.itemSpacing) or 0
+                                    local netHeight = math.max(0, desired - (2 * itemSpacing))
+                                    -- Apply height and keep it non-interactive
+                                    if netHeight and f.SetHeight then f:SetHeight(netHeight) end
+                                    if f.SetFrameLevel and target and target:GetFrameLevel() then
+                                        pcall(f.SetFrameLevel, f, math.max(1, (target:GetFrameLevel() or 1) - 1))
+                                    end
+                                    if f.SetFrameStrata then pcall(f.SetFrameStrata, f, "BACKGROUND") end
+                                    if f.EnableMouse then f:EnableMouse(false) end
+                                    if f.SetMouseMotionEnabled then f:SetMouseMotionEnabled(false) end
+                                    if f.SetHitRectInsets then
+                                        local w = tonumber(f:GetWidth()) or 200
+                                        pcall(f.SetHitRectInsets, f, 0, w, 0, 0) -- zero-width hit rect
+                                    end
+                                end
+								-- Disable selection/clicks on the parent row
+								f:EnableMouse(false)
+					end
+				end
+			end
+		end
+
+		-- Light reflow to apply height changes without full rebuild (reduces flicker)
+		if categoryList and categoryList.ScrollBox and categoryList.ScrollBox.Layout then
+			if not panel._sidebarReflowQueued then
+				panel._sidebarReflowQueued = true
+				C_Timer.After(0, function()
+					panel._sidebarReflowQueued = false
+					pcall(categoryList.ScrollBox.Layout, categoryList.ScrollBox)
+				end)
+			end
+		end
     end
 end
 
