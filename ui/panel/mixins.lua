@@ -171,6 +171,9 @@ function ScooterTabbedSectionMixin:LayoutTabs()
         local topBaseline = 14
         lastTop:SetPoint("TOPRIGHT", self, "TOPRIGHT", -30, topBaseline)
         chainLeft(topRow)
+        -- Ensure upper row sits above the lower row visually/click-wise
+        local baseLevel = (self:GetFrameLevel() or 1)
+        for i = 1, #topRow do if topRow[i] and topRow[i].SetFrameLevel then topRow[i]:SetFrameLevel(baseLevel + 2) end end
         -- Now anchor the BOTTOM row directly below the top row (touching)
         if #bottomRow > 0 then
             local lastBottom = bottomRow[#bottomRow]
@@ -179,6 +182,19 @@ function ScooterTabbedSectionMixin:LayoutTabs()
             -- Positive offset pulls upward (TOP to BOTTOM anchor semantics)
             lastBottom:SetPoint("TOPRIGHT", lastTop, "BOTTOMRIGHT", 0, rowOverlap)
             chainLeft(bottomRow)
+            -- Keep bottom row beneath top row and reduce its top hit area so it doesn't capture clicks
+            for i = 1, #bottomRow do
+                local btn = bottomRow[i]
+                if btn then
+                    if btn.SetFrameLevel then btn:SetFrameLevel(baseLevel + 1) end
+                    if btn.SetHitRectInsets then btn:SetHitRectInsets(0, 0, rowOverlap, 0) end
+                end
+            end
+            -- Restore full hit rect for the top row
+            for i = 1, #topRow do
+                local btn = topRow[i]
+                if btn and btn.SetHitRectInsets then btn:SetHitRectInsets(0, 0, 0, 0) end
+            end
         end
     else
         -- Only one row → place the bottomRow at the standard baseline
@@ -186,6 +202,11 @@ function ScooterTabbedSectionMixin:LayoutTabs()
         lastOnly:ClearAllPoints()
         lastOnly:SetPoint("TOPRIGHT", self, "TOPRIGHT", -30, 10)
         chainLeft(bottomRow)
+        -- Ensure full click area when only one row is present
+        for i = 1, #bottomRow do
+            local btn = bottomRow[i]
+            if btn and btn.SetHitRectInsets then btn:SetHitRectInsets(0, 0, 0, 0) end
+        end
     end
 end
 
