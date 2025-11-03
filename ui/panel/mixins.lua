@@ -93,24 +93,29 @@ ScooterTabbedSectionMixin = {}
 
 function ScooterTabbedSectionMixin:OnLoad()
     self.tabsGroup = self.tabsGroup or CreateRadioButtonGroup()
+    -- Hide optional tabs by default; they will be enabled in Init/SetTitles when text is provided
+    if self.TabC then self.TabC:Hide() end
+    if self.TabD then self.TabD:Hide() end
+    if self.TabE then self.TabE:Hide() end
+    if self.TabF then self.TabF:Hide() end
+    if self.TabG then self.TabG:Hide() end
     local buttons = {}
     if self.TabA then table.insert(buttons, self.TabA) end
     if self.TabB then table.insert(buttons, self.TabB) end
-    if self.TabC then table.insert(buttons, self.TabC) end
-    if self.TabD then table.insert(buttons, self.TabD) end
+    -- Do not add TabC/TabD here; they may be added later if enabled by SetTitles
     if #buttons == 0 then return end
     self.tabsGroup:AddButtons(buttons)
     self.tabsGroup:SelectAtIndex(1)
     self.tabsGroup:RegisterCallback(ButtonGroupBaseMixin.Event.Selected, function(_, btn)
         self:EvaluateVisibility(btn)
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
-        if self.UpdateTabTheme then self:UpdateTabTheme() end
+        if self.UpdateTabTheme then self:UpdateTabTheme(btn) end
     end, self)
     self:EvaluateVisibility(self.TabA or buttons[1])
-    if self.UpdateTabTheme then self:UpdateTabTheme() end
+    if self.UpdateTabTheme then self:UpdateTabTheme(self.TabA or buttons[1]) end
 end
 
-function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, tabCText, tabDText)
+function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, tabCText, tabDText, tabEText, tabFText, tabGText)
     if self.TitleFS then self.TitleFS:SetText(sectionTitle or "") end
     if self.TabA then
         self.TabA.tabText = tabAText or "Tab A"
@@ -126,18 +131,115 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, t
             self.TabB:SetWidth(self.TabB.Text:GetStringWidth() + 40)
         end
     end
+    -- Optional tabs C/D: only enable when explicit text is provided
+    local enableC = type(tabCText) == "string" and tabCText ~= ""
+    local enableD = type(tabDText) == "string" and tabDText ~= ""
+    local enableE = type(tabEText) == "string" and tabEText ~= ""
+    local enableF = type(tabFText) == "string" and tabFText ~= ""
+    local enableG = type(tabGText) == "string" and tabGText ~= ""
     if self.TabC then
-        self.TabC.tabText = tabCText or (self.TabC.tabText or "Tab C")
-        if self.TabC.Text then
-            self.TabC.Text:SetText(self.TabC.tabText)
-            self.TabC:SetWidth(self.TabC.Text:GetStringWidth() + 40)
+        if enableC then
+            self.TabC.tabText = tabCText
+            if self.TabC.Text then
+                self.TabC.Text:SetText(self.TabC.tabText)
+                self.TabC:SetWidth(self.TabC.Text:GetStringWidth() + 40)
+            end
+            self.TabC:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabC._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabC })
+                self.TabC._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabC._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabC)
+                self.TabC._ScooterInTabsGroup = false
+            end
+            self.TabC:Hide()
+            if self.PageC then self.PageC:Hide() end
         end
     end
     if self.TabD then
-        self.TabD.tabText = tabDText or (self.TabD.tabText or "Tab D")
-        if self.TabD.Text then
-            self.TabD.Text:SetText(self.TabD.tabText)
-            self.TabD:SetWidth(self.TabD.Text:GetStringWidth() + 40)
+        if enableD then
+            self.TabD.tabText = tabDText
+            if self.TabD.Text then
+                self.TabD.Text:SetText(self.TabD.tabText)
+                self.TabD:SetWidth(self.TabD.Text:GetStringWidth() + 40)
+            end
+            self.TabD:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabD._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabD })
+                self.TabD._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabD._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabD)
+                self.TabD._ScooterInTabsGroup = false
+            end
+            self.TabD:Hide()
+            if self.PageD then self.PageD:Hide() end
+        end
+    end
+    if self.TabE then
+        if enableE then
+            self.TabE.tabText = tabEText
+            if self.TabE.Text then
+                self.TabE.Text:SetText(self.TabE.tabText)
+                self.TabE:SetWidth(self.TabE.Text:GetStringWidth() + 40)
+            end
+            self.TabE:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabE._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabE })
+                self.TabE._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabE._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabE)
+                self.TabE._ScooterInTabsGroup = false
+            end
+            self.TabE:Hide()
+            if self.PageE then self.PageE:Hide() end
+        end
+    end
+    if self.TabF then
+        if enableF then
+            self.TabF.tabText = tabFText
+            if self.TabF.Text then
+                self.TabF.Text:SetText(self.TabF.tabText)
+                self.TabF:SetWidth(self.TabF.Text:GetStringWidth() + 40)
+            end
+            self.TabF:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabF._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabF })
+                self.TabF._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabF._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabF)
+                self.TabF._ScooterInTabsGroup = false
+            end
+            self.TabF:Hide()
+            if self.PageF then self.PageF:Hide() end
+        end
+    end
+    if self.TabG then
+        if enableG then
+            self.TabG.tabText = tabGText
+            if self.TabG.Text then
+                self.TabG.Text:SetText(self.TabG.tabText)
+                self.TabG:SetWidth(self.TabG.Text:GetStringWidth() + 40)
+            end
+            self.TabG:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabG._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabG })
+                self.TabG._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabG._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabG)
+                self.TabG._ScooterInTabsGroup = false
+            end
+            self.TabG:Hide()
+            if self.PageG then self.PageG:Hide() end
         end
     end
     if self.UpdateTabTheme then self:UpdateTabTheme() end
@@ -153,13 +255,13 @@ function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
         elseif selected == self.TabC then index = 3
         elseif selected == self.TabD then index = 4 end
     end
-    local pages = { self.PageA, self.PageB, self.PageC, self.PageD }
+    local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG }
     for i = 1, #pages do
         if pages[i] then pages[i]:SetShown(i == index) end
     end
 end
 
-function ScooterTabbedSectionMixin:UpdateTabTheme()
+function ScooterTabbedSectionMixin:UpdateTabTheme(selectedBtn)
     local brandR, brandG, brandB = 0.20, 0.90, 0.30
     local function style(btn, selected)
         if not btn or not btn.Text then return end
@@ -170,8 +272,16 @@ function ScooterTabbedSectionMixin:UpdateTabTheme()
             btn.Text:SetTextColor(brandR, brandG, brandB, 1)
         end
     end
-    local selectedIndex = (self.tabsGroup and self.tabsGroup.GetSelectedIndex) and self.tabsGroup:GetSelectedIndex() or 1
-    local tabs = { self.TabA, self.TabB, self.TabC, self.TabD }
+    local selectedIndex = 1
+    if selectedBtn then
+        if selectedBtn == self.TabA then selectedIndex = 1
+        elseif selectedBtn == self.TabB then selectedIndex = 2
+        elseif selectedBtn == self.TabC then selectedIndex = 3
+        elseif selectedBtn == self.TabD then selectedIndex = 4 end
+    elseif (self.tabsGroup and self.tabsGroup.GetSelectedIndex) then
+        selectedIndex = self.tabsGroup:GetSelectedIndex() or 1
+    end
+    local tabs = { self.TabA, self.TabB, self.TabC, self.TabD, self.TabE, self.TabF, self.TabG }
     for i = 1, #tabs do
         style(tabs[i], selectedIndex == i)
     end
@@ -179,7 +289,7 @@ end
 
 function ScooterTabbedSectionMixin:Init(initializer)
     local data = initializer and initializer.data or {}
-    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText)
+    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText, data.tabEText, data.tabFText, data.tabGText)
     local function ClearChildren(frame)
         if not frame or not frame.GetNumChildren then return end
         for i = frame:GetNumChildren(), 1, -1 do
@@ -191,6 +301,9 @@ function ScooterTabbedSectionMixin:Init(initializer)
     ClearChildren(self.PageB)
     ClearChildren(self.PageC)
     ClearChildren(self.PageD)
+    ClearChildren(self.PageE)
+    ClearChildren(self.PageF)
+    ClearChildren(self.PageG)
     if type(data.build) == "function" then
         data.build(self)
     end

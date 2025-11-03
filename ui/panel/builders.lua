@@ -512,6 +512,12 @@ local function createComponentRenderer(componentId)
                                     f:SetPoint("TOPLEFT", 4, yC.y)
                                     f:SetPoint("TOPRIGHT", -16, yC.y)
                                     initCb:InitFrame(f)
+                                -- Theme the label: Roboto + white (override Blizzard yellow)
+                                if panel and panel.ApplyRobotoWhite then
+                                    if f.Text then panel.ApplyRobotoWhite(f.Text) end
+                                    local cb = f.Checkbox or f.CheckBox or (f.Control and f.Control.Checkbox)
+                                    if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                end
                                     yC.y = yC.y - 34
                                 end
                                 addDropdown(frame.PageC, "Hotkey Font", fontOptions,
@@ -551,6 +557,12 @@ local function createComponentRenderer(componentId)
                                     f:SetPoint("TOPLEFT", 4, yD.y)
                                     f:SetPoint("TOPRIGHT", -16, yD.y)
                                     initCb:InitFrame(f)
+                                -- Theme the label: Roboto + white (override Blizzard yellow)
+                                if panel and panel.ApplyRobotoWhite then
+                                    if f.Text then panel.ApplyRobotoWhite(f.Text) end
+                                    local cb = f.Checkbox or f.CheckBox or (f.Control and f.Control.Checkbox)
+                                    if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                end
                                     yD.y = yD.y - 34
                                 end
                                 addDropdown(frame.PageD, "Macro Name Font", fontOptions,
@@ -1311,4 +1323,58 @@ function panel.RenderActionBar7()  return createComponentRenderer("actionBar7")(
 function panel.RenderActionBar8()  return createComponentRenderer("actionBar8")() end
 function panel.RenderStanceBar()   return createWIPRenderer("stanceBar",   "Stance Bar")()   end
 function panel.RenderMicroBar()    return createWIPRenderer("microBar",    "Micro Bar")()    end
+
+-- Unit Frames placeholder renderers -------------------------------------------
+local function createUFRenderer(componentId, title)
+    return function()
+        local render = function()
+            local f = panel.frame
+            if not f or not f.SettingsList then return end
+
+            local init = {}
+
+            -- First collapsible section: Health Bar
+            local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                name = "Health Bar",
+                sectionKey = "Health Bar",
+                componentId = componentId,
+                expanded = panel:IsSectionExpanded(componentId, "Health Bar"),
+            })
+            expInitializer.GetExtent = function() return 30 end
+            table.insert(init, expInitializer)
+
+            -- Tabbed section with seven tabs for stretch testing
+            local data = {
+                sectionTitle = "",
+                tabAText = "SettingName1",
+                tabBText = "SettingName2",
+                tabCText = "SettingName3",
+                tabDText = "SettingName4",
+                tabEText = "SettingName5",
+                tabFText = "SettingName6",
+                tabGText = "SettingName7",
+            }
+            data.build = function(frame)
+                -- Placeholder: no controls; we only need to visualize tabs
+            end
+            local tabInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
+            tabInit.GetExtent = function() return 140 end
+            tabInit:AddShownPredicate(function()
+                return panel:IsSectionExpanded(componentId, "Health Bar")
+            end)
+            table.insert(init, tabInit)
+
+            local settingsList = f.SettingsList
+            settingsList.Header.Title:SetText(title or componentId)
+            settingsList:Display(init)
+            settingsList:Show()
+            f.Canvas:Hide()
+        end
+        return { mode = "list", render = render, componentId = componentId }
+    end
+end
+
+function panel.RenderUFPlayer() return createUFRenderer("ufPlayer", "Player")() end
+function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target")() end
+function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")()  end
 

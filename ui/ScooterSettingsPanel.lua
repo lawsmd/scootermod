@@ -1277,6 +1277,10 @@ local function BuildCategories()
 
 	-- Action Bars children
 	addEntry("actionBar1", addon.SettingsPanel.RenderActionBar1())
+	-- Unit Frames children
+	addEntry("ufPlayer", addon.SettingsPanel.RenderUFPlayer())
+	addEntry("ufTarget", addon.SettingsPanel.RenderUFTarget())
+	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
 	addEntry("actionBar2", addon.SettingsPanel.RenderActionBar2())
 	addEntry("actionBar3", addon.SettingsPanel.RenderActionBar3())
 	addEntry("actionBar4", addon.SettingsPanel.RenderActionBar4())
@@ -1287,7 +1291,7 @@ local function BuildCategories()
 	addEntry("stanceBar", addon.SettingsPanel.RenderStanceBar())
 	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
 
-	-- Build nav model (parents + children). Parents: Profiles (always expanded), CDM, Action Bars
+	-- Build nav model (parents + children). Parents: Profiles (always expanded), CDM, Action Bars, Unit Frames
 	local navModel = {
 		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = false, children = {
 			{ type = "child", key = "profilesManage", label = "Manage Profiles" },
@@ -1311,17 +1315,23 @@ local function BuildCategories()
 			{ type = "child", key = "stanceBar", label = "Stance Bar" },
 			{ type = "child", key = "microBar", label = "Micro Bar" },
 		}},
+		{ type = "parent", key = "Unit Frames", label = "Unit Frames", collapsible = true, children = {
+			{ type = "child", key = "ufPlayer", label = "Player" },
+			{ type = "child", key = "ufTarget", label = "Target" },
+			{ type = "child", key = "ufFocus",  label = "Focus"  },
+		}},
 	}
 
 	-- Initialize expand state defaults (Profiles always expanded)
-	for _, parent in ipairs(navModel) do
-		if parent.type == "parent" then
-			local key = parent.key
-			if panel._sidebarExpanded[key] == nil then
-				panel._sidebarExpanded[key] = (parent.collapsible ~= true) and true or true
-			end
-		end
-	end
+    for _, parent in ipairs(navModel) do
+        if parent.type == "parent" then
+            local key = parent.key
+            if panel._sidebarExpanded[key] == nil then
+                -- Default: non-collapsible parents expanded; collapsible parents start collapsed
+                panel._sidebarExpanded[key] = (parent.collapsible ~= true)
+            end
+        end
+    end
 
 	-- Row factory helpers ------------------------------------------------------
 	local function styleLabel(fs, isHeader)

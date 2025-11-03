@@ -87,14 +87,18 @@ do
             if isFontString(obj) then
                 panel.ApplyRoboto(obj)
             elseif obj and obj.IsObjectType and obj:IsObjectType("Button") then
-                local function tint(tex)
-                    if tex and tex.SetVertexColor then tex:SetDesaturated(true); tex:SetVertexColor(brandR, brandG, brandB) end
+                -- Skip checkbox buttons; leave Blizzard checkbox visuals un-tinted
+                local objType = obj.GetObjectType and obj:GetObjectType() or ""
+                if objType ~= "CheckButton" then
+                    local function tint(tex)
+                        if tex and tex.SetVertexColor then tex:SetDesaturated(true); tex:SetVertexColor(brandR, brandG, brandB) end
+                    end
+                    tint(obj.GetNormalTexture and obj:GetNormalTexture() or nil)
+                    tint(obj.GetPushedTexture and obj:GetPushedTexture() or nil)
+                    if obj.SetHighlightTexture then pcall(obj.SetHighlightTexture, obj, "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD") end
+                    local hl = obj.GetHighlightTexture and obj:GetHighlightTexture() or nil
+                    if hl then hl:SetDesaturated(false); hl:SetVertexColor(1,1,1); hl:SetAlpha(0.25) end
                 end
-                tint(obj.GetNormalTexture and obj:GetNormalTexture() or nil)
-                tint(obj.GetPushedTexture and obj:GetPushedTexture() or nil)
-                if obj.SetHighlightTexture then pcall(obj.SetHighlightTexture, obj, "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD") end
-                local hl = obj.GetHighlightTexture and obj:GetHighlightTexture() or nil
-                if hl then hl:SetDesaturated(false); hl:SetVertexColor(1,1,1); hl:SetAlpha(0.25) end
             end
         end, 3)
     end

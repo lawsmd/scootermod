@@ -27,11 +27,29 @@
         </Anchors>
       </Frame>
 
-      <!-- Support up to four tabs aligned from right to left: D, C, B, A -->
-      <Button parentKey="TabD" inherits="MinimalTabTemplate">
+      <!-- Support up to seven tabs aligned from right to left: G, F, E, D, C, B, A -->
+      <Button parentKey="TabG" inherits="MinimalTabTemplate">
         <Size y="37"/>
         <Anchors>
           <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" x="-30" y="10"/>
+        </Anchors>
+      </Button>
+      <Button parentKey="TabF" inherits="MinimalTabTemplate">
+        <Size y="37"/>
+        <Anchors>
+          <Anchor point="TOPRIGHT" relativeKey="$parent.TabG" relativePoint="TOPLEFT" x="0" y="0"/>
+        </Anchors>
+      </Button>
+      <Button parentKey="TabE" inherits="MinimalTabTemplate">
+        <Size y="37"/>
+        <Anchors>
+          <Anchor point="TOPRIGHT" relativeKey="$parent.TabF" relativePoint="TOPLEFT" x="0" y="0"/>
+        </Anchors>
+      </Button>
+      <Button parentKey="TabD" inherits="MinimalTabTemplate">
+        <Size y="37"/>
+        <Anchors>
+          <Anchor point="TOPRIGHT" relativeKey="$parent.TabE" relativePoint="TOPLEFT" x="0" y="0"/>
         </Anchors>
       </Button>
       <Button parentKey="TabC" inherits="MinimalTabTemplate">
@@ -57,6 +75,9 @@
       <Frame parentKey="PageB" setAllPoints="true"/>
       <Frame parentKey="PageC" setAllPoints="true"/>
       <Frame parentKey="PageD" setAllPoints="true"/>
+      <Frame parentKey="PageE" setAllPoints="true"/>
+      <Frame parentKey="PageF" setAllPoints="true"/>
+      <Frame parentKey="PageG" setAllPoints="true"/>
     </Frames>
     <Scripts>
       <OnLoad method="OnLoad"/>
