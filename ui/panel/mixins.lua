@@ -99,6 +99,8 @@ function ScooterTabbedSectionMixin:OnLoad()
     if self.TabE then self.TabE:Hide() end
     if self.TabF then self.TabF:Hide() end
     if self.TabG then self.TabG:Hide() end
+    if self.TabH then self.TabH:Hide() end
+    if self.TabI then self.TabI:Hide() end
     local buttons = {}
     if self.TabA then table.insert(buttons, self.TabA) end
     if self.TabB then table.insert(buttons, self.TabB) end
@@ -115,7 +117,79 @@ function ScooterTabbedSectionMixin:OnLoad()
     if self.UpdateTabTheme then self:UpdateTabTheme(self.TabA or buttons[1]) end
 end
 
-function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, tabCText, tabDText, tabEText, tabFText, tabGText)
+-- Lay out tabs in up to two rows.
+-- Rule: show first up to 5 tabs on the bottom row (left-to-right, row is right-aligned).
+-- Any remaining tabs (6+) are placed on a second row above, also right-aligned and ordered left-to-right.
+function ScooterTabbedSectionMixin:LayoutTabs()
+    local all = { self.TabA, self.TabB, self.TabC, self.TabD, self.TabE, self.TabF, self.TabG, self.TabH, self.TabI }
+    local visible = {}
+    for i = 1, #all do
+        local btn = all[i]
+        if btn and btn:IsShown() then table.insert(visible, btn) end
+    end
+    if #visible == 0 then return end
+
+    local function chainLeft(rowButtons)
+        for i = #rowButtons - 1, 1, -1 do
+            local btn = rowButtons[i]
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPRIGHT", rowButtons[i + 1], "TOPLEFT", 0, 0)
+        end
+    end
+
+    -- Split into rows: bottom (first five) and top (overflow)
+    local bottomCount = math.min(5, #visible)
+    local bottomRow = {}
+    for i = 1, bottomCount do table.insert(bottomRow, visible[i]) end
+    local topRow = {}
+    if #visible > 5 then for i = 6, #visible do table.insert(topRow, visible[i]) end end
+
+    -- If we have 2 rows, drop the border down by one tab height to make room above it
+    do
+        local tabHeight = 37
+        if self.NineSlice and self.NineSlice.ClearAllPoints then
+            self.NineSlice:ClearAllPoints()
+            if #visible > 5 then
+                -- Move border down by the effective extra height (second row minus overlap),
+                -- then tighten a few pixels so the bottom row visually meets the border.
+                local rowOverlap = 12 -- keep in sync with bottomRow anchor below
+                local borderTighten = 4
+                local drop = math.max(0, tabHeight - rowOverlap - borderTighten)
+                self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14 - drop)
+            else
+                self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14)
+            end
+            self.NineSlice:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -6, -16)
+        end
+    end
+
+    -- Anchor the TOP row to the frame (to guarantee clearance from the section header)
+    if #topRow > 0 then
+        local lastTop = topRow[#topRow]
+        lastTop:ClearAllPoints()
+        -- Nudge downward slightly from the original XML baseline to avoid header overlap
+        local topBaseline = 14
+        lastTop:SetPoint("TOPRIGHT", self, "TOPRIGHT", -30, topBaseline)
+        chainLeft(topRow)
+        -- Now anchor the BOTTOM row directly below the top row (touching)
+        if #bottomRow > 0 then
+            local lastBottom = bottomRow[#bottomRow]
+            lastBottom:ClearAllPoints()
+            local rowOverlap = 12
+            -- Positive offset pulls upward (TOP to BOTTOM anchor semantics)
+            lastBottom:SetPoint("TOPRIGHT", lastTop, "BOTTOMRIGHT", 0, rowOverlap)
+            chainLeft(bottomRow)
+        end
+    else
+        -- Only one row → place the bottomRow at the standard baseline
+        local lastOnly = bottomRow[#bottomRow]
+        lastOnly:ClearAllPoints()
+        lastOnly:SetPoint("TOPRIGHT", self, "TOPRIGHT", -30, 10)
+        chainLeft(bottomRow)
+    end
+end
+
+function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, tabCText, tabDText, tabEText, tabFText, tabGText, tabHText, tabIText)
     if self.TitleFS then self.TitleFS:SetText(sectionTitle or "") end
     if self.TabA then
         self.TabA.tabText = tabAText or "Tab A"
@@ -137,6 +211,8 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, t
     local enableE = type(tabEText) == "string" and tabEText ~= ""
     local enableF = type(tabFText) == "string" and tabFText ~= ""
     local enableG = type(tabGText) == "string" and tabGText ~= ""
+    local enableH = type(tabHText) == "string" and tabHText ~= ""
+    local enableI = type(tabIText) == "string" and tabIText ~= ""
     if self.TabC then
         if enableC then
             self.TabC.tabText = tabCText
@@ -242,7 +318,51 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, t
             if self.PageG then self.PageG:Hide() end
         end
     end
+    if self.TabH then
+        if enableH then
+            self.TabH.tabText = tabHText
+            if self.TabH.Text then
+                self.TabH.Text:SetText(self.TabH.tabText)
+                self.TabH:SetWidth(self.TabH.Text:GetStringWidth() + 40)
+            end
+            self.TabH:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabH._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabH })
+                self.TabH._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabH._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabH)
+                self.TabH._ScooterInTabsGroup = false
+            end
+            self.TabH:Hide()
+            if self.PageH then self.PageH:Hide() end
+        end
+    end
+    if self.TabI then
+        if enableI then
+            self.TabI.tabText = tabIText
+            if self.TabI.Text then
+                self.TabI.Text:SetText(self.TabI.tabText)
+                self.TabI:SetWidth(self.TabI.Text:GetStringWidth() + 40)
+            end
+            self.TabI:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabI._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabI })
+                self.TabI._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabI._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabI)
+                self.TabI._ScooterInTabsGroup = false
+            end
+            self.TabI:Hide()
+            if self.PageI then self.PageI:Hide() end
+        end
+    end
     if self.UpdateTabTheme then self:UpdateTabTheme() end
+    -- Recalculate positions after enabling/disabling tabs
+    if self.LayoutTabs then self:LayoutTabs() end
 end
 
 function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
@@ -255,7 +375,7 @@ function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
         elseif selected == self.TabC then index = 3
         elseif selected == self.TabD then index = 4 end
     end
-    local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG }
+    local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG, self.PageH, self.PageI }
     for i = 1, #pages do
         if pages[i] then pages[i]:SetShown(i == index) end
     end
@@ -277,11 +397,16 @@ function ScooterTabbedSectionMixin:UpdateTabTheme(selectedBtn)
         if selectedBtn == self.TabA then selectedIndex = 1
         elseif selectedBtn == self.TabB then selectedIndex = 2
         elseif selectedBtn == self.TabC then selectedIndex = 3
-        elseif selectedBtn == self.TabD then selectedIndex = 4 end
+        elseif selectedBtn == self.TabD then selectedIndex = 4
+        elseif selectedBtn == self.TabE then selectedIndex = 5
+        elseif selectedBtn == self.TabF then selectedIndex = 6
+        elseif selectedBtn == self.TabG then selectedIndex = 7
+        elseif selectedBtn == self.TabH then selectedIndex = 8
+        elseif selectedBtn == self.TabI then selectedIndex = 9 end
     elseif (self.tabsGroup and self.tabsGroup.GetSelectedIndex) then
         selectedIndex = self.tabsGroup:GetSelectedIndex() or 1
     end
-    local tabs = { self.TabA, self.TabB, self.TabC, self.TabD, self.TabE, self.TabF, self.TabG }
+    local tabs = { self.TabA, self.TabB, self.TabC, self.TabD, self.TabE, self.TabF, self.TabG, self.TabH, self.TabI }
     for i = 1, #tabs do
         style(tabs[i], selectedIndex == i)
     end
@@ -289,7 +414,7 @@ end
 
 function ScooterTabbedSectionMixin:Init(initializer)
     local data = initializer and initializer.data or {}
-    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText, data.tabEText, data.tabFText, data.tabGText)
+    self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText, data.tabEText, data.tabFText, data.tabGText, data.tabHText, data.tabIText)
     local function ClearChildren(frame)
         if not frame or not frame.GetNumChildren then return end
         for i = frame:GetNumChildren(), 1, -1 do
@@ -304,6 +429,8 @@ function ScooterTabbedSectionMixin:Init(initializer)
     ClearChildren(self.PageE)
     ClearChildren(self.PageF)
     ClearChildren(self.PageG)
+    ClearChildren(self.PageH)
+    ClearChildren(self.PageI)
     if type(data.build) == "function" then
         data.build(self)
     end

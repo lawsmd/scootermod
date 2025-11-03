@@ -1343,16 +1343,18 @@ local function createUFRenderer(componentId, title)
             expInitializer.GetExtent = function() return 30 end
             table.insert(init, expInitializer)
 
-            -- Tabbed section with seven tabs for stretch testing
+            -- Tabbed section with seven tabs for stretch testing (varying lengths)
             local data = {
                 sectionTitle = "",
-                tabAText = "SettingName1",
-                tabBText = "SettingName2",
-                tabCText = "SettingName3",
-                tabDText = "SettingName4",
-                tabEText = "SettingName5",
-                tabFText = "SettingName6",
-                tabGText = "SettingName7",
+                tabAText = "General",
+                tabBText = "Positioning",
+                tabCText = "Colors",
+                tabDText = "Borders",
+                tabEText = "Text Options",
+                tabFText = "Visibility",
+                tabGText = "Advanced",
+                tabHText = "Layout",
+                tabIText = "Other",
             }
             data.build = function(frame)
                 -- Placeholder: no controls; we only need to visualize tabs
@@ -1363,6 +1365,38 @@ local function createUFRenderer(componentId, title)
                 return panel:IsSectionExpanded(componentId, "Health Bar")
             end)
             table.insert(init, tabInit)
+
+            -- Second collapsible section: Power Bar (same tabbed layout for adjacency testing)
+            local expInitializer2 = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                name = "Power Bar",
+                sectionKey = "Power Bar",
+                componentId = componentId,
+                expanded = panel:IsSectionExpanded(componentId, "Power Bar"),
+            })
+            expInitializer2.GetExtent = function() return 30 end
+            table.insert(init, expInitializer2)
+
+            local data2 = {
+                sectionTitle = "",
+                tabAText = "General",
+                tabBText = "Positioning",
+                tabCText = "Colors",
+                tabDText = "Borders",
+                tabEText = "Text Options",
+                tabFText = "Visibility",
+                tabGText = "Advanced",
+                tabHText = "Layout",
+                tabIText = "Other",
+            }
+            data2.build = function(frame)
+                -- placeholder content; layout test only
+            end
+            local tabInit2 = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data2)
+            tabInit2.GetExtent = function() return 140 end
+            tabInit2:AddShownPredicate(function()
+                return panel:IsSectionExpanded(componentId, "Power Bar")
+            end)
+            table.insert(init, tabInit2)
 
             local settingsList = f.SettingsList
             settingsList.Header.Title:SetText(title or componentId)
