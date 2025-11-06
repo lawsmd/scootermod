@@ -501,8 +501,10 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                     color = color,
                     layer = "OVERLAY",
                     layerSublevel = 7,
-                    containerStrata = "TOOLTIP",
-                    levelOffset = 1000,
+                    -- Use an independent container on UIParent so bar masks do not clip the border,
+                    -- and keep it below our settings panel (which uses DIALOG strata).
+                    containerStrata = "HIGH",
+                    levelOffset = 5,
                     containerParent = barFrame,
                     expandX = 1,
                     expandY = 2,

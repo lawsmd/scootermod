@@ -109,12 +109,23 @@ function ScooterTabbedSectionMixin:OnLoad()
     self.tabsGroup:AddButtons(buttons)
     self.tabsGroup:SelectAtIndex(1)
     self.tabsGroup:RegisterCallback(ButtonGroupBaseMixin.Event.Selected, function(_, btn)
+        if self.tabsGroup and self.tabsGroup.GetSelectedIndex then
+            self._selectedIndex = self.tabsGroup:GetSelectedIndex()
+        end
         self:EvaluateVisibility(btn)
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
         if self.UpdateTabTheme then self:UpdateTabTheme(btn) end
     end, self)
     self:EvaluateVisibility(self.TabA or buttons[1])
     if self.UpdateTabTheme then self:UpdateTabTheme(self.TabA or buttons[1]) end
+    -- Ensure theme is corrected whenever the section becomes visible (e.g., after
+    -- switching categories) even if the button group's Selected callback doesn't fire.
+    if self.SetScript and not self._scooterOnShowHooked then
+        self._scooterOnShowHooked = true
+        self:SetScript("OnShow", function()
+            if self.UpdateTabTheme then self:UpdateTabTheme() end
+        end)
+    end
 end
 
 -- Lay out tabs in up to two rows.
@@ -413,7 +424,7 @@ function ScooterTabbedSectionMixin:UpdateTabTheme(selectedBtn)
             btn.Text:SetTextColor(brandR, brandG, brandB, 1)
         end
     end
-    local selectedIndex = 1
+    local selectedIndex = nil
     if selectedBtn then
         if selectedBtn == self.TabA then selectedIndex = 1
         elseif selectedBtn == self.TabB then selectedIndex = 2
@@ -424,9 +435,23 @@ function ScooterTabbedSectionMixin:UpdateTabTheme(selectedBtn)
         elseif selectedBtn == self.TabG then selectedIndex = 7
         elseif selectedBtn == self.TabH then selectedIndex = 8
         elseif selectedBtn == self.TabI then selectedIndex = 9 end
-    elseif (self.tabsGroup and self.tabsGroup.GetSelectedIndex) then
-        selectedIndex = self.tabsGroup:GetSelectedIndex() or 1
     end
+    -- Prefer our persisted selection if available (survives hide/show and recycler reuse)
+    if not selectedIndex and self._selectedIndex then
+        selectedIndex = self._selectedIndex
+    end
+    -- Fall back to the visible page if the button group lost state
+    if not selectedIndex then
+        local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG, self.PageH, self.PageI }
+        for i = 1, #pages do
+            if pages[i] and pages[i]:IsShown() then selectedIndex = i; break end
+        end
+    end
+    -- Finally, ask the button group, and clamp to first tab if still unknown
+    if not selectedIndex and self.tabsGroup and self.tabsGroup.GetSelectedIndex then
+        selectedIndex = self.tabsGroup:GetSelectedIndex()
+    end
+    if not selectedIndex then selectedIndex = 1 end
     local tabs = { self.TabA, self.TabB, self.TabC, self.TabD, self.TabE, self.TabF, self.TabG, self.TabH, self.TabI }
     for i = 1, #tabs do
         style(tabs[i], selectedIndex == i)

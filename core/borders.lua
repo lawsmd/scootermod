@@ -88,10 +88,13 @@ function Borders.ApplySquare(frame, opts)
     local expand = tonumber(opts.expand) or 0
     local ex = tonumber(opts.expandX) or expand
     local ey = tonumber(opts.expandY) or expand
-    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey);       e.Top:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey);     e.Top:SetHeight(size)
+    -- Prevent corner over-darkening without leaving gaps:
+    -- let horizontal edges span the full width; trim vertical edges by the thickness.
+    -- This yields a single-draw corner (from the horizontal edge) at each corner.
+    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey);        e.Top:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey);        e.Top:SetHeight(size)
     e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", -ex, -ey); e.Bottom:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", ex, -ey); e.Bottom:SetHeight(size)
-    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey);       e.Left:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", -ex, -ey);   e.Left:SetWidth(size)
-    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey);    e.Right:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", ex, -ey); e.Right:SetWidth(size)
+    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", anchor, "TOPLEFT", -ex, ey - size);        e.Left:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", -ex, (-ey) + size);   e.Left:SetWidth(size)
+    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", ex, ey - size);     e.Right:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", ex, (-ey) + size); e.Right:SetWidth(size)
     for _, t in pairs(e) do if t.Show then t:Show() end end
     if container and container.Show then container:Show() end
 end

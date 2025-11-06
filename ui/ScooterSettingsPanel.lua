@@ -143,6 +143,11 @@ function panel.RefreshCurrentCategory()
                     break
                 end
             end
+            -- After restoring selection, re-apply theme to all tabbed sections present
+            for i = 1, settingsList:GetNumChildren() do
+                local child = select(i, settingsList:GetChildren())
+                if child and child.UpdateTabTheme then pcall(child.UpdateTabTheme, child) end
+            end
         end)
     end
 end
@@ -1529,6 +1534,7 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                 button2 = CANCEL,
                 OnAccept = function(self, data)
                     if data and addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                 local ok, err = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
                 if addon and addon.CopyUnitFrameTextSettings then
                     pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit)
@@ -1544,7 +1550,11 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                                 data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
                                 if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
                             end
-                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                            if panel and panel.RefreshCurrentCategoryDeferred and C_Timer and C_Timer.After then
+                                C_Timer.After(0.36, function()
+                                    if panel and not panel._suspendRefresh then panel.RefreshCurrentCategoryDeferred() end
+                                end)
+                            end
                         else
                             if _G and _G.StaticPopup_Show then
                                 local msg
@@ -1582,12 +1592,17 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                 button2 = CANCEL,
                 OnAccept = function(self, data)
                     if data and addon and addon.CopyActionBarSettings then
+                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                         addon.CopyActionBarSettings(data.sourceId, data.destId)
                         if data.dropdown then
                             data.dropdown._ScooterSelectedId = data.sourceId
                             if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
                         end
-                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                        if panel and panel.RefreshCurrentCategoryDeferred and C_Timer and C_Timer.After then
+                            C_Timer.After(0.36, function()
+                                if panel and not panel._suspendRefresh then panel.RefreshCurrentCategoryDeferred() end
+                            end)
+                        end
                     end
                 end,
                 OnCancel = function(self, data) end,
