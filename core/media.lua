@@ -82,6 +82,8 @@ function addon.BuildBarTextureOptionsContainer()
     local create = Settings and Settings.CreateControlTextContainer
     if not create then
         local fallback = {}
+        -- Insert a Default option that restores Blizzard's stock textures
+        table.insert(fallback, { value = "default", text = "Default" })
         for _, key in ipairs(BAR_TEXTURE_ORDER) do
             fallback[#fallback + 1] = { value = key, text = addon.Media.GetBarTextureDisplayName(key) or key }
         end
@@ -89,6 +91,8 @@ function addon.BuildBarTextureOptionsContainer()
     end
 
     local container = create()
+    -- Add Default option at the top
+    container:Add("default", "Default")
     for _, key in ipairs(BAR_TEXTURE_ORDER) do
         local path = BAR_TEXTURES[key]
         if path then
@@ -102,6 +106,7 @@ end
 
 function addon.Media.ResolveBarTexturePath(key)
 	if type(key) ~= "string" or key == "" then return nil end
+	if key == "default" then return nil end
 	return BAR_TEXTURES[key]
 end
 

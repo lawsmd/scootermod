@@ -19,6 +19,7 @@ libs/AceConfig-3.0/AceConfig-3.0.xml
 libs/LibEditModeOverride/LibEditModeOverride.xml
 
 core/media.lua
+core/colors.lua
 core/fonts.lua
 core/barborders.lua
 core/iconborders.lua

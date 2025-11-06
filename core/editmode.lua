@@ -18,6 +18,72 @@ local function _lower(s)
     return string.lower(s)
 end
 
+--[[----------------------------------------------------------------------------
+    Copy helpers (Edit Mode only)
+----------------------------------------------------------------------------]]--
+-- Copy Unit Frame "Frame Size (Scale)" from one unit to another.
+-- Allowed units: "Player", "Target", "Focus". Pet is intentionally excluded.
+-- Returns true on success; false and an error key on failure.
+function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
+    local function norm(u)
+        if type(u) ~= "string" then return nil end
+        u = string.lower(u)
+        if u == "player" then return "Player" end
+        if u == "target" then return "Target" end
+        if u == "focus"  then return "Focus" end
+        return nil
+    end
+    local src = norm(sourceUnit)
+    local dst = norm(destUnit)
+    if not src or not dst then return false, "invalid_unit" end
+    if src == "Pet" or dst == "Pet" then return false, "pet_excluded" end
+    if src == dst then return false, "same_unit" end
+
+    local mgr = _G.EditModeManagerFrame
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+    local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+    if not (mgr and EM and EMSys and UFSetting and mgr.GetRegisteredSystemFrame) then return false, "env_unavailable" end
+
+    local function idxFor(unit)
+        if unit == "Player" then return EM.Player end
+        if unit == "Target" then return EM.Target end
+        if unit == "Focus"  then return EM.Focus end
+        return nil
+    end
+
+    local srcIdx = idxFor(src)
+    local dstIdx = idxFor(dst)
+    if not srcIdx or not dstIdx then return false, "invalid_unit" end
+
+    local srcFrame = mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, srcIdx)
+    local dstFrame = mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, dstIdx)
+    if not srcFrame or not dstFrame then return false, "frame_missing" end
+
+    -- Read source Frame Size; library is configured to return RAW (100..200)
+    local sizeSetting = UFSetting.FrameSize
+    local raw = addon.EditMode.GetSetting(srcFrame, sizeSetting)
+    if raw == nil then return false, "no_source_value" end
+    local v = tonumber(raw) or 100
+    -- Safety: convert index 0..20 to raw 100..200 if observed
+    if v <= 20 then v = 100 + (v * 5) end
+    if v < 100 then v = 100 elseif v > 200 then v = 200 end
+
+    -- Focus destination requires Use Larger Frame to be enabled
+    if dst == "Focus" then
+        local useLarger = addon.EditMode.GetSetting(dstFrame, UFSetting.UseLargerFrame)
+        if not useLarger or tonumber(useLarger) == 0 then
+            return false, "focus_requires_larger"
+        end
+    end
+
+    -- Write to destination and persist
+    addon.EditMode.SetSetting(dstFrame, sizeSetting, v)
+    if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    return true
+end
+
 -- Discover the numeric setting id at runtime to avoid stale hardcodes
 local function ResolveSettingId(frame, logicalKey)
     if not frame or not frame.system or not _G.EditModeSettingDisplayInfoManager then return nil end
@@ -271,6 +337,15 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         editModeValue = (dbValue == "H") and 0 or 1
     elseif settingId == "columns" then
         editModeValue = tonumber(dbValue) or 12
+    elseif component and component.id == "microBar" and settingId == "direction" then
+        -- Micro Bar: 'Order' uses 0 = default (Right/Up), 1 = reverse (Left/Down)
+        local orientation = component.db.orientation or "H"
+        if orientation == "H" then
+            editModeValue = (dbValue == "left") and 1 or 0 -- default Right => 0
+        else
+            editModeValue = (dbValue == "down") and 1 or 0 -- default Up => 0
+        end
+        setting.settingId = setting.settingId or 1
     elseif settingId == "direction" then
         local orientation = component.db.orientation or "H"
         if orientation == "H" then
@@ -299,6 +374,22 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         -- Always resolve the EM setting id for opacity to avoid stale hardcodes
         local resolved = ResolveSettingId(frame, "opacity")
         if resolved then setting.settingId = resolved end
+    elseif component and component.id == "microBar" and (settingId == "menuSize" or settingId == "eyeSize") then
+        -- Micro Bar sliders: library expects RAW values (min..max, step 5)
+        local minV = (settingId == "menuSize") and 70 or 50
+        local maxV = (settingId == "menuSize") and 200 or 150
+        local step = 5
+        local raw = tonumber(dbValue) or ((minV + maxV) / 2)
+        if raw < minV then raw = minV elseif raw > maxV then raw = maxV end
+        raw = minV + math.floor(((raw - minV) / step) + 0.5) * step -- snap to step within range
+        setting.settingId = setting.settingId or ((settingId == "menuSize") and 2 or 3)
+        addon.EditMode.SetSetting(frame, setting.settingId, raw)
+        local updater = (settingId == "menuSize") and frame.UpdateSystemSettingSize or frame.UpdateSystemSettingEyeSize
+        if frame and type(updater) == "function" then pcall(updater, frame) end
+        if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+        if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+        if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+        return true
     elseif settingId == "displayMode" then
         -- Map addon values to bar content dropdown: both/icon/name
         setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_content") or ResolveSettingId(frame, "display_mode") or setting.settingId
@@ -373,44 +464,45 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             end
             local emVal = (component.db.orientation == "H") and 0 or 1
             addon.EditMode.SetSetting(frame, setting.settingId, emVal)
-            if frame and type(frame.UpdateSettingMap) == "function" then
-                pcall(frame.UpdateSettingMap, frame)
-            end
-            if frame and type(frame.UpdateSystemSettingOrientation) == "function" then
-                pcall(frame.UpdateSystemSettingOrientation, frame)
-            end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            -- Action Bars prefer grid relayout APIs; Cooldown Viewer uses Refresh/UpdateLayout
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            -- For Stance Bar, skip all immediate updaters to avoid taint; rely on deferred ApplyChanges
+            if not (component and component.id == "stanceBar") then
+                if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
+                if frame and type(frame.UpdateSystemSettingOrientation) == "function" then pcall(frame.UpdateSystemSettingOrientation, frame) end
+                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
-        elseif settingId == "columns" and type(component.id) == "string" and component.id:match("^actionBar%d$") then
-            -- Action Bars: "# Rows/Columns" maps to NumRows setting
+        elseif settingId == "columns" and type(component.id) == "string" and (component.id:match("^actionBar%d$") or component.id == "stanceBar") then
+            -- Action Bars / Stance Bar: "# Rows/Columns" maps to NumRows setting
             local value = tonumber(component.db.columns)
             if not value then value = 1 end
             value = math.floor(math.max(1, math.min(4, value)))
             -- Resolve rows setting id dynamically
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_rows") or setting.settingId
             addon.EditMode.SetSetting(frame, setting.settingId, value)
-            if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
-            if frame and type(frame.UpdateSystemSettingNumRows) == "function" then pcall(frame.UpdateSystemSettingNumRows, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            -- Skip all immediate updaters for Stance Bar to avoid taint
+            if not (component and component.id == "stanceBar") then
+                if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
+                if frame and type(frame.UpdateSystemSettingNumRows) == "function" then pcall(frame.UpdateSystemSettingNumRows, frame) end
+                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
@@ -443,6 +535,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then
                 pcall(frame.UpdateSystemSettingVisibleSetting, frame)
             end
+            wrote = true
+            persist()
+            return true
+        elseif component and component.id == "microBar" and settingId == "direction" then
+            -- Write and immediately update ordering for Micro bar
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingOrder) == "function" then pcall(frame.UpdateSystemSettingOrder, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
             wrote = true
             persist()
             return true
@@ -483,15 +583,17 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             return true
         elseif settingId == "iconSize" then
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not (component and component.id == "stanceBar") then
+                if frame and type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
+                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
@@ -503,18 +605,21 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local pad = tonumber(component.db.iconPadding) or 2
             if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
-            if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not (component and component.id == "stanceBar") then
+                if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
+                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
-            if addon.EditMode and addon.EditMode.ApplyChanges then addon.EditMode.ApplyChanges() end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         end
         -- Others: skip write if no change
@@ -627,6 +732,18 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         local iconsSetting = ResolveSettingId(frame, "num_icons")
         local v = iconsSetting and addon.EditMode.GetSetting(frame, iconsSetting) or editModeValue
         dbValue = math.max(6, math.min(12, tonumber(v) or 12))
+    elseif component and component.id == "microBar" and settingId == "direction" then
+        -- Micro Bar: 0 = default (Right/Up), 1 = reverse (Left/Down)
+        setting.settingId = setting.settingId or 1
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        local orientation = component.db.orientation or "H"
+        if orientation == "H" then
+            dbValue = (tonumber(v) == 1) and "left" or "right"
+        else
+            dbValue = (tonumber(v) == 1) and "down" or "up"
+        end
+        if component.db[settingId] ~= dbValue then component.db[settingId] = dbValue return true end
+        return false
     elseif settingId == "direction" then
         local orientation = component.db.orientation or "H"
         if orientation == "H" then
@@ -651,6 +768,17 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         if v == nil then return false end
         v = math.floor(v + 0.5)
         if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        dbValue = v
+    elseif component and component.id == "microBar" and (settingId == "menuSize" or settingId == "eyeSize") then
+        -- Library returns RAW values when index-based mode is enabled
+        setting.settingId = setting.settingId or ((settingId == "menuSize") and 2 or 3)
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        local minV = (settingId == "menuSize") and 70 or 50
+        local maxV = (settingId == "menuSize") and 200 or 150
+        local step = 5
+        v = tonumber(v) or minV
+        if v < minV then v = minV elseif v > maxV then v = maxV end
+        v = minV + math.floor(((v - minV) / step) + 0.5) * step
         dbValue = v
     elseif settingId == "visibilityMode" then
         -- 0 = always, 1 = only in combat, 2 = hidden
@@ -817,6 +945,50 @@ function addon.EditMode.Initialize()
                     LEO_local2._forceIndexBased[sys][settingId] = true
                 end
             end
+        end
+
+        -- Micro Bar (Menu): treat Menu Size and Eye Size as index-based internally
+        do
+            local micro = _G["MicroMenuContainer"]
+            if micro then
+                local sys = micro.system or 13
+                LEO_local2._forceIndexBased = LEO_local2._forceIndexBased or {}
+                LEO_local2._forceIndexBased[sys] = LEO_local2._forceIndexBased[sys] or {}
+                -- Known setting ids from runtime dumps
+                LEO_local2._forceIndexBased[sys][2] = true -- Menu Size
+                LEO_local2._forceIndexBased[sys][3] = true -- Eye Size
+            else
+                -- Fallback: set by known system id for retail
+                local sys = 13
+                LEO_local2._forceIndexBased = LEO_local2._forceIndexBased or {}
+                LEO_local2._forceIndexBased[sys] = LEO_local2._forceIndexBased[sys] or {}
+                LEO_local2._forceIndexBased[sys][2] = true
+                LEO_local2._forceIndexBased[sys][3] = true
+            end
+        end
+    end
+
+    -- Treat Unit Frame Frame Size as index-based: Edit Mode stores an index (0..20) while UI presents 100..200.
+    do
+        local LEO_flag = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO_flag and _G and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeUnitFrameSetting then
+            local sysUF = _G.Enum.EditModeSystem.UnitFrame
+            local settingFS = _G.Enum.EditModeUnitFrameSetting.FrameSize
+            LEO_flag._forceIndexBased = LEO_flag._forceIndexBased or {}
+            LEO_flag._forceIndexBased[sysUF] = LEO_flag._forceIndexBased[sysUF] or {}
+            LEO_flag._forceIndexBased[sysUF][settingFS] = true
+        end
+    end
+
+    -- Compatibility: Some clients persist Cast Bar Bar Size as an index; treat as index-based to avoid snapping to max.
+    do
+        local LEO_flag2 = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO_flag2 and _G and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCastBarSetting then
+            local sysCB = _G.Enum.EditModeSystem.CastBar
+            local settingBS = _G.Enum.EditModeCastBarSetting.BarSize
+            LEO_flag2._forceIndexBased = LEO_flag2._forceIndexBased or {}
+            LEO_flag2._forceIndexBased[sysCB] = LEO_flag2._forceIndexBased[sysCB] or {}
+            LEO_flag2._forceIndexBased[sysCB][settingBS] = true
         end
     end
 end

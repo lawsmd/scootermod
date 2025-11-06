@@ -1557,6 +1557,72 @@ function addon:InitializeComponents()
     self:RegisterComponent(trackedBars)
 end
 
+-- Micro Bar (Edit Mode only): Orientation, Order, Menu Size, Eye Size
+do
+    local microBar = Component:New({
+        id = "microBar",
+        name = "Micro Bar",
+        frameName = "MicroMenuContainer",
+        settings = {
+            -- Positioning
+            orientation = { type = "editmode", settingId = 0, default = "H", ui = {
+                label = "Orientation", widget = "dropdown", values = { H = "Horizontal", V = "Vertical" }, section = "Positioning", order = 1
+            }},
+            -- Order behaves like a direction toggle; map to directional labels for consistency
+            direction = { type = "editmode", settingId = 1, default = "right", ui = {
+                label = "Icon Direction", widget = "dropdown", values = { left = "Left", right = "Right", up = "Up", down = "Down" }, section = "Positioning", order = 2, dynamicValues = true
+            }},
+            positionX = { type = "addon", default = 0, ui = {
+                label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
+            }},
+            positionY = { type = "addon", default = 0, ui = {
+                label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 99
+            }},
+            -- Sizing
+            menuSize = { type = "editmode", settingId = 2, default = 100, ui = {
+                label = "Menu Size (Scale)", widget = "slider", min = 70, max = 200, step = 5, section = "Sizing", order = 1
+            }},
+            eyeSize = { type = "editmode", settingId = 3, default = 100, ui = {
+                label = "Eye Size", widget = "slider", min = 50, max = 150, step = 5, section = "Sizing", order = 2
+            }},
+        },
+        -- No addon-only styling for Micro bar currently
+    })
+    addon:RegisterComponent(microBar)
+end
+
+-- Stance Bar (Edit Mode only): Orientation, Rows (NumRows), Icon Padding, Icon Size
+do
+    local stanceBar = Component:New({
+        id = "stanceBar",
+        name = "Stance Bar",
+        frameName = "StanceBar",
+        settings = {
+            -- Positioning
+            orientation = { type = "editmode", default = "H", ui = {
+                label = "Orientation", widget = "dropdown", values = { H = "Horizontal", V = "Vertical" }, section = "Positioning", order = 1
+            }},
+            columns = { type = "editmode", default = 1, ui = {
+                label = "# Columns/Rows", widget = "slider", min = 1, max = 4, step = 1, section = "Positioning", order = 2, dynamicLabel = true
+            }},
+            iconPadding = { type = "editmode", default = 2, ui = {
+                label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 3
+            }},
+            positionX = { type = "addon", default = 0, ui = {
+                label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
+            }},
+            positionY = { type = "addon", default = 0, ui = {
+                label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 99
+            }},
+            -- Sizing
+            iconSize = { type = "editmode", default = 100, ui = {
+                label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
+            }},
+        },
+    })
+    addon:RegisterComponent(stanceBar)
+end
+
 -- Action Bars (1–8): minimal components to expose Edit Mode Positioning > Orientation
 do
     local function abComponent(id, name, frameName, defaultOrientation)
@@ -1710,6 +1776,17 @@ function addon:ApplyStyles()
             component:ApplyStyling()
         end
     end
+    -- Also apply Unit Frame text visibility toggles
+    if addon.ApplyAllUnitFrameHealthTextVisibility then
+        addon.ApplyAllUnitFrameHealthTextVisibility()
+    end
+    if addon.ApplyAllUnitFramePowerTextVisibility then
+        addon.ApplyAllUnitFramePowerTextVisibility()
+    end
+    -- Apply Unit Frame bar textures (Health/Power) if configured
+    if addon.ApplyAllUnitFrameBarTextures then
+        addon.ApplyAllUnitFrameBarTextures()
+    end
 end
 
 -- Copy all settings from one Action Bar to another (both Edit Mode and addon-only)
@@ -1778,6 +1855,733 @@ function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
     if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
     if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
     addon:ApplyStyles()
+end
+
+-- Unit Frames: Toggle Health % (LeftText) and Value (RightText) visibility per unit
+do
+    local function getUnitFrameFor(unit)
+        local mgr = _G.EditModeManagerFrame
+		local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+		local EMSys = _G.Enum and _G.Enum.EditModeSystem
+		if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then
+			-- Fallback for environments where Edit Mode indices aren't available
+			if unit == "Pet" then return _G.PetFrame end
+			return nil
+		end
+		local idx = nil
+		if EM then
+			idx = (unit == "Player" and EM.Player)
+				or (unit == "Target" and EM.Target)
+				or (unit == "Focus" and EM.Focus)
+				or (unit == "Pet" and EM.Pet)
+		end
+		if idx then
+			return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+		end
+		-- If no index was resolved (older builds lacking EM.Pet), try known globals
+		if unit == "Pet" then return _G.PetFrame end
+		return nil
+    end
+
+    local function findFontStringByNameHint(root, hint)
+        if not root then return nil end
+        local target
+        local function scan(obj)
+            if not obj or target then return end
+            if obj.GetObjectType and obj:GetObjectType() == "FontString" then
+                local nm = obj.GetName and obj:GetName() or (obj.GetDebugName and obj:GetDebugName()) or ""
+                if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                    target = obj; return
+                end
+            end
+            if obj.GetRegions then
+                local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
+                for i = 1, n do
+                    local r = select(i, obj:GetRegions())
+                    if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+                        local nm = r.GetName and r:GetName() or (r.GetDebugName and r:GetDebugName()) or ""
+                        if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                            target = r; return
+                        end
+                    end
+                end
+            end
+            if obj.GetChildren then
+                local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+                for i = 1, m do
+                    local c = select(i, obj:GetChildren())
+                    scan(c)
+                    if target then return end
+                end
+            end
+        end
+        scan(root)
+        return target
+    end
+
+    local function applyForUnit(unit)
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames[unit] = db.unitFrames[unit] or {}
+        local cfg = db.unitFrames[unit]
+        local frame = getUnitFrameFor(unit)
+        if not frame then return end
+		local leftFS
+		local rightFS
+		if unit == "Pet" then
+			leftFS = _G.PetFrameHealthBarTextLeft or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText)
+			rightFS = _G.PetFrameHealthBarTextRight or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText)
+		end
+		leftFS = leftFS or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText) or findFontStringByNameHint(frame, "HealthBarsContainer.LeftText") or findFontStringByNameHint(frame, ".LeftText") or findFontStringByNameHint(frame, "HealthBarTextLeft")
+		rightFS = rightFS or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText) or findFontStringByNameHint(frame, "HealthBarsContainer.RightText") or findFontStringByNameHint(frame, ".RightText") or findFontStringByNameHint(frame, "HealthBarTextRight")
+        if leftFS and leftFS.SetShown then pcall(leftFS.SetShown, leftFS, not not (not cfg.healthPercentHidden)) end
+        if rightFS and rightFS.SetShown then pcall(rightFS.SetShown, rightFS, not not (not cfg.healthValueHidden)) end
+
+        -- Apply styling (font/size/style/color/offset) with stable baseline anchoring
+        addon._ufTextBaselines = addon._ufTextBaselines or {}
+        local function ensureBaseline(fs, key)
+            addon._ufTextBaselines[key] = addon._ufTextBaselines[key] or {}
+            local b = addon._ufTextBaselines[key]
+            if b.point == nil then
+                if fs and fs.GetPoint then
+                    local p, relTo, rp, x, y = fs:GetPoint(1)
+                    b.point = p or "CENTER"
+                    b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
+                    b.relPoint = rp or b.point
+                    b.x = tonumber(x) or 0
+                    b.y = tonumber(y) or 0
+                else
+                    b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
+                end
+            end
+            return b
+        end
+
+        local function applyTextStyle(fs, styleCfg, baselineKey)
+            if not fs or not styleCfg then return end
+            local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+            local size = tonumber(styleCfg.size) or 14
+            local outline = tostring(styleCfg.style or "OUTLINE")
+            if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+            local c = styleCfg.color or {1,1,1,1}
+            if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+            -- Offset relative to a stable baseline anchor captured at first apply this session
+            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+            if fs.ClearAllPoints and fs.SetPoint then
+                local b = ensureBaseline(fs, baselineKey)
+                fs:ClearAllPoints()
+                fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+            end
+        end
+
+        if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left") end
+        if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right") end
+    end
+
+    function addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
+        applyForUnit(unit)
+    end
+
+	function addon.ApplyAllUnitFrameHealthTextVisibility()
+		applyForUnit("Player")
+		applyForUnit("Target")
+		applyForUnit("Focus")
+		applyForUnit("Pet")
+	end
+
+    -- Copy addon-only Unit Frame text settings from source unit to destination unit
+    function addon.CopyUnitFrameTextSettings(sourceUnit, destUnit)
+        local db = addon and addon.db and addon.db.profile
+        if not db then return false end
+        db.unitFrames = db.unitFrames or {}
+        local src = db.unitFrames[sourceUnit]
+        if not src then return false end
+        db.unitFrames[destUnit] = db.unitFrames[destUnit] or {}
+        local dst = db.unitFrames[destUnit]
+        local function deepcopy(v)
+            if type(v) ~= "table" then return v end
+            local out = {}
+            for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+            return out
+        end
+        local keys = {
+            "healthPercentHidden",
+            "healthValueHidden",
+            "textHealthPercent",
+            "textHealthValue",
+        }
+        for _, k in ipairs(keys) do
+            if src[k] ~= nil then dst[k] = deepcopy(src[k]) else dst[k] = nil end
+        end
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(destUnit) end
+        return true
+    end
+end
+
+-- Unit Frames: Toggle Power % (LeftText when present) and Value (RightText) visibility per unit
+do
+	local function getUnitFrameFor(unit)
+		local mgr = _G.EditModeManagerFrame
+		local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+		local EMSys = _G.Enum and _G.Enum.EditModeSystem
+		if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then
+			if unit == "Pet" then return _G.PetFrame end
+			return nil
+		end
+		local idx = nil
+		if EM then
+			idx = (unit == "Player" and EM.Player)
+				or (unit == "Target" and EM.Target)
+				or (unit == "Focus" and EM.Focus)
+				or (unit == "Pet" and EM.Pet)
+		end
+		if idx then
+			return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+		end
+		if unit == "Pet" then return _G.PetFrame end
+		return nil
+	end
+
+	local function findFontStringByNameHint(root, hint)
+		if not root then return nil end
+		local target
+		local function scan(obj)
+			if not obj or target then return end
+			if obj.GetObjectType and obj:GetObjectType() == "FontString" then
+				local nm = obj.GetName and obj:GetName() or (obj.GetDebugName and obj:GetDebugName()) or ""
+				if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+					target = obj; return
+				end
+			end
+			if obj.GetRegions then
+				local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
+				for i = 1, n do
+					local r = select(i, obj:GetRegions())
+					if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+						local nm = r.GetName and r:GetName() or (r.GetDebugName and r:GetDebugName()) or ""
+						if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+							target = r; return
+						end
+					end
+				end
+			end
+			if obj.GetChildren then
+				local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+				for i = 1, m do
+					local c = select(i, obj:GetChildren())
+					scan(c)
+					if target then return end
+				end
+			end
+		end
+		scan(root)
+		return target
+	end
+
+	local function applyForUnit(unit)
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames[unit] = db.unitFrames[unit] or {}
+		local cfg = db.unitFrames[unit]
+		local frame = getUnitFrameFor(unit)
+		if not frame then return end
+
+		-- Attempt to resolve power bar text regions
+		local leftFS
+		local rightFS
+		if unit == "Pet" then
+			-- Pet uses standalone globals more often
+			leftFS = _G.PetFrameManaBarTextLeft
+			rightFS = _G.PetFrameManaBarTextRight
+		end
+		-- Common names on Player: ManaBar.LeftText / ManaBar.RightText; on Target/Focus, ManaBar.LeftText/RightText as children under content
+		leftFS = leftFS
+			or (frame.ManaBar and frame.ManaBar.LeftText)
+			or findFontStringByNameHint(frame, "ManaBar.LeftText")
+			or findFontStringByNameHint(frame, ".LeftText")
+			or findFontStringByNameHint(frame, "ManaBarTextLeft")
+		rightFS = rightFS
+			or (frame.ManaBar and frame.ManaBar.RightText)
+			or findFontStringByNameHint(frame, "ManaBar.RightText")
+			or findFontStringByNameHint(frame, ".RightText")
+			or findFontStringByNameHint(frame, "ManaBarTextRight")
+
+		-- Visibility: tolerate missing LeftText on some classes/specs (no-op)
+		if leftFS and leftFS.SetShown then pcall(leftFS.SetShown, leftFS, not not (not cfg.powerPercentHidden)) end
+		if rightFS and rightFS.SetShown then pcall(rightFS.SetShown, rightFS, not not (not cfg.powerValueHidden)) end
+
+		-- Styling
+		addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
+		local function ensureBaseline(fs, key)
+			addon._ufPowerTextBaselines[key] = addon._ufPowerTextBaselines[key] or {}
+			local b = addon._ufPowerTextBaselines[key]
+			if b.point == nil then
+				if fs and fs.GetPoint then
+					local p, relTo, rp, x, y = fs:GetPoint(1)
+					b.point = p or "CENTER"
+					b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
+					b.relPoint = rp or b.point
+					b.x = tonumber(x) or 0
+					b.y = tonumber(y) or 0
+				else
+					b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
+				end
+			end
+			return b
+		end
+
+		local function applyTextStyle(fs, styleCfg, baselineKey)
+			if not fs or not styleCfg then return end
+			local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+			local size = tonumber(styleCfg.size) or 14
+			local outline = tostring(styleCfg.style or "OUTLINE")
+			if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+			local c = styleCfg.color or {1,1,1,1}
+			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+			if fs.ClearAllPoints and fs.SetPoint then
+				local b = ensureBaseline(fs, baselineKey)
+				fs:ClearAllPoints()
+				fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+			end
+		end
+
+		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left") end
+		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right") end
+	end
+
+	function addon.ApplyUnitFramePowerTextVisibilityFor(unit)
+		applyForUnit(unit)
+	end
+
+	function addon.ApplyAllUnitFramePowerTextVisibility()
+		applyForUnit("Player")
+		applyForUnit("Target")
+		applyForUnit("Focus")
+		applyForUnit("Pet")
+	end
+
+	-- Optional helper mirroring health text settings copy (no-op if missing)
+	function addon.CopyUnitFramePowerTextSettings(sourceUnit, destUnit)
+		local db = addon and addon.db and addon.db.profile
+		if not db then return false end
+		db.unitFrames = db.unitFrames or {}
+		local src = db.unitFrames[sourceUnit]
+		if not src then return false end
+		db.unitFrames[destUnit] = db.unitFrames[destUnit] or {}
+		local dst = db.unitFrames[destUnit]
+		local function deepcopy(v)
+			if type(v) ~= "table" then return v end
+			local out = {}
+			for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+			return out
+		end
+		local keys = {
+			"powerPercentHidden",
+			"powerValueHidden",
+			"textPowerPercent",
+			"textPowerValue",
+		}
+		for _, k in ipairs(keys) do
+			if src[k] ~= nil then dst[k] = deepcopy(src[k]) else dst[k] = nil end
+		end
+		if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(destUnit) end
+		return true
+	end
+end
+
+-- Unit Frames: Copy Health/Power Bar Style settings (texture, color mode, tint)
+do
+    function addon.CopyUnitFrameBarStyleSettings(sourceUnit, destUnit)
+        local db = addon and addon.db and addon.db.profile
+        if not db then return false end
+        db.unitFrames = db.unitFrames or {}
+        local src = db.unitFrames[sourceUnit]
+        if not src then return false end
+        db.unitFrames[destUnit] = db.unitFrames[destUnit] or {}
+        local dst = db.unitFrames[destUnit]
+
+        local function deepcopy(v)
+            if type(v) ~= "table" then return v end
+            local out = {}
+            for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+            return out
+        end
+
+        local keys = {
+            "healthBarTexture",
+            "healthBarColorMode",
+            "healthBarTint",
+            "powerBarTexture",
+            "powerBarColorMode",
+            "powerBarTint",
+        }
+        for _, k in ipairs(keys) do
+            if src[k] ~= nil then dst[k] = deepcopy(src[k]) else dst[k] = nil end
+        end
+
+        if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(destUnit) end
+        return true
+    end
+end
+
+-- Unit Frames: Apply custom bar textures (Health/Power) with optional tint per unit
+do
+    local function getUnitFrameFor(unit)
+        local mgr = _G.EditModeManagerFrame
+        local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+        local EMSys = _G.Enum and _G.Enum.EditModeSystem
+        if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then
+            if unit == "Pet" then return _G.PetFrame end
+            return nil
+        end
+        local idx = nil
+        if EM then
+            idx = (unit == "Player" and EM.Player)
+                or (unit == "Target" and EM.Target)
+                or (unit == "Focus" and EM.Focus)
+                or (unit == "Pet" and EM.Pet)
+        end
+        if idx then
+            return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+        end
+        if unit == "Pet" then return _G.PetFrame end
+        return nil
+    end
+
+    local function findStatusBarByHints(root, hintsTbl, excludesTbl)
+        if not root then return nil end
+        local hints = hintsTbl or {}
+        local excludes = excludesTbl or {}
+        local found
+        local function matchesName(obj)
+            local nm = (obj and obj.GetName and obj:GetName()) or (obj and obj.GetDebugName and obj:GetDebugName()) or ""
+            if type(nm) ~= "string" then return false end
+            local lnm = string.lower(nm)
+            for _, ex in ipairs(excludes) do
+                if ex and string.find(lnm, string.lower(ex), 1, true) then
+                    return false
+                end
+            end
+            for _, h in ipairs(hints) do
+                if h and string.find(lnm, string.lower(h), 1, true) then
+                    return true
+                end
+            end
+            return false
+        end
+        local function scan(obj)
+            if not obj or found then return end
+            if obj.GetObjectType and obj:GetObjectType() == "StatusBar" then
+                if matchesName(obj) then
+                    found = obj; return
+                end
+            end
+            if obj.GetChildren then
+                local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+                for i = 1, m do
+                    local c = select(i, obj:GetChildren())
+                    scan(c)
+                    if found then return end
+                end
+            end
+        end
+        scan(root)
+        return found
+    end
+
+    local function getNested(root, ...)
+        local cur = root
+        for i = 1, select('#', ...) do
+            local key = select(i, ...)
+            if not cur or type(cur) ~= "table" then return nil end
+            cur = cur[key]
+        end
+        return cur
+    end
+
+    local function resolveHealthBar(frame, unit)
+        -- Deterministic paths from Framestack findings; fallback to conservative search only if missing
+        if unit == "Pet" then return _G.PetFrameHealthBar end
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            local hb = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar")
+            if hb then return hb end
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+            if hb then return hb end
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+            if hb then return hb end
+        end
+        -- Fallbacks
+        if frame and frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar then return frame.HealthBarsContainer.HealthBar end
+        return findStatusBarByHints(frame, {"HealthBarsContainer.HealthBar", ".HealthBar", "HealthBar"}, {"Prediction", "Absorb", "Mana"})
+    end
+
+    local function resolvePowerBar(frame, unit)
+        if unit == "Pet" then return _G.PetFrameManaBar end
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            local mb = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "ManaBarArea", "ManaBar")
+            if mb then return mb end
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+            if mb then return mb end
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+            if mb then return mb end
+        end
+        if frame and frame.ManaBar then return frame.ManaBar end
+        return findStatusBarByHints(frame, {"ManaBar", ".ManaBar", "PowerBar"}, {"Prediction"})
+    end
+
+    -- Resolve mask textures per unit and bar type to ensure proper shaping after texture swaps
+    local function resolveHealthMask(unit)
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain
+                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarMask
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarMask
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarMask
+        elseif unit == "Pet" then
+            return _G.PetFrameHealthBarMask
+        end
+        return nil
+    end
+
+    local function resolvePowerMask(unit)
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaBarMask
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarMask
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarMask
+        elseif unit == "Pet" then
+            return _G.PetFrameManaBarMask
+        end
+        return nil
+    end
+
+    local function ensureMaskOnBarTexture(bar, mask)
+        if not bar or not mask or not bar.GetStatusBarTexture then return end
+        local tex = bar:GetStatusBarTexture()
+        if not tex or not tex.AddMaskTexture then return end
+        -- Re-apply mask to the current texture instance and enforce Blizzard's texel snapping settings
+        pcall(tex.AddMaskTexture, tex, mask)
+        if tex.SetTexelSnappingBias then pcall(tex.SetTexelSnappingBias, tex, 0) end
+        if tex.SetSnapToPixelGrid then pcall(tex.SetSnapToPixelGrid, tex, false) end
+        if tex.SetHorizTile then pcall(tex.SetHorizTile, tex, false) end
+        if tex.SetVertTile then pcall(tex.SetVertTile, tex, false) end
+        if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
+    end
+
+    local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower)
+        if not bar or type(bar.GetStatusBarTexture) ~= "function" then return end
+        local tex = bar:GetStatusBarTexture()
+        -- Capture original once
+        if not bar._ScootUFOrigCaptured then
+            if tex and tex.GetAtlas then
+                local ok, atlas = pcall(tex.GetAtlas, tex)
+                if ok and atlas then bar._ScootUFOrigAtlas = atlas end
+            end
+			if tex and tex.GetTexture then
+				local ok, path = pcall(tex.GetTexture, tex)
+				if ok and path then
+					-- Some Blizzard status bars use atlases; GetAtlas may return nil while GetTexture returns the atlas token.
+					-- Prefer treating such strings as atlases when possible to avoid spritesheet rendering on restore.
+					local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(path) ~= nil
+					if isAtlas then
+						bar._ScootUFOrigAtlas = bar._ScootUFOrigAtlas or path
+					else
+						bar._ScootUFOrigPath = path
+					end
+				end
+			end
+            if tex and tex.GetVertexColor then
+                local ok, r, g, b, a = pcall(tex.GetVertexColor, tex)
+                if ok then bar._ScootUFOrigVertex = { r or 1, g or 1, b or 1, a or 1 } end
+            end
+            bar._ScootUFOrigCaptured = true
+        end
+
+        local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
+        if isCustom and resolvedPath then
+            if bar.SetStatusBarTexture then pcall(bar.SetStatusBarTexture, bar, resolvedPath) end
+            -- Re-fetch the current texture after swapping to ensure subsequent operations target the new texture
+            tex = bar:GetStatusBarTexture()
+            local r, g, b, a = 1, 1, 1, 1
+            if colorMode == "custom" and type(tint) == "table" then
+                r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+            elseif colorMode == "class" then
+                if addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB(unitForClass or "player")
+                    r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+                end
+            elseif colorMode == "default" then
+                -- When using a custom texture, "Default" should tint to the stock bar color
+                if barKind == "health" and addon.GetDefaultHealthColorRGB then
+                    local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+                    r, g, b, a = hr or 0, hg or 1, hb or 0, 1
+                elseif barKind == "power" and addon.GetPowerColorRGB then
+                    local pr, pg, pb = addon.GetPowerColorRGB(unitForPower or unitForClass or "player")
+                    r, g, b, a = pr or 1, pg or 1, pb or 1, 1
+                else
+                    local ov = bar._ScootUFOrigVertex
+                    if type(ov) == "table" then r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1 end
+                end
+            end
+            if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, r, g, b, a) end
+        else
+            -- Default texture path. If the user selected Class/Custom color, avoid restoring
+            -- Blizzard's green/colored atlas because vertex-color multiplies and distorts hues.
+            -- Instead, use a neutral white fill and apply the desired color; keep the stock mask.
+            local r, g, b, a = 1, 1, 1, 1
+            local wantsNeutral = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class")
+            if wantsNeutral then
+                if colorMode == "custom" then
+                    r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+                elseif colorMode == "class" and addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB(unitForClass or "player")
+                    r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+                end
+                if tex and tex.SetColorTexture then pcall(tex.SetColorTexture, tex, 1, 1, 1, 1) end
+            else
+                -- Default color: restore Blizzard's original fill
+                if bar._ScootUFOrigCaptured then
+                    if bar._ScootUFOrigAtlas then
+                        if tex and tex.SetAtlas then
+                            pcall(tex.SetAtlas, tex, bar._ScootUFOrigAtlas, true)
+                        elseif bar.SetStatusBarTexture then
+                            pcall(bar.SetStatusBarTexture, bar, bar._ScootUFOrigAtlas)
+                        end
+                    elseif bar._ScootUFOrigPath then
+                        local treatAsAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(bar._ScootUFOrigPath) ~= nil
+                        if treatAsAtlas and tex and tex.SetAtlas then
+                            pcall(tex.SetAtlas, tex, bar._ScootUFOrigPath, true)
+                        elseif bar.SetStatusBarTexture then
+                            pcall(bar.SetStatusBarTexture, bar, bar._ScootUFOrigPath)
+                        end
+                    end
+                end
+                local ov = bar._ScootUFOrigVertex or {1,1,1,1}
+                r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1
+            end
+            if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, r, g, b, a) end
+            if bar.ScooterModBG and bar.ScooterModBG.Hide then pcall(bar.ScooterModBG.Hide, bar.ScooterModBG) end
+        end
+    end
+
+    local function applyForUnit(unit)
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+        db.unitFrames = db.unitFrames or {}
+        local cfg = db.unitFrames[unit] or {}
+        local frame = getUnitFrameFor(unit)
+        if not frame then return end
+
+        local hb = resolveHealthBar(frame, unit)
+        if hb then
+            local colorModeHB = (cfg.healthBarColorMode == "class" and "class") or (cfg.healthBarColorMode == "custom" and "custom") or "default"
+            local texKeyHB = cfg.healthBarTexture or "default"
+            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
+            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
+            -- If restoring default texture and we lack a captured original, restore to the known stock atlas for this unit
+            local isDefaultHB = (texKeyHB == "default" or not addon.Media.ResolveBarTexturePath(texKeyHB))
+            if isDefaultHB and not hb._ScootUFOrigAtlas and not hb._ScootUFOrigPath then
+				local stockAtlas
+				if unit == "Player" then
+					stockAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health"
+				elseif unit == "Target" then
+					stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+				elseif unit == "Focus" then
+					stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health" -- Focus reuses Target visuals
+				elseif unit == "Pet" then
+					stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- Pet frame shares party atlas
+				end
+                if stockAtlas then
+                    local hbTex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
+                    if hbTex and hbTex.SetAtlas then pcall(hbTex.SetAtlas, hbTex, stockAtlas, true) end
+					-- Best-effort: ensure the mask uses the matching atlas
+					local mask = resolveHealthMask(unit)
+					if mask and mask.SetAtlas then
+						local maskAtlas
+						if unit == "Player" then
+							maskAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Mask"
+						elseif unit == "Target" or unit == "Focus" then
+							maskAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health-Mask"
+						elseif unit == "Pet" then
+							maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask"
+						end
+						if maskAtlas then pcall(mask.SetAtlas, mask, maskAtlas) end
+					end
+				end
+			end
+			ensureMaskOnBarTexture(hb, resolveHealthMask(unit))
+		end
+
+        local pb = resolvePowerBar(frame, unit)
+        if pb then
+            local colorModePB = (cfg.powerBarColorMode == "class" and "class") or (cfg.powerBarColorMode == "custom" and "custom") or "default"
+            local texKeyPB = cfg.powerBarTexture or "default"
+            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
+            applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
+            ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
+        end
+
+        -- Nudge Blizzard to re-evaluate atlases/masks immediately after restoration
+        local function refresh(unitKey)
+            if unitKey == "Player" then
+                if _G.PlayerFrame_Update then pcall(_G.PlayerFrame_Update) end
+            elseif unitKey == "Target" then
+                if _G.TargetFrame_Update then pcall(_G.TargetFrame_Update, _G.TargetFrame) end
+            elseif unitKey == "Focus" then
+                if _G.FocusFrame_Update then pcall(_G.FocusFrame_Update, _G.FocusFrame) end
+            elseif unitKey == "Pet" then
+                if _G.PetFrame_Update then pcall(_G.PetFrame_Update, _G.PetFrame) end
+            end
+        end
+        refresh(unit)
+    end
+
+    function addon.ApplyUnitFrameBarTexturesFor(unit)
+        applyForUnit(unit)
+    end
+
+    function addon.ApplyAllUnitFrameBarTextures()
+        applyForUnit("Player")
+        applyForUnit("Target")
+        applyForUnit("Focus")
+        applyForUnit("Pet")
+    end
 end
 
 function addon:SyncAllEditModeSettings()

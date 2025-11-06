@@ -690,11 +690,16 @@ local function createComponentRenderer(componentId)
                 row = CreateFrame("Frame", nil, frame, "SettingsCheckboxControlTemplate")
                 row:SetPoint("TOPLEFT", 4, 0)
                 row:SetPoint("TOPRIGHT", -16, 0)
-                                frame.EnableCustomTexturesRow = row
-                                if row.Checkbox then
-                                    row.Checkbox:SetHitRectInsets(0, -220, 0, 0)
-                                end
-                            end
+                row:SetHeight(26)
+                frame.EnableCustomTexturesRow = row
+            end
+            row:Show()
+            if row.SetFrameLevel then row:SetFrameLevel((frame:GetFrameLevel() or 1)) end
+            if row.EnableMouse then row:EnableMouse(false) end
+            if row.Checkbox then
+                row.Checkbox:EnableMouse(true)
+                if row.Checkbox.SetHitRectInsets then row.Checkbox:SetHitRectInsets(0, 0, 0, 0) end
+            end
 
                             if row.Text then
                                 row.Text:SetText("Enable Custom Textures")
@@ -1281,6 +1286,7 @@ local function BuildCategories()
 	addEntry("ufPlayer", addon.SettingsPanel.RenderUFPlayer())
 	addEntry("ufTarget", addon.SettingsPanel.RenderUFTarget())
 	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
+	addEntry("ufPet",    addon.SettingsPanel.RenderUFPet())
 	addEntry("actionBar2", addon.SettingsPanel.RenderActionBar2())
 	addEntry("actionBar3", addon.SettingsPanel.RenderActionBar3())
 	addEntry("actionBar4", addon.SettingsPanel.RenderActionBar4())
@@ -1319,6 +1325,7 @@ local function BuildCategories()
 			{ type = "child", key = "ufPlayer", label = "Player" },
 			{ type = "child", key = "ufTarget", label = "Target" },
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
+			{ type = "child", key = "ufPet",    label = "Pet"    },
 		}},
 	}
 
@@ -1493,6 +1500,8 @@ local function BuildCategories()
 		local entry = catRenderers[key]
 		if entry and entry.mode == "list" and entry.render then
 			entry.render()
+			-- After rendering, configure the shared header "Copy from" controls for this category
+			if panel and panel.ConfigureHeaderCopyFromForKey then panel.ConfigureHeaderCopyFromForKey(key) end
 			if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
 		end
 	end
@@ -1504,6 +1513,211 @@ local function BuildCategories()
 		panel.RebuildNav()
 		panel.SelectCategory("profilesManage")
 	end)
+end
+
+-- Ensure and configure the shared header "Copy from" controls based on a category key
+panel.ConfigureHeaderCopyFromForKey = function(key)
+    local f = panel.frame
+    if not f or not f.SettingsList or not f.SettingsList.Header then return end
+    local header = f.SettingsList.Header
+    -- One-time registration of confirmation dialogs used by header "Copy from" menus
+    if _G and _G.StaticPopupDialogs then
+        if not _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] then
+    _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] = {
+        text = "Copy supported Unit Frame settings from %s to %s?",
+                button1 = "Copy",
+                button2 = CANCEL,
+                OnAccept = function(self, data)
+                    if data and addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                local ok, err = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                if addon and addon.CopyUnitFrameTextSettings then
+                    pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit)
+                end
+                if addon and addon.CopyUnitFramePowerTextSettings then
+                    pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit)
+                end
+                if addon and addon.CopyUnitFrameBarStyleSettings then
+                    pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit)
+                end
+                        if ok then
+                            if data.dropdown then
+                                data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
+                                if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
+                            end
+                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                        else
+                            if _G and _G.StaticPopup_Show then
+                                local msg
+                                if err == "focus_requires_larger" then
+                                    msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
+                                elseif err == "pet_excluded" then
+                                    msg = "Pet is excluded from copy operations."
+                                else
+                                    msg = "Copy failed. Please try again."
+                                end
+                                _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] = _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] or {
+                                    text = "%s",
+                                    button1 = OKAY,
+                                    timeout = 0,
+                                    whileDead = 1,
+                                    hideOnEscape = 1,
+                                    preferredIndex = 3,
+                                }
+                                _G.StaticPopup_Show("SCOOTERMOD_COPY_UF_ERROR", msg)
+                            end
+                        end
+                    end
+                end,
+                OnCancel = function(self, data) end,
+                timeout = 0,
+                whileDead = 1,
+                hideOnEscape = 1,
+                preferredIndex = 3,
+            }
+        end
+        if not _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] then
+            _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] = {
+                text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
+                button1 = "Copy",
+                button2 = CANCEL,
+                OnAccept = function(self, data)
+                    if data and addon and addon.CopyActionBarSettings then
+                        addon.CopyActionBarSettings(data.sourceId, data.destId)
+                        if data.dropdown then
+                            data.dropdown._ScooterSelectedId = data.sourceId
+                            if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
+                        end
+                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                    end
+                end,
+                OnCancel = function(self, data) end,
+                timeout = 0,
+                whileDead = 1,
+                hideOnEscape = 1,
+                preferredIndex = 3,
+            }
+        end
+    end
+    -- Create once
+    if not header.ScooterCopyFromLabel then
+        local lbl = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        lbl:SetText("Copy from:")
+        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+        header.ScooterCopyFromLabel = lbl
+    end
+    if not header.ScooterCopyFromDropdown then
+        local dd = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+        dd:SetSize(180, 22)
+        header.ScooterCopyFromDropdown = dd
+    end
+    local lbl = header.ScooterCopyFromLabel
+    local dd  = header.ScooterCopyFromDropdown
+    -- Anchor to the left of the Collapse/Defaults button when available; fallback to top-right
+    dd:ClearAllPoints()
+    local collapseBtn = header.CollapseAllButton or header.CollapseButton or header.DefaultsButton
+    if collapseBtn then
+        dd:SetPoint("RIGHT", collapseBtn, "LEFT", -24, 0)
+    else
+        dd:SetPoint("TOPRIGHT", header, "TOPRIGHT", -24, 0)
+    end
+    lbl:ClearAllPoints(); lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+
+    local isAB = type(key) == "string" and key:match("^actionBar%d$") ~= nil
+    local isUF = (key == "ufPlayer") or (key == "ufTarget") or (key == "ufFocus")
+
+    -- Reset any previous selection text to avoid stale prompts between categories
+    dd._ScooterSelectedId = nil
+
+    if isAB and dd and dd.SetupMenu then
+        local currentId = key
+        dd:SetupMenu(function(menu, root)
+            for i = 1, 8 do
+                local id = "actionBar" .. tostring(i)
+                if id ~= currentId then
+                    local comp = addon and addon.Components and addon.Components[id]
+                    local text = (comp and comp.name) or ("Action Bar " .. tostring(i))
+                    root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
+                        local which = "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
+                        local destName = (addon and addon.Components and addon.Components[currentId] and addon.Components[currentId].name) or currentId
+                        local data = { sourceId = id, destId = currentId, sourceName = text, destName = destName, dropdown = dd }
+                        if _G and _G.StaticPopup_Show then
+                            _G.StaticPopup_Show(which, text, destName, data)
+                        elseif addon and addon.CopyActionBarSettings then
+                            addon.CopyActionBarSettings(id, currentId)
+                            dd._ScooterSelectedId = id
+                            if dd.SetText then dd:SetText(text) end
+                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                        end
+                    end)
+                end
+            end
+        end)
+		local function setPromptBar()
+			local s = "Select a bar..."
+			if dd.SetText then dd:SetText(s) end
+			if dd.Text and dd.Text.SetText then dd.Text:SetText(s) end
+		end
+		setPromptBar()
+		if C_Timer and C_Timer.After then C_Timer.After(0, setPromptBar) end
+    elseif isUF and dd and dd.SetupMenu then
+        local function unitLabelFor(id)
+            if id == "ufPlayer" then return "Player" end
+            if id == "ufTarget" then return "Target" end
+            if id == "ufFocus"  then return "Focus" end
+            return id
+        end
+        local function unitKeyFor(id)
+            if id == "ufPlayer" then return "Player" end
+            if id == "ufTarget" then return "Target" end
+            if id == "ufFocus"  then return "Focus" end
+            return nil
+        end
+        local currentId = key
+        dd:SetupMenu(function(menu, root)
+            local candidates = { "ufPlayer", "ufTarget", "ufFocus" } -- Pet excluded
+            for _, id in ipairs(candidates) do
+                if id ~= currentId then
+                    local text = unitLabelFor(id)
+                    root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
+                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
+                        local destLabel = unitLabelFor(currentId)
+                        local data = {
+                            sourceUnit = unitKeyFor(id),
+                            destUnit = unitKeyFor(currentId),
+                            sourceLabel = text,
+                            destLabel = destLabel,
+                            dropdown = dd,
+                            sourceId = id,
+                            destId = currentId,
+                        }
+                        if _G and _G.StaticPopup_Show then
+                            _G.StaticPopup_Show(which, text, destLabel, data)
+                        elseif addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                            local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                            if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
+                            if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
+                            if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                            if ok then
+                                dd._ScooterSelectedId = id
+                                if dd.SetText then dd:SetText(text) end
+                                if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+		local function setPromptFrame()
+			local s = "Select a frame..."
+			if dd.SetText then dd:SetText(s) end
+			if dd.Text and dd.Text.SetText then dd.Text:SetText(s) end
+		end
+		setPromptFrame()
+		if C_Timer and C_Timer.After then C_Timer.After(0, setPromptFrame) end
+    end
+
+    if lbl then lbl:SetShown(isAB or isUF) end
+    if dd then dd:SetShown(isAB or isUF) end
 end
 
 		local function ShowPanel()

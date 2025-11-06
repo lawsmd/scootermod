@@ -14,6 +14,29 @@ if type(panel.IsSectionExpanded) ~= "function" then
     end
 end
 
+-- Helper: temporarily pause mousewheel scrolling on the right-hand SettingsList to avoid
+-- racing layout during short write windows (e.g., immediate scroll after a toggle)
+function panel:PauseScrollWheel(duration)
+    local f = self.frame
+    local sl = f and f.SettingsList
+    if not sl then return end
+    if not sl._wheelBlocker then
+        local blocker = CreateFrame("Frame", nil, sl)
+        blocker:SetAllPoints(sl)
+        blocker:EnableMouse(true)
+        blocker:EnableMouseWheel(true)
+        blocker:SetScript("OnMouseWheel", function() end)
+        blocker:Hide()
+        sl._wheelBlocker = blocker
+    end
+    local blocker = sl._wheelBlocker
+    blocker:Show()
+    if blocker._timer and blocker._timer.Cancel then blocker._timer:Cancel() end
+    blocker._timer = C_Timer.NewTimer(duration or 0.25, function()
+        if blocker then blocker:Hide() end
+    end)
+end
+
 -- Component settings list renderers and helpers moved from ScooterSettingsPanel.lua
 
 local function createComponentRenderer(componentId)
@@ -623,10 +646,17 @@ local function createComponentRenderer(componentId)
                                 row = CreateFrame("Frame", nil, frame, "SettingsCheckboxControlTemplate")
                                 row:SetPoint("TOPLEFT", 4, 0)
                                 row:SetPoint("TOPRIGHT", -16, 0)
+                                row:SetHeight(26)
                                 frame.EnableCustomTexturesRow = row
-                                if row.Checkbox then
-                                    row.Checkbox:SetHitRectInsets(0, -220, 0, 0)
-                                end
+                            end
+                            -- Ensure row is visible when this section uses it and does not block tabs
+                            row:Show()
+                            if row.SetFrameLevel then row:SetFrameLevel((frame:GetFrameLevel() or 1)) end
+                            if row.EnableMouse then row:EnableMouse(false) end
+                            if row.Checkbox then
+                                row.Checkbox:EnableMouse(true)
+                                -- Do not extend hit rect into the tab area
+                                if row.Checkbox.SetHitRectInsets then row.Checkbox:SetHitRectInsets(0, 0, 0, 0) end
                             end
                             if row.Text then
                                 row.Text:SetText("Enable Custom Textures")
@@ -762,6 +792,15 @@ local function createComponentRenderer(componentId)
                                 function()
                                     local v = component.db[settingId]
                                     if v == nil then v = setting.default end
+                                    -- Coerce direction to a valid option for current orientation to avoid transient 'Custom'
+                                    if settingId == "direction" then
+                                        local o = component.db.orientation or "H"
+                                        if o == "H" then
+                                            if v ~= "left" and v ~= "right" then v = "right" end
+                                        else
+                                            if v ~= "up" and v ~= "down" then v = "up" end
+                                        end
+                                    end
                                     return v
                                 end,
                                 function(v)
@@ -812,7 +851,24 @@ local function createComponentRenderer(componentId)
                                             end
                                         
                                     elseif settingId == "orientation" then
-                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.1) end
+                                        -- Pre-adjust direction to a valid option for the new orientation BEFORE syncing, to avoid transient 'Custom'
+                                        do
+                                            local newOrientation = tostring(v)
+                                            local dir = component.db.direction or "right"
+                                            if newOrientation == "H" then
+                                                if dir ~= "left" and dir ~= "right" then component.db.direction = "right" end
+                                            else
+                                                if dir ~= "up" and dir ~= "down" then component.db.direction = "up" end
+                                            end
+                                            -- Also push direction immediately so Edit Mode reflects valid value during transition
+                                            if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
+                                            end
+                                        end
+                                        -- Hold re-render just a bit longer to let both writes settle
+                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
+                                        -- Hide the direction control very briefly to avoid 'Custom' while options swap
+                                        if panel then panel._dirReinitHoldUntil = (GetTime and (GetTime() + 0.25)) or (panel._dirReinitHoldUntil or 0) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                             addon.EditMode.SyncComponentSettingToEditMode(component, "orientation")
                                             safeSaveOnly(); requestApply()
@@ -959,6 +1015,19 @@ local function createComponentRenderer(componentId)
                                     elseif addon.BuildIconBorderOptionsContainer then
                                         data = { setting = settingObj, options = addon.BuildIconBorderOptionsContainer, name = label }
                                     end
+                                elseif settingId == "direction" then
+                                    local containerOpts = Settings.CreateControlTextContainer()
+                                    local orientation = component and component.db and (component.db.orientation or "H") or "H"
+                                    local orderedValues = {}
+                                    if orientation == "H" then
+                                        table.insert(orderedValues, "right")
+                                        table.insert(orderedValues, "left")
+                                    else
+                                        table.insert(orderedValues, "up")
+                                        table.insert(orderedValues, "down")
+                                    end
+                                    for _, valKey in ipairs(orderedValues) do containerOpts:Add(valKey, values[valKey]) end
+                                    data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
                                 else
                                     local containerOpts = Settings.CreateControlTextContainer()
                                     local orderedValues = {}
@@ -995,6 +1064,14 @@ local function createComponentRenderer(componentId)
                                     return true
                                 end
                                 initDrop:AddShownPredicate(shouldShowDropdown)
+                                -- For Micro Bar 'direction', hide momentarily during orientation swap to avoid transient 'Custom'
+                                if settingId == "direction" then
+                                    initDrop:AddShownPredicate(function()
+                                        if not panel or not panel._dirReinitHoldUntil then return true end
+                                        local now = GetTime and GetTime() or 0
+                                        return now >= panel._dirReinitHoldUntil
+                                    end)
+                                end
                                 if settingId == "visibilityMode" then
                                     initDrop.reinitializeOnValueChanged = false
                                 else
@@ -1239,8 +1316,9 @@ local function createComponentRenderer(componentId)
             settingsList:Show()
             f.Canvas:Hide()
         end
+
         return { mode = "list", render = render, componentId = componentId }
-    end
+    end -- This end was missing
 end
 
 function panel.RenderEssentialCooldowns() return createComponentRenderer("essentialCooldowns")() end
@@ -1277,14 +1355,240 @@ local function createEmptySectionsRenderer(componentId, title)
 
             local settingsList = f.SettingsList
             settingsList.Header.Title:SetText(title or componentId)
+
+            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
+            do
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local header = settingsList and settingsList.Header
+                local collapseBtn = header and (header.DefaultsButton or header.CollapseAllButton or header.CollapseButton)
+                if header then
+                    -- Create once (shared with Action Bars header controls)
+                    if not header.ScooterCopyFromLabel then
+                        local lbl = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                        lbl:SetText("Copy from:")
+                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                        header.ScooterCopyFromLabel = lbl
+                    end
+                    if not header.ScooterCopyFromDropdown then
+                        local dd = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+                        dd:SetSize(180, 22)
+                        header.ScooterCopyFromDropdown = dd
+                    end
+                    local lbl = header.ScooterCopyFromLabel
+                    local dd = header.ScooterCopyFromDropdown
+                    -- Position: always anchor to header's top-right to avoid template differences
+                    if dd and lbl then
+                        dd:ClearAllPoints()
+                        dd:SetPoint("TOPRIGHT", header, "TOPRIGHT", -24, 0)
+                        lbl:ClearAllPoints()
+                        lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+                    end
+
+                    -- Confirmation and error dialogs (one-time registration)
+                    if _G and _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] then
+                        _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] = {
+                            text = "Copy supported Unit Frame settings from %s to %s?",
+                            button1 = "Copy",
+                            button2 = CANCEL,
+                            OnAccept = function(self, data)
+                                if data and addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                                    local ok, err = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                    if addon and addon.CopyUnitFrameTextSettings then
+                                        pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit)
+                                    end
+                                    if addon and addon.CopyUnitFramePowerTextSettings then
+                                        pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit)
+                                    end
+                                    if addon and addon.CopyUnitFrameBarStyleSettings then
+                                        pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit)
+                                    end
+                                    if ok then
+                                        if data.dropdown then
+                                            data.dropdown._ScooterSelectedId = data.sourceUnit
+                                            if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
+                                        end
+                                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                    else
+                                        if _G and _G.StaticPopup_Show then
+                                            local msg
+                                            if err == "focus_requires_larger" then
+                                                msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
+                                            elseif err == "pet_excluded" then
+                                                msg = "Pet is excluded from copy operations."
+                                            else
+                                                msg = "Copy failed. Please try again."
+                                            end
+                                            _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] = _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] or {
+                                                text = "%s",
+                                                button1 = OKAY,
+                                                timeout = 0,
+                                                whileDead = 1,
+                                                hideOnEscape = 1,
+                                                preferredIndex = 3,
+                                            }
+                                            _G.StaticPopup_Show("SCOOTERMOD_COPY_UF_ERROR", msg)
+                                        end
+                                    end
+                                end
+                            end,
+                            OnCancel = function(self, data) end,
+                            timeout = 0,
+                            whileDead = 1,
+                            hideOnEscape = 1,
+                            preferredIndex = 3,
+                        }
+                    end
+
+                    -- Populate dropdown only on UF tabs (Player/Target/Focus). Pet excluded entirely.
+                    if isUF and dd and dd.SetupMenu then
+                        local currentId = componentId
+                        local function unitLabelFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return id
+                        end
+                        local function unitKeyFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return nil
+                        end
+                        dd:SetupMenu(function(menu, root)
+                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" } -- Pet excluded
+                            for _, id in ipairs(candidates) do
+                                if id ~= currentId then
+                                    local text = unitLabelFor(id)
+                                    root:CreateRadio(text, function()
+                                        return dd._ScooterSelectedId == id
+                                    end, function()
+                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
+                                        local destLabel = unitLabelFor(currentId)
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        if _G and _G.StaticPopup_Show then
+                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        else
+                                            -- Fallback: perform copy directly if popup system is unavailable
+                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                                if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
+                                                if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
+                                                if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                                                if ok then
+                                                    dd._ScooterSelectedId = id
+                                                    if dd.SetText then dd:SetText(text) end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Ensure a neutral prompt if nothing selected yet
+                        if dd.SetShown then dd:SetShown(true) end
+                        if lbl and lbl.SetShown then lbl:SetShown(true) end
+                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a frame...") end
+                    end
+
+                    -- Visibility per tab
+                    if lbl then lbl:SetShown(isUF) end
+                    if dd then dd:SetShown(isUF) end
+                end
+            end
+
             settingsList:Display(init)
+            -- Ensure header "Copy from" is present AFTER Display as well (some templates rebuild header)
+            do
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local header = settingsList and settingsList.Header
+                if header then
+                    local lbl = header.ScooterCopyFromLabel
+                    local dd = header.ScooterCopyFromDropdown
+                    if not lbl or not dd then
+                        -- Recreate if missing
+                        if not header.ScooterCopyFromLabel then
+                            local l = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                            l:SetText("Copy from:")
+                            if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(l) end
+                            header.ScooterCopyFromLabel = l
+                        end
+                        if not header.ScooterCopyFromDropdown then
+                            local d = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+                            d:SetSize(180, 22)
+                            header.ScooterCopyFromDropdown = d
+                        end
+                        lbl = header.ScooterCopyFromLabel
+                        dd  = header.ScooterCopyFromDropdown
+                        if dd and lbl then
+                            dd:ClearAllPoints(); dd:SetPoint("TOPRIGHT", header, "TOPRIGHT", -24, 0)
+                            lbl:ClearAllPoints(); lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+                        end
+                    end
+                    if isUF and dd and dd.SetupMenu then
+                        local function unitLabelFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return id
+                        end
+                        local function unitKeyFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return nil
+                        end
+                        local currentId = componentId
+                        dd:SetupMenu(function(menu, root)
+                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
+                            for _, id in ipairs(candidates) do
+                                if id ~= currentId then
+                                    local text = unitLabelFor(id)
+                                    root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
+                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
+                                        local destLabel = unitLabelFor(currentId)
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        if _G and _G.StaticPopup_Show then
+                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        else
+                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                                if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
+                                                if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
+                                                if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                                                if ok then
+                                                    dd._ScooterSelectedId = id
+                                                    if dd.SetText then dd:SetText(text) end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a frame...") end
+                        if lbl then lbl:SetShown(true) end
+                        if dd then dd:SetShown(true) end
+                    else
+                        if lbl then lbl:SetShown(false) end
+                        if dd then dd:SetShown(false) end
+                    end
+                end
+            end
+            -- Mirror Action Bars post-display repair to ensure header children are laid out
+            local currentCategory = f.CurrentCategory
+            if currentCategory and f.CatRenderers then
+                local entry = f.CatRenderers[currentCategory]
+                if entry then entry._lastInitializers = init end
+            end
+            if settingsList.RepairDisplay then pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end }) end
             settingsList:Show()
             f.Canvas:Hide()
         end
         return { mode = "list", render = render, componentId = componentId }
     end
 end
-
 local function createWIPRenderer(componentId, title)
     return function()
         local render = function()
@@ -1304,7 +1608,175 @@ local function createWIPRenderer(componentId, title)
 
             local settingsList = f.SettingsList
             settingsList.Header.Title:SetText(title or componentId)
+
+            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
+            do
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local header = settingsList and settingsList.Header
+                if header then
+                    -- Create once
+                    if not header.ScooterCopyFromLabel then
+                        local lbl = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                        lbl:SetText("Copy from:")
+                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                        header.ScooterCopyFromLabel = lbl
+                    end
+                    if not header.ScooterCopyFromDropdown then
+                        local dd = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+                        dd:SetSize(180, 22)
+                        header.ScooterCopyFromDropdown = dd
+                    end
+                    local lbl = header.ScooterCopyFromLabel
+                    local dd = header.ScooterCopyFromDropdown
+                    -- Anchor to the left of Collapse All/Defaults if available, else top-right fallback
+                    if dd and lbl then
+                        local collapseBtn = header and (header.CollapseAllButton or header.CollapseButton or header.DefaultsButton)
+                        dd:ClearAllPoints()
+                        if collapseBtn then
+                            dd:SetPoint("RIGHT", collapseBtn, "LEFT", -24, 0)
+                        else
+                            dd:SetPoint("TOPRIGHT", header, "TOPRIGHT", -24, 0)
+                        end
+                        lbl:ClearAllPoints()
+                        lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+                    end
+
+                    -- Populate dropdown only on UF tabs (exclude Pet)
+                    if isUF and dd and dd.SetupMenu then
+                        local function unitLabelFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return id
+                        end
+                        local function unitKeyFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return nil
+                        end
+                        local currentId = componentId
+                        dd:SetupMenu(function(menu, root)
+                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
+                            for _, id in ipairs(candidates) do
+                                if id ~= currentId then
+                                    local text = unitLabelFor(id)
+                                    root:CreateRadio(text, function()
+                                        return dd._ScooterSelectedId == id
+                                    end, function()
+                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
+                                        local destLabel = unitLabelFor(currentId)
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        if _G and _G.StaticPopup_Show then
+                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        else
+                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                                if ok then
+                                                    dd._ScooterSelectedId = id
+                                                    if dd.SetText then dd:SetText(text) end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a frame...") end
+                        if lbl then lbl:SetShown(true) end
+                        if dd then dd:SetShown(true) end
+                    end
+
+                    -- Visibility per tab
+                    if lbl then lbl:SetShown(isUF) end
+                    if dd then dd:SetShown(isUF) end
+                end
+            end
+
             settingsList:Display(init)
+
+            -- Post-Display: ensure header controls still exist (some templates rebuild header)
+            do
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local header = settingsList and settingsList.Header
+                if header then
+                    local lbl = header.ScooterCopyFromLabel
+                    local dd = header.ScooterCopyFromDropdown
+                    if not lbl or not dd then
+                        if not header.ScooterCopyFromLabel then
+                            local l = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                            l:SetText("Copy from:")
+                            if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(l) end
+                            header.ScooterCopyFromLabel = l
+                        end
+                        if not header.ScooterCopyFromDropdown then
+                            local d = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
+                            d:SetSize(180, 22)
+                            header.ScooterCopyFromDropdown = d
+                        end
+                        lbl = header.ScooterCopyFromLabel
+                        dd  = header.ScooterCopyFromDropdown
+                        if dd and lbl then
+                            local collapseBtn = header and (header.CollapseAllButton or header.CollapseButton or header.DefaultsButton)
+                            dd:ClearAllPoints()
+                            if collapseBtn then
+                                dd:SetPoint("RIGHT", collapseBtn, "LEFT", -24, 0)
+                            else
+                                dd:SetPoint("TOPRIGHT", header, "TOPRIGHT", -24, 0)
+                            end
+                            lbl:ClearAllPoints(); lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+                        end
+                    end
+                    if isUF and dd and dd.SetupMenu then
+                        local function unitLabelFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return id
+                        end
+                        local function unitKeyFor(id)
+                            if id == "ufPlayer" then return "Player" end
+                            if id == "ufTarget" then return "Target" end
+                            if id == "ufFocus"  then return "Focus" end
+                            return nil
+                        end
+                        local currentId = componentId
+                        dd:SetupMenu(function(menu, root)
+                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
+                            for _, id in ipairs(candidates) do
+                                if id ~= currentId then
+                                    local text = unitLabelFor(id)
+                                    root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
+                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
+                                        local destLabel = unitLabelFor(currentId)
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        if _G and _G.StaticPopup_Show then
+                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        else
+                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
+                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                                if ok then
+                                                    dd._ScooterSelectedId = id
+                                                    if dd.SetText then dd:SetText(text) end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a frame...") end
+                        if lbl then lbl:SetShown(true) end
+                        if dd then dd:SetShown(true) end
+                    else
+                        if lbl then lbl:SetShown(false) end
+                        if dd then dd:SetShown(false) end
+                    end
+                end
+            end
+
             settingsList:Show()
             f.Canvas:Hide()
         end
@@ -1321,82 +1793,1383 @@ function panel.RenderActionBar5()  return createComponentRenderer("actionBar5")(
 function panel.RenderActionBar6()  return createComponentRenderer("actionBar6")() end
 function panel.RenderActionBar7()  return createComponentRenderer("actionBar7")() end
 function panel.RenderActionBar8()  return createComponentRenderer("actionBar8")() end
-function panel.RenderStanceBar()   return createWIPRenderer("stanceBar",   "Stance Bar")()   end
-function panel.RenderMicroBar()    return createWIPRenderer("microBar",    "Micro Bar")()    end
+function panel.RenderStanceBar()   return createComponentRenderer("stanceBar")()           end
+function panel.RenderMicroBar()    return createComponentRenderer("microBar")()              end
 
 -- Unit Frames placeholder renderers -------------------------------------------
 local function createUFRenderer(componentId, title)
-    return function()
         local render = function()
             local f = panel.frame
             if not f or not f.SettingsList then return end
 
             local init = {}
 
-            -- First collapsible section: Health Bar
+			-- First collapsible section: Parent Frame
             local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
-                name = "Health Bar",
-                sectionKey = "Health Bar",
+				name = "Parent Frame",
+				sectionKey = "Parent Frame",
                 componentId = componentId,
-                expanded = panel:IsSectionExpanded(componentId, "Health Bar"),
+				expanded = panel:IsSectionExpanded(componentId, "Parent Frame"),
             })
             expInitializer.GetExtent = function() return 30 end
             table.insert(init, expInitializer)
 
-            -- Tabbed section with seven tabs for stretch testing (varying lengths)
-            local data = {
-                sectionTitle = "",
-                tabAText = "General",
-                tabBText = "Positioning",
-                tabCText = "Colors",
-                tabDText = "Borders",
-                tabEText = "Text Options",
-                tabFText = "Visibility",
-                tabGText = "Advanced",
-                tabHText = "Layout",
-                tabIText = "Other",
-            }
-            data.build = function(frame)
-                -- Placeholder: no controls; we only need to visualize tabs
-            end
-            local tabInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-            tabInit.GetExtent = function() return 140 end
+			-- Parent Frame section with Positioning and Sizing tabs
+			local data = {
+				sectionTitle = "",
+				tabAText = "Positioning",
+				tabBText = "Sizing",
+			}
+			data.build = function(frame)
+				-- Positioning tab (PageA): X/Y text inputs wired to Edit Mode reanchor
+				-- Pixel/UI-unit conversion helpers and coalesced write state
+				local function getUiScale()
+					return (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+				end
+				local function uiUnitsToPixels(u)
+					local s = getUiScale()
+					return math.floor((u * s) + 0.5)
+				end
+				local function pixelsToUiUnits(px)
+					local s = getUiScale()
+					if s == 0 then return 0 end
+					return px / s
+				end
+				local pendingPxX, pendingPxY
+				local pendingWriteTimer
+				local function getUnitFrame()
+					local mgr = _G.EditModeManagerFrame
+					local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+					local EMSys = _G.Enum and _G.Enum.EditModeSystem
+					if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+					local idx = (componentId == "ufPlayer" and EM.Player)
+						or (componentId == "ufTarget" and EM.Target)
+						or (componentId == "ufFocus" and EM.Focus)
+						or (componentId == "ufPet" and EM.Pet)
+						or nil
+					if not idx then return nil end
+					return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+				end
+				local function readOffsets()
+					local fUF = getUnitFrame()
+					if not fUF then return 0, 0 end
+					-- Prefer direct anchor offsets when anchored CENTER to UIParent CENTER
+					if fUF.GetPoint then
+						local p, relTo, rp, ox, oy = fUF:GetPoint(1)
+						if p == "CENTER" and rp == "CENTER" and relTo == UIParent and type(ox) == "number" and type(oy) == "number" then
+							-- Convert stored UI units to pixels for display
+							return uiUnitsToPixels(ox), uiUnitsToPixels(oy)
+						end
+					end
+					-- Fallback: compute from centers without additional scale math
+					if not (fUF.GetCenter and UIParent and UIParent.GetCenter) then return 0, 0 end
+					local fx, fy = fUF:GetCenter()
+					local px, py = UIParent:GetCenter()
+					if not (fx and fy and px and py) then return 0, 0 end
+					-- Compute pixel delta directly from centers
+					local dx = fx - px
+					local dy = fy - py
+					return math.floor(dx + 0.5), math.floor(dy + 0.5)
+				end
+				local function writeOffsets(newX, newY)
+					local fUF = getUnitFrame()
+					if not fUF then return end
+					-- Update pending pixel values and coalesce both-axis write
+					local curPxX, curPxY = readOffsets()
+					pendingPxX = (newX ~= nil) and clampPositionValue(roundPositionValue(newX)) or curPxX
+					pendingPxY = (newY ~= nil) and clampPositionValue(roundPositionValue(newY)) or curPxY
+					if pendingWriteTimer and pendingWriteTimer.Cancel then pendingWriteTimer:Cancel() end
+					pendingWriteTimer = C_Timer.NewTimer(0.1, function()
+						local pxX = clampPositionValue(roundPositionValue(pendingPxX or 0))
+						local pxY = clampPositionValue(roundPositionValue(pendingPxY or 0))
+						local ux = pixelsToUiUnits(pxX)
+						local uy = pixelsToUiUnits(pxY)
+						-- If not already anchored to UIParent CENTER, normalize once using current center delta (in UI units)
+						if fUF.GetPoint then
+							local p, relTo, rp = fUF:GetPoint(1)
+							if not (p == "CENTER" and rp == "CENTER" and relTo == UIParent) then
+								if fUF.GetCenter and UIParent and UIParent.GetCenter then
+									local fx, fy = fUF:GetCenter(); local cx, cy = UIParent:GetCenter()
+									if fx and fy and cx and cy then
+										local curUx = pixelsToUiUnits((fx - cx))
+										local curUy = pixelsToUiUnits((fy - cy))
+										if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
+											addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", curUx, curUy)
+											if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+										end
+									end
+								end
+							end
+						end
+						if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
+							addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", ux, uy)
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							-- Immediately update visuals locally to reflect new position without a full ApplyChanges
+							if fUF and fUF.ClearAllPoints and fUF.SetPoint then
+								fUF:ClearAllPoints()
+								fUF:SetPoint("CENTER", UIParent, "CENTER", ux, uy)
+							end
+							-- Intentionally no RequestApplyChanges() for unit-frame position writes
+						end
+					end)
+				end
+				local yA = { y = -50 }
+				local function addPosInput(label, getter, setter)
+					local options = Settings.CreateSliderOptions(-1000, 1000, 1)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
+					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+					local init = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					ConvertSliderInitializerToTextInput(init)
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
+					row.GetElementData = function() return init end
+					row:SetPoint("TOPLEFT", 4, yA.y)
+					row:SetPoint("TOPRIGHT", -16, yA.y)
+					init:InitFrame(row)
+					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					yA.y = yA.y - 34
+				end
+				addPosInput("X Position (px)", function() local x = readOffsets(); return x end, function(v) writeOffsets(v, nil) end)
+				addPosInput("Y Position (px)", function() local _, y = readOffsets(); return y end, function(v) writeOffsets(nil, v) end)
+				-- Player-only: mirror Cast Bar lock as "Cast Bar Underneath" under Parent Frame > Positioning
+				if componentId == "ufPlayer" then
+					local function getCastBar()
+						local mgr = _G.EditModeManagerFrame
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+					end
+					local label = "Cast Bar Underneath"
+					local function getter()
+						local frame = getCastBar()
+						local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+						if frame and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(frame, sid)
+							return (v and v ~= 0) and true or false
+						end
+						return false
+					end
+					local function setter(b)
+						local frame = getCastBar()
+						local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+						local val = (b and true) and 1 or 0
+						if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frame, sid, val)
+							if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
+					if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+					-- Briefly suspend list refresh/layout during the write to avoid first-scroll flicker
+					if panel and panel.SuspendRefresh then panel.SuspendRefresh(1.0) end
+						end
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, yA.y)
+					row:SetPoint("TOPRIGHT", -16, yA.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					yA.y = yA.y - 34
+				end
+				-- Sizing tab (PageB): Focus gets a "Use Larger Frame" checkbox that gates Frame Size visibility
+				if componentId == "ufFocus" then
+					local yCb = { y = -50 }
+					local label = "Use Larger Frame"
+					local function getUnitFrame()
+						local mgr = _G.EditModeManagerFrame
+						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						local idx = EM.Focus
+						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					end
+					local function getter()
+						local frame = getUnitFrame()
+						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+						if frame and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(frame, settingId)
+							return (v and v ~= 0) and true or false
+						end
+						return false
+					end
+					local function setter(b)
+						local frame = getUnitFrame()
+						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+						local val = (b and true) and 1 or 0
+						if frame and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frame, settingId, val)
+							if type(frame.UpdateSystemSettingFrameSize) == "function" then pcall(frame.UpdateSystemSettingFrameSize, frame) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							-- Update Focus Buffs & Debuffs gating immediately without full rebuild
+							if panel and panel.RefreshFocusBuffsOnTopGating then panel.RefreshFocusBuffsOnTopGating() end
+						-- Update Frame Size slider gating without rebuilding
+						if panel and panel.RefreshFocusFrameSizeGating then panel.RefreshFocusFrameSizeGating() end
+						end
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local fcb = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+					fcb.GetElementData = function() return initCb end
+					fcb:SetPoint("TOPLEFT", 4, yCb.y)
+					fcb:SetPoint("TOPRIGHT", -16, yCb.y)
+					initCb:InitFrame(fcb)
+					if panel and panel.ApplyRobotoWhite then
+						if fcb.Text then panel.ApplyRobotoWhite(fcb.Text) end
+						local cb = fcb.Checkbox or fcb.CheckBox or (fcb.Control and fcb.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+				end
+
+				-- Sizing tab (PageB): add Frame Size slider for Player/Target/Focus/Pet, wired to Edit Mode
+				if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet" then
+					-- If Focus has the gating checkbox above, nudge the first slider row down by one row height
+					local y = { y = (componentId == "ufFocus" and -84 or -50) }
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local options = Settings.CreateSliderOptions(100, 200, 5)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					local label = "Frame Size"
+					local function getUnitFrame()
+						local mgr = _G.EditModeManagerFrame
+						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						local idx = (componentId == "ufPlayer" and EM.Player)
+							or (componentId == "ufTarget" and EM.Target)
+							or (componentId == "ufFocus" and EM.Focus)
+							or (componentId == "ufPet" and EM.Pet)
+							or nil
+						if not idx then return nil end
+						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					end
+					-- Focus: do not hide the slider; we keep it visible and disable when gated
+					local function getter()
+						local frame = getUnitFrame()
+						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
+						if frame and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(frame, settingId)
+							if v == nil then return 100 end
+							-- Convert index (0..20) to raw (100..200) if necessary
+							if v <= 20 then return 100 + (v * 5) end
+							return math.max(100, math.min(200, v))
+						end
+						return 100
+					end
+					local function setter(raw)
+						local frame = getUnitFrame()
+						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
+						local val = tonumber(raw) or 100
+						val = math.max(100, math.min(200, val))
+						if frame and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
+							-- Library expects raw 100..200 for UnitFrame Frame Size
+							addon.EditMode.SetSetting(frame, settingId, val)
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
+					end
+					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+					f.GetElementData = function() return initSlider end
+					f:SetPoint("TOPLEFT", 4, y.y)
+					f:SetPoint("TOPRIGHT", -16, y.y)
+					initSlider:InitFrame(f)
+					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					-- Focus-specific: gate enable state based on Use Larger Frame without rebuilding
+					if componentId == "ufFocus" then
+						local function isUseLargerEnabled()
+							local frameUF = getUnitFrame()
+							local sidULF = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+							if frameUF and sidULF and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frameUF, sidULF)
+								return (v and v ~= 0) and true or false
+							end
+							return false
+						end
+						if not f._blocker then
+							f._blocker = CreateFrame("Frame", nil, f)
+							f._blocker:SetAllPoints(f)
+							f._blocker:EnableMouse(true)
+							f._blocker:Hide()
+						end
+						panel.RefreshFocusFrameSizeGating = function()
+							local enabled = isUseLargerEnabled()
+							if enabled then
+								f:SetAlpha(1)
+								if f._blocker then f._blocker:Hide() end
+							else
+								f:SetAlpha(0.5)
+								if f._blocker then f._blocker:Show() end
+							end
+						end
+						if panel.RefreshFocusFrameSizeGating then panel.RefreshFocusFrameSizeGating() end
+					end
+					y.y = y.y - 34
+				end
+			end
+			local tabInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
+            -- Static height to accommodate up to 8 rows comfortably
+            tabInit.GetExtent = function() return 360 end
             tabInit:AddShownPredicate(function()
-                return panel:IsSectionExpanded(componentId, "Health Bar")
+				return panel:IsSectionExpanded(componentId, "Parent Frame")
             end)
             table.insert(init, tabInit)
 
-            -- Second collapsible section: Power Bar (same tabbed layout for adjacency testing)
-            local expInitializer2 = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
-                name = "Power Bar",
-                sectionKey = "Power Bar",
-                componentId = componentId,
-                expanded = panel:IsSectionExpanded(componentId, "Power Bar"),
-            })
-            expInitializer2.GetExtent = function() return 30 end
-            table.insert(init, expInitializer2)
+			-- Second collapsible section: Health Bar (blank for now)
+			local expInitializerHB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+				name = "Health Bar",
+				sectionKey = "Health Bar",
+				componentId = componentId,
+				expanded = panel:IsSectionExpanded(componentId, "Health Bar"),
+			})
+			expInitializerHB.GetExtent = function() return 30 end
+			table.insert(init, expInitializerHB)
 
-            local data2 = {
-                sectionTitle = "",
-                tabAText = "General",
-                tabBText = "Positioning",
-                tabCText = "Colors",
-                tabDText = "Borders",
-                tabEText = "Text Options",
-                tabFText = "Visibility",
-                tabGText = "Advanced",
-                tabHText = "Layout",
-                tabIText = "Other",
-            }
-            data2.build = function(frame)
-                -- placeholder content; layout test only
-            end
-            local tabInit2 = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data2)
-            tabInit2.GetExtent = function() return 140 end
-            tabInit2:AddShownPredicate(function()
-                return panel:IsSectionExpanded(componentId, "Power Bar")
-            end)
-            table.insert(init, tabInit2)
+			-- Health Bar tabs: % Text, Value Text, Bar Texture
+			local hbTabs = { sectionTitle = "", tabAText = "% Text", tabBText = "Value Text", tabCText = "Bar Style" }
+			hbTabs.build = function(frame)
+				local function unitKey()
+					if componentId == "ufPlayer" then return "Player" end
+					if componentId == "ufTarget" then return "Target" end
+					if componentId == "ufFocus" then return "Focus" end
+					if componentId == "ufPet" then return "Pet" end
+					return nil
+				end
+				local function ensureUFDB()
+					local db = addon and addon.db and addon.db.profile
+					if not db then return nil end
+					db.unitFrames = db.unitFrames or {}
+					local uk = unitKey(); if not uk then return nil end
+					db.unitFrames[uk] = db.unitFrames[uk] or {}
+					return db.unitFrames[uk]
+				end
+
+				-- Local UI helpers (mirror Action Bar Text helpers)
+				local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+				local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+					local options = Settings.CreateSliderOptions(minV, maxV, step)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+					f.GetElementData = function() return initSlider end
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					initSlider:InitFrame(f)
+					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					yRef.y = yRef.y - 34
+				end
+				local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+					local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+					local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+					f.GetElementData = function() return initDrop end
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					initDrop:InitFrame(f)
+					local lbl = f and (f.Text or f.Label)
+					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+					end
+					yRef.y = yRef.y - 34
+				end
+				local function addStyle(parent, label, getFunc, setFunc, yRef)
+					local function styleOptions()
+						local container = Settings.CreateControlTextContainer();
+						container:Add("NONE", "Regular");
+						container:Add("OUTLINE", "Outline");
+						container:Add("THICKOUTLINE", "Thick Outline");
+						return container:GetData()
+					end
+					addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+				end
+				local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+					local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+					f:SetHeight(26)
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					f.Text:SetText(label)
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					local right = CreateFrame("Frame", nil, f)
+					right:SetSize(250, 26)
+					right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+					f.Text:ClearAllPoints()
+					f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+					f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+					f.Text:SetJustifyH("LEFT")
+					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					local function update()
+						local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
+					end
+					swatch:SetScript("OnClick", function()
+						local r, g, b, a = getFunc()
+						ColorPickerFrame:SetupColorPickerAndShow({
+							r = r or 1, g = g or 1, b = b or 1,
+							hasOpacity = hasAlpha,
+							opacity = a or 1,
+							swatchFunc = function()
+								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+								setFunc(nr, ng, nb, na); update()
+							end,
+							cancelFunc = function(prev)
+								if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
+							end,
+						})
+					end)
+					update()
+					yRef.y = yRef.y - 34
+				end
+
+				-- PageA: % Text
+				do
+					local function applyNow()
+						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local function fontOptions()
+						return addon.BuildFontOptionsContainer()
+					end
+					local y = { y = -50 }
+					local label = "Disable % Text"
+					local function getter()
+						local t = ensureUFDB(); return t and not not t.healthPercentHidden or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.healthPercentHidden = (v and true) or false
+						applyNow()
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+					-- Font controls for % Text
+					addDropdown(frame.PageA, "% Text Font", fontOptions,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.fontFace or "FRIZQT__" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.fontFace = v; applyNow() end,
+						y)
+					addStyle(frame.PageA, "% Text Style",
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.style or "OUTLINE" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.style = v; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Size", 6, 48, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return tonumber(s.size) or 14 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.size = tonumber(v) or 14; applyNow() end,
+						y)
+					addColor(frame.PageA, "% Text Color", true,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.color = {r,g,b,a}; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Offset X", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.x = tonumber(v) or 0; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Offset Y", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.y = tonumber(v) or 0; applyNow() end,
+						y)
+				end
+
+				-- PageB: Value Text
+				do
+					local function applyNow()
+						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local function fontOptions()
+						return addon.BuildFontOptionsContainer()
+					end
+					local y = { y = -50 }
+					local label = "Disable Value Text"
+					local function getter()
+						local t = ensureUFDB(); return t and not not t.healthValueHidden or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.healthValueHidden = (v and true) or false
+						applyNow()
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					-- Match % Text layout: drop the cursor after the checkbox row
+					y.y = y.y - 34
+					-- Font controls for Value Text
+					addDropdown(frame.PageB, "Value Text Font", fontOptions,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.fontFace or "FRIZQT__" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.fontFace = v; applyNow() end,
+						y)
+					addStyle(frame.PageB, "Value Text Style",
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.style or "OUTLINE" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.style = v; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Size", 6, 48, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return tonumber(s.size) or 14 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.size = tonumber(v) or 14; applyNow() end,
+						y)
+					addColor(frame.PageB, "Value Text Color", true,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.color = {r,g,b,a}; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Offset X", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.x = tonumber(v) or 0; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Offset Y", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.y = tonumber(v) or 0; applyNow() end,
+						y)
+				end
+
+				-- PageC: Bar Texture (selector) + Bar Color (dropdown) + Bar Tint (conditional)
+				do
+					local function applyNow()
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local y = { y = -50 }
+					-- Texture dropdown
+					local function opts() return addon.BuildBarTextureOptionsContainer() end
+					local function getTex() local t = ensureUFDB() or {}; return t.healthBarTexture or "default" end
+					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarTexture = v; applyNow() end
+					local texSetting = CreateLocalSetting("Bar Texture", "string", getTex, setTex, getTex())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Texture", setting = texSetting, options = opts })
+					local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					f.GetElementData = function() return initDrop end
+					f:SetPoint("TOPLEFT", 4, y.y)
+					f:SetPoint("TOPRIGHT", -16, y.y)
+                    initDrop:InitFrame(f)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = f and (f.Text or f.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+                    if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
+					y.y = y.y - 34
+
+					-- Bar Color dropdown
+                    local function colorOpts()
+						local container = Settings.CreateControlTextContainer()
+                        container:Add("default", "Default")
+                        container:Add("class", "Class Color")
+                        container:Add("custom", "Custom")
+						return container:GetData()
+					end
+					local tintRow
+					local function getColorMode() local t = ensureUFDB() or {}; return t.healthBarColorMode or "default" end
+					local function setColorMode(v)
+						local t = ensureUFDB(); if not t then return end; t.healthBarColorMode = v or "default"; applyNow()
+						if tintRow then
+							if v == "custom" then tintRow:Show() else tintRow:Hide() end
+						end
+					end
+					local colorSetting = CreateLocalSetting("Bar Color", "string", getColorMode, setColorMode, getColorMode())
+					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Color", setting = colorSetting, options = colorOpts })
+					local cf = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					cf.GetElementData = function() return initColor end
+					cf:SetPoint("TOPLEFT", 4, y.y)
+					cf:SetPoint("TOPRIGHT", -16, y.y)
+                    initColor:InitFrame(cf)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = cf and (cf.Text or cf.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+					y.y = y.y - 34
+					-- Tint color swatch
+					local function getTint()
+						local t = ensureUFDB() or {}; local c = t.healthBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+					end
+					local function setTint(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.healthBarTint = {r,g,b,a}; applyNow()
+					end
+					local f2 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
+					tintRow = f2
+					f2:SetHeight(26)
+					f2:SetPoint("TOPLEFT", 4, y.y)
+					f2:SetPoint("TOPRIGHT", -16, y.y)
+					f2.Text:SetText("Bar Tint")
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
+					local right = CreateFrame("Frame", nil, f2)
+					right:SetSize(250, 26)
+					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
+					f2.Text:ClearAllPoints()
+					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
+					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+					f2.Text:SetJustifyH("LEFT")
+					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					local function update()
+						local r, g, b, a = getTint(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
+					end
+					swatch:SetScript("OnClick", function()
+						local r, g, b, a = getTint()
+						ColorPickerFrame:SetupColorPickerAndShow({
+							r = r or 1, g = g or 1, b = b or 1,
+							hasOpacity = true,
+							opacity = a or 1,
+							swatchFunc = function()
+								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = ColorPickerFrame:GetColorAlpha()
+								setTint(nr, ng, nb, na); update()
+							end,
+							cancelFunc = function(prev)
+								if prev then setTint(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
+							end,
+						})
+					end)
+					update()
+					if getColorMode() ~= "custom" then f2:Hide() else f2:Show() end
+					y.y = y.y - 34
+				end
+
+				-- Apply current visibility once when building
+				if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
+			end
+			local hbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", hbTabs)
+			hbInit.GetExtent = function() return 300 end
+			hbInit:AddShownPredicate(function()
+				return panel:IsSectionExpanded(componentId, "Health Bar")
+			end)
+			table.insert(init, hbInit)
+
+			-- Third collapsible section: Power Bar (blank for now)
+			local expInitializerPB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+				name = "Power Bar",
+				sectionKey = "Power Bar",
+				componentId = componentId,
+				expanded = panel:IsSectionExpanded(componentId, "Power Bar"),
+			})
+			expInitializerPB.GetExtent = function() return 30 end
+			table.insert(init, expInitializerPB)
+
+			-- Power Bar tabs: % Text, Value Text, Bar Texture
+			local pbTabs = { sectionTitle = "", tabAText = "% Text", tabBText = "Value Text", tabCText = "Bar Style" }
+			pbTabs.build = function(frame)
+				local function unitKey()
+					if componentId == "ufPlayer" then return "Player" end
+					if componentId == "ufTarget" then return "Target" end
+					if componentId == "ufFocus" then return "Focus" end
+					if componentId == "ufPet" then return "Pet" end
+					return nil
+				end
+				local function ensureUFDB()
+					local db = addon and addon.db and addon.db.profile
+					if not db then return nil end
+					db.unitFrames = db.unitFrames or {}
+					local uk = unitKey(); if not uk then return nil end
+					db.unitFrames[uk] = db.unitFrames[uk] or {}
+					return db.unitFrames[uk]
+				end
+
+				local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+				local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+					local options = Settings.CreateSliderOptions(minV, maxV, step)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+					f.GetElementData = function() return initSlider end
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					initSlider:InitFrame(f)
+					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					yRef.y = yRef.y - 34
+				end
+				local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+					local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+					local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+					f.GetElementData = function() return initDrop end
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					initDrop:InitFrame(f)
+					local lbl = f and (f.Text or f.Label)
+					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+					end
+					yRef.y = yRef.y - 34
+				end
+				local function addStyle(parent, label, getFunc, setFunc, yRef)
+					local function styleOptions()
+						local container = Settings.CreateControlTextContainer();
+						container:Add("NONE", "Regular");
+						container:Add("OUTLINE", "Outline");
+						container:Add("THICKOUTLINE", "Thick Outline");
+						return container:GetData()
+					end
+					addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+				end
+				local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+					local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+					f:SetHeight(26)
+					f:SetPoint("TOPLEFT", 4, yRef.y)
+					f:SetPoint("TOPRIGHT", -16, yRef.y)
+					f.Text:SetText(label)
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					local right = CreateFrame("Frame", nil, f)
+					right:SetSize(250, 26)
+					right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+					f.Text:ClearAllPoints()
+					f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+					f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+					f.Text:SetJustifyH("LEFT")
+					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					local function update()
+						local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
+					end
+					swatch:SetScript("OnClick", function()
+						local r, g, b, a = getFunc()
+						ColorPickerFrame:SetupColorPickerAndShow({
+							r = r or 1, g = g or 1, b = b or 1,
+							hasOpacity = hasAlpha,
+							opacity = a or 1,
+							swatchFunc = function()
+								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+								setFunc(nr, ng, nb, na); update()
+							end,
+							cancelFunc = function(prev)
+								if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
+							end,
+						})
+					end)
+					update()
+					yRef.y = yRef.y - 34
+				end
+
+				-- PageA: % Text (Power Percent)
+				do
+					local function applyNow()
+						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local function fontOptions()
+						return addon.BuildFontOptionsContainer()
+					end
+					local y = { y = -50 }
+					local label = "Disable % Text"
+					local function getter()
+						local t = ensureUFDB(); return t and not not t.powerPercentHidden or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.powerPercentHidden = (v and true) or false
+						applyNow()
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+					addDropdown(frame.PageA, "% Text Font", fontOptions,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.fontFace or "FRIZQT__" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.fontFace = v; applyNow() end,
+						y)
+					addStyle(frame.PageA, "% Text Style",
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.style or "OUTLINE" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.style = v; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Size", 6, 48, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
+						y)
+					addColor(frame.PageA, "% Text Color", true,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Offset X", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
+						y)
+					addSlider(frame.PageA, "% Text Offset Y", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.y = tonumber(v) or 0; applyNow() end,
+						y)
+				end
+
+				-- PageB: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
+				do
+					local function applyNow()
+						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local function fontOptions()
+						return addon.BuildFontOptionsContainer()
+					end
+					local y = { y = -50 }
+					local label = "Disable Value Text"
+					local function getter()
+						local t = ensureUFDB(); return t and not not t.powerValueHidden or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.powerValueHidden = (v and true) or false
+						applyNow()
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+					addDropdown(frame.PageB, "Value Text Font", fontOptions,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.fontFace or "FRIZQT__" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.fontFace = v; applyNow() end,
+						y)
+					addStyle(frame.PageB, "Value Text Style",
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.style or "OUTLINE" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.style = v; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Size", 6, 48, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return tonumber(s.size) or 14 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyNow() end,
+						y)
+					addColor(frame.PageB, "Value Text Color", true,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Offset X", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.x = tonumber(v) or 0; applyNow() end,
+						y)
+					addSlider(frame.PageB, "Value Text Offset Y", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.y = tonumber(v) or 0; applyNow() end,
+						y)
+				end
+
+				-- PageC: Bar Texture for Power Bar
+				do
+					local function applyNow()
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local y = { y = -50 }
+					-- Texture dropdown
+					local function opts() return addon.BuildBarTextureOptionsContainer() end
+					local function getTex() local t = ensureUFDB() or {}; return t.powerBarTexture or "default" end
+					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.powerBarTexture = v; applyNow() end
+					local texSetting = CreateLocalSetting("Bar Texture", "string", getTex, setTex, getTex())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Texture", setting = texSetting, options = opts })
+					local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					f.GetElementData = function() return initDrop end
+					f:SetPoint("TOPLEFT", 4, y.y)
+					f:SetPoint("TOPRIGHT", -16, y.y)
+                    initDrop:InitFrame(f)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = f and (f.Text or f.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+					if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
+					y.y = y.y - 34
+
+					-- Bar Color dropdown
+                    local function colorOpts()
+						local container = Settings.CreateControlTextContainer()
+                        container:Add("default", "Default")
+                        container:Add("custom", "Custom")
+						return container:GetData()
+					end
+					local tintRow
+					local function getColorMode() local t = ensureUFDB() or {}; return t.powerBarColorMode or "default" end
+					local function setColorMode(v)
+						local t = ensureUFDB(); if not t then return end; t.powerBarColorMode = v or "default"; applyNow()
+						if tintRow then
+							if v == "custom" then tintRow:Show() else tintRow:Hide() end
+						end
+					end
+					local colorSetting = CreateLocalSetting("Bar Color", "string", getColorMode, setColorMode, getColorMode())
+                    local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Color", setting = colorSetting, options = colorOpts })
+					local cf = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					cf.GetElementData = function() return initColor end
+					cf:SetPoint("TOPLEFT", 4, y.y)
+					cf:SetPoint("TOPRIGHT", -16, y.y)
+                    initColor:InitFrame(cf)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = cf and (cf.Text or cf.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+					y.y = y.y - 34
+					-- Tint color
+					local function getTint()
+						local t = ensureUFDB() or {}; local c = t.powerBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+					end
+					local function setTint(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.powerBarTint = {r,g,b,a}; applyNow()
+					end
+					local f2 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
+					tintRow = f2
+					f2:SetHeight(26)
+					f2:SetPoint("TOPLEFT", 4, y.y)
+					f2:SetPoint("TOPRIGHT", -16, y.y)
+					f2.Text:SetText("Bar Tint")
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
+					local right = CreateFrame("Frame", nil, f2)
+					right:SetSize(250, 26)
+					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
+					f2.Text:ClearAllPoints()
+					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
+					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+					f2.Text:SetJustifyH("LEFT")
+					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					local function update()
+						local r, g, b, a = getTint(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
+					end
+					swatch:SetScript("OnClick", function()
+						local r, g, b, a = getTint()
+						ColorPickerFrame:SetupColorPickerAndShow({
+							r = r or 1, g = g or 1, b = b or 1,
+							hasOpacity = true,
+							opacity = a or 1,
+							swatchFunc = function()
+								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = ColorPickerFrame:GetColorAlpha()
+								setTint(nr, ng, nb, na); update()
+							end,
+							cancelFunc = function(prev)
+								if prev then setTint(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
+							end,
+						})
+					end)
+					update()
+					if getColorMode() ~= "custom" then f2:Hide() else f2:Show() end
+					y.y = y.y - 34
+				end
+
+				-- Apply current visibility once when building
+				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
+			end
+
+			local pbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", pbTabs)
+			pbInit.GetExtent = function() return 300 end
+			pbInit:AddShownPredicate(function()
+				return panel:IsSectionExpanded(componentId, "Power Bar")
+			end)
+			table.insert(init, pbInit)
+
+			-- Fourth collapsible section: Cast Bar (Player only)
+			if componentId == "ufPlayer" then
+				local expInitializerCB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Cast Bar",
+					sectionKey = "Cast Bar",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Cast Bar"),
+				})
+				expInitializerCB.GetExtent = function() return 30 end
+				table.insert(init, expInitializerCB)
+
+				-- Cast Bar tabbed section: Positioning / Sizing (Sizing placeholder for now)
+				local cbData = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Cast Time" }
+				cbData.build = function(frame)
+					-- Utilities reused from Parent Frame positioning
+					local function getUiScale() return (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1 end
+					local function uiUnitsToPixels(u) local s = getUiScale(); return math.floor((u * s) + 0.5) end
+					local function pixelsToUiUnits(px) local s = getUiScale(); if s == 0 then return 0 end; return px / s end
+
+					local function getCastBar()
+						local mgr = _G.EditModeManagerFrame
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+					end
+
+					-- Positioning tab content (PageA)
+					local yA = { y = -50 }
+					local function addCheckboxLock()
+						local label = "Lock to Player Frame"
+						local function getter()
+							local frame = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+							if frame and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frame, sid)
+								return (v and v ~= 0) and true or false
+							end
+							return false
+						end
+						local function setter(b)
+							local frame = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+							local val = (b and true) and 1 or 0
+							if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frame, sid, val)
+								if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+							end
+						end
+						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, yA.y)
+						row:SetPoint("TOPRIGHT", -16, yA.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						yA.y = yA.y - 34
+						return setting
+					end
+
+					local lockSetting = addCheckboxLock()
+
+					local function isLocked()
+						return (lockSetting and lockSetting.GetValue and lockSetting:GetValue()) and true or false
+					end
+
+					-- Position inputs only when unlocked
+					if not isLocked() then
+						local function readOffsets()
+							local cb = getCastBar()
+							if not cb then return 0, 0 end
+							if cb.GetPoint then
+								local p, relTo, rp, ox, oy = cb:GetPoint(1)
+								if p == "CENTER" and rp == "CENTER" and relTo == UIParent and type(ox) == "number" and type(oy) == "number" then
+									return uiUnitsToPixels(ox), uiUnitsToPixels(oy)
+								end
+							end
+							if not (cb.GetCenter and UIParent and UIParent.GetCenter) then return 0, 0 end
+							local fx, fy = cb:GetCenter(); local px, py = UIParent:GetCenter(); if not (fx and fy and px and py) then return 0, 0 end
+							return math.floor((fx - px) + 0.5), math.floor((fy - py) + 0.5)
+						end
+						local pendingPxX, pendingPxY, pendingWriteTimer
+						local function writeOffsets(newX, newY)
+							local cb = getCastBar(); if not cb then return end
+							local curX, curY = readOffsets()
+							pendingPxX = (newX ~= nil) and clampPositionValue(roundPositionValue(newX)) or curX
+							pendingPxY = (newY ~= nil) and clampPositionValue(roundPositionValue(newY)) or curY
+							if pendingWriteTimer and pendingWriteTimer.Cancel then pendingWriteTimer:Cancel() end
+							pendingWriteTimer = C_Timer.NewTimer(0.1, function()
+								local pxX = clampPositionValue(roundPositionValue(pendingPxX or 0))
+								local pxY = clampPositionValue(roundPositionValue(pendingPxY or 0))
+								local ux = pixelsToUiUnits(pxX)
+								local uy = pixelsToUiUnits(pxY)
+								if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
+									addon.EditMode.ReanchorFrame(cb, "CENTER", UIParent, "CENTER", ux, uy)
+									if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+									if cb and cb.ClearAllPoints and cb.SetPoint then
+										cb:ClearAllPoints(); cb:SetPoint("CENTER", UIParent, "CENTER", ux, uy)
+									end
+								end
+							end)
+						end
+						local function addPosInput(label, getter, setter)
+							local options = Settings.CreateSliderOptions(-1000, 1000, 1)
+							options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
+							local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+							local init = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+							ConvertSliderInitializerToTextInput(init)
+							local row = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
+							row.GetElementData = function() return init end
+							row:SetPoint("TOPLEFT", 4, yA.y)
+							row:SetPoint("TOPRIGHT", -16, yA.y)
+							init:InitFrame(row)
+							if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+							yA.y = yA.y - 34
+						end
+						addPosInput("X Position (px)", function() local x = readOffsets(); return x end, function(v) writeOffsets(v, nil) end)
+						addPosInput("Y Position (px)", function() local _, y = readOffsets(); return y end, function(v) writeOffsets(nil, v) end)
+					end
+
+					-- Sizing tab (PageB): Bar Size (Scale) 100..150 step 10
+					do
+						local y = { y = -50 }
+						local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+						local options = Settings.CreateSliderOptions(100, 150, 10)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+						local label = "Bar Size (Scale)"
+						local function getCastBar()
+							local mgr = _G.EditModeManagerFrame
+							local EMSys = _G.Enum and _G.Enum.EditModeSystem
+							if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+							return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+						end
+						local function getter()
+							local frame = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.BarSize
+							if frame and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frame, sid)
+								if v == nil then return 100 end
+								return math.max(100, math.min(150, v))
+							end
+							return 100
+						end
+						local function setter(raw)
+							local frame = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.BarSize
+							local val = tonumber(raw) or 100
+							val = math.floor(math.max(100, math.min(150, val)) / 10 + 0.5) * 10
+							if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frame, sid, val)
+								if type(frame.UpdateSystemSettingBarSize) == "function" then pcall(frame.UpdateSystemSettingBarSize, frame) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							end
+						end
+						local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						y.y = y.y - 34
+					end
+
+					-- Cast Time tab (PageC): Show Cast Time checkbox
+					do
+						local y = { y = -50 }
+						local label = "Show Cast Time"
+						local function getCastBar()
+							local mgr = _G.EditModeManagerFrame
+							local EMSys = _G.Enum and _G.Enum.EditModeSystem
+							if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+							return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+						end
+						local function getter()
+							local frameCB = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.ShowCastTime
+							if frameCB and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frameCB, sid)
+								return (tonumber(v) or 0) == 1
+							end
+							return false
+						end
+						local function setter(b)
+							local frameCB = getCastBar()
+							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.ShowCastTime
+							local val = (b and true) and 1 or 0
+							if frameCB and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frameCB, sid, val)
+								if type(frameCB.UpdateSystemSettingShowCastTime) == "function" then pcall(frameCB.UpdateSystemSettingShowCastTime, frameCB) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							end
+						end
+						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
+					end
+				end
+
+				local tabCBC = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", cbData)
+				tabCBC.GetExtent = function() return 220 end
+				tabCBC:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Cast Bar") end)
+				table.insert(init, tabCBC)
+			end
+
+			-- Fifth collapsible section: Buffs & Debuffs (Target only)
+			if componentId == "ufTarget" then
+				local expInitializerBD = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Buffs & Debuffs",
+					sectionKey = "Buffs & Debuffs",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Buffs & Debuffs"),
+				})
+				expInitializerBD.GetExtent = function() return 30 end
+				table.insert(init, expInitializerBD)
+
+				-- Tabbed section within Buffs & Debuffs: Positioning (first tab)
+				local bdData = { sectionTitle = "", tabAText = "Positioning" }
+				bdData.build = function(frame)
+					-- Positioning tab (PageA): "Buffs on Top" checkbox wired to Edit Mode
+					local y = { y = -50 }
+					local function getUnitFrame()
+						local mgr = _G.EditModeManagerFrame
+						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						local idx = EM.Target
+						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					end
+					local label = "Buffs on Top"
+					local function getter()
+						local frameUF = getUnitFrame()
+						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+						if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(frameUF, sid)
+							return (tonumber(v) or 0) == 1
+						end
+						return false
+					end
+					local function setter(b)
+						local frameUF = getUnitFrame()
+						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+						local val = (b and true) and 1 or 0
+						if frameUF and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, sid, val)
+							-- Nudge visuals; call specific updater if present, else coalesced apply
+							if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+				end
+
+				local tabBD = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdData)
+				tabBD.GetExtent = function() return 120 end
+				tabBD:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
+				table.insert(init, tabBD)
+			end
+
+			-- Sixth collapsible section: Buffs & Debuffs (Focus only)
+			if componentId == "ufFocus" then
+				local expInitializerBDF = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Buffs & Debuffs",
+					sectionKey = "Buffs & Debuffs",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Buffs & Debuffs"),
+				})
+				expInitializerBDF.GetExtent = function() return 30 end
+				table.insert(init, expInitializerBDF)
+
+				local bdDataF = { sectionTitle = "", tabAText = "Positioning" }
+				bdDataF.build = function(frame)
+					local y = { y = -50 }
+					local function getUnitFrame()
+						local mgr = _G.EditModeManagerFrame
+						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+						local EMSys = _G.Enum and _G.Enum.EditModeSystem
+						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+						local idx = EM.Focus
+						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					end
+					local function isUseLargerEnabled()
+						local fUF = getUnitFrame()
+						local sidULF = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+						if fUF and sidULF and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(fUF, sidULF)
+							return (v and v ~= 0) and true or false
+						end
+						return false
+					end
+					local label = "Buffs on Top"
+					local function getter()
+						local frameUF = getUnitFrame()
+						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+						if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+							local v = addon.EditMode.GetSetting(frameUF, sid)
+							return (tonumber(v) or 0) == 1
+						end
+						return false
+					end
+					local function setter(b)
+						-- Respect gating: if Use Larger Frame is not enabled, ignore writes
+						if not isUseLargerEnabled() then return end
+						local frameUF = getUnitFrame()
+						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+						local val = (b and true) and 1 or 0
+						if frameUF and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, sid, val)
+							if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					-- Gray out when Use Larger Frame is unchecked and show disclaimer
+					local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+					local disabled = not isUseLargerEnabled()
+					if cb then if disabled then cb:Disable() else cb:Enable() end end
+					local disclaimer = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+					disclaimer:SetText("Parent Frame > Sizing > 'Use Larger Frame' required")
+					disclaimer:SetJustifyH("LEFT")
+					if disclaimer.SetWordWrap then disclaimer:SetWordWrap(true) end
+					if disclaimer.SetNonSpaceWrap then disclaimer:SetNonSpaceWrap(true) end
+					local anchor = (cb and cb.Text) or row.Text or row
+					disclaimer:ClearAllPoints()
+					disclaimer:SetPoint("LEFT", anchor, "RIGHT", 42, 0)
+					disclaimer:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+					disclaimer:SetShown(disabled)
+
+					-- Expose a lightweight gating refresher to avoid full category rebuilds
+					panel.RefreshFocusBuffsOnTopGating = function()
+						local isDisabled = not isUseLargerEnabled()
+						if cb then if isDisabled then cb:Disable() else cb:Enable() end end
+						if disclaimer then disclaimer:SetShown(isDisabled) end
+					end
+					if panel.RefreshFocusBuffsOnTopGating then panel.RefreshFocusBuffsOnTopGating() end
+					y.y = y.y - 34
+				end
+
+				local tabBDF = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdDataF)
+				tabBDF.GetExtent = function() return 120 end
+				tabBDF:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
+				table.insert(init, tabBDF)
+			end
 
             local settingsList = f.SettingsList
             settingsList.Header.Title:SetText(title or componentId)
@@ -1405,10 +3178,9 @@ local function createUFRenderer(componentId, title)
             f.Canvas:Hide()
         end
         return { mode = "list", render = render, componentId = componentId }
-    end
 end
 
-function panel.RenderUFPlayer() return createUFRenderer("ufPlayer", "Player")() end
-function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target")() end
-function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")()  end
-
+function panel.RenderUFPlayer() return createUFRenderer("ufPlayer", "Player") end
+function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target") end
+function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")  end
+function panel.RenderUFPet()    return createUFRenderer("ufPet",    "Pet")    end

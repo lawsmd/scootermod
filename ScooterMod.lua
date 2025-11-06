@@ -78,7 +78,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
     -- /scoot debug <target>
     if cmd == "debug" then
         local target = args[2]
-        if not target or target == "" then addon:Print("Usage: /scoot debug <ab1|ab2|...|ab8|essential|utility|<FrameName>>") return end
+        if not target or target == "" then addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|<FrameName>>") return end
         if addon.DebugDump then addon.DebugDump(target) else addon:Print("Debug module not loaded.") end
         return
     end

@@ -436,6 +436,10 @@ end
 function ScooterTabbedSectionMixin:Init(initializer)
     local data = initializer and initializer.data or {}
     self:SetTitles(data.sectionTitle or "", data.tabAText or "Tab A", data.tabBText or "Tab B", data.tabCText, data.tabDText, data.tabEText, data.tabFText, data.tabGText, data.tabHText, data.tabIText)
+    -- Hide any ad-hoc header controls from prior uses (e.g., Tracked Bars "Enable Custom Textures" row)
+    if self.EnableCustomTexturesRow then
+        self.EnableCustomTexturesRow:Hide()
+    end
     local function ClearChildren(frame)
         if not frame or not frame.GetNumChildren then return end
         for i = frame:GetNumChildren(), 1, -1 do
