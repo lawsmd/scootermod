@@ -2000,6 +2000,17 @@ end
                     if settingsList and settingsList.RepairDisplay and entry and entry._lastInitializers then
                         pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(entry._lastInitializers) end, GetInitializers = function() return entry._lastInitializers end })
                     end
+                    -- Reconfigure shared header "Copy from" controls on reopen to restore placeholder prompts
+                    if panel and panel.ConfigureHeaderCopyFromForKey and cat then
+                        panel.ConfigureHeaderCopyFromForKey(cat)
+                        if C_Timer and C_Timer.After then
+                            C_Timer.After(0, function()
+                                if panel and panel.ConfigureHeaderCopyFromForKey and panel.frame and panel.frame:IsShown() then
+                                    panel.ConfigureHeaderCopyFromForKey(cat)
+                                end
+                            end)
+                        end
+                    end
                 end
             end)
         end

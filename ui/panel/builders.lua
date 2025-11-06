@@ -1804,319 +1804,304 @@ local function createUFRenderer(componentId, title)
 
             local init = {}
 
-			-- First collapsible section: Parent Frame
-            local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
-				name = "Parent Frame",
-				sectionKey = "Parent Frame",
-                componentId = componentId,
-				expanded = panel:IsSectionExpanded(componentId, "Parent Frame"),
-            })
-            expInitializer.GetExtent = function() return 30 end
-            table.insert(init, expInitializer)
-
-			-- Parent Frame section with Positioning and Sizing tabs
-			local data = {
-				sectionTitle = "",
-				tabAText = "Positioning",
-				tabBText = "Sizing",
-			}
-			data.build = function(frame)
-				-- Positioning tab (PageA): X/Y text inputs wired to Edit Mode reanchor
-				-- Pixel/UI-unit conversion helpers and coalesced write state
-				local function getUiScale()
-					return (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
-				end
-				local function uiUnitsToPixels(u)
-					local s = getUiScale()
-					return math.floor((u * s) + 0.5)
-				end
-				local function pixelsToUiUnits(px)
-					local s = getUiScale()
-					if s == 0 then return 0 end
-					return px / s
-				end
-				local pendingPxX, pendingPxY
-				local pendingWriteTimer
-				local function getUnitFrame()
-					local mgr = _G.EditModeManagerFrame
-					local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
-					local EMSys = _G.Enum and _G.Enum.EditModeSystem
-					if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-					local idx = (componentId == "ufPlayer" and EM.Player)
-						or (componentId == "ufTarget" and EM.Target)
-						or (componentId == "ufFocus" and EM.Focus)
-						or (componentId == "ufPet" and EM.Pet)
-						or nil
-					if not idx then return nil end
-					return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
-				end
-				local function readOffsets()
-					local fUF = getUnitFrame()
-					if not fUF then return 0, 0 end
-					-- Prefer direct anchor offsets when anchored CENTER to UIParent CENTER
-					if fUF.GetPoint then
-						local p, relTo, rp, ox, oy = fUF:GetPoint(1)
-						if p == "CENTER" and rp == "CENTER" and relTo == UIParent and type(ox) == "number" and type(oy) == "number" then
-							-- Convert stored UI units to pixels for display
-							return uiUnitsToPixels(ox), uiUnitsToPixels(oy)
-						end
+			-- Top-level Parent Frame rows (no collapsible or tabs)
+			-- Shared helpers for the four unit frames
+			local function getUiScale()
+				return (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+			end
+			local function pixelsToUiUnits(px)
+				local s = getUiScale()
+				if s == 0 then return 0 end
+				return px / s
+			end
+			local function uiUnitsToPixels(u)
+				local s = getUiScale()
+				return math.floor((u * s) + 0.5)
+			end
+			local function getUnitFrame()
+				local mgr = _G.EditModeManagerFrame
+				local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+				local EMSys = _G.Enum and _G.Enum.EditModeSystem
+				if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+				local idx = (componentId == "ufPlayer" and EM.Player)
+					or (componentId == "ufTarget" and EM.Target)
+					or (componentId == "ufFocus" and EM.Focus)
+					or (componentId == "ufPet" and EM.Pet)
+					or nil
+				if not idx then return nil end
+				return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+			end
+			local function readOffsets()
+				local fUF = getUnitFrame()
+				if not fUF then return 0, 0 end
+				if fUF.GetPoint then
+					local p, relTo, rp, ox, oy = fUF:GetPoint(1)
+					if p == "CENTER" and rp == "CENTER" and relTo == UIParent and type(ox) == "number" and type(oy) == "number" then
+						return uiUnitsToPixels(ox), uiUnitsToPixels(oy)
 					end
-					-- Fallback: compute from centers without additional scale math
-					if not (fUF.GetCenter and UIParent and UIParent.GetCenter) then return 0, 0 end
-					local fx, fy = fUF:GetCenter()
-					local px, py = UIParent:GetCenter()
-					if not (fx and fy and px and py) then return 0, 0 end
-					-- Compute pixel delta directly from centers
-					local dx = fx - px
-					local dy = fy - py
-					return math.floor(dx + 0.5), math.floor(dy + 0.5)
 				end
-				local function writeOffsets(newX, newY)
-					local fUF = getUnitFrame()
-					if not fUF then return end
-					-- Update pending pixel values and coalesce both-axis write
-					local curPxX, curPxY = readOffsets()
-					pendingPxX = (newX ~= nil) and clampPositionValue(roundPositionValue(newX)) or curPxX
-					pendingPxY = (newY ~= nil) and clampPositionValue(roundPositionValue(newY)) or curPxY
-					if pendingWriteTimer and pendingWriteTimer.Cancel then pendingWriteTimer:Cancel() end
-					pendingWriteTimer = C_Timer.NewTimer(0.1, function()
-						local pxX = clampPositionValue(roundPositionValue(pendingPxX or 0))
-						local pxY = clampPositionValue(roundPositionValue(pendingPxY or 0))
-						local ux = pixelsToUiUnits(pxX)
-						local uy = pixelsToUiUnits(pxY)
-						-- If not already anchored to UIParent CENTER, normalize once using current center delta (in UI units)
-						if fUF.GetPoint then
-							local p, relTo, rp = fUF:GetPoint(1)
-							if not (p == "CENTER" and rp == "CENTER" and relTo == UIParent) then
-								if fUF.GetCenter and UIParent and UIParent.GetCenter then
-									local fx, fy = fUF:GetCenter(); local cx, cy = UIParent:GetCenter()
-									if fx and fy and cx and cy then
-										local curUx = pixelsToUiUnits((fx - cx))
-										local curUy = pixelsToUiUnits((fy - cy))
-										if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
-											addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", curUx, curUy)
-											if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-										end
+				if not (fUF.GetCenter and UIParent and UIParent.GetCenter) then return 0, 0 end
+				local fx, fy = fUF:GetCenter()
+				local px, py = UIParent:GetCenter()
+				if not (fx and fy and px and py) then return 0, 0 end
+				return math.floor((fx - px) + 0.5), math.floor((fy - py) + 0.5)
+			end
+			local _pendingPxX, _pendingPxY, _pendingWriteTimer
+			local function writeOffsets(newX, newY)
+				local fUF = getUnitFrame()
+				if not fUF then return end
+				local curPxX, curPxY = readOffsets()
+				_pendingPxX = (newX ~= nil) and clampPositionValue(roundPositionValue(newX)) or curPxX
+				_pendingPxY = (newY ~= nil) and clampPositionValue(roundPositionValue(newY)) or curPxY
+				if _pendingWriteTimer and _pendingWriteTimer.Cancel then _pendingWriteTimer:Cancel() end
+				_pendingWriteTimer = C_Timer.NewTimer(0.1, function()
+					local pxX = clampPositionValue(roundPositionValue(_pendingPxX or 0))
+					local pxY = clampPositionValue(roundPositionValue(_pendingPxY or 0))
+					local ux = pixelsToUiUnits(pxX)
+					local uy = pixelsToUiUnits(pxY)
+					-- Normalize anchor once if needed
+					if fUF.GetPoint then
+						local p, relTo, rp = fUF:GetPoint(1)
+						if not (p == "CENTER" and rp == "CENTER" and relTo == UIParent) then
+							if fUF.GetCenter and UIParent and UIParent.GetCenter then
+								local fx, fy = fUF:GetCenter(); local cx, cy = UIParent:GetCenter()
+								if fx and fy and cx and cy then
+									local curUx = pixelsToUiUnits((fx - cx))
+									local curUy = pixelsToUiUnits((fy - cy))
+									if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
+										addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", curUx, curUy)
+										if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
 									end
 								end
 							end
 						end
-						if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
-							addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", ux, uy)
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							-- Immediately update visuals locally to reflect new position without a full ApplyChanges
-							if fUF and fUF.ClearAllPoints and fUF.SetPoint then
-								fUF:ClearAllPoints()
-								fUF:SetPoint("CENTER", UIParent, "CENTER", ux, uy)
-							end
-							-- Intentionally no RequestApplyChanges() for unit-frame position writes
-						end
-					end)
-				end
-				local yA = { y = -50 }
-				local function addPosInput(label, getter, setter)
-					local options = Settings.CreateSliderOptions(-1000, 1000, 1)
-					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
-					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-					local init = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-					ConvertSliderInitializerToTextInput(init)
-					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
-					row.GetElementData = function() return init end
-					row:SetPoint("TOPLEFT", 4, yA.y)
-					row:SetPoint("TOPRIGHT", -16, yA.y)
-					init:InitFrame(row)
-					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
-					yA.y = yA.y - 34
-				end
-				addPosInput("X Position (px)", function() local x = readOffsets(); return x end, function(v) writeOffsets(v, nil) end)
-				addPosInput("Y Position (px)", function() local _, y = readOffsets(); return y end, function(v) writeOffsets(nil, v) end)
-				-- Player-only: mirror Cast Bar lock as "Cast Bar Underneath" under Parent Frame > Positioning
-				if componentId == "ufPlayer" then
-					local function getCastBar()
-						local mgr = _G.EditModeManagerFrame
-						local EMSys = _G.Enum and _G.Enum.EditModeSystem
-						if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-						return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
 					end
-					local label = "Cast Bar Underneath"
-					local function getter()
-						local frame = getCastBar()
-						local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-						if frame and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(frame, sid)
-							return (v and v ~= 0) and true or false
-						end
-						return false
-					end
-					local function setter(b)
-						local frame = getCastBar()
-						local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-						local val = (b and true) and 1 or 0
-						if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frame, sid, val)
-							if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
-					if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-					-- Briefly suspend list refresh/layout during the write to avoid first-scroll flicker
-					if panel and panel.SuspendRefresh then panel.SuspendRefresh(1.0) end
+					if addon and addon.EditMode and addon.EditMode.ReanchorFrame then
+						addon.EditMode.ReanchorFrame(fUF, "CENTER", UIParent, "CENTER", ux, uy)
+						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						if fUF and fUF.ClearAllPoints and fUF.SetPoint then
+							fUF:ClearAllPoints()
+							fUF:SetPoint("CENTER", UIParent, "CENTER", ux, uy)
 						end
 					end
-					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-					row.GetElementData = function() return initCb end
-					row:SetPoint("TOPLEFT", 4, yA.y)
-					row:SetPoint("TOPRIGHT", -16, yA.y)
-					initCb:InitFrame(row)
-					if panel and panel.ApplyRobotoWhite then
-						if row.Text then panel.ApplyRobotoWhite(row.Text) end
-						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-					end
-					yA.y = yA.y - 34
-				end
-				-- Sizing tab (PageB): Focus gets a "Use Larger Frame" checkbox that gates Frame Size visibility
-				if componentId == "ufFocus" then
-					local yCb = { y = -50 }
-					local label = "Use Larger Frame"
-					local function getUnitFrame()
-						local mgr = _G.EditModeManagerFrame
-						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
-						local EMSys = _G.Enum and _G.Enum.EditModeSystem
-						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-						local idx = EM.Focus
-						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
-					end
-					local function getter()
-						local frame = getUnitFrame()
-						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
-						if frame and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(frame, settingId)
-							return (v and v ~= 0) and true or false
-						end
-						return false
-					end
-					local function setter(b)
-						local frame = getUnitFrame()
-						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
-						local val = (b and true) and 1 or 0
-						if frame and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frame, settingId, val)
-							if type(frame.UpdateSystemSettingFrameSize) == "function" then pcall(frame.UpdateSystemSettingFrameSize, frame) end
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-							-- Update Focus Buffs & Debuffs gating immediately without full rebuild
-							if panel and panel.RefreshFocusBuffsOnTopGating then panel.RefreshFocusBuffsOnTopGating() end
-						-- Update Frame Size slider gating without rebuilding
-						if panel and panel.RefreshFocusFrameSizeGating then panel.RefreshFocusFrameSizeGating() end
-						end
-					end
-					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local fcb = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
-					fcb.GetElementData = function() return initCb end
-					fcb:SetPoint("TOPLEFT", 4, yCb.y)
-					fcb:SetPoint("TOPRIGHT", -16, yCb.y)
-					initCb:InitFrame(fcb)
-					if panel and panel.ApplyRobotoWhite then
-						if fcb.Text then panel.ApplyRobotoWhite(fcb.Text) end
-						local cb = fcb.Checkbox or fcb.CheckBox or (fcb.Control and fcb.Control.Checkbox)
-						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-					end
-				end
-
-				-- Sizing tab (PageB): add Frame Size slider for Player/Target/Focus/Pet, wired to Edit Mode
-				if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet" then
-					-- If Focus has the gating checkbox above, nudge the first slider row down by one row height
-					local y = { y = (componentId == "ufFocus" and -84 or -50) }
-					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
-					local options = Settings.CreateSliderOptions(100, 200, 5)
-					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
-					local label = "Frame Size"
-					local function getUnitFrame()
-						local mgr = _G.EditModeManagerFrame
-						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
-						local EMSys = _G.Enum and _G.Enum.EditModeSystem
-						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-						local idx = (componentId == "ufPlayer" and EM.Player)
-							or (componentId == "ufTarget" and EM.Target)
-							or (componentId == "ufFocus" and EM.Focus)
-							or (componentId == "ufPet" and EM.Pet)
-							or nil
-						if not idx then return nil end
-						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
-					end
-					-- Focus: do not hide the slider; we keep it visible and disable when gated
-					local function getter()
-						local frame = getUnitFrame()
-						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
-						if frame and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(frame, settingId)
-							if v == nil then return 100 end
-							-- Convert index (0..20) to raw (100..200) if necessary
-							if v <= 20 then return 100 + (v * 5) end
-							return math.max(100, math.min(200, v))
-						end
-						return 100
-					end
-					local function setter(raw)
-						local frame = getUnitFrame()
-						local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
-						local val = tonumber(raw) or 100
-						val = math.max(100, math.min(200, val))
-						if frame and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
-							-- Library expects raw 100..200 for UnitFrame Frame Size
-							addon.EditMode.SetSetting(frame, settingId, val)
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-						end
-					end
-					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
-					f.GetElementData = function() return initSlider end
-					f:SetPoint("TOPLEFT", 4, y.y)
-					f:SetPoint("TOPRIGHT", -16, y.y)
-					initSlider:InitFrame(f)
-					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
-					-- Focus-specific: gate enable state based on Use Larger Frame without rebuilding
-					if componentId == "ufFocus" then
-						local function isUseLargerEnabled()
-							local frameUF = getUnitFrame()
-							local sidULF = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
-							if frameUF and sidULF and addon and addon.EditMode and addon.EditMode.GetSetting then
-								local v = addon.EditMode.GetSetting(frameUF, sidULF)
-								return (v and v ~= 0) and true or false
-							end
-							return false
-						end
-						if not f._blocker then
-							f._blocker = CreateFrame("Frame", nil, f)
-							f._blocker:SetAllPoints(f)
-							f._blocker:EnableMouse(true)
-							f._blocker:Hide()
-						end
-						panel.RefreshFocusFrameSizeGating = function()
-							local enabled = isUseLargerEnabled()
-							if enabled then
-								f:SetAlpha(1)
-								if f._blocker then f._blocker:Hide() end
-							else
-								f:SetAlpha(0.5)
-								if f._blocker then f._blocker:Show() end
-							end
-						end
-						if panel.RefreshFocusFrameSizeGating then panel.RefreshFocusFrameSizeGating() end
-					end
-					y.y = y.y - 34
-				end
+				end)
 			end
-			local tabInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-            -- Static height to accommodate up to 8 rows comfortably
-            tabInit.GetExtent = function() return 360 end
-            tabInit:AddShownPredicate(function()
-				return panel:IsSectionExpanded(componentId, "Parent Frame")
-            end)
-            table.insert(init, tabInit)
+
+			-- X Position (px)
+			do
+				local label = "X Position (px)"
+				local options = Settings.CreateSliderOptions(-1000, 1000, 1)
+				options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
+				local setting = CreateLocalSetting(label, "number",
+					function() local x = readOffsets(); return x end,
+					function(v) writeOffsets(v, nil) end,
+					0)
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				row.GetExtent = function() return 34 end
+				-- Present as numeric text input (previous behavior), not a slider
+				if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+					end
+				end
+				table.insert(init, row)
+			end
+
+			-- Y Position (px)
+			do
+				local label = "Y Position (px)"
+				local options = Settings.CreateSliderOptions(-1000, 1000, 1)
+				options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
+				local setting = CreateLocalSetting(label, "number",
+					function() local _, y = readOffsets(); return y end,
+					function(v) writeOffsets(nil, v) end,
+					0)
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				row.GetExtent = function() return 34 end
+				-- Present as numeric text input (previous behavior), not a slider
+				if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+					end
+				end
+				table.insert(init, row)
+			end
+
+			-- Player-only: Cast Bar Underneath
+			if componentId == "ufPlayer" then
+				local function getUF()
+					return getUnitFrame()
+				end
+				local function getCastBar()
+					local mgr = _G.EditModeManagerFrame
+					local EMSys = _G.Enum and _G.Enum.EditModeSystem
+					if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+					return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+				end
+				local label = "Cast Bar Underneath"
+				local function getter()
+					-- Prefer Unit Frame setting when available (EditMode dump shows index [1] on PlayerFrame)
+					local frameUF = getUF()
+					local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+					local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
+					if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.GetSetting then
+						local v = addon.EditMode.GetSetting(frameUF, sidUF)
+						if v ~= nil then return (tonumber(v) or 0) ~= 0 end
+					end
+					-- Fallback to Cast Bar system's lock (legacy)
+					local frameCB = getCastBar()
+					local sidCB = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+					if frameCB and sidCB and addon and addon.EditMode and addon.EditMode.GetSetting then
+						local v = addon.EditMode.GetSetting(frameCB, sidCB)
+						return (tonumber(v) or 0) ~= 0
+					end
+					return false
+				end
+				local function setter(b)
+					local val = (b and true) and 1 or 0
+					-- Fix note (2025-11-06): Mirror this toggle to BOTH Unit Frame [CastBarUnderneath]
+					-- and Cast Bar [LockToPlayerFrame], then call UpdateSystem/RefreshLayout, SaveOnly(),
+					-- and a coalesced RequestApplyChanges(). This ensures the on-screen element updates
+					-- immediately and the Edit Mode checkbox reflects the new value without needing a reopen.
+					-- Write to Unit Frame setting first
+					do
+						local frameUF = getUF()
+						local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+						local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
+						if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, sidUF, val)
+							-- Try immediate visual refresh on the unit frame
+							if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
+							if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						end
+					end
+					-- Also mirror to Cast Bar system to ensure immediate visual update
+					do
+						local frameCB = getCastBar()
+						local sidCB = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+						if frameCB and sidCB and addon and addon.EditMode and addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameCB, sidCB, val)
+							if type(frameCB.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frameCB.UpdateSystemSettingLockToPlayerFrame, frameCB) end
+							if type(frameCB.UpdateSystem) == "function" then pcall(frameCB.UpdateSystem, frameCB) end
+							if type(frameCB.RefreshLayout) == "function" then pcall(frameCB.RefreshLayout, frameCB) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						end
+					end
+					-- Coalesced apply to propagate to Edit Mode UI immediately
+					if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.5) end
+				end
+				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+				row.GetExtent = function() return 34 end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite then
+							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+							local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+					end
+				end
+				table.insert(init, row)
+			end
+
+			-- Focus-only: Use Larger Frame
+			if componentId == "ufFocus" then
+				local label = "Use Larger Frame"
+				local function getUF() return getUnitFrame() end
+				local function getter()
+					local frameUF = getUF()
+					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
+						local v = addon.EditMode.GetSetting(frameUF, settingId)
+						return (v and v ~= 0) and true or false
+					end
+					return false
+				end
+				local function setter(b)
+					local frameUF = getUF()
+					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+					local val = (b and true) and 1 or 0
+					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
+						addon.EditMode.SetSetting(frameUF, settingId, val)
+						if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
+						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					end
+				end
+				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+				row.GetExtent = function() return 34 end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite then
+							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+							local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+					end
+				end
+				table.insert(init, row)
+			end
+
+			-- Frame Size (all four)
+			do
+				local label = "Frame Size"
+				local function getUF() return getUnitFrame() end
+				local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+				local options = Settings.CreateSliderOptions(100, 200, 5)
+				options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+				local function getter()
+					local frameUF = getUF()
+					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
+					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
+						local v = addon.EditMode.GetSetting(frameUF, settingId)
+						if v == nil then return 100 end
+						if v <= 20 then return 100 + (v * 5) end
+						return math.max(100, math.min(200, v))
+					end
+					return 100
+				end
+				local function setter(raw)
+					local frameUF = getUF()
+					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
+					local val = tonumber(raw) or 100
+					val = math.max(100, math.min(200, val))
+					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
+						addon.EditMode.SetSetting(frameUF, settingId, val)
+						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					end
+				end
+				local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				row.GetExtent = function() return 34 end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+					end
+				end
+				table.insert(init, row)
+			end
 
 			-- Second collapsible section: Health Bar (blank for now)
 			local expInitializerHB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -2822,16 +2807,39 @@ local function createUFRenderer(componentId, title)
 							return false
 						end
 						local function setter(b)
-							local frame = getCastBar()
-							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
 							local val = (b and true) and 1 or 0
-							if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frame, sid, val)
-								if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-								if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+							-- Fix note (2025-11-06): Keep Cast Bar <-> Unit Frame in lockstep by writing to
+							-- Cast Bar [LockToPlayerFrame] and mirroring to Player Unit Frame [CastBarUnderneath],
+							-- then nudge UpdateSystem/RefreshLayout, SaveOnly(), and coalesced RequestApplyChanges().
+							-- This prevents stale visuals and keeps Edit Mode UI in sync instantly.
+							-- Write to Cast Bar system
+							do
+								local frame = getCastBar()
+								local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+								if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frame, sid, val)
+									if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
+									if type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+									if type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+								end
 							end
+							-- Mirror to Player Unit Frame setting [Cast Bar Underneath] to keep both UIs in sync
+							do
+								local mgr = _G.EditModeManagerFrame
+								local EMSys = _G.Enum and _G.Enum.EditModeSystem
+								local EMUF = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+								local frameUF = (mgr and EMSys and EMUF and mgr.GetRegisteredSystemFrame) and mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EMUF.Player) or nil
+								local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+								local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
+								if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frameUF, sidUF, val)
+									if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
+									if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
+								end
+							end
+							if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
 						end
 						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
