@@ -83,6 +83,26 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         return
     end
 
+    -- /scoot zorder uf <unit>
+    if cmd == "zorder" then
+        local sub = string.lower(args[2] or "")
+        if sub == "uf" then
+            local unit = string.lower(args[3] or "")
+            if unit == "player" or unit == "target" or unit == "focus" or unit == "pet" then
+                if addon.DebugDumpZOrderUF then
+                    addon.DebugDumpZOrderUF(unit)
+                else
+                    addon:Print("Z-Order debug not available.")
+                end
+            else
+                addon:Print("Usage: /scoot zorder uf <player|target|focus|pet>")
+            end
+            return
+        end
+        addon:Print("Usage: /scoot zorder uf <player|target|focus|pet>")
+        return
+    end
+
     -- /scoot copy "Source Name" "New Name"
     if cmd == "copy" then
         local src = args[2]

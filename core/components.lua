@@ -31,6 +31,62 @@ local function HideDefaultBarTextures(barFrame, restore)
                 end
             end
         end
+        -- EXPERIMENT EXTENSION (2025-11-07): Also promote Left/Right text on Health and Mana bars using the same overlay.
+        do
+            if _G.InCombatLockdown and not _G.InCombatLockdown() then
+                local function promoteFS(fs, overlay)
+                    if not (fs and overlay) then return end
+                    if not fs._ScootUFOrigParent then
+                        fs._ScootUFOrigParent = fs:GetParent()
+                        if fs.GetNumPoints then
+                            local pts = {}
+                            local n = fs:GetNumPoints()
+                            for i = 1, n do
+                                local p, rel, rp, x, y = fs:GetPoint(i)
+                                table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+                            end
+                            fs._ScootUFOrigPoints = pts
+                        end
+                    end
+                    if fs.SetParent then pcall(fs.SetParent, fs, overlay) end
+                    if fs.ClearAllPoints and fs.SetPoint and fs._ScootUFOrigPoints then
+                        pcall(fs.ClearAllPoints, fs)
+                        for _, pt in ipairs(fs._ScootUFOrigPoints) do
+                            pcall(fs.SetPoint, fs, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", pt[4] or 0, pt[5] or 0)
+                        end
+                    end
+                    if fs.SetDrawLayer then pcall(fs.SetDrawLayer, fs, "OVERLAY", 8) end
+                end
+                -- Ensure overlays exist
+                if hbContainer and not hb._ScootUFTextOverlay then
+                    local overlay = CreateFrame("Frame", nil, UIParent)
+                    overlay:SetClipsChildren(false)
+                    overlay:SetFrameStrata("DIALOG")
+                    overlay:SetFrameLevel(9999)
+                    overlay:SetAllPoints(hbContainer)
+                    hb._ScootUFTextOverlay = overlay
+                end
+                if manaContainer and not manaContainer._ScootUFTextOverlay then
+                    local overlayM = CreateFrame("Frame", nil, UIParent)
+                    overlayM:SetClipsChildren(false)
+                    overlayM:SetFrameStrata("DIALOG")
+                    overlayM:SetFrameLevel(9999)
+                    overlayM:SetAllPoints(manaContainer)
+                    manaContainer._ScootUFTextOverlay = overlayM
+                end
+                -- Promote
+                if hbContainer and hb._ScootUFTextOverlay then
+                    promoteFS(hbContainer.LeftText, hb._ScootUFTextOverlay)
+                    promoteFS(hbContainer.RightText, hb._ScootUFTextOverlay)
+                    promoteFS(hbContainer.HealthBarText, hb._ScootUFTextOverlay)
+                end
+                if manaContainer and manaContainer._ScootUFTextOverlay then
+                    promoteFS(manaContainer.LeftText, manaContainer._ScootUFTextOverlay)
+                    promoteFS(manaContainer.RightText, manaContainer._ScootUFTextOverlay)
+                    promoteFS(manaContainer.ManaBarText, manaContainer._ScootUFTextOverlay)
+                end
+            end
+        end
     end
 end
 
@@ -2327,6 +2383,102 @@ do
         return findStatusBarByHints(frame, {"HealthBarsContainer.HealthBar", ".HealthBar", "HealthBar"}, {"Prediction", "Absorb", "Mana"})
     end
 
+    -- Raise unit frame text layers so they always appear above any custom borders
+    local function raiseUnitTextLayers(unit, targetLevel)
+        local function safeSetDrawLayer(fs, layer, sub)
+            if fs and fs.SetDrawLayer then pcall(fs.SetDrawLayer, fs, layer, sub) end
+        end
+        local function safeRaiseFrameLevel(frame, baseLevel, bump)
+            if not frame then return end
+            local cur = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
+            local target = math.max(cur, (tonumber(baseLevel) or 0) + (tonumber(bump) or 0))
+            if targetLevel and type(targetLevel) == "number" then
+                if target < targetLevel then target = targetLevel end
+            end
+            if frame.SetFrameLevel then pcall(frame.SetFrameLevel, frame, target) end
+        end
+        if unit == "Pet" then
+            safeSetDrawLayer(_G.PetFrameHealthBarText, "OVERLAY", 6)
+            safeSetDrawLayer(_G.PetFrameHealthBarTextLeft, "OVERLAY", 6)
+            safeSetDrawLayer(_G.PetFrameHealthBarTextRight, "OVERLAY", 6)
+            safeSetDrawLayer(_G.PetFrameManaBarText, "OVERLAY", 6)
+            safeSetDrawLayer(_G.PetFrameManaBarTextLeft, "OVERLAY", 6)
+            safeSetDrawLayer(_G.PetFrameManaBarTextRight, "OVERLAY", 6)
+            -- Bump parent levels above any border holder
+            local hb = _G.PetFrameHealthBar
+            local mb = _G.PetFrameManaBar
+            local base = (hb and hb.GetFrameLevel and hb:GetFrameLevel()) or 0
+            safeRaiseFrameLevel(hb, base, 12)
+            safeRaiseFrameLevel(mb, base, 12)
+            return
+        end
+        local root = (unit == "Player" and _G.PlayerFrame)
+            or (unit == "Target" and _G.TargetFrame)
+            or (unit == "Focus" and _G.FocusFrame) or nil
+        if not root then return end
+        -- Health texts
+        local hbContainer = (unit == "Player" and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer)
+            or (root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer)
+        if hbContainer then
+            safeSetDrawLayer(hbContainer.HealthBarText, "OVERLAY", 6)
+            safeSetDrawLayer(hbContainer.LeftText, "OVERLAY", 6)
+            safeSetDrawLayer(hbContainer.RightText, "OVERLAY", 6)
+            local base = (hbContainer.GetFrameLevel and hbContainer:GetFrameLevel()) or ((root.GetFrameLevel and root:GetFrameLevel()) or 0)
+            safeRaiseFrameLevel(hbContainer, base, 12)
+        end
+        -- Mana texts
+        local mana
+        if unit == "Player" then
+            mana = root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+        else
+            mana = root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain and root.TargetFrameContent.TargetFrameContentMain.ManaBar
+        end
+        if mana then
+            safeSetDrawLayer(mana.ManaBarText, "OVERLAY", 6)
+            safeSetDrawLayer(mana.LeftText, "OVERLAY", 6)
+            safeSetDrawLayer(mana.RightText, "OVERLAY", 6)
+            local base = (mana.GetFrameLevel and mana:GetFrameLevel()) or ((root.GetFrameLevel and root:GetFrameLevel()) or 0)
+            safeRaiseFrameLevel(mana, base, 12)
+        end
+    end
+
+    -- (moved ensureTextAndBorderOrdering below resolver functions)
+
+	-- Parent container that holds both Health and Power areas (content main)
+	local function resolveUFContentMain(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain or nil
+		elseif unit == "Target" then
+			local root = _G.TargetFrame
+			return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain or nil
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain or nil
+		elseif unit == "Pet" then
+			return _G.PetFrame
+		end
+		return nil
+	end
+
+    local function resolveHealthContainer(frame, unit)
+        if unit == "Pet" then return _G.PetFrame and _G.PetFrame.HealthBarContainer end
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            local c = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer")
+            if c then return c end
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            local c = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer")
+            if c then return c end
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            local c = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer")
+            if c then return c end
+        end
+        return frame and frame.HealthBarsContainer or nil
+    end
+
     local function resolvePowerBar(frame, unit)
         if unit == "Pet" then return _G.PetFrameManaBar end
         if unit == "Player" then
@@ -2388,6 +2540,61 @@ do
                 and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarMask
         elseif unit == "Pet" then
             return _G.PetFrameManaBarMask
+        end
+        return nil
+    end
+
+    -- Compute border holder level below current text and enforce ordering deterministically
+    local function ensureTextAndBorderOrdering(unit)
+        local root = (unit == "Player" and _G.PlayerFrame)
+            or (unit == "Target" and _G.TargetFrame)
+            or (unit == "Focus" and _G.FocusFrame)
+            or (unit == "Pet" and _G.PetFrame) or nil
+        if not root then return end
+        local hb = resolveHealthBar(root, unit) or nil
+        local hbContainer = resolveHealthContainer(root, unit) or nil
+        local pb = resolvePowerBar(root, unit) or nil
+        local manaContainer
+        if unit == "Player" then
+            manaContainer = root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar or nil
+        else
+            manaContainer = root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain and root.TargetFrameContent.TargetFrameContentMain.ManaBar or nil
+        end
+        -- Determine bar level and desired ordering: bar < holder < text
+        local barLevel = (hb and hb.GetFrameLevel and hb:GetFrameLevel()) or 0
+        local curTextLevel = 0
+        if hbContainer and hbContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, hbContainer:GetFrameLevel() or 0) end
+        if manaContainer and manaContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, manaContainer:GetFrameLevel() or 0) end
+        local desiredTextLevel = math.max(curTextLevel, barLevel + 2)
+        -- Raise text containers above holder
+        if hbContainer and hbContainer.SetFrameLevel then pcall(hbContainer.SetFrameLevel, hbContainer, desiredTextLevel) end
+        if manaContainer and manaContainer.SetFrameLevel then pcall(manaContainer.SetFrameLevel, manaContainer, desiredTextLevel) end
+        -- Keep text FontStrings at high overlay sublevel
+        raiseUnitTextLayers(unit, desiredTextLevel)
+        -- Place the textured border holder between bar and text
+        do
+            local holder = hb and hb.ScooterStyledBorder or nil
+            if holder and holder.SetFrameLevel then
+                local holderLevel = math.max(1, desiredTextLevel - 1, barLevel + 1)
+                pcall(holder.SetFrameLevel, holder, holderLevel)
+            end
+        end
+        -- (experimental text reparent/strata bump removed; see HOLDING.md 2025-11-07)
+    end
+
+    -- Resolve the stock unit frame frame art (the large atlas that includes the health bar border)
+    local function resolveUnitFrameFrameTexture(unit)
+        if unit == "Player" then
+            local root = _G.PlayerFrame
+            return root and root.PlayerFrameContainer and root.PlayerFrameContainer.FrameTexture or nil
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
+        elseif unit == "Pet" then
+            return _G.PetFrameTexture
         end
         return nil
     end
@@ -2509,6 +2716,7 @@ do
         local cfg = db.unitFrames[unit] or {}
         local frame = getUnitFrameFor(unit)
         if not frame then return end
+        local _didResize = false
 
         local hb = resolveHealthBar(frame, unit)
         if hb then
@@ -2548,6 +2756,306 @@ do
 				end
 			end
 			ensureMaskOnBarTexture(hb, resolveHealthMask(unit))
+			-- Experimental: Health Bar Width scaling (texture/mask only), Player/Target/Focus
+            do
+				if unit ~= "Pet" then
+				local pct = tonumber(cfg.healthBarWidthPct) or 100
+					local tex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
+					local mask = resolveHealthMask(unit)
+					-- Reverted width behavior: do not modify parent containers; operate only on the bar/texture/mask
+					local container = nil
+					local main = nil
+					-- Capture originals once
+					if tex and not tex._ScootUFOrigCapturedWidth then
+						if tex.GetScale then
+							local ok, sc = pcall(tex.GetScale, tex)
+							if ok and sc then tex._ScootUFOrigScale = sc end
+						end
+						if tex.GetWidth then
+							local ok, w = pcall(tex.GetWidth, tex)
+							if ok and w then tex._ScootUFOrigWidth = w end
+						end
+						tex._ScootUFOrigCapturedWidth = true
+					end
+					if mask and not mask._ScootUFOrigCapturedWidth then
+						if mask.GetScale then
+							local ok, sc = pcall(mask.GetScale, mask)
+							if ok and sc then mask._ScootUFOrigScale = sc end
+						end
+						if mask.GetWidth then
+							local ok, w = pcall(mask.GetWidth, mask)
+							if ok and w then mask._ScootUFOrigWidth = w end
+						end
+						mask._ScootUFOrigCapturedWidth = true
+					end
+
+                    -- Ensure original anchor points captured for re-anchoring (width/height adjustments)
+					if hb and not hb._ScootUFOrigPoints then
+						local pts = {}
+						local n = (hb.GetNumPoints and hb:GetNumPoints()) or 0
+						for i = 1, n do
+							local p, rel, rp, x, y = hb:GetPoint(i)
+							table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+						end
+						hb._ScootUFOrigPoints = pts
+					end
+                    if container and not container._ScootUFOrigPoints then
+                        local pts = {}
+                        local n = (container.GetNumPoints and container:GetNumPoints()) or 0
+                        for i = 1, n do
+                            local p, rel, rp, x, y = container:GetPoint(i)
+                            table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+                        end
+                        container._ScootUFOrigPoints = pts
+                    end
+					if main and not main._ScootUFOrigPoints then
+						local pts = {}
+						local n = (main.GetNumPoints and main:GetNumPoints()) or 0
+						for i = 1, n do
+							local p, rel, rp, x, y = main:GetPoint(i)
+							table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+						end
+						main._ScootUFOrigPoints = pts
+					end
+					local function reapplyPointsWithRightOffset(dx)
+						-- Positive dx moves RIGHT/CENTER anchors outward to the right
+						local pts = hb and hb._ScootUFOrigPoints
+						if not (hb and pts and hb.ClearAllPoints and hb.SetPoint) then return end
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(pts) do
+							local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
+							local xx = x or 0
+							local anchor = tostring(p or "")
+							local relp = tostring(rp or "")
+							if string.find(anchor, "RIGHT", 1, true) or string.find(relp, "RIGHT", 1, true) then
+								xx = (x or 0) + (dx or 0)
+							elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
+								xx = (x or 0) + ((dx or 0) * 0.5)
+							end
+							pcall(hb.SetPoint, hb, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
+						end
+					end
+                    local function reapplyContainerPointsWithRightOffset(dx)
+                        if not container then return end
+                        local pts = container._ScootUFOrigPoints
+                        if not (pts and container.ClearAllPoints and container.SetPoint) then return end
+                        pcall(container.ClearAllPoints, container)
+                        for _, pt in ipairs(pts) do
+                            local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
+                            local xx = x or 0
+                            local anchor = tostring(p or "")
+                            local relp = tostring(rp or "")
+                            if string.find(anchor, "RIGHT", 1, true) or string.find(relp, "RIGHT", 1, true) then
+                                xx = (x or 0) + (dx or 0)
+                            elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
+                                xx = (x or 0) + ((dx or 0) * 0.5)
+                            end
+                            pcall(container.SetPoint, container, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
+                        end
+                    end
+					local function reapplyMainPointsWithRightOffset(dx)
+						if not main then return end
+						local pts = main._ScootUFOrigPoints
+						if not (pts and main.ClearAllPoints and main.SetPoint) then return end
+						pcall(main.ClearAllPoints, main)
+						for _, pt in ipairs(pts) do
+							local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
+							local xx = x or 0
+							local anchor = tostring(p or "")
+							local relp = tostring(rp or "")
+							if string.find(anchor, "RIGHT", 1, true) or string.find(relp, "RIGHT", 1, true) then
+								xx = (x or 0) + (dx or 0)
+							elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
+								xx = (x or 0) + ((dx or 0) * 0.5)
+							end
+							pcall(main.SetPoint, main, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
+						end
+					end
+					local scaleX = math.max(1, pct / 100)
+					local scaleY = 1
+					-- Capture original HealthBar width once (frame width, not value)
+					if hb and not hb._ScootUFOrigWidth then
+						if hb.GetWidth then
+							local ok, w = pcall(hb.GetWidth, hb)
+							if ok and w then hb._ScootUFOrigWidth = w end
+						end
+					end
+                    if container and not container._ScootUFOrigWidth then
+                        if container.GetWidth then
+                            local ok, w = pcall(container.GetWidth, container)
+                            if ok and w then container._ScootUFOrigWidth = w end
+                        end
+                    end
+					if main and not main._ScootUFOrigWidth then
+						if main.GetWidth then
+							local ok, w = pcall(main.GetWidth, main)
+							if ok and w then main._ScootUFOrigWidth = w end
+						end
+					end
+                    if pct > 100 then
+						-- Prefer scaling; fall back to widening if scale not available
+						if tex and tex.SetScale then pcall(tex.SetScale, tex, scaleX) end
+						if mask and mask.SetScale then pcall(mask.SetScale, mask, scaleX) end
+						if tex and (not tex.SetScale) and tex.SetWidth and tex._ScootUFOrigWidth then
+							pcall(tex.SetWidth, tex, tex._ScootUFOrigWidth * scaleX)
+						end
+						if mask and (not mask.SetScale) and mask.SetWidth and mask._ScootUFOrigWidth then
+							pcall(mask.SetWidth, mask, mask._ScootUFOrigWidth * scaleX)
+						end
+						-- Ensure the status bar frame itself widens
+						if hb and hb.SetWidth and hb._ScootUFOrigWidth then
+							pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth * scaleX)
+						end
+                        -- Also widen the container to avoid capping/clipping at container edges
+                        if container and container.SetWidth and container._ScootUFOrigWidth then
+                            pcall(container.SetWidth, container, container._ScootUFOrigWidth * scaleX)
+                        end
+						-- And widen the content main to move the unified right boundary
+						if main and main.SetWidth and main._ScootUFOrigWidth then
+							pcall(main.SetWidth, main, main._ScootUFOrigWidth * scaleX)
+						end
+						-- Disable clipping on parents so overflow is visible
+						if container and container.SetClipsChildren then pcall(container.SetClipsChildren, container, false) end
+						if main and main.SetClipsChildren then pcall(main.SetClipsChildren, main, false) end
+						-- Grow frame to the right by re-anchoring RIGHT/CENTER points outward (keeps left edge fixed)
+						if hb and hb._ScootUFOrigWidth then
+							local dx = (hb._ScootUFOrigWidth * (scaleX - 1))
+							if dx and dx ~= 0 then reapplyPointsWithRightOffset(dx) end
+						end
+                        if container and container._ScootUFOrigWidth then
+                            local dx = (container._ScootUFOrigWidth * (scaleX - 1))
+                            if dx and dx ~= 0 then reapplyContainerPointsWithRightOffset(dx) end
+                        end
+						if main and main._ScootUFOrigWidth then
+							local dx = (main._ScootUFOrigWidth * (scaleX - 1))
+							if dx and dx ~= 0 then reapplyMainPointsWithRightOffset(dx) end
+						end
+                        _didResize = true
+					else
+						-- Restore
+						if tex then
+							if tex._ScootUFOrigScale and tex.SetScale then pcall(tex.SetScale, tex, tex._ScootUFOrigScale) end
+							if tex._ScootUFOrigWidth and tex.SetWidth then pcall(tex.SetWidth, tex, tex._ScootUFOrigWidth) end
+						end
+						if mask then
+							if mask._ScootUFOrigScale and mask.SetScale then pcall(mask.SetScale, mask, mask._ScootUFOrigScale) end
+							if mask._ScootUFOrigWidth and mask.SetWidth then pcall(mask.SetWidth, mask, mask._ScootUFOrigWidth) end
+						end
+						if hb and hb._ScootUFOrigWidth and hb.SetWidth then
+							pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth)
+						end
+                        if container and container._ScootUFOrigWidth and container.SetWidth then
+                            pcall(container.SetWidth, container, container._ScootUFOrigWidth)
+                        end
+						if main and main._ScootUFOrigWidth and main.SetWidth then
+							pcall(main.SetWidth, main, main._ScootUFOrigWidth)
+						end
+						if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
+							pcall(hb.ClearAllPoints, hb)
+							for _, pt in ipairs(hb._ScootUFOrigPoints) do
+								pcall(hb.SetPoint, hb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+							end
+						end
+                        if container and container._ScootUFOrigPoints and container.ClearAllPoints and container.SetPoint then
+                            pcall(container.ClearAllPoints, container)
+                            for _, pt in ipairs(container._ScootUFOrigPoints) do
+                                pcall(container.SetPoint, container, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+                            end
+                        end
+						if main and main._ScootUFOrigPoints and main.ClearAllPoints and main.SetPoint then
+							pcall(main.ClearAllPoints, main)
+							for _, pt in ipairs(main._ScootUFOrigPoints) do
+								pcall(main.SetPoint, main, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+							end
+						end
+					end
+					-- (Reverted) Height scaling removed
+				end
+			end
+            -- Health Bar custom border (Health Bar only)
+            do
+				local styleKey = cfg.healthBarBorderStyle
+				local tintEnabled = not not cfg.healthBarBorderTintEnable
+				local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
+					cfg.healthBarBorderTintColor[1] or 1,
+					cfg.healthBarBorderTintColor[2] or 1,
+					cfg.healthBarBorderTintColor[3] or 1,
+					cfg.healthBarBorderTintColor[4] or 1,
+				} or {1, 1, 1, 1}
+                local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                local inset = tonumber(cfg.healthBarBorderInset) or 0
+				-- Only draw custom border when Use Custom Borders is enabled
+				if hb then
+					if cfg.useCustomBorders then
+						-- Handle style = "none" to explicitly clear any custom border
+						if styleKey == "none" or styleKey == nil then
+							if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+							if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+						else
+							-- Match Tracked Bars: when tint is disabled use white for textured styles,
+							-- and black only for the pixel fallback case.
+							local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+							local color
+							if tintEnabled then
+								color = tintColor
+							else
+								if styleDef then
+									color = {1, 1, 1, 1}
+								else
+									color = {0, 0, 0, 1}
+								end
+							end
+                            local handled = false
+							if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+								-- Clear any prior holder/state to avoid stale tinting when toggling
+								if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                handled = addon.BarBorders.ApplyToBarFrame(hb, styleKey, {
+                                    color = color,
+                                    thickness = thickness,
+                                    levelOffset = 1, -- just above bar fill; text will be raised above holder
+                                    containerParent = (hb and hb:GetParent()) or nil,
+                                    inset = inset,
+                                })
+							end
+							if handled then
+								if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+							else
+								-- Fallback: pixel (square) border drawn with our lightweight helper
+								if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                if addon.Borders and addon.Borders.ApplySquare then
+									local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                    local baseY = (thickness <= 1) and 0 or 1
+                                    local baseX = 1
+                                    local expandY = baseY - inset
+                                    local expandX = baseX - inset
+                                    if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                    if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                    addon.Borders.ApplySquare(hb, {
+										size = thickness,
+										color = sqColor,
+                                        layer = "OVERLAY",
+                                        layerSublevel = 3,
+										expandX = expandX,
+										expandY = expandY,
+									})
+                                end
+							end
+                            -- Deterministically place border below text and ensure text wins
+                            ensureTextAndBorderOrdering(unit)
+                            -- Light hook: keep ordering stable on bar resize
+                            if hb and not hb._ScootUFZOrderHooked and hb.HookScript then
+                                hb:HookScript("OnSizeChanged", function() ensureTextAndBorderOrdering(unit) end)
+                                hb._ScootUFZOrderHooked = true
+                            end
+						end
+					else
+						-- Custom borders disabled -> ensure cleared
+						if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+						if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+					end
+				end
+            end
 		end
 
         local pb = resolvePowerBar(frame, unit)
@@ -2571,6 +3079,15 @@ do
                 if _G.PetFrame_Update then pcall(_G.PetFrame_Update, _G.PetFrame) end
             end
         end
+
+        -- Experimental: optionally hide the stock frame art (which includes the health bar border)
+        do
+            local ft = resolveUnitFrameFrameTexture(unit)
+            if ft and ft.SetShown then
+                local hide = not not (cfg.useCustomBorders or cfg.healthBarHideBorder)
+                pcall(ft.SetShown, ft, not hide)
+            end
+        end
         refresh(unit)
     end
 
@@ -2584,7 +3101,106 @@ do
         applyForUnit("Focus")
         applyForUnit("Pet")
     end
+
+    -- Install stable hooks to re-assert z-order after Blizzard refreshers
+    local function installUFZOrderHooks()
+        local function defer(unit)
+            if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, function() ensureTextAndBorderOrdering(unit) end) else ensureTextAndBorderOrdering(unit) end
+        end
+        if _G.PlayerFrame and _G.PlayerFrame.UpdateSystem then
+            _G.hooksecurefunc(_G.PlayerFrame, "UpdateSystem", function() defer("Player") end)
+        end
+        if type(_G.TargetFrame_Update) == "function" then
+            _G.hooksecurefunc("TargetFrame_Update", function() defer("Target") end)
+        end
+        if type(_G.FocusFrame_Update) == "function" then
+            _G.hooksecurefunc("FocusFrame_Update", function() defer("Focus") end)
+        end
+        if type(_G.PetFrame_Update) == "function" then
+            _G.hooksecurefunc("PetFrame_Update", function() defer("Pet") end)
+        end
+    end
+
+    if not addon._UFZOrderHooksInstalled then
+        addon._UFZOrderHooksInstalled = true
+        if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, installUFZOrderHooks) else installUFZOrderHooks() end
+    end
+
+    -- One-time cleanup for prior experiment artifacts (overlay/text parent/strata)
+    local function cleanupUFExperiment(unit)
+        local root = (unit == "Player" and _G.PlayerFrame)
+            or (unit == "Target" and _G.TargetFrame)
+            or (unit == "Focus" and _G.FocusFrame)
+            or (unit == "Pet" and _G.PetFrame) or nil
+        if not root then return end
+        local frame = root
+        local hb = resolveHealthBar(frame, unit)
+        local hbContainer = resolveHealthContainer(frame, unit)
+        local manaContainer
+        if unit == "Player" then
+            manaContainer = root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar or nil
+        else
+            manaContainer = root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain and root.TargetFrameContent.TargetFrameContentMain.ManaBar or nil
+        end
+        -- Restore strata
+        local function restoreStrata(c)
+            if c and c._ScootUFOrigStrata and c.SetFrameStrata then
+                pcall(c.SetFrameStrata, c, c._ScootUFOrigStrata)
+                c._ScootUFOrigStrata = nil
+            end
+        end
+        restoreStrata(hbContainer)
+        restoreStrata(manaContainer)
+        -- Restore fontstrings
+        local function restoreFS(fs)
+            if not fs then return end
+            if fs._ScootUFOrigParent and fs.SetParent then
+                pcall(fs.SetParent, fs, fs._ScootUFOrigParent)
+            end
+            if fs._ScootUFOrigPoints and fs.ClearAllPoints and fs.SetPoint then
+                pcall(fs.ClearAllPoints, fs)
+                for _, pt in ipairs(fs._ScootUFOrigPoints) do
+                    pcall(fs.SetPoint, fs, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", pt[4] or 0, pt[5] or 0)
+                end
+            end
+            fs._ScootUFOrigParent = nil
+            fs._ScootUFOrigPoints = nil
+        end
+        if hb and hb.TextString then restoreFS(hb.TextString) end
+        if hbContainer then
+            restoreFS(hbContainer.LeftText)
+            restoreFS(hbContainer.RightText)
+            restoreFS(hbContainer.HealthBarText)
+        end
+        if manaContainer then
+            restoreFS(manaContainer.LeftText)
+            restoreFS(manaContainer.RightText)
+            restoreFS(manaContainer.ManaBarText)
+        end
+        -- Remove overlays
+        local function killOverlay(overlay)
+            if overlay and overlay.Hide then pcall(overlay.Hide, overlay) end
+        end
+        if hb and hb._ScootUFTextOverlay then killOverlay(hb._ScootUFTextOverlay); hb._ScootUFTextOverlay = nil end
+        if manaContainer and manaContainer._ScootUFTextOverlay then killOverlay(manaContainer._ScootUFTextOverlay); manaContainer._ScootUFTextOverlay = nil end
+    end
+    if not addon._UFZOrderCleanupRun then
+        addon._UFZOrderCleanupRun = true
+        if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, function()
+            cleanupUFExperiment("Player")
+            cleanupUFExperiment("Target")
+            cleanupUFExperiment("Focus")
+            cleanupUFExperiment("Pet")
+        end) else
+            cleanupUFExperiment("Player")
+            cleanupUFExperiment("Target")
+            cleanupUFExperiment("Focus")
+            cleanupUFExperiment("Pet")
+        end
+    end
 end
+
+-- (Reverted) No additional hooks for reapplying experimental sizing; rely on normal refresh
 
 function addon:SyncAllEditModeSettings()
     local anyChanged = false

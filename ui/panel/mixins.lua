@@ -405,7 +405,12 @@ function ScooterTabbedSectionMixin:EvaluateVisibility(selected)
         if selected == self.TabA then index = 1
         elseif selected == self.TabB then index = 2
         elseif selected == self.TabC then index = 3
-        elseif selected == self.TabD then index = 4 end
+        elseif selected == self.TabD then index = 4
+        elseif selected == self.TabE then index = 5
+        elseif selected == self.TabF then index = 6
+        elseif selected == self.TabG then index = 7
+        elseif selected == self.TabH then index = 8
+        elseif selected == self.TabI then index = 9 end
     end
     local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG, self.PageH, self.PageI }
     for i = 1, #pages do

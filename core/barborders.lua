@@ -70,17 +70,20 @@ local function ensureBorderFrame(barFrame)
     local holder = barFrame.ScooterStyledBorder
     if not holder then
         local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-        holder = CreateFrame("Frame", nil, barFrame, template)
+        local parentOverride = rawget(barFrame, "_ScooterBorderContainerParentRef")
+        holder = CreateFrame("Frame", nil, parentOverride or barFrame, template)
         holder:SetClipsChildren(false)
         holder:SetIgnoreParentAlpha(false)
         barFrame.ScooterStyledBorder = holder
     end
-    local strata = barFrame.GetFrameStrata and barFrame:GetFrameStrata()
+    local strata = (barFrame._ScooterBorderContainerParentRef or barFrame).GetFrameStrata and (barFrame._ScooterBorderContainerParentRef or barFrame):GetFrameStrata()
     if strata then
         holder:SetFrameStrata(strata)
     end
-    local level = (barFrame.GetFrameLevel and barFrame:GetFrameLevel()) or 0
-    holder:SetFrameLevel(level + 8)
+    local parentForLevel = barFrame._ScooterBorderContainerParentRef or barFrame
+    local level = (parentForLevel.GetFrameLevel and parentForLevel:GetFrameLevel()) or 0
+    local offset = tonumber(barFrame._ScooterBorderLevelOffset) or 8
+    holder:SetFrameLevel(level + offset)
     return holder
 end
 
@@ -118,17 +121,22 @@ local function applyBackdrop(holder, style, edgeSize)
     return ok
 end
 
-local function applyStyle(barFrame, style, color, thickness, skipStateUpdate)
+local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, inset)
     local holder = ensureBorderFrame(barFrame)
     if not holder then return false end
 
+    -- Edge and padding scale with the bar's height (original behavior)
     local edgeSize = computeEdgeSize(barFrame, style, thickness)
     local paddingMultiplier = style and style.paddingMultiplier or 0.5
     local pad = math.floor(edgeSize * paddingMultiplier + 0.5)
+    local insetPx = tonumber(inset) or tonumber(barFrame and barFrame._ScooterBorderInset) or 0
+    -- Positive inset pulls the border inward (smaller padding); negative pushes outward
+    local padAdj = pad - insetPx
+    if padAdj < 0 then padAdj = 0 end
 
     holder:ClearAllPoints()
-    holder:SetPoint("TOPLEFT", barFrame, "TOPLEFT", -pad, pad)
-    holder:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", pad, -pad)
+    holder:SetPoint("TOPLEFT", barFrame, "TOPLEFT", -padAdj, padAdj)
+    holder:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", padAdj, -padAdj)
 
     if not applyBackdrop(holder, style, edgeSize) then
         holder:Hide()
@@ -149,6 +157,7 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate)
             styleKey = style.key,
             thickness = thickness,
             color = cloneColor(color),
+            inset = insetPx,
         }
     end
 
@@ -163,7 +172,7 @@ local function handleSizeChanged(frame)
     if not style then return end
     local color = cloneColor(state.color)
     local thickness = tonumber(state.thickness) or 1
-    applyStyle(frame, style, color, thickness, true)
+    applyStyle(frame, style, color, thickness, true, tonumber(state.inset) or 0)
 end
 
 local function ensureSizeHook(barFrame)
@@ -277,7 +286,20 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
 
     local color = cloneColor(options and options.color)
 
-    return applyStyle(barFrame, style, color, thickness, false)
+    -- Allow callers (e.g., Unit Frames) to request a specific relative level/parent so text stays above borders
+    if type(options) == "table" and options.levelOffset then
+        barFrame._ScooterBorderLevelOffset = tonumber(options.levelOffset) or 8
+    else
+        barFrame._ScooterBorderLevelOffset = 8
+    end
+    if type(options) == "table" and options.containerParent and options.containerParent.GetFrameLevel then
+        barFrame._ScooterBorderContainerParentRef = options.containerParent
+    else
+        barFrame._ScooterBorderContainerParentRef = nil
+    end
+    barFrame._ScooterBorderInset = tonumber(options and options.inset) or 0
+
+    return applyStyle(barFrame, style, color, thickness, false, barFrame._ScooterBorderInset)
 end
 
 function BarBorders.ClearBarFrame(barFrame)
