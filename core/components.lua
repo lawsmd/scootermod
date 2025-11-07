@@ -2562,6 +2562,10 @@ do
         end
         -- Determine bar level and desired ordering: bar < holder < text
         local barLevel = (hb and hb.GetFrameLevel and hb:GetFrameLevel()) or 0
+        if pb and pb.GetFrameLevel then
+            local pbl = pb:GetFrameLevel() or 0
+            if pbl > barLevel then barLevel = pbl end
+        end
         local curTextLevel = 0
         if hbContainer and hbContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, hbContainer:GetFrameLevel() or 0) end
         if manaContainer and manaContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, manaContainer:GetFrameLevel() or 0) end
@@ -2573,11 +2577,34 @@ do
         raiseUnitTextLayers(unit, desiredTextLevel)
         -- Place the textured border holder between bar and text
         do
-            local holder = hb and hb.ScooterStyledBorder or nil
-            if holder and holder.SetFrameLevel then
-                local holderLevel = math.max(1, desiredTextLevel - 1, barLevel + 1)
-                pcall(holder.SetFrameLevel, holder, holderLevel)
+            local holderLevel = math.max(1, desiredTextLevel - 1, barLevel + 1)
+            local hHolder = hb and hb.ScooterStyledBorder or nil
+            if hHolder and hHolder.SetFrameLevel then
+                -- Lock desired level so internal size hooks won't raise it above text later
+                hb._ScooterBorderFixedLevel = holderLevel
+                pcall(hHolder.SetFrameLevel, hHolder, holderLevel)
             end
+            -- Match holder strata to the text container's strata so frame level ordering decides (bar < holder < text)
+            if hHolder and hHolder.SetFrameStrata then
+                local s = (hbContainer and hbContainer.GetFrameStrata and hbContainer:GetFrameStrata())
+                    or (hb and hb.GetFrameStrata and hb:GetFrameStrata())
+                    or (root and root.GetFrameStrata and root:GetFrameStrata())
+                    or "MEDIUM"
+                pcall(hHolder.SetFrameStrata, hHolder, s)
+            end
+            local pHolder = pb and pb.ScooterStyledBorder or nil
+            if pHolder and pHolder.SetFrameLevel then
+                pb._ScooterBorderFixedLevel = holderLevel
+                pcall(pHolder.SetFrameLevel, pHolder, holderLevel)
+            end
+            if pHolder and pHolder.SetFrameStrata then
+                local s2 = (manaContainer and manaContainer.GetFrameStrata and manaContainer:GetFrameStrata())
+                    or (pb and pb.GetFrameStrata and pb:GetFrameStrata())
+                    or (root and root.GetFrameStrata and root:GetFrameStrata())
+                    or "MEDIUM"
+                pcall(pHolder.SetFrameStrata, pHolder, s2)
+            end
+            -- No overlay frame creation: respect stock-frame reuse policy
         end
         -- (experimental text reparent/strata bump removed; see HOLDING.md 2025-11-07)
     end
@@ -3007,7 +3034,7 @@ do
 								end
 							end
                             local handled = false
-							if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+                            if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
 								-- Clear any prior holder/state to avoid stale tinting when toggling
 								if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                 handled = addon.BarBorders.ApplyToBarFrame(hb, styleKey, {
@@ -3018,9 +3045,7 @@ do
                                     inset = inset,
                                 })
 							end
-							if handled then
-								if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
-							else
+                            if not handled then
 								-- Fallback: pixel (square) border drawn with our lightweight helper
 								if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                 if addon.Borders and addon.Borders.ApplySquare then
@@ -3065,6 +3090,85 @@ do
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
             applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
+
+            -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
+            do
+                local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
+                local tintEnabled
+                if cfg.powerBarBorderTintEnable ~= nil then
+                    tintEnabled = not not cfg.powerBarBorderTintEnable
+                else
+                    tintEnabled = not not cfg.healthBarBorderTintEnable
+                end
+                local baseTint = type(cfg.powerBarBorderTintColor) == "table" and cfg.powerBarBorderTintColor or cfg.healthBarBorderTintColor
+                local tintColor = type(baseTint) == "table" and {
+                    baseTint[1] or 1,
+                    baseTint[2] or 1,
+                    baseTint[3] or 1,
+                    baseTint[4] or 1,
+                } or {1, 1, 1, 1}
+                local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
+                if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
+                if cfg.useCustomBorders then
+                    if styleKey == "none" or styleKey == nil then
+                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                    else
+                        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+                        local color
+                        if tintEnabled then
+                            color = tintColor
+                        else
+                            if styleDef then
+                                color = {1, 1, 1, 1}
+                            else
+                                color = {0, 0, 0, 1}
+                            end
+                        end
+                        local handled = false
+                        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+                            if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                            handled = addon.BarBorders.ApplyToBarFrame(pb, styleKey, {
+                                color = color,
+                                thickness = thickness,
+                                levelOffset = 1,
+                                containerParent = (pb and pb:GetParent()) or nil,
+                                inset = inset,
+                            })
+                        end
+                        if not handled then
+                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                            if addon.Borders and addon.Borders.ApplySquare then
+                                local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                local baseY = (thickness <= 1) and 0 or 1
+                                local baseX = 1
+                                local expandY = baseY - inset
+                                local expandX = baseX - inset
+                                if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                addon.Borders.ApplySquare(pb, {
+                                    size = thickness,
+                                    color = sqColor,
+                                    layer = "OVERLAY",
+                                    layerSublevel = 3,
+                                    expandX = expandX,
+                                    expandY = expandY,
+                                })
+                            end
+                        end
+                        -- Keep ordering stable for power bar borders as well
+                        ensureTextAndBorderOrdering(unit)
+                        if pb and not pb._ScootUFZOrderHooked and pb.HookScript then
+                            pb:HookScript("OnSizeChanged", function() ensureTextAndBorderOrdering(unit) end)
+                            pb._ScootUFZOrderHooked = true
+                        end
+                    end
+                else
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                end
+            end
         end
 
         -- Nudge Blizzard to re-evaluate atlases/masks immediately after restoration

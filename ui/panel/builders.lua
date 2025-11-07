@@ -2682,8 +2682,8 @@ local function createUFRenderer(componentId, title)
 			expInitializerPB.GetExtent = function() return 30 end
 			table.insert(init, expInitializerPB)
 
-			-- Power Bar tabs: % Text, Value Text, Bar Texture
-			local pbTabs = { sectionTitle = "", tabAText = "% Text", tabBText = "Value Text", tabCText = "Bar Style" }
+            -- Power Bar tabs: % Text, Value Text, Bar Style, Border
+            local pbTabs = { sectionTitle = "", tabAText = "% Text", tabBText = "Value Text", tabCText = "Bar Style", tabDText = "Border" }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2894,11 +2894,165 @@ local function createUFRenderer(componentId, title)
 						y)
 				end
 
-				-- PageC: Bar Texture for Power Bar
+                -- PageC: Bar Texture for Power Bar
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
+
+                -- PageD: Border (Power Bar)
+                do
+                    local y = { y = -50 }
+                    local function optionsBorder()
+                        local c = Settings.CreateControlTextContainer()
+                        c:Add("none", "None")
+                        if addon and addon.BuildBarBorderOptionsContainer then
+                            local base = addon.BuildBarBorderOptionsContainer()
+                            if type(base) == "table" then
+                                for _, entry in ipairs(base) do
+                                    if entry and entry.value and entry.text then
+                                        c:Add(entry.value, entry.text)
+                                    end
+                                end
+                            end
+                        else
+                            c:Add("square", "Default (Square)")
+                        end
+                        return c:GetData()
+                    end
+                    local function isEnabled()
+                        local t = ensureUFDB() or {}
+                        return not not t.useCustomBorders
+                    end
+                    local function applyNow()
+                        local uk = unitKey()
+                        if addon and uk and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(uk) end
+                    end
+                    local function getStyle()
+                        local t = ensureUFDB() or {}; return t.powerBarBorderStyle or "square"
+                    end
+                    local function setStyle(v)
+                        local t = ensureUFDB(); if not t then return end
+                        t.powerBarBorderStyle = v or "square"
+                        applyNow()
+                    end
+                    local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+                    local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
+                    local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+                    f.GetElementData = function() return initDrop end
+                    f:SetPoint("TOPLEFT", 4, y.y)
+                    f:SetPoint("TOPRIGHT", -16, y.y)
+                    initDrop:InitFrame(f)
+                    local lbl = f and (f.Text or f.Label)
+                    if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                    local enabled = isEnabled()
+                    if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
+                    if lbl and lbl.SetTextColor then
+                        if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+                    end
+                    y.y = y.y - 34
+
+                    -- Border Tint (checkbox + swatch)
+                    do
+                        local function getTintEnabled()
+                            local t = ensureUFDB() or {}; return not not t.powerBarBorderTintEnable
+                        end
+                        local function setTintEnabled(b)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarBorderTintEnable = not not b
+                            applyNow()
+                        end
+                        local function getTint()
+                            local t = ensureUFDB() or {}
+                            local c = t.powerBarBorderTintColor or {1,1,1,1}
+                            return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+                        end
+                        local function setTint(r, g, b, a)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+                            applyNow()
+                        end
+                        local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+                        local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+                        local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+                        row.GetElementData = function() return initCb end
+                        row:SetPoint("TOPLEFT", 4, y.y)
+                        row:SetPoint("TOPRIGHT", -16, y.y)
+                        initCb:InitFrame(row)
+                        local enabled2 = isEnabled()
+                        local ctrl = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox) or row.Control
+                        if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled2) end
+                        if row.ScooterInlineSwatch and row.ScooterInlineSwatch.EnableMouse then
+                            row.ScooterInlineSwatch:EnableMouse(enabled2)
+                            if row.ScooterInlineSwatch.SetAlpha then row.ScooterInlineSwatch:SetAlpha(enabled2 and 1 or 0.5) end
+                        end
+                        local labelFS = (ctrl and ctrl.Text) or row.Text
+                        if labelFS and labelFS.SetTextColor then
+                            if enabled2 then labelFS:SetTextColor(1, 1, 1, 1) else labelFS:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+
+                    -- Border Thickness
+                    do
+                        local function getThk()
+                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderThickness) or 1
+                        end
+                        local function setThk(v)
+                            local t = ensureUFDB(); if not t then return end
+                            local nv = tonumber(v) or 1
+                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+                            t.powerBarBorderThickness = nv
+                            applyNow()
+                        end
+                        local opts = Settings.CreateSliderOptions(1, 16, 1)
+                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+                        local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
+                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
+                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        sf.GetElementData = function() return initSlider end
+                        sf:SetPoint("TOPLEFT", 4, y.y)
+                        sf:SetPoint("TOPRIGHT", -16, y.y)
+                        initSlider:InitFrame(sf)
+                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        local enabled3 = isEnabled()
+                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled3) end
+                        if sf.Text and sf.Text.SetTextColor then
+                            if enabled3 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+
+                    -- Border Inset
+                    do
+                        local function getInset()
+                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInset) or 0
+                        end
+                        local function setInset(v)
+                            local t = ensureUFDB(); if not t then return end
+                            local nv = tonumber(v) or 0
+                            if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
+                            t.powerBarBorderInset = nv
+                            applyNow()
+                        end
+                        local opts = Settings.CreateSliderOptions(-4, 4, 1)
+                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+                        local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
+                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
+                        sf.GetElementData = function() return initSlider end
+                        sf:SetPoint("TOPLEFT", 4, y.y)
+                        sf:SetPoint("TOPRIGHT", -16, y.y)
+                        initSlider:InitFrame(sf)
+                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        local enabled4 = isEnabled()
+                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled4) end
+                        if sf.Text and sf.Text.SetTextColor then
+                            if enabled4 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+                end
 					local y = { y = -50 }
 					-- Texture dropdown
 					local function opts() return addon.BuildBarTextureOptionsContainer() end

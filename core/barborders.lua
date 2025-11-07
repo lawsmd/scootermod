@@ -83,7 +83,8 @@ local function ensureBorderFrame(barFrame)
     local parentForLevel = barFrame._ScooterBorderContainerParentRef or barFrame
     local level = (parentForLevel.GetFrameLevel and parentForLevel:GetFrameLevel()) or 0
     local offset = tonumber(barFrame._ScooterBorderLevelOffset) or 8
-    holder:SetFrameLevel(level + offset)
+    local desiredLevel = tonumber(barFrame._ScooterBorderFixedLevel) or (level + offset)
+    holder:SetFrameLevel(desiredLevel)
     return holder
 end
 
