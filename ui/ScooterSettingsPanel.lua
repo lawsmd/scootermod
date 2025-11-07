@@ -1912,9 +1912,11 @@ end
                 local cid = entry.componentId
                 panel._expanded = panel._expanded or {}
                 panel._expanded[cid] = panel._expanded[cid] or {}
-                -- Collapse known sections for this component
-                for _, key in ipairs({"Positioning","Sizing","Style","Border","Icon","Text","Misc","Visibility"}) do
-                    panel._expanded[cid][key] = false
+                -- Dynamically collapse ALL sections for this component
+                -- This works for any section keys: current Cooldown Manager sections,
+                -- Unit Frames sections (Health Bar, Power Bar, etc.), Action Bars sections (Backdrop, etc.)
+                for sectionKey, _ in pairs(panel._expanded[cid]) do
+                    panel._expanded[cid][sectionKey] = false
                 end
                 panel.RefreshCurrentCategory()
             end)

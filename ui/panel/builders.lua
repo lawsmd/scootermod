@@ -2152,10 +2152,21 @@ local function createUFRenderer(componentId, title)
 				expanded = panel:IsSectionExpanded(componentId, "Health Bar"),
 			})
 			expInitializerHB.GetExtent = function() return 30 end
-			table.insert(init, expInitializerHB)
+		table.insert(init, expInitializerHB)
 
-			-- Health Bar tabs: Sizing, % Text, Value Text, Bar Style, Border
-			local hbTabs = { sectionTitle = "", tabAText = "Sizing", tabBText = "% Text", tabCText = "Value Text", tabDText = "Bar Style", tabEText = "Border" }
+		--[[
+			UNIT FRAMES TABBED SECTION TAB PRIORITY ORDER (all Player/Target/Focus/Pet sections):
+			1. Positioning
+			2. Sizing
+			3. Style/Texture (corresponds to "Bar Style" tabs)
+			4. Border
+			5. Visibility
+			6. Text Elements (e.g., "% Text", "Value Text")
+			
+			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
+		]]--
+		-- Health Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
+		local hbTabs = { sectionTitle = "", tabAText = "Sizing", tabBText = "Bar Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
 			hbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2285,7 +2296,7 @@ local function createUFRenderer(componentId, title)
 					-- (Reverted) Bar Height slider removed
 				end
 
-				-- PageB: % Text
+				-- PageD: % Text
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -2306,7 +2317,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2318,33 +2329,33 @@ local function createUFRenderer(componentId, title)
 					end
 					y.y = y.y - 34
 					-- Font controls for % Text
-					addDropdown(frame.PageB, "% Text Font", fontOptions,
+					addDropdown(frame.PageD, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageB, "% Text Style",
+					addStyle(frame.PageD, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageB, "% Text Size", 6, 48, 1,
+					addSlider(frame.PageD, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageB, "% Text Color", true,
+					addColor(frame.PageD, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageB, "% Text Offset X", -100, 100, 1,
+					addSlider(frame.PageD, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageB, "% Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageD, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageC: Value Text
+				-- PageE: Value Text
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -2365,7 +2376,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2378,33 +2389,33 @@ local function createUFRenderer(componentId, title)
 					-- Match % Text layout: drop the cursor after the checkbox row
 					y.y = y.y - 34
 					-- Font controls for Value Text
-					addDropdown(frame.PageC, "Value Text Font", fontOptions,
+					addDropdown(frame.PageE, "Value Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageC, "Value Text Style",
+					addStyle(frame.PageE, "Value Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageC, "Value Text Size", 6, 48, 1,
+					addSlider(frame.PageE, "Value Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageC, "Value Text Color", true,
+					addColor(frame.PageE, "Value Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageC, "Value Text Offset X", -100, 100, 1,
+					addSlider(frame.PageE, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageC, "Value Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageE, "Value Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageD: Bar Texture (selector) + Bar Color (dropdown) + Bar Tint (conditional)
+				-- PageB: Bar Texture (selector) + Bar Color (dropdown) + Bar Tint (conditional)
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
@@ -2416,7 +2427,7 @@ local function createUFRenderer(componentId, title)
 					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarTexture = v; applyNow() end
 					local texSetting = CreateLocalSetting("Bar Texture", "string", getTex, setTex, getTex())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Texture", setting = texSetting, options = opts })
-					local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -2446,7 +2457,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local colorSetting = CreateLocalSetting("Bar Color", "string", getColorMode, setColorMode, getColorMode())
 					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Color", setting = colorSetting, options = colorOpts })
-					local cf = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+					local cf = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
 					cf.GetElementData = function() return initColor end
 					cf:SetPoint("TOPLEFT", 4, y.y)
 					cf:SetPoint("TOPRIGHT", -16, y.y)
@@ -2463,7 +2474,7 @@ local function createUFRenderer(componentId, title)
 					local function setTint(r,g,b,a)
 						local t = ensureUFDB(); if not t then return end; t.healthBarTint = {r,g,b,a}; applyNow()
 					end
-					local f2 = CreateFrame("Frame", nil, frame.PageD, "SettingsListElementTemplate")
+					local f2 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
 					tintRow = f2
 					f2:SetHeight(26)
 					f2:SetPoint("TOPLEFT", 4, y.y)
@@ -2502,7 +2513,7 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 34
 				end
 
-				-- PageE: Border (Health Bar only)
+				-- PageC: Border (Health Bar only)
 				do
 					local y = { y = -50 }
 					local function optionsBorder()
@@ -2543,7 +2554,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
-					local f = CreateFrame("Frame", nil, frame.PageE, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -2580,7 +2591,7 @@ local function createUFRenderer(componentId, title)
 						end
 						local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
 						local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
-						local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
 						row.GetElementData = function() return initCb end
 						row:SetPoint("TOPLEFT", 4, y.y)
 						row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2616,7 +2627,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageE, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -2647,7 +2658,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageE, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -2682,8 +2693,8 @@ local function createUFRenderer(componentId, title)
 			expInitializerPB.GetExtent = function() return 30 end
 			table.insert(init, expInitializerPB)
 
-            -- Power Bar tabs: % Text, Value Text, Bar Style, Border
-            local pbTabs = { sectionTitle = "", tabAText = "% Text", tabBText = "Value Text", tabCText = "Bar Style", tabDText = "Border" }
+            -- Power Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
+            local pbTabs = { sectionTitle = "", tabAText = "Bar Style", tabBText = "Border", tabCText = "% Text", tabDText = "Value Text" }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2778,7 +2789,7 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
-				-- PageA: % Text (Power Percent)
+				-- PageC: % Text (Power Percent)
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -2799,7 +2810,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2810,33 +2821,33 @@ local function createUFRenderer(componentId, title)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 					y.y = y.y - 34
-					addDropdown(frame.PageA, "% Text Font", fontOptions,
+					addDropdown(frame.PageC, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageA, "% Text Style",
+					addStyle(frame.PageC, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageA, "% Text Size", 6, 48, 1,
+					addSlider(frame.PageC, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageA, "% Text Color", true,
+					addColor(frame.PageC, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageA, "% Text Offset X", -100, 100, 1,
+					addSlider(frame.PageC, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageA, "% Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageC, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageB: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
+				-- PageD: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -2857,7 +2868,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2868,39 +2879,39 @@ local function createUFRenderer(componentId, title)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 					y.y = y.y - 34
-					addDropdown(frame.PageB, "Value Text Font", fontOptions,
+					addDropdown(frame.PageD, "Value Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageB, "Value Text Style",
+					addStyle(frame.PageD, "Value Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageB, "Value Text Size", 6, 48, 1,
+					addSlider(frame.PageD, "Value Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageB, "Value Text Color", true,
+					addColor(frame.PageD, "Value Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageB, "Value Text Offset X", -100, 100, 1,
+					addSlider(frame.PageD, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageB, "Value Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageD, "Value Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-                -- PageC: Bar Texture for Power Bar
+                -- PageA: Bar Texture for Power Bar
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
 
-                -- PageD: Border (Power Bar)
+                -- PageB: Border (Power Bar)
                 do
                     local y = { y = -50 }
                     local function optionsBorder()
@@ -2938,7 +2949,7 @@ local function createUFRenderer(componentId, title)
                     end
                     local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
                     local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
-                    local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+                    local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
                     f.GetElementData = function() return initDrop end
                     f:SetPoint("TOPLEFT", 4, y.y)
                     f:SetPoint("TOPRIGHT", -16, y.y)
@@ -2974,7 +2985,7 @@ local function createUFRenderer(componentId, title)
                         end
                         local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
                         local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
-                        local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+                        local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
                         row.GetElementData = function() return initCb end
                         row:SetPoint("TOPLEFT", 4, y.y)
                         row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3009,7 +3020,7 @@ local function createUFRenderer(componentId, title)
                         opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
                         local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
                         local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
-                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
                         sf.GetElementData = function() return initSlider end
                         sf:SetPoint("TOPLEFT", 4, y.y)
                         sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -3038,7 +3049,7 @@ local function createUFRenderer(componentId, title)
                         local opts = Settings.CreateSliderOptions(-4, 4, 1)
                         opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
                         local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
-                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
                         local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
                         sf.GetElementData = function() return initSlider end
                         sf:SetPoint("TOPLEFT", 4, y.y)
