@@ -156,6 +156,7 @@ function ScooterTabbedSectionMixin:LayoutTabs()
     if #visible > 5 then for i = 6, #visible do table.insert(topRow, visible[i]) end end
 
     -- If we have 2 rows, drop the border down by one tab height to make room above it
+    local drop = 0
     do
         local tabHeight = 37
         if self.NineSlice and self.NineSlice.ClearAllPoints then
@@ -165,12 +166,32 @@ function ScooterTabbedSectionMixin:LayoutTabs()
                 -- then tighten a few pixels so the bottom row visually meets the border.
                 local rowOverlap = 12 -- keep in sync with bottomRow anchor below
                 local borderTighten = 4
-                local drop = math.max(0, tabHeight - rowOverlap - borderTighten)
+                drop = math.max(0, tabHeight - rowOverlap - borderTighten)
                 self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14 - drop)
             else
                 self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14)
             end
             self.NineSlice:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -6, -16)
+        end
+    end
+    
+    -- Anchor page frames to respect the border position and provide consistent top spacing
+    do
+        local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG, self.PageH, self.PageI }
+        -- Content inset from border edges (left, right, bottom)
+        local contentInsetX = 8
+        local contentInsetBottom = 8
+        -- Top spacing from the border's top edge to the first control (reduced to 8px for better fit)
+        local contentTopSpacing = 8
+        -- The border's TOPLEFT is at (-12, -14 - drop), so content should start at:
+        -- X: -12 + contentInsetX, Y: -14 - drop - contentTopSpacing
+        local pageTopY = -14 - drop - contentTopSpacing
+        for i = 1, #pages do
+            if pages[i] then
+                pages[i]:ClearAllPoints()
+                pages[i]:SetPoint("TOPLEFT", self, "TOPLEFT", -12 + contentInsetX, pageTopY)
+                pages[i]:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -6 - contentInsetX, -16 + contentInsetBottom)
+            end
         end
     end
 

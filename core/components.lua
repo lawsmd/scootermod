@@ -1785,6 +1785,9 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFramePowerTextVisibility then
         addon.ApplyAllUnitFramePowerTextVisibility()
     end
+    if addon.ApplyAllUnitFrameNameLevelText then
+        addon.ApplyAllUnitFrameNameLevelText()
+    end
     -- Apply Unit Frame bar textures (Health/Power) if configured
     if addon.ApplyAllUnitFrameBarTextures then
         addon.ApplyAllUnitFrameBarTextures()
@@ -2193,6 +2196,188 @@ do
 		end
 		if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(destUnit) end
 		return true
+	end
+end
+
+--- Unit Frames: Apply Name & Level Text styling (visibility, font, size, style, color, offset)
+do
+	local function getUnitFrameFor(unit)
+		local mgr = _G.EditModeManagerFrame
+		local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+		local EMSys = _G.Enum and _G.Enum.EditModeSystem
+		if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then
+			if unit == "Pet" then return _G.PetFrame end
+			return nil
+		end
+		local idx = nil
+		if unit == "Player" then idx = EM.Player
+		elseif unit == "Target" then idx = EM.Target
+		elseif unit == "Focus" then idx = EM.Focus
+		elseif unit == "Pet" then idx = EM.Pet
+		end
+		if not idx then return nil end
+		return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+	end
+
+	local function findFontStringByNameHint(root, hint)
+		if not (root and hint) then return nil end
+		local target = nil
+		local function scan(obj)
+			if not obj then return end
+			if target then return end
+			if obj.IsObjectType and obj:IsObjectType("FontString") then
+				local nm = obj.GetName and obj:GetName() or ""
+				if type(nm) == "string" and string.find(nm, hint, 1, true) then
+					target = obj
+					return
+				end
+			end
+			if obj.GetChildren then
+				local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+				for i = 1, m do
+					local c = select(i, obj:GetChildren())
+					scan(c)
+					if target then return end
+				end
+			end
+		end
+		scan(root)
+		return target
+	end
+
+	local function applyForUnit(unit)
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames[unit] = db.unitFrames[unit] or {}
+		local cfg = db.unitFrames[unit]
+		local frame = getUnitFrameFor(unit)
+		if not frame then return end
+
+		-- Resolve Name and Level FontStrings
+		local nameFS, levelFS
+		
+		-- Try direct child access first (most common)
+		if unit == "Player" then
+			nameFS = _G.PlayerName
+			levelFS = _G.PlayerLevelText
+		elseif unit == "Target" then
+			-- Target uses nested content structure
+			local targetFrame = _G.TargetFrame
+			if targetFrame and targetFrame.TargetFrameContent and targetFrame.TargetFrameContent.TargetFrameContentMain then
+				nameFS = targetFrame.TargetFrameContent.TargetFrameContentMain.Name
+				levelFS = targetFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+			end
+		elseif unit == "Focus" then
+			-- Focus uses same nested content structure as Target
+			local focusFrame = _G.FocusFrame
+			if focusFrame and focusFrame.FocusFrameContent and focusFrame.FocusFrameContent.FocusFrameContentMain then
+				nameFS = focusFrame.FocusFrameContent.FocusFrameContentMain.Name
+				levelFS = focusFrame.FocusFrameContent.FocusFrameContentMain.LevelText
+			end
+		elseif unit == "Pet" then
+			-- Pet uses same nested content structure as Target/Focus
+			local petFrame = _G.PetFrame
+			if petFrame and petFrame.PetFrameContent and petFrame.PetFrameContent.PetFrameContentMain then
+				nameFS = petFrame.PetFrameContent.PetFrameContentMain.Name
+				levelFS = petFrame.PetFrameContent.PetFrameContentMain.LevelText
+			end
+		end
+
+		-- Fallback: search by name hints
+		if not nameFS then nameFS = findFontStringByNameHint(frame, "Name") end
+		if not levelFS then levelFS = findFontStringByNameHint(frame, "LevelText") end
+
+		-- Apply visibility
+		if nameFS and nameFS.SetShown then pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden) end
+		if levelFS and levelFS.SetShown then pcall(levelFS.SetShown, levelFS, not cfg.levelTextHidden) end
+
+		-- Apply styling
+		addon._ufNameLevelTextBaselines = addon._ufNameLevelTextBaselines or {}
+		local function ensureBaseline(fs, key)
+			addon._ufNameLevelTextBaselines[key] = addon._ufNameLevelTextBaselines[key] or {}
+			local b = addon._ufNameLevelTextBaselines[key]
+			if b.point == nil then
+				if fs and fs.GetPoint then
+					local p, relTo, rp, x, y = fs:GetPoint(1)
+					b.point = p or "CENTER"
+					b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
+					b.relPoint = rp or b.point
+					b.x = tonumber(x) or 0
+					b.y = tonumber(y) or 0
+				else
+					b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
+				end
+			end
+			return b
+		end
+
+	local function applyTextStyle(fs, styleCfg, baselineKey)
+		if not fs or not styleCfg then return end
+		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+		local size = tonumber(styleCfg.size) or 14
+		local outline = tostring(styleCfg.style or "OUTLINE")
+		if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+		local c = styleCfg.color or {1,1,1,1}
+		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+		if fs.ClearAllPoints and fs.SetPoint then
+			local b = ensureBaseline(fs, baselineKey)
+			fs:ClearAllPoints()
+			fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+		end
+	end
+
+	if nameFS then applyTextStyle(nameFS, cfg.textName or {}, unit .. ":name") end
+	if levelFS then 
+		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
+		
+		-- For Player level text, install a hook to reapply color after Blizzard updates it
+		-- Blizzard's PlayerFrame_Update constantly resets the level text color based on difficulty
+		if unit == "Player" and levelFS and cfg.textLevel and cfg.textLevel.color then
+			local function reapplyLevelColor()
+				local c = cfg.textLevel.color or {1,1,1,1}
+				if levelFS.SetTextColor then
+					pcall(levelFS.SetTextColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+				end
+			end
+			
+			-- Hook PlayerFrame_UpdateLevelTextAnchor which runs after level color updates
+			if not addon._playerLevelColorHooked then
+				addon._playerLevelColorHooked = true
+				if _G.PlayerFrame_UpdateLevelTextAnchor then
+					hooksecurefunc("PlayerFrame_UpdateLevelTextAnchor", function()
+						if addon and addon.ApplyUnitFrameNameLevelTextFor then
+							C_Timer.After(0, function()
+								local db = addon and addon.db and addon.db.profile
+								if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
+									local fs = _G.PlayerLevelText
+									local c = db.unitFrames.Player.textLevel.color
+									if fs and fs.SetTextColor then
+										pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+									end
+								end
+							end)
+						end
+					end)
+				end
+			end
+			-- Reapply immediately as well
+			reapplyLevelColor()
+		end
+	end
+	end
+
+	function addon.ApplyUnitFrameNameLevelTextFor(unit)
+		applyForUnit(unit)
+	end
+
+	function addon.ApplyAllUnitFrameNameLevelText()
+		applyForUnit("Player")
+		applyForUnit("Target")
+		applyForUnit("Focus")
+		applyForUnit("Pet")
 	end
 end
 
@@ -3035,6 +3220,41 @@ do
             applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
 
+            -- Power Bar positioning offsets
+            do
+                local offsetX = tonumber(cfg.powerBarOffsetX) or 0
+                local offsetY = tonumber(cfg.powerBarOffsetY) or 0
+                
+                -- Store original points if not already stored
+                if not pb._ScootPowerBarOrigPoints then
+                    pb._ScootPowerBarOrigPoints = {}
+                    for i = 1, pb:GetNumPoints() do
+                        local point, relativeTo, relativePoint, xOfs, yOfs = pb:GetPoint(i)
+                        table.insert(pb._ScootPowerBarOrigPoints, {point, relativeTo, relativePoint, xOfs, yOfs})
+                    end
+                end
+                
+                -- Apply offsets if non-zero, otherwise restore original anchors
+                if offsetX ~= 0 or offsetY ~= 0 then
+                    if pb.ClearAllPoints and pb.SetPoint then
+                        pcall(pb.ClearAllPoints, pb)
+                        for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
+                            local newX = (pt[4] or 0) + offsetX
+                            local newY = (pt[5] or 0) + offsetY
+                            pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", newX, newY)
+                        end
+                    end
+                else
+                    -- Restore original points when offsets are zero
+                    if pb.ClearAllPoints and pb.SetPoint then
+                        pcall(pb.ClearAllPoints, pb)
+                        for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
+                            pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+                        end
+                    end
+                end
+            end
+
             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
             do
                 local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
@@ -3134,6 +3354,94 @@ do
             if ft and ft.SetShown then
                 local hide = not not (cfg.useCustomBorders or cfg.healthBarHideBorder)
                 pcall(ft.SetShown, ft, not hide)
+            end
+        end
+        
+        -- Hide static visual elements when Use Custom Borders is enabled.
+        -- Rationale: These elements (ReputationColor for Target/Focus, FrameFlash for Player) have
+        -- fixed positions that cannot be adjusted. Since ScooterMod allows users to reposition and
+        -- resize health/power bars independently, these static overlays would remain in their original
+        -- positions while the bars they're meant to surround/backdrop move elsewhere. This creates
+        -- visual confusion, so we disable them when custom borders are active.
+        
+        -- Hide ReputationColor frame for Target/Focus when Use Custom Borders is enabled
+        if (unit == "Target" or unit == "Focus") and cfg.useCustomBorders then
+            local frame = getUnitFrameFor(unit)
+            if frame then
+                local reputationColor
+                if unit == "Target" and _G.TargetFrame then
+                    reputationColor = _G.TargetFrame.TargetFrameContent 
+                        and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                        and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                elseif unit == "Focus" and _G.FocusFrame then
+                    reputationColor = _G.FocusFrame.FocusFrameContent
+                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain
+                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain.ReputationColor
+                end
+                if reputationColor and reputationColor.SetShown then
+                    pcall(reputationColor.SetShown, reputationColor, false)
+                end
+            end
+        elseif (unit == "Target" or unit == "Focus") then
+            -- Restore ReputationColor when Use Custom Borders is disabled
+            local frame = getUnitFrameFor(unit)
+            if frame then
+                local reputationColor
+                if unit == "Target" and _G.TargetFrame then
+                    reputationColor = _G.TargetFrame.TargetFrameContent 
+                        and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                        and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                elseif unit == "Focus" and _G.FocusFrame then
+                    reputationColor = _G.FocusFrame.FocusFrameContent
+                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain
+                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain.ReputationColor
+                end
+                if reputationColor and reputationColor.SetShown then
+                    pcall(reputationColor.SetShown, reputationColor, true)
+                end
+            end
+        end
+        
+        -- Hide FrameFlash (aggro/threat glow) for Player when Use Custom Borders is enabled
+        if unit == "Player" then
+            if _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
+                local frameFlash = _G.PlayerFrame.PlayerFrameContainer.FrameFlash
+                if frameFlash then
+                    if cfg.useCustomBorders then
+                        -- Hide and install persistent hook to keep it hidden
+                        if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, false) end
+                        if frameFlash.Hide then pcall(frameFlash.Hide, frameFlash) end
+                        
+                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
+                        if not frameFlash._ScootHideHookInstalled then
+                            frameFlash._ScootHideHookInstalled = true
+                            frameFlash._ScootOrigOnShow = frameFlash:GetScript("OnShow")
+                        end
+                        frameFlash:SetScript("OnShow", function(self)
+                            local db = addon and addon.db and addon.db.profile
+                            if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                                -- Keep it hidden while Use Custom Borders is enabled
+                                self:Hide()
+                            else
+                                -- Allow it to show if custom borders are disabled
+                                if self._ScootOrigOnShow then
+                                    self._ScootOrigOnShow(self)
+                                end
+                            end
+                        end)
+                    else
+                        -- Restore FrameFlash when Use Custom Borders is disabled
+                        -- Restore original OnShow handler
+                        if frameFlash._ScootHideHookInstalled and frameFlash._ScootOrigOnShow then
+                            frameFlash:SetScript("OnShow", frameFlash._ScootOrigOnShow)
+                        else
+                            frameFlash:SetScript("OnShow", nil)
+                        end
+                        -- Show the frame
+                        if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, true) end
+                        if frameFlash.Show then pcall(frameFlash.Show, frameFlash) end
+                    end
+                end
             end
         end
         refresh(unit)

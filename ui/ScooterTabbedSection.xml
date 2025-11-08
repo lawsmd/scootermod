@@ -83,15 +83,16 @@
         </Anchors>
       </Button>
 
-      <Frame parentKey="PageA" setAllPoints="true"/>
-      <Frame parentKey="PageB" setAllPoints="true"/>
-      <Frame parentKey="PageC" setAllPoints="true"/>
-      <Frame parentKey="PageD" setAllPoints="true"/>
-      <Frame parentKey="PageE" setAllPoints="true"/>
-      <Frame parentKey="PageF" setAllPoints="true"/>
-      <Frame parentKey="PageG" setAllPoints="true"/>
-      <Frame parentKey="PageH" setAllPoints="true"/>
-      <Frame parentKey="PageI" setAllPoints="true"/>
+      <!-- Page frames will be anchored dynamically by LayoutTabs() to respect multi-row tab spacing -->
+      <Frame parentKey="PageA"/>
+      <Frame parentKey="PageB"/>
+      <Frame parentKey="PageC"/>
+      <Frame parentKey="PageD"/>
+      <Frame parentKey="PageE"/>
+      <Frame parentKey="PageF"/>
+      <Frame parentKey="PageG"/>
+      <Frame parentKey="PageH"/>
+      <Frame parentKey="PageI"/>
     </Frames>
     <Scripts>
       <OnLoad method="OnLoad"/>

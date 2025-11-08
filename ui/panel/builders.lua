@@ -2103,46 +2103,53 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, row)
 			end
 
-			-- Player-only: Use Custom Borders (hide stock frame art to allow custom bar-only borders)
-			if componentId == "ufPlayer" then
-				local label = "Use Custom Borders"
-				local function ensureUFDB()
-					local db = addon and addon.db and addon.db.profile
-					if not db then return nil end
-					db.unitFrames = db.unitFrames or {}
-					db.unitFrames.Player = db.unitFrames.Player or {}
-					return db.unitFrames.Player
-				end
-				local function getter()
-					local t = ensureUFDB(); if not t then return false end
-					return not not t.useCustomBorders
-				end
-				local function setter(b)
-					local t = ensureUFDB(); if not t then return end
-					t.useCustomBorders = not not b
-					-- Clear legacy per-health-bar hide flag when disabling custom borders so stock art restores
-					if not b then t.healthBarHideBorder = false end
-					if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Player") end
-					-- Rerender current category to update enabled/disabled state of Border tab controls
-					if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
-				end
-				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-				row.GetExtent = function() return 34 end
-				do
-					local base = row.InitFrame
-					row.InitFrame = function(self, frame)
-						if base then base(self, frame) end
-						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
-						if panel and panel.ApplyRobotoWhite then
-							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
-							local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
-							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-						end
+		-- Use Custom Borders (hide stock frame art to allow custom bar-only borders)
+		if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet" then
+			local unitKey
+			if componentId == "ufPlayer" then unitKey = "Player"
+			elseif componentId == "ufTarget" then unitKey = "Target"
+			elseif componentId == "ufFocus" then unitKey = "Focus"
+			elseif componentId == "ufPet" then unitKey = "Pet"
+			end
+
+			local label = "Use Custom Borders"
+			local function ensureUFDB()
+				local db = addon and addon.db and addon.db.profile
+				if not db then return nil end
+				db.unitFrames = db.unitFrames or {}
+				db.unitFrames[unitKey] = db.unitFrames[unitKey] or {}
+				return db.unitFrames[unitKey]
+			end
+			local function getter()
+				local t = ensureUFDB(); if not t then return false end
+				return not not t.useCustomBorders
+			end
+			local function setter(b)
+				local t = ensureUFDB(); if not t then return end
+				t.useCustomBorders = not not b
+				-- Clear legacy per-health-bar hide flag when disabling custom borders so stock art restores
+				if not b then t.healthBarHideBorder = false end
+				if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
+				-- Rerender current category to update enabled/disabled state of Border tab controls
+				if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+			end
+			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+			local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			row.GetExtent = function() return 34 end
+			do
+				local base = row.InitFrame
+				row.InitFrame = function(self, frame)
+					if base then base(self, frame) end
+					if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+					if panel and panel.ApplyRobotoWhite then
+						if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+						local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 				end
-				table.insert(init, row)
 			end
+			table.insert(init, row)
+		end
 
 			-- Second collapsible section: Health Bar (blank for now)
 			local expInitializerHB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -2677,7 +2684,8 @@ local function createUFRenderer(componentId, title)
 				if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
 			end
 			local hbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", hbTabs)
-			hbInit.GetExtent = function() return 300 end
+			-- Increased from 300 to 315 to accommodate up to 7-8 settings per tab
+			hbInit.GetExtent = function() return 315 end
 			hbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Health Bar")
 			end)
@@ -2694,7 +2702,7 @@ local function createUFRenderer(componentId, title)
 			table.insert(init, expInitializerPB)
 
             -- Power Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-            local pbTabs = { sectionTitle = "", tabAText = "Bar Style", tabBText = "Border", tabCText = "% Text", tabDText = "Value Text" }
+            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Bar Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2789,7 +2797,33 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
-				-- PageC: % Text (Power Percent)
+				-- PageA: Positioning (Power Bar)
+				do
+					local function applyNow()
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local y = { y = -50 }
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					
+					-- X Offset slider
+					addSlider(frame.PageA, "X Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetX) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetX = tonumber(v) or 0; applyNow() end,
+						y)
+					
+					-- Y Offset slider
+					addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetY) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetY = tonumber(v) or 0; applyNow() end,
+						y)
+				end
+
+				-- PageB: Sizing (Power Bar) - Empty for now
+				do
+					-- Reserved for future sizing controls
+				end
+
+				-- PageE: % Text (Power Percent)
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -2810,7 +2844,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2821,33 +2855,33 @@ local function createUFRenderer(componentId, title)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 					y.y = y.y - 34
-					addDropdown(frame.PageC, "% Text Font", fontOptions,
+					addDropdown(frame.PageE, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageC, "% Text Style",
+					addStyle(frame.PageE, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Size", 6, 48, 1,
+					addSlider(frame.PageE, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageC, "% Text Color", true,
+					addColor(frame.PageE, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Offset X", -100, 100, 1,
+					addSlider(frame.PageE, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageE, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageD: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
+				-- PageF: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -2868,7 +2902,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2879,191 +2913,37 @@ local function createUFRenderer(componentId, title)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 					y.y = y.y - 34
-					addDropdown(frame.PageD, "Value Text Font", fontOptions,
+					addDropdown(frame.PageF, "Value Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageD, "Value Text Style",
+					addStyle(frame.PageF, "Value Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Size", 6, 48, 1,
+					addSlider(frame.PageF, "Value Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageD, "Value Text Color", true,
+					addColor(frame.PageF, "Value Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Offset X", -100, 100, 1,
+					addSlider(frame.PageF, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageF, "Value Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-                -- PageA: Bar Texture for Power Bar
+                -- PageC: Bar Style (Power Bar)
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
-
-                -- PageB: Border (Power Bar)
-                do
-                    local y = { y = -50 }
-                    local function optionsBorder()
-                        local c = Settings.CreateControlTextContainer()
-                        c:Add("none", "None")
-                        if addon and addon.BuildBarBorderOptionsContainer then
-                            local base = addon.BuildBarBorderOptionsContainer()
-                            if type(base) == "table" then
-                                for _, entry in ipairs(base) do
-                                    if entry and entry.value and entry.text then
-                                        c:Add(entry.value, entry.text)
-                                    end
-                                end
-                            end
-                        else
-                            c:Add("square", "Default (Square)")
-                        end
-                        return c:GetData()
-                    end
-                    local function isEnabled()
-                        local t = ensureUFDB() or {}
-                        return not not t.useCustomBorders
-                    end
-                    local function applyNow()
-                        local uk = unitKey()
-                        if addon and uk and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(uk) end
-                    end
-                    local function getStyle()
-                        local t = ensureUFDB() or {}; return t.powerBarBorderStyle or "square"
-                    end
-                    local function setStyle(v)
-                        local t = ensureUFDB(); if not t then return end
-                        t.powerBarBorderStyle = v or "square"
-                        applyNow()
-                    end
-                    local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
-                    local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
-                    local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
-                    f.GetElementData = function() return initDrop end
-                    f:SetPoint("TOPLEFT", 4, y.y)
-                    f:SetPoint("TOPRIGHT", -16, y.y)
-                    initDrop:InitFrame(f)
-                    local lbl = f and (f.Text or f.Label)
-                    if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-                    local enabled = isEnabled()
-                    if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
-                    if lbl and lbl.SetTextColor then
-                        if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
-                    end
-                    y.y = y.y - 34
-
-                    -- Border Tint (checkbox + swatch)
-                    do
-                        local function getTintEnabled()
-                            local t = ensureUFDB() or {}; return not not t.powerBarBorderTintEnable
-                        end
-                        local function setTintEnabled(b)
-                            local t = ensureUFDB(); if not t then return end
-                            t.powerBarBorderTintEnable = not not b
-                            applyNow()
-                        end
-                        local function getTint()
-                            local t = ensureUFDB() or {}
-                            local c = t.powerBarBorderTintColor or {1,1,1,1}
-                            return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
-                        end
-                        local function setTint(r, g, b, a)
-                            local t = ensureUFDB(); if not t then return end
-                            t.powerBarBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
-                            applyNow()
-                        end
-                        local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
-                        local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
-                        local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
-                        row.GetElementData = function() return initCb end
-                        row:SetPoint("TOPLEFT", 4, y.y)
-                        row:SetPoint("TOPRIGHT", -16, y.y)
-                        initCb:InitFrame(row)
-                        local enabled2 = isEnabled()
-                        local ctrl = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox) or row.Control
-                        if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled2) end
-                        if row.ScooterInlineSwatch and row.ScooterInlineSwatch.EnableMouse then
-                            row.ScooterInlineSwatch:EnableMouse(enabled2)
-                            if row.ScooterInlineSwatch.SetAlpha then row.ScooterInlineSwatch:SetAlpha(enabled2 and 1 or 0.5) end
-                        end
-                        local labelFS = (ctrl and ctrl.Text) or row.Text
-                        if labelFS and labelFS.SetTextColor then
-                            if enabled2 then labelFS:SetTextColor(1, 1, 1, 1) else labelFS:SetTextColor(0.6, 0.6, 0.6, 1) end
-                        end
-                        y.y = y.y - 34
-                    end
-
-                    -- Border Thickness
-                    do
-                        local function getThk()
-                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderThickness) or 1
-                        end
-                        local function setThk(v)
-                            local t = ensureUFDB(); if not t then return end
-                            local nv = tonumber(v) or 1
-                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
-                            t.powerBarBorderThickness = nv
-                            applyNow()
-                        end
-                        local opts = Settings.CreateSliderOptions(1, 16, 1)
-                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
-                        local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
-                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
-                        local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
-                        sf.GetElementData = function() return initSlider end
-                        sf:SetPoint("TOPLEFT", 4, y.y)
-                        sf:SetPoint("TOPRIGHT", -16, y.y)
-                        initSlider:InitFrame(sf)
-                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
-                        local enabled3 = isEnabled()
-                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled3) end
-                        if sf.Text and sf.Text.SetTextColor then
-                            if enabled3 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
-                        end
-                        y.y = y.y - 34
-                    end
-
-                    -- Border Inset
-                    do
-                        local function getInset()
-                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInset) or 0
-                        end
-                        local function setInset(v)
-                            local t = ensureUFDB(); if not t then return end
-                            local nv = tonumber(v) or 0
-                            if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
-                            t.powerBarBorderInset = nv
-                            applyNow()
-                        end
-                        local opts = Settings.CreateSliderOptions(-4, 4, 1)
-                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
-                        local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
-                        local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
-                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
-                        sf.GetElementData = function() return initSlider end
-                        sf:SetPoint("TOPLEFT", 4, y.y)
-                        sf:SetPoint("TOPRIGHT", -16, y.y)
-                        initSlider:InitFrame(sf)
-                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
-                        local enabled4 = isEnabled()
-                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled4) end
-                        if sf.Text and sf.Text.SetTextColor then
-                            if enabled4 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
-                        end
-                        y.y = y.y - 34
-                    end
-                end
 					local y = { y = -50 }
 					-- Texture dropdown
 					local function opts() return addon.BuildBarTextureOptionsContainer() end
@@ -3156,18 +3036,441 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 34
 				end
 
+                -- PageD: Border (Power Bar)
+                do
+                    local y = { y = -50 }
+                    local function optionsBorder()
+                        local c = Settings.CreateControlTextContainer()
+                        c:Add("none", "None")
+                        if addon and addon.BuildBarBorderOptionsContainer then
+                            local base = addon.BuildBarBorderOptionsContainer()
+                            if type(base) == "table" then
+                                for _, entry in ipairs(base) do
+                                    if entry and entry.value and entry.text then
+                                        c:Add(entry.value, entry.text)
+                                    end
+                                end
+                            end
+                        else
+                            c:Add("square", "Default (Square)")
+                        end
+                        return c:GetData()
+                    end
+                    local function isEnabled()
+                        local t = ensureUFDB() or {}
+                        return not not t.useCustomBorders
+                    end
+                    local function applyNow()
+                        local uk = unitKey()
+                        if addon and uk and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(uk) end
+                    end
+                    local function getStyle()
+                        local t = ensureUFDB() or {}; return t.powerBarBorderStyle or "square"
+                    end
+                    local function setStyle(v)
+                        local t = ensureUFDB(); if not t then return end
+                        t.powerBarBorderStyle = v or "square"
+                        applyNow()
+                    end
+                    local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+                    local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
+                    local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+                    f.GetElementData = function() return initDrop end
+                    f:SetPoint("TOPLEFT", 4, y.y)
+                    f:SetPoint("TOPRIGHT", -16, y.y)
+                    initDrop:InitFrame(f)
+                    local lbl = f and (f.Text or f.Label)
+                    if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                    local enabled = isEnabled()
+                    if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
+                    if lbl and lbl.SetTextColor then
+                        if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+                    end
+                    y.y = y.y - 34
+
+                    -- Border Tint (checkbox + swatch)
+                    do
+                        local function getTintEnabled()
+                            local t = ensureUFDB() or {}; return not not t.powerBarBorderTintEnable
+                        end
+                        local function setTintEnabled(b)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarBorderTintEnable = not not b
+                            applyNow()
+                        end
+                        local function getTint()
+                            local t = ensureUFDB() or {}
+                            local c = t.powerBarBorderTintColor or {1,1,1,1}
+                            return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+                        end
+                        local function setTint(r, g, b, a)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+                            applyNow()
+                        end
+                        local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+                        local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+                        local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+                        row.GetElementData = function() return initCb end
+                        row:SetPoint("TOPLEFT", 4, y.y)
+                        row:SetPoint("TOPRIGHT", -16, y.y)
+                        initCb:InitFrame(row)
+                        local enabled2 = isEnabled()
+                        local ctrl = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox) or row.Control
+                        if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled2) end
+                        if row.ScooterInlineSwatch and row.ScooterInlineSwatch.EnableMouse then
+                            row.ScooterInlineSwatch:EnableMouse(enabled2)
+                            if row.ScooterInlineSwatch.SetAlpha then row.ScooterInlineSwatch:SetAlpha(enabled2 and 1 or 0.5) end
+                        end
+                        local labelFS = (ctrl and ctrl.Text) or row.Text
+                        if labelFS and labelFS.SetTextColor then
+                            if enabled2 then labelFS:SetTextColor(1, 1, 1, 1) else labelFS:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+
+                    -- Border Thickness
+                    do
+                        local function getThk()
+                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderThickness) or 1
+                        end
+                        local function setThk(v)
+                            local t = ensureUFDB(); if not t then return end
+                            local nv = tonumber(v) or 1
+                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+                            t.powerBarBorderThickness = nv
+                            applyNow()
+                        end
+                        local opts = Settings.CreateSliderOptions(1, 16, 1)
+                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+                        local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
+                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
+                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        sf.GetElementData = function() return initSlider end
+                        sf:SetPoint("TOPLEFT", 4, y.y)
+                        sf:SetPoint("TOPRIGHT", -16, y.y)
+                        initSlider:InitFrame(sf)
+                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        local enabled3 = isEnabled()
+                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled3) end
+                        if sf.Text and sf.Text.SetTextColor then
+                            if enabled3 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+
+                    -- Border Inset
+                    do
+                        local function getInset()
+                            local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInset) or 0
+                        end
+                        local function setInset(v)
+                            local t = ensureUFDB(); if not t then return end
+                            local nv = tonumber(v) or 0
+                            if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
+                            t.powerBarBorderInset = nv
+                            applyNow()
+                        end
+                        local opts = Settings.CreateSliderOptions(-4, 4, 1)
+                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+                        local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
+                        local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+                        local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
+                        sf.GetElementData = function() return initSlider end
+                        sf:SetPoint("TOPLEFT", 4, y.y)
+                        sf:SetPoint("TOPRIGHT", -16, y.y)
+                        initSlider:InitFrame(sf)
+                        if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        local enabled4 = isEnabled()
+                        if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled4) end
+                        if sf.Text and sf.Text.SetTextColor then
+                            if enabled4 then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+                        end
+                        y.y = y.y - 34
+                    end
+                end
+
 				-- Apply current visibility once when building
 				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
 			end
 
 			local pbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", pbTabs)
-			pbInit.GetExtent = function() return 300 end
+			-- Increased from 300 to 315 to accommodate up to 7-8 settings per tab
+			pbInit.GetExtent = function() return 315 end
 			pbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Power Bar")
 			end)
 			table.insert(init, pbInit)
 
-			-- Fourth collapsible section: Cast Bar (Player only)
+		-- Fourth collapsible section: Name & Level Text (all unit frames)
+		local expInitializerNLT = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+			name = "Name & Level Text",
+			sectionKey = "Name & Level Text",
+			componentId = componentId,
+			expanded = panel:IsSectionExpanded(componentId, "Name & Level Text"),
+		})
+		expInitializerNLT.GetExtent = function() return 30 end
+		table.insert(init, expInitializerNLT)
+
+	-- Name & Level Text tabs: Backdrop / Border / Name Text / Level Text
+	local nltTabs = { sectionTitle = "", tabAText = "Backdrop", tabBText = "Border", tabCText = "Name Text", tabDText = "Level Text" }
+	nltTabs.build = function(frame)
+		-- Helper for unit key
+		local function unitKey()
+			if componentId == "ufPlayer" then return "Player" end
+			if componentId == "ufTarget" then return "Target" end
+			if componentId == "ufFocus" then return "Focus" end
+			if componentId == "ufPet" then return "Pet" end
+			return nil
+		end
+
+		-- Helper to ensure unit frame DB
+		local function ensureUFDB()
+			local db = addon and addon.db and addon.db.profile
+			if not db then return nil end
+			db.unitFrames = db.unitFrames or {}
+			local uk = unitKey(); if not uk then return nil end
+			db.unitFrames[uk] = db.unitFrames[uk] or {}
+			return db.unitFrames[uk]
+		end
+
+		-- Helper functions for controls
+		local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+		local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+			local options = Settings.CreateSliderOptions(minV, maxV, step)
+			options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+			local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+			local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+			local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+			f.GetElementData = function() return initSlider end
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			initSlider:InitFrame(f)
+			if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			yRef.y = yRef.y - 34
+		end
+		local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+			local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+			local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+			local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+			f.GetElementData = function() return initDrop end
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			initDrop:InitFrame(f)
+			local lbl = f and (f.Text or f.Label)
+			if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+			if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+				addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+			end
+			yRef.y = yRef.y - 34
+		end
+		local function addStyle(parent, label, getFunc, setFunc, yRef)
+			local function styleOptions()
+				local container = Settings.CreateControlTextContainer();
+				container:Add("NONE", "Regular");
+				container:Add("OUTLINE", "Outline");
+				container:Add("THICKOUTLINE", "Thick Outline");
+				return container:GetData()
+			end
+			addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+		end
+		local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+			local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+			f:SetHeight(26)
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			f.Text:SetText(label)
+			if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			local right = CreateFrame("Frame", nil, f)
+			right:SetSize(250, 26)
+			right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+			f.Text:ClearAllPoints()
+			f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+			f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+			f.Text:SetJustifyH("LEFT")
+			local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
+			swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+			local function update()
+				local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
+			end
+			swatch:SetScript("OnClick", function()
+				local r, g, b, a = getFunc()
+				ColorPickerFrame:SetupColorPickerAndShow({
+					r = r or 1, g = g or 1, b = b or 1,
+					hasOpacity = hasAlpha,
+					opacity = a or 1,
+					swatchFunc = function()
+						local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+						setFunc(nr, ng, nb, na); update()
+					end,
+					cancelFunc = function(prev)
+						if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
+					end,
+				})
+			end)
+			update()
+			yRef.y = yRef.y - 34
+		end
+
+		-- Tab A: Backdrop (blank for now)
+		-- Intentionally left blank
+
+		-- Tab B: Border (blank for now)
+		-- Intentionally left blank
+
+		-- Tab C: Name Text
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFrameNameLevelTextFor then addon.ApplyUnitFrameNameLevelTextFor(unitKey()) end
+				if addon and addon.ApplyStyles then addon:ApplyStyles() end
+			end
+			local function fontOptions()
+				return addon.BuildFontOptionsContainer()
+			end
+			local y = { y = -50 }
+			
+			-- Disable Name Text checkbox
+			local label = "Disable Name Text"
+			local function getter()
+				local t = ensureUFDB(); return t and not not t.nameTextHidden or false
+			end
+			local function setter(v)
+				local t = ensureUFDB(); if not t then return end
+				t.nameTextHidden = (v and true) or false
+				applyNow()
+			end
+			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+			local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+			row.GetElementData = function() return initCb end
+			row:SetPoint("TOPLEFT", 4, y.y)
+			row:SetPoint("TOPRIGHT", -16, y.y)
+			initCb:InitFrame(row)
+			if panel and panel.ApplyRobotoWhite then
+				if row.Text then panel.ApplyRobotoWhite(row.Text) end
+				local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+			end
+			y.y = y.y - 34
+			
+			-- Name Text Font
+			addDropdown(frame.PageC, "Name Text Font", fontOptions,
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; return s.fontFace or "FRIZQT__" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.fontFace = v; applyNow() end,
+				y)
+			
+			-- Name Text Style
+			addStyle(frame.PageC, "Name Text Style",
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; return s.style or "OUTLINE" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.style = v; applyNow() end,
+				y)
+			
+			-- Name Text Size
+			addSlider(frame.PageC, "Name Text Size", 6, 48, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; return tonumber(s.size) or 14 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.size = tonumber(v) or 14; applyNow() end,
+				y)
+			
+			-- Name Text Color
+			addColor(frame.PageC, "Name Text Color", true,
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.color = {r,g,b,a}; applyNow() end,
+				y)
+			
+			-- Name Text Offset X
+			addSlider(frame.PageC, "Name Text Offset X", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.offset = t.textName.offset or {}; t.textName.offset.x = tonumber(v) or 0; applyNow() end,
+				y)
+			
+			-- Name Text Offset Y
+			addSlider(frame.PageC, "Name Text Offset Y", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textName or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.offset = t.textName.offset or {}; t.textName.offset.y = tonumber(v) or 0; applyNow() end,
+				y)
+		end
+
+		-- Tab D: Level Text
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFrameNameLevelTextFor then addon.ApplyUnitFrameNameLevelTextFor(unitKey()) end
+				if addon and addon.ApplyStyles then addon:ApplyStyles() end
+			end
+			local function fontOptions()
+				return addon.BuildFontOptionsContainer()
+			end
+			local y = { y = -50 }
+			
+			-- Disable Level Text checkbox
+			local label = "Disable Level Text"
+			local function getter()
+				local t = ensureUFDB(); return t and not not t.levelTextHidden or false
+			end
+			local function setter(v)
+				local t = ensureUFDB(); if not t then return end
+				t.levelTextHidden = (v and true) or false
+				applyNow()
+			end
+			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+			local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+			row.GetElementData = function() return initCb end
+			row:SetPoint("TOPLEFT", 4, y.y)
+			row:SetPoint("TOPRIGHT", -16, y.y)
+			initCb:InitFrame(row)
+			if panel and panel.ApplyRobotoWhite then
+				if row.Text then panel.ApplyRobotoWhite(row.Text) end
+				local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+			end
+			y.y = y.y - 34
+			
+			-- Level Text Font
+			addDropdown(frame.PageD, "Level Text Font", fontOptions,
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; return s.fontFace or "FRIZQT__" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.fontFace = v; applyNow() end,
+				y)
+			
+			-- Level Text Style
+			addStyle(frame.PageD, "Level Text Style",
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; return s.style or "OUTLINE" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.style = v; applyNow() end,
+				y)
+			
+			-- Level Text Size
+			addSlider(frame.PageD, "Level Text Size", 6, 48, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; return tonumber(s.size) or 14 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.size = tonumber(v) or 14; applyNow() end,
+				y)
+			
+			-- Level Text Color
+			addColor(frame.PageD, "Level Text Color", true,
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.color = {r,g,b,a}; applyNow() end,
+				y)
+			
+			-- Level Text Offset X
+			addSlider(frame.PageD, "Level Text Offset X", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.offset = t.textLevel.offset or {}; t.textLevel.offset.x = tonumber(v) or 0; applyNow() end,
+				y)
+			
+			-- Level Text Offset Y
+			addSlider(frame.PageD, "Level Text Offset Y", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.offset = t.textLevel.offset or {}; t.textLevel.offset.y = tonumber(v) or 0; applyNow() end,
+				y)
+		end
+		end
+
+		local nltInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", nltTabs)
+		nltInit.GetExtent = function() return 300 end
+		nltInit:AddShownPredicate(function()
+			return panel:IsSectionExpanded(componentId, "Name & Level Text")
+		end)
+		table.insert(init, nltInit)
+
+		-- Fifth collapsible section: Cast Bar (Player only)
 			if componentId == "ufPlayer" then
 				local expInitializerCB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 					name = "Cast Bar",
