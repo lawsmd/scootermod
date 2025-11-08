@@ -2684,8 +2684,10 @@ local function createUFRenderer(componentId, title)
 				if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
 			end
 			local hbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", hbTabs)
-			-- Increased from 300 to 315 to accommodate up to 7-8 settings per tab
-			hbInit.GetExtent = function() return 315 end
+			-- STATIC HEIGHT for tabbed sections with up to 7-8 settings per tab.
+			-- Current: 330px provides comfortable spacing with 2px top gap and room at bottom.
+			-- DO NOT reduce below 315px or settings will bleed past the bottom border.
+			hbInit.GetExtent = function() return 330 end
 			hbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Health Bar")
 			end)
@@ -3195,8 +3197,10 @@ local function createUFRenderer(componentId, title)
 			end
 
 			local pbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", pbTabs)
-			-- Increased from 300 to 315 to accommodate up to 7-8 settings per tab
-			pbInit.GetExtent = function() return 315 end
+			-- STATIC HEIGHT for tabbed sections with up to 7-8 settings per tab.
+			-- Current: 330px provides comfortable spacing with 2px top gap and room at bottom.
+			-- DO NOT reduce below 315px or settings will bleed past the bottom border.
+			pbInit.GetExtent = function() return 330 end
 			pbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Power Bar")
 			end)
@@ -3371,11 +3375,11 @@ local function createUFRenderer(componentId, title)
 				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.size = tonumber(v) or 14; applyNow() end,
 				y)
 			
-			-- Name Text Color
-			addColor(frame.PageC, "Name Text Color", true,
-				function() local t = ensureUFDB() or {}; local s = t.textName or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
-				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.color = {r,g,b,a}; applyNow() end,
-				y)
+		-- Name Text Color
+		addColor(frame.PageC, "Name Text Color", true,
+			function() local t = ensureUFDB() or {}; local s = t.textName or {}; local c = s.color or {1.0,0.82,0.0,1}; return c[1], c[2], c[3], c[4] end,
+			function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.color = {r,g,b,a}; applyNow() end,
+			y)
 			
 			-- Name Text Offset X
 			addSlider(frame.PageC, "Name Text Offset X", -100, 100, 1,
@@ -3443,11 +3447,11 @@ local function createUFRenderer(componentId, title)
 				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.size = tonumber(v) or 14; applyNow() end,
 				y)
 			
-			-- Level Text Color
-			addColor(frame.PageD, "Level Text Color", true,
-				function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
-				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.color = {r,g,b,a}; applyNow() end,
-				y)
+		-- Level Text Color
+		addColor(frame.PageD, "Level Text Color", true,
+			function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local c = s.color or {1.0,0.82,0.0,1}; return c[1], c[2], c[3], c[4] end,
+			function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.color = {r,g,b,a}; applyNow() end,
+			y)
 			
 			-- Level Text Offset X
 			addSlider(frame.PageD, "Level Text Offset X", -100, 100, 1,

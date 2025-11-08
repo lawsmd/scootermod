@@ -2257,32 +2257,32 @@ do
 		-- Resolve Name and Level FontStrings
 		local nameFS, levelFS
 		
-		-- Try direct child access first (most common)
-		if unit == "Player" then
-			nameFS = _G.PlayerName
-			levelFS = _G.PlayerLevelText
-		elseif unit == "Target" then
-			-- Target uses nested content structure
-			local targetFrame = _G.TargetFrame
-			if targetFrame and targetFrame.TargetFrameContent and targetFrame.TargetFrameContent.TargetFrameContentMain then
-				nameFS = targetFrame.TargetFrameContent.TargetFrameContentMain.Name
-				levelFS = targetFrame.TargetFrameContent.TargetFrameContentMain.LevelText
-			end
-		elseif unit == "Focus" then
-			-- Focus uses same nested content structure as Target
-			local focusFrame = _G.FocusFrame
-			if focusFrame and focusFrame.FocusFrameContent and focusFrame.FocusFrameContent.FocusFrameContentMain then
-				nameFS = focusFrame.FocusFrameContent.FocusFrameContentMain.Name
-				levelFS = focusFrame.FocusFrameContent.FocusFrameContentMain.LevelText
-			end
-		elseif unit == "Pet" then
-			-- Pet uses same nested content structure as Target/Focus
-			local petFrame = _G.PetFrame
-			if petFrame and petFrame.PetFrameContent and petFrame.PetFrameContent.PetFrameContentMain then
-				nameFS = petFrame.PetFrameContent.PetFrameContentMain.Name
-				levelFS = petFrame.PetFrameContent.PetFrameContentMain.LevelText
-			end
+	-- Try direct child access first (most common)
+	if unit == "Player" then
+		nameFS = _G.PlayerName
+		levelFS = _G.PlayerLevelText
+	elseif unit == "Target" then
+		-- Target uses nested content structure
+		local targetFrame = _G.TargetFrame
+		if targetFrame and targetFrame.TargetFrameContent and targetFrame.TargetFrameContent.TargetFrameContentMain then
+			nameFS = targetFrame.TargetFrameContent.TargetFrameContentMain.Name
+			levelFS = targetFrame.TargetFrameContent.TargetFrameContentMain.LevelText
 		end
+	elseif unit == "Focus" then
+		-- Focus reuses Target's content structure naming (TargetFrameContent, not FocusFrameContent!)
+		local focusFrame = _G.FocusFrame
+		if focusFrame and focusFrame.TargetFrameContent and focusFrame.TargetFrameContent.TargetFrameContentMain then
+			nameFS = focusFrame.TargetFrameContent.TargetFrameContentMain.Name
+			levelFS = focusFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+		end
+	elseif unit == "Pet" then
+		-- Pet also reuses Target's content structure naming
+		local petFrame = _G.PetFrame
+		if petFrame and petFrame.TargetFrameContent and petFrame.TargetFrameContent.TargetFrameContentMain then
+			nameFS = petFrame.TargetFrameContent.TargetFrameContentMain.Name
+			levelFS = petFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+		end
+	end
 
 		-- Fallback: search by name hints
 		if not nameFS then nameFS = findFontStringByNameHint(frame, "Name") end
@@ -2318,7 +2318,8 @@ do
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
 		if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-		local c = styleCfg.color or {1,1,1,1}
+		-- Use Blizzard's default yellow color (1.0, 0.82, 0.0) instead of white
+		local c = styleCfg.color or {1.0,0.82,0.0,1}
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
 		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
@@ -2333,38 +2334,40 @@ do
 	if levelFS then 
 		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
 		
-		-- For Player level text, install a hook to reapply color after Blizzard updates it
-		-- Blizzard's PlayerFrame_Update constantly resets the level text color based on difficulty
+		-- For Player level text, Blizzard uses SetVertexColor (not SetTextColor!) which requires special handling
+		-- Blizzard constantly resets the level color, so we intercept SetVertexColor calls
 		if unit == "Player" and levelFS and cfg.textLevel and cfg.textLevel.color then
-			local function reapplyLevelColor()
-				local c = cfg.textLevel.color or {1,1,1,1}
-				if levelFS.SetTextColor then
-					pcall(levelFS.SetTextColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+			-- Install a hook directly on the frame's SetVertexColor to override Blizzard's calls
+			if not levelFS._scooterVertexColorHooked then
+				levelFS._scooterVertexColorHooked = true
+				levelFS._scooterOrigSetVertexColor = levelFS.SetVertexColor
+				
+				levelFS.SetVertexColor = function(self, r, g, b, a)
+					-- Check if we have a custom color configured
+					local db = addon and addon.db and addon.db.profile
+					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
+						local c = db.unitFrames.Player.textLevel.color
+						-- Use our custom color instead of Blizzard's
+						levelFS._scooterOrigSetVertexColor(self, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+					else
+						-- No custom color, use Blizzard's
+						levelFS._scooterOrigSetVertexColor(self, r, g, b, a)
+					end
 				end
 			end
 			
-			-- Hook PlayerFrame_UpdateLevelTextAnchor which runs after level color updates
-			if not addon._playerLevelColorHooked then
-				addon._playerLevelColorHooked = true
-				if _G.PlayerFrame_UpdateLevelTextAnchor then
-					hooksecurefunc("PlayerFrame_UpdateLevelTextAnchor", function()
-						if addon and addon.ApplyUnitFrameNameLevelTextFor then
-							C_Timer.After(0, function()
-								local db = addon and addon.db and addon.db.profile
-								if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
-									local fs = _G.PlayerLevelText
-									local c = db.unitFrames.Player.textLevel.color
-									if fs and fs.SetTextColor then
-										pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-									end
-								end
-							end)
-						end
-					end)
-				end
+		-- Apply our color immediately (use Blizzard's default yellow)
+		local c = cfg.textLevel.color or {1.0,0.82,0.0,1}
+		if levelFS._scooterOrigSetVertexColor then
+			pcall(levelFS._scooterOrigSetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+		end
+		elseif unit == "Player" and levelFS and levelFS._scooterVertexColorHooked then
+			-- Custom color disabled, restore original behavior
+			if levelFS._scooterOrigSetVertexColor then
+				levelFS.SetVertexColor = levelFS._scooterOrigSetVertexColor
+				levelFS._scooterVertexColorHooked = nil
+				levelFS._scooterOrigSetVertexColor = nil
 			end
-			-- Reapply immediately as well
-			reapplyLevelColor()
 		end
 	end
 	end

@@ -155,7 +155,23 @@ function ScooterTabbedSectionMixin:LayoutTabs()
     local topRow = {}
     if #visible > 5 then for i = 6, #visible do table.insert(topRow, visible[i]) end end
 
-    -- If we have 2 rows, drop the border down by one tab height to make room above it
+    -- ============================================================================
+    -- MULTI-ROW TAB LAYOUT: Border and Content Positioning
+    -- ============================================================================
+    -- When 6+ tabs are present, tabs overflow to a second row. This requires
+    -- moving the border down to accommodate the extra row height while maintaining
+    -- consistent visual spacing from border to content.
+    --
+    -- CRITICAL RULE FOR FUTURE AGENTS:
+    -- The 'drop' calculation and 'contentTopSpacing' work together to maintain
+    -- consistent visual spacing. If you change one, verify the other still produces
+    -- the desired spacing in both single-row (≤5 tabs) and multi-row (6+ tabs) cases.
+    --
+    -- Current spacing philosophy: Minimal top gap for clean, compact appearance
+    -- while ensuring content doesn't touch the border edge.
+    -- ============================================================================
+    
+    -- Calculate how far to drop the border when we have 2 rows of tabs
     local drop = 0
     do
         local tabHeight = 37
@@ -167,8 +183,10 @@ function ScooterTabbedSectionMixin:LayoutTabs()
                 local rowOverlap = 12 -- keep in sync with bottomRow anchor below
                 local borderTighten = 4
                 drop = math.max(0, tabHeight - rowOverlap - borderTighten)
+                -- drop = 21px for multi-row tabs
                 self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14 - drop)
             else
+                -- Single row: standard position
                 self.NineSlice:SetPoint("TOPLEFT", self, "TOPLEFT", -12, -14)
             end
             self.NineSlice:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -6, -16)
@@ -176,16 +194,27 @@ function ScooterTabbedSectionMixin:LayoutTabs()
     end
     
     -- Anchor page frames to respect the border position and provide consistent top spacing
+    -- STATIC SPACING RULE (DO NOT CHANGE WITHOUT UNDERSTANDING):
+    -- This spacing is STATICALLY DEFINED once 6+ tabs are reached. The calculation
+    -- ensures visual consistency between single-row and multi-row tab sections.
     do
         local pages = { self.PageA, self.PageB, self.PageC, self.PageD, self.PageE, self.PageF, self.PageG, self.PageH, self.PageI }
         -- Content inset from border edges (left, right, bottom)
         local contentInsetX = 8
         local contentInsetBottom = 8
-        -- Top spacing from the border's top edge to the first control (reduced to 8px for better fit)
-        local contentTopSpacing = 8
-        -- The border's TOPLEFT is at (-12, -14 - drop), so content should start at:
-        -- X: -12 + contentInsetX, Y: -14 - drop - contentTopSpacing
+        
+        -- CRITICAL SPACING VALUE:
+        -- Top spacing from the border's top edge to the first control.
+        -- Current: 2px for minimal gap while maintaining clean appearance.
+        -- DO NOT reduce below 2px or content will touch/overlap the border.
+        local contentTopSpacing = 2
+        
+        -- Calculate final page top position:
+        -- - Border top is at: -14 - drop (where drop=0 for ≤5 tabs, drop=21 for 6+ tabs)
+        -- - Content starts: border top - contentTopSpacing
+        -- Result: Single-row=-16, Multi-row=-37 (maintains same 2px visual gap from border)
         local pageTopY = -14 - drop - contentTopSpacing
+        
         for i = 1, #pages do
             if pages[i] then
                 pages[i]:ClearAllPoints()
