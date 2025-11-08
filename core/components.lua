@@ -3377,9 +3377,9 @@ do
                         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
                         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 elseif unit == "Focus" and _G.FocusFrame then
-                    reputationColor = _G.FocusFrame.FocusFrameContent
-                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain
-                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain.ReputationColor
+                    reputationColor = _G.FocusFrame.TargetFrameContent
+                        and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                        and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 end
                 if reputationColor and reputationColor.SetShown then
                     pcall(reputationColor.SetShown, reputationColor, false)
@@ -3395,9 +3395,9 @@ do
                         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
                         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 elseif unit == "Focus" and _G.FocusFrame then
-                    reputationColor = _G.FocusFrame.FocusFrameContent
-                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain
-                        and _G.FocusFrame.FocusFrameContent.FocusFrameContentMain.ReputationColor
+                    reputationColor = _G.FocusFrame.TargetFrameContent
+                        and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                        and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 end
                 if reputationColor and reputationColor.SetShown then
                     pcall(reputationColor.SetShown, reputationColor, true)
