@@ -125,19 +125,12 @@ do
     f.ARIALN   = "Fonts\\ARIALN.TTF"
     f.MORPHEUS = "Fonts\\MORPHEUS.TTF"
     f.SKURRI   = "Fonts\\SKURRI.TTF"
-    -- Bundled Roboto (copied into ScooterMod/media/fonts)
+    -- Bundled Roboto (curated set: Regular, Medium, Bold, Thin)
     local base = "Interface\\AddOns\\ScooterMod\\media\\fonts\\"
     f.ROBOTO_REG   = base .. "Roboto-Regular.ttf"
     f.ROBOTO_MED   = base .. "Roboto-Medium.ttf"
     f.ROBOTO_BLD   = base .. "Roboto-Bold.ttf"
-    f.ROBOTO_ITA   = base .. "Roboto-Italic.ttf"
-    f.ROBOTO_LGT   = base .. "Roboto-Light.ttf"
-    f.ROBOTO_LITA  = base .. "Roboto-LightItalic.ttf"
-    f.ROBOTO_MITA  = base .. "Roboto-MediumItalic.ttf"
-    f.ROBOTO_BITA  = base .. "Roboto-BoldItalic.ttf"
     f.ROBOTO_THIN  = base .. "Roboto-Thin.ttf"
-    f.ROBOTO_TITA  = base .. "Roboto-ThinItalic.ttf"
-    -- (Removed) Roboto Condensed variants to keep the list concise
 end
 
 

@@ -432,13 +432,50 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if useCustom then
             local fg = component.db and component.db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default)
             local bg = component.db and component.db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default)
-            addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg)
-            local fgCol = (component.db and component.db.styleForegroundColor) or {1,1,1,1}
+            local bgOpacity = component.db and component.db.styleBackgroundOpacity or (component.settings.styleBackgroundOpacity and component.settings.styleBackgroundOpacity.default) or 50
+            addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg, bgOpacity)
+            -- Apply foreground color based on mode
+            local fgColorMode = (component.db and component.db.styleForegroundColorMode) or "default"
+            local fgTint = (component.db and component.db.styleForegroundTint) or {1,1,1,1}
             local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
-            if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, fgCol[1] or 1, fgCol[2] or 1, fgCol[3] or 1, fgCol[4] or 1) end
-            local bgCol = (component.db and component.db.styleBackgroundColor) or {1,1,1,0.9}
-            if barFrame.ScooterModBG and barFrame.ScooterModBG.SetVertexColor then
-                pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, bgCol[1] or 1, bgCol[2] or 1, bgCol[3] or 1, bgCol[4] or 1)
+            if tex and tex.SetVertexColor then
+                local r, g, b, a = 1, 1, 1, 1
+                if fgColorMode == "custom" and type(fgTint) == "table" then
+                    r, g, b, a = fgTint[1] or 1, fgTint[2] or 1, fgTint[3] or 1, fgTint[4] or 1
+                elseif fgColorMode == "texture" then
+                    -- Apply white (no tint) to preserve texture's original colors
+                    r, g, b, a = 1, 1, 1, 1
+                elseif fgColorMode == "default" then
+                    -- Default: use Blizzard's default Tracked Bars color (orange-ish: 1.0, 0.5, 0.25)
+                    -- This matches the color used when reverting to stock texture (line 486)
+                    r, g, b, a = 1.0, 0.5, 0.25, 1.0
+                end
+                pcall(tex.SetVertexColor, tex, r, g, b, a)
+            end
+            -- Apply background color based on mode
+            local bgColorMode = (component.db and component.db.styleBackgroundColorMode) or "default"
+            local bgTint = (component.db and component.db.styleBackgroundTint) or {0,0,0,1}
+            if barFrame.ScooterModBG then
+                local r, g, b, a = 0, 0, 0, 1
+                if bgColorMode == "custom" and type(bgTint) == "table" then
+                    r, g, b, a = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
+                elseif bgColorMode == "texture" then
+                    -- Apply white (no tint) to preserve texture's original colors
+                    r, g, b, a = 1, 1, 1, 1
+                elseif bgColorMode == "default" then
+                    -- Default: black background
+                    r, g, b, a = 0, 0, 0, 1
+                end
+                -- Apply color (RGB only, not alpha)
+                if barFrame.ScooterModBG.SetVertexColor then
+                    pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, r, g, b, 1.0)
+                end
+                -- Re-apply opacity after vertex color to ensure it's not overridden
+                if barFrame.ScooterModBG.SetAlpha then
+                    local opacity = tonumber(bgOpacity) or 50
+                    opacity = math.max(0, math.min(100, opacity)) / 100
+                    pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, opacity)
+                end
             end
         else
             -- Revert to Blizzard defaults
@@ -1463,7 +1500,7 @@ function addon:InitializeComponents()
                     local c = Settings.CreateControlTextContainer(); c:Add("bevelled", "Bevelled"); return c:GetData()
                 end
             }},
-            styleBackgroundTexture = { type = "addon", default = "bevelledGrey", ui = {
+            styleBackgroundTexture = { type = "addon", default = "bevelled", ui = {
                 label = "Background Texture", widget = "dropdown", section = "Style", order = 2, optionsProvider = function()
                     if addon.BuildBarTextureOptionsContainer then return addon.BuildBarTextureOptionsContainer() end
                     local c = Settings.CreateControlTextContainer(); c:Add("bevelledGrey", "Bevelled Grey"); return c:GetData()
@@ -1474,6 +1511,9 @@ function addon:InitializeComponents()
             }},
             styleBackgroundColor = { type = "addon", default = {1,1,1,0.9}, ui = {
                 label = "Background Color", widget = "color", section = "Style", order = 4
+            }},
+            styleBackgroundOpacity = { type = "addon", default = 50, ui = {
+                label = "Background Opacity", widget = "slider", min = 0, max = 100, step = 1, section = "Style", order = 5
             }},
             -- Bar Border
             borderEnable = { type = "addon", default = false, ui = {
@@ -2406,9 +2446,17 @@ do
             "healthBarTexture",
             "healthBarColorMode",
             "healthBarTint",
+            "healthBarBackgroundTexture",
+            "healthBarBackgroundColorMode",
+            "healthBarBackgroundTint",
+            "healthBarBackgroundOpacity",
             "powerBarTexture",
             "powerBarColorMode",
             "powerBarTint",
+            "powerBarBackgroundTexture",
+            "powerBarBackgroundColorMode",
+            "powerBarBackgroundTint",
+            "powerBarBackgroundOpacity",
         }
         for _, k in ipairs(keys) do
             if src[k] ~= nil then dst[k] = deepcopy(src[k]) else dst[k] = nil end
@@ -2771,6 +2819,14 @@ do
         if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
     end
 
+    -- Get default background color for unit frame bars (fallback when no custom color is set)
+    local function getDefaultBackgroundColor(unit, barKind)
+        -- Based on Blizzard source: Player frame HealthBar.Background uses BLACK_FONT_COLOR (0, 0, 0)
+        -- Target/Focus/Pet don't have explicit Background textures in XML, use black as well
+        -- Power bars (ManaBar) don't have Background textures in XML either, use black
+        return 0, 0, 0, 1
+    end
+
     local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower)
         if not bar or type(bar.GetStatusBarTexture) ~= "function" then return end
         local tex = bar:GetStatusBarTexture()
@@ -2814,6 +2870,9 @@ do
                     local cr, cg, cb = addon.GetClassColorRGB(unitForClass or "player")
                     r, g, b, a = cr or 1, cg or 1, cb or 1, 1
                 end
+            elseif colorMode == "texture" then
+                -- Apply white (no tint) to preserve texture's original colors
+                r, g, b, a = 1, 1, 1, 1
             elseif colorMode == "default" then
                 -- When using a custom texture, "Default" should tint to the stock bar color
                 if barKind == "health" and addon.GetDefaultHealthColorRGB then
@@ -2868,6 +2927,68 @@ do
         end
     end
 
+    -- Apply background texture and color to a bar
+    local function applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind)
+        if not bar then return end
+        
+        -- Ensure we have a background texture frame at a LOW sublevel so it appears behind the status bar fill
+        if not bar.ScooterModBG then
+            bar.ScooterModBG = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
+            bar.ScooterModBG:SetAllPoints(bar)
+        end
+        
+        -- Get opacity (default 50% based on Blizzard's dead/ghost state alpha)
+        local opacity = tonumber(backgroundOpacity) or 50
+        opacity = math.max(0, math.min(100, opacity)) / 100
+        
+        -- Check if we're using a custom background texture
+        local isCustomTexture = type(backgroundTextureKey) == "string" and backgroundTextureKey ~= "" and backgroundTextureKey ~= "default"
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(backgroundTextureKey)
+        
+        if isCustomTexture and resolvedPath then
+            -- Apply custom texture
+            pcall(bar.ScooterModBG.SetTexture, bar.ScooterModBG, resolvedPath)
+            
+            -- Apply color based on mode
+            local r, g, b, a = 1, 1, 1, 1
+            if backgroundColorMode == "custom" and type(backgroundTint) == "table" then
+                r, g, b, a = backgroundTint[1] or 1, backgroundTint[2] or 1, backgroundTint[3] or 1, backgroundTint[4] or 1
+            elseif backgroundColorMode == "texture" then
+                -- Apply white (no tint) to preserve texture's original colors
+                r, g, b, a = 1, 1, 1, 1
+            elseif backgroundColorMode == "default" then
+                r, g, b, a = getDefaultBackgroundColor(unit, barKind)
+            end
+            
+            if bar.ScooterModBG.SetVertexColor then
+                pcall(bar.ScooterModBG.SetVertexColor, bar.ScooterModBG, r, g, b, a)
+            end
+            -- Apply opacity
+            if bar.ScooterModBG.SetAlpha then
+                pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
+            end
+            bar.ScooterModBG:Show()
+        else
+            -- Default: always show our background with default black color
+            -- We don't rely on Blizzard's stock Background texture since it's hidden by default
+            pcall(bar.ScooterModBG.SetTexture, bar.ScooterModBG, nil)
+            
+            local r, g, b, a = getDefaultBackgroundColor(unit, barKind)
+            if backgroundColorMode == "custom" and type(backgroundTint) == "table" then
+                r, g, b, a = backgroundTint[1] or 1, backgroundTint[2] or 1, backgroundTint[3] or 1, backgroundTint[4] or 1
+            end
+            
+            if bar.ScooterModBG.SetColorTexture then
+                pcall(bar.ScooterModBG.SetColorTexture, bar.ScooterModBG, r, g, b, a)
+            end
+            -- Apply opacity
+            if bar.ScooterModBG.SetAlpha then
+                pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
+            end
+            bar.ScooterModBG:Show()
+        end
+    end
+
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -2879,10 +3000,16 @@ do
 
         local hb = resolveHealthBar(frame, unit)
         if hb then
-            local colorModeHB = (cfg.healthBarColorMode == "class" and "class") or (cfg.healthBarColorMode == "custom" and "custom") or "default"
+            local colorModeHB = cfg.healthBarColorMode or "default"
             local texKeyHB = cfg.healthBarTexture or "default"
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
+            
+            -- Apply background texture and color for Health Bar
+            local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
+            local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
+            local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
+            applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
             -- If restoring default texture and we lack a captured original, restore to the known stock atlas for this unit
             local isDefaultHB = (texKeyHB == "default" or not addon.Media.ResolveBarTexturePath(texKeyHB))
             if isDefaultHB and not hb._ScootUFOrigAtlas and not hb._ScootUFOrigPath then
@@ -3217,10 +3344,17 @@ do
 
         local pb = resolvePowerBar(frame, unit)
         if pb then
-            local colorModePB = (cfg.powerBarColorMode == "class" and "class") or (cfg.powerBarColorMode == "custom" and "custom") or "default"
+            local colorModePB = cfg.powerBarColorMode or "default"
             local texKeyPB = cfg.powerBarTexture or "default"
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
             applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
+            
+            -- Apply background texture and color for Power Bar
+            local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
+            local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
+            local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
+            applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+            
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
 
             -- Power Bar positioning offsets

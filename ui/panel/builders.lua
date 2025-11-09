@@ -196,34 +196,16 @@ local function createComponentRenderer(componentId)
                             f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
                             f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
                             f.Text:SetJustifyH("LEFT")
-                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-                            local function update()
+                            -- Use centralized color swatch factory
+                            local function getColorTable()
                                 local r, g, b, a = getFunc()
-                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
-                                swatch.a = a or 1
+                                return {r or 1, g or 1, b or 1, a or 1}
                             end
-                            swatch:SetScript("OnClick", function()
-                                local r, g, b, a = getFunc()
-                                ColorPickerFrame:SetupColorPickerAndShow({
-                                    r = r or 1, g = g or 1, b = b or 1,
-                                    hasOpacity = hasAlpha,
-                                    opacity = a or 1,
-                                    swatchFunc = function()
-                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                                        local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
-                                        setFunc(nr, ng, nb, na)
-                                        update()
-                                    end,
-                                    cancelFunc = function(prev)
-                                        if prev then
-                                            setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
-                                            update()
-                                        end
-                                    end,
-                                })
-                            end)
-                            update()
+                            local function setColorTable(r, g, b, a)
+                                setFunc(r, g, b, a)
+                            end
+                            local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
                             yRef.y = yRef.y - 34
                         end
 
@@ -681,6 +663,9 @@ local function createComponentRenderer(componentId)
                                         if btn.ScooterCustomTexturesRefresh then
                                             btn.ScooterCustomTexturesRefresh()
                                         end
+                                        if btn.ScooterUpdateStyleControlsState then
+                                            btn.ScooterUpdateStyleControlsState()
+                                        end
                                         if btn.ScooterCustomTexturesRefreshLayout then
                                             btn.ScooterCustomTexturesRefreshLayout()
                                         end
@@ -697,8 +682,13 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             initDrop:InitFrame(f)
+                            if panel and panel.ApplyRobotoWhite then
+                                local lbl = f and (f.Text or f.Label)
+                                if lbl then panel.ApplyRobotoWhite(lbl) end
+                            end
                             if addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, setting) end
                             yRef.y = yRef.y - 34
+                            return f
                         end
                         local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
                             local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
@@ -706,6 +696,7 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPLEFT", 4, yRef.y)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             f.Text:SetText(label)
+                            if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
                             local right = CreateFrame("Frame", nil, f)
                             right:SetSize(250, 26)
                             right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
@@ -713,48 +704,234 @@ local function createComponentRenderer(componentId)
                             f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
                             f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
                             f.Text:SetJustifyH("LEFT")
-                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-                            local function update()
+                            -- Use centralized color swatch factory with refresh callback
+                            local function getColorTable()
                                 local r, g, b, a = getFunc()
-                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
-                                swatch.a = a or 1
+                                return {r or 1, g or 1, b or 1, a or 1}
                             end
-                            swatch:SetScript("OnClick", function()
-                                local r, g, b, a = getFunc()
-                                ColorPickerFrame:SetupColorPickerAndShow({
-                                    r = r or 1, g = g or 1, b = b or 1,
-                                    hasOpacity = true,
-                                    opacity = a or 1,
-                                    swatchFunc = function()
-                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                                        local na = ColorPickerFrame:GetColorAlpha()
-                                        setFunc(nr, ng, nb, na)
-                                        update(); refresh()
-                                    end,
-                                    cancelFunc = function(prev)
-                                        if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update(); refresh() end
-                                    end,
-                                })
-                            end)
-                            update()
+                            local function setColorTable(r, g, b, a)
+                                setFunc(r, g, b, a)
+                                refresh()
+                            end
+                            local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
                             yRef.y = yRef.y - 34
+                            return f, swatch
                         end
-                        addDropdown(frame.PageA, "Foreground Texture", addon.BuildBarTextureOptionsContainer,
+                        local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+                            local options = Settings.CreateSliderOptions(minV, maxV, step)
+                            options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
+                            local setting = CreateLocalSetting(label, "number", getFunc, function(v) setFunc(v); refresh() end, getFunc())
+                            local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+                            local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+                            f.GetElementData = function() return initSlider end
+                            f:SetPoint("TOPLEFT", 4, yRef.y)
+                            f:SetPoint("TOPRIGHT", -16, yRef.y)
+                            initSlider:InitFrame(f)
+                            if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(f) end
+                            if panel and panel.ApplyRobotoWhite and f.Text then panel.ApplyRobotoWhite(f.Text) end
+                            yRef.y = yRef.y - 48
+                            return f
+                        end
+                        -- Store references to all controls for enable/disable
+                        local styleControls = {}
+                        local fgTexDropdown = addDropdown(frame.PageA, "Foreground Texture", function()
+                            -- Remove "default" option - only show custom textures
+                            local allOptions = addon.BuildBarTextureOptionsContainer and addon.BuildBarTextureOptionsContainer() or {}
+                            local filteredOptions = {}
+                            for _, option in ipairs(allOptions) do
+                                if option.value ~= "default" then
+                                    table.insert(filteredOptions, option)
+                                end
+                            end
+                            return filteredOptions
+                        end,
                             function() return db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default) end,
                             function(v) db.styleForegroundTexture = v; refresh() end, yA)
-                        addColor(frame.PageA, "Foreground Color", true,
-                            function() local c = db.styleForegroundColor or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
-                            function(r,g,b,a) db.styleForegroundColor = {r,g,b,a}; end, yA)
-                        addDropdown(frame.PageB, "Background Texture", addon.BuildBarTextureOptionsContainer,
+                        table.insert(styleControls, fgTexDropdown)
+                        -- Foreground Color dropdown
+                        local function fgColorOpts()
+                            local container = Settings.CreateControlTextContainer()
+                            container:Add("default", "Default")
+                            container:Add("texture", "Texture Original")
+                            container:Add("custom", "Custom")
+                            return container:GetData()
+                        end
+                        local fgTintRow, fgTintLabel, fgTintSwatch
+                        local function getFgColorMode() return db.styleForegroundColorMode or "default" end
+                        local function setFgColorMode(v)
+                            db.styleForegroundColorMode = v or "default"
+                            refresh()
+                            local isCustom = (v == "custom")
+                            if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+                            if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
+                        end
+                        local fgColorSetting = CreateLocalSetting("Foreground Color", "string", getFgColorMode, setFgColorMode, getFgColorMode())
+                        local initFgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Color", setting = fgColorSetting, options = fgColorOpts })
+                        local cfg = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
+                        cfg.GetElementData = function() return initFgColor end
+                        cfg:SetPoint("TOPLEFT", 4, yA.y)
+                        cfg:SetPoint("TOPRIGHT", -16, yA.y)
+                        initFgColor:InitFrame(cfg)
+                        if panel and panel.ApplyRobotoWhite then
+                            local lbl = cfg and (cfg.Text or cfg.Label)
+                            if lbl then panel.ApplyRobotoWhite(lbl) end
+                        end
+                        table.insert(styleControls, cfg)
+                        yA.y = yA.y - 34
+                        -- Foreground Tint color swatch
+                        local function getFgTint()
+                            local c = db.styleForegroundTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+                        end
+                        local function setFgTint(r,g,b,a)
+                            db.styleForegroundTint = {r,g,b,a}; refresh()
+                        end
+                        local f2 = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
+                        fgTintRow = f2
+                        f2:SetHeight(26)
+                        f2:SetPoint("TOPLEFT", 4, yA.y)
+                        f2:SetPoint("TOPRIGHT", -16, yA.y)
+                        f2.Text:SetText("Foreground Tint")
+                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
+                        fgTintLabel = f2.Text
+                        local right = CreateFrame("Frame", nil, f2)
+                        right:SetSize(250, 26)
+                        right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
+                        f2.Text:ClearAllPoints()
+                        f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
+                        f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+                        f2.Text:SetJustifyH("LEFT")
+                        local function getFgColorTable()
+                            local r, g, b, a = getFgTint()
+                            return {r or 1, g or 1, b or 1, a or 1}
+                        end
+                        local function setFgColorTable(r, g, b, a)
+                            setFgTint(r, g, b, a)
+                        end
+                        local swatch = CreateColorSwatch(right, getFgColorTable, setFgColorTable, true)
+                        swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+                        fgTintSwatch = swatch
+                        local isCustom = (getFgColorMode() == "custom")
+                        if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+                        if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
+                        table.insert(styleControls, fgTintRow)
+                        table.insert(styleControls, fgTintSwatch)
+                        yA.y = yA.y - 34
+                        local bgTexDropdown = addDropdown(frame.PageB, "Background Texture", addon.BuildBarTextureOptionsContainer,
                             function() return db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default) end,
                             function(v) db.styleBackgroundTexture = v; refresh() end, yB)
-                        addColor(frame.PageB, "Background Color", true,
-                            function() local c = db.styleBackgroundColor or {1,1,1,0.9}; return c[1], c[2], c[3], c[4] end,
-                            function(r,g,b,a) db.styleBackgroundColor = {r,g,b,a}; end, yB)
+                        table.insert(styleControls, bgTexDropdown)
+                        -- Background Color dropdown
+                        local function bgColorOpts()
+                            local container = Settings.CreateControlTextContainer()
+                            container:Add("default", "Default")
+                            container:Add("texture", "Texture Original")
+                            container:Add("custom", "Custom")
+                            return container:GetData()
+                        end
+                        local bgTintRow, bgTintLabel, bgTintSwatch
+                        local function getBgColorMode() return db.styleBackgroundColorMode or "default" end
+                        local function setBgColorMode(v)
+                            db.styleBackgroundColorMode = v or "default"
+                            refresh()
+                            local isCustom = (v == "custom")
+                            if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+                            if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
+                        end
+                        local bgColorSetting = CreateLocalSetting("Background Color", "string", getBgColorMode, setBgColorMode, getBgColorMode())
+                        local initBgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Color", setting = bgColorSetting, options = bgColorOpts })
+                        local cbg = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+                        cbg.GetElementData = function() return initBgColor end
+                        cbg:SetPoint("TOPLEFT", 4, yB.y)
+                        cbg:SetPoint("TOPRIGHT", -16, yB.y)
+                        initBgColor:InitFrame(cbg)
+                        if panel and panel.ApplyRobotoWhite then
+                            local lbl = cbg and (cbg.Text or cbg.Label)
+                            if lbl then panel.ApplyRobotoWhite(lbl) end
+                        end
+                        table.insert(styleControls, cbg)
+                        yB.y = yB.y - 34
+                        -- Background Tint color swatch
+                        local function getBgTint()
+                            local c = db.styleBackgroundTint or {0,0,0,1}; return c[1], c[2], c[3], c[4]
+                        end
+                        local function setBgTint(r,g,b,a)
+                            db.styleBackgroundTint = {r,g,b,a}; refresh()
+                        end
+                        local f3 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
+                        bgTintRow = f3
+                        f3:SetHeight(26)
+                        f3:SetPoint("TOPLEFT", 4, yB.y)
+                        f3:SetPoint("TOPRIGHT", -16, yB.y)
+                        f3.Text:SetText("Background Tint")
+                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f3.Text) end
+                        bgTintLabel = f3.Text
+                        local rightBg = CreateFrame("Frame", nil, f3)
+                        rightBg:SetSize(250, 26)
+                        rightBg:SetPoint("RIGHT", f3, "RIGHT", -16, 0)
+                        f3.Text:ClearAllPoints()
+                        f3.Text:SetPoint("LEFT", f3, "LEFT", 36.5, 0)
+                        f3.Text:SetPoint("RIGHT", rightBg, "LEFT", 0, 0)
+                        f3.Text:SetJustifyH("LEFT")
+                        local function getBgColorTable()
+                            local r, g, b, a = getBgTint()
+                            return {r or 1, g or 1, b or 1, a or 1}
+                        end
+                        local function setBgColorTable(r, g, b, a)
+                            setBgTint(r, g, b, a)
+                        end
+                        local bgSwatch = CreateColorSwatch(rightBg, getBgColorTable, setBgColorTable, true)
+                        bgSwatch:SetPoint("LEFT", rightBg, "LEFT", 8, 0)
+                        bgTintSwatch = bgSwatch
+                        local isBgCustom = (getBgColorMode() == "custom")
+                        if bgTintLabel then bgTintLabel:SetTextColor(isBgCustom and 1 or 0.5, isBgCustom and 1 or 0.5, isBgCustom and 1 or 0.5) end
+                        if bgTintSwatch then bgTintSwatch:SetEnabled(isBgCustom) end
+                        table.insert(styleControls, bgTintRow)
+                        table.insert(styleControls, bgTintSwatch)
+                        yB.y = yB.y - 34
+                        local bgOpacitySlider = addSlider(frame.PageB, "Background Opacity", 0, 100, 1,
+                            function() return db.styleBackgroundOpacity or (component.settings.styleBackgroundOpacity and component.settings.styleBackgroundOpacity.default) or 50 end,
+                            function(v) db.styleBackgroundOpacity = tonumber(v) or 50 end, yB)
+                        table.insert(styleControls, bgOpacitySlider)
+                        
+                        -- Function to enable/disable all style controls
+                        local function updateStyleControlsState()
+                            local enabled = db.styleEnableCustom ~= false
+                            for _, control in ipairs(styleControls) do
+                                if control then
+                                    -- Gray out labels
+                                    if control.Text then
+                                        local alpha = enabled and 1 or 0.5
+                                        control.Text:SetTextColor(alpha, alpha, alpha)
+                                    end
+                                    -- Disable controls
+                                    if control.SetEnabled then
+                                        control:SetEnabled(enabled)
+                                    elseif control.Disable and control.Enable then
+                                        if enabled then control:Enable() else control:Disable() end
+                                    end
+                                    -- For dropdowns, disable the control
+                                    if control.Control and control.Control.SetEnabled then
+                                        control.Control:SetEnabled(enabled)
+                                    end
+                                    -- For sliders
+                                    if control.Slider and control.Slider.SetEnabled then
+                                        control.Slider:SetEnabled(enabled)
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Update state initially
+                        updateStyleControlsState()
+                        
+                        -- Hook checkbox to update state
+                        if checkbox then
+                            checkbox.ScooterUpdateStyleControlsState = updateStyleControlsState
+                        end
                     end
                     local initializer = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-                    initializer.GetExtent = function() return 160 end
+                    initializer.GetExtent = function() return 208 end
                     initializer:AddShownPredicate(function()
                         return panel:IsSectionExpanded(component.id, "Style")
                     end)
@@ -2165,7 +2342,7 @@ local function createUFRenderer(componentId, title)
 			UNIT FRAMES TABBED SECTION TAB PRIORITY ORDER (all Player/Target/Focus/Pet sections):
 			1. Positioning
 			2. Sizing
-			3. Style/Texture (corresponds to "Bar Style" tabs)
+			3. Style/Texture (corresponds to "Style" tabs)
 			4. Border
 			5. Visibility
 			6. Text Elements (e.g., "% Text", "Value Text")
@@ -2173,7 +2350,7 @@ local function createUFRenderer(componentId, title)
 			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
 		]]--
 		-- Health Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-		local hbTabs = { sectionTitle = "", tabAText = "Sizing", tabBText = "Bar Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
+		local hbTabs = { sectionTitle = "", tabAText = "Sizing", tabBText = "Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
 			hbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2245,27 +2422,16 @@ local function createUFRenderer(componentId, title)
 					f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
 					f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
 					f.Text:SetJustifyH("LEFT")
-					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					local function update()
-						local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
-					end
-					swatch:SetScript("OnClick", function()
+					-- Use centralized color swatch factory
+					local function getColorTable()
 						local r, g, b, a = getFunc()
-						ColorPickerFrame:SetupColorPickerAndShow({
-							r = r or 1, g = g or 1, b = b or 1,
-							hasOpacity = hasAlpha,
-							opacity = a or 1,
-							swatchFunc = function()
-								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
-								setFunc(nr, ng, nb, na); update()
-							end,
-							cancelFunc = function(prev)
-								if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
-							end,
-						})
-					end)
-					update()
+						return {r or 1, g or 1, b or 1, a or 1}
+					end
+					local function setColorTable(r, g, b, a)
+						setFunc(r, g, b, a)
+					end
+					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
 					yRef.y = yRef.y - 34
 				end
 
@@ -2422,18 +2588,18 @@ local function createUFRenderer(componentId, title)
 						y)
 				end
 
-				-- PageB: Bar Texture (selector) + Bar Color (dropdown) + Bar Tint (conditional)
+				-- PageB: Foreground/Background Texture + Color
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
 					local y = { y = -50 }
-					-- Texture dropdown
+					-- Foreground Texture dropdown
 					local function opts() return addon.BuildBarTextureOptionsContainer() end
 					local function getTex() local t = ensureUFDB() or {}; return t.healthBarTexture or "default" end
 					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarTexture = v; applyNow() end
-					local texSetting = CreateLocalSetting("Bar Texture", "string", getTex, setTex, getTex())
-					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Texture", setting = texSetting, options = opts })
+					local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = opts })
 					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
@@ -2446,24 +2612,25 @@ local function createUFRenderer(componentId, title)
                     if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
-					-- Bar Color dropdown
+					-- Foreground Color dropdown
                     local function colorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
+                        container:Add("texture", "Texture Original")
                         container:Add("class", "Class Color")
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local tintRow
+					local fgTintRow, fgTintLabel, fgTintSwatch
 					local function getColorMode() local t = ensureUFDB() or {}; return t.healthBarColorMode or "default" end
 					local function setColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.healthBarColorMode = v or "default"; applyNow()
-						if tintRow then
-							if v == "custom" then tintRow:Show() else tintRow:Hide() end
-						end
+						local isCustom = (v == "custom")
+						if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+						if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					end
-					local colorSetting = CreateLocalSetting("Bar Color", "string", getColorMode, setColorMode, getColorMode())
-					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Color", setting = colorSetting, options = colorOpts })
+					local colorSetting = CreateLocalSetting("Foreground Color", "string", getColorMode, setColorMode, getColorMode())
+					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Color", setting = colorSetting, options = colorOpts })
 					local cf = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
 					cf.GetElementData = function() return initColor end
 					cf:SetPoint("TOPLEFT", 4, y.y)
@@ -2474,7 +2641,7 @@ local function createUFRenderer(componentId, title)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
 					y.y = y.y - 34
-					-- Tint color swatch
+					-- Foreground Tint color swatch
 					local function getTint()
 						local t = ensureUFDB() or {}; local c = t.healthBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
 					end
@@ -2482,12 +2649,13 @@ local function createUFRenderer(componentId, title)
 						local t = ensureUFDB(); if not t then return end; t.healthBarTint = {r,g,b,a}; applyNow()
 					end
 					local f2 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
-					tintRow = f2
+					fgTintRow = f2
 					f2:SetHeight(26)
 					f2:SetPoint("TOPLEFT", 4, y.y)
 					f2:SetPoint("TOPRIGHT", -16, y.y)
-					f2.Text:SetText("Bar Tint")
+					f2.Text:SetText("Foreground Tint")
 					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
+					fgTintLabel = f2.Text
 					local right = CreateFrame("Frame", nil, f2)
 					right:SetSize(250, 26)
 					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
@@ -2495,29 +2663,121 @@ local function createUFRenderer(componentId, title)
 					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
 					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
 					f2.Text:SetJustifyH("LEFT")
-					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					local function update()
-						local r, g, b, a = getTint(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
-					end
-					swatch:SetScript("OnClick", function()
+					-- Use centralized color swatch factory
+					local function getColorTable()
 						local r, g, b, a = getTint()
-						ColorPickerFrame:SetupColorPickerAndShow({
-							r = r or 1, g = g or 1, b = b or 1,
-							hasOpacity = true,
-							opacity = a or 1,
-							swatchFunc = function()
-								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = ColorPickerFrame:GetColorAlpha()
-								setTint(nr, ng, nb, na); update()
-							end,
-							cancelFunc = function(prev)
-								if prev then setTint(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
-							end,
-						})
-					end)
-					update()
-					if getColorMode() ~= "custom" then f2:Hide() else f2:Show() end
+						return {r or 1, g or 1, b or 1, a or 1}
+					end
+					local function setColorTable(r, g, b, a)
+						setTint(r, g, b, a)
+					end
+					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, true)
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					fgTintSwatch = swatch
+					-- Set initial disabled state if not custom
+					local isCustom = (getColorMode() == "custom")
+					if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					y.y = y.y - 34
+
+					-- Background Texture dropdown
+					local function getBgTex() local t = ensureUFDB() or {}; return t.healthBarBackgroundTexture or "default" end
+					local function setBgTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTexture = v; applyNow() end
+					local bgTexSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
+					local initBgDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgTexSetting, options = opts })
+					local fbg = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+					fbg.GetElementData = function() return initBgDrop end
+					fbg:SetPoint("TOPLEFT", 4, y.y)
+					fbg:SetPoint("TOPRIGHT", -16, y.y)
+                    initBgDrop:InitFrame(fbg)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = fbg and (fbg.Text or fbg.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+                    if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
+					y.y = y.y - 34
+
+					-- Background Color dropdown
+                    local function bgColorOpts()
+						local container = Settings.CreateControlTextContainer()
+                        container:Add("default", "Default")
+                        container:Add("texture", "Texture Original")
+                        container:Add("custom", "Custom")
+						return container:GetData()
+					end
+					local bgTintRow, bgTintLabel, bgTintSwatch
+					local function getBgColorMode() local t = ensureUFDB() or {}; return t.healthBarBackgroundColorMode or "default" end
+					local function setBgColorMode(v)
+						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundColorMode = v or "default"; applyNow()
+						local isCustom = (v == "custom")
+						if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+						if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
+					end
+					local bgColorSetting = CreateLocalSetting("Background Color", "string", getBgColorMode, setBgColorMode, getBgColorMode())
+					local initBgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Color", setting = bgColorSetting, options = bgColorOpts })
+					local cbg = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+					cbg.GetElementData = function() return initBgColor end
+					cbg:SetPoint("TOPLEFT", 4, y.y)
+					cbg:SetPoint("TOPRIGHT", -16, y.y)
+                    initBgColor:InitFrame(cbg)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = cbg and (cbg.Text or cbg.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+					y.y = y.y - 34
+					-- Background Tint color swatch
+					local function getBgTint()
+						local t = ensureUFDB() or {}; local c = t.healthBarBackgroundTint or {0,0,0,1}; return c[1], c[2], c[3], c[4]
+					end
+					local function setBgTint(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTint = {r,g,b,a}; applyNow()
+					end
+					local f3 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
+					bgTintRow = f3
+					f3:SetHeight(26)
+					f3:SetPoint("TOPLEFT", 4, y.y)
+					f3:SetPoint("TOPRIGHT", -16, y.y)
+					f3.Text:SetText("Background Tint")
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f3.Text) end
+					bgTintLabel = f3.Text
+					local rightBg = CreateFrame("Frame", nil, f3)
+					rightBg:SetSize(250, 26)
+					rightBg:SetPoint("RIGHT", f3, "RIGHT", -16, 0)
+					f3.Text:ClearAllPoints()
+					f3.Text:SetPoint("LEFT", f3, "LEFT", 36.5, 0)
+					f3.Text:SetPoint("RIGHT", rightBg, "LEFT", 0, 0)
+					f3.Text:SetJustifyH("LEFT")
+					local function getBgColorTable()
+						local r, g, b, a = getBgTint()
+						return {r or 0, g or 0, b or 0, a or 1}
+					end
+					local function setBgColorTable(r, g, b, a)
+						setBgTint(r, g, b, a)
+					end
+					local swatchBg = CreateColorSwatch(rightBg, getBgColorTable, setBgColorTable, true)
+					swatchBg:SetPoint("LEFT", rightBg, "LEFT", 8, 0)
+					bgTintSwatch = swatchBg
+					-- Set initial disabled state if not custom
+					local isCustom = (getBgColorMode() == "custom")
+					if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
+					y.y = y.y - 34
+
+					-- Background Opacity slider
+					local function getBgOpacity() local t = ensureUFDB() or {}; return t.healthBarBackgroundOpacity or 50 end
+					local function setBgOpacity(v) local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundOpacity = tonumber(v) or 50; applyNow() end
+					local bgOpacitySetting = CreateLocalSetting("Background Opacity", "number", getBgOpacity, setBgOpacity, getBgOpacity())
+					local bgOpacityOpts = Settings.CreateSliderOptions(0, 100, 1)
+					bgOpacityOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
+					local bgOpacityInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Background Opacity", setting = bgOpacitySetting, options = bgOpacityOpts })
+					local fOpa = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+					fOpa.GetElementData = function() return bgOpacityInit end
+					fOpa:SetPoint("TOPLEFT", 4, y.y)
+					fOpa:SetPoint("TOPRIGHT", -16, y.y)
+					bgOpacityInit:InitFrame(fOpa)
+					if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(fOpa) end
+					if panel and panel.ApplyRobotoWhite and fOpa.Text then panel.ApplyRobotoWhite(fOpa.Text) end
+					y.y = y.y - 48
 				end
 
 				-- PageC: Border (Health Bar only)
@@ -2704,7 +2964,7 @@ local function createUFRenderer(componentId, title)
 			table.insert(init, expInitializerPB)
 
             -- Power Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Bar Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
+            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2775,27 +3035,16 @@ local function createUFRenderer(componentId, title)
 					f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
 					f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
 					f.Text:SetJustifyH("LEFT")
-					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					local function update()
-						local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
-					end
-					swatch:SetScript("OnClick", function()
+					-- Use centralized color swatch factory
+					local function getColorTable()
 						local r, g, b, a = getFunc()
-						ColorPickerFrame:SetupColorPickerAndShow({
-							r = r or 1, g = g or 1, b = b or 1,
-							hasOpacity = hasAlpha,
-							opacity = a or 1,
-							swatchFunc = function()
-								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
-								setFunc(nr, ng, nb, na); update()
-							end,
-							cancelFunc = function(prev)
-								if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
-							end,
-						})
-					end)
-					update()
+						return {r or 1, g or 1, b or 1, a or 1}
+					end
+					local function setColorTable(r, g, b, a)
+						setFunc(r, g, b, a)
+					end
+					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
 					yRef.y = yRef.y - 34
 				end
 
@@ -2941,18 +3190,18 @@ local function createUFRenderer(componentId, title)
 						y)
 				end
 
-                -- PageC: Bar Style (Power Bar)
+                -- PageC: Foreground/Background Texture + Color (Power Bar)
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
 					local y = { y = -50 }
-					-- Texture dropdown
+					-- Foreground Texture dropdown
 					local function opts() return addon.BuildBarTextureOptionsContainer() end
 					local function getTex() local t = ensureUFDB() or {}; return t.powerBarTexture or "default" end
 					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.powerBarTexture = v; applyNow() end
-					local texSetting = CreateLocalSetting("Bar Texture", "string", getTex, setTex, getTex())
-					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Texture", setting = texSetting, options = opts })
+					local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = opts })
 					local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
@@ -2965,23 +3214,24 @@ local function createUFRenderer(componentId, title)
 					if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
-					-- Bar Color dropdown
+					-- Foreground Color dropdown
                     local function colorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
+                        container:Add("texture", "Texture Original")
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local tintRow
+					local fgTintRow, fgTintLabel, fgTintSwatch
 					local function getColorMode() local t = ensureUFDB() or {}; return t.powerBarColorMode or "default" end
 					local function setColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.powerBarColorMode = v or "default"; applyNow()
-						if tintRow then
-							if v == "custom" then tintRow:Show() else tintRow:Hide() end
-						end
+						local isCustom = (v == "custom")
+						if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+						if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					end
-					local colorSetting = CreateLocalSetting("Bar Color", "string", getColorMode, setColorMode, getColorMode())
-                    local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Bar Color", setting = colorSetting, options = colorOpts })
+					local colorSetting = CreateLocalSetting("Foreground Color", "string", getColorMode, setColorMode, getColorMode())
+                    local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Color", setting = colorSetting, options = colorOpts })
 					local cf = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
 					cf.GetElementData = function() return initColor end
 					cf:SetPoint("TOPLEFT", 4, y.y)
@@ -2992,7 +3242,7 @@ local function createUFRenderer(componentId, title)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
 					y.y = y.y - 34
-					-- Tint color
+					-- Foreground Tint color
 					local function getTint()
 						local t = ensureUFDB() or {}; local c = t.powerBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
 					end
@@ -3000,12 +3250,13 @@ local function createUFRenderer(componentId, title)
 						local t = ensureUFDB(); if not t then return end; t.powerBarTint = {r,g,b,a}; applyNow()
 					end
 					local f2 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
-					tintRow = f2
+					fgTintRow = f2
 					f2:SetHeight(26)
 					f2:SetPoint("TOPLEFT", 4, y.y)
 					f2:SetPoint("TOPRIGHT", -16, y.y)
-					f2.Text:SetText("Bar Tint")
+					f2.Text:SetText("Foreground Tint")
 					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
+					fgTintLabel = f2.Text
 					local right = CreateFrame("Frame", nil, f2)
 					right:SetSize(250, 26)
 					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
@@ -3013,29 +3264,121 @@ local function createUFRenderer(componentId, title)
 					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
 					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
 					f2.Text:SetJustifyH("LEFT")
-					local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					local function update()
-						local r, g, b, a = getTint(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
-					end
-					swatch:SetScript("OnClick", function()
+					-- Use centralized color swatch factory
+					local function getColorTable()
 						local r, g, b, a = getTint()
-						ColorPickerFrame:SetupColorPickerAndShow({
-							r = r or 1, g = g or 1, b = b or 1,
-							hasOpacity = true,
-							opacity = a or 1,
-							swatchFunc = function()
-								local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = ColorPickerFrame:GetColorAlpha()
-								setTint(nr, ng, nb, na); update()
-							end,
-							cancelFunc = function(prev)
-								if prev then setTint(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
-							end,
-						})
-					end)
-					update()
-					if getColorMode() ~= "custom" then f2:Hide() else f2:Show() end
+						return {r or 1, g or 1, b or 1, a or 1}
+					end
+					local function setColorTable(r, g, b, a)
+						setTint(r, g, b, a)
+					end
+					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, true)
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					fgTintSwatch = swatch
+					-- Set initial disabled state if not custom
+					local isCustom = (getColorMode() == "custom")
+					if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					y.y = y.y - 34
+
+					-- Background Texture dropdown
+					local function getBgTex() local t = ensureUFDB() or {}; return t.powerBarBackgroundTexture or "default" end
+					local function setBgTex(v) local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundTexture = v; applyNow() end
+					local bgTexSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
+					local initBgDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgTexSetting, options = opts })
+					local fbg = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					fbg.GetElementData = function() return initBgDrop end
+					fbg:SetPoint("TOPLEFT", 4, y.y)
+					fbg:SetPoint("TOPRIGHT", -16, y.y)
+                    initBgDrop:InitFrame(fbg)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = fbg and (fbg.Text or fbg.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+                    if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
+					y.y = y.y - 34
+
+					-- Background Color dropdown
+                    local function bgColorOpts()
+						local container = Settings.CreateControlTextContainer()
+                        container:Add("default", "Default")
+                        container:Add("texture", "Texture Original")
+                        container:Add("custom", "Custom")
+						return container:GetData()
+					end
+					local bgTintRow, bgTintLabel, bgTintSwatch
+					local function getBgColorMode() local t = ensureUFDB() or {}; return t.powerBarBackgroundColorMode or "default" end
+					local function setBgColorMode(v)
+						local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundColorMode = v or "default"; applyNow()
+						local isCustom = (v == "custom")
+						if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+						if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
+					end
+					local bgColorSetting = CreateLocalSetting("Background Color", "string", getBgColorMode, setBgColorMode, getBgColorMode())
+					local initBgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Color", setting = bgColorSetting, options = bgColorOpts })
+					local cbg = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					cbg.GetElementData = function() return initBgColor end
+					cbg:SetPoint("TOPLEFT", 4, y.y)
+					cbg:SetPoint("TOPRIGHT", -16, y.y)
+                    initBgColor:InitFrame(cbg)
+                    if panel and panel.ApplyRobotoWhite then
+                        local lbl = cbg and (cbg.Text or cbg.Label)
+                        if lbl then panel.ApplyRobotoWhite(lbl) end
+                    end
+					y.y = y.y - 34
+					-- Background Tint color swatch
+					local function getBgTint()
+						local t = ensureUFDB() or {}; local c = t.powerBarBackgroundTint or {0,0,0,1}; return c[1], c[2], c[3], c[4]
+					end
+					local function setBgTint(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundTint = {r,g,b,a}; applyNow()
+					end
+					local f3 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
+					bgTintRow = f3
+					f3:SetHeight(26)
+					f3:SetPoint("TOPLEFT", 4, y.y)
+					f3:SetPoint("TOPRIGHT", -16, y.y)
+					f3.Text:SetText("Background Tint")
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f3.Text) end
+					bgTintLabel = f3.Text
+					local rightBg = CreateFrame("Frame", nil, f3)
+					rightBg:SetSize(250, 26)
+					rightBg:SetPoint("RIGHT", f3, "RIGHT", -16, 0)
+					f3.Text:ClearAllPoints()
+					f3.Text:SetPoint("LEFT", f3, "LEFT", 36.5, 0)
+					f3.Text:SetPoint("RIGHT", rightBg, "LEFT", 0, 0)
+					f3.Text:SetJustifyH("LEFT")
+					local function getBgColorTable()
+						local r, g, b, a = getBgTint()
+						return {r or 0, g or 0, b or 0, a or 1}
+					end
+					local function setBgColorTable(r, g, b, a)
+						setBgTint(r, g, b, a)
+					end
+					local swatchBg = CreateColorSwatch(rightBg, getBgColorTable, setBgColorTable, true)
+					swatchBg:SetPoint("LEFT", rightBg, "LEFT", 8, 0)
+					bgTintSwatch = swatchBg
+					-- Set initial disabled state if not custom
+					local isCustom = (getBgColorMode() == "custom")
+					if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
+					y.y = y.y - 34
+
+					-- Background Opacity slider
+					local function getBgOpacity() local t = ensureUFDB() or {}; return t.powerBarBackgroundOpacity or 50 end
+					local function setBgOpacity(v) local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundOpacity = tonumber(v) or 50; applyNow() end
+					local bgOpacitySetting = CreateLocalSetting("Background Opacity", "number", getBgOpacity, setBgOpacity, getBgOpacity())
+					local bgOpacityOpts = Settings.CreateSliderOptions(0, 100, 1)
+					bgOpacityOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
+					local bgOpacityInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Background Opacity", setting = bgOpacitySetting, options = bgOpacityOpts })
+					local fOpa = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
+					fOpa.GetElementData = function() return bgOpacityInit end
+					fOpa:SetPoint("TOPLEFT", 4, y.y)
+					fOpa:SetPoint("TOPRIGHT", -16, y.y)
+					bgOpacityInit:InitFrame(fOpa)
+					if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(fOpa) end
+					if panel and panel.ApplyRobotoWhite and fOpa.Text then panel.ApplyRobotoWhite(fOpa.Text) end
+					y.y = y.y - 48
 				end
 
                 -- PageD: Border (Power Bar)
@@ -3292,27 +3635,16 @@ local function createUFRenderer(componentId, title)
 			f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
 			f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
 			f.Text:SetJustifyH("LEFT")
-			local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-			swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-			local function update()
-				local r, g, b, a = getFunc(); if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end; swatch.a = a or 1
-			end
-			swatch:SetScript("OnClick", function()
+			-- Use centralized color swatch factory
+			local function getColorTable()
 				local r, g, b, a = getFunc()
-				ColorPickerFrame:SetupColorPickerAndShow({
-					r = r or 1, g = g or 1, b = b or 1,
-					hasOpacity = hasAlpha,
-					opacity = a or 1,
-					swatchFunc = function()
-						local nr, ng, nb = ColorPickerFrame:GetColorRGB(); local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
-						setFunc(nr, ng, nb, na); update()
-					end,
-					cancelFunc = function(prev)
-						if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update() end
-					end,
-				})
-			end)
-			update()
+				return {r or 1, g or 1, b or 1, a or 1}
+			end
+			local function setColorTable(r, g, b, a)
+				setFunc(r, g, b, a)
+			end
+			local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+			swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
 			yRef.y = yRef.y - 34
 		end
 

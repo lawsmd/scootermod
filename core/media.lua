@@ -12,21 +12,42 @@ local BAR_TEXTURES = {
 	fadeBottom             = BAR_MEDIA_PREFIX .. "fade-bottom.png",
 	fadeLeft               = BAR_MEDIA_PREFIX .. "fade-left.png",
 	blizzardCastBar        = BAR_MEDIA_PREFIX .. "blizzard-cast-bar.png",
-	mmtA1                  = BAR_MEDIA_PREFIX .. "a1.tga",
-	mmtA2                  = BAR_MEDIA_PREFIX .. "a2.tga",
-	mmtA3                  = BAR_MEDIA_PREFIX .. "a3.tga",
-	mmtA4                  = BAR_MEDIA_PREFIX .. "a4.tga",
-	mmtA5                  = BAR_MEDIA_PREFIX .. "a5.tga",
-	mmtA6                  = BAR_MEDIA_PREFIX .. "a6.tga",
-	mmtA7                  = BAR_MEDIA_PREFIX .. "a7.tga",
-	mmtA8                  = BAR_MEDIA_PREFIX .. "a8.tga",
-	mmtA9                  = BAR_MEDIA_PREFIX .. "a9.tga",
-	mmtA10                 = BAR_MEDIA_PREFIX .. "a10.tga",
-	mmtA11                 = BAR_MEDIA_PREFIX .. "a11.tga",
-	mmtA12                 = BAR_MEDIA_PREFIX .. "a12.tga",
-	mmtA13                 = BAR_MEDIA_PREFIX .. "a13.tga",
-	mmtA14                 = BAR_MEDIA_PREFIX .. "a14.tga",
-	mmtA15                 = BAR_MEDIA_PREFIX .. "a15.tga",
+	-- Blizzard resource bar textures (from ElvUI_EltreumUI)
+	blizzardEbonMight      = BAR_MEDIA_PREFIX .. "EvokerEbonMight.tga",
+	blizzardEnergy         = BAR_MEDIA_PREFIX .. "BlizzardUnitframe1.tga",
+	blizzardFocus          = BAR_MEDIA_PREFIX .. "BlizzardUnitframe2.tga",
+	blizzardFury           = BAR_MEDIA_PREFIX .. "DemonHunterFury.tga",
+	blizzardInsanity       = BAR_MEDIA_PREFIX .. "PriestInsanity1.tga",
+	blizzardInsanity2      = BAR_MEDIA_PREFIX .. "PriestInsanity2.tga",
+	blizzardLunarPower     = BAR_MEDIA_PREFIX .. "DruidStarPower.tga",
+	blizzardMaelstrom      = BAR_MEDIA_PREFIX .. "ShamanMaelstrom.tga",
+	blizzardMana           = BAR_MEDIA_PREFIX .. "BlizzardUnitframe3.tga",
+	blizzardPain           = BAR_MEDIA_PREFIX .. "MonkStagger1.tga",
+	blizzardPain2          = BAR_MEDIA_PREFIX .. "MonkStagger2.tga",
+	blizzardPain3          = BAR_MEDIA_PREFIX .. "MonkStagger3.tga",
+	blizzardRage           = BAR_MEDIA_PREFIX .. "BlizzardUnitframe4.tga",
+	blizzardRaidBar        = BAR_MEDIA_PREFIX .. "BlizzardUnitframe5.tga",
+	blizzardRunicPower     = BAR_MEDIA_PREFIX .. "BlizzardUnitframe6.tga",
+	-- Additional Blizzard unitframe textures
+	blizzardUnitframe7     = BAR_MEDIA_PREFIX .. "BlizzardUnitframe7.tga",
+	blizzardUnitframe8     = BAR_MEDIA_PREFIX .. "BlizzardUnitframe8.tga",
+	-- Blizzard experience bar textures
+	blizzardExperience1   = BAR_MEDIA_PREFIX .. "BlizzardExperience1.tga",
+	blizzardExperience2    = BAR_MEDIA_PREFIX .. "BlizzardExperience2.tga",
+	blizzardExperience3   = BAR_MEDIA_PREFIX .. "BlizzardExperience3.tga",
+	-- Blizzard labs textures
+	blizzardLabs1          = BAR_MEDIA_PREFIX .. "BlizzardLabs1.tga",
+	blizzardLabs2          = BAR_MEDIA_PREFIX .. "BlizzardLabs2.tga",
+	-- Numbered series
+	a1                     = BAR_MEDIA_PREFIX .. "a1.tga",
+	a2                     = BAR_MEDIA_PREFIX .. "a2.tga",
+	a3                     = BAR_MEDIA_PREFIX .. "a3.tga",
+	a4                     = BAR_MEDIA_PREFIX .. "a4.tga",
+	a5                     = BAR_MEDIA_PREFIX .. "a5.tga",
+	a8                     = BAR_MEDIA_PREFIX .. "a8.tga",
+	a9                     = BAR_MEDIA_PREFIX .. "a9.tga",
+	a12                    = BAR_MEDIA_PREFIX .. "a12.tga",
+	a13                    = BAR_MEDIA_PREFIX .. "a13.tga",
 }
 
 local BAR_DISPLAY_NAMES = {
@@ -36,21 +57,42 @@ local BAR_DISPLAY_NAMES = {
 	fadeBottom = "Fade Bottom",
 	fadeLeft = "Fade Left",
 	blizzardCastBar = "Blizzard Cast Bar",
-	mmtA1 = "mMediaTag A1",
-	mmtA2 = "mMediaTag A2",
-	mmtA3 = "mMediaTag A3",
-	mmtA4 = "mMediaTag A4",
-	mmtA5 = "mMediaTag A5",
-	mmtA6 = "mMediaTag A6",
-	mmtA7 = "mMediaTag A7",
-	mmtA8 = "mMediaTag A8",
-	mmtA9 = "mMediaTag A9",
-	mmtA10 = "mMediaTag A10",
-	mmtA11 = "mMediaTag A11",
-	mmtA12 = "mMediaTag A12",
-	mmtA13 = "mMediaTag A13",
-	mmtA14 = "mMediaTag A14",
-	mmtA15 = "mMediaTag A15",
+	-- Blizzard resource bar textures
+	blizzardEbonMight = "Blizzard Ebon Might",
+	blizzardEnergy = "Blizzard Energy",
+	blizzardFocus = "Blizzard Focus",
+	blizzardFury = "Blizzard Fury",
+	blizzardInsanity = "Blizzard Insanity",
+	blizzardInsanity2 = "Blizzard Insanity 2",
+	blizzardLunarPower = "Blizzard Lunar Power",
+	blizzardMaelstrom = "Blizzard Maelstrom",
+	blizzardMana = "Blizzard Mana",
+	blizzardPain = "Blizzard Pain",
+	blizzardPain2 = "Blizzard Pain 2",
+	blizzardPain3 = "Blizzard Pain 3",
+	blizzardRage = "Blizzard Rage",
+	blizzardRaidBar = "Blizzard Raid Bar",
+	blizzardRunicPower = "Blizzard Runic Power",
+	-- Additional Blizzard unitframe textures
+	blizzardUnitframe7 = "Blizzard Unitframe 7",
+	blizzardUnitframe8 = "Blizzard Unitframe 8",
+	-- Blizzard experience bar textures
+	blizzardExperience1 = "Blizzard Experience 1",
+	blizzardExperience2 = "Blizzard Experience 2",
+	blizzardExperience3 = "Blizzard Experience 3",
+	-- Blizzard labs textures
+	blizzardLabs1 = "Blizzard Labs 1",
+	blizzardLabs2 = "Blizzard Labs 2",
+	-- Numbered series
+	a1 = "A1",
+	a2 = "A2",
+	a3 = "A3",
+	a4 = "A4",
+	a5 = "A5",
+	a8 = "A8",
+	a9 = "A9",
+	a12 = "A12",
+	a13 = "A13",
 }
 
 local BAR_TEXTURE_ORDER = {
@@ -60,21 +102,39 @@ local BAR_TEXTURE_ORDER = {
 	"fadeBottom",
 	"fadeLeft",
 	"blizzardCastBar",
-	"mmtA1",
-	"mmtA2",
-	"mmtA3",
-	"mmtA4",
-	"mmtA5",
-	"mmtA6",
-	"mmtA7",
-	"mmtA8",
-	"mmtA9",
-	"mmtA10",
-	"mmtA11",
-	"mmtA12",
-	"mmtA13",
-	"mmtA14",
-	"mmtA15",
+	-- Blizzard resource bar textures (grouped together)
+	"blizzardEbonMight",
+	"blizzardEnergy",
+	"blizzardFocus",
+	"blizzardFury",
+	"blizzardInsanity",
+	"blizzardInsanity2",
+	"blizzardLunarPower",
+	"blizzardMaelstrom",
+	"blizzardMana",
+	"blizzardPain",
+	"blizzardPain2",
+	"blizzardPain3",
+	"blizzardRage",
+	"blizzardRaidBar",
+	"blizzardRunicPower",
+	"blizzardUnitframe7",
+	"blizzardUnitframe8",
+	"blizzardExperience1",
+	"blizzardExperience2",
+	"blizzardExperience3",
+	"blizzardLabs1",
+	"blizzardLabs2",
+	-- Numbered series
+	"a1",
+	"a2",
+	"a3",
+	"a4",
+	"a5",
+	"a8",
+	"a9",
+	"a12",
+	"a13",
 }
 
 -- Public: build a Settings container for dropdowns listing bar textures
@@ -131,12 +191,17 @@ end
 
 -- Apply ScooterMod bar textures to a StatusBar frame (foreground fill) and a background texture.
 -- This does not rely on Blizzard parentKeys and is safe to call repeatedly.
-function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgroundKey)
+function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgroundKey, backgroundOpacity)
 	if not barFrame or type(barFrame.GetObjectType) ~= "function" then return end
 	if barFrame:GetObjectType() ~= "StatusBar" then return end
 
 	local fgPath = addon.Media.ResolveBarTexturePath(foregroundKey)
 	local bgPath = addon.Media.ResolveBarTexturePath(backgroundKey)
+	
+	-- If background is "default" or empty, use Blizzard's default cooldown manager bar atlas
+	if not bgPath or backgroundKey == "default" or backgroundKey == "" then
+		bgPath = "UI-HUD-CoolDownManager-Bar"
+	end
 
 	-- Foreground (status bar fill)
 	if fgPath and barFrame.SetStatusBarTexture then
@@ -152,8 +217,17 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		barFrame.ScooterModBG:SetAllPoints(barFrame)
 	end
 	if bgPath then
-		pcall(barFrame.ScooterModBG.SetTexture, barFrame.ScooterModBG, bgPath)
-		pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, 1.0)
+		-- Check if it's an atlas or a texture path
+		local isAtlas = type(bgPath) == "string" and not bgPath:find("\\") and not bgPath:find("/")
+		if isAtlas then
+			pcall(barFrame.ScooterModBG.SetAtlas, barFrame.ScooterModBG, bgPath, true)
+		else
+			pcall(barFrame.ScooterModBG.SetTexture, barFrame.ScooterModBG, bgPath)
+		end
+		-- Apply opacity (default 50% for a subtle background effect)
+		local opacity = tonumber(backgroundOpacity) or 50
+		opacity = math.max(0, math.min(100, opacity)) / 100
+		pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, opacity)
 		barFrame.ScooterModBG:Show()
 	else
 		-- If no background selected, hide our overlay and let stock show

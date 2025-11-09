@@ -81,6 +81,76 @@ function ConvertSliderInitializerToTextInput(initializer)
     return initializer
 end
 
+-- Creates a standalone color picker swatch button
+-- Parameters:
+--   parent: The parent frame to attach the swatch to
+--   getColor: Function that returns {r, g, b, a} color table
+--   setColor: Function(r, g, b, a) to set the color
+--   hasAlpha: Boolean, whether to show opacity slider in color picker
+-- Returns: The swatch button frame
+function CreateColorSwatch(parent, getColor, setColor, hasAlpha)
+    local swatch = CreateFrame("Button", nil, parent, "ColorSwatchTemplate")
+    -- Apply ScooterMod swatch sizing: ~30% taller (18 -> 23), 3x wider (18 -> 54)
+    swatch:SetSize(54, 23)
+    
+    -- Add black border background
+    if swatch.SwatchBg then 
+        swatch.SwatchBg:SetAllPoints(swatch)
+        swatch.SwatchBg:SetColorTexture(0, 0, 0, 1)
+        swatch.SwatchBg:Show()
+    end
+    
+    -- Inset the color texture slightly to create visible border
+    if swatch.Color then
+        swatch.Color:ClearAllPoints()
+        swatch.Color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+        swatch.Color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+    end
+    
+    -- Hide checkers pattern (we don't need transparency display)
+    if swatch.Checkers then
+        swatch.Checkers:Hide()
+    end
+    
+    -- Resize normal texture if present
+    if swatch:GetNormalTexture() then
+        swatch:GetNormalTexture():SetAllPoints(swatch)
+    end
+    
+    local function updateSwatchColor()
+        local c = getColor() or {1, 1, 1, 1}
+        if swatch.Color then 
+            swatch.Color:SetColorTexture(c[1] or 1, c[2] or 1, c[3] or 1, 1) 
+        end
+    end
+    
+    swatch:SetScript("OnClick", function()
+        local cur = getColor() or {1, 1, 1, 1}
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = cur[1] or 1,
+            g = cur[2] or 1,
+            b = cur[3] or 1,
+            hasOpacity = hasAlpha,
+            opacity = cur[4] or 1,
+            swatchFunc = function()
+                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+                setColor(nr, ng, nb, na)
+                updateSwatchColor()
+            end,
+            cancelFunc = function(prev)
+                if prev then
+                    setColor(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
+                    updateSwatchColor()
+                end
+            end,
+        })
+    end)
+    
+    updateSwatchColor()
+    return swatch
+end
+
 function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, setColor, offset)
     local data = { setting = settingObj, name = label, options = {} }
     local init = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", data)
@@ -93,9 +163,33 @@ function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, setCol
         if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
         if not swatch then
             swatch = CreateFrame("Button", nil, frame, "ColorSwatchTemplate")
-            swatch:SetSize(18, 18)
-            if swatch.SwatchBg then swatch.SwatchBg:SetColorTexture(0, 0, 0, 1) end
-            if swatch.InnerBorder then swatch.InnerBorder:SetColorTexture(0, 0, 0, 1) end
+            -- Apply ScooterMod swatch sizing: ~30% taller (18 -> 23), 3x wider (18 -> 54)
+            swatch:SetSize(54, 23)
+            
+            -- Add black border background
+            if swatch.SwatchBg then 
+                swatch.SwatchBg:SetAllPoints(swatch)
+                swatch.SwatchBg:SetColorTexture(0, 0, 0, 1)
+                swatch.SwatchBg:Show()
+            end
+            
+            -- Inset the color texture slightly to create visible border
+            if swatch.Color then
+                swatch.Color:ClearAllPoints()
+                swatch.Color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+                swatch.Color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+            end
+            
+            -- Hide checkers pattern (we don't need transparency display)
+            if swatch.Checkers then
+                swatch.Checkers:Hide()
+            end
+            
+            -- Resize normal texture if present
+            if swatch:GetNormalTexture() then
+                swatch:GetNormalTexture():SetAllPoints(swatch)
+            end
+            
             frame.ScooterInlineSwatch = swatch
         end
         if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end

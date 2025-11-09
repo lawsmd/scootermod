@@ -348,34 +348,16 @@ local function createComponentRenderer(componentId)
                             f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
                             f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
                             f.Text:SetJustifyH("LEFT")
-                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-                            local function update()
+                            -- Use centralized color swatch factory
+                            local function getColorTable()
                                 local r, g, b, a = getFunc()
-                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
-                                swatch.a = a or 1
+                                return {r or 1, g or 1, b or 1, a or 1}
                             end
-                            swatch:SetScript("OnClick", function()
-                                local r, g, b, a = getFunc()
-                                ColorPickerFrame:SetupColorPickerAndShow({
-                                    r = r or 1, g = g or 1, b = b or 1,
-                                    hasOpacity = hasAlpha,
-                                    opacity = a or 1,
-                                    swatchFunc = function()
-                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                                        local na = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
-                                        setFunc(nr, ng, nb, na)
-                                        update()
-                                    end,
-                                    cancelFunc = function(prev)
-                                        if prev then
-                                            setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
-                                            update()
-                                        end
-                                    end,
-                                })
-                            end)
-                            update()
+                            local function setColorTable(r, g, b, a)
+                                setFunc(r, g, b, a)
+                            end
+                            local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
                             yRef.y = yRef.y - 34
                         end
 
@@ -764,31 +746,17 @@ local function createComponentRenderer(componentId)
                             f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
                             f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
                             f.Text:SetJustifyH("LEFT")
-                            local swatch = CreateFrame("Button", nil, right, "ColorSwatchTemplate")
-                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-                            local function update()
+                            -- Use centralized color swatch factory with refresh callback
+                            local function getColorTable()
                                 local r, g, b, a = getFunc()
-                                if swatch.Color then swatch.Color:SetColorTexture(r or 1, g or 1, b or 1) end
-                                swatch.a = a or 1
+                                return {r or 1, g or 1, b or 1, a or 1}
                             end
-                            swatch:SetScript("OnClick", function()
-                                local r, g, b, a = getFunc()
-                                ColorPickerFrame:SetupColorPickerAndShow({
-                                    r = r or 1, g = g or 1, b = b or 1,
-                                    hasOpacity = true,
-                                    opacity = a or 1,
-                                    swatchFunc = function()
-                                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                                        local na = ColorPickerFrame:GetColorAlpha()
-                                        setFunc(nr, ng, nb, na)
-                                        update(); refresh()
-                                    end,
-                                    cancelFunc = function(prev)
-                                        if prev then setFunc(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1); update(); refresh() end
-                                    end,
-                                })
-                            end)
-                            update()
+                            local function setColorTable(r, g, b, a)
+                                setFunc(r, g, b, a)
+                                refresh()
+                            end
+                            local swatch = CreateColorSwatch(right, getColorTable, setColorTable, true)
+                            swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
                             yRef.y = yRef.y - 34
                         end
                         -- Foreground tab controls
