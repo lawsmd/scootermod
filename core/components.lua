@@ -2526,10 +2526,25 @@ do
 			end
 			if tex then
 				if hb and resolvedPath and enabledBackdrop then
+					-- Compute a baseline width and apply user width percentage independently of Health Bar width
+					local base = tonumber(cfg.nameBackdropBaseWidth)
+					if not base or base <= 0 then
+						local hbw = (hb.GetWidth and hb:GetWidth()) or 0
+						local pct = tonumber(cfg.healthBarWidthPct) or 100
+						if pct > 0 then
+							base = hbw * (100 / pct)
+						else
+							base = hbw
+						end
+						-- Persist baseline for stability across live changes
+						cfg.nameBackdropBaseWidth = base
+					end
+					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
+					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
+					local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
 					tex:ClearAllPoints()
 					tex:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
-					tex:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
-					tex:SetHeight(16)
+					tex:SetSize(desiredWidth, 16)
 					tex:SetTexture(resolvedPath)
 					if tex.SetDrawLayer then tex:SetDrawLayer("BACKGROUND", -8) end
 					if tex.SetHorizTile then tex:SetHorizTile(false) end
@@ -2582,10 +2597,20 @@ do
 				main[borderKey] = borderFrame
 			end
 			if borderFrame and hb and useBorders then
+				-- Match border width to the same baseline-derived width as backdrop
+				local base = tonumber(cfg.nameBackdropBaseWidth)
+				if not base or base <= 0 then
+					local hbw = (hb.GetWidth and hb:GetWidth()) or 0
+					local pct = tonumber(cfg.healthBarWidthPct) or 100
+					if pct > 0 then base = hbw * (100 / pct) else base = hbw end
+					cfg.nameBackdropBaseWidth = base
+				end
+				local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
+				if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
+				local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
 				borderFrame:ClearAllPoints()
 				borderFrame:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
-				borderFrame:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
-				borderFrame:SetHeight(16)
+				borderFrame:SetSize(desiredWidth, 16)
 				local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey) or nil
 				local styleTexture = styleDef and styleDef.texture or nil
 				local thicknessScale = (styleDef and styleDef.thicknessScale) or 1.0

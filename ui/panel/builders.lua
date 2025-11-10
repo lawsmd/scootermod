@@ -3663,7 +3663,7 @@ local function createUFRenderer(componentId, title)
 				local t = ensureUFDB() or {}; if t.nameBackdropEnabled == nil then return true end; return not not t.nameBackdropEnabled
 			end
 			-- Hold refs to enable/disable dynamically
-			local _bdTexFrame, _bdColorFrame, _bdTintLabel, _bdTintSwatch, _bdOpacityFrame
+			local _bdTexFrame, _bdColorFrame, _bdTintLabel, _bdTintSwatch, _bdOpacityFrame, _bdWidthFrame
 			local function refreshBackdropEnabledState()
 				local en = isBackdropEnabled()
 				if _bdTexFrame and _bdTexFrame.Control and _bdTexFrame.Control.SetEnabled then _bdTexFrame.Control:SetEnabled(en) end
@@ -3676,6 +3676,8 @@ local function createUFRenderer(componentId, title)
 					local lbl = _bdColorFrame and (_bdColorFrame.Text or _bdColorFrame.Label)
 					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
 				end
+				if _bdWidthFrame and _bdWidthFrame.Control and _bdWidthFrame.Control.SetEnabled then _bdWidthFrame.Control:SetEnabled(en) end
+				if _bdWidthFrame and _bdWidthFrame.Text and _bdWidthFrame.Text.SetTextColor then _bdWidthFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
 				if _bdOpacityFrame and _bdOpacityFrame.Control and _bdOpacityFrame.Control.SetEnabled then _bdOpacityFrame.Control:SetEnabled(en) end
 				if _bdOpacityFrame and _bdOpacityFrame.Text and _bdOpacityFrame.Text.SetTextColor then _bdOpacityFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
 				-- Tint depends on both enabled and color mode
@@ -3835,6 +3837,28 @@ local function createUFRenderer(componentId, title)
 				_bdTintLabel = tintLabel
 				_bdTintSwatch = sw
 				y.y = y.y - 34
+			end
+			
+			-- Backdrop Width (% of baseline at 100%)
+			do
+				local function get()
+					local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropWidthPct) or 100; if v < 25 then v = 25 elseif v > 300 then v = 300 end; return v
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					local nv = tonumber(v) or 100
+					if nv < 25 then nv = 25 elseif nv > 300 then nv = 300 end
+					t.nameBackdropWidthPct = nv
+					applyNow()
+					refreshBackdropEnabledState()
+				end
+				local sf = addSlider(frame.PageA, "Backdrop Width (%)", 25, 300, 1, get, set, y)
+				do
+					local en = isBackdropEnabled()
+					if sf and sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
+					if sf and sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				_bdWidthFrame = sf
 			end
 			
 			-- Backdrop Opacity (0-100)
