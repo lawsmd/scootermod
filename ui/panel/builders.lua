@@ -47,6 +47,9 @@ local function createComponentRenderer(componentId)
 
             local init = {}
             local sections = {}
+            -- Store refresh functions for Border/Backdrop sections to call after Display completes
+            local borderRefreshFunc = nil
+            local backdropRefreshFunc = nil
             for settingId, setting in pairs(component.settings) do
                 if setting.ui and not setting.ui.hidden then
                     local section = setting.ui.section or "General"
@@ -641,12 +644,19 @@ local function createComponentRenderer(componentId)
                                 if row.Checkbox.SetHitRectInsets then row.Checkbox:SetHitRectInsets(0, 0, 0, 0) end
                             end
                             if row.Text then
-                                row.Text:SetText("Enable Custom Textures")
+                                row.Text:SetText("Use Custom Textures")
                                 if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
                             end
                             local checkbox = row.Checkbox
                             if checkbox then
                                 checkbox:SetChecked(db.styleEnableCustom ~= false)
+                                -- Add info icon next to the checkbox explaining why custom textures remove Blizzard border
+                                if panel and panel.CreateInfoIcon and not row.ScooterInfoIcon then
+                                    local tooltipText = "Blizzard's Tracked Bar border is tied to the bar texture, so enabling custom textures also removes the default border. This is necessary because the border and texture cannot be separated."
+                                    row.ScooterInfoIcon = panel.CreateInfoIcon(row, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
+                                    row.ScooterInfoIcon:ClearAllPoints()
+                                    row.ScooterInfoIcon:SetPoint("LEFT", checkbox, "RIGHT", 10, 0)
+                                end
                                 checkbox.ScooterCustomTexturesDB = db
                                 checkbox.ScooterCustomTexturesRefresh = refresh
                                 checkbox.ScooterCustomTexturesRefreshLayout = RefreshCurrentCategoryDeferred
@@ -946,7 +956,148 @@ local function createComponentRenderer(componentId)
                         expanded = panel:IsSectionExpanded(component.id, sectionName),
                     })
                     expInitializer.GetExtent = function() return 30 end
+                    -- Hook section expansion to refresh Border/Backdrop enabled state
+                    local isCDMBorderCheck = (sectionName == "Border") and (
+                        component.id == "essentialCooldowns" or 
+                        component.id == "utilityCooldowns" or 
+                        component.id == "trackedBuffs" or 
+                        component.id == "trackedBars" or
+                        (type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil)
+                    )
+                    local isABBackdropCheck = (sectionName == "Backdrop") and (
+                        type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil
+                    )
+                    if isCDMBorderCheck or isABBackdropCheck then
+                        local baseInit = expInitializer.InitFrame
+                        expInitializer.InitFrame = function(self, frame)
+                            if baseInit then baseInit(self, frame) end
+                            -- Refresh when section is expanded/collapsed
+                            if frame and frame.ExpandButton then
+                                local expandBtn = frame.ExpandButton
+                                if expandBtn and not expandBtn._ScooterRefreshHooked then
+                                    expandBtn:HookScript("OnClick", function()
+                                        C_Timer.After(0.15, function()
+                                            if borderRefreshFunc then borderRefreshFunc() end
+                                            if backdropRefreshFunc then backdropRefreshFunc() end
+                                        end)
+                                    end)
+                                    expandBtn._ScooterRefreshHooked = true
+                                end
+                            end
+                        end
+                    end
                     table.insert(init, expInitializer)
+
+                    -- Track Border section controls for Cooldown Manager groups and Action Bars to enable graying out
+                    local isCDMBorder = (sectionName == "Border") and (
+                        component.id == "essentialCooldowns" or 
+                        component.id == "utilityCooldowns" or 
+                        component.id == "trackedBuffs" or 
+                        component.id == "trackedBars" or
+                        (type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil)
+                    )
+                    local borderControls = {}
+                    local function refreshBorderEnabledState()
+                        if not isCDMBorder then return end
+                        local enabled = component.db.borderEnable ~= false
+                        for _, controlRef in ipairs(borderControls) do
+                            if controlRef.frame then
+                                local frame = controlRef.frame
+                                -- Enable/disable the control
+                                if controlRef.type == "slider" then
+                                    if frame.Control and frame.Control.SetEnabled then
+                                        frame.Control:SetEnabled(enabled)
+                                    end
+                                    if frame.SliderWithSteppers and frame.SliderWithSteppers.SetEnabled then
+                                        frame.SliderWithSteppers:SetEnabled(enabled)
+                                    end
+                                elseif controlRef.type == "dropdown" then
+                                    if frame.Control and frame.Control.SetEnabled then
+                                        frame.Control:SetEnabled(enabled)
+                                    end
+                                elseif controlRef.type == "checkbox" then
+                                    local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox) or frame.Control
+                                    if cb and cb.SetEnabled then
+                                        cb:SetEnabled(enabled)
+                                    end
+                                    if frame.ScooterInlineSwatch and frame.ScooterInlineSwatch.EnableMouse then
+                                        frame.ScooterInlineSwatch:EnableMouse(enabled)
+                                    end
+                                end
+                                -- Gray out labels
+                                local lbl = frame.Text or frame.Label
+                                if not lbl and frame.GetRegions then
+                                    local regions = { frame:GetRegions() }
+                                    for i = 1, #regions do
+                                        local r = regions[i]
+                                        if r and r.IsObjectType and r:IsObjectType("FontString") then
+                                            lbl = r; break
+                                        end
+                                    end
+                                end
+                                if lbl and lbl.SetTextColor then
+                                    lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+                                end
+                            end
+                        end
+                    end
+
+                    -- Track Backdrop section controls for Action Bars to enable graying out when backdropDisable is checked
+                    local isABBackdrop = (sectionName == "Backdrop") and (
+                        type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil
+                    )
+                    local backdropControls = {}
+                    local function refreshBackdropEnabledState()
+                        if not isABBackdrop then return end
+                        local enabled = not component.db.backdropDisable
+                        for _, controlRef in ipairs(backdropControls) do
+                            if controlRef.frame then
+                                local frame = controlRef.frame
+                                -- Enable/disable the control
+                                if controlRef.type == "slider" then
+                                    if frame.Control and frame.Control.SetEnabled then
+                                        frame.Control:SetEnabled(enabled)
+                                    end
+                                    if frame.SliderWithSteppers and frame.SliderWithSteppers.SetEnabled then
+                                        frame.SliderWithSteppers:SetEnabled(enabled)
+                                    end
+                                elseif controlRef.type == "dropdown" then
+                                    if frame.Control and frame.Control.SetEnabled then
+                                        frame.Control:SetEnabled(enabled)
+                                    end
+                                elseif controlRef.type == "checkbox" then
+                                    local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox) or frame.Control
+                                    if cb and cb.SetEnabled then
+                                        cb:SetEnabled(enabled)
+                                    end
+                                    if frame.ScooterInlineSwatch and frame.ScooterInlineSwatch.EnableMouse then
+                                        frame.ScooterInlineSwatch:EnableMouse(enabled)
+                                    end
+                                elseif controlRef.type == "color" then
+                                    if frame.ScooterColorSwatch and frame.ScooterColorSwatch.EnableMouse then
+                                        frame.ScooterColorSwatch:EnableMouse(enabled)
+                                    end
+                                    if frame.ScooterColorSwatch and frame.ScooterColorSwatch.SetAlpha then
+                                        frame.ScooterColorSwatch:SetAlpha(enabled and 1 or 0.5)
+                                    end
+                                end
+                                -- Gray out labels
+                                local lbl = frame.Text or frame.Label
+                                if not lbl and frame.GetRegions then
+                                    local regions = { frame:GetRegions() }
+                                    for i = 1, #regions do
+                                        local r = regions[i]
+                                        if r and r.IsObjectType and r:IsObjectType("FontString") then
+                                            lbl = r; break
+                                        end
+                                    end
+                                end
+                                if lbl and lbl.SetTextColor then
+                                    lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+                                end
+                            end
+                        end
+                    end
 
                     for _, item in ipairs(sections[sectionName] or {}) do
                         local settingId = item.id
@@ -1087,7 +1238,21 @@ local function createComponentRenderer(componentId)
                                         or settingId == "iconBorderEnable" or settingId == "iconBorderTintEnable"
                                         or settingId == "iconBorderStyle"
                                         or settingId == "borderEnable" or settingId == "borderTintEnable"
-                                        or settingId == "borderStyle" then
+                                        or settingId == "borderStyle" or settingId == "backdropDisable" then
+                                        -- Refresh Border section enabled state when borderEnable changes
+                                        if isCDMBorder and settingId == "borderEnable" then
+                                            C_Timer.After(0, function()
+                                                refreshBorderEnabledState()
+                                            end)
+                                            if borderRefreshFunc then borderRefreshFunc() end
+                                        end
+                                        -- Refresh Backdrop section enabled state when backdropDisable changes
+                                        if isABBackdrop and settingId == "backdropDisable" then
+                                            C_Timer.After(0, function()
+                                                refreshBackdropEnabledState()
+                                            end)
+                                            if backdropRefreshFunc then backdropRefreshFunc() end
+                                        end
                                         RefreshCurrentCategoryDeferred()
                                     end
                                 end, setting.default)
@@ -1111,17 +1276,23 @@ local function createComponentRenderer(componentId)
                                 initSlider:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
                                 end)
-                                if settingId == "iconBorderThickness" or settingId == "borderThickness" then
-                                    initSlider:AddShownPredicate(function()
-                                        local db = component and component.db
-                                        if settingId == "iconBorderThickness" then
-                                            if not db or not db.iconBorderEnable then return false end
-                                            return panel:IsSectionExpanded(component.id, sectionName)
-                                        else
-                                            if not db or not db.borderEnable then return false end
-                                            return panel:IsSectionExpanded(component.id, sectionName)
-                                        end
-                                    end)
+                                -- Track borderThickness slider for Border section graying out (removed hiding predicate)
+                                if isCDMBorder and settingId == "borderThickness" then
+                                    local baseInit = initSlider.InitFrame
+                                    initSlider.InitFrame = function(self, frame)
+                                        if baseInit then baseInit(self, frame) end
+                                        table.insert(borderControls, { type = "slider", frame = frame })
+                                        -- Don't refresh here - wait until after Display completes
+                                    end
+                                end
+                                -- Track backdrop sliders for Backdrop section graying out
+                                if isABBackdrop and (settingId == "backdropInset" or settingId == "backdropOpacity") then
+                                    local baseInit = initSlider.InitFrame
+                                    initSlider.InitFrame = function(self, frame)
+                                        if baseInit then baseInit(self, frame) end
+                                        table.insert(backdropControls, { type = "slider", frame = frame })
+                                        -- Don't refresh here - wait until after Display completes
+                                    end
                                 end
                                 if settingId == "opacity" then
                                     initSlider.reinitializeOnValueChanged = false
@@ -1129,7 +1300,7 @@ local function createComponentRenderer(componentId)
                                     initSlider.reinitializeOnValueChanged = true
                                 end
                                 if settingId == "positionX" or settingId == "positionY" then ConvertSliderInitializerToTextInput(initSlider) end
-                                if settingId == "opacity" then
+                                if settingId == "opacity" or settingId == "barOpacity" then
                                     local baseInit = initSlider.InitFrame
                                     initSlider.InitFrame = function(self, frame)
                                         if baseInit then baseInit(self, frame) end
@@ -1137,7 +1308,7 @@ local function createComponentRenderer(componentId)
                                             local original = frame.OnSettingValueChanged
                                             frame.OnSettingValueChanged = function(ctrl, setting, val)
                                                 if original then pcall(original, ctrl, setting, val) end
-                                                local cv = component.db.opacity or (component.settings.opacity and component.settings.opacity.default) or 100
+                                                local cv = component.db.opacity or component.db.barOpacity or (component.settings.opacity and component.settings.opacity.default) or (component.settings.barOpacity and component.settings.barOpacity.default) or 100
                                                 local c = ctrl:GetSetting()
                                                 if c and c.SetValue and type(cv) == 'number' then
                                                     c:SetValue(cv)
@@ -1145,7 +1316,8 @@ local function createComponentRenderer(componentId)
                                             end
                                             frame.ScooterOpacityHooked = true
                                         end
-                                        if frame.SliderWithSteppers and frame.SliderWithSteppers.Slider then
+                                        -- Boundary hook only applies to Cooldown Manager opacity (50-100), not Action Bar opacity (1-100)
+                                        if settingId == "opacity" and frame.SliderWithSteppers and frame.SliderWithSteppers.Slider then
                                             local s = frame.SliderWithSteppers.Slider
                                             if not s.ScooterBoundariesHooked then
                                                 s:HookScript("OnValueChanged", function(slider, value)
@@ -1157,6 +1329,43 @@ local function createComponentRenderer(componentId)
                                             end
                                         end
                                         if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+                                        -- Add info icon explaining opacity priority (only for components with multiple opacity sliders)
+                                        if sectionName == "Misc" and panel and panel.CreateInfoIcon then
+                                            -- Check if this component has the other opacity settings (indicating it uses the priority system)
+                                            local hasOpacityPriority = false
+                                            if settingId == "opacity" then
+                                                hasOpacityPriority = (component.settings.opacityOutOfCombat ~= nil) and (component.settings.opacityWithTarget ~= nil)
+                                            elseif settingId == "barOpacity" then
+                                                hasOpacityPriority = (component.settings.barOpacityOutOfCombat ~= nil) and (component.settings.barOpacityWithTarget ~= nil)
+                                            end
+                                            if hasOpacityPriority and not frame.ScooterOpacityInfoIcon then
+                                                local tooltipText = "Opacity priority: With Target takes precedence, then In Combat (this slider), then Out of Combat. The highest priority condition that applies determines the opacity."
+                                                -- Position icon next to the label text ("Opacity"), not the slider
+                                                local label = frame.Text or frame.Label
+                                                if label and panel and panel.CreateInfoIcon then
+                                                    -- Create icon using the helper function, which anchors to label's right edge
+                                                    frame.ScooterOpacityInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
+                                                    -- Defer positioning to ensure label is laid out first, then adjust based on actual text width
+                                                    C_Timer.After(0, function()
+                                                        if frame.ScooterOpacityInfoIcon and label then
+                                                            frame.ScooterOpacityInfoIcon:ClearAllPoints()
+                                                            -- Get the actual text width and position icon right after the text
+                                                            local textWidth = label:GetStringWidth() or 0
+                                                            if textWidth > 0 then
+                                                                -- Position relative to label's left edge + text width
+                                                                frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+                                                            else
+                                                                -- Fallback: use label's right edge if text width unavailable
+                                                                frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+                                                            end
+                                                        end
+                                                    end)
+                                                else
+                                                    -- Fallback: create icon anchored to frame if label not found
+                                                    frame.ScooterOpacityInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 10, 0, 32)
+                                                end
+                                            end
+                                        end
                                     end
                                 end
                                 do
@@ -1225,14 +1434,20 @@ local function createComponentRenderer(componentId)
                                     if not panel:IsSectionExpanded(component.id, sectionName) then
                                         return false
                                     end
+                                    -- Removed borderEnable check for CDM Border sections - controls are grayed out instead of hidden
                                     if component and component.id == "trackedBars" and settingId == "borderStyle" then
                                         local db = component and component.db
                                         if not db or db.styleEnableCustom == false then return false end
-                                        return db.borderEnable and db.borderEnable ~= false
+                                        -- Show always, will be grayed out if borderEnable is false
+                                        return true
                                     end
                                     if settingId == "iconBorderStyle" then
                                         local db = component and component.db
                                         return db and db.iconBorderEnable and db.iconBorderEnable ~= false
+                                    end
+                                    if settingId == "borderStyle" and isCDMBorder then
+                                        -- Show always for CDM Border sections and Action Bars, will be grayed out if borderEnable is false
+                                        return true
                                     end
                                     if settingId == "borderStyle" then
                                         local db = component and component.db
@@ -1241,6 +1456,24 @@ local function createComponentRenderer(componentId)
                                     return true
                                 end
                                 initDrop:AddShownPredicate(shouldShowDropdown)
+                                -- Track borderStyle dropdown for Border section graying out
+                                if isCDMBorder and settingId == "borderStyle" then
+                                    local baseInit = initDrop.InitFrame
+                                    initDrop.InitFrame = function(self, frame)
+                                        if baseInit then baseInit(self, frame) end
+                                        table.insert(borderControls, { type = "dropdown", frame = frame })
+                                        -- Don't refresh here - wait until after Display completes
+                                    end
+                                end
+                                -- Track backdropStyle dropdown for Backdrop section graying out
+                                if isABBackdrop and settingId == "backdropStyle" then
+                                    local baseInit = initDrop.InitFrame
+                                    initDrop.InitFrame = function(self, frame)
+                                        if baseInit then baseInit(self, frame) end
+                                        table.insert(backdropControls, { type = "dropdown", frame = frame })
+                                        -- Don't refresh here - wait until after Display completes
+                                    end
+                                end
                                 -- For Micro Bar 'direction', hide momentarily during orientation swap to avoid transient 'Custom'
                                 if settingId == "direction" then
                                     initDrop:AddShownPredicate(function()
@@ -1289,9 +1522,15 @@ local function createComponentRenderer(componentId)
                                         if settingId == "iconBorderTintEnable" then
                                             local db = component and component.db
                                             return db and db.iconBorderEnable
+                                    elseif settingId == "borderTintEnable" and isCDMBorder then
+                                            -- Show always for CDM Border sections and Action Bars, will be grayed out if borderEnable is false
+                                            return true
                                     elseif settingId == "borderTintEnable" then
                                             local db = component and component.db
                                         return db and db.borderEnable
+                                        elseif settingId == "backdropTintEnable" and isABBackdrop then
+                                            -- Show always for Action Bar Backdrop sections, will be grayed out if backdropDisable is true
+                                            return true
                                         elseif settingId == "backdropTintEnable" then
                                             local db = component and component.db
                                             if not db or db.backdropDisable then return false end
@@ -1299,6 +1538,24 @@ local function createComponentRenderer(componentId)
                                         end
                                         return true
                                     end)
+                                    -- Track borderTintEnable checkbox for Border section graying out
+                                    if isCDMBorder and settingId == "borderTintEnable" then
+                                        local baseInit = initCb.InitFrame
+                                        initCb.InitFrame = function(self, frame)
+                                            if baseInit then baseInit(self, frame) end
+                                            table.insert(borderControls, { type = "checkbox", frame = frame })
+                                            -- Don't refresh here - wait until after Display completes
+                                        end
+                                    end
+                                    -- Track backdropTintEnable checkbox for Backdrop section graying out
+                                    if isABBackdrop and settingId == "backdropTintEnable" then
+                                        local baseInit = initCb.InitFrame
+                                        initCb.InitFrame = function(self, frame)
+                                            if baseInit then baseInit(self, frame) end
+                                            table.insert(backdropControls, { type = "checkbox", frame = frame })
+                                            -- Don't refresh here - wait until after Display completes
+                                        end
+                                    end
                                     local baseInit = initCb.InitFrame
                                     initCb.InitFrame = function(self, frame)
                                         if baseInit then baseInit(self, frame) end
@@ -1324,11 +1581,29 @@ local function createComponentRenderer(componentId)
                                     local baseInitFrame = initCb.InitFrame
                                     initCb.InitFrame = function(self, frame)
                                         if baseInitFrame then baseInitFrame(self, frame) end
+                                        -- Clean up Unit Frame info icons if this checkbox is NOT a Unit Frame checkbox
+                                        -- This prevents Unit Frame icons from appearing on recycled frames (e.g., Action Bar checkboxes)
+                                        -- Only destroy icons marked as Unit Frame icons, allowing other components to have their own icons
+                                        if frame.ScooterInfoIcon and frame.ScooterInfoIcon._isUnitFrameIcon then
+                                            local labelText = frame.Text and frame.Text:GetText() or ""
+                                            local isUnitFrameComponent = (component.id == "ufPlayer" or component.id == "ufTarget" or component.id == "ufFocus" or component.id == "ufPet")
+                                            local isUnitFrameCheckbox = (labelText == "Use Custom Borders")
+                                            if not (isUnitFrameComponent and isUnitFrameCheckbox) then
+                                                -- This is NOT a Unit Frame checkbox - destroy the Unit Frame icon
+                                                -- Other components can create their own icons without interference
+                                                frame.ScooterInfoIcon:Hide()
+                                                frame.ScooterInfoIcon:SetParent(nil)
+                                                frame.ScooterInfoIcon = nil
+                                            end
+                                        end
                                         if frame.ScooterInlineSwatch then
                                             frame.ScooterInlineSwatch:Hide()
                                         end
-                                        if frame.ScooterInlineSwatchWrapper and frame.OnSettingValueChanged == frame.ScooterInlineSwatchWrapper then
-                                            frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase
+                                        -- Aggressively restore any swatch-wrapped handlers on recycled rows
+                                        if frame.ScooterInlineSwatchWrapper then
+                                            frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase or frame.OnSettingValueChanged
+                                            frame.ScooterInlineSwatchWrapper = nil
+                                            frame.ScooterInlineSwatchBase = nil
                                         end
                                         local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
                                         if cb and cb.UnregisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event and cb.ScooterInlineSwatchCallbackOwner then
@@ -1337,6 +1612,49 @@ local function createComponentRenderer(componentId)
                                         end
                                         if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
                                         if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
+                                        -- Force-stable handlers for key master toggles to avoid recycled-frame wrapper interference
+                                        if settingId == "borderEnable" then
+                                            local cbBtn = frame.Checkbox or frame.CheckBox or frame.Control or frame
+                                            if cbBtn and not cbBtn._ScooterStableBorderHooked then
+                                                cbBtn:HookScript("OnClick", function(btn)
+                                                    local newVal = (btn.GetChecked and btn:GetChecked()) and true or false
+                                                    -- Write DB directly to ensure immediate effect
+                                                    if component and component.db then component.db.borderEnable = newVal end
+                                                    -- Also reflect into the Setting object if present
+                                                    local st = frame.GetSetting and frame:GetSetting()
+                                                    if st and st.SetValue then pcall(st.SetValue, st, newVal) end
+                                                    -- Apply visuals and refresh enabled state
+                                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                                    if borderRefreshFunc then borderRefreshFunc() end
+                                                end)
+                                                cbBtn._ScooterStableBorderHooked = true
+                                            end
+                                        elseif settingId == "backdropDisable" then
+                                            local cbBtn = frame.Checkbox or frame.CheckBox or frame.Control or frame
+                                            if cbBtn and not cbBtn._ScooterStableBackdropHooked then
+                                                cbBtn:HookScript("OnClick", function(btn)
+                                                    local newVal = (btn.GetChecked and btn:GetChecked()) and true or false
+                                                    if component and component.db then component.db.backdropDisable = newVal end
+                                                    local st = frame.GetSetting and frame:GetSetting()
+                                                    if st and st.SetValue then pcall(st.SetValue, st, newVal) end
+                                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                                    if backdropRefreshFunc then backdropRefreshFunc() end
+                                                end)
+                                                cbBtn._ScooterStableBackdropHooked = true
+                                            end
+                                        end
+                                        -- Refresh Border section enabled state after borderEnable checkbox is initialized
+                                        if isCDMBorder and settingId == "borderEnable" then
+                                            C_Timer.After(0, function()
+                                                refreshBorderEnabledState()
+                                            end)
+                                        end
+                                        -- Refresh Backdrop section enabled state after backdropDisable checkbox is initialized
+                                        if isABBackdrop and settingId == "backdropDisable" then
+                                            C_Timer.After(0, function()
+                                                refreshBackdropEnabledState()
+                                            end)
+                                        end
                                     end
                                     table.insert(init, initCb)
                                 end
@@ -1387,6 +1705,13 @@ local function createComponentRenderer(componentId)
                                 end
                             end
                         end
+                    end
+                    -- Store refresh functions to call after Display completes
+                    if isCDMBorder then
+                        borderRefreshFunc = refreshBorderEnabledState
+                    end
+                    if isABBackdrop then
+                        backdropRefreshFunc = refreshBackdropEnabledState
                     end
                 end
             end
@@ -1492,6 +1817,18 @@ local function createComponentRenderer(componentId)
             if settingsList.RepairDisplay then pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end }) end
             settingsList:Show()
             f.Canvas:Hide()
+            
+            -- Refresh Border/Backdrop enabled state after Display completes (frames now exist)
+            if borderRefreshFunc then
+                C_Timer.After(0.05, function()
+                    borderRefreshFunc()
+                end)
+            end
+            if backdropRefreshFunc then
+                C_Timer.After(0.05, function()
+                    backdropRefreshFunc()
+                end)
+            end
         end
 
         return { mode = "list", render = render, componentId = componentId }
@@ -2317,11 +2654,77 @@ local function createUFRenderer(componentId, title)
 				local base = row.InitFrame
 				row.InitFrame = function(self, frame)
 					if base then base(self, frame) end
+					-- FIRST: Clean up Unit Frame info icons if this frame is being used for a different component
+					-- This must happen before any other logic to prevent icon from appearing on recycled frames
+					-- Only destroy icons that were created for Unit Frames, allowing other components to have their own icons
+					if frame.ScooterInfoIcon and frame.ScooterInfoIcon._isUnitFrameIcon then
+						local labelText = frame.Text and frame.Text:GetText() or ""
+						local isUnitFrameComponent = (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet")
+						local isUnitFrameCheckbox = (labelText == "Use Custom Borders")
+						if not (isUnitFrameComponent and isUnitFrameCheckbox) then
+							-- This is NOT a Unit Frame checkbox - hide and destroy the Unit Frame icon
+							-- Other components can have their own icons without interference
+							frame.ScooterInfoIcon:Hide()
+							frame.ScooterInfoIcon:SetParent(nil)
+							frame.ScooterInfoIcon = nil
+						end
+					end
+					-- Hide any stray inline swatch from a previously-recycled tint row
+					if frame.ScooterInlineSwatch then
+						frame.ScooterInlineSwatch:Hide()
+					end
+					-- Aggressively restore any swatch-wrapped handlers on recycled rows
+					if frame.ScooterInlineSwatchWrapper then
+						frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase or frame.OnSettingValueChanged
+						frame.ScooterInlineSwatchWrapper = nil
+						frame.ScooterInlineSwatchBase = nil
+					end
+					-- Detach swatch-specific checkbox callbacks so this row behaves like a normal checkbox
+					local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
+					if cb and cb.UnregisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event and cb.ScooterInlineSwatchCallbackOwner then
+						cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
+						cb.ScooterInlineSwatchCallbackOwner = nil
+					end
 					if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
 					if panel and panel.ApplyRobotoWhite then
 						if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
 						local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					-- Add info icon next to the label - ONLY for Unit Frame "Use Custom Borders" checkbox
+					if frame and frame.Text then
+						local labelText = frame.Text:GetText()
+						if labelText == "Use Custom Borders" and (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet") then
+							-- This is the Unit Frame checkbox - create/show the icon
+							if panel and panel.CreateInfoIcon then
+								if not frame.ScooterInfoIcon then
+									local tooltipText = "Enables custom borders by disabling Blizzard's default frame art. Note: This also temporarily disables Aggro Glow and Reputation Colors—we'll restore those features in a future update."
+									-- Icon size is 32 (double the original 16) for better visibility
+									-- Position icon to the right of the checkbox to ensure no overlap
+									local checkbox = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+									if checkbox then
+										-- Position icon to the right of the checkbox with spacing
+										frame.ScooterInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
+										frame.ScooterInfoIcon:ClearAllPoints()
+										frame.ScooterInfoIcon:SetPoint("LEFT", checkbox, "RIGHT", 10, 0)
+									else
+										-- Fallback: position relative to label if checkbox not found
+										frame.ScooterInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
+										if frame.Text then
+											frame.ScooterInfoIcon:ClearAllPoints()
+											-- Use larger offset to avoid checkbox area (checkbox is ~80px from left, 30px wide)
+											frame.ScooterInfoIcon:SetPoint("LEFT", frame.Text, "RIGHT", 40, 0)
+										end
+									end
+									-- Store metadata to identify this as a Unit Frame icon
+									frame.ScooterInfoIcon._isUnitFrameIcon = true
+									frame.ScooterInfoIcon._componentId = componentId
+								else
+									-- Icon already exists, ensure it's visible
+									frame.ScooterInfoIcon:Show()
+								end
+							end
+						end
 					end
 				end
 			end
