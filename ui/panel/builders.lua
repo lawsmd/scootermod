@@ -3595,6 +3595,7 @@ local function createUFRenderer(componentId, title)
 			initSlider:InitFrame(f)
 			if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
 			yRef.y = yRef.y - 34
+			return f
 		end
 		local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
 			local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
@@ -3610,6 +3611,7 @@ local function createUFRenderer(componentId, title)
 				addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 			end
 			yRef.y = yRef.y - 34
+			return f
 		end
 		local function addStyle(parent, label, getFunc, setFunc, yRef)
 			local function styleOptions()
@@ -3648,11 +3650,412 @@ local function createUFRenderer(componentId, title)
 			yRef.y = yRef.y - 34
 		end
 
-		-- Tab A: Backdrop (blank for now)
-		-- Intentionally left blank
+		-- Tab A: Backdrop
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFrameNameLevelTextFor then addon.ApplyUnitFrameNameLevelTextFor(unitKey()) end
+				if addon and addon.ApplyStyles then addon:ApplyStyles() end
+			end
+			local y = { y = -50 }
+			
+			-- Enable Backdrop
+			local function isBackdropEnabled()
+				local t = ensureUFDB() or {}; if t.nameBackdropEnabled == nil then return true end; return not not t.nameBackdropEnabled
+			end
+			-- Hold refs to enable/disable dynamically
+			local _bdTexFrame, _bdColorFrame, _bdTintLabel, _bdTintSwatch, _bdOpacityFrame
+			local function refreshBackdropEnabledState()
+				local en = isBackdropEnabled()
+				if _bdTexFrame and _bdTexFrame.Control and _bdTexFrame.Control.SetEnabled then _bdTexFrame.Control:SetEnabled(en) end
+				do
+					local lbl = _bdTexFrame and (_bdTexFrame.Text or _bdTexFrame.Label)
+					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				if _bdColorFrame and _bdColorFrame.Control and _bdColorFrame.Control.SetEnabled then _bdColorFrame.Control:SetEnabled(en) end
+				do
+					local lbl = _bdColorFrame and (_bdColorFrame.Text or _bdColorFrame.Label)
+					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				if _bdOpacityFrame and _bdOpacityFrame.Control and _bdOpacityFrame.Control.SetEnabled then _bdOpacityFrame.Control:SetEnabled(en) end
+				if _bdOpacityFrame and _bdOpacityFrame.Text and _bdOpacityFrame.Text.SetTextColor then _bdOpacityFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				-- Tint depends on both enabled and color mode
+				local t = ensureUFDB() or {}
+				local isCustom = (t.nameBackdropColorMode == "custom") and en
+				if _bdTintLabel and _bdTintLabel.SetTextColor then _bdTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+				if _bdTintSwatch and _bdTintSwatch.SetEnabled then _bdTintSwatch:SetEnabled(isCustom) end
+			end
+			do
+				local function getter()
+					return isBackdropEnabled()
+				end
+				local function setter(v)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropEnabled = not not v
+					applyNow()
+					refreshBackdropEnabledState()
+				end
+				local setting = CreateLocalSetting("Enable Backdrop", "boolean", getter, setter, getter())
+				local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Enable Backdrop", setting = setting, options = {} })
+				local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+				row.GetElementData = function() return initCb end
+				row:SetPoint("TOPLEFT", 4, y.y)
+				row:SetPoint("TOPRIGHT", -16, y.y)
+				initCb:InitFrame(row)
+				if panel and panel.ApplyRobotoWhite then
+					if row.Text then panel.ApplyRobotoWhite(row.Text) end
+					local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+					if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				end
+				y.y = y.y - 34
+			end
+			
+			-- Backdrop Texture (no Default entry)
+			do
+				local function get()
+					local t = ensureUFDB() or {}; return t.nameBackdropTexture or ""
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropTexture = v
+					applyNow()
+				end
+				local function optsFiltered()
+					local all = addon.BuildBarTextureOptionsContainer and addon.BuildBarTextureOptionsContainer() or {}
+					local out = {}
+					for _, o in ipairs(all) do
+						if o.value ~= "default" then
+							table.insert(out, o)
+						end
+					end
+					return out
+				end
+				local f = addDropdown(frame.PageA, "Backdrop Texture", optsFiltered, get, set, y)
+				-- Gray out when disabled
+				do
+					local en = isBackdropEnabled()
+					if f and f.Control and f.Control.SetEnabled then f.Control:SetEnabled(en) end
+					local lbl = f and (f.Text or f.Label)
+					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				_bdTexFrame = f
+			end
+			
+			-- Backdrop Color mode (Default / Texture Original / Custom)
+			local tintRow, tintLabel, tintSwatch
+			do
+				local function get()
+					local t = ensureUFDB() or {}; return t.nameBackdropColorMode or "default"
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropColorMode = v or "default"
+					applyNow()
+					-- Enable tint only when Custom (match bar style behavior)
+					local isCustom = (v == "custom")
+					if tintLabel then tintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if tintSwatch and tintSwatch.SetEnabled then tintSwatch:SetEnabled(isCustom) end
+					refreshBackdropEnabledState()
+				end
+				local function colorOpts()
+					local container = Settings.CreateControlTextContainer()
+					container:Add("default", "Default")
+					container:Add("texture", "Texture Original")
+					container:Add("custom", "Custom")
+					return container:GetData()
+				end
+				local setting = CreateLocalSetting("Backdrop Color", "string", get, set, get())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Backdrop Color", setting = setting, options = colorOpts })
+				local f = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				if panel and panel.ApplyRobotoWhite then
+					local lbl = f and (f.Text or f.Label)
+					if lbl then panel.ApplyRobotoWhite(lbl) end
+				end
+				-- Gray out when disabled
+				do
+					local en = isBackdropEnabled()
+					if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(en) end
+					local lbl = f and (f.Text or f.Label)
+					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				_bdColorFrame = f
+				y.y = y.y - 34
+			end
+			
+			-- Backdrop Tint (enabled only when Backdrop Color = Custom)
+			do
+				local function get()
+					local t = ensureUFDB() or {}; local c = t.nameBackdropTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+				end
+				local function set(r,g,b,a)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropTint = {r,g,b,a}
+					applyNow()
+					refreshBackdropEnabledState()
+				end
+				local f = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
+				tintRow = f
+				f:SetHeight(26)
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				f.Text:SetText("Backdrop Tint")
+				if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+				tintLabel = f.Text
+				local right = CreateFrame("Frame", nil, f)
+				right:SetSize(250, 26)
+				right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+				f.Text:ClearAllPoints()
+				f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+				f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+				f.Text:SetJustifyH("LEFT")
+				local function getTbl()
+					local r,g,b,a = get(); return {r or 1, g or 1, b or 1, a or 1}
+				end
+				local function setTbl(r,g,b,a) set(r,g,b,a) end
+				local sw = CreateColorSwatch(right, getTbl, setTbl, true)
+				sw:SetPoint("LEFT", right, "LEFT", 8, 0)
+				tintSwatch = sw
+				-- initialize enable state to current mode
+				do
+					local t = ensureUFDB() or {}
+					local isCustom = (t.nameBackdropColorMode == "custom")
+					if tintLabel then tintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
+					if tintSwatch and tintSwatch.SetEnabled then tintSwatch:SetEnabled(isCustom) end
+				end
+				-- Gray out entire row if backdrop disabled
+				do
+					local en = isBackdropEnabled()
+					if f and f.SetAlpha then f:SetAlpha(en and 1 or 0.7) end
+					if tintLabel and tintLabel.SetTextColor and not en then tintLabel:SetTextColor(0.6, 0.6, 0.6, 1) end
+					if tintSwatch and tintSwatch.EnableMouse then tintSwatch:EnableMouse(en) end
+				end
+				_bdTintLabel = tintLabel
+				_bdTintSwatch = sw
+				y.y = y.y - 34
+			end
+			
+			-- Backdrop Opacity (0-100)
+			do
+				local function get()
+					local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropOpacity) or 50; if v < 0 then v = 0 elseif v > 100 then v = 100 end; return v
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					local nv = tonumber(v) or 50
+					if nv < 0 then nv = 0 elseif nv > 100 then nv = 100 end
+					t.nameBackdropOpacity = nv
+					applyNow()
+					refreshBackdropEnabledState()
+				end
+				local sf = addSlider(frame.PageA, "Backdrop Opacity", 0, 100, 1, get, set, y)
+				do
+					local en = isBackdropEnabled()
+					if sf and sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
+					if sf and sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				_bdOpacityFrame = sf
+			end
+			refreshBackdropEnabledState()
+		end
 
-		-- Tab B: Border (blank for now)
-		-- Intentionally left blank
+		-- Tab B: Border (Name Backdrop border)
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFrameNameLevelTextFor then addon.ApplyUnitFrameNameLevelTextFor(unitKey()) end
+				if addon and addon.ApplyStyles then addon:ApplyStyles() end
+			end
+			-- Enable Border checkbox + gating combines with global Use Custom Borders
+			local function isEnabled()
+				local t = ensureUFDB() or {}
+				local localEnabled = not not t.nameBackdropBorderEnabled
+				local globalEnabled = not not t.useCustomBorders
+				return localEnabled and globalEnabled
+			end
+			local y = { y = -50 }
+			local _brStyleFrame, _brTintRow, _brTintSwatch, _brThickFrame, _brInsetFrame, _brTintLabel
+			local function refreshBorderEnabledState()
+				local en = isEnabled()
+				if _brStyleFrame and _brStyleFrame.Control and _brStyleFrame.Control.SetEnabled then _brStyleFrame.Control:SetEnabled(en) end
+				do
+					local lbl = _brStyleFrame and (_brStyleFrame.Text or _brStyleFrame.Label)
+					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				end
+				if _brThickFrame and _brThickFrame.Control and _brThickFrame.Control.SetEnabled then _brThickFrame.Control:SetEnabled(en) end
+				if _brThickFrame and _brThickFrame.Text and _brThickFrame.Text.SetTextColor then _brThickFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				if _brInsetFrame and _brInsetFrame.Control and _brInsetFrame.Control.SetEnabled then _brInsetFrame.Control:SetEnabled(en) end
+				if _brInsetFrame and _brInsetFrame.Text and _brInsetFrame.Text.SetTextColor then _brInsetFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				if _brTintRow then
+					local ctrl = _brTintRow.Checkbox or _brTintRow.CheckBox or (_brTintRow.Control and _brTintRow.Control.Checkbox) or _brTintRow.Control
+					if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(en) end
+				end
+				if _brTintSwatch and _brTintSwatch.EnableMouse then _brTintSwatch:EnableMouse(en) end
+				if _brTintLabel and _brTintLabel.SetTextColor then _brTintLabel:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+			end
+			
+			-- Enable Border
+			do
+				local function getter()
+					local t = ensureUFDB() or {}; return not not t.nameBackdropBorderEnabled
+				end
+				local function setter(v)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropBorderEnabled = not not v
+					applyNow()
+					refreshBorderEnabledState()
+				end
+				local setting = CreateLocalSetting("Enable Border", "boolean", getter, setter, getter())
+				local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Enable Border", setting = setting, options = {} })
+				local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+				row.GetElementData = function() return initCb end
+				row:SetPoint("TOPLEFT", 4, y.y)
+				row:SetPoint("TOPRIGHT", -16, y.y)
+				initCb:InitFrame(row)
+				if panel and panel.ApplyRobotoWhite then
+					if row.Text then panel.ApplyRobotoWhite(row.Text) end
+					local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+					if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				end
+				y.y = y.y - 34
+			end
+			
+			-- Border Style
+			do
+				local function get()
+					local t = ensureUFDB() or {}; return t.nameBackdropBorderStyle or "square"
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropBorderStyle = v or "square"
+					applyNow()
+					refreshBorderEnabledState()
+				end
+				local function opts()
+					return addon.BuildBarBorderOptionsContainer and addon.BuildBarBorderOptionsContainer() or {
+						{ value = "square", text = "Default (Square)" }
+					}
+				end
+				local setting = CreateLocalSetting("Border Style", "string", get, set, get())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = setting, options = opts })
+				local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				local lbl = f and (f.Text or f.Label)
+				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+				local en = isEnabled()
+				if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(en) end
+				if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				y.y = y.y - 34
+				_brStyleFrame = f
+			end
+			
+			-- Border Tint (checkbox + swatch)
+			do
+				local function getTintEnabled()
+					local t = ensureUFDB() or {}; return not not t.nameBackdropBorderTintEnable
+				end
+				local function setTintEnabled(b)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropBorderTintEnable = not not b
+					applyNow()
+				end
+				local function getTint()
+					local t = ensureUFDB() or {}
+					local c = t.nameBackdropBorderTintColor or {1,1,1,1}
+					return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+				end
+				local function setTint(r,g,b,a)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+					applyNow()
+				end
+				local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+				local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+				local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+				row.GetElementData = function() return initCb end
+				row:SetPoint("TOPLEFT", 4, y.y)
+				row:SetPoint("TOPRIGHT", -16, y.y)
+				initCb:InitFrame(row)
+				local en = isEnabled()
+				local ctrl = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox) or row.Control
+				if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(en) end
+				if row.ScooterInlineSwatch and row.ScooterInlineSwatch.EnableMouse then
+					row.ScooterInlineSwatch:EnableMouse(en)
+					if row.ScooterInlineSwatch.SetAlpha then row.ScooterInlineSwatch:SetAlpha(en and 1 or 0.5) end
+				end
+				local labelFS = (ctrl and ctrl.Text) or row.Text
+				if labelFS and labelFS.SetTextColor then
+					if en then labelFS:SetTextColor(1, 1, 1, 1) else labelFS:SetTextColor(0.6, 0.6, 0.6, 1) end
+				end
+				y.y = y.y - 34
+				_brTintRow = row
+				_brTintSwatch = row.ScooterInlineSwatch
+				_brTintLabel = labelFS
+			end
+			
+			-- Border Thickness
+			do
+				local function get()
+					local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderThickness) or 1
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					local nv = tonumber(v) or 1
+					if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+					t.nameBackdropBorderThickness = nv
+					applyNow()
+				end
+				local opts = Settings.CreateSliderOptions(1, 16, 1)
+				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+				local setting = CreateLocalSetting("Border Thickness", "number", get, set, get())
+				local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+				local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = setting, options = opts })
+				sf.GetElementData = function() return initSlider end
+				sf:SetPoint("TOPLEFT", 4, y.y)
+				sf:SetPoint("TOPRIGHT", -16, y.y)
+				initSlider:InitFrame(sf)
+				if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+				local en = isEnabled()
+				if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
+				if sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				y.y = y.y - 34
+				_brThickFrame = sf
+			end
+			
+			-- Border Inset
+			do
+				local function get()
+					local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInset) or 0
+				end
+				local function set(v)
+					local t = ensureUFDB(); if not t then return end
+					local nv = tonumber(v) or 0
+					if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
+					t.nameBackdropBorderInset = nv
+					applyNow()
+				end
+				local opts = Settings.CreateSliderOptions(-4, 4, 1)
+				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+				local setting = CreateLocalSetting("Border Inset", "number", get, set, get())
+				local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+				local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = setting, options = opts })
+				sf.GetElementData = function() return initSlider end
+				sf:SetPoint("TOPLEFT", 4, y.y)
+				sf:SetPoint("TOPRIGHT", -16, y.y)
+				initSlider:InitFrame(sf)
+				if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+				local en = isEnabled()
+				if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
+				if sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
+				y.y = y.y - 34
+				_brInsetFrame = sf
+			end
+			refreshBorderEnabledState()
+		end
 
 		-- Tab C: Name Text
 		do
