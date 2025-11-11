@@ -4994,7 +4994,118 @@ local function createUFRenderer(componentId, title)
 		end)
 		table.insert(init, nltInit)
 
-		-- Fifth collapsible section: Cast Bar (Player only)
+		-- Fifth collapsible section: Portrait (all unit frames)
+		local expInitializerPortrait = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+			name = "Portrait",
+			sectionKey = "Portrait",
+			componentId = componentId,
+			expanded = panel:IsSectionExpanded(componentId, "Portrait"),
+		})
+		expInitializerPortrait.GetExtent = function() return 30 end
+		table.insert(init, expInitializerPortrait)
+
+		-- Portrait tabs: Positioning / Sizing / Mask / Border / Text / Other
+		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = "Text", tabFText = "Other" }
+		portraitTabs.build = function(frame)
+			-- Helper for unit key
+			local function unitKey()
+				if componentId == "ufPlayer" then return "Player" end
+				if componentId == "ufTarget" then return "Target" end
+				if componentId == "ufFocus" then return "Focus" end
+				if componentId == "ufPet" then return "Pet" end
+				return nil
+			end
+
+			-- Helper to ensure unit frame DB
+			local function ensureUFDB()
+				local db = addon and addon.db and addon.db.profile
+				if not db then return nil end
+				db.unitFrames = db.unitFrames or {}
+				local uk = unitKey(); if not uk then return nil end
+				db.unitFrames[uk] = db.unitFrames[uk] or {}
+				db.unitFrames[uk].portrait = db.unitFrames[uk].portrait or {}
+				return db.unitFrames[uk].portrait
+			end
+
+			-- Helper functions for controls
+			local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+			local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+				local options = Settings.CreateSliderOptions(minV, maxV, step)
+				options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+				local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+				local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+				f.GetElementData = function() return initSlider end
+				f:SetPoint("TOPLEFT", 4, yRef.y)
+				f:SetPoint("TOPRIGHT", -16, yRef.y)
+				initSlider:InitFrame(f)
+				if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+				yRef.y = yRef.y - 34
+			end
+
+			-- PageA: Positioning
+			do
+				local function applyNow()
+					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+				end
+				local y = { y = -50 }
+				
+				-- X Offset slider
+				addSlider(frame.PageA, "X Offset", -100, 100, 1,
+					function() local t = ensureUFDB() or {}; return tonumber(t.offsetX) or 0 end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.offsetX = tonumber(v) or 0; applyNow() end,
+					y)
+				
+				-- Y Offset slider
+				addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+					function() local t = ensureUFDB() or {}; return tonumber(t.offsetY) or 0 end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.offsetY = tonumber(v) or 0; applyNow() end,
+					y)
+			end
+
+			-- PageB: Sizing (placeholder for now)
+			do
+				local y = { y = -50 }
+				-- Controls will be added here later
+			end
+
+			-- PageC: Mask (placeholder for now)
+			do
+				local y = { y = -50 }
+				-- Controls will be added here later
+			end
+
+			-- PageD: Border (placeholder for now)
+			do
+				local y = { y = -50 }
+				-- Controls will be added here later
+			end
+
+			-- PageE: Text (placeholder for now)
+			do
+				local y = { y = -50 }
+				-- Controls will be added here later
+			end
+
+			-- PageF: Other (placeholder for now)
+			do
+				local y = { y = -50 }
+				-- Controls will be added here later
+			end
+		end
+
+		local portraitInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", portraitTabs)
+		-- STATIC HEIGHT for tabbed sections with up to 7-8 settings per tab.
+		-- Current: 330px provides comfortable spacing with 2px top gap and room at bottom.
+		-- DO NOT reduce below 315px or settings will bleed past the bottom border.
+		portraitInit.GetExtent = function() return 330 end
+		portraitInit:AddShownPredicate(function()
+			return panel:IsSectionExpanded(componentId, "Portrait")
+		end)
+		table.insert(init, portraitInit)
+
+		-- Sixth collapsible section: Cast Bar (Player only)
 			if componentId == "ufPlayer" then
 				local expInitializerCB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 					name = "Cast Bar",

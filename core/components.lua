@@ -1833,6 +1833,10 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameBarTextures then
         addon.ApplyAllUnitFrameBarTextures()
     end
+    -- Apply Unit Frame portrait positioning if configured
+    if addon.ApplyAllUnitFramePortraits then
+        addon.ApplyAllUnitFramePortraits()
+    end
 end
 
 -- Copy all settings from one Action Bar to another (both Edit Mode and addon-only)
@@ -4100,6 +4104,180 @@ do
         if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, installUFZOrderHooks) else installUFZOrderHooks() end
     end
 
+end
+
+-- Unit Frames: Apply Portrait positioning (X/Y offsets)
+do
+	-- Resolve portrait frame for a given unit
+	local function resolvePortraitFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContainer and root.PlayerFrameContainer.PlayerPortrait or nil
+		elseif unit == "Target" then
+			local root = _G.TargetFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.Portrait or nil
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.Portrait or nil
+		elseif unit == "Pet" then
+			return _G.PetPortrait
+		end
+		return nil
+	end
+
+	-- Resolve portrait mask frame for a given unit
+	local function resolvePortraitMaskFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContainer and root.PlayerFrameContainer.PlayerPortraitMask or nil
+		elseif unit == "Target" then
+			local root = _G.TargetFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.PortraitMask or nil
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.PortraitMask or nil
+		elseif unit == "Pet" then
+			local root = _G.PetFrame
+			return root and root.PortraitMask or nil
+		end
+		return nil
+	end
+
+	-- Resolve portrait corner icon frame for a given unit (Player-only)
+	local function resolvePortraitCornerIconFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentContextual and root.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon or nil
+		end
+		-- Target/Focus/Pet don't appear to have corner icons
+		return nil
+	end
+
+	-- Store original positions (per frame, not per unit, to handle frame recreation)
+	local originalPositions = {}
+
+	local function applyForUnit(unit)
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames[unit] = db.unitFrames[unit] or {}
+		db.unitFrames[unit].portrait = db.unitFrames[unit].portrait or {}
+		local cfg = db.unitFrames[unit].portrait
+
+		local portraitFrame = resolvePortraitFrame(unit)
+		if not portraitFrame then return end
+
+		local maskFrame = resolvePortraitMaskFrame(unit)
+		-- Corner icon only exists for Player frame
+		local cornerIconFrame = (unit == "Player") and resolvePortraitCornerIconFrame(unit) or nil
+
+		-- Capture original positions on first access
+		if not originalPositions[portraitFrame] then
+			local point, relativeTo, relativePoint, xOfs, yOfs = portraitFrame:GetPoint()
+			if point then
+				originalPositions[portraitFrame] = {
+					point = point,
+					relativeTo = relativeTo,
+					relativePoint = relativePoint,
+					xOfs = xOfs or 0,
+					yOfs = yOfs or 0,
+				}
+			end
+		end
+
+		-- Capture mask position if it exists
+		if maskFrame and not originalPositions[maskFrame] then
+			local point, relativeTo, relativePoint, xOfs, yOfs = maskFrame:GetPoint()
+			if point then
+				originalPositions[maskFrame] = {
+					point = point,
+					relativeTo = relativeTo,
+					relativePoint = relativePoint,
+					xOfs = xOfs or 0,
+					yOfs = yOfs or 0,
+				}
+			end
+		end
+
+		-- Capture corner icon position if it exists
+		if cornerIconFrame and not originalPositions[cornerIconFrame] then
+			local point, relativeTo, relativePoint, xOfs, yOfs = cornerIconFrame:GetPoint()
+			if point then
+				originalPositions[cornerIconFrame] = {
+					point = point,
+					relativeTo = relativeTo,
+					relativePoint = relativePoint,
+					xOfs = xOfs or 0,
+					yOfs = yOfs or 0,
+				}
+			end
+		end
+
+		local origPortrait = originalPositions[portraitFrame]
+		if not origPortrait then return end
+
+		local origMask = maskFrame and originalPositions[maskFrame] or nil
+		local origCornerIcon = cornerIconFrame and originalPositions[cornerIconFrame] or nil
+
+		-- Get offsets from config
+		local offsetX = tonumber(cfg.offsetX) or 0
+		local offsetY = tonumber(cfg.offsetY) or 0
+
+		-- Apply offsets relative to original positions (portrait, mask, and corner icon together)
+		local function applyPosition()
+			if not InCombatLockdown() then
+				-- Move portrait frame
+				portraitFrame:ClearAllPoints()
+				portraitFrame:SetPoint(origPortrait.point, origPortrait.relativeTo, origPortrait.relativePoint, origPortrait.xOfs + offsetX, origPortrait.yOfs + offsetY)
+
+				-- Move mask frame if it exists
+				-- For Target/Focus, anchor mask to portrait to keep them locked together
+				-- For Player/Pet, use original anchor to maintain proper positioning
+				if maskFrame and origMask then
+					maskFrame:ClearAllPoints()
+					if unit == "Target" or unit == "Focus" then
+						-- Anchor mask to portrait frame to prevent drift
+						-- Use CENTER to CENTER anchoring with 0,0 offset to keep them perfectly aligned
+						-- This ensures they move together regardless of their original anchor frames
+						maskFrame:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
+					else
+						-- Player/Pet: use original anchor
+						maskFrame:SetPoint(origMask.point, origMask.relativeTo, origMask.relativePoint, origMask.xOfs + offsetX, origMask.yOfs + offsetY)
+					end
+				end
+
+				-- Move corner icon frame if it exists (Player only)
+				if cornerIconFrame and origCornerIcon and unit == "Player" then
+					cornerIconFrame:ClearAllPoints()
+					cornerIconFrame:SetPoint(origCornerIcon.point, origCornerIcon.relativeTo, origCornerIcon.relativePoint, origCornerIcon.xOfs + offsetX, origCornerIcon.yOfs + offsetY)
+				end
+			end
+		end
+
+		if InCombatLockdown() then
+			-- Defer application until out of combat
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0.1, function()
+					if not InCombatLockdown() then
+						applyPosition()
+					end
+				end)
+			end
+		else
+			applyPosition()
+		end
+	end
+
+	function addon.ApplyUnitFramePortraitFor(unit)
+		applyForUnit(unit)
+	end
+
+	function addon.ApplyAllUnitFramePortraits()
+		applyForUnit("Player")
+		applyForUnit("Target")
+		applyForUnit("Focus")
+		applyForUnit("Pet")
+	end
 end
 
 -- (Reverted) No additional hooks for reapplying experimental sizing; rely on normal refresh
