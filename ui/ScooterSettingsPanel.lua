@@ -29,13 +29,25 @@ end
 
 -- Optional refresh suspension to avoid flicker when visibility-related settings write to Edit Mode
 panel._suspendRefresh = false
+panel._queuedRefresh = false
 function panel.SuspendRefresh(seconds)
     panel._suspendRefresh = true
     local delay = tonumber(seconds) or 0.2
     if C_Timer and C_Timer.After then
-        C_Timer.After(delay, function() panel._suspendRefresh = false end)
+		C_Timer.After(delay, function()
+			panel._suspendRefresh = false
+			-- If a refresh was requested while suspended, run it now
+			if panel._queuedRefresh and panel.RefreshCurrentCategory then
+				panel._queuedRefresh = false
+				panel.RefreshCurrentCategory()
+			end
+		end)
     else
-        panel._suspendRefresh = false
+		panel._suspendRefresh = false
+		if panel._queuedRefresh and panel.RefreshCurrentCategory then
+			panel._queuedRefresh = false
+			panel.RefreshCurrentCategory()
+		end
     end
 end
 
@@ -153,7 +165,25 @@ function panel.RefreshCurrentCategory()
 end
 
 function panel.RefreshCurrentCategoryDeferred()
-    if panel._suspendRefresh then return end
+	if panel._suspendRefresh then
+		-- Queue a one-shot refresh to run when suspension ends; also capture scroll percent now
+		panel._queuedRefresh = true
+		do
+			local f = panel and panel.frame
+			local settingsList = f and f.SettingsList
+			local sb = settingsList and settingsList.ScrollBox
+			local percent
+			if sb and sb.GetDerivedScrollPercentage then
+				percent = sb:GetDerivedScrollPercentage()
+			elseif sb and sb.GetScrollPercentage then
+				percent = sb:GetScrollPercentage()
+			end
+			if percent ~= nil then
+				panel._desiredScrollPercent = percent
+			end
+		end
+		return
+	end
     -- Capture current scroll percent immediately so we can restore it even if
     -- multiple deferred refreshes get queued.
     do

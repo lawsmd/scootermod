@@ -49,6 +49,9 @@ function addon:RegisterEvents()
     self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	self:RegisterEvent("ADDON_LOADED")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    -- Ensure Unit Frame styling is re-applied when target/focus units change
+    self:RegisterEvent("PLAYER_TARGET_CHANGED")
+    self:RegisterEvent("PLAYER_FOCUS_CHANGED")
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
@@ -182,6 +185,28 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         end
     end
     self:ApplyStyles()
+end
+
+function addon:PLAYER_TARGET_CHANGED()
+    -- Re-apply Target styling (health/power textures, borders, width) after Blizzard rebuilds layout
+    if addon.ApplyUnitFrameBarTexturesFor then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Target") end)
+        else
+            addon.ApplyUnitFrameBarTexturesFor("Target")
+        end
+    end
+end
+
+function addon:PLAYER_FOCUS_CHANGED()
+    -- Re-apply Focus styling (health/power textures, borders, width) after Blizzard rebuilds layout
+    if addon.ApplyUnitFrameBarTexturesFor then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Focus") end)
+        else
+            addon.ApplyUnitFrameBarTexturesFor("Focus")
+        end
+    end
 end
 
 function addon:EDIT_MODE_LAYOUTS_UPDATED()

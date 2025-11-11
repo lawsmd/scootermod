@@ -3270,6 +3270,10 @@ do
             local colorModeHB = cfg.healthBarColorMode or "default"
             local texKeyHB = cfg.healthBarTexture or "default"
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
+			-- Avoid applying styling to Target/Focus before they exist; Blizzard will reset sizes on first Update
+			if (unit == "Target" or unit == "Focus") and _G.UnitExists and not _G.UnitExists(unitId) then
+				return
+			end
             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
             
             -- Apply background texture and color for Health Bar
@@ -3458,6 +3462,18 @@ do
 						if main.GetWidth then
 							local ok, w = pcall(main.GetWidth, main)
 							if ok and w then main._ScootUFOrigWidth = w end
+						end
+					end
+					-- CRITICAL: Always restore to original state FIRST before applying new width
+					-- This ensures we start from a clean slate on every apply and prevents
+					-- baseline drift if the slider is nudged repeatedly.
+					if hb and hb._ScootUFOrigWidth and hb.SetWidth then
+						pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth)
+					end
+					if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(hb._ScootUFOrigPoints) do
+							pcall(hb.SetPoint, hb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
 						end
 					end
                     if pct > 100 then
@@ -3723,6 +3739,18 @@ do
                     end
 
                     local scaleX = math.max(1, pct / 100)
+
+					-- CRITICAL: Always restore to original state FIRST before applying new width
+					-- Always start from the captured baseline to avoid cumulative offsets.
+					if pb and pb._ScootUFOrigWidth and pb.SetWidth then
+						pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+					end
+					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+						pcall(pb.ClearAllPoints, pb)
+						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+							pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+						end
+					end
 
                     if pct > 100 then
                         -- Widen the status bar frame
@@ -4036,13 +4064,31 @@ do
             if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, function() ensureTextAndBorderOrdering(unit) end) else ensureTextAndBorderOrdering(unit) end
         end
         if _G.PlayerFrame and _G.PlayerFrame.UpdateSystem then
-            _G.hooksecurefunc(_G.PlayerFrame, "UpdateSystem", function() defer("Player") end)
+            _G.hooksecurefunc(_G.PlayerFrame, "UpdateSystem", function()
+                defer("Player")
+            end)
         end
         if type(_G.TargetFrame_Update) == "function" then
-            _G.hooksecurefunc("TargetFrame_Update", function() defer("Target") end)
+            _G.hooksecurefunc("TargetFrame_Update", function()
+                defer("Target")
+                -- Re-apply width scaling after Blizzard updates Target layout
+                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Target") end)
+                elseif addon.ApplyUnitFrameBarTexturesFor then
+                    addon.ApplyUnitFrameBarTexturesFor("Target")
+                end
+            end)
         end
         if type(_G.FocusFrame_Update) == "function" then
-            _G.hooksecurefunc("FocusFrame_Update", function() defer("Focus") end)
+            _G.hooksecurefunc("FocusFrame_Update", function()
+                defer("Focus")
+                -- Re-apply width scaling after Blizzard updates Focus layout (e.g., when focus is set)
+                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Focus") end)
+                elseif addon.ApplyUnitFrameBarTexturesFor then
+                    addon.ApplyUnitFrameBarTexturesFor("Focus")
+                end
+            end)
         end
         if type(_G.PetFrame_Update) == "function" then
             _G.hooksecurefunc("PetFrame_Update", function() defer("Pet") end)
