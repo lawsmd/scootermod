@@ -991,6 +991,7 @@ local function ApplyActionBarStyling(self)
 					buttons[#buttons + 1] = child
 				end
 			end
+			
 		end
 		return buttons
 	end
@@ -2543,7 +2544,12 @@ do
 					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
 					local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
 					tex:ClearAllPoints()
-					tex:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
+					-- Anchor to RIGHT edge for Target/Focus so the strip grows left from the portrait side
+					if unit == "Target" or unit == "Focus" then
+						tex:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
+					else
+						tex:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
+					end
 					tex:SetSize(desiredWidth, 16)
 					tex:SetTexture(resolvedPath)
 					if tex.SetDrawLayer then tex:SetDrawLayer("BACKGROUND", -8) end
@@ -2609,7 +2615,12 @@ do
 				if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
 				local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
 				borderFrame:ClearAllPoints()
-				borderFrame:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
+				-- Anchor to RIGHT edge for Target/Focus so the border grows left from the portrait side
+				if unit == "Target" or unit == "Focus" then
+					borderFrame:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
+				else
+					borderFrame:SetPoint("BOTTOMLEFT", hb, "TOPLEFT", 0, 0)
+				end
 				borderFrame:SetSize(desiredWidth, 16)
 				local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey) or nil
 				local styleTexture = styleDef and styleDef.texture or nil
@@ -3298,35 +3309,67 @@ do
 				end
 			end
 			ensureMaskOnBarTexture(hb, resolveHealthMask(unit))
-			-- Experimental: Health Bar Width scaling (texture/mask only), Player/Target/Focus
+			
+			-- Apply reverse fill for Target/Focus if configured
+			if (unit == "Target" or unit == "Focus") and hb and hb.SetReverseFill then
+				local shouldReverse = not not cfg.healthBarReverseFill
+				pcall(hb.SetReverseFill, hb, shouldReverse)
+			end
+			
+			-- Experimental: Health Bar Width scaling (texture/mask only)
+			-- For Target/Focus: Only when reverse fill is enabled
+			-- For Player/Pet: Always available
             do
-				if unit ~= "Pet" then
+				local canScale = false
+				if unit == "Player" or unit == "Pet" then
+					canScale = true
+				elseif (unit == "Target" or unit == "Focus") and cfg.healthBarReverseFill then
+					canScale = true
+				end
+				
+				if canScale then
 				local pct = tonumber(cfg.healthBarWidthPct) or 100
 					local tex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
 					local mask = resolveHealthMask(unit)
 					-- Reverted width behavior: do not modify parent containers; operate only on the bar/texture/mask
 					local container = nil
 					local main = nil
-					-- Capture originals once
+					-- Capture originals once (width and anchor points only, not scale)
 					if tex and not tex._ScootUFOrigCapturedWidth then
-						if tex.GetScale then
-							local ok, sc = pcall(tex.GetScale, tex)
-							if ok and sc then tex._ScootUFOrigScale = sc end
-						end
 						if tex.GetWidth then
 							local ok, w = pcall(tex.GetWidth, tex)
 							if ok and w then tex._ScootUFOrigWidth = w end
 						end
+						-- Capture texture's anchor points
+						if tex.GetNumPoints then
+							local texPts = {}
+							local n = tex:GetNumPoints() or 0
+							for i = 1, n do
+								local ok, p, rel, rp, x, y = pcall(tex.GetPoint, tex, i)
+								if ok and p then
+									table.insert(texPts, { p, rel, rp, x or 0, y or 0 })
+								end
+							end
+							if #texPts > 0 then tex._ScootUFOrigPoints = texPts end
+						end
 						tex._ScootUFOrigCapturedWidth = true
 					end
 					if mask and not mask._ScootUFOrigCapturedWidth then
-						if mask.GetScale then
-							local ok, sc = pcall(mask.GetScale, mask)
-							if ok and sc then mask._ScootUFOrigScale = sc end
-						end
 						if mask.GetWidth then
 							local ok, w = pcall(mask.GetWidth, mask)
 							if ok and w then mask._ScootUFOrigWidth = w end
+						end
+						-- Capture mask's anchor points
+						if mask.GetNumPoints then
+							local maskPts = {}
+							local n = mask:GetNumPoints() or 0
+							for i = 1, n do
+								local ok, p, rel, rp, x, y = pcall(mask.GetPoint, mask, i)
+								if ok and p then
+									table.insert(maskPts, { p, rel, rp, x or 0, y or 0 })
+								end
+							end
+							if #maskPts > 0 then mask._ScootUFOrigPoints = maskPts end
 						end
 						mask._ScootUFOrigCapturedWidth = true
 					end
@@ -3359,8 +3402,9 @@ do
 						end
 						main._ScootUFOrigPoints = pts
 					end
-					local function reapplyPointsWithRightOffset(dx)
-						-- Positive dx moves RIGHT/CENTER anchors outward to the right
+					-- Minimal anchor helpers (Health Bar only): keep the far edge fixed when widening
+					local function reapplyHBPointsWithRightOffset(dx)
+						-- Positive dx moves RIGHT/CENTER anchors outward to the right (keep left edge fixed)
 						local pts = hb and hb._ScootUFOrigPoints
 						if not (hb and pts and hb.ClearAllPoints and hb.SetPoint) then return end
 						pcall(hb.ClearAllPoints, hb)
@@ -3377,40 +3421,22 @@ do
 							pcall(hb.SetPoint, hb, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
 						end
 					end
-                    local function reapplyContainerPointsWithRightOffset(dx)
-                        if not container then return end
-                        local pts = container._ScootUFOrigPoints
-                        if not (pts and container.ClearAllPoints and container.SetPoint) then return end
-                        pcall(container.ClearAllPoints, container)
-                        for _, pt in ipairs(pts) do
-                            local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
-                            local xx = x or 0
-                            local anchor = tostring(p or "")
-                            local relp = tostring(rp or "")
-                            if string.find(anchor, "RIGHT", 1, true) or string.find(relp, "RIGHT", 1, true) then
-                                xx = (x or 0) + (dx or 0)
-                            elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
-                                xx = (x or 0) + ((dx or 0) * 0.5)
-                            end
-                            pcall(container.SetPoint, container, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
-                        end
-                    end
-					local function reapplyMainPointsWithRightOffset(dx)
-						if not main then return end
-						local pts = main._ScootUFOrigPoints
-						if not (pts and main.ClearAllPoints and main.SetPoint) then return end
-						pcall(main.ClearAllPoints, main)
+					local function reapplyHBPointsWithLeftOffset(dx)
+						-- Positive dx moves LEFT/CENTER anchors outward to the left (keep right edge fixed)
+						local pts = hb and hb._ScootUFOrigPoints
+						if not (hb and pts and hb.ClearAllPoints and hb.SetPoint) then return end
+						pcall(hb.ClearAllPoints, hb)
 						for _, pt in ipairs(pts) do
 							local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
 							local xx = x or 0
 							local anchor = tostring(p or "")
 							local relp = tostring(rp or "")
-							if string.find(anchor, "RIGHT", 1, true) or string.find(relp, "RIGHT", 1, true) then
-								xx = (x or 0) + (dx or 0)
+							if string.find(anchor, "LEFT", 1, true) or string.find(relp, "LEFT", 1, true) then
+								xx = (x or 0) - (dx or 0)
 							elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
-								xx = (x or 0) + ((dx or 0) * 0.5)
+								xx = (x or 0) - ((dx or 0) * 0.5)
 							end
-							pcall(main.SetPoint, main, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
+							pcall(hb.SetPoint, hb, p or "LEFT", rel, rp or p or "LEFT", xx or 0, y or 0)
 						end
 					end
 					local scaleX = math.max(1, pct / 100)
@@ -3435,62 +3461,59 @@ do
 						end
 					end
                     if pct > 100 then
-						-- Prefer scaling; fall back to widening if scale not available
-						if tex and tex.SetScale then pcall(tex.SetScale, tex, scaleX) end
-						if mask and mask.SetScale then pcall(mask.SetScale, mask, scaleX) end
-						if tex and (not tex.SetScale) and tex.SetWidth and tex._ScootUFOrigWidth then
-							pcall(tex.SetWidth, tex, tex._ScootUFOrigWidth * scaleX)
-						end
-						if mask and (not mask.SetScale) and mask.SetWidth and mask._ScootUFOrigWidth then
-							pcall(mask.SetWidth, mask, mask._ScootUFOrigWidth * scaleX)
-						end
-						-- Ensure the status bar frame itself widens
+						-- Widen the status bar frame
 						if hb and hb.SetWidth and hb._ScootUFOrigWidth then
 							pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth * scaleX)
 						end
-                        -- Also widen the container to avoid capping/clipping at container edges
-                        if container and container.SetWidth and container._ScootUFOrigWidth then
-                            pcall(container.SetWidth, container, container._ScootUFOrigWidth * scaleX)
-                        end
-						-- And widen the content main to move the unified right boundary
-						if main and main.SetWidth and main._ScootUFOrigWidth then
-							pcall(main.SetWidth, main, main._ScootUFOrigWidth * scaleX)
-						end
-						-- Disable clipping on parents so overflow is visible
-						if container and container.SetClipsChildren then pcall(container.SetClipsChildren, container, false) end
-						if main and main.SetClipsChildren then pcall(main.SetClipsChildren, main, false) end
-						-- Grow frame to the right by re-anchoring RIGHT/CENTER points outward (keeps left edge fixed)
+						
+						-- Reposition the frame to control growth direction
 						if hb and hb._ScootUFOrigWidth then
 							local dx = (hb._ScootUFOrigWidth * (scaleX - 1))
-							if dx and dx ~= 0 then reapplyPointsWithRightOffset(dx) end
+							if dx and dx ~= 0 then
+								if unit == "Target" or unit == "Focus" then
+									reapplyHBPointsWithLeftOffset(dx)
+								else
+									reapplyHBPointsWithRightOffset(dx)
+								end
+							end
 						end
-                        if container and container._ScootUFOrigWidth then
-                            local dx = (container._ScootUFOrigWidth * (scaleX - 1))
-                            if dx and dx ~= 0 then reapplyContainerPointsWithRightOffset(dx) end
-                        end
-						if main and main._ScootUFOrigWidth then
-							local dx = (main._ScootUFOrigWidth * (scaleX - 1))
-							if dx and dx ~= 0 then reapplyMainPointsWithRightOffset(dx) end
+						
+						-- DO NOT touch the StatusBar texture - it's managed automatically by the StatusBar widget
+						-- REMOVE the mask entirely when widening - it causes rendering artifacts
+						if tex and mask and tex.RemoveMaskTexture then
+							pcall(tex.RemoveMaskTexture, tex, mask)
+						end
+						
+						-- Force StatusBar to refresh its texture
+						if hb and hb.GetValue and hb.SetValue then
+							local currentValue = hb:GetValue()
+							if currentValue then
+								pcall(hb.SetValue, hb, currentValue)
+							end
 						end
                         _didResize = true
 					else
 						-- Restore
-						if tex then
-							if tex._ScootUFOrigScale and tex.SetScale then pcall(tex.SetScale, tex, tex._ScootUFOrigScale) end
-							if tex._ScootUFOrigWidth and tex.SetWidth then pcall(tex.SetWidth, tex, tex._ScootUFOrigWidth) end
+						-- Restore texture anchor points (StatusBar manages width automatically)
+						if tex and tex._ScootUFOrigPoints and tex.ClearAllPoints and tex.SetPoint then
+							pcall(tex.ClearAllPoints, tex)
+							for _, pt in ipairs(tex._ScootUFOrigPoints) do
+								pcall(tex.SetPoint, tex, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+							end
 						end
+						-- Restore mask width and anchor points
 						if mask then
-							if mask._ScootUFOrigScale and mask.SetScale then pcall(mask.SetScale, mask, mask._ScootUFOrigScale) end
 							if mask._ScootUFOrigWidth and mask.SetWidth then pcall(mask.SetWidth, mask, mask._ScootUFOrigWidth) end
+							if mask._ScootUFOrigPoints and mask.ClearAllPoints and mask.SetPoint then
+								pcall(mask.ClearAllPoints, mask)
+								for _, pt in ipairs(mask._ScootUFOrigPoints) do
+									pcall(mask.SetPoint, mask, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+								end
+							end
 						end
+						-- Restore health bar frame
 						if hb and hb._ScootUFOrigWidth and hb.SetWidth then
 							pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth)
-						end
-                        if container and container._ScootUFOrigWidth and container.SetWidth then
-                            pcall(container.SetWidth, container, container._ScootUFOrigWidth)
-                        end
-						if main and main._ScootUFOrigWidth and main.SetWidth then
-							pcall(main.SetWidth, main, main._ScootUFOrigWidth)
 						end
 						if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
 							pcall(hb.ClearAllPoints, hb)
@@ -3498,20 +3521,47 @@ do
 								pcall(hb.SetPoint, hb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
 							end
 						end
-                        if container and container._ScootUFOrigPoints and container.ClearAllPoints and container.SetPoint then
-                            pcall(container.ClearAllPoints, container)
-                            for _, pt in ipairs(container._ScootUFOrigPoints) do
-                                pcall(container.SetPoint, container, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
-                            end
-                        end
-						if main and main._ScootUFOrigPoints and main.ClearAllPoints and main.SetPoint then
-							pcall(main.ClearAllPoints, main)
-							for _, pt in ipairs(main._ScootUFOrigPoints) do
-								pcall(main.SetPoint, main, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
-							end
+						-- Re-apply mask to texture at original dimensions
+						if hb and mask then
+							ensureMaskOnBarTexture(hb, mask)
 						end
 					end
 					-- (Reverted) Height scaling removed
+				else
+					-- Not scalable (Target/Focus with default fill): ensure we restore any prior width/anchors/mask
+					local tex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
+					local mask = resolveHealthMask(unit)
+					-- Restore texture anchor points
+					if tex and tex._ScootUFOrigPoints and tex.ClearAllPoints and tex.SetPoint then
+						pcall(tex.ClearAllPoints, tex)
+						for _, pt in ipairs(tex._ScootUFOrigPoints) do
+							pcall(tex.SetPoint, tex, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+						end
+					end
+					-- Restore mask width and anchor points
+					if mask then
+						if mask._ScootUFOrigWidth and mask.SetWidth then pcall(mask.SetWidth, mask, mask._ScootUFOrigWidth) end
+						if mask._ScootUFOrigPoints and mask.ClearAllPoints and mask.SetPoint then
+							pcall(mask.ClearAllPoints, mask)
+							for _, pt in ipairs(mask._ScootUFOrigPoints) do
+								pcall(mask.SetPoint, mask, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+							end
+						end
+					end
+					-- Restore health bar frame
+					if hb and hb._ScootUFOrigWidth and hb.SetWidth then
+						pcall(hb.SetWidth, hb, hb._ScootUFOrigWidth)
+					end
+					if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(hb._ScootUFOrigPoints) do
+							pcall(hb.SetPoint, hb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+						end
+					end
+					-- Re-apply mask to texture at original dimensions
+					if hb and mask then
+						ensureMaskOnBarTexture(hb, mask)
+					end
 				end
 			end
             -- Health Bar custom border (Health Bar only)
@@ -3612,6 +3662,135 @@ do
             applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
             
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
+
+            -- Apply reverse fill for Target/Focus if configured
+            if (unit == "Target" or unit == "Focus") and pb and pb.SetReverseFill then
+                local shouldReverse = not not cfg.powerBarReverseFill
+                pcall(pb.SetReverseFill, pb, shouldReverse)
+            end
+
+            -- Experimental: Power Bar Width scaling (texture/mask only)
+            -- For Target/Focus: Only when reverse fill is enabled
+            -- For Player/Pet: Always available
+            do
+                local canScale = false
+                if unit == "Player" or unit == "Pet" then
+                    canScale = true
+                elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
+                    canScale = true
+                end
+
+				if canScale then
+                    local pct = tonumber(cfg.powerBarWidthPct) or 100
+                    local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
+                    local mask = resolvePowerMask(unit)
+
+                    -- Capture original PB width once
+                    if pb and not pb._ScootUFOrigWidth then
+                        if pb.GetWidth then
+                            local ok, w = pcall(pb.GetWidth, pb)
+                            if ok and w then pb._ScootUFOrigWidth = w end
+                        end
+                    end
+
+                    -- Capture original PB anchors
+                    if pb and not pb._ScootUFOrigPoints then
+                        local pts = {}
+                        local n = (pb.GetNumPoints and pb:GetNumPoints()) or 0
+                        for i = 1, n do
+                            local p, rel, rp, x, y = pb:GetPoint(i)
+                            table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+                        end
+                        pb._ScootUFOrigPoints = pts
+                    end
+
+                    -- Helper: reanchor PB to grow left
+                    local function reapplyPBPointsWithLeftOffset(dx)
+                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not pb._ScootUFOrigPoints then return end
+                        pcall(pb.ClearAllPoints, pb)
+                        for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                            pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", (pt[4] or 0) - dx, pt[5] or 0)
+                        end
+                    end
+
+                    -- Helper: reanchor PB to grow right
+                    local function reapplyPBPointsWithRightOffset(dx)
+                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not pb._ScootUFOrigPoints then return end
+                        pcall(pb.ClearAllPoints, pb)
+                        for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                            pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", (pt[4] or 0) + dx, pt[5] or 0)
+                        end
+                    end
+
+                    local scaleX = math.max(1, pct / 100)
+
+                    if pct > 100 then
+                        -- Widen the status bar frame
+                        if pb and pb.SetWidth and pb._ScootUFOrigWidth then
+                            pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth * scaleX)
+                        end
+
+                        -- Reposition the frame to control growth direction
+                        if pb and pb._ScootUFOrigWidth then
+                            local dx = (pb._ScootUFOrigWidth * (scaleX - 1))
+                            if dx and dx ~= 0 then
+                                if unit == "Target" or unit == "Focus" then
+                                    reapplyPBPointsWithLeftOffset(dx)
+                                else
+                                    reapplyPBPointsWithRightOffset(dx)
+                                end
+                            end
+                        end
+
+                        -- DO NOT touch the StatusBar texture - it's managed automatically by the StatusBar widget
+                        -- REMOVE the mask entirely when widening - it causes rendering artifacts
+                        if tex and mask and tex.RemoveMaskTexture then
+                            pcall(tex.RemoveMaskTexture, tex, mask)
+                        end
+
+                        -- Force StatusBar to refresh its texture
+                        if pb and pb.GetValue and pb.SetValue then
+                            local currentValue = pb:GetValue()
+                            if currentValue then
+                                pcall(pb.SetValue, pb, currentValue)
+                            end
+                        end
+                    else
+                        -- Restore power bar frame
+                        if pb and pb._ScootUFOrigWidth and pb.SetWidth then
+                            pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+                        end
+                        if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+                            pcall(pb.ClearAllPoints, pb)
+                            for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                                pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+                            end
+                        end
+                        -- Re-apply mask to texture at original dimensions
+                        if pb and mask then
+                            ensureMaskOnBarTexture(pb, mask)
+                        end
+                    end
+				else
+					-- Not scalable (Target/Focus with default fill): ensure we restore any prior width/anchors/mask
+					local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
+					local mask = resolvePowerMask(unit)
+					-- Restore power bar frame
+					if pb and pb._ScootUFOrigWidth and pb.SetWidth then
+						pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+					end
+					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+						pcall(pb.ClearAllPoints, pb)
+						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+							pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+						end
+					end
+					-- Re-apply mask to texture at original dimensions
+					if pb and mask then
+						ensureMaskOnBarTexture(pb, mask)
+					end
+				end
+            end
 
             -- Power Bar positioning offsets
             do

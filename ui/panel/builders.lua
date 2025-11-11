@@ -2753,7 +2753,10 @@ local function createUFRenderer(componentId, title)
 			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
 		]]--
 		-- Health Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-		local hbTabs = { sectionTitle = "", tabAText = "Sizing", tabBText = "Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
+		-- Tab name is "Sizing/Direction" for Target/Focus (which support reverse fill), "Sizing" for Player/Pet
+		local isTargetOrFocus = (componentId == "ufTarget" or componentId == "ufFocus")
+		local sizingTabName = isTargetOrFocus and "Sizing/Direction" or "Sizing"
+		local hbTabs = { sectionTitle = "", tabAText = sizingTabName, tabBText = "Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
 			hbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2838,37 +2841,199 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
-				-- PageA: Sizing (experimental) — Health Bar Width
+				-- PageA: Sizing/Direction (experimental) — Bar Fill Direction + Health Bar Width
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
 					end
 					local y = { y = -50 }
+					
+					-- Bar Fill Direction dropdown (Target/Focus only)
+					if isTargetOrFocus then
+						local label = "Bar Fill Direction"
+						local function fillDirOptions()
+							local container = Settings.CreateControlTextContainer()
+							container:Add("default", "Left to Right (default)")
+							container:Add("reverse", "Right to Left (mirrored)")
+							return container:GetData()
+						end
+						local function getter()
+							local t = ensureUFDB() or {}
+							return t.healthBarReverseFill and "reverse" or "default"
+						end
+						local function setter(v)
+							local t = ensureUFDB(); if not t then return end
+							local wasReverse = not not t.healthBarReverseFill
+							local willBeReverse = (v == "reverse")
+							
+							if wasReverse and not willBeReverse then
+								-- Switching FROM reverse TO default: Save current width and force to 100
+								local currentWidth = tonumber(t.healthBarWidthPct) or 100
+								t.healthBarWidthPctSaved = currentWidth
+								t.healthBarWidthPct = 100
+							elseif not wasReverse and willBeReverse then
+								-- Switching FROM default TO reverse: Restore saved width
+								local savedWidth = tonumber(t.healthBarWidthPctSaved) or 100
+								t.healthBarWidthPct = savedWidth
+							end
+							
+							t.healthBarReverseFill = willBeReverse
+							applyNow()
+							-- Refresh the page to update Bar Width slider enabled state
+							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
+							if panel and panel.RefreshCurrentCategoryDeferred then
+								panel.RefreshCurrentCategoryDeferred()
+							end
+						end
+						addDropdown(frame.PageA, label, fillDirOptions, getter, setter, y)
+					end
+					
+					-- Bar Width slider (only enabled for Target/Focus with reverse fill)
 					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
 					local label = "Bar Width (%)"
 					local options = Settings.CreateSliderOptions(100, 150, 1)
 					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					
+					-- Getter: Always return the actual stored value
 					local function getter()
 						local t = ensureUFDB() or {}
 						return tonumber(t.healthBarWidthPct) or 100
 					end
+					
+					-- Setter: Store value normally (only when slider is enabled)
 					local function setter(v)
 						local t = ensureUFDB(); if not t then return end
+						-- For Target/Focus: prevent changes when reverse fill is disabled
+						if isTargetOrFocus and not t.healthBarReverseFill then
+							return -- Silently ignore changes when disabled
+						end
 						local val = tonumber(v) or 100
 						val = math.max(100, math.min(150, val))
 						t.healthBarWidthPct = val
 						applyNow()
 					end
+					
 					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
 					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-					local f = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
-					f.GetElementData = function() return initSlider end
-					f:SetPoint("TOPLEFT", 4, y.y)
-					f:SetPoint("TOPRIGHT", -16, y.y)
-					initSlider:InitFrame(f)
-					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					local widthSlider = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
+					widthSlider.GetElementData = function() return initSlider end
+					widthSlider:SetPoint("TOPLEFT", 4, y.y)
+					widthSlider:SetPoint("TOPRIGHT", -16, y.y)
+					initSlider:InitFrame(widthSlider)
+					if widthSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(widthSlider.Text) end
+					
+					-- Store reference for later updates
+					widthSlider._scooterSetting = setting
+					
+					-- Conditional enable/disable based on fill direction (Target/Focus only)
+					if isTargetOrFocus then
+						local t = ensureUFDB() or {}
+						local isReverse = not not t.healthBarReverseFill
+						
+						if isReverse then
+							-- Enabled state: full opacity for all elements
+							if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
+							if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
+							if widthSlider.Control then 
+								widthSlider.Control:Show()
+								widthSlider.Control:Enable()
+								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(true) end
+								if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
+								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(true) end
+								widthSlider.Control:SetAlpha(1.0)
+							end
+							if widthSlider.Slider then widthSlider.Slider:Enable() end
+							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(true) end
+							-- Show interactive slider row; hide static replacement (if present)
+							widthSlider:Show()
+							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
+							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
+						else
+							-- Disabled state: gray out all visual elements
+							if widthSlider.Text then widthSlider.Text:SetAlpha(0.5) end
+							if widthSlider.Label then widthSlider.Label:SetAlpha(0.5) end
+							if widthSlider.Control then 
+								widthSlider.Control:Disable()
+								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(false) end
+								if widthSlider.Control.Slider then widthSlider.Control.Slider:Disable() end
+								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(false) end
+								widthSlider.Control:SetAlpha(0.5)
+							end
+							if widthSlider.Slider then widthSlider.Slider:Disable() end
+							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(false) end
+							-- Replace the interactive row with a static, non-interactive row indicating 100%
+							widthSlider:Hide()
+							if not widthSlider.ScooterBarWidthStatic then
+								local static = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
+								static:SetHeight(26)
+								static:SetPoint("TOPLEFT", widthSlider, "TOPLEFT", 0, 0)
+								static:SetPoint("TOPRIGHT", widthSlider, "TOPRIGHT", 0, 0)
+								-- Compose label text with value
+								local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
+								static.Text:SetText(baseLabel .. " — 100%")
+								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
+								-- Align label to match standard row left inset
+								if static.Text then
+									static.Text:ClearAllPoints()
+									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+									static.Text:SetJustifyH("LEFT")
+								end
+								widthSlider.ScooterBarWidthStatic = static
+							end
+							-- Ensure text reflects forced 100%
+							do
+								local static = widthSlider.ScooterBarWidthStatic
+								if static and static.Text then
+									local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
+									static.Text:SetText(baseLabel .. " — 100%")
+									-- Ensure alignment remains correct after text update
+									static.Text:ClearAllPoints()
+									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+									static.Text:SetJustifyH("LEFT")
+								end
+							end
+							-- Add info icon on the static row explaining why it's disabled
+							if panel and panel.CreateInfoIconForLabel and not widthSlider.ScooterBarWidthStaticInfo then
+								local tooltipText = "Bar Width scaling is only available when using 'Right to Left (mirrored)' fill direction."
+								widthSlider.ScooterBarWidthStaticInfo = panel.CreateInfoIconForLabel(
+									widthSlider.ScooterBarWidthStatic.Text,
+									tooltipText,
+									5, 0, 32
+								)
+								C_Timer.After(0, function()
+									local icon = widthSlider.ScooterBarWidthStaticInfo
+									local label = widthSlider.ScooterBarWidthStatic and widthSlider.ScooterBarWidthStatic.Text
+									if icon and label then
+										icon:ClearAllPoints()
+										local textWidth = label:GetStringWidth() or 0
+										if textWidth > 0 then
+											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+										else
+											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+										end
+									end
+								end)
+							end
+							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Show() end
+							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Show() end
+						end
+					else
+						-- For Player/Pet, always enabled (no reverse fill option)
+						if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
+						if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
+						if widthSlider.Control then 
+							widthSlider.Control:Show()
+							widthSlider.Control:Enable()
+							if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
+							widthSlider.Control:SetAlpha(1.0)
+						end
+						if widthSlider.Slider then widthSlider.Slider:Enable() end
+						widthSlider:Show()
+						if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
+						if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
+					end
+					
 					y.y = y.y - 34
-
 					-- (Reverted) Bar Height slider removed
 				end
 
@@ -3367,7 +3532,10 @@ local function createUFRenderer(componentId, title)
 			table.insert(init, expInitializerPB)
 
             -- Power Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
+            -- Tab name is "Sizing/Direction" for Target/Focus (which support reverse fill), "Sizing" for Player/Pet
+            local isTargetOrFocusPB = (componentId == "ufTarget" or componentId == "ufFocus")
+            local sizingTabNamePB = isTargetOrFocusPB and "Sizing/Direction" or "Sizing"
+            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = sizingTabNamePB, tabCText = "Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -3472,9 +3640,199 @@ local function createUFRenderer(componentId, title)
 						y)
 				end
 
-				-- PageB: Sizing (Power Bar) - Empty for now
+				-- PageB: Sizing/Direction (Power Bar)
 				do
-					-- Reserved for future sizing controls
+					local function applyNow()
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local y = { y = -50 }
+
+					-- Bar Fill Direction dropdown (Target/Focus only)
+					if isTargetOrFocusPB then
+						local label = "Bar Fill Direction"
+						local function fillDirOptions()
+							local container = Settings.CreateControlTextContainer()
+							container:Add("default", "Left to Right (default)")
+							container:Add("reverse", "Right to Left (mirrored)")
+							return container:GetData()
+						end
+						local function getter()
+							local t = ensureUFDB() or {}
+							return t.powerBarReverseFill and "reverse" or "default"
+						end
+						local function setter(v)
+							local t = ensureUFDB(); if not t then return end
+							local wasReverse = not not t.powerBarReverseFill
+							local willBeReverse = (v == "reverse")
+							
+							if wasReverse and not willBeReverse then
+								-- Switching FROM reverse TO default: Save current width and force to 100
+								local currentWidth = tonumber(t.powerBarWidthPct) or 100
+								t.powerBarWidthPctSaved = currentWidth
+								t.powerBarWidthPct = 100
+							elseif not wasReverse and willBeReverse then
+								-- Switching FROM default TO reverse: Restore saved width
+								local savedWidth = tonumber(t.powerBarWidthPctSaved) or 100
+								t.powerBarWidthPct = savedWidth
+							end
+							
+							t.powerBarReverseFill = willBeReverse
+							applyNow()
+							-- Refresh the page to update Bar Width slider enabled state
+							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
+							if panel and panel.RefreshCurrentCategoryDeferred then
+								panel.RefreshCurrentCategoryDeferred()
+							end
+						end
+						addDropdown(frame.PageB, label, fillDirOptions, getter, setter, y)
+					end
+
+					-- Bar Width slider (only enabled for Target/Focus with reverse fill)
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local label = "Bar Width (%)"
+					local options = Settings.CreateSliderOptions(100, 150, 1)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+
+					-- Getter: Always return the actual stored value
+					local function getter()
+						local t = ensureUFDB() or {}
+						return tonumber(t.powerBarWidthPct) or 100
+					end
+
+					-- Setter: Store value normally (only when slider is enabled)
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						-- For Target/Focus: prevent changes when reverse fill is disabled
+						if isTargetOrFocusPB and not t.powerBarReverseFill then
+							return -- Silently ignore changes when disabled
+						end
+						local val = tonumber(v) or 100
+						val = math.max(100, math.min(150, val))
+						t.powerBarWidthPct = val
+						applyNow()
+					end
+
+					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					local widthSlider = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+					widthSlider.GetElementData = function() return initSlider end
+					widthSlider:SetPoint("TOPLEFT", 4, y.y)
+					widthSlider:SetPoint("TOPRIGHT", -16, y.y)
+					initSlider:InitFrame(widthSlider)
+					if widthSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(widthSlider.Text) end
+
+					-- Store reference for later updates
+					widthSlider._scooterSetting = setting
+
+					-- Conditional enable/disable based on fill direction (Target/Focus only)
+					if isTargetOrFocusPB then
+						local t = ensureUFDB() or {}
+						local isReverse = not not t.powerBarReverseFill
+						
+						if isReverse then
+							-- Enabled state: full opacity for all elements
+							if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
+							if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
+							if widthSlider.Control then 
+								widthSlider.Control:Show()
+								widthSlider.Control:Enable()
+								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(true) end
+								if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
+								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(true) end
+								widthSlider.Control:SetAlpha(1.0)
+							end
+							if widthSlider.Slider then widthSlider.Slider:Enable() end
+							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(true) end
+							-- Show interactive slider row; hide static replacement (if present)
+							widthSlider:Show()
+							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
+							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
+						else
+							-- Disabled state: gray out all visual elements
+							if widthSlider.Text then widthSlider.Text:SetAlpha(0.5) end
+							if widthSlider.Label then widthSlider.Label:SetAlpha(0.5) end
+							if widthSlider.Control then 
+								widthSlider.Control:Disable()
+								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(false) end
+								if widthSlider.Control.Slider then widthSlider.Control.Slider:Disable() end
+								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(false) end
+								widthSlider.Control:SetAlpha(0.5)
+							end
+							if widthSlider.Slider then widthSlider.Slider:Disable() end
+							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(false) end
+							-- Replace the interactive row with a static, non-interactive row indicating 100%
+							widthSlider:Hide()
+							if not widthSlider.ScooterBarWidthStatic then
+								local static = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
+								static:SetHeight(26)
+								static:SetPoint("TOPLEFT", widthSlider, "TOPLEFT", 0, 0)
+								static:SetPoint("TOPRIGHT", widthSlider, "TOPRIGHT", 0, 0)
+								-- Compose label text with value
+								local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
+								static.Text:SetText(baseLabel .. " — 100%")
+								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
+								-- Align label to match standard row left inset
+								if static.Text then
+									static.Text:ClearAllPoints()
+									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+									static.Text:SetJustifyH("LEFT")
+								end
+								widthSlider.ScooterBarWidthStatic = static
+							end
+							-- Ensure text reflects forced 100%
+							do
+								local static = widthSlider.ScooterBarWidthStatic
+								if static and static.Text then
+									local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
+									static.Text:SetText(baseLabel .. " — 100%")
+									-- Ensure alignment remains correct after text update
+									static.Text:ClearAllPoints()
+									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+									static.Text:SetJustifyH("LEFT")
+								end
+							end
+							-- Add info icon on the static row explaining why it's disabled
+							if panel and panel.CreateInfoIconForLabel and not widthSlider.ScooterBarWidthStaticInfo then
+								local tooltipText = "Bar Width scaling is only available when using 'Right to Left (mirrored)' fill direction."
+								widthSlider.ScooterBarWidthStaticInfo = panel.CreateInfoIconForLabel(
+									widthSlider.ScooterBarWidthStatic.Text,
+									tooltipText,
+									5, 0, 32
+								)
+								C_Timer.After(0, function()
+									local icon = widthSlider.ScooterBarWidthStaticInfo
+									local label = widthSlider.ScooterBarWidthStatic and widthSlider.ScooterBarWidthStatic.Text
+									if icon and label then
+										icon:ClearAllPoints()
+										local textWidth = label:GetStringWidth() or 0
+										if textWidth > 0 then
+											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+										else
+											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+										end
+									end
+								end)
+							end
+							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Show() end
+							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Show() end
+						end
+					else
+						-- For Player/Pet, always enabled (no reverse fill option)
+						if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
+						if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
+						if widthSlider.Control then 
+							widthSlider.Control:Show()
+							widthSlider.Control:Enable()
+							if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
+							widthSlider.Control:SetAlpha(1.0)
+						end
+						if widthSlider.Slider then widthSlider.Slider:Enable() end
+						widthSlider:Show()
+						if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
+						if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
+					end
+
+					y.y = y.y - 34
 				end
 
 				-- PageE: % Text (Power Percent)
