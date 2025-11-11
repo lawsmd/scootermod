@@ -4155,6 +4155,8 @@ do
 
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
+	-- Store original scales (per frame, not per unit, to handle frame recreation)
+	local originalScales = {}
 
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
@@ -4219,9 +4221,28 @@ do
 		local origMask = maskFrame and originalPositions[maskFrame] or nil
 		local origCornerIcon = cornerIconFrame and originalPositions[cornerIconFrame] or nil
 
+		-- Capture original scales on first access
+		if not originalScales[portraitFrame] then
+			originalScales[portraitFrame] = portraitFrame:GetScale() or 1.0
+		end
+		if maskFrame and not originalScales[maskFrame] then
+			originalScales[maskFrame] = maskFrame:GetScale() or 1.0
+		end
+		if cornerIconFrame and not originalScales[cornerIconFrame] then
+			originalScales[cornerIconFrame] = cornerIconFrame:GetScale() or 1.0
+		end
+
+		local origPortraitScale = originalScales[portraitFrame] or 1.0
+		local origMaskScale = maskFrame and (originalScales[maskFrame] or 1.0) or nil
+		local origCornerIconScale = cornerIconFrame and (originalScales[cornerIconFrame] or 1.0) or nil
+
 		-- Get offsets from config
 		local offsetX = tonumber(cfg.offsetX) or 0
 		local offsetY = tonumber(cfg.offsetY) or 0
+
+		-- Get scale from config (100-200%, stored as percentage)
+		local scalePct = tonumber(cfg.scale) or 100
+		local scaleMultiplier = scalePct / 100.0
 
 		-- Apply offsets relative to original positions (portrait, mask, and corner icon together)
 		local function applyPosition()
@@ -4254,17 +4275,37 @@ do
 			end
 		end
 
+		-- Apply scaling to portrait, mask, and corner icon frames
+		local function applyScale()
+			if not InCombatLockdown() then
+				-- Scale portrait frame
+				portraitFrame:SetScale(origPortraitScale * scaleMultiplier)
+
+				-- Scale mask frame if it exists
+				if maskFrame and origMaskScale then
+					maskFrame:SetScale(origMaskScale * scaleMultiplier)
+				end
+
+				-- Scale corner icon frame if it exists (Player only)
+				if cornerIconFrame and origCornerIconScale and unit == "Player" then
+					cornerIconFrame:SetScale(origCornerIconScale * scaleMultiplier)
+				end
+			end
+		end
+
 		if InCombatLockdown() then
 			-- Defer application until out of combat
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()
 					if not InCombatLockdown() then
 						applyPosition()
+						applyScale()
 					end
 				end)
 			end
 		else
 			applyPosition()
+			applyScale()
 		end
 	end
 

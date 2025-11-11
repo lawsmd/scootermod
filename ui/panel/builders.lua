@@ -5064,10 +5064,19 @@ local function createUFRenderer(componentId, title)
 					y)
 			end
 
-			-- PageB: Sizing (placeholder for now)
+			-- PageB: Sizing
 			do
+				local function applyNow()
+					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+				end
 				local y = { y = -50 }
-				-- Controls will be added here later
+				
+				-- Portrait Size (Scale) slider
+				addSlider(frame.PageB, "Portrait Size (Scale)", 50, 200, 1,
+					function() local t = ensureUFDB() or {}; return tonumber(t.scale) or 100 end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.scale = tonumber(v) or 100; applyNow() end,
+					y)
 			end
 
 			-- PageC: Mask (placeholder for now)
