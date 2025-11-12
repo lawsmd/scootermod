@@ -5004,8 +5004,8 @@ local function createUFRenderer(componentId, title)
 		expInitializerPortrait.GetExtent = function() return 30 end
 		table.insert(init, expInitializerPortrait)
 
-		-- Portrait tabs: Positioning / Sizing / Mask / Border / Text / Other
-		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = "Text", tabFText = "Other" }
+		-- Portrait tabs: Positioning / Sizing / Mask / Border / Text / Visibility
+		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = "Text", tabFText = "Visibility" }
 		portraitTabs.build = function(frame)
 			-- Helper for unit key
 			local function unitKey()
@@ -5095,6 +5095,28 @@ local function createUFRenderer(componentId, title)
 					function() local t = ensureUFDB() or {}; return tonumber(t.zoom) or 100 end,
 					function(v) local t = ensureUFDB(); if not t then return end; t.zoom = tonumber(v) or 100; applyNow() end,
 					y)
+				
+				-- Use Full Circle Mask checkbox (Player only)
+				if unitKey() == "Player" then
+					do
+						local setting = CreateLocalSetting("Use Full Circle Mask", "boolean",
+							function() local t = ensureUFDB() or {}; return (t.useFullCircleMask == true) end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.useFullCircleMask = (v == true); applyNow() end,
+							false)
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Full Circle Mask", setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
+					end
+				end
 			end
 
 			-- PageD: Border (placeholder for now)
@@ -5109,10 +5131,105 @@ local function createUFRenderer(componentId, title)
 				-- Controls will be added here later
 			end
 
-			-- PageF: Other (placeholder for now)
+			-- PageF: Visibility
 			do
+				local function applyNow()
+					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+				end
 				local y = { y = -50 }
-				-- Controls will be added here later
+				
+				-- Hide Portrait checkbox
+				do
+					local setting = CreateLocalSetting("Hide Portrait", "boolean",
+						function() local t = ensureUFDB() or {}; return (t.hidePortrait == true) end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.hidePortrait = (v == true); applyNow() end,
+						false)
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Portrait", setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+				end
+				
+				-- Hide Rest Loop/Animation checkbox (Player only)
+				if unitKey() == "Player" then
+					do
+						local setting = CreateLocalSetting("Hide Rest Loop/Animation", "boolean",
+							function() local t = ensureUFDB() or {}; return (t.hideRestLoop == true) end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.hideRestLoop = (v == true); applyNow() end,
+							false)
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Rest Loop/Animation", setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
+					end
+				end
+				
+				-- Hide Status Texture checkbox (Player only)
+				if unitKey() == "Player" then
+					do
+						local setting = CreateLocalSetting("Hide Status Texture", "boolean",
+							function() local t = ensureUFDB() or {}; return (t.hideStatusTexture == true) end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.hideStatusTexture = (v == true); applyNow() end,
+							false)
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Status Texture", setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
+					end
+				end
+				
+				-- Hide Corner Icon checkbox (Player only)
+				if unitKey() == "Player" then
+					do
+						local setting = CreateLocalSetting("Hide Corner Icon", "boolean",
+							function() local t = ensureUFDB() or {}; return (t.hideCornerIcon == true) end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.hideCornerIcon = (v == true); applyNow() end,
+							false)
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Corner Icon", setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
+					end
+				end
+				
+				-- Portrait Opacity slider (1-100%)
+				addSlider(frame.PageF, "Portrait Opacity", 1, 100, 1,
+					function() local t = ensureUFDB() or {}; return tonumber(t.opacity) or 100 end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.opacity = tonumber(v) or 100; applyNow() end,
+					y)
 			end
 		end
 

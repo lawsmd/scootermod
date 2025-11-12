@@ -4153,12 +4153,36 @@ do
 		return nil
 	end
 
+	-- Resolve portrait rest loop frame for a given unit (Player-only)
+	local function resolvePortraitRestLoopFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentContextual and root.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop or nil
+		end
+		-- Target/Focus/Pet don't appear to have rest loops
+		return nil
+	end
+
+	-- Resolve portrait status texture frame for a given unit (Player-only)
+	local function resolvePortraitStatusTextureFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.StatusTexture or nil
+		end
+		-- Target/Focus/Pet don't appear to have status textures
+		return nil
+	end
+
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
 	-- Store original scales (per frame, not per unit, to handle frame recreation)
 	local originalScales = {}
 	-- Store original texture coordinates (per frame, not per unit, to handle frame recreation)
 	local originalTexCoords = {}
+	-- Store original alpha values (per frame, not per unit, to handle frame recreation)
+	local originalAlphas = {}
+	-- Store original mask atlas (per frame, not per unit, to handle frame recreation)
+	local originalMaskAtlas = {}
 
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
@@ -4174,6 +4198,10 @@ do
 		local maskFrame = resolvePortraitMaskFrame(unit)
 		-- Corner icon only exists for Player frame
 		local cornerIconFrame = (unit == "Player") and resolvePortraitCornerIconFrame(unit) or nil
+		-- Rest loop only exists for Player frame
+		local restLoopFrame = (unit == "Player") and resolvePortraitRestLoopFrame(unit) or nil
+		-- Status texture only exists for Player frame
+		local statusTextureFrame = (unit == "Player") and resolvePortraitStatusTextureFrame(unit) or nil
 
 		-- Capture original positions on first access
 		if not originalPositions[portraitFrame] then
@@ -4276,6 +4304,47 @@ do
 			}
 		end
 
+		-- Capture original alpha on first access
+		if not originalAlphas[portraitFrame] then
+			originalAlphas[portraitFrame] = portraitFrame:GetAlpha() or 1.0
+		end
+		if maskFrame and not originalAlphas[maskFrame] then
+			originalAlphas[maskFrame] = maskFrame:GetAlpha() or 1.0
+		end
+		if cornerIconFrame and not originalAlphas[cornerIconFrame] then
+			originalAlphas[cornerIconFrame] = cornerIconFrame:GetAlpha() or 1.0
+		end
+		if restLoopFrame and not originalAlphas[restLoopFrame] then
+			originalAlphas[restLoopFrame] = restLoopFrame:GetAlpha() or 1.0
+		end
+		if statusTextureFrame and not originalAlphas[statusTextureFrame] then
+			originalAlphas[statusTextureFrame] = statusTextureFrame:GetAlpha() or 1.0
+		end
+
+		local origPortraitAlpha = originalAlphas[portraitFrame] or 1.0
+		local origMaskAlpha = maskFrame and (originalAlphas[maskFrame] or 1.0) or nil
+		local origCornerIconAlpha = cornerIconFrame and (originalAlphas[cornerIconFrame] or 1.0) or nil
+		local origRestLoopAlpha = restLoopFrame and (originalAlphas[restLoopFrame] or 1.0) or nil
+		local origStatusTextureAlpha = statusTextureFrame and (originalAlphas[statusTextureFrame] or 1.0) or nil
+
+		-- Capture original mask atlas on first access (for Player only - to support full circle mask)
+		if maskFrame and unit == "Player" and not originalMaskAtlas[maskFrame] then
+			if maskFrame.GetAtlas then
+				local ok, atlas = pcall(maskFrame.GetAtlas, maskFrame)
+				if ok and atlas then
+					originalMaskAtlas[maskFrame] = atlas
+				else
+					-- Fallback: use known default Player mask atlas
+					originalMaskAtlas[maskFrame] = "UI-HUD-UnitFrame-Player-Portrait-Mask"
+				end
+			else
+				-- Fallback: use known default Player mask atlas
+				originalMaskAtlas[maskFrame] = "UI-HUD-UnitFrame-Player-Portrait-Mask"
+			end
+		end
+
+		local origMaskAtlas = maskFrame and (originalMaskAtlas[maskFrame] or nil) or nil
+
 		-- Get offsets from config
 		local offsetX = tonumber(cfg.offsetX) or 0
 		local offsetY = tonumber(cfg.offsetY) or 0
@@ -4289,6 +4358,18 @@ do
 		-- Note: Zoom out (< 100%) is not supported - portrait textures are at full bounds (0,1,0,1)
 		local zoomPct = tonumber(cfg.zoom) or 100
 		if zoomPct < 100 then zoomPct = 100 elseif zoomPct > 200 then zoomPct = 200 end
+
+		-- Get visibility settings from config
+		local hidePortrait = (cfg.hidePortrait == true)
+		local hideRestLoop = (cfg.hideRestLoop == true)
+		local hideStatusTexture = (cfg.hideStatusTexture == true)
+		local hideCornerIcon = (cfg.hideCornerIcon == true)
+		local opacityPct = tonumber(cfg.opacity) or 100
+		if opacityPct < 1 then opacityPct = 1 elseif opacityPct > 100 then opacityPct = 100 end
+		local opacityValue = opacityPct / 100.0
+
+		-- Get full circle mask setting (Player only)
+		local useFullCircleMask = (unit == "Player") and (cfg.useFullCircleMask == true) or false
 
 		-- Apply offsets relative to original positions (portrait, mask, and corner icon together)
 		local function applyPosition()
@@ -4437,6 +4518,98 @@ do
 			end
 		end
 
+		-- Apply mask atlas change (Player only - full circle mask)
+		local function applyMask()
+			if maskFrame and unit == "Player" and origMaskAtlas then
+				if useFullCircleMask then
+					-- Change to full circle mask
+					if maskFrame.SetAtlas then
+						pcall(maskFrame.SetAtlas, maskFrame, "CircleMask", false)
+					end
+				else
+					-- Restore original mask (with square corner)
+					if maskFrame.SetAtlas then
+						pcall(maskFrame.SetAtlas, maskFrame, origMaskAtlas, false)
+					end
+				end
+			end
+		end
+
+		-- Apply visibility (hide/opacity) to portrait, mask, corner icon, and rest loop
+		local function applyVisibility()
+			-- If "Hide Portrait" is checked, hide everything (ignore individual flags)
+			-- Otherwise, check individual flags for each element
+			
+			-- Portrait frame: hidden if "Hide Portrait" is checked
+			local portraitHidden = hidePortrait
+			local finalAlpha = portraitHidden and 0.0 or (origPortraitAlpha * opacityValue)
+			
+			if portraitFrame.SetAlpha then
+				portraitFrame:SetAlpha(finalAlpha)
+			end
+			if portraitHidden and portraitFrame.Hide then
+				portraitFrame:Hide()
+			elseif not portraitHidden and portraitFrame.Show then
+				portraitFrame:Show()
+			end
+
+			-- Mask frame: hidden if "Hide Portrait" is checked
+			if maskFrame then
+				local maskHidden = hidePortrait
+				local maskAlpha = maskHidden and 0.0 or (origMaskAlpha * opacityValue)
+				if maskFrame.SetAlpha then
+					maskFrame:SetAlpha(maskAlpha)
+				end
+				if maskHidden and maskFrame.Hide then
+					maskFrame:Hide()
+				elseif not maskHidden and maskFrame.Show then
+					maskFrame:Show()
+				end
+			end
+
+			-- Corner icon frame: hidden if "Hide Portrait" OR "Hide Corner Icon" is checked (Player only)
+			if cornerIconFrame and unit == "Player" then
+				local iconHidden = hidePortrait or hideCornerIcon
+				local iconAlpha = iconHidden and 0.0 or (origCornerIconAlpha * opacityValue)
+				if cornerIconFrame.SetAlpha then
+					cornerIconFrame:SetAlpha(iconAlpha)
+				end
+				if iconHidden and cornerIconFrame.Hide then
+					cornerIconFrame:Hide()
+				elseif not iconHidden and cornerIconFrame.Show then
+					cornerIconFrame:Show()
+				end
+			end
+
+			-- Rest loop frame: hidden if "Hide Portrait" OR "Hide Rest Loop/Animation" is checked (Player only)
+			if restLoopFrame and unit == "Player" then
+				local restHidden = hidePortrait or hideRestLoop
+				local restAlpha = restHidden and 0.0 or (origRestLoopAlpha * opacityValue)
+				if restLoopFrame.SetAlpha then
+					restLoopFrame:SetAlpha(restAlpha)
+				end
+				if restHidden and restLoopFrame.Hide then
+					restLoopFrame:Hide()
+				elseif not restHidden and restLoopFrame.Show then
+					restLoopFrame:Show()
+				end
+			end
+
+			-- Status texture frame: hidden if "Hide Portrait" OR "Hide Status Texture" is checked (Player only)
+			if statusTextureFrame and unit == "Player" then
+				local statusHidden = hidePortrait or hideStatusTexture
+				local statusAlpha = statusHidden and 0.0 or (origStatusTextureAlpha * opacityValue)
+				if statusTextureFrame.SetAlpha then
+					statusTextureFrame:SetAlpha(statusAlpha)
+				end
+				if statusHidden and statusTextureFrame.Hide then
+					statusTextureFrame:Hide()
+				elseif not statusHidden and statusTextureFrame.Show then
+					statusTextureFrame:Show()
+				end
+			end
+		end
+
 		if InCombatLockdown() then
 			-- Defer application until out of combat
 			if _G.C_Timer and _G.C_Timer.After then
@@ -4445,6 +4618,8 @@ do
 						applyPosition()
 						applyScale()
 						applyZoom()
+						applyMask()
+						applyVisibility()
 					end
 				end)
 			end
@@ -4452,6 +4627,8 @@ do
 			applyPosition()
 			applyScale()
 			applyZoom()
+			applyMask()
+			applyVisibility()
 		end
 	end
 
