@@ -157,6 +157,13 @@ function CreateCheckboxWithSwatchInitializer(settingObj, label, getColor, setCol
     local baseInit = init.InitFrame
     init.InitFrame = function(self, frame)
         if baseInit then baseInit(self, frame) end
+        -- Defense-in-depth: recycled Settings rows may carry an unrelated Scooter info icon
+        -- Swatch rows should NEVER carry any info icon. Remove any stray icon unconditionally.
+        if frame and frame.ScooterInfoIcon then
+            frame.ScooterInfoIcon:Hide()
+            frame.ScooterInfoIcon:SetParent(nil)
+            frame.ScooterInfoIcon = nil
+        end
         local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
         local swatch = frame.ScooterInlineSwatch
         if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end

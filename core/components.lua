@@ -3962,7 +3962,7 @@ do
         end
         
         -- Hide static visual elements when Use Custom Borders is enabled.
-        -- Rationale: These elements (ReputationColor for Target/Focus, FrameFlash for Player) have
+        -- Rationale: These elements (ReputationColor for Target/Focus, FrameFlash for Player, Flash for Target) have
         -- fixed positions that cannot be adjusted. Since ScooterMod allows users to reposition and
         -- resize health/power bars independently, these static overlays would remain in their original
         -- positions while the bars they're meant to surround/backdrop move elsewhere. This creates
@@ -4044,6 +4044,49 @@ do
                         -- Show the frame
                         if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, true) end
                         if frameFlash.Show then pcall(frameFlash.Show, frameFlash) end
+                    end
+                end
+            end
+        end
+        
+        -- Hide Flash (aggro/threat glow) for Target when Use Custom Borders is enabled
+        if unit == "Target" then
+            if _G.TargetFrame and _G.TargetFrame.TargetFrameContainer then
+                local targetFlash = _G.TargetFrame.TargetFrameContainer.Flash
+                if targetFlash then
+                    if cfg.useCustomBorders then
+                        -- Hide and install persistent hook to keep it hidden
+                        if targetFlash.SetShown then pcall(targetFlash.SetShown, targetFlash, false) end
+                        if targetFlash.Hide then pcall(targetFlash.Hide, targetFlash) end
+                        
+                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
+                        if not targetFlash._ScootHideHookInstalled then
+                            targetFlash._ScootHideHookInstalled = true
+                            targetFlash._ScootOrigOnShow = targetFlash:GetScript("OnShow")
+                        end
+                        targetFlash:SetScript("OnShow", function(self)
+                            local db = addon and addon.db and addon.db.profile
+                            if db and db.unitFrames and db.unitFrames.Target and db.unitFrames.Target.useCustomBorders then
+                                -- Keep it hidden while Use Custom Borders is enabled
+                                self:Hide()
+                            else
+                                -- Allow it to show if custom borders are disabled
+                                if self._ScootOrigOnShow then
+                                    self._ScootOrigOnShow(self)
+                                end
+                            end
+                        end)
+                    else
+                        -- Restore Flash when Use Custom Borders is disabled
+                        -- Restore original OnShow handler
+                        if targetFlash._ScootHideHookInstalled and targetFlash._ScootOrigOnShow then
+                            targetFlash:SetScript("OnShow", targetFlash._ScootOrigOnShow)
+                        else
+                            targetFlash:SetScript("OnShow", nil)
+                        end
+                        -- Show the frame
+                        if targetFlash.SetShown then pcall(targetFlash.SetShown, targetFlash, true) end
+                        if targetFlash.Show then pcall(targetFlash.Show, targetFlash) end
                     end
                 end
             end
@@ -4535,7 +4578,99 @@ do
 			end
 		end
 
-		-- Apply visibility (hide/opacity) to portrait, mask, corner icon, and rest loop
+		-- Apply portrait border using custom textures
+		local function applyBorder()
+			if not portraitFrame then return end
+			
+			-- Get parent frame for creating border texture (portrait is a Texture, not a Frame)
+			local parentFrame = portraitFrame:GetParent()
+			if not parentFrame then return end
+			
+			-- Use a unique key for storing border texture on parent frame
+			local borderKey = "ScootPortraitBorder_" .. tostring(unit)
+			local borderTexture = parentFrame[borderKey]
+			
+			local borderEnabled = cfg.portraitBorderEnable
+			if not borderEnabled then
+				-- Hide border if disabled
+				if borderTexture then
+					borderTexture:Hide()
+				end
+				return
+			end
+			
+			local borderStyle = cfg.portraitBorderStyle or "texture_c"
+			-- Treat "default" as "texture_c" for backwards compatibility
+			if borderStyle == "default" then
+				borderStyle = "texture_c"
+			end
+			
+			-- Map style keys to texture paths
+			local textureMap = {
+				texture_c = "Interface\\AddOns\\ScooterMod\\media\\portraitborder\\texture_c.tga",
+				texture_s = "Interface\\AddOns\\ScooterMod\\media\\portraitborder\\texture_s.tga",
+				rare_c = "Interface\\AddOns\\ScooterMod\\media\\portraitborder\\rare_c.tga",
+				rare_s = "Interface\\AddOns\\ScooterMod\\media\\portraitborder\\rare_s.tga",
+			}
+			
+			local texturePath = textureMap[borderStyle]
+			if not texturePath then return end
+			
+			-- Create border texture if it doesn't exist
+			if not borderTexture then
+				borderTexture = parentFrame:CreateTexture(nil, "OVERLAY")
+				parentFrame[borderKey] = borderTexture
+			end
+			
+			-- Set texture
+			borderTexture:SetTexture(texturePath)
+			
+			-- Get border thickness (1-16)
+			local thickness = tonumber(cfg.portraitBorderThickness) or 1
+			if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+			
+			-- Calculate expand based on thickness (negative values expand outward/outset)
+			-- Thickness 1 = minimal expansion, thickness 16 = maximum expansion
+			-- Increased multiplier to push borders further out from portrait edge to align with portrait circle
+			local baseOutset = 4.0  -- Base outset to align with portrait edge
+			local expandX = -(baseOutset + (thickness * 2.0))
+			local expandY = -(baseOutset + (thickness * 2.0))
+			
+			-- Position border to match portrait with expansion
+			borderTexture:ClearAllPoints()
+			borderTexture:SetPoint("TOPLEFT", portraitFrame, "TOPLEFT", expandX, -expandY)
+			borderTexture:SetPoint("BOTTOMRIGHT", portraitFrame, "BOTTOMRIGHT", -expandX, expandY)
+			
+			-- Apply color based on color mode
+			local colorMode = cfg.portraitBorderColorMode or "texture"
+			local r, g, b, a = 1, 1, 1, 1
+			
+			if colorMode == "custom" then
+				-- Custom: use tint color
+				local tintColor = cfg.portraitBorderTintColor or {1, 1, 1, 1}
+				r, g, b, a = tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1
+			elseif colorMode == "class" then
+				-- Class Color: use player's class color
+				if addon.GetClassColorRGB then
+					local cr, cg, cb = addon.GetClassColorRGB(unit == "Player" and "player" or (unit == "Target" and "target" or (unit == "Focus" and "focus" or "pet")))
+					r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+				else
+					r, g, b, a = 1, 1, 1, 1
+				end
+			elseif colorMode == "texture" then
+				-- Texture Original: preserve texture's original colors (white = no tint)
+				r, g, b, a = 1, 1, 1, 1
+			end
+			
+			borderTexture:SetVertexColor(r, g, b, a)
+			
+			-- Set draw layer to appear above portrait
+			borderTexture:SetDrawLayer("OVERLAY", 7)
+			
+			-- Show border
+			borderTexture:Show()
+		end
+
 		local function applyVisibility()
 			-- If "Hide Portrait" is checked, hide everything (ignore individual flags)
 			-- Otherwise, check individual flags for each element
@@ -4619,6 +4754,7 @@ do
 						applyScale()
 						applyZoom()
 						applyMask()
+						applyBorder()
 						applyVisibility()
 					end
 				end)
@@ -4628,6 +4764,7 @@ do
 			applyScale()
 			applyZoom()
 			applyMask()
+			applyBorder()
 			applyVisibility()
 		end
 	end

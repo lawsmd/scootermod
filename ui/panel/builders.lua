@@ -656,6 +656,9 @@ local function createComponentRenderer(componentId)
                                     row.ScooterInfoIcon = panel.CreateInfoIcon(row, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
                                     row.ScooterInfoIcon:ClearAllPoints()
                                     row.ScooterInfoIcon:SetPoint("LEFT", checkbox, "RIGHT", 10, 0)
+                                    -- Tag this icon so it is not mistaken for other settings when rows are recycled
+                                    row.ScooterInfoIcon._isTrackedBarsStyleIcon = true
+                                    row.ScooterInfoIcon._ownerKey = "trackedBars_useCustomTextures"
                                 end
                                 checkbox.ScooterCustomTexturesDB = db
                                 checkbox.ScooterCustomTexturesRefresh = refresh
@@ -2521,6 +2524,13 @@ local function createUFRenderer(componentId, title)
 					local base = row.InitFrame
 					row.InitFrame = function(self, frame)
 						if base then base(self, frame) end
+                        -- Remove any stray info icon from recycled rows; this row does not use an info icon
+                        if frame and frame.ScooterInfoIcon then
+                            -- Keep only if explicitly tagged for this exact row (none are)
+                            frame.ScooterInfoIcon:Hide()
+                            frame.ScooterInfoIcon:SetParent(nil)
+                            frame.ScooterInfoIcon = nil
+                        end
 						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
 						if panel and panel.ApplyRobotoWhite then
 							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
@@ -5119,10 +5129,245 @@ local function createUFRenderer(componentId, title)
 				end
 			end
 
-			-- PageD: Border (placeholder for now)
+			-- PageD: Border
 			do
+				local function applyNow()
+					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+				end
 				local y = { y = -50 }
-				-- Controls will be added here later
+				
+				-- Helper function to check if border is enabled
+				local function isEnabled()
+					local t = ensureUFDB() or {}
+					return not not t.portraitBorderEnable
+				end
+				
+				-- Use Custom Border checkbox
+				do
+					local setting = CreateLocalSetting("Use Custom Border", "boolean",
+						function() local t = ensureUFDB() or {}; return (t.portraitBorderEnable == true) end,
+						function(v) 
+							local t = ensureUFDB(); if not t then return end
+							t.portraitBorderEnable = (v == true)
+							-- Refresh the panel to update gray-out state
+							if panel and panel.RefreshCurrentCategoryDeferred then
+								panel:RefreshCurrentCategoryDeferred()
+							end
+							applyNow()
+						end,
+						false)
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Custom Border", setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+				end
+				
+				-- Border Style dropdown
+				do
+					local function optionsStyle()
+						local c = Settings.CreateControlTextContainer()
+						c:Add("texture_c", "Circle")
+						c:Add("texture_s", "Circle with Corner")
+						c:Add("rare_c", "Rare (Circle)")
+						-- Rare (Square) only available for Target and Focus
+						if unitKey() == "Target" or unitKey() == "Focus" then
+							c:Add("rare_s", "Rare (Square)")
+						end
+						return c:GetData()
+					end
+					local function getStyle()
+						local t = ensureUFDB() or {}
+						local current = t.portraitBorderStyle or "texture_c"
+						-- If current style is "default" or "rare_s" for non-Target/Focus, reset to first option
+						if current == "default" then
+							return "texture_c"
+						end
+						if current == "rare_s" and unitKey() ~= "Target" and unitKey() ~= "Focus" then
+							return "texture_c"
+						end
+						return current
+					end
+					local function setStyle(v)
+						local t = ensureUFDB(); if not t then return end
+						-- Don't allow "default" or "rare_s" for non-Target/Focus
+						if v == "default" then
+							v = "texture_c"
+						end
+						if v == "rare_s" and unitKey() ~= "Target" and unitKey() ~= "Focus" then
+							v = "texture_c"
+						end
+						t.portraitBorderStyle = v or "texture_c"
+						applyNow()
+					end
+					local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsStyle })
+					local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+					f.GetElementData = function() return initDrop end
+					f:SetPoint("TOPLEFT", 4, y.y)
+					f:SetPoint("TOPRIGHT", -16, y.y)
+					initDrop:InitFrame(f)
+					local lbl = f and (f.Text or f.Label)
+					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					-- Grey out when Use Custom Border is off
+					local enabled = isEnabled()
+					if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
+					if lbl and lbl.SetTextColor then
+						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+					y.y = y.y - 34
+				end
+				
+				-- Border Inset slider (moved to directly after Border Style)
+				do
+					local function getInset()
+						local t = ensureUFDB() or {}; return tonumber(t.portraitBorderThickness) or 1
+					end
+					local function setInset(v)
+						local t = ensureUFDB(); if not t then return end
+						local nv = tonumber(v) or 1
+						if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+						t.portraitBorderThickness = nv
+						applyNow()
+					end
+					local opts = Settings.CreateSliderOptions(1, 16, 1)
+					opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+					local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
+					local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+					sf.GetElementData = function() return initSlider end
+					sf:SetPoint("TOPLEFT", 4, y.y)
+					sf:SetPoint("TOPRIGHT", -16, y.y)
+					initSlider:InitFrame(sf)
+					if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+					-- Grey out when Use Custom Border is off
+					local enabled = isEnabled()
+					if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
+					if sf.Text and sf.Text.SetTextColor then
+						if enabled then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+					y.y = y.y - 34
+				end
+				
+				-- Border Color dropdown
+				-- Store references in a table that will be populated by Border Tint section
+				local borderTintRefs = {}
+				do
+					local function colorOpts()
+						local container = Settings.CreateControlTextContainer()
+						container:Add("texture", "Texture Original")
+						container:Add("class", "Class Color")
+						container:Add("custom", "Custom")
+						return container:GetData()
+					end
+					local function getColorMode()
+						local t = ensureUFDB() or {}
+						return t.portraitBorderColorMode or "texture"
+					end
+					local function setColorMode(v)
+						local t = ensureUFDB(); if not t then return end
+						t.portraitBorderColorMode = v or "texture"
+						applyNow()
+						-- Enable/disable Border Tint based on color mode
+						local isCustom = (v == "custom")
+						local borderEnabled = isEnabled()
+						local finalEnabled = borderEnabled and isCustom
+						-- Update Border Tint controls if they exist
+						if borderTintRefs.label then
+							borderTintRefs.label:SetTextColor(finalEnabled and 1 or 0.5, finalEnabled and 1 or 0.5, finalEnabled and 1 or 0.5)
+						end
+						if borderTintRefs.swatch then
+							if borderTintRefs.swatch.EnableMouse then borderTintRefs.swatch:EnableMouse(finalEnabled) end
+							if borderTintRefs.swatch.SetAlpha then borderTintRefs.swatch:SetAlpha(finalEnabled and 1 or 0.5) end
+						end
+					end
+					local colorSetting = CreateLocalSetting("Border Color", "string", getColorMode, setColorMode, getColorMode())
+					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Color", setting = colorSetting, options = colorOpts })
+					local cf = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+					cf.GetElementData = function() return initColor end
+					cf:SetPoint("TOPLEFT", 4, y.y)
+					cf:SetPoint("TOPRIGHT", -16, y.y)
+					initColor:InitFrame(cf)
+					if panel and panel.ApplyRobotoWhite then
+						local lbl = cf and (cf.Text or cf.Label)
+						if lbl then panel.ApplyRobotoWhite(lbl) end
+					end
+					-- Grey out when Use Custom Border is off
+					local enabled = isEnabled()
+					if cf.Control and cf.Control.SetEnabled then cf.Control:SetEnabled(enabled) end
+					local lbl = cf and (cf.Text or cf.Label)
+					if lbl and lbl.SetTextColor then
+						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+					y.y = y.y - 34
+				end
+				
+				-- Border Tint (simple color swatch) - only enabled when Custom color mode is selected
+				do
+					local function getTint()
+						local t = ensureUFDB() or {}
+						local c = t.portraitBorderTintColor or {1,1,1,1}
+						return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+					end
+					local function setTint(r, g, b, a)
+						local t = ensureUFDB(); if not t then return end
+						t.portraitBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+						applyNow()
+					end
+					-- Create a simple row with label and color swatch (following standard pattern)
+					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsListElementTemplate")
+					row:SetHeight(26)
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					row.Text:SetText("Border Tint")
+					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					-- Store references for color mode updates
+					borderTintRefs.row = row
+					borderTintRefs.label = row.Text
+					-- Create right container for swatch (matching standard pattern)
+					local right = CreateFrame("Frame", nil, row)
+					right:SetSize(250, 26)
+					right:SetPoint("RIGHT", row, "RIGHT", -16, 0)
+					-- Reposition text label to match standard alignment
+					row.Text:ClearAllPoints()
+					row.Text:SetPoint("LEFT", row, "LEFT", 36.5, 0)
+					row.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+					row.Text:SetJustifyH("LEFT")
+					-- Create color swatch using the helper function, anchored to right container
+					local swatch = CreateColorSwatch(right, getTint, setTint, true)
+					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+					borderTintRefs.swatch = swatch
+					-- Check current color mode to set initial enabled state
+					local function updateTintEnabled()
+						local t = ensureUFDB() or {}
+						local colorMode = t.portraitBorderColorMode or "texture"
+						local isCustom = (colorMode == "custom")
+						local borderEnabled = isEnabled()
+						local finalEnabled = borderEnabled and isCustom
+						if swatch and swatch.EnableMouse then
+							swatch:EnableMouse(finalEnabled)
+							if swatch.SetAlpha then swatch:SetAlpha(finalEnabled and 1 or 0.5) end
+						end
+						if borderTintRefs.label and borderTintRefs.label.SetTextColor then
+							if finalEnabled then
+								borderTintRefs.label:SetTextColor(1, 1, 1, 1)
+							else
+								borderTintRefs.label:SetTextColor(0.6, 0.6, 0.6, 1)
+							end
+						end
+					end
+					updateTintEnabled()
+					-- Grey out when Use Custom Border is off (handled by updateTintEnabled)
+					y.y = y.y - 34
+				end
 			end
 
 			-- PageE: Text (placeholder for now)
@@ -5668,3 +5913,4 @@ function panel.RenderUFPlayer() return createUFRenderer("ufPlayer", "Player") en
 function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target") end
 function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")  end
 function panel.RenderUFPet()    return createUFRenderer("ufPet",    "Pet")    end
+
