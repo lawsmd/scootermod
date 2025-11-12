@@ -5079,10 +5079,22 @@ local function createUFRenderer(componentId, title)
 					y)
 			end
 
-			-- PageC: Mask (placeholder for now)
+			-- PageC: Mask
 			do
+				local function applyNow()
+					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+				end
 				local y = { y = -50 }
-				-- Controls will be added here later
+				
+				-- Portrait Zoom slider
+				-- Note: Zoom out (< 100%) is not supported because portrait textures are already at full bounds (0,1,0,1).
+				-- We cannot show pixels beyond the texture bounds. Zoom in (> 100%) works by cropping the edges.
+				-- Range: 100-200% (zoom in only)
+				addSlider(frame.PageC, "Portrait Zoom", 100, 200, 1,
+					function() local t = ensureUFDB() or {}; return tonumber(t.zoom) or 100 end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.zoom = tonumber(v) or 100; applyNow() end,
+					y)
 			end
 
 			-- PageD: Border (placeholder for now)

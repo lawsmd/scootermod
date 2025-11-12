@@ -4157,6 +4157,8 @@ do
 	local originalPositions = {}
 	-- Store original scales (per frame, not per unit, to handle frame recreation)
 	local originalScales = {}
+	-- Store original texture coordinates (per frame, not per unit, to handle frame recreation)
+	local originalTexCoords = {}
 
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
@@ -4236,6 +4238,44 @@ do
 		local origMaskScale = maskFrame and (originalScales[maskFrame] or 1.0) or nil
 		local origCornerIconScale = cornerIconFrame and (originalScales[cornerIconFrame] or 1.0) or nil
 
+		-- Get portrait texture
+		-- For unit frames, the portraitFrame IS the texture itself (not a frame containing a texture)
+		-- Check if it's a Texture directly, otherwise try GetPortrait() or GetRegions()
+		local portraitTexture = nil
+		if portraitFrame.GetObjectType and portraitFrame:GetObjectType() == "Texture" then
+			-- The frame itself is the texture (unit frame portraits)
+			portraitTexture = portraitFrame
+		elseif portraitFrame.GetPortrait then
+			-- PortraitFrameMixin frames have GetPortrait() method
+			portraitTexture = portraitFrame:GetPortrait()
+		elseif portraitFrame.GetRegions then
+			-- Fallback: search regions for a texture
+			for _, region in ipairs({ portraitFrame:GetRegions() }) do
+				if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+					portraitTexture = region
+					break
+				end
+			end
+		end
+
+		-- Capture original texture coordinates on first access
+		if portraitTexture and not originalTexCoords[portraitFrame] then
+			-- GetTexCoord returns 8 values: ulX, ulY, blX, blY, urX, urY, brX, brY
+			-- Extract bounds from corner coordinates
+			local ulX, ulY, blX, blY, urX, urY, brX, brY = portraitTexture:GetTexCoord()
+			-- Extract min/max from all corners to get bounding box
+			local left = math.min(ulX or 0, blX or 0, urX or 0, brX or 0)
+			local right = math.max(ulX or 1, blX or 1, urX or 1, brX or 1)
+			local top = math.min(ulY or 0, blY or 0, urY or 0, brY or 0)
+			local bottom = math.max(ulY or 1, blY or 1, urY or 1, brY or 1)
+			originalTexCoords[portraitFrame] = {
+				left = left,
+				right = right,
+				top = top,
+				bottom = bottom,
+			}
+		end
+
 		-- Get offsets from config
 		local offsetX = tonumber(cfg.offsetX) or 0
 		local offsetY = tonumber(cfg.offsetY) or 0
@@ -4243,6 +4283,12 @@ do
 		-- Get scale from config (100-200%, stored as percentage)
 		local scalePct = tonumber(cfg.scale) or 100
 		local scaleMultiplier = scalePct / 100.0
+
+		-- Get zoom from config (100-200%, stored as percentage)
+		-- 100% = no zoom (full texture), > 100% = zoom in (crop edges)
+		-- Note: Zoom out (< 100%) is not supported - portrait textures are at full bounds (0,1,0,1)
+		local zoomPct = tonumber(cfg.zoom) or 100
+		if zoomPct < 100 then zoomPct = 100 elseif zoomPct > 200 then zoomPct = 200 end
 
 		-- Apply offsets relative to original positions (portrait, mask, and corner icon together)
 		local function applyPosition()
@@ -4293,6 +4339,104 @@ do
 			end
 		end
 
+		-- Apply zoom to portrait texture via SetTexCoord
+		local function applyZoom()
+			if not portraitTexture then 
+				-- Debug: log if texture not found
+				if addon.debug then
+					print("ScooterMod: Portrait zoom - texture not found for", unit)
+				end
+				return 
+			end
+			
+			-- Re-capture original coordinates if not stored yet (handles texture recreation)
+			if not originalTexCoords[portraitFrame] then
+				local ulX, ulY, blX, blY, urX, urY, brX, brY = portraitTexture:GetTexCoord()
+				local left = math.min(ulX or 0, blX or 0, urX or 0, brX or 0)
+				local right = math.max(ulX or 1, blX or 1, urX or 1, brX or 1)
+				local top = math.min(ulY or 0, blY or 0, urY or 0, brY or 0)
+				local bottom = math.max(ulY or 1, blY or 1, urY or 1, brY or 1)
+				originalTexCoords[portraitFrame] = {
+					left = left,
+					right = right,
+					top = top,
+					bottom = bottom,
+				}
+			end
+			
+			local origCoords = originalTexCoords[portraitFrame]
+			if not origCoords then return end
+
+			-- Calculate zoom: 100% = no change, > 100% = zoom in (crop edges), < 100% = zoom out (limited)
+			-- For zoom in: crop equal amounts from all sides
+			-- For zoom out: we can't show beyond texture bounds, so we'll limit it
+			local zoomFactor = zoomPct / 100.0
+			
+			if zoomFactor == 1.0 then
+				-- No zoom: restore original coordinates
+				if portraitTexture.SetTexCoord then
+					portraitTexture:SetTexCoord(origCoords.left, origCoords.right, origCoords.top, origCoords.bottom)
+				end
+			elseif zoomFactor > 1.0 then
+				-- Zoom in: crop edges (e.g., 150% = show center 66.7% = crop 16.7% from each side)
+				local cropAmount = (zoomFactor - 1.0) / (2.0 * zoomFactor)
+				local origWidth = origCoords.right - origCoords.left
+				local origHeight = origCoords.bottom - origCoords.top
+				local newLeft = origCoords.left + (origWidth * cropAmount)
+				local newRight = origCoords.right - (origWidth * cropAmount)
+				local newTop = origCoords.top + (origHeight * cropAmount)
+				local newBottom = origCoords.bottom - (origHeight * cropAmount)
+				
+				if portraitTexture.SetTexCoord then
+					portraitTexture:SetTexCoord(newLeft, newRight, newTop, newBottom)
+					-- Debug output
+					if addon.debug then
+						print(string.format("ScooterMod: Portrait zoom %d%% for %s - coords: %.3f,%.3f,%.3f,%.3f", zoomPct, unit, newLeft, newRight, newTop, newBottom))
+					end
+				end
+			else
+				-- Zoom out: show more (limited by texture bounds)
+				-- LIMITATION: If original coordinates are already at full bounds (0,1,0,1),
+				-- we cannot zoom out because there are no additional pixels to show.
+				-- The texture coordinate system is clamped to [0,1] range.
+				local origWidth = origCoords.right - origCoords.left
+				local origHeight = origCoords.bottom - origCoords.top
+				
+				-- Check if we're already at full bounds - if so, zoom out is not possible
+				local isFullBounds = (origCoords.left <= 0.001 and origCoords.right >= 0.999 and 
+				                      origCoords.top <= 0.001 and origCoords.bottom >= 0.999)
+				
+				if isFullBounds then
+					-- Already at full texture bounds - zoom out has no effect
+					-- Just restore original coordinates (which are already full bounds)
+					if portraitTexture.SetTexCoord then
+						portraitTexture:SetTexCoord(origCoords.left, origCoords.right, origCoords.top, origCoords.bottom)
+					end
+					-- Debug output to explain limitation
+					if addon.debug then
+						print(string.format("ScooterMod: Portrait zoom out %d%% for %s - limited by full texture bounds (0,1,0,1)", zoomPct, unit))
+					end
+				else
+					-- Original coordinates are NOT at full bounds, so we can expand within available space
+					local origCenterX = origCoords.left + (origWidth / 2.0)
+					local origCenterY = origCoords.top + (origHeight / 2.0)
+					local newWidth = origWidth / zoomFactor
+					local newHeight = origHeight / zoomFactor
+					local newLeft = math.max(0, origCenterX - (newWidth / 2.0))
+					local newRight = math.min(1, origCenterX + (newWidth / 2.0))
+					local newTop = math.max(0, origCenterY - (newHeight / 2.0))
+					local newBottom = math.min(1, origCenterY + (newHeight / 2.0))
+					
+					if portraitTexture.SetTexCoord then
+						portraitTexture:SetTexCoord(newLeft, newRight, newTop, newBottom)
+						if addon.debug then
+							print(string.format("ScooterMod: Portrait zoom out %d%% for %s - coords: %.3f,%.3f,%.3f,%.3f", zoomPct, unit, newLeft, newRight, newTop, newBottom))
+						end
+					end
+				end
+			end
+		end
+
 		if InCombatLockdown() then
 			-- Defer application until out of combat
 			if _G.C_Timer and _G.C_Timer.After then
@@ -4300,12 +4444,14 @@ do
 					if not InCombatLockdown() then
 						applyPosition()
 						applyScale()
+						applyZoom()
 					end
 				end)
 			end
 		else
 			applyPosition()
 			applyScale()
+			applyZoom()
 		end
 	end
 
@@ -4318,6 +4464,52 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+	end
+
+	-- Hook portrait updates to reapply zoom when Blizzard updates portraits
+	-- Hook UnitFramePortrait_Update which is called when portraits need refreshing
+	if _G.UnitFramePortrait_Update then
+		_G.hooksecurefunc("UnitFramePortrait_Update", function(unitFrame)
+			if unitFrame and unitFrame.unit then
+				local unit = unitFrame.unit
+				local unitKey = nil
+				if unit == "player" then unitKey = "Player"
+				elseif unit == "target" then unitKey = "Target"
+				elseif unit == "focus" then unitKey = "Focus"
+				elseif unit == "pet" then unitKey = "Pet"
+				end
+				if unitKey then
+					-- Defer zoom reapplication to next frame to ensure texture is ready
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, function()
+							applyForUnit(unitKey)
+						end)
+					end
+				end
+			end
+		end)
+	end
+	
+	-- Also hook SetPortraitTexture as a fallback
+	if _G.SetPortraitTexture then
+		_G.hooksecurefunc("SetPortraitTexture", function(texture, unit)
+			if unit and (unit == "player" or unit == "target" or unit == "focus" or unit == "pet") then
+				local unitKey = nil
+				if unit == "player" then unitKey = "Player"
+				elseif unit == "target" then unitKey = "Target"
+				elseif unit == "focus" then unitKey = "Focus"
+				elseif unit == "pet" then unitKey = "Pet"
+				end
+				if unitKey then
+					-- Defer zoom reapplication to next frame to ensure texture is ready
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, function()
+							applyForUnit(unitKey)
+						end)
+					end
+				end
+			end
+		end)
 	end
 end
 
