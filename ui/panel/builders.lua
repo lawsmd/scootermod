@@ -2656,7 +2656,6 @@ local function createUFRenderer(componentId, title)
 				if not b then t.healthBarHideBorder = false end
 				-- Reset bar height to 100% when disabling Use Custom Borders
 				if wasEnabled and not b then
-					t.healthBarHeightPct = 100
 					t.powerBarHeightPct = 100
 				end
 				if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
@@ -2768,11 +2767,8 @@ local function createUFRenderer(componentId, title)
 			
 			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
 		]]--
-		-- Health Bar tabs (ordered by Unit Frames tab priority: Positioning > Sizing > Style/Texture > Border > Visibility > Text Elements)
-		-- Tab name is "Sizing/Direction" for Target/Focus (which support reverse fill), "Sizing" for Player/Pet
-		local isTargetOrFocus = (componentId == "ufTarget" or componentId == "ufFocus")
-		local sizingTabName = isTargetOrFocus and "Sizing/Direction" or "Sizing"
-		local hbTabs = { sectionTitle = "", tabAText = sizingTabName, tabBText = "Style", tabCText = "Border", tabDText = "% Text", tabEText = "Value Text" }
+		-- Health Bar tabs (Style, Border, Text variants)
+		local hbTabs = { sectionTitle = "", tabAText = "Style", tabBText = "Border", tabCText = "% Text", tabDText = "Value Text" }
 			hbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2857,356 +2853,9 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
-				-- PageA: Sizing/Direction (experimental) — Bar Fill Direction + Health Bar Width
-				do
-					local function applyNow()
-						if addon and addon.ApplyStyles then addon:ApplyStyles() end
-					end
-					local y = { y = -50 }
-					
-					-- Bar Fill Direction dropdown (Target/Focus only)
-					if isTargetOrFocus then
-						local label = "Bar Fill Direction"
-						local function fillDirOptions()
-							local container = Settings.CreateControlTextContainer()
-							container:Add("default", "Left to Right (default)")
-							container:Add("reverse", "Right to Left (mirrored)")
-							return container:GetData()
-						end
-						local function getter()
-							local t = ensureUFDB() or {}
-							return t.healthBarReverseFill and "reverse" or "default"
-						end
-						local function setter(v)
-							local t = ensureUFDB(); if not t then return end
-							local wasReverse = not not t.healthBarReverseFill
-							local willBeReverse = (v == "reverse")
-							
-							if wasReverse and not willBeReverse then
-								-- Switching FROM reverse TO default: Save current width and force to 100
-								local currentWidth = tonumber(t.healthBarWidthPct) or 100
-								t.healthBarWidthPctSaved = currentWidth
-								t.healthBarWidthPct = 100
-							elseif not wasReverse and willBeReverse then
-								-- Switching FROM default TO reverse: Restore saved width
-								local savedWidth = tonumber(t.healthBarWidthPctSaved) or 100
-								t.healthBarWidthPct = savedWidth
-							end
-							
-							t.healthBarReverseFill = willBeReverse
-							applyNow()
-							-- Refresh the page to update Bar Width slider enabled state
-							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
-							if panel and panel.RefreshCurrentCategoryDeferred then
-								panel.RefreshCurrentCategoryDeferred()
-							end
-						end
-						addDropdown(frame.PageA, label, fillDirOptions, getter, setter, y)
-					end
-					
-					-- Bar Width slider (only enabled for Target/Focus with reverse fill)
-					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
-					local label = "Bar Width (%)"
-					local options = Settings.CreateSliderOptions(100, 150, 1)
-					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
-					
-					-- Getter: Always return the actual stored value
-					local function getter()
-						local t = ensureUFDB() or {}
-						return tonumber(t.healthBarWidthPct) or 100
-					end
-					
-					-- Setter: Store value normally (only when slider is enabled)
-					local function setter(v)
-						local t = ensureUFDB(); if not t then return end
-						-- For Target/Focus: prevent changes when reverse fill is disabled
-						if isTargetOrFocus and not t.healthBarReverseFill then
-							return -- Silently ignore changes when disabled
-						end
-						local val = tonumber(v) or 100
-						val = math.max(100, math.min(150, val))
-						t.healthBarWidthPct = val
-						applyNow()
-					end
-					
-					local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-					local widthSlider = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
-					widthSlider.GetElementData = function() return initSlider end
-					widthSlider:SetPoint("TOPLEFT", 4, y.y)
-					widthSlider:SetPoint("TOPRIGHT", -16, y.y)
-					initSlider:InitFrame(widthSlider)
-					if widthSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(widthSlider.Text) end
-					
-					-- Store reference for later updates
-					widthSlider._scooterSetting = setting
-					
-					-- Conditional enable/disable based on fill direction (Target/Focus only)
-					if isTargetOrFocus then
-						local t = ensureUFDB() or {}
-						local isReverse = not not t.healthBarReverseFill
-						
-						if isReverse then
-							-- Enabled state: full opacity for all elements
-							if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
-							if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
-							if widthSlider.Control then 
-								widthSlider.Control:Show()
-								widthSlider.Control:Enable()
-								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(true) end
-								if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
-								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(true) end
-								widthSlider.Control:SetAlpha(1.0)
-							end
-							if widthSlider.Slider then widthSlider.Slider:Enable() end
-							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(true) end
-							-- Show interactive slider row; hide static replacement (if present)
-							widthSlider:Show()
-							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
-							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
-						else
-							-- Disabled state: gray out all visual elements
-							if widthSlider.Text then widthSlider.Text:SetAlpha(0.5) end
-							if widthSlider.Label then widthSlider.Label:SetAlpha(0.5) end
-							if widthSlider.Control then 
-								widthSlider.Control:Disable()
-								if widthSlider.Control.EnableMouse then widthSlider.Control:EnableMouse(false) end
-								if widthSlider.Control.Slider then widthSlider.Control.Slider:Disable() end
-								if widthSlider.Control.Slider and widthSlider.Control.Slider.EnableMouse then widthSlider.Control.Slider:EnableMouse(false) end
-								widthSlider.Control:SetAlpha(0.5)
-							end
-							if widthSlider.Slider then widthSlider.Slider:Disable() end
-							if widthSlider.Slider and widthSlider.Slider.EnableMouse then widthSlider.Slider:EnableMouse(false) end
-							-- Replace the interactive row with a static, non-interactive row indicating 100%
-							widthSlider:Hide()
-							if not widthSlider.ScooterBarWidthStatic then
-								local static = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
-								static:SetHeight(26)
-								static:SetPoint("TOPLEFT", widthSlider, "TOPLEFT", 0, 0)
-								static:SetPoint("TOPRIGHT", widthSlider, "TOPRIGHT", 0, 0)
-								-- Compose label text with value
-								local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
-								static.Text:SetText(baseLabel .. " — 100%")
-								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
-								-- Align label to match standard row left inset
-								if static.Text then
-									static.Text:ClearAllPoints()
-									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
-									static.Text:SetJustifyH("LEFT")
-								end
-								widthSlider.ScooterBarWidthStatic = static
-							end
-							-- Ensure text reflects forced 100%
-							do
-								local static = widthSlider.ScooterBarWidthStatic
-								if static and static.Text then
-									local baseLabel = (widthSlider.Text and widthSlider.Text:GetText()) or "Bar Width (%)"
-									static.Text:SetText(baseLabel .. " — 100%")
-									-- Ensure alignment remains correct after text update
-									static.Text:ClearAllPoints()
-									static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
-									static.Text:SetJustifyH("LEFT")
-								end
-							end
-							-- Add info icon on the static row explaining why it's disabled
-							if panel and panel.CreateInfoIconForLabel and not widthSlider.ScooterBarWidthStaticInfo then
-								local tooltipText = "Bar Width scaling is only available when using 'Right to Left (mirrored)' fill direction."
-								widthSlider.ScooterBarWidthStaticInfo = panel.CreateInfoIconForLabel(
-									widthSlider.ScooterBarWidthStatic.Text,
-									tooltipText,
-									5, 0, 32
-								)
-								C_Timer.After(0, function()
-									local icon = widthSlider.ScooterBarWidthStaticInfo
-									local label = widthSlider.ScooterBarWidthStatic and widthSlider.ScooterBarWidthStatic.Text
-									if icon and label then
-										icon:ClearAllPoints()
-										local textWidth = label:GetStringWidth() or 0
-										if textWidth > 0 then
-											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
-										else
-											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
-										end
-									end
-								end)
-							end
-							if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Show() end
-							if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Show() end
-						end
-					else
-						-- For Player/Pet, always enabled (no reverse fill option)
-						if widthSlider.Text then widthSlider.Text:SetAlpha(1.0) end
-						if widthSlider.Label then widthSlider.Label:SetAlpha(1.0) end
-						if widthSlider.Control then 
-							widthSlider.Control:Show()
-							widthSlider.Control:Enable()
-							if widthSlider.Control.Slider then widthSlider.Control.Slider:Enable() end
-							widthSlider.Control:SetAlpha(1.0)
-						end
-						if widthSlider.Slider then widthSlider.Slider:Enable() end
-						widthSlider:Show()
-						if widthSlider.ScooterBarWidthStatic then widthSlider.ScooterBarWidthStatic:Hide() end
-						if widthSlider.ScooterBarWidthStaticInfo then widthSlider.ScooterBarWidthStaticInfo:Hide() end
-					end
-					
-					y.y = y.y - 34
-					
-					-- Bar Height slider (only enabled when Use Custom Borders is checked)
-					local heightLabel = "Bar Height (%)"
-					local heightOptions = Settings.CreateSliderOptions(50, 200, 1)
-					heightOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
-					
-					-- Getter: Always return the actual stored value
-					local function heightGetter()
-						local t = ensureUFDB() or {}
-						return tonumber(t.healthBarHeightPct) or 100
-					end
-					
-					-- Setter: Store value normally (only when slider is enabled)
-					local function heightSetter(v)
-						local t = ensureUFDB(); if not t then return end
-						-- Prevent changes when Use Custom Borders is disabled
-						if not t.useCustomBorders then
-							return -- Silently ignore changes when disabled
-						end
-						local val = tonumber(v) or 100
-						val = math.max(50, math.min(200, val))
-						t.healthBarHeightPct = val
-						applyNow()
-					end
-					
-					local heightSetting = CreateLocalSetting(heightLabel, "number", heightGetter, heightSetter, heightGetter())
-					local initHeightSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = heightLabel, setting = heightSetting, options = heightOptions })
-					local heightSlider = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
-					heightSlider.GetElementData = function() return initHeightSlider end
-					heightSlider:SetPoint("TOPLEFT", 4, y.y)
-					heightSlider:SetPoint("TOPRIGHT", -16, y.y)
-					initHeightSlider:InitFrame(heightSlider)
-					if heightSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(heightSlider.Text) end
-					
-					-- Add info icon to enabled slider explaining the requirement
-					if panel and panel.CreateInfoIconForLabel then
-						local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the health bar."
-						local label = heightSlider.Text or heightSlider.Label
-						if label and not heightSlider.ScooterBarHeightInfoIcon then
-							heightSlider.ScooterBarHeightInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
-							C_Timer.After(0, function()
-								local icon = heightSlider.ScooterBarHeightInfoIcon
-								local lbl = heightSlider.Text or heightSlider.Label
-								if icon and lbl then
-									icon:ClearAllPoints()
-									local textWidth = lbl:GetStringWidth() or 0
-									if textWidth > 0 then
-										icon:SetPoint("LEFT", lbl, "LEFT", textWidth + 5, 0)
-									else
-										icon:SetPoint("LEFT", lbl, "RIGHT", 5, 0)
-									end
-								end
-							end)
-						end
-					end
-					
-					-- Store reference for later updates
-					heightSlider._scooterSetting = heightSetting
-					
-					-- Conditional enable/disable based on Use Custom Borders
-					local function updateHeightSliderState()
-						local t = ensureUFDB() or {}
-						local isEnabled = not not t.useCustomBorders
-						
-						if isEnabled then
-							-- Enabled state: full opacity for all elements
-							if heightSlider.Text then heightSlider.Text:SetAlpha(1.0) end
-							if heightSlider.Label then heightSlider.Label:SetAlpha(1.0) end
-							if heightSlider.Control then 
-								heightSlider.Control:Show()
-								heightSlider.Control:Enable()
-								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(true) end
-								if heightSlider.Control.Slider then heightSlider.Control.Slider:Enable() end
-								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(true) end
-								heightSlider.Control:SetAlpha(1.0)
-							end
-							if heightSlider.Slider then heightSlider.Slider:Enable() end
-							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(true) end
-							heightSlider:Show()
-							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Hide() end
-							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Hide() end
-							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Show() end
-						else
-							-- Disabled state: gray out all visual elements
-							if heightSlider.Text then heightSlider.Text:SetAlpha(0.5) end
-							if heightSlider.Label then heightSlider.Label:SetAlpha(0.5) end
-							if heightSlider.Control then 
-								heightSlider.Control:Hide()
-								heightSlider.Control:Disable()
-								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(false) end
-								if heightSlider.Control.Slider then heightSlider.Control.Slider:Disable() end
-								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(false) end
-								heightSlider.Control:SetAlpha(0.5)
-							end
-							if heightSlider.Slider then heightSlider.Slider:Disable() end
-							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(false) end
-							heightSlider:SetAlpha(0.5)
-							
-							-- Create static replacement row if it doesn't exist
-							if not heightSlider.ScooterBarHeightStatic then
-								local static = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
-								static:SetHeight(26)
-								static:SetPoint("TOPLEFT", 4, y.y)
-								static:SetPoint("TOPRIGHT", -16, y.y)
-								static.Text = static:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
-								static.Text:SetJustifyH("LEFT")
-								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
-								heightSlider.ScooterBarHeightStatic = static
-							end
-							local static = heightSlider.ScooterBarHeightStatic
-							if static and static.Text then
-								local baseLabel = (heightSlider.Text and heightSlider.Text:GetText()) or "Bar Height (%)"
-								static.Text:SetText(baseLabel .. " — 100%")
-								static.Text:ClearAllPoints()
-								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
-								static.Text:SetJustifyH("LEFT")
-							end
-							-- Add info icon on the static row explaining why it's disabled
-							if panel and panel.CreateInfoIconForLabel and not heightSlider.ScooterBarHeightStaticInfo then
-								local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the health bar."
-								heightSlider.ScooterBarHeightStaticInfo = panel.CreateInfoIconForLabel(
-									heightSlider.ScooterBarHeightStatic.Text,
-									tooltipText,
-									5, 0, 32
-								)
-								C_Timer.After(0, function()
-									local icon = heightSlider.ScooterBarHeightStaticInfo
-									local label = heightSlider.ScooterBarHeightStatic and heightSlider.ScooterBarHeightStatic.Text
-									if icon and label then
-										icon:ClearAllPoints()
-										local textWidth = label:GetStringWidth() or 0
-										if textWidth > 0 then
-											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
-										else
-											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
-										end
-									end
-								end)
-							end
-							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Show() end
-							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Show() end
-							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Hide() end
-							heightSlider:Hide()
-						end
-					end
-					
-					-- Initial state update
-					updateHeightSliderState()
-					
-					-- Store update function for external calls (e.g., when Use Custom Borders changes)
-					heightSlider._updateState = updateHeightSliderState
-					
-					y.y = y.y - 34
-				end
+				-- Removed Health Bar sizing tab (Positioning/Sizing controls)
 
-				-- PageD: % Text
+				-- PageC: % Text
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -3227,7 +2876,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3239,33 +2888,33 @@ local function createUFRenderer(componentId, title)
 					end
 					y.y = y.y - 34
 					-- Font controls for % Text
-					addDropdown(frame.PageD, "% Text Font", fontOptions,
+					addDropdown(frame.PageC, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageD, "% Text Style",
+					addStyle(frame.PageC, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageD, "% Text Size", 6, 48, 1,
+					addSlider(frame.PageC, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageD, "% Text Color", true,
+					addColor(frame.PageC, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageD, "% Text Offset X", -100, 100, 1,
+					addSlider(frame.PageC, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageD, "% Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageC, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageE: Value Text
+				-- PageD: Value Text
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -3286,7 +2935,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3299,33 +2948,33 @@ local function createUFRenderer(componentId, title)
 					-- Match % Text layout: drop the cursor after the checkbox row
 					y.y = y.y - 34
 					-- Font controls for Value Text
-					addDropdown(frame.PageE, "Value Text Font", fontOptions,
+					addDropdown(frame.PageD, "Value Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageE, "Value Text Style",
+					addStyle(frame.PageD, "Value Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageE, "Value Text Size", 6, 48, 1,
+					addSlider(frame.PageD, "Value Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageE, "Value Text Color", true,
+					addColor(frame.PageD, "Value Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageE, "Value Text Offset X", -100, 100, 1,
+					addSlider(frame.PageD, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageE, "Value Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageD, "Value Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageB: Foreground/Background Texture + Color
+				-- PageA: Foreground/Background Texture + Color
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
@@ -3337,7 +2986,7 @@ local function createUFRenderer(componentId, title)
 					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarTexture = v; applyNow() end
 					local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = opts })
-					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -3368,7 +3017,7 @@ local function createUFRenderer(componentId, title)
 					local function setTintTbl(r,g,b,a)
 						local t = ensureUFDB(); if not t then return end; t.healthBarTint = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 					end
-					panel.DropdownWithInlineSwatch(frame.PageB, y, {
+					panel.DropdownWithInlineSwatch(frame.PageA, y, {
 						label = "Foreground Color",
 						getMode = getColorMode,
 						setMode = setColorMode,
@@ -3383,7 +3032,7 @@ local function createUFRenderer(componentId, title)
 					local function setBgTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTexture = v; applyNow() end
 					local bgTexSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
 					local initBgDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgTexSetting, options = opts })
-					local fbg = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+					local fbg = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
 					fbg.GetElementData = function() return initBgDrop end
 					fbg:SetPoint("TOPLEFT", 4, y.y)
 					fbg:SetPoint("TOPRIGHT", -16, y.y)
@@ -3413,7 +3062,7 @@ local function createUFRenderer(componentId, title)
 					local function setBgTintTbl(r,g,b,a)
 						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTint = { r or 0, g or 0, b or 0, a or 1 }; applyNow()
 					end
-					panel.DropdownWithInlineSwatch(frame.PageB, y, {
+					panel.DropdownWithInlineSwatch(frame.PageA, y, {
 						label = "Background Color",
 						getMode = getBgColorMode,
 						setMode = setBgColorMode,
@@ -3433,7 +3082,7 @@ local function createUFRenderer(componentId, title)
 					local bgOpacityOpts = Settings.CreateSliderOptions(0, 100, 1)
 					bgOpacityOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
 					local bgOpacityInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Background Opacity", setting = bgOpacitySetting, options = bgOpacityOpts })
-					local fOpa = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+					local fOpa = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
 					fOpa.GetElementData = function() return bgOpacityInit end
 					fOpa:SetPoint("TOPLEFT", 4, y.y)
 					fOpa:SetPoint("TOPRIGHT", -16, y.y)
@@ -3443,7 +3092,7 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 48
 				end
 
-				-- PageC: Border (Health Bar only)
+				-- PageB: Border (Health Bar only)
 				do
 					local y = { y = -50 }
 					local function optionsBorder()
@@ -3484,7 +3133,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
-					local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -3521,7 +3170,7 @@ local function createUFRenderer(componentId, title)
 						end
 						local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
 						local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
-						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
 						row.GetElementData = function() return initCb end
 						row:SetPoint("TOPLEFT", 4, y.y)
 						row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3557,7 +3206,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -3588,7 +3237,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
