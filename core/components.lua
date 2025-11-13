@@ -2498,9 +2498,9 @@ do
 			
 		-- Apply our color immediately (use Blizzard's default yellow)
 		local c = cfg.textLevel.color or {1.0,0.82,0.0,1}
-		if levelFS._scooterOrigSetVertexColor then
-			pcall(levelFS._scooterOrigSetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-		end
+			if levelFS._scooterOrigSetVertexColor then
+				pcall(levelFS._scooterOrigSetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+			end
 		elseif unit == "Player" and levelFS and levelFS._scooterVertexColorHooked then
 			-- Custom color disabled, restore original behavior
 			if levelFS._scooterOrigSetVertexColor then
@@ -3584,6 +3584,145 @@ do
 					end
 				end
 			end
+			
+			-- Health Bar Height scaling (texture/mask only)
+			-- For Target/Focus: Only when reverse fill is enabled
+			-- For Player/Pet: Always available
+			do
+				local canScale = false
+				if unit == "Player" or unit == "Pet" then
+					canScale = true
+				elseif (unit == "Target" or unit == "Focus") and cfg.healthBarReverseFill then
+					canScale = true
+				end
+				
+				if canScale then
+					local pct = tonumber(cfg.healthBarHeightPct) or 100
+					local widthPct = tonumber(cfg.healthBarWidthPct) or 100
+					local tex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
+					local mask = resolveHealthMask(unit)
+					
+					-- Capture originals once (height and anchor points)
+					if tex and not tex._ScootUFOrigCapturedHeight then
+						if tex.GetHeight then
+							local ok, h = pcall(tex.GetHeight, tex)
+							if ok and h then tex._ScootUFOrigHeight = h end
+						end
+						-- Texture anchor points already captured by width scaling
+						tex._ScootUFOrigCapturedHeight = true
+					end
+					if mask and not mask._ScootUFOrigCapturedHeight then
+						if mask.GetHeight then
+							local ok, h = pcall(mask.GetHeight, mask)
+							if ok and h then mask._ScootUFOrigHeight = h end
+						end
+						-- Mask anchor points already captured by width scaling
+						mask._ScootUFOrigCapturedHeight = true
+					end
+					
+					-- Anchor points should already be captured by width scaling
+					-- If not, capture them now
+					if hb and not hb._ScootUFOrigPoints then
+						local pts = {}
+						local n = (hb.GetNumPoints and hb:GetNumPoints()) or 0
+						for i = 1, n do
+							local p, rel, rp, x, y = hb:GetPoint(i)
+							table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+						end
+						hb._ScootUFOrigPoints = pts
+					end
+					
+					-- Helper: reanchor HB to grow downward (keep top fixed)
+					local function reapplyHBPointsWithBottomOffset(dy)
+						-- Positive dy moves BOTTOM/CENTER anchors downward (keep top edge fixed)
+						local pts = hb and hb._ScootUFOrigPoints
+						if not (hb and pts and hb.ClearAllPoints and hb.SetPoint) then return end
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(pts) do
+							local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
+							local yy = y or 0
+							local anchor = tostring(p or "")
+							local relp = tostring(rp or "")
+							if string.find(anchor, "BOTTOM", 1, true) or string.find(relp, "BOTTOM", 1, true) then
+								yy = (y or 0) - (dy or 0)
+							elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
+								yy = (y or 0) - ((dy or 0) * 0.5)
+							end
+							pcall(hb.SetPoint, hb, p or "TOP", rel, rp or p or "TOP", x or 0, yy or 0)
+						end
+					end
+					
+					local scaleY = math.max(0.5, math.min(2.0, pct / 100))
+					
+					-- Capture original HealthBar height once
+					if hb and not hb._ScootUFOrigHeight then
+						if hb.GetHeight then
+							local ok, h = pcall(hb.GetHeight, hb)
+							if ok and h then hb._ScootUFOrigHeight = h end
+						end
+					end
+					
+					-- CRITICAL: Always restore to original state FIRST
+					if hb and hb._ScootUFOrigHeight and hb.SetHeight then
+						pcall(hb.SetHeight, hb, hb._ScootUFOrigHeight)
+					end
+					if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(hb._ScootUFOrigPoints) do
+							pcall(hb.SetPoint, hb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
+						end
+					end
+					
+					if pct ~= 100 then
+						-- Scale the status bar frame height
+						if hb and hb.SetHeight and hb._ScootUFOrigHeight then
+							pcall(hb.SetHeight, hb, hb._ScootUFOrigHeight * scaleY)
+						end
+						
+						-- Reposition the frame to grow downward (keep top fixed)
+						if hb and hb._ScootUFOrigHeight then
+							local dy = (hb._ScootUFOrigHeight * (scaleY - 1))
+							if dy and dy ~= 0 then
+								reapplyHBPointsWithBottomOffset(dy)
+							end
+						end
+						
+						-- DO NOT touch the StatusBar texture - it's managed automatically by the StatusBar widget
+						-- REMOVE the mask entirely when scaling - it causes rendering artifacts
+						if tex and mask and tex.RemoveMaskTexture then
+							pcall(tex.RemoveMaskTexture, tex, mask)
+						end
+						
+						-- Force StatusBar to refresh its texture
+						if hb and hb.GetValue and hb.SetValue then
+							local currentValue = hb:GetValue()
+							if currentValue then
+								pcall(hb.SetValue, hb, currentValue)
+							end
+						end
+					else
+						-- Restore (already done above in the restore-first step)
+						-- Re-apply mask ONLY if both Width and Height are at 100%
+						-- (Width scaling removes the mask, so we shouldn't re-apply it if Width is still scaled)
+						if hb and mask and widthPct == 100 then
+							ensureMaskOnBarTexture(hb, mask)
+						end
+					end
+				else
+					-- Not scalable (Target/Focus with default fill): ensure we restore any prior height/anchors
+					-- Restore health bar frame
+					if hb and hb._ScootUFOrigHeight and hb.SetHeight then
+						pcall(hb.SetHeight, hb, hb._ScootUFOrigHeight)
+					end
+					if hb and hb._ScootUFOrigPoints and hb.ClearAllPoints and hb.SetPoint then
+						pcall(hb.ClearAllPoints, hb)
+						for _, pt in ipairs(hb._ScootUFOrigPoints) do
+							pcall(hb.SetPoint, hb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
+						end
+					end
+				end
+			end
+			
             -- Health Bar custom border (Health Bar only)
             do
 				local styleKey = cfg.healthBarBorderStyle
@@ -3821,9 +3960,147 @@ do
 					if pb and mask then
 						ensureMaskOnBarTexture(pb, mask)
 					end
+							end
+						end
+			
+			-- Power Bar Height scaling (texture/mask only)
+			-- For Target/Focus: Only when reverse fill is enabled
+			-- For Player/Pet: Always available
+			do
+				local canScale = false
+				if unit == "Player" or unit == "Pet" then
+					canScale = true
+				elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
+					canScale = true
 				end
-            end
-
+				
+				if canScale then
+					local pct = tonumber(cfg.powerBarHeightPct) or 100
+					local widthPct = tonumber(cfg.powerBarWidthPct) or 100
+					local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
+					local mask = resolvePowerMask(unit)
+					
+					-- Capture originals once (height and anchor points)
+					if tex and not tex._ScootUFOrigCapturedHeight then
+						if tex.GetHeight then
+							local ok, h = pcall(tex.GetHeight, tex)
+							if ok and h then tex._ScootUFOrigHeight = h end
+						end
+						-- Texture anchor points already captured by width scaling
+						tex._ScootUFOrigCapturedHeight = true
+					end
+					if mask and not mask._ScootUFOrigCapturedHeight then
+						if mask.GetHeight then
+							local ok, h = pcall(mask.GetHeight, mask)
+							if ok and h then mask._ScootUFOrigHeight = h end
+						end
+						-- Mask anchor points already captured by width scaling
+						mask._ScootUFOrigCapturedHeight = true
+					end
+					
+					-- Anchor points should already be captured by width scaling
+					-- If not, capture them now
+					if pb and not pb._ScootUFOrigPoints then
+						local pts = {}
+						local n = (pb.GetNumPoints and pb:GetNumPoints()) or 0
+						for i = 1, n do
+							local p, rel, rp, x, y = pb:GetPoint(i)
+							table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+						end
+						pb._ScootUFOrigPoints = pts
+					end
+					
+					-- Helper: reanchor PB to grow downward (keep top fixed)
+					local function reapplyPBPointsWithBottomOffset(dy)
+						-- Positive dy moves BOTTOM/CENTER anchors downward (keep top edge fixed)
+						local pts = pb and pb._ScootUFOrigPoints
+						if not (pb and pts and pb.ClearAllPoints and pb.SetPoint) then return end
+						pcall(pb.ClearAllPoints, pb)
+						for _, pt in ipairs(pts) do
+							local p, rel, rp, x, y = pt[1], pt[2], pt[3], pt[4], pt[5]
+							local yy = y or 0
+							local anchor = tostring(p or "")
+							local relp = tostring(rp or "")
+							if string.find(anchor, "BOTTOM", 1, true) or string.find(relp, "BOTTOM", 1, true) then
+								yy = (y or 0) - (dy or 0)
+							elseif string.find(anchor, "CENTER", 1, true) or string.find(relp, "CENTER", 1, true) then
+								yy = (y or 0) - ((dy or 0) * 0.5)
+							end
+							pcall(pb.SetPoint, pb, p or "TOP", rel, rp or p or "TOP", x or 0, yy or 0)
+						end
+					end
+					
+					local scaleY = math.max(0.5, math.min(2.0, pct / 100))
+					
+					-- Capture original PowerBar height once
+					if pb and not pb._ScootUFOrigHeight then
+						if pb.GetHeight then
+							local ok, h = pcall(pb.GetHeight, pb)
+							if ok and h then pb._ScootUFOrigHeight = h end
+						end
+					end
+					
+					-- CRITICAL: Always restore to original state FIRST
+					if pb and pb._ScootUFOrigHeight and pb.SetHeight then
+						pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight)
+					end
+					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+						pcall(pb.ClearAllPoints, pb)
+						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+							pcall(pb.SetPoint, pb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
+						end
+					end
+					
+					if pct ~= 100 then
+						-- Scale the status bar frame height
+						if pb and pb.SetHeight and pb._ScootUFOrigHeight then
+							pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight * scaleY)
+						end
+						
+						-- Reposition the frame to grow downward (keep top fixed)
+						if pb and pb._ScootUFOrigHeight then
+							local dy = (pb._ScootUFOrigHeight * (scaleY - 1))
+							if dy and dy ~= 0 then
+								reapplyPBPointsWithBottomOffset(dy)
+							end
+						end
+						
+						-- DO NOT touch the StatusBar texture - it's managed automatically by the StatusBar widget
+						-- REMOVE the mask entirely when scaling - it causes rendering artifacts
+						if tex and mask and tex.RemoveMaskTexture then
+							pcall(tex.RemoveMaskTexture, tex, mask)
+						end
+						
+						-- Force StatusBar to refresh its texture
+						if pb and pb.GetValue and pb.SetValue then
+							local currentValue = pb:GetValue()
+							if currentValue then
+								pcall(pb.SetValue, pb, currentValue)
+							end
+						end
+					else
+						-- Restore (already done above in the restore-first step)
+						-- Re-apply mask ONLY if both Width and Height are at 100%
+						-- (Width scaling removes the mask, so we shouldn't re-apply it if Width is still scaled)
+						if pb and mask and widthPct == 100 then
+							ensureMaskOnBarTexture(pb, mask)
+						end
+					end
+				else
+					-- Not scalable (Target/Focus with default fill): ensure we restore any prior height/anchors
+					-- Restore power bar frame
+					if pb and pb._ScootUFOrigHeight and pb.SetHeight then
+						pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight)
+					end
+					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+						pcall(pb.ClearAllPoints, pb)
+						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+							pcall(pb.SetPoint, pb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
+						end
+					end
+				end
+			end
+						
             -- Power Bar positioning offsets
             do
                 local offsetX = tonumber(cfg.powerBarOffsetX) or 0
@@ -3835,29 +4112,29 @@ do
                     for i = 1, pb:GetNumPoints() do
                         local point, relativeTo, relativePoint, xOfs, yOfs = pb:GetPoint(i)
                         table.insert(pb._ScootPowerBarOrigPoints, {point, relativeTo, relativePoint, xOfs, yOfs})
-                    end
-                end
-                
+							end
+						end
+						
                 -- Apply offsets if non-zero, otherwise restore original anchors
                 if offsetX ~= 0 or offsetY ~= 0 then
                     if pb.ClearAllPoints and pb.SetPoint then
-                        pcall(pb.ClearAllPoints, pb)
+								pcall(pb.ClearAllPoints, pb)
                         for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
                             local newX = (pt[4] or 0) + offsetX
                             local newY = (pt[5] or 0) + offsetY
                             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", newX, newY)
-                        end
-                    end
-                else
+							end
+						end
+					else
                     -- Restore original points when offsets are zero
                     if pb.ClearAllPoints and pb.SetPoint then
-                        pcall(pb.ClearAllPoints, pb)
+						pcall(pb.ClearAllPoints, pb)
                         for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
                             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
-                        end
-                    end
-                end
-            end
+						end
+					end
+				end
+			end
 
             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
             do
