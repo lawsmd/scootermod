@@ -3434,7 +3434,7 @@ local function createUFRenderer(componentId, title)
 					-- Bar Width slider (only enabled for Target/Focus with reverse fill)
 					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
 					local label = "Bar Width (%)"
-					local options = Settings.CreateSliderOptions(100, 150, 1)
+					local options = Settings.CreateSliderOptions(50, 150, 1)
 					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
 
 					-- Getter: Always return the actual stored value
@@ -3451,7 +3451,7 @@ local function createUFRenderer(componentId, title)
 							return -- Silently ignore changes when disabled
 						end
 						local val = tonumber(v) or 100
-						val = math.max(100, math.min(150, val))
+						val = math.max(50, math.min(150, val))
 						t.powerBarWidthPct = val
 						applyNow()
 					end

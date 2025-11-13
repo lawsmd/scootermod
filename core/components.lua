@@ -3429,6 +3429,8 @@ do
                     local pct = tonumber(cfg.powerBarWidthPct) or 100
                     local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
                     local mask = resolvePowerMask(unit)
+					local isMirroredUnit = (unit == "Target" or unit == "Focus")
+					local scaleX = math.min(1.5, math.max(0.5, (pct or 100) / 100))
 
                     -- Capture original PB width once
                     if pb and not pb._ScootUFOrigWidth then
@@ -3466,8 +3468,6 @@ do
                             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", (pt[4] or 0) + dx, pt[5] or 0)
                         end
                     end
-
-                    local scaleX = math.max(1, pct / 100)
 
 					-- CRITICAL: Always restore to original state FIRST before applying new width
 					-- Always start from the captured baseline to avoid cumulative offsets.
@@ -3512,6 +3512,22 @@ do
                                 pcall(pb.SetValue, pb, currentValue)
                             end
                         end
+                    elseif pct < 100 then
+						-- Narrow the status bar frame
+						if pb and pb.SetWidth and pb._ScootUFOrigWidth then
+							pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth * scaleX)
+						end
+						-- Reposition so mirrored bars keep the portrait edge anchored
+						if pb and pb._ScootUFOrigWidth then
+							local shrinkDx = pb._ScootUFOrigWidth * (1 - scaleX)
+							if shrinkDx and shrinkDx ~= 0 and isMirroredUnit then
+								reapplyPBPointsWithLeftOffset(-shrinkDx)
+							end
+						end
+						-- Ensure mask remains applied when narrowing
+						if pb and mask then
+							ensureMaskOnBarTexture(pb, mask)
+						end
                     else
                         -- Restore power bar frame
                         if pb and pb._ScootUFOrigWidth and pb.SetWidth then
