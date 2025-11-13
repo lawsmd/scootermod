@@ -2650,11 +2650,17 @@ local function createUFRenderer(componentId, title)
 			end
 			local function setter(b)
 				local t = ensureUFDB(); if not t then return end
+				local wasEnabled = not not t.useCustomBorders
 				t.useCustomBorders = not not b
 				-- Clear legacy per-health-bar hide flag when disabling custom borders so stock art restores
 				if not b then t.healthBarHideBorder = false end
+				-- Reset bar height to 100% when disabling Use Custom Borders
+				if wasEnabled and not b then
+					t.healthBarHeightPct = 100
+					t.powerBarHeightPct = 100
+				end
 				if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
-				-- Rerender current category to update enabled/disabled state of Border tab controls
+				-- Rerender current category to update enabled/disabled state of Border tab controls and Bar Height sliders
 				if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
 			end
 			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -3044,7 +3050,160 @@ local function createUFRenderer(componentId, title)
 					end
 					
 					y.y = y.y - 34
-					-- (Reverted) Bar Height slider removed
+					
+					-- Bar Height slider (only enabled when Use Custom Borders is checked)
+					local heightLabel = "Bar Height (%)"
+					local heightOptions = Settings.CreateSliderOptions(50, 200, 1)
+					heightOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					
+					-- Getter: Always return the actual stored value
+					local function heightGetter()
+						local t = ensureUFDB() or {}
+						return tonumber(t.healthBarHeightPct) or 100
+					end
+					
+					-- Setter: Store value normally (only when slider is enabled)
+					local function heightSetter(v)
+						local t = ensureUFDB(); if not t then return end
+						-- Prevent changes when Use Custom Borders is disabled
+						if not t.useCustomBorders then
+							return -- Silently ignore changes when disabled
+						end
+						local val = tonumber(v) or 100
+						val = math.max(50, math.min(200, val))
+						t.healthBarHeightPct = val
+						applyNow()
+					end
+					
+					local heightSetting = CreateLocalSetting(heightLabel, "number", heightGetter, heightSetter, heightGetter())
+					local initHeightSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = heightLabel, setting = heightSetting, options = heightOptions })
+					local heightSlider = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
+					heightSlider.GetElementData = function() return initHeightSlider end
+					heightSlider:SetPoint("TOPLEFT", 4, y.y)
+					heightSlider:SetPoint("TOPRIGHT", -16, y.y)
+					initHeightSlider:InitFrame(heightSlider)
+					if heightSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(heightSlider.Text) end
+					
+					-- Add info icon to enabled slider explaining the requirement
+					if panel and panel.CreateInfoIconForLabel then
+						local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the health bar."
+						local label = heightSlider.Text or heightSlider.Label
+						if label and not heightSlider.ScooterBarHeightInfoIcon then
+							heightSlider.ScooterBarHeightInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
+							C_Timer.After(0, function()
+								local icon = heightSlider.ScooterBarHeightInfoIcon
+								local lbl = heightSlider.Text or heightSlider.Label
+								if icon and lbl then
+									icon:ClearAllPoints()
+									local textWidth = lbl:GetStringWidth() or 0
+									if textWidth > 0 then
+										icon:SetPoint("LEFT", lbl, "LEFT", textWidth + 5, 0)
+									else
+										icon:SetPoint("LEFT", lbl, "RIGHT", 5, 0)
+									end
+								end
+							end)
+						end
+					end
+					
+					-- Store reference for later updates
+					heightSlider._scooterSetting = heightSetting
+					
+					-- Conditional enable/disable based on Use Custom Borders
+					local function updateHeightSliderState()
+						local t = ensureUFDB() or {}
+						local isEnabled = not not t.useCustomBorders
+						
+						if isEnabled then
+							-- Enabled state: full opacity for all elements
+							if heightSlider.Text then heightSlider.Text:SetAlpha(1.0) end
+							if heightSlider.Label then heightSlider.Label:SetAlpha(1.0) end
+							if heightSlider.Control then 
+								heightSlider.Control:Show()
+								heightSlider.Control:Enable()
+								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(true) end
+								if heightSlider.Control.Slider then heightSlider.Control.Slider:Enable() end
+								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(true) end
+								heightSlider.Control:SetAlpha(1.0)
+							end
+							if heightSlider.Slider then heightSlider.Slider:Enable() end
+							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(true) end
+							heightSlider:Show()
+							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Hide() end
+							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Hide() end
+							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Show() end
+						else
+							-- Disabled state: gray out all visual elements
+							if heightSlider.Text then heightSlider.Text:SetAlpha(0.5) end
+							if heightSlider.Label then heightSlider.Label:SetAlpha(0.5) end
+							if heightSlider.Control then 
+								heightSlider.Control:Hide()
+								heightSlider.Control:Disable()
+								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(false) end
+								if heightSlider.Control.Slider then heightSlider.Control.Slider:Disable() end
+								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(false) end
+								heightSlider.Control:SetAlpha(0.5)
+							end
+							if heightSlider.Slider then heightSlider.Slider:Disable() end
+							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(false) end
+							heightSlider:SetAlpha(0.5)
+							
+							-- Create static replacement row if it doesn't exist
+							if not heightSlider.ScooterBarHeightStatic then
+								local static = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
+								static:SetHeight(26)
+								static:SetPoint("TOPLEFT", 4, y.y)
+								static:SetPoint("TOPRIGHT", -16, y.y)
+								static.Text = static:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+								static.Text:SetJustifyH("LEFT")
+								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
+								heightSlider.ScooterBarHeightStatic = static
+							end
+							local static = heightSlider.ScooterBarHeightStatic
+							if static and static.Text then
+								local baseLabel = (heightSlider.Text and heightSlider.Text:GetText()) or "Bar Height (%)"
+								static.Text:SetText(baseLabel .. " — 100%")
+								static.Text:ClearAllPoints()
+								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+								static.Text:SetJustifyH("LEFT")
+							end
+							-- Add info icon on the static row explaining why it's disabled
+							if panel and panel.CreateInfoIconForLabel and not heightSlider.ScooterBarHeightStaticInfo then
+								local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the health bar."
+								heightSlider.ScooterBarHeightStaticInfo = panel.CreateInfoIconForLabel(
+									heightSlider.ScooterBarHeightStatic.Text,
+									tooltipText,
+									5, 0, 32
+								)
+								C_Timer.After(0, function()
+									local icon = heightSlider.ScooterBarHeightStaticInfo
+									local label = heightSlider.ScooterBarHeightStatic and heightSlider.ScooterBarHeightStatic.Text
+									if icon and label then
+										icon:ClearAllPoints()
+										local textWidth = label:GetStringWidth() or 0
+										if textWidth > 0 then
+											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+										else
+											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+										end
+									end
+								end)
+							end
+							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Show() end
+							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Show() end
+							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Hide() end
+							heightSlider:Hide()
+						end
+					end
+					
+					-- Initial state update
+					updateHeightSliderState()
+					
+					-- Store update function for external calls (e.g., when Use Custom Borders changes)
+					heightSlider._updateState = updateHeightSliderState
+					
+					y.y = y.y - 34
 				end
 
 				-- PageD: % Text
@@ -3190,7 +3349,7 @@ local function createUFRenderer(componentId, title)
                     if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
-					-- Foreground Color dropdown
+					-- Foreground Color (dropdown + inline swatch)
                     local function colorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
@@ -3199,64 +3358,25 @@ local function createUFRenderer(componentId, title)
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local fgTintRow, fgTintLabel, fgTintSwatch
 					local function getColorMode() local t = ensureUFDB() or {}; return t.healthBarColorMode or "default" end
 					local function setColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.healthBarColorMode = v or "default"; applyNow()
-						local isCustom = (v == "custom")
-						if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-						if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					end
-					local colorSetting = CreateLocalSetting("Foreground Color", "string", getColorMode, setColorMode, getColorMode())
-					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Color", setting = colorSetting, options = colorOpts })
-					local cf = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
-					cf.GetElementData = function() return initColor end
-					cf:SetPoint("TOPLEFT", 4, y.y)
-					cf:SetPoint("TOPRIGHT", -16, y.y)
-                    initColor:InitFrame(cf)
-                    if panel and panel.ApplyRobotoWhite then
-                        local lbl = cf and (cf.Text or cf.Label)
-                        if lbl then panel.ApplyRobotoWhite(lbl) end
-                    end
-					y.y = y.y - 34
-					-- Foreground Tint color swatch
-					local function getTint()
-						local t = ensureUFDB() or {}; local c = t.healthBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+					local function getTintTbl()
+						local t = ensureUFDB() or {}; local c = t.healthBarTint or {1,1,1,1}; return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
 					end
-					local function setTint(r,g,b,a)
-						local t = ensureUFDB(); if not t then return end; t.healthBarTint = {r,g,b,a}; applyNow()
+					local function setTintTbl(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.healthBarTint = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 					end
-					local f2 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
-					fgTintRow = f2
-					f2:SetHeight(26)
-					f2:SetPoint("TOPLEFT", 4, y.y)
-					f2:SetPoint("TOPRIGHT", -16, y.y)
-					f2.Text:SetText("Foreground Tint")
-					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
-					fgTintLabel = f2.Text
-					local right = CreateFrame("Frame", nil, f2)
-					right:SetSize(250, 26)
-					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
-					f2.Text:ClearAllPoints()
-					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
-					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
-					f2.Text:SetJustifyH("LEFT")
-					-- Use centralized color swatch factory
-					local function getColorTable()
-						local r, g, b, a = getTint()
-						return {r or 1, g or 1, b or 1, a or 1}
-					end
-					local function setColorTable(r, g, b, a)
-						setTint(r, g, b, a)
-					end
-					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, true)
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					fgTintSwatch = swatch
-					-- Set initial disabled state if not custom
-					local isCustom = (getColorMode() == "custom")
-					if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-					if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
-					y.y = y.y - 34
+					panel.DropdownWithInlineSwatch(frame.PageB, y, {
+						label = "Foreground Color",
+						getMode = getColorMode,
+						setMode = setColorMode,
+						getColor = getTintTbl,
+						setColor = setTintTbl,
+						options = colorOpts,
+						insideButton = true,
+					})
 
 					-- Background Texture dropdown
 					local function getBgTex() local t = ensureUFDB() or {}; return t.healthBarBackgroundTexture or "default" end
@@ -3275,7 +3395,7 @@ local function createUFRenderer(componentId, title)
                     if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
 					y.y = y.y - 34
 
-					-- Background Color dropdown
+					-- Background Color (dropdown + inline swatch)
                     local function bgColorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
@@ -3283,60 +3403,25 @@ local function createUFRenderer(componentId, title)
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local bgTintRow, bgTintLabel, bgTintSwatch
 					local function getBgColorMode() local t = ensureUFDB() or {}; return t.healthBarBackgroundColorMode or "default" end
 					local function setBgColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundColorMode = v or "default"; applyNow()
-						local isCustom = (v == "custom")
-						if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-						if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
 					end
-					local bgColorSetting = CreateLocalSetting("Background Color", "string", getBgColorMode, setBgColorMode, getBgColorMode())
-					local initBgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Color", setting = bgColorSetting, options = bgColorOpts })
-					local cbg = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
-					cbg.GetElementData = function() return initBgColor end
-					cbg:SetPoint("TOPLEFT", 4, y.y)
-					cbg:SetPoint("TOPRIGHT", -16, y.y)
-                    initBgColor:InitFrame(cbg)
-                    if panel and panel.ApplyRobotoWhite then
-                        local lbl = cbg and (cbg.Text or cbg.Label)
-                        if lbl then panel.ApplyRobotoWhite(lbl) end
-                    end
-					y.y = y.y - 34
-					-- Background Tint color swatch
-					local function getBgTint()
-						local t = ensureUFDB() or {}; local c = t.healthBarBackgroundTint or {0,0,0,1}; return c[1], c[2], c[3], c[4]
+					local function getBgTintTbl()
+						local t = ensureUFDB() or {}; local c = t.healthBarBackgroundTint or {0,0,0,1}; return { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
 					end
-					local function setBgTint(r,g,b,a)
-						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTint = {r,g,b,a}; applyNow()
+					local function setBgTintTbl(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTint = { r or 0, g or 0, b or 0, a or 1 }; applyNow()
 					end
-					local f3 = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
-					bgTintRow = f3
-					f3:SetHeight(26)
-					f3:SetPoint("TOPLEFT", 4, y.y)
-					f3:SetPoint("TOPRIGHT", -16, y.y)
-					f3.Text:SetText("Background Tint")
-					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f3.Text) end
-					bgTintLabel = f3.Text
-					local rightBg = CreateFrame("Frame", nil, f3)
-					rightBg:SetSize(250, 26)
-					rightBg:SetPoint("RIGHT", f3, "RIGHT", -16, 0)
-					f3.Text:ClearAllPoints()
-					f3.Text:SetPoint("LEFT", f3, "LEFT", 36.5, 0)
-					f3.Text:SetPoint("RIGHT", rightBg, "LEFT", 0, 0)
-					f3.Text:SetJustifyH("LEFT")
-					local function getBgColorTable()
-						local r, g, b, a = getBgTint()
-						return {r or 0, g or 0, b or 0, a or 1}
-					end
-					local function setBgColorTable(r, g, b, a)
-						setBgTint(r, g, b, a)
-					end
-					local swatchBg = CreateColorSwatch(rightBg, getBgColorTable, setBgColorTable, true)
-					swatchBg:SetPoint("LEFT", rightBg, "LEFT", 8, 0)
-					bgTintSwatch = swatchBg
-					-- Set initial disabled state if not custom
-					local isCustom = (getBgColorMode() == "custom")
+					panel.DropdownWithInlineSwatch(frame.PageB, y, {
+						label = "Background Color",
+						getMode = getBgColorMode,
+						setMode = setBgColorMode,
+						getColor = getBgTintTbl,
+						setColor = setBgTintTbl,
+						options = bgColorOpts,
+						insideButton = true,
+					})
 					if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
 					if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
 					y.y = y.y - 34
@@ -3843,6 +3928,160 @@ local function createUFRenderer(componentId, title)
 					end
 
 					y.y = y.y - 34
+					
+					-- Bar Height slider (only enabled when Use Custom Borders is checked)
+					local heightLabel = "Bar Height (%)"
+					local heightOptions = Settings.CreateSliderOptions(50, 200, 1)
+					heightOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					
+					-- Getter: Always return the actual stored value
+					local function heightGetter()
+						local t = ensureUFDB() or {}
+						return tonumber(t.powerBarHeightPct) or 100
+					end
+					
+					-- Setter: Store value normally (only when slider is enabled)
+					local function heightSetter(v)
+						local t = ensureUFDB(); if not t then return end
+						-- Prevent changes when Use Custom Borders is disabled
+						if not t.useCustomBorders then
+							return -- Silently ignore changes when disabled
+						end
+						local val = tonumber(v) or 100
+						val = math.max(50, math.min(200, val))
+						t.powerBarHeightPct = val
+						applyNow()
+					end
+					
+					local heightSetting = CreateLocalSetting(heightLabel, "number", heightGetter, heightSetter, heightGetter())
+					local initHeightSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = heightLabel, setting = heightSetting, options = heightOptions })
+					local heightSlider = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+					heightSlider.GetElementData = function() return initHeightSlider end
+					heightSlider:SetPoint("TOPLEFT", 4, y.y)
+					heightSlider:SetPoint("TOPRIGHT", -16, y.y)
+					initHeightSlider:InitFrame(heightSlider)
+					if heightSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(heightSlider.Text) end
+					
+					-- Add info icon to enabled slider explaining the requirement
+					if panel and panel.CreateInfoIconForLabel then
+						local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the power bar."
+						local label = heightSlider.Text or heightSlider.Label
+						if label and not heightSlider.ScooterBarHeightInfoIcon then
+							heightSlider.ScooterBarHeightInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
+							C_Timer.After(0, function()
+								local icon = heightSlider.ScooterBarHeightInfoIcon
+								local lbl = heightSlider.Text or heightSlider.Label
+								if icon and lbl then
+									icon:ClearAllPoints()
+									local textWidth = lbl:GetStringWidth() or 0
+									if textWidth > 0 then
+										icon:SetPoint("LEFT", lbl, "LEFT", textWidth + 5, 0)
+									else
+										icon:SetPoint("LEFT", lbl, "RIGHT", 5, 0)
+									end
+								end
+							end)
+						end
+					end
+					
+					-- Store reference for later updates
+					heightSlider._scooterSetting = heightSetting
+					
+					-- Conditional enable/disable based on Use Custom Borders
+					local function updateHeightSliderState()
+						local t = ensureUFDB() or {}
+						local isEnabled = not not t.useCustomBorders
+						
+						if isEnabled then
+							-- Enabled state: full opacity for all elements
+							if heightSlider.Text then heightSlider.Text:SetAlpha(1.0) end
+							if heightSlider.Label then heightSlider.Label:SetAlpha(1.0) end
+							if heightSlider.Control then 
+								heightSlider.Control:Show()
+								heightSlider.Control:Enable()
+								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(true) end
+								if heightSlider.Control.Slider then heightSlider.Control.Slider:Enable() end
+								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(true) end
+								heightSlider.Control:SetAlpha(1.0)
+							end
+							if heightSlider.Slider then heightSlider.Slider:Enable() end
+							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(true) end
+							heightSlider:Show()
+							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Hide() end
+							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Hide() end
+							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Show() end
+						else
+							-- Disabled state: gray out all visual elements
+							if heightSlider.Text then heightSlider.Text:SetAlpha(0.5) end
+							if heightSlider.Label then heightSlider.Label:SetAlpha(0.5) end
+							if heightSlider.Control then 
+								heightSlider.Control:Hide()
+								heightSlider.Control:Disable()
+								if heightSlider.Control.EnableMouse then heightSlider.Control:EnableMouse(false) end
+								if heightSlider.Control.Slider then heightSlider.Control.Slider:Disable() end
+								if heightSlider.Control.Slider and heightSlider.Control.Slider.EnableMouse then heightSlider.Control.Slider:EnableMouse(false) end
+								heightSlider.Control:SetAlpha(0.5)
+							end
+							if heightSlider.Slider then heightSlider.Slider:Disable() end
+							if heightSlider.Slider and heightSlider.Slider.EnableMouse then heightSlider.Slider:EnableMouse(false) end
+							heightSlider:SetAlpha(0.5)
+							
+							-- Create static replacement row if it doesn't exist
+							if not heightSlider.ScooterBarHeightStatic then
+								local static = CreateFrame("Frame", nil, frame.PageB, "SettingsListElementTemplate")
+								static:SetHeight(26)
+								static:SetPoint("TOPLEFT", 4, y.y)
+								static:SetPoint("TOPRIGHT", -16, y.y)
+								static.Text = static:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+								static.Text:SetJustifyH("LEFT")
+								if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(static.Text) end
+								heightSlider.ScooterBarHeightStatic = static
+							end
+							local static = heightSlider.ScooterBarHeightStatic
+							if static and static.Text then
+								local baseLabel = (heightSlider.Text and heightSlider.Text:GetText()) or "Bar Height (%)"
+								static.Text:SetText(baseLabel .. " — 100%")
+								static.Text:ClearAllPoints()
+								static.Text:SetPoint("LEFT", static, "LEFT", 36.5, 0)
+								static.Text:SetJustifyH("LEFT")
+							end
+							-- Add info icon on the static row explaining why it's disabled
+							if panel and panel.CreateInfoIconForLabel and not heightSlider.ScooterBarHeightStaticInfo then
+								local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the power bar."
+								heightSlider.ScooterBarHeightStaticInfo = panel.CreateInfoIconForLabel(
+									heightSlider.ScooterBarHeightStatic.Text,
+									tooltipText,
+									5, 0, 32
+								)
+								C_Timer.After(0, function()
+									local icon = heightSlider.ScooterBarHeightStaticInfo
+									local label = heightSlider.ScooterBarHeightStatic and heightSlider.ScooterBarHeightStatic.Text
+									if icon and label then
+										icon:ClearAllPoints()
+										local textWidth = label:GetStringWidth() or 0
+										if textWidth > 0 then
+											icon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+										else
+											icon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+										end
+									end
+								end)
+							end
+							if heightSlider.ScooterBarHeightStatic then heightSlider.ScooterBarHeightStatic:Show() end
+							if heightSlider.ScooterBarHeightStaticInfo then heightSlider.ScooterBarHeightStaticInfo:Show() end
+							if heightSlider.ScooterBarHeightInfoIcon then heightSlider.ScooterBarHeightInfoIcon:Hide() end
+							heightSlider:Hide()
+						end
+					end
+					
+					-- Initial state update
+					updateHeightSliderState()
+					
+					-- Store update function for external calls (e.g., when Use Custom Borders changes)
+					heightSlider._updateState = updateHeightSliderState
+					
+					y.y = y.y - 34
 				end
 
 				-- PageE: % Text (Power Percent)
@@ -3985,7 +4224,7 @@ local function createUFRenderer(componentId, title)
 					if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
-					-- Foreground Color dropdown
+					-- Foreground Color (dropdown + inline swatch)
                     local function colorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
@@ -3993,64 +4232,25 @@ local function createUFRenderer(componentId, title)
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local fgTintRow, fgTintLabel, fgTintSwatch
 					local function getColorMode() local t = ensureUFDB() or {}; return t.powerBarColorMode or "default" end
 					local function setColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.powerBarColorMode = v or "default"; applyNow()
-						local isCustom = (v == "custom")
-						if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-						if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
 					end
-					local colorSetting = CreateLocalSetting("Foreground Color", "string", getColorMode, setColorMode, getColorMode())
-                    local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Color", setting = colorSetting, options = colorOpts })
-					local cf = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
-					cf.GetElementData = function() return initColor end
-					cf:SetPoint("TOPLEFT", 4, y.y)
-					cf:SetPoint("TOPRIGHT", -16, y.y)
-                    initColor:InitFrame(cf)
-                    if panel and panel.ApplyRobotoWhite then
-                        local lbl = cf and (cf.Text or cf.Label)
-                        if lbl then panel.ApplyRobotoWhite(lbl) end
-                    end
-					y.y = y.y - 34
-					-- Foreground Tint color
-					local function getTint()
-						local t = ensureUFDB() or {}; local c = t.powerBarTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
+					local function getTintTbl()
+						local t = ensureUFDB() or {}; local c = t.powerBarTint or {1,1,1,1}; return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
 					end
-					local function setTint(r,g,b,a)
-						local t = ensureUFDB(); if not t then return end; t.powerBarTint = {r,g,b,a}; applyNow()
+					local function setTintTbl(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.powerBarTint = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 					end
-					local f2 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
-					fgTintRow = f2
-					f2:SetHeight(26)
-					f2:SetPoint("TOPLEFT", 4, y.y)
-					f2:SetPoint("TOPRIGHT", -16, y.y)
-					f2.Text:SetText("Foreground Tint")
-					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f2.Text) end
-					fgTintLabel = f2.Text
-					local right = CreateFrame("Frame", nil, f2)
-					right:SetSize(250, 26)
-					right:SetPoint("RIGHT", f2, "RIGHT", -16, 0)
-					f2.Text:ClearAllPoints()
-					f2.Text:SetPoint("LEFT", f2, "LEFT", 36.5, 0)
-					f2.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
-					f2.Text:SetJustifyH("LEFT")
-					-- Use centralized color swatch factory
-					local function getColorTable()
-						local r, g, b, a = getTint()
-						return {r or 1, g or 1, b or 1, a or 1}
-					end
-					local function setColorTable(r, g, b, a)
-						setTint(r, g, b, a)
-					end
-					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, true)
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					fgTintSwatch = swatch
-					-- Set initial disabled state if not custom
-					local isCustom = (getColorMode() == "custom")
-					if fgTintLabel then fgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-					if fgTintSwatch then fgTintSwatch:SetEnabled(isCustom) end
-					y.y = y.y - 34
+					panel.DropdownWithInlineSwatch(frame.PageC, y, {
+						label = "Foreground Color",
+						getMode = getColorMode,
+						setMode = setColorMode,
+						getColor = getTintTbl,
+						setColor = setTintTbl,
+						options = colorOpts,
+						insideButton = true,
+					})
 
 					-- Background Texture dropdown
 					local function getBgTex() local t = ensureUFDB() or {}; return t.powerBarBackgroundTexture or "default" end
@@ -4069,7 +4269,7 @@ local function createUFRenderer(componentId, title)
                     if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
 					y.y = y.y - 34
 
-					-- Background Color dropdown
+					-- Background Color (dropdown + inline swatch)
                     local function bgColorOpts()
 						local container = Settings.CreateControlTextContainer()
                         container:Add("default", "Default")
@@ -4077,63 +4277,25 @@ local function createUFRenderer(componentId, title)
                         container:Add("custom", "Custom")
 						return container:GetData()
 					end
-					local bgTintRow, bgTintLabel, bgTintSwatch
 					local function getBgColorMode() local t = ensureUFDB() or {}; return t.powerBarBackgroundColorMode or "default" end
 					local function setBgColorMode(v)
 						local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundColorMode = v or "default"; applyNow()
-						local isCustom = (v == "custom")
-						if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-						if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
 					end
-					local bgColorSetting = CreateLocalSetting("Background Color", "string", getBgColorMode, setBgColorMode, getBgColorMode())
-					local initBgColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Color", setting = bgColorSetting, options = bgColorOpts })
-					local cbg = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
-					cbg.GetElementData = function() return initBgColor end
-					cbg:SetPoint("TOPLEFT", 4, y.y)
-					cbg:SetPoint("TOPRIGHT", -16, y.y)
-                    initBgColor:InitFrame(cbg)
-                    if panel and panel.ApplyRobotoWhite then
-                        local lbl = cbg and (cbg.Text or cbg.Label)
-                        if lbl then panel.ApplyRobotoWhite(lbl) end
-                    end
-					y.y = y.y - 34
-					-- Background Tint color swatch
-					local function getBgTint()
-						local t = ensureUFDB() or {}; local c = t.powerBarBackgroundTint or {0,0,0,1}; return c[1], c[2], c[3], c[4]
+					local function getBgTintTbl()
+						local t = ensureUFDB() or {}; local c = t.powerBarBackgroundTint or {0,0,0,1}; return { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
 					end
-					local function setBgTint(r,g,b,a)
-						local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundTint = {r,g,b,a}; applyNow()
+					local function setBgTintTbl(r,g,b,a)
+						local t = ensureUFDB(); if not t then return end; t.powerBarBackgroundTint = { r or 0, g or 0, b or 0, a or 1 }; applyNow()
 					end
-					local f3 = CreateFrame("Frame", nil, frame.PageC, "SettingsListElementTemplate")
-					bgTintRow = f3
-					f3:SetHeight(26)
-					f3:SetPoint("TOPLEFT", 4, y.y)
-					f3:SetPoint("TOPRIGHT", -16, y.y)
-					f3.Text:SetText("Background Tint")
-					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f3.Text) end
-					bgTintLabel = f3.Text
-					local rightBg = CreateFrame("Frame", nil, f3)
-					rightBg:SetSize(250, 26)
-					rightBg:SetPoint("RIGHT", f3, "RIGHT", -16, 0)
-					f3.Text:ClearAllPoints()
-					f3.Text:SetPoint("LEFT", f3, "LEFT", 36.5, 0)
-					f3.Text:SetPoint("RIGHT", rightBg, "LEFT", 0, 0)
-					f3.Text:SetJustifyH("LEFT")
-					local function getBgColorTable()
-						local r, g, b, a = getBgTint()
-						return {r or 0, g or 0, b or 0, a or 1}
-					end
-					local function setBgColorTable(r, g, b, a)
-						setBgTint(r, g, b, a)
-					end
-					local swatchBg = CreateColorSwatch(rightBg, getBgColorTable, setBgColorTable, true)
-					swatchBg:SetPoint("LEFT", rightBg, "LEFT", 8, 0)
-					bgTintSwatch = swatchBg
-					-- Set initial disabled state if not custom
-					local isCustom = (getBgColorMode() == "custom")
-					if bgTintLabel then bgTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-					if bgTintSwatch then bgTintSwatch:SetEnabled(isCustom) end
-					y.y = y.y - 34
+					panel.DropdownWithInlineSwatch(frame.PageC, y, {
+						label = "Background Color",
+						getMode = getBgColorMode,
+						setMode = setBgColorMode,
+						getColor = getBgTintTbl,
+						setColor = setBgTintTbl,
+						options = bgColorOpts,
+						insideButton = true,
+					})
 
 					-- Background Opacity slider
 					local function getBgOpacity() local t = ensureUFDB() or {}; return t.powerBarBackgroundOpacity or 50 end
@@ -4434,7 +4596,7 @@ local function createUFRenderer(componentId, title)
 				local t = ensureUFDB() or {}; if t.nameBackdropEnabled == nil then return true end; return not not t.nameBackdropEnabled
 			end
 			-- Hold refs to enable/disable dynamically
-			local _bdTexFrame, _bdColorFrame, _bdTintLabel, _bdTintSwatch, _bdOpacityFrame, _bdWidthFrame
+			local _bdTexFrame, _bdColorFrame, _bdOpacityFrame, _bdWidthFrame
 			local function refreshBackdropEnabledState()
 				local en = isBackdropEnabled()
 				if _bdTexFrame and _bdTexFrame.Control and _bdTexFrame.Control.SetEnabled then _bdTexFrame.Control:SetEnabled(en) end
@@ -4451,11 +4613,7 @@ local function createUFRenderer(componentId, title)
 				if _bdWidthFrame and _bdWidthFrame.Text and _bdWidthFrame.Text.SetTextColor then _bdWidthFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
 				if _bdOpacityFrame and _bdOpacityFrame.Control and _bdOpacityFrame.Control.SetEnabled then _bdOpacityFrame.Control:SetEnabled(en) end
 				if _bdOpacityFrame and _bdOpacityFrame.Text and _bdOpacityFrame.Text.SetTextColor then _bdOpacityFrame.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
-				-- Tint depends on both enabled and color mode
-				local t = ensureUFDB() or {}
-				local isCustom = (t.nameBackdropColorMode == "custom") and en
-				if _bdTintLabel and _bdTintLabel.SetTextColor then _bdTintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-				if _bdTintSwatch and _bdTintSwatch.SetEnabled then _bdTintSwatch:SetEnabled(isCustom) end
+				-- Note: Backdrop Color unified control handles its own enabled state via isEnabled callback
 			end
 			do
 				local function getter()
@@ -4513,21 +4671,24 @@ local function createUFRenderer(componentId, title)
 				_bdTexFrame = f
 			end
 			
-			-- Backdrop Color mode (Default / Texture Original / Custom)
-			local tintRow, tintLabel, tintSwatch
+			-- Backdrop Color mode (Default / Texture Original / Custom) with inline color swatch
 			do
-				local function get()
+				local function getMode()
 					local t = ensureUFDB() or {}; return t.nameBackdropColorMode or "default"
 				end
-				local function set(v)
+				local function setMode(v)
 					local t = ensureUFDB(); if not t then return end
 					t.nameBackdropColorMode = v or "default"
 					applyNow()
-					-- Enable tint only when Custom (match bar style behavior)
-					local isCustom = (v == "custom")
-					if tintLabel then tintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-					if tintSwatch and tintSwatch.SetEnabled then tintSwatch:SetEnabled(isCustom) end
 					refreshBackdropEnabledState()
+				end
+				local function getColor()
+					local t = ensureUFDB() or {}; local c = t.nameBackdropTint or {1,1,1,1}; return c
+				end
+				local function setColor(r,g,b,a)
+					local t = ensureUFDB(); if not t then return end
+					t.nameBackdropTint = {r,g,b,a}
+					applyNow()
 				end
 				local function colorOpts()
 					local container = Settings.CreateControlTextContainer()
@@ -4536,78 +4697,17 @@ local function createUFRenderer(componentId, title)
 					container:Add("custom", "Custom")
 					return container:GetData()
 				end
-				local setting = CreateLocalSetting("Backdrop Color", "string", get, set, get())
-				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Backdrop Color", setting = setting, options = colorOpts })
-				local f = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
-				f.GetElementData = function() return initDrop end
-				f:SetPoint("TOPLEFT", 4, y.y)
-				f:SetPoint("TOPRIGHT", -16, y.y)
-				initDrop:InitFrame(f)
-				if panel and panel.ApplyRobotoWhite then
-					local lbl = f and (f.Text or f.Label)
-					if lbl then panel.ApplyRobotoWhite(lbl) end
-				end
-				-- Gray out when disabled
-				do
-					local en = isBackdropEnabled()
-					if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(en) end
-					local lbl = f and (f.Text or f.Label)
-					if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
-				end
+				local f, swatch = panel.DropdownWithInlineSwatch(frame.PageA, y, {
+					label = "Backdrop Color",
+					getMode = getMode,
+					setMode = setMode,
+					getColor = getColor,
+					setColor = setColor,
+					options = colorOpts,
+					isEnabled = function() return isBackdropEnabled() end,
+					insideButton = true,
+				})
 				_bdColorFrame = f
-				y.y = y.y - 34
-			end
-			
-			-- Backdrop Tint (enabled only when Backdrop Color = Custom)
-			do
-				local function get()
-					local t = ensureUFDB() or {}; local c = t.nameBackdropTint or {1,1,1,1}; return c[1], c[2], c[3], c[4]
-				end
-				local function set(r,g,b,a)
-					local t = ensureUFDB(); if not t then return end
-					t.nameBackdropTint = {r,g,b,a}
-					applyNow()
-					refreshBackdropEnabledState()
-				end
-				local f = CreateFrame("Frame", nil, frame.PageA, "SettingsListElementTemplate")
-				tintRow = f
-				f:SetHeight(26)
-				f:SetPoint("TOPLEFT", 4, y.y)
-				f:SetPoint("TOPRIGHT", -16, y.y)
-				f.Text:SetText("Backdrop Tint")
-				if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
-				tintLabel = f.Text
-				local right = CreateFrame("Frame", nil, f)
-				right:SetSize(250, 26)
-				right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
-				f.Text:ClearAllPoints()
-				f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
-				f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
-				f.Text:SetJustifyH("LEFT")
-				local function getTbl()
-					local r,g,b,a = get(); return {r or 1, g or 1, b or 1, a or 1}
-				end
-				local function setTbl(r,g,b,a) set(r,g,b,a) end
-				local sw = CreateColorSwatch(right, getTbl, setTbl, true)
-				sw:SetPoint("LEFT", right, "LEFT", 8, 0)
-				tintSwatch = sw
-				-- initialize enable state to current mode
-				do
-					local t = ensureUFDB() or {}
-					local isCustom = (t.nameBackdropColorMode == "custom")
-					if tintLabel then tintLabel:SetTextColor(isCustom and 1 or 0.5, isCustom and 1 or 0.5, isCustom and 1 or 0.5) end
-					if tintSwatch and tintSwatch.SetEnabled then tintSwatch:SetEnabled(isCustom) end
-				end
-				-- Gray out entire row if backdrop disabled
-				do
-					local en = isBackdropEnabled()
-					if f and f.SetAlpha then f:SetAlpha(en and 1 or 0.7) end
-					if tintLabel and tintLabel.SetTextColor and not en then tintLabel:SetTextColor(0.6, 0.6, 0.6, 1) end
-					if tintSwatch and tintSwatch.EnableMouse then tintSwatch:EnableMouse(en) end
-				end
-				_bdTintLabel = tintLabel
-				_bdTintSwatch = sw
-				y.y = y.y - 34
 			end
 			
 			-- Backdrop Width (% of baseline at 100%)
@@ -4905,11 +5005,40 @@ local function createUFRenderer(componentId, title)
 				function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.size = tonumber(v) or 14; applyNow() end,
 				y)
 			
-		-- Name Text Color
-		addColor(frame.PageC, "Name Text Color", true,
-			function() local t = ensureUFDB() or {}; local s = t.textName or {}; local c = s.color or {1.0,0.82,0.0,1}; return c[1], c[2], c[3], c[4] end,
-			function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.color = {r,g,b,a}; applyNow() end,
-			y)
+		-- Name Text Color (dropdown + inline swatch)
+		do
+			local function colorOpts()
+				local c = Settings.CreateControlTextContainer()
+				c:Add("default", "Default")
+				c:Add("class", "Class Color")
+				c:Add("custom", "Custom")
+				return c:GetData()
+			end
+			local function getMode()
+				local t = ensureUFDB() or {}; local s = t.textName or {}; return s.colorMode or "default"
+			end
+			local function setMode(v)
+				local t = ensureUFDB(); if not t then return end
+				t.textName = t.textName or {}; t.textName.colorMode = v or "default"; applyNow()
+			end
+			local function getColorTbl()
+				local t = ensureUFDB() or {}; local s = t.textName or {}; local c = s.color or {1.0,0.82,0.0,1}
+				return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+			end
+			local function setColorTbl(r,g,b,a)
+				local t = ensureUFDB(); if not t then return end
+				t.textName = t.textName or {}; t.textName.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
+			end
+			panel.DropdownWithInlineSwatch(frame.PageC, y, {
+				label = "Name Text Color",
+				getMode = getMode,
+				setMode = setMode,
+				getColor = getColorTbl,
+				setColor = setColorTbl,
+				options = colorOpts,
+				insideButton = true,
+			})
+		end
 			
 			-- Name Text Offset X
 			addSlider(frame.PageC, "Name Text Offset X", -100, 100, 1,
@@ -4977,11 +5106,40 @@ local function createUFRenderer(componentId, title)
 				function(v) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.size = tonumber(v) or 14; applyNow() end,
 				y)
 			
-		-- Level Text Color
-		addColor(frame.PageD, "Level Text Color", true,
-			function() local t = ensureUFDB() or {}; local s = t.textLevel or {}; local c = s.color or {1.0,0.82,0.0,1}; return c[1], c[2], c[3], c[4] end,
-			function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textLevel = t.textLevel or {}; t.textLevel.color = {r,g,b,a}; applyNow() end,
-			y)
+		-- Level Text Color (dropdown + inline swatch)
+		do
+			local function colorOpts()
+				local c = Settings.CreateControlTextContainer()
+				c:Add("default", "Default")
+				c:Add("class", "Class Color")
+				c:Add("custom", "Custom")
+				return c:GetData()
+			end
+			local function getMode()
+				local t = ensureUFDB() or {}; local s = t.textLevel or {}; return s.colorMode or "default"
+			end
+			local function setMode(v)
+				local t = ensureUFDB(); if not t then return end
+				t.textLevel = t.textLevel or {}; t.textLevel.colorMode = v or "default"; applyNow()
+			end
+			local function getColorTbl()
+				local t = ensureUFDB() or {}; local s = t.textLevel or {}; local c = s.color or {1.0,0.82,0.0,1}
+				return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+			end
+			local function setColorTbl(r,g,b,a)
+				local t = ensureUFDB(); if not t then return end
+				t.textLevel = t.textLevel or {}; t.textLevel.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
+			end
+			panel.DropdownWithInlineSwatch(frame.PageD, y, {
+				label = "Level Text Color",
+				getMode = getMode,
+				setMode = setMode,
+				getColor = getColorTbl,
+				setColor = setColorTbl,
+				options = colorOpts,
+				insideButton = true,
+			})
+		end
 			
 			-- Level Text Offset X
 			addSlider(frame.PageD, "Level Text Offset X", -100, 100, 1,
@@ -5257,9 +5415,7 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 34
 				end
 				
-				-- Border Color dropdown
-				-- Store references in a table that will be populated by Border Tint section
-				local borderTintRefs = {}
+				-- Border Color (dropdown) + inline Custom Tint swatch (unified control)
 				do
 					local function colorOpts()
 						local container = Settings.CreateControlTextContainer()
@@ -5276,42 +5432,7 @@ local function createUFRenderer(componentId, title)
 						local t = ensureUFDB(); if not t then return end
 						t.portraitBorderColorMode = v or "texture"
 						applyNow()
-						-- Enable/disable Border Tint based on color mode
-						local isCustom = (v == "custom")
-						local borderEnabled = isEnabled()
-						local finalEnabled = borderEnabled and isCustom
-						-- Update Border Tint controls if they exist
-						if borderTintRefs.label then
-							borderTintRefs.label:SetTextColor(finalEnabled and 1 or 0.5, finalEnabled and 1 or 0.5, finalEnabled and 1 or 0.5)
-						end
-						if borderTintRefs.swatch then
-							if borderTintRefs.swatch.EnableMouse then borderTintRefs.swatch:EnableMouse(finalEnabled) end
-							if borderTintRefs.swatch.SetAlpha then borderTintRefs.swatch:SetAlpha(finalEnabled and 1 or 0.5) end
-						end
 					end
-					local colorSetting = CreateLocalSetting("Border Color", "string", getColorMode, setColorMode, getColorMode())
-					local initColor = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Color", setting = colorSetting, options = colorOpts })
-					local cf = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
-					cf.GetElementData = function() return initColor end
-					cf:SetPoint("TOPLEFT", 4, y.y)
-					cf:SetPoint("TOPRIGHT", -16, y.y)
-					initColor:InitFrame(cf)
-					if panel and panel.ApplyRobotoWhite then
-						local lbl = cf and (cf.Text or cf.Label)
-						if lbl then panel.ApplyRobotoWhite(lbl) end
-					end
-					-- Grey out when Use Custom Border is off
-					local enabled = isEnabled()
-					if cf.Control and cf.Control.SetEnabled then cf.Control:SetEnabled(enabled) end
-					local lbl = cf and (cf.Text or cf.Label)
-					if lbl and lbl.SetTextColor then
-						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
-					end
-					y.y = y.y - 34
-				end
-				
-				-- Border Tint (simple color swatch) - only enabled when Custom color mode is selected
-				do
 					local function getTint()
 						local t = ensureUFDB() or {}
 						local c = t.portraitBorderTintColor or {1,1,1,1}
@@ -5322,51 +5443,16 @@ local function createUFRenderer(componentId, title)
 						t.portraitBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
 						applyNow()
 					end
-					-- Create a simple row with label and color swatch (following standard pattern)
-					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsListElementTemplate")
-					row:SetHeight(26)
-					row:SetPoint("TOPLEFT", 4, y.y)
-					row:SetPoint("TOPRIGHT", -16, y.y)
-					row.Text:SetText("Border Tint")
-					if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
-					-- Store references for color mode updates
-					borderTintRefs.row = row
-					borderTintRefs.label = row.Text
-					-- Create right container for swatch (matching standard pattern)
-					local right = CreateFrame("Frame", nil, row)
-					right:SetSize(250, 26)
-					right:SetPoint("RIGHT", row, "RIGHT", -16, 0)
-					-- Reposition text label to match standard alignment
-					row.Text:ClearAllPoints()
-					row.Text:SetPoint("LEFT", row, "LEFT", 36.5, 0)
-					row.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
-					row.Text:SetJustifyH("LEFT")
-					-- Create color swatch using the helper function, anchored to right container
-					local swatch = CreateColorSwatch(right, getTint, setTint, true)
-					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
-					borderTintRefs.swatch = swatch
-					-- Check current color mode to set initial enabled state
-					local function updateTintEnabled()
-						local t = ensureUFDB() or {}
-						local colorMode = t.portraitBorderColorMode or "texture"
-						local isCustom = (colorMode == "custom")
-						local borderEnabled = isEnabled()
-						local finalEnabled = borderEnabled and isCustom
-						if swatch and swatch.EnableMouse then
-							swatch:EnableMouse(finalEnabled)
-							if swatch.SetAlpha then swatch:SetAlpha(finalEnabled and 1 or 0.5) end
-						end
-						if borderTintRefs.label and borderTintRefs.label.SetTextColor then
-							if finalEnabled then
-								borderTintRefs.label:SetTextColor(1, 1, 1, 1)
-							else
-								borderTintRefs.label:SetTextColor(0.6, 0.6, 0.6, 1)
-							end
-						end
-					end
-					updateTintEnabled()
-					-- Grey out when Use Custom Border is off (handled by updateTintEnabled)
-					y.y = y.y - 34
+					panel.DropdownWithInlineSwatch(frame.PageD, y, {
+						label = "Border Color",
+						getMode = getColorMode,
+						setMode = setColorMode,
+						getColor = getTint,
+						setColor = setTint,
+						options = colorOpts,
+						isEnabled = isEnabled,
+						insideButton = true,
+					})
 				end
 			end
 

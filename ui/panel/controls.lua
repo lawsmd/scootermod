@@ -309,4 +309,179 @@ do
     end
 end
 
+-- Unified dropdown + inline color swatch control
+-- Usage:
+--   panel.DropdownWithInlineSwatch(parent, yRef, {
+--       label = "Border Color",
+--       getMode = function() return "texture"|"class"|"custom" end,
+--       setMode = function(v) ... end,
+--       getColor = function() return {r,g,b,a} or {r,g,b} end,
+--       setColor = function(r,g,b,a) ... end,
+--       options  = function() return Settings.CreateControlTextContainer():GetData() end (optional),
+--       isEnabled = function() return true|false end (optional),
+--       insideButton = true  -- RECOMMENDED: Always set to true for consistent spacing. Defaults to false if omitted, causing spacing issues.
+--   })
+function panel.DropdownWithInlineSwatch(parent, yRef, opts)
+    opts = opts or {}
+    local label = opts.label or "Color"
+    local getMode = assert(opts.getMode, "getMode required")
+    local setMode = assert(opts.setMode, "setMode required")
+    local getColor = assert(opts.getColor, "getColor required")
+    local setColor = assert(opts.setColor, "setColor required")
 
+    local function defaultOptions()
+        local c = Settings.CreateControlTextContainer()
+        c:Add("texture", "Texture Original")
+        c:Add("class", "Class Color")
+        c:Add("custom", "Custom")
+        return c:GetData()
+    end
+    local optionsFn = opts.options or defaultOptions
+
+    local function applyEnabledState(frame, enabled)
+        if frame and frame.Control and frame.Control.SetEnabled then
+            frame.Control:SetEnabled(enabled and true or false)
+        end
+        local lbl = frame and (frame.Text or frame.Label)
+        if lbl and lbl.SetTextColor then
+            if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+        end
+    end
+
+    -- Local refresh closure (defined after UI creation)
+    local function localRefresh() end
+
+    local modeSetting = CreateLocalSetting(label, "string",
+        function() return getMode() end,
+        function(v)
+            setMode(v)
+            -- Refresh swatch visibility immediately for this row only
+            if localRefresh then localRefresh() end
+        end,
+        getMode())
+
+    local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = modeSetting, options = optionsFn })
+    local row = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+    row.GetElementData = function() return initDrop end
+    row:SetPoint("TOPLEFT", 4, yRef.y)
+    row:SetPoint("TOPRIGHT", -16, yRef.y)
+    initDrop:InitFrame(row)
+    if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+
+    -- Inline swatch
+    local swatchParent = (opts.insideButton and row.Control) or row
+    -- Try to parent to the actual dropdown button when requested
+    if opts.insideButton and row.Control then
+        local btn = (row.Control.Dropdown and row.Control.Dropdown.Button) or row.Control.Button or row.Control
+        if btn then swatchParent = btn end
+    end
+    local swatch = CreateFrame("Button", nil, swatchParent, "ColorSwatchTemplate")
+    -- Make the swatch larger for visibility (approx 3x width)
+    swatch:SetSize(54, 18)
+    if opts.insideButton and swatchParent then
+        swatch:SetPoint("RIGHT", swatchParent, "RIGHT", -22, 0)
+    else
+        if row.Control then
+            -- Prefer to place to the right of the dropdown if possible
+            swatch:SetPoint("LEFT", row.Control, "RIGHT", 8, 0)
+        else
+            -- Fallback: pin to the row's right edge
+            swatch:SetPoint("RIGHT", row, "RIGHT", -16, 0)
+        end
+    end
+    -- Add a clear black outline and tighten color rect
+    if swatch.SwatchBg then
+        swatch.SwatchBg:SetAllPoints(swatch)
+        swatch.SwatchBg:SetColorTexture(0, 0, 0, 1) -- solid black outline background
+        swatch.SwatchBg:Show()
+    end
+    if swatch.Color then
+        swatch.Color:ClearAllPoints()
+        swatch.Color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+        swatch.Color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+    end
+    if swatch.Checkers then swatch.Checkers:Hide() end
+
+    -- Ensure it renders above the dropdown pieces
+    local ref = swatchParent or row
+    swatch:SetFrameStrata((ref.GetFrameStrata and ref:GetFrameStrata()) or row:GetFrameStrata())
+    local baseLvl = (ref.GetFrameLevel and ref:GetFrameLevel()) or (row:GetFrameLevel() or 0)
+    swatch:SetFrameLevel(baseLvl + 6)
+
+    -- Prevent clicks on the swatch from propagating to the dropdown button
+    if swatch.SetPropagateMouseClicks then swatch:SetPropagateMouseClicks(false) end
+    if swatch.RegisterForClicks then swatch:RegisterForClicks("LeftButtonUp") end
+    swatch:SetScript("OnMouseDown", function() end)
+    -- Normalize inner color texture if present
+    if swatch.Color then
+        swatch.Color:ClearAllPoints()
+        swatch.Color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+        swatch.Color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+    end
+    if swatch.Checkers then swatch.Checkers:Hide() end
+
+    local function setSwatchVisual(r, g, b, a)
+        if swatch.Color then
+            swatch.Color:SetColorTexture(r or 1, g or 1, b or 1, 1)
+        elseif swatch:GetNormalTexture() then
+            swatch:GetNormalTexture():SetVertexColor(r or 1, g or 1, b or 1, a or 1)
+        end
+    end
+
+    local function readColor()
+        local c = getColor() or {1,1,1,1}
+        local r,g,b,a
+        if type(c) == "table" then
+            r = c.r or c[1] or 1
+            g = c.g or c[2] or 1
+            b = c.b or c[3] or 1
+            a = c.a or c[4] or 1
+        end
+        return r or 1, g or 1, b or 1, a or 1
+    end
+
+    setSwatchVisual(readColor())
+
+    swatch:SetScript("OnClick", function()
+        local r,g,b,a = readColor()
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = r, g = g, b = b,
+            hasOpacity = true,
+            opacity = a,
+            swatchFunc = function()
+                local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                local na = ColorPickerFrame:GetColorAlpha() or 1
+                setColor(nr, ng, nb, na)
+                setSwatchVisual(nr, ng, nb, na)
+                if opts.onChanged then opts.onChanged() end
+            end,
+            cancelFunc = function(prev)
+                if prev then
+                    setColor(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
+                    setSwatchVisual(prev.r or 1, prev.g or 1, prev.b or 1, prev.a or 1)
+                end
+            end,
+        })
+    end)
+
+    -- Live refresh logic wired to parent for ease of reuse
+    localRefresh = function()
+        local enabled = true
+        if type(opts.isEnabled) == "function" then
+            enabled = opts.isEnabled() and true or false
+        end
+        applyEnabledState(row, enabled)
+        local mode = getMode()
+        local isCustom = (mode == "custom")
+        swatch:SetShown(enabled and isCustom)
+        swatch:EnableMouse(enabled and isCustom)
+        if enabled and isCustom then
+            setSwatchVisual(readColor())
+        end
+    end
+
+    localRefresh()
+
+    if yRef and yRef.y then yRef.y = yRef.y - 34 end
+    return row, swatch
+end
