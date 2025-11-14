@@ -2595,12 +2595,10 @@ do
 			levelFS = focusFrame.TargetFrameContent.TargetFrameContentMain.LevelText
 		end
 	elseif unit == "Pet" then
-		-- Pet also reuses Target's content structure naming
-		local petFrame = _G.PetFrame
-		if petFrame and petFrame.TargetFrameContent and petFrame.TargetFrameContent.TargetFrameContentMain then
-			nameFS = petFrame.TargetFrameContent.TargetFrameContentMain.Name
-			levelFS = petFrame.TargetFrameContent.TargetFrameContentMain.LevelText
-		end
+		-- Pet uses global FontString names (PetName is a direct global, not nested)
+		nameFS = _G.PetName
+		-- Pet frame doesn't have a LevelText FontString (no level display)
+		levelFS = nil
 	end
 
 		-- Fallback: search by name hints
@@ -2629,6 +2627,89 @@ do
 				end
 			end
 			return b
+		end
+
+		-- Optional: widen the name container for Target/Focus to reduce truncation.
+		-- This adjusts the Name FontString's width and anchor so the right edge
+		-- stays aligned relative to the ReputationColor strip while growing left.
+		addon._ufNameContainerBaselines = addon._ufNameContainerBaselines or {}
+		local function applyNameContainerWidth(unitKey, nameFSLocal)
+			if not nameFSLocal then return end
+			-- Only Target/Focus currently support this control; Player/Pet keep stock behavior.
+			if unitKey ~= "Target" and unitKey ~= "Focus" then return end
+
+			local unitCfg = db.unitFrames[unitKey] or {}
+			local styleCfg = unitCfg.textName or {}
+			local pct = tonumber(styleCfg.containerWidthPct) or 100
+
+			-- Clamp slider semantics to [80,150] (matches UI slider).
+			if pct < 80 then pct = 80 elseif pct > 150 then pct = 150 end
+
+			local key = unitKey .. ":nameContainer"
+			local baseline = addon._ufNameContainerBaselines[key]
+			if not baseline then
+				baseline = {}
+				baseline.width = nameFSLocal.GetWidth and nameFSLocal:GetWidth() or 90
+				if nameFSLocal.GetPoint then
+					local p, relTo, rp, x, y = nameFSLocal:GetPoint(1)
+					baseline.point = p or "TOPLEFT"
+					baseline.relTo = relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame
+					baseline.relPoint = rp or baseline.point
+					baseline.x = tonumber(x) or 0
+					baseline.y = tonumber(y) or 0
+				else
+					baseline.point, baseline.relTo, baseline.relPoint, baseline.x, baseline.y =
+						"TOPLEFT", (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame, "TOPLEFT", 0, 0
+				end
+				addon._ufNameContainerBaselines[key] = baseline
+			end
+
+			-- When at 100%, restore original width/anchor and bail.
+			if pct == 100 then
+				if nameFSLocal.ClearAllPoints and nameFSLocal.SetPoint and baseline.width then
+					nameFSLocal:SetWidth(baseline.width)
+					nameFSLocal:ClearAllPoints()
+					nameFSLocal:SetPoint(
+						baseline.point or "TOPLEFT",
+						baseline.relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame,
+						baseline.relPoint or baseline.point or "TOPLEFT",
+						baseline.x or 0,
+						baseline.y or 0
+					)
+				end
+				return
+			end
+
+			local baseWidth = baseline.width or (nameFSLocal.GetWidth and nameFSLocal:GetWidth()) or 90
+			local newWidth = math.floor((baseWidth * pct / 100) + 0.5)
+
+			-- Default behavior: scale the width and preserve left anchor.
+			local point, relTo, relPoint, xOff, yOff =
+				baseline.point, baseline.relTo, baseline.relPoint, baseline.x, baseline.y
+
+			-- If we can find the canonical ReputationColor strip, keep right margin stable
+			-- by nudging the TOPLEFT X offset leftwards as width grows.
+			local main = resolveUFContentMain_NLT(unitKey)
+			local rep = main and main.ReputationColor or nil
+			if rep and relTo == rep and (point == "TOPLEFT" or point == "LEFT") then
+				-- Right edge offset remains unchanged; only the left edge moves.
+				local delta = newWidth - baseWidth
+				xOff = (xOff or 0) - delta
+			end
+
+			if nameFSLocal.SetWidth then
+				nameFSLocal:SetWidth(newWidth)
+			end
+			if nameFSLocal.ClearAllPoints and nameFSLocal.SetPoint then
+				nameFSLocal:ClearAllPoints()
+				nameFSLocal:SetPoint(
+					point or "TOPLEFT",
+					relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame,
+					relPoint or point or "TOPLEFT",
+					xOff or 0,
+					yOff or 0
+				)
+			end
 		end
 
 	local function applyTextStyle(fs, styleCfg, baselineKey)
@@ -2666,7 +2747,11 @@ do
 		end
 	end
 
-	if nameFS then applyTextStyle(nameFS, cfg.textName or {}, unit .. ":name") end
+	if nameFS then
+		applyTextStyle(nameFS, cfg.textName or {}, unit .. ":name")
+		-- Apply optional name container width adjustment (Target/Focus only).
+		applyNameContainerWidth(unit, nameFS)
+	end
 	if levelFS then 
 		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
 		
@@ -4638,24 +4723,36 @@ do
 		local useFullCircleMask = (unit == "Player") and (cfg.useFullCircleMask == true) or false
 
 		-- Apply offsets relative to original positions (portrait, mask, and corner icon together)
+		-- NOTE: Pet positioning disabled - PetFrame is a managed frame; moving portrait causes entire frame to move
 		local function applyPosition()
+			if unit == "Pet" then
+				-- Skip positioning for Pet - causes entire frame to move due to managed frame layout system
+				return
+			end
 			if not InCombatLockdown() then
 				-- Move portrait frame
 				portraitFrame:ClearAllPoints()
 				portraitFrame:SetPoint(origPortrait.point, origPortrait.relativeTo, origPortrait.relativePoint, origPortrait.xOfs + offsetX, origPortrait.yOfs + offsetY)
 
 				-- Move mask frame if it exists
-				-- For Target/Focus, anchor mask to portrait to keep them locked together
-				-- For Player/Pet, use original anchor to maintain proper positioning
+				-- For Target/Focus/Pet, anchor mask to portrait to keep them locked together
+				-- Pet's mask is already anchored to portrait in XML, so we maintain that relationship
+				-- For Player, use original anchor to maintain proper positioning
 				if maskFrame and origMask then
 					maskFrame:ClearAllPoints()
-					if unit == "Target" or unit == "Focus" then
+					if unit == "Target" or unit == "Focus" or unit == "Pet" then
 						-- Anchor mask to portrait frame to prevent drift
-						-- Use CENTER to CENTER anchoring with 0,0 offset to keep them perfectly aligned
-						-- This ensures they move together regardless of their original anchor frames
-						maskFrame:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
+						-- Use TOPLEFT/BOTTOMRIGHT anchoring to match XML structure (Pet) or CENTER (Target/Focus)
+						if unit == "Pet" then
+							-- Pet mask uses TOPLEFT and BOTTOMRIGHT anchors to match portrait bounds
+							maskFrame:SetPoint("TOPLEFT", portraitFrame, "TOPLEFT", 0, 0)
+							maskFrame:SetPoint("BOTTOMRIGHT", portraitFrame, "BOTTOMRIGHT", 0, 0)
+						else
+							-- Target/Focus: Use CENTER to CENTER anchoring with 0,0 offset to keep them perfectly aligned
+							maskFrame:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
+						end
 					else
-						-- Player/Pet: use original anchor
+						-- Player: use original anchor
 						maskFrame:SetPoint(origMask.point, origMask.relativeTo, origMask.relativePoint, origMask.xOfs + offsetX, origMask.yOfs + offsetY)
 					end
 				end

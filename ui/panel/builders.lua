@@ -4684,6 +4684,56 @@ local function createUFRenderer(componentId, title)
 				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 			end
 			y.y = y.y - 34
+
+			-- Name Container Width (Target/Focus only)
+			if componentId == "ufTarget" or componentId == "ufFocus" then
+				local function getWidthPct()
+					local t = ensureUFDB() or {}
+					local s = t.textName or {}
+					return tonumber(s.containerWidthPct) or 100
+				end
+				local function setWidthPct(v)
+					local t = ensureUFDB(); if not t then return end
+					t.textName = t.textName or {}
+					t.textName.containerWidthPct = tonumber(v) or 100
+					applyNow()
+				end
+				local widthRow = addSlider(
+					frame.PageC,
+					"Name Container Width",
+					80, 150, 5,
+					getWidthPct,
+					setWidthPct,
+					y
+				)
+
+				-- Info icon tooltip explaining purpose
+				if panel and panel.CreateInfoIconForLabel and widthRow then
+					local lbl = widthRow.Text or widthRow.Label
+					if lbl then
+						local icon = panel.CreateInfoIconForLabel(
+							lbl,
+							"Widen the name container to decrease the truncation of long names or with large name font sizes.",
+							5,
+							0,
+							32
+						)
+						-- Defer repositioning so we can anchor precisely to the rendered label text.
+						if icon and C_Timer and C_Timer.After then
+							C_Timer.After(0, function()
+								if not (icon:IsShown() and lbl:IsShown()) then return end
+								local textWidth = lbl.GetStringWidth and lbl:GetStringWidth() or 0
+								icon:ClearAllPoints()
+								if textWidth and textWidth > 0 then
+									icon:SetPoint("LEFT", lbl, "LEFT", textWidth + 5, 0)
+								else
+									icon:SetPoint("LEFT", lbl, "RIGHT", 5, 0)
+								end
+							end)
+						end
+					end
+				end
+			end
 			
 			-- Name Text Font
 			addDropdown(frame.PageC, "Name Text Font", fontOptions,
@@ -4708,15 +4758,33 @@ local function createUFRenderer(componentId, title)
 			local function colorOpts()
 				local c = Settings.CreateControlTextContainer()
 				c:Add("default", "Default")
-				c:Add("class", "Class Color")
+				-- Class Color option only available for Player (not Target/Focus/Pet)
+				if componentId == "ufPlayer" then
+					c:Add("class", "Class Color")
+				end
 				c:Add("custom", "Custom")
 				return c:GetData()
 			end
 			local function getMode()
-				local t = ensureUFDB() or {}; local s = t.textName or {}; return s.colorMode or "default"
+				local t = ensureUFDB() or {}; local s = t.textName or {}
+				local mode = s.colorMode or "default"
+				-- Reset "class" mode to "default" for Target/Focus/Pet (class option not available)
+				if (componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet") and mode == "class" then
+					mode = "default"
+					-- Also update the stored value to prevent it from persisting
+					if t then
+						t.textName = t.textName or {}
+						t.textName.colorMode = "default"
+					end
+				end
+				return mode
 			end
 			local function setMode(v)
 				local t = ensureUFDB(); if not t then return end
+				-- Prevent setting "class" mode for Target/Focus/Pet (option not available)
+				if (componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet") and v == "class" then
+					v = "default"
+				end
 				t.textName = t.textName or {}; t.textName.colorMode = v or "default"; applyNow()
 			end
 			local function getColorTbl()
@@ -4854,7 +4922,11 @@ local function createUFRenderer(componentId, title)
 		end
 
 		local nltInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", nltTabs)
-		nltInit.GetExtent = function() return 300 end
+		-- Static height for Name & Level Text tabs (Backdrop/Border/Name/Level).
+		-- 300px was barely sufficient for 7 controls; with the 8th "Name Container Width"
+		-- control on the Name Text tab we align with the 330px class used elsewhere
+		-- for tabs with 7-8 settings (see TABBEDSECTIONS.md).
+		nltInit.GetExtent = function() return 330 end
 		nltInit:AddShownPredicate(function()
 			return panel:IsSectionExpanded(componentId, "Name & Level Text")
 		end)
@@ -4872,7 +4944,8 @@ local function createUFRenderer(componentId, title)
 
 		-- Portrait tabs: Positioning / Sizing / Mask / Border / Damage Text / Visibility
 		-- Damage Text tab only exists for Player frame
-		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = (componentId == "ufPlayer") and "Damage Text" or nil, tabFText = "Visibility" }
+		-- Positioning tab disabled for Pet (PetFrame is a managed frame; moving portrait causes entire frame to move)
+		local portraitTabs = { sectionTitle = "", tabAText = (componentId ~= "ufPet") and "Positioning" or nil, tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = (componentId == "ufPlayer") and "Damage Text" or nil, tabFText = "Visibility" }
 		portraitTabs.build = function(frame)
 			-- Helper for unit key
 			local function unitKey()
@@ -4937,25 +5010,27 @@ local function createUFRenderer(componentId, title)
 				return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
 			end
 
-			-- PageA: Positioning
-			do
-				local function applyNow()
-					if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
-					if addon and addon.ApplyStyles then addon:ApplyStyles() end
+			-- PageA: Positioning (disabled for Pet - PetFrame is a managed frame; moving portrait causes entire frame to move)
+			if componentId ~= "ufPet" then
+				do
+					local function applyNow()
+						if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local y = { y = -50 }
+					
+					-- X Offset slider
+					addSlider(frame.PageA, "X Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; return tonumber(t.offsetX) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.offsetX = tonumber(v) or 0; applyNow() end,
+						y)
+					
+					-- Y Offset slider
+					addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; return tonumber(t.offsetY) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.offsetY = tonumber(v) or 0; applyNow() end,
+						y)
 				end
-				local y = { y = -50 }
-				
-				-- X Offset slider
-				addSlider(frame.PageA, "X Offset", -100, 100, 1,
-					function() local t = ensureUFDB() or {}; return tonumber(t.offsetX) or 0 end,
-					function(v) local t = ensureUFDB(); if not t then return end; t.offsetX = tonumber(v) or 0; applyNow() end,
-					y)
-				
-				-- Y Offset slider
-				addSlider(frame.PageA, "Y Offset", -100, 100, 1,
-					function() local t = ensureUFDB() or {}; return tonumber(t.offsetY) or 0 end,
-					function(v) local t = ensureUFDB(); if not t then return end; t.offsetY = tonumber(v) or 0; applyNow() end,
-					y)
 			end
 
 			-- PageB: Sizing
