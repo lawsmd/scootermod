@@ -1837,6 +1837,10 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFramePortraits then
         addon.ApplyAllUnitFramePortraits()
     end
+    -- Apply Unit Frame Cast Bar positioning (Target/Focus) if configured
+    if addon.ApplyAllUnitFrameCastBars then
+        addon.ApplyAllUnitFrameCastBars()
+    end
 end
 
 -- Copy all settings from one Action Bar to another (both Edit Mode and addon-only)
@@ -5323,6 +5327,88 @@ do
 				end
 			end
 		end)
+	end
+end
+
+-- Unit Frames: Cast Bar positioning (Target/Focus only, addon-managed offsets)
+do
+	local function resolveCastBarFrame(unit)
+		if unit == "Target" then
+			return _G.TargetFrameSpellBar
+		elseif unit == "Focus" then
+			return _G.FocusFrameSpellBar
+		end
+		return nil
+	end
+
+	-- Store original positions per frame so offsets are always relative to stock layout
+	local originalPositions = {}
+
+	local function applyCastBarForUnit(unit)
+		if unit ~= "Target" and unit ~= "Focus" then return end
+
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames[unit] = db.unitFrames[unit] or {}
+		db.unitFrames[unit].castBar = db.unitFrames[unit].castBar or {}
+		local cfg = db.unitFrames[unit].castBar
+
+		local frame = resolveCastBarFrame(unit)
+		if not frame then return end
+
+		-- Capture baseline anchor once
+		if not originalPositions[frame] and frame.GetPoint then
+			local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(1)
+			if point then
+				originalPositions[frame] = {
+					point = point,
+					relativeTo = relativeTo,
+					relativePoint = relativePoint,
+					xOfs = xOfs or 0,
+					yOfs = yOfs or 0,
+				}
+			end
+		end
+
+		local orig = originalPositions[frame]
+		if not orig then return end
+
+		local offsetX = tonumber(cfg.offsetX) or 0
+		local offsetY = tonumber(cfg.offsetY) or 0
+
+		local function apply()
+			if InCombatLockdown and InCombatLockdown() then
+				return
+			end
+			if not (frame.ClearAllPoints and frame.SetPoint) then
+				return
+			end
+			frame:ClearAllPoints()
+			frame:SetPoint(orig.point, orig.relativeTo, orig.relativePoint, (orig.xOfs or 0) + offsetX, (orig.yOfs or 0) + offsetY)
+		end
+
+		if InCombatLockdown and InCombatLockdown() then
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0.1, function()
+					if not (InCombatLockdown and InCombatLockdown()) then
+						apply()
+					end
+				end)
+			end
+		else
+			apply()
+		end
+	end
+
+	function addon.ApplyUnitFrameCastBarFor(unit)
+		applyCastBarForUnit(unit)
+	end
+
+	function addon.ApplyAllUnitFrameCastBars()
+		applyCastBarForUnit("Target")
+		applyCastBarForUnit("Focus")
 	end
 end
 

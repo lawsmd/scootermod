@@ -5528,8 +5528,8 @@ local function createUFRenderer(componentId, title)
 		end)
 		table.insert(init, portraitInit)
 
-		-- Sixth collapsible section: Cast Bar (Player only)
-			if componentId == "ufPlayer" then
+		-- Sixth collapsible section: Cast Bar (Player/Target/Focus)
+			if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" then
 				local expInitializerCB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 					name = "Cast Bar",
 					sectionKey = "Cast Bar",
@@ -5539,9 +5539,60 @@ local function createUFRenderer(componentId, title)
 				expInitializerCB.GetExtent = function() return 30 end
 				table.insert(init, expInitializerCB)
 
-				-- Cast Bar tabbed section: Positioning / Sizing (Sizing placeholder for now)
-				local cbData = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Cast Time" }
+				-- Cast Bar tabbed section:
+				-- Tabs (in order): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Cast Time Text, Visibility
+				local cbData = {
+					sectionTitle = "",
+					tabAText = "Positioning",
+					tabBText = "Sizing",
+					tabCText = "Style",
+					tabDText = "Border",
+					tabEText = "Icon",
+					tabFText = "Spell Name Text",
+					tabGText = "Cast Time Text",
+					tabHText = "Visibility",
+				}
 				cbData.build = function(frame)
+					-- Helper: map componentId -> unit key
+					local function unitKey()
+						if componentId == "ufPlayer" then return "Player" end
+						if componentId == "ufTarget" then return "Target" end
+						if componentId == "ufFocus" then return "Focus" end
+						return nil
+					end
+
+					-- Helper: ensure Unit Frame Cast Bar DB namespace (Target/Focus only for now)
+					local function ensureCastBarDB()
+						local uk = unitKey()
+						if uk ~= "Target" and uk ~= "Focus" then return nil end
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames[uk] = db.unitFrames[uk] or {}
+						db.unitFrames[uk].castBar = db.unitFrames[uk].castBar or {}
+						return db.unitFrames[uk].castBar
+					end
+
+					-- Small slider helper (used for Target/Focus offsets)
+					local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+						local options = Settings.CreateSliderOptions(minV, maxV, step)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+							return tostring(math.floor((tonumber(v) or 0) + 0.5))
+						end)
+						local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						yRef.y = yRef.y - 34
+						return f
+					end
+
+					-- PLAYER CAST BAR (Edit Mode–managed)
+					if componentId == "ufPlayer" then
 					-- Utilities reused from Parent Frame positioning
 					local function getUiScale() return (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1 end
 					local function uiUnitsToPixels(u) local s = getUiScale(); return math.floor((u * s) + 0.5) end
@@ -5600,6 +5651,8 @@ local function createUFRenderer(componentId, title)
 							end
 							if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
 							if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							-- Avoid immediate flicker: suspend and queue a single category refresh
+							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
 							if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
 						end
 						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -5724,7 +5777,7 @@ local function createUFRenderer(componentId, title)
 						y.y = y.y - 34
 					end
 
-					-- Cast Time tab (PageC): Show Cast Time checkbox
+					-- Cast Time Text tab (PageG): Show Cast Time checkbox
 					do
 						local y = { y = -50 }
 						local label = "Show Cast Time"
@@ -5756,7 +5809,7 @@ local function createUFRenderer(componentId, title)
 						end
 						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						local row = CreateFrame("Frame", nil, frame.PageG, "SettingsCheckboxControlTemplate")
 						row.GetElementData = function() return initCb end
 						row:SetPoint("TOPLEFT", 4, y.y)
 						row:SetPoint("TOPRIGHT", -16, y.y)
@@ -5767,6 +5820,45 @@ local function createUFRenderer(componentId, title)
 							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 						end
 						y.y = y.y - 34
+					end
+					-- Placeholder tabs (Style, Border, Icon, Spell Name Text, Visibility) are wired by titles only for now.
+
+					-- TARGET/FOCUS CAST BAR (addon-only X/Y offsets)
+					else
+						local uk = unitKey()
+						if uk == "Target" or uk == "Focus" then
+							local function applyNow()
+								if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor(uk) end
+								if addon and addon.ApplyStyles then addon:ApplyStyles() end
+							end
+							local y = { y = -50 }
+
+							-- X Offset slider (-100..100 px)
+							addSlider(frame.PageA, "X Offset", -100, 100, 1,
+								function()
+									local t = ensureCastBarDB() or {}
+									return tonumber(t.offsetX) or 0
+								end,
+								function(v)
+									local t = ensureCastBarDB(); if not t then return end
+									t.offsetX = tonumber(v) or 0
+									applyNow()
+								end,
+								y)
+
+							-- Y Offset slider (-100..100 px)
+							addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+								function()
+									local t = ensureCastBarDB() or {}
+									return tonumber(t.offsetY) or 0
+								end,
+								function(v)
+									local t = ensureCastBarDB(); if not t then return end
+									t.offsetY = tonumber(v) or 0
+									applyNow()
+								end,
+								y)
+						end
 					end
 				end
 
