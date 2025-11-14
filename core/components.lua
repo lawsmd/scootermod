@@ -5333,6 +5333,9 @@ end
 -- Unit Frames: Cast Bar positioning (Target/Focus only, addon-managed offsets)
 do
 	local function resolveCastBarFrame(unit)
+		if unit == "Player" then
+			return _G.PlayerCastingBarFrame
+		end
 		if unit == "Target" then
 			return _G.TargetFrameSpellBar
 		elseif unit == "Focus" then
@@ -5343,9 +5346,11 @@ do
 
 	-- Store original positions per frame so offsets are always relative to stock layout
 	local originalPositions = {}
+	-- Store original widths per frame for width-percent scaling
+	local originalWidths = {}
 
 	local function applyCastBarForUnit(unit)
-		if unit ~= "Target" and unit ~= "Focus" then return end
+		if unit ~= "Player" and unit ~= "Target" and unit ~= "Focus" then return end
 
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
@@ -5375,8 +5380,26 @@ do
 		local orig = originalPositions[frame]
 		if not orig then return end
 
-		local offsetX = tonumber(cfg.offsetX) or 0
-		local offsetY = tonumber(cfg.offsetY) or 0
+		-- Capture original width once
+		if not originalWidths[frame] and frame.GetWidth then
+			local ok, w = pcall(frame.GetWidth, frame)
+			if ok and w then
+				originalWidths[frame] = w
+			end
+		end
+
+		local origWidth = originalWidths[frame]
+
+		-- Target/Focus support offsets; Player remains anchored by Edit Mode
+		local offsetX, offsetY = 0, 0
+		if unit == "Target" or unit == "Focus" then
+			offsetX = tonumber(cfg.offsetX) or 0
+			offsetY = tonumber(cfg.offsetY) or 0
+		end
+
+		-- Width percent (50–150%; 100 = stock width)
+		local widthPct = tonumber(cfg.widthPct) or 100
+		if widthPct < 50 then widthPct = 50 elseif widthPct > 150 then widthPct = 150 end
 
 		local function apply()
 			if InCombatLockdown and InCombatLockdown() then
@@ -5385,6 +5408,13 @@ do
 			if not (frame.ClearAllPoints and frame.SetPoint) then
 				return
 			end
+
+			-- Apply width scaling relative to original width (if available)
+			if origWidth and frame.SetWidth then
+				local scale = widthPct / 100.0
+				pcall(frame.SetWidth, frame, origWidth * scale)
+			end
+
 			frame:ClearAllPoints()
 			frame:SetPoint(orig.point, orig.relativeTo, orig.relativePoint, (orig.xOfs or 0) + offsetX, (orig.yOfs or 0) + offsetY)
 		end

@@ -5777,6 +5777,47 @@ local function createUFRenderer(componentId, title)
 						y.y = y.y - 34
 					end
 
+					-- Bar Width slider (Player only for now, percent of original width)
+					do
+						local y = { y = -90 } -- place just below Bar Size (Scale)
+						local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+						local options = Settings.CreateSliderOptions(50, 150, 1)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+
+						local label = "Bar Width (%)"
+						local function getter()
+							local db = addon and addon.db and addon.db.profile
+							if not db then return 100 end
+							db.unitFrames = db.unitFrames or {}
+							db.unitFrames.Player = db.unitFrames.Player or {}
+							db.unitFrames.Player.castBar = db.unitFrames.Player.castBar or {}
+							local t = db.unitFrames.Player.castBar
+							return tonumber(t.widthPct) or 100
+						end
+						local function setter(v)
+							local db = addon and addon.db and addon.db.profile
+							if not db then return end
+							db.unitFrames = db.unitFrames or {}
+							db.unitFrames.Player = db.unitFrames.Player or {}
+							db.unitFrames.Player.castBar = db.unitFrames.Player.castBar or {}
+							local t = db.unitFrames.Player.castBar
+							local val = tonumber(v) or 100
+							if val < 50 then val = 50 elseif val > 150 then val = 150 end
+							t.widthPct = val
+							if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor("Player") end
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+
+						local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					end
+
 					-- Cast Time Text tab (PageG): Show Cast Time checkbox
 					do
 						local y = { y = -50 }
@@ -5823,7 +5864,7 @@ local function createUFRenderer(componentId, title)
 					end
 					-- Placeholder tabs (Style, Border, Icon, Spell Name Text, Visibility) are wired by titles only for now.
 
-					-- TARGET/FOCUS CAST BAR (addon-only X/Y offsets)
+					-- TARGET/FOCUS CAST BAR (addon-only X/Y offsets + width)
 					else
 						local uk = unitKey()
 						if uk == "Target" or uk == "Focus" then
@@ -5831,33 +5872,65 @@ local function createUFRenderer(componentId, title)
 								if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor(uk) end
 								if addon and addon.ApplyStyles then addon:ApplyStyles() end
 							end
-							local y = { y = -50 }
+							-- PageA: Positioning (X/Y offsets)
+							do
+								local y = { y = -50 }
+								-- X Offset slider (-150..150 px)
+								addSlider(frame.PageA, "X Offset", -150, 150, 1,
+									function()
+										local t = ensureCastBarDB() or {}
+										return tonumber(t.offsetX) or 0
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.offsetX = tonumber(v) or 0
+										applyNow()
+									end,
+									y)
 
-							-- X Offset slider (-100..100 px)
-							addSlider(frame.PageA, "X Offset", -100, 100, 1,
-								function()
-									local t = ensureCastBarDB() or {}
-									return tonumber(t.offsetX) or 0
-								end,
-								function(v)
-									local t = ensureCastBarDB(); if not t then return end
-									t.offsetX = tonumber(v) or 0
-									applyNow()
-								end,
-								y)
+								-- Y Offset slider (-150..150 px)
+								addSlider(frame.PageA, "Y Offset", -150, 150, 1,
+									function()
+										local t = ensureCastBarDB() or {}
+										return tonumber(t.offsetY) or 0
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.offsetY = tonumber(v) or 0
+										applyNow()
+									end,
+									y)
+							end
 
-							-- Y Offset slider (-100..100 px)
-							addSlider(frame.PageA, "Y Offset", -100, 100, 1,
-								function()
+							-- PageB: Sizing (Bar Width %)
+							do
+								local y = { y = -50 }
+								local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+								local options = Settings.CreateSliderOptions(50, 150, 1)
+								options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+
+								local label = "Bar Width (%)"
+								local function getter()
 									local t = ensureCastBarDB() or {}
-									return tonumber(t.offsetY) or 0
-								end,
-								function(v)
+									return tonumber(t.widthPct) or 100
+								end
+								local function setter(v)
 									local t = ensureCastBarDB(); if not t then return end
-									t.offsetY = tonumber(v) or 0
+									local val = tonumber(v) or 100
+									if val < 50 then val = 50 elseif val > 150 then val = 150 end
+									t.widthPct = val
 									applyNow()
-								end,
-								y)
+								end
+
+								local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+								local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+								local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+								f.GetElementData = function() return initSlider end
+								f:SetPoint("TOPLEFT", 4, y.y)
+								f:SetPoint("TOPRIGHT", -16, y.y)
+								initSlider:InitFrame(f)
+								if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+							end
 						end
 					end
 				end
