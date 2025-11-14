@@ -185,6 +185,13 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         end
     end
     self:ApplyStyles()
+    -- Deferred reapply of Player textures to catch any Blizzard resets after initial apply
+    -- This ensures textures persist even if Blizzard updates the frame after our initial styling
+    if C_Timer and C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+        C_Timer.After(0.1, function()
+            addon.ApplyUnitFrameBarTexturesFor("Player")
+        end)
+    end
 end
 
 function addon:PLAYER_TARGET_CHANGED()

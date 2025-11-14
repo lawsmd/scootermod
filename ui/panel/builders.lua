@@ -2767,8 +2767,21 @@ local function createUFRenderer(componentId, title)
 			
 			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
 		]]--
-		-- Health Bar tabs (Style, Border, Text variants)
-		local hbTabs = { sectionTitle = "", tabAText = "Style", tabBText = "Border", tabCText = "% Text", tabDText = "Value Text" }
+		-- Health Bar tabs (Direction for Target/Focus, then Style, Border, Text variants)
+		local isTargetOrFocusHB = (componentId == "ufTarget" or componentId == "ufFocus")
+		local hbTabs = { sectionTitle = "" }
+		if isTargetOrFocusHB then
+			hbTabs.tabAText = "Direction"
+			hbTabs.tabBText = "Style"
+			hbTabs.tabCText = "Border"
+			hbTabs.tabDText = "% Text"
+			hbTabs.tabEText = "Value Text"
+		else
+			hbTabs.tabAText = "Style"
+			hbTabs.tabBText = "Border"
+			hbTabs.tabCText = "% Text"
+			hbTabs.tabDText = "Value Text"
+		end
 			hbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -2853,9 +2866,42 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
-				-- Removed Health Bar sizing tab (Positioning/Sizing controls)
+				-- PageA: Direction (Target/Focus only)
+				if isTargetOrFocusHB then
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
 
-				-- PageC: % Text
+						-- Bar Fill Direction dropdown (Target/Focus only)
+						local label = "Bar Fill Direction"
+						local function fillDirOptions()
+							local container = Settings.CreateControlTextContainer()
+							container:Add("default", "Left to Right (Default)")
+							container:Add("reverse", "Right to Left (Mirrored)")
+							return container:GetData()
+						end
+						local function getter()
+							local t = ensureUFDB() or {}
+							return t.healthBarReverseFill and "reverse" or "default"
+						end
+						local function setter(v)
+							local t = ensureUFDB(); if not t then return end
+							t.healthBarReverseFill = (v == "reverse")
+							applyNow()
+							-- Refresh the page to update any dependent controls
+							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
+							if panel and panel.RefreshCurrentCategoryDeferred then
+								panel.RefreshCurrentCategoryDeferred()
+							end
+						end
+						addDropdown(frame.PageA, label, fillDirOptions, getter, setter, y)
+					end
+				end
+
+				-- PageC: % Text (or PageB if no Direction tab)
+				local percentTextPage = isTargetOrFocusHB and frame.PageD or frame.PageC
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -2876,7 +2922,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, percentTextPage, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2888,33 +2934,34 @@ local function createUFRenderer(componentId, title)
 					end
 					y.y = y.y - 34
 					-- Font controls for % Text
-					addDropdown(frame.PageC, "% Text Font", fontOptions,
+					addDropdown(percentTextPage, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageC, "% Text Style",
+					addStyle(percentTextPage, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Size", 6, 48, 1,
+					addSlider(percentTextPage, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageC, "% Text Color", true,
+					addColor(percentTextPage, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Offset X", -100, 100, 1,
+					addSlider(percentTextPage, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageC, "% Text Offset Y", -100, 100, 1,
+					addSlider(percentTextPage, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageD: Value Text
+				-- PageD: Value Text (or PageD if no Direction tab)
+				local valueTextPage = isTargetOrFocusHB and frame.PageE or frame.PageD
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -2935,7 +2982,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, valueTextPage, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -2948,33 +2995,34 @@ local function createUFRenderer(componentId, title)
 					-- Match % Text layout: drop the cursor after the checkbox row
 					y.y = y.y - 34
 					-- Font controls for Value Text
-					addDropdown(frame.PageD, "Value Text Font", fontOptions,
+					addDropdown(valueTextPage, "Value Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageD, "Value Text Style",
+					addStyle(valueTextPage, "Value Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Size", 6, 48, 1,
+					addSlider(valueTextPage, "Value Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageD, "Value Text Color", true,
+					addColor(valueTextPage, "Value Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Offset X", -100, 100, 1,
+					addSlider(valueTextPage, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageD, "Value Text Offset Y", -100, 100, 1,
+					addSlider(valueTextPage, "Value Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageA: Foreground/Background Texture + Color
+				-- PageA/PageB: Foreground/Background Texture + Color (PageB for Target/Focus, PageA for Player/Pet)
+				local stylePage = isTargetOrFocusHB and frame.PageB or frame.PageA
 				do
 					local function applyNow()
 						if addon and addon.ApplyStyles then addon:ApplyStyles() end
@@ -2986,7 +3034,7 @@ local function createUFRenderer(componentId, title)
 					local function setTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarTexture = v; applyNow() end
 					local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = opts })
-					local f = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, stylePage, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -3017,7 +3065,7 @@ local function createUFRenderer(componentId, title)
 					local function setTintTbl(r,g,b,a)
 						local t = ensureUFDB(); if not t then return end; t.healthBarTint = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 					end
-					panel.DropdownWithInlineSwatch(frame.PageA, y, {
+					panel.DropdownWithInlineSwatch(stylePage, y, {
 						label = "Foreground Color",
 						getMode = getColorMode,
 						setMode = setColorMode,
@@ -3032,7 +3080,7 @@ local function createUFRenderer(componentId, title)
 					local function setBgTex(v) local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTexture = v; applyNow() end
 					local bgTexSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
 					local initBgDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgTexSetting, options = opts })
-					local fbg = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
+					local fbg = CreateFrame("Frame", nil, stylePage, "SettingsDropdownControlTemplate")
 					fbg.GetElementData = function() return initBgDrop end
 					fbg:SetPoint("TOPLEFT", 4, y.y)
 					fbg:SetPoint("TOPRIGHT", -16, y.y)
@@ -3062,7 +3110,7 @@ local function createUFRenderer(componentId, title)
 					local function setBgTintTbl(r,g,b,a)
 						local t = ensureUFDB(); if not t then return end; t.healthBarBackgroundTint = { r or 0, g or 0, b or 0, a or 1 }; applyNow()
 					end
-					panel.DropdownWithInlineSwatch(frame.PageA, y, {
+					panel.DropdownWithInlineSwatch(stylePage, y, {
 						label = "Background Color",
 						getMode = getBgColorMode,
 						setMode = setBgColorMode,
@@ -3082,7 +3130,7 @@ local function createUFRenderer(componentId, title)
 					local bgOpacityOpts = Settings.CreateSliderOptions(0, 100, 1)
 					bgOpacityOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
 					local bgOpacityInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Background Opacity", setting = bgOpacitySetting, options = bgOpacityOpts })
-					local fOpa = CreateFrame("Frame", nil, frame.PageA, "SettingsSliderControlTemplate")
+					local fOpa = CreateFrame("Frame", nil, stylePage, "SettingsSliderControlTemplate")
 					fOpa.GetElementData = function() return bgOpacityInit end
 					fOpa:SetPoint("TOPLEFT", 4, y.y)
 					fOpa:SetPoint("TOPRIGHT", -16, y.y)
@@ -3092,7 +3140,8 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 48
 				end
 
-				-- PageB: Border (Health Bar only)
+				-- PageB/PageC: Border (Health Bar only) (PageC for Target/Focus, PageB for Player/Pet)
+				local borderPage = isTargetOrFocusHB and frame.PageC or frame.PageB
 				do
 					local y = { y = -50 }
 					local function optionsBorder()
@@ -3133,7 +3182,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
 					local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = optionsBorder })
-					local f = CreateFrame("Frame", nil, frame.PageB, "SettingsDropdownControlTemplate")
+					local f = CreateFrame("Frame", nil, borderPage, "SettingsDropdownControlTemplate")
 					f.GetElementData = function() return initDrop end
 					f:SetPoint("TOPLEFT", 4, y.y)
 					f:SetPoint("TOPRIGHT", -16, y.y)
@@ -3170,7 +3219,7 @@ local function createUFRenderer(componentId, title)
 						end
 						local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
 						local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
-						local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+						local row = CreateFrame("Frame", nil, borderPage, "SettingsCheckboxControlTemplate")
 						row.GetElementData = function() return initCb end
 						row:SetPoint("TOPLEFT", 4, y.y)
 						row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3206,7 +3255,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, borderPage, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -3237,7 +3286,7 @@ local function createUFRenderer(componentId, title)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
-						local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+						local sf = CreateFrame("Frame", nil, borderPage, "SettingsSliderControlTemplate")
 						sf.GetElementData = function() return initSlider end
 						sf:SetPoint("TOPLEFT", 4, y.y)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
@@ -3396,8 +3445,8 @@ local function createUFRenderer(componentId, title)
 						local label = "Bar Fill Direction"
 						local function fillDirOptions()
 							local container = Settings.CreateControlTextContainer()
-							container:Add("default", "Left to Right (default)")
-							container:Add("reverse", "Right to Left (mirrored)")
+							container:Add("default", "Left to Right (Default)")
+							container:Add("reverse", "Right to Left (Mirrored)")
 							return container:GetData()
 						end
 						local function getter()
