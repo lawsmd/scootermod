@@ -4870,8 +4870,9 @@ local function createUFRenderer(componentId, title)
 		expInitializerPortrait.GetExtent = function() return 30 end
 		table.insert(init, expInitializerPortrait)
 
-		-- Portrait tabs: Positioning / Sizing / Mask / Border / Text / Visibility
-		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = "Text", tabFText = "Visibility" }
+		-- Portrait tabs: Positioning / Sizing / Mask / Border / Damage Text / Visibility
+		-- Damage Text tab only exists for Player frame
+		local portraitTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = (componentId == "ufPlayer") and "Damage Text" or nil, tabFText = "Visibility" }
 		portraitTabs.build = function(frame)
 			-- Helper for unit key
 			local function unitKey()
@@ -4907,6 +4908,33 @@ local function createUFRenderer(componentId, title)
 				initSlider:InitFrame(f)
 				if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
 				yRef.y = yRef.y - 34
+				return f
+			end
+			local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+				local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+				local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, yRef.y)
+				f:SetPoint("TOPRIGHT", -16, yRef.y)
+				initDrop:InitFrame(f)
+				local lbl = f and (f.Text or f.Label)
+				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+				if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+					addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+				end
+				yRef.y = yRef.y - 34
+				return f
+			end
+			local function addStyle(parent, label, getFunc, setFunc, yRef)
+				local function styleOptions()
+					local container = Settings.CreateControlTextContainer();
+					container:Add("NONE", "Regular");
+					container:Add("OUTLINE", "Outline");
+					container:Add("THICKOUTLINE", "Thick Outline");
+					return container:GetData()
+				end
+				return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
 			end
 
 			-- PageA: Positioning
@@ -5154,10 +5182,163 @@ local function createUFRenderer(componentId, title)
 				end
 			end
 
-			-- PageE: Text (placeholder for now)
+			-- PageE: Damage Text (Player only)
 			do
-				local y = { y = -50 }
-				-- Controls will be added here later
+				-- Only show this tab for Player frame
+				if unitKey() ~= "Player" then
+					-- Empty page for non-Player frames
+					local y = { y = -50 }
+				else
+					local function applyNow()
+						if addon and addon.ApplyUnitFramePortraitFor then addon.ApplyUnitFramePortraitFor(unitKey()) end
+						if addon and addon.ApplyStyles then addon:ApplyStyles() end
+					end
+					local function fontOptions()
+						return addon.BuildFontOptionsContainer()
+					end
+					local y = { y = -50 }
+					
+					-- Helper function to check if damage text is disabled
+					local function isDisabled()
+						local t = ensureUFDB() or {}
+						return not not t.damageTextDisabled
+					end
+					
+					-- Store references to controls for gray-out logic
+					local _dtFontFrame, _dtStyleFrame, _dtSizeFrame, _dtColorFrame, _dtOffsetXFrame, _dtOffsetYFrame
+					
+					-- Function to refresh gray-out state
+					local function refreshDamageTextDisabledState()
+						local disabled = isDisabled()
+						-- Gray out all controls when disabled
+						if _dtFontFrame then
+							if _dtFontFrame.Control and _dtFontFrame.Control.SetEnabled then _dtFontFrame.Control:SetEnabled(not disabled) end
+							local lbl = _dtFontFrame.Text or _dtFontFrame.Label
+							if lbl and lbl.SetTextColor then lbl:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+						end
+						if _dtStyleFrame then
+							if _dtStyleFrame.Control and _dtStyleFrame.Control.SetEnabled then _dtStyleFrame.Control:SetEnabled(not disabled) end
+							local lbl = _dtStyleFrame.Text or _dtStyleFrame.Label
+							if lbl and lbl.SetTextColor then lbl:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+						end
+						if _dtSizeFrame then
+							if _dtSizeFrame.Control and _dtSizeFrame.Control.SetEnabled then _dtSizeFrame.Control:SetEnabled(not disabled) end
+							if _dtSizeFrame.Text and _dtSizeFrame.Text.SetTextColor then _dtSizeFrame.Text:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+						end
+						if _dtColorFrame then
+							-- Color dropdown
+							if _dtColorFrame.Control and _dtColorFrame.Control.SetEnabled then _dtColorFrame.Control:SetEnabled(not disabled) end
+							local lbl = _dtColorFrame.Text or _dtColorFrame.Label
+							if lbl and lbl.SetTextColor then lbl:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+							-- Color swatch
+							if _dtColorFrame.ScooterInlineSwatch and _dtColorFrame.ScooterInlineSwatch.EnableMouse then
+								_dtColorFrame.ScooterInlineSwatch:EnableMouse(not disabled)
+								if _dtColorFrame.ScooterInlineSwatch.SetAlpha then _dtColorFrame.ScooterInlineSwatch:SetAlpha(disabled and 0.5 or 1) end
+							end
+						end
+						if _dtOffsetXFrame then
+							if _dtOffsetXFrame.Control and _dtOffsetXFrame.Control.SetEnabled then _dtOffsetXFrame.Control:SetEnabled(not disabled) end
+							if _dtOffsetXFrame.Text and _dtOffsetXFrame.Text.SetTextColor then _dtOffsetXFrame.Text:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+						end
+						if _dtOffsetYFrame then
+							if _dtOffsetYFrame.Control and _dtOffsetYFrame.Control.SetEnabled then _dtOffsetYFrame.Control:SetEnabled(not disabled) end
+							if _dtOffsetYFrame.Text and _dtOffsetYFrame.Text.SetTextColor then _dtOffsetYFrame.Text:SetTextColor(disabled and 0.6 or 1, disabled and 0.6 or 1, disabled and 0.6 or 1, 1) end
+						end
+					end
+					
+					-- Disable Damage Text checkbox
+					local label = "Disable Damage Text"
+					local function getter()
+						local t = ensureUFDB(); return t and not not t.damageTextDisabled or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.damageTextDisabled = (v and true) or false
+						applyNow()
+						refreshDamageTextDisabledState()
+					end
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+					y.y = y.y - 34
+					
+					-- Damage Text Font
+					_dtFontFrame = addDropdown(frame.PageE, "Font", fontOptions,
+						function() local t = ensureUFDB() or {}; local s = t.damageText or {}; return s.fontFace or "FRIZQT__" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.damageText = t.damageText or {}; t.damageText.fontFace = v; applyNow() end,
+						y)
+					
+					-- Damage Text Style
+					_dtStyleFrame = addStyle(frame.PageE, "Font Style",
+						function() local t = ensureUFDB() or {}; local s = t.damageText or {}; return s.style or "OUTLINE" end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.damageText = t.damageText or {}; t.damageText.style = v; applyNow() end,
+						y)
+					
+					-- Damage Text Size
+					_dtSizeFrame = addSlider(frame.PageE, "Font Size", 6, 48, 1,
+						function() local t = ensureUFDB() or {}; local s = t.damageText or {}; return tonumber(s.size) or 14 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.damageText = t.damageText or {}; t.damageText.size = tonumber(v) or 14; applyNow() end,
+						y)
+					
+					-- Damage Text Color (dropdown + inline swatch)
+					do
+						local function colorOpts()
+							local c = Settings.CreateControlTextContainer()
+							c:Add("default", "Default")
+							c:Add("class", "Class Color")
+							c:Add("custom", "Custom")
+							return c:GetData()
+						end
+						local function getMode()
+							local t = ensureUFDB() or {}; local s = t.damageText or {}; return s.colorMode or "default"
+						end
+						local function setMode(v)
+							local t = ensureUFDB(); if not t then return end
+							t.damageText = t.damageText or {}; t.damageText.colorMode = v or "default"; applyNow()
+						end
+						local function getColorTbl()
+							local t = ensureUFDB() or {}; local s = t.damageText or {}; local c = s.color or {1.0,0.82,0.0,1}
+							return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+						end
+						local function setColorTbl(r,g,b,a)
+							local t = ensureUFDB(); if not t then return end
+							t.damageText = t.damageText or {}; t.damageText.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
+						end
+						_dtColorFrame = panel.DropdownWithInlineSwatch(frame.PageE, y, {
+							label = "Font Color",
+							getMode = getMode,
+							setMode = setMode,
+							getColor = getColorTbl,
+							setColor = setColorTbl,
+							options = colorOpts,
+							insideButton = true,
+						})
+					end
+					
+					-- Damage Text Offset X
+					_dtOffsetXFrame = addSlider(frame.PageE, "Font X Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.damageText or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.damageText = t.damageText or {}; t.damageText.offset = t.damageText.offset or {}; t.damageText.offset.x = tonumber(v) or 0; applyNow() end,
+						y)
+					
+					-- Damage Text Offset Y
+					_dtOffsetYFrame = addSlider(frame.PageE, "Font Y Offset", -100, 100, 1,
+						function() local t = ensureUFDB() or {}; local s = t.damageText or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+						function(v) local t = ensureUFDB(); if not t then return end; t.damageText = t.damageText or {}; t.damageText.offset = t.damageText.offset or {}; t.damageText.offset.y = tonumber(v) or 0; applyNow() end,
+						y)
+					
+					-- Initialize gray-out state
+					refreshDamageTextDisabledState()
+				end
 			end
 
 			-- PageF: Visibility

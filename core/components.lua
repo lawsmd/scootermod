@@ -4429,6 +4429,16 @@ do
 		return nil
 	end
 
+	-- Resolve damage text (HitText) frame for a given unit (Player-only)
+	local function resolveDamageTextFrame(unit)
+		if unit == "Player" then
+			local root = _G.PlayerFrame
+			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.HitIndicator and root.PlayerFrameContent.PlayerFrameContentMain.HitIndicator.HitText or nil
+		end
+		-- Target/Focus/Pet don't have damage text
+		return nil
+	end
+
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
 	-- Store original scales (per frame, not per unit, to handle frame recreation)
@@ -4958,6 +4968,119 @@ do
 			end
 		end
 
+		-- Apply damage text styling (Player only)
+		local function applyDamageText()
+			if unit ~= "Player" then return end
+			local damageTextFrame = resolveDamageTextFrame(unit)
+			if not damageTextFrame then return end
+
+			local damageTextDisabled = cfg.damageTextDisabled == true
+			
+			-- Instead of hiding the frame (which breaks Blizzard's CombatFeedback system),
+			-- set alpha to 0 to make it invisible when disabled. This prevents the feedbackStartTime nil error.
+			-- We use alpha instead of SetShown because Blizzard's CombatFeedback_OnUpdate expects the frame
+			-- to exist and be managed by their system.
+			if damageTextDisabled then
+				if damageTextFrame.SetAlpha then
+					pcall(damageTextFrame.SetAlpha, damageTextFrame, 0)
+				end
+				-- Skip styling when disabled
+				return
+			end
+
+			local damageTextCfg = cfg.damageText or {}
+			
+			-- Hook SetTextHeight on the frame to intercept Blizzard's calls and override with our custom size
+			-- This prevents Blizzard from overriding our font size with SetTextHeight
+			if not damageTextFrame._scooterSetTextHeightHooked then
+				damageTextFrame._scooterSetTextHeightHooked = true
+				local originalSetTextHeight = damageTextFrame.SetTextHeight
+				damageTextFrame.SetTextHeight = function(self, height)
+					-- Check if we have custom settings
+					local db = addon and addon.db and addon.db.profile
+					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
+						local cfg = db.unitFrames.Player.portrait
+						local damageTextCfg = cfg.damageText or {}
+						local customSize = tonumber(damageTextCfg.size)
+						if customSize then
+							-- Use our custom size instead of Blizzard's height
+							-- But we still need to call SetFont to set the actual font size
+							local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+							local customStyle = tostring(damageTextCfg.style or "OUTLINE")
+							if self.SetFont then
+								pcall(self.SetFont, self, customFace, customSize, customStyle)
+							end
+							-- Don't call original SetTextHeight - SetFont handles the size
+							return
+						end
+					end
+					-- No custom settings, use original behavior
+					if originalSetTextHeight then
+						return originalSetTextHeight(self, height)
+					end
+				end
+			end
+			
+			-- Initialize baseline storage
+			addon._ufDamageTextBaselines = addon._ufDamageTextBaselines or {}
+			local function ensureBaseline(fs, key)
+				addon._ufDamageTextBaselines[key] = addon._ufDamageTextBaselines[key] or {}
+				local b = addon._ufDamageTextBaselines[key]
+				if b.point == nil then
+					if fs and fs.GetPoint then
+						local p, relTo, rp, x, y = fs:GetPoint(1)
+						b.point = p or "CENTER"
+						b.relTo = relTo or (fs.GetParent and fs:GetParent()) or nil
+						b.relPoint = rp or b.point
+						b.x = tonumber(x) or 0
+						b.y = tonumber(y) or 0
+					else
+						b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or nil, "CENTER", 0, 0
+					end
+				end
+				return b
+			end
+
+			-- Apply text styling
+			local face = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+			local size = tonumber(damageTextCfg.size) or 14
+			local outline = tostring(damageTextCfg.style or "OUTLINE")
+			if damageTextFrame.SetFont then
+				pcall(damageTextFrame.SetFont, damageTextFrame, face, size, outline)
+			end
+
+			-- Determine color based on colorMode
+			local c = nil
+			local colorMode = damageTextCfg.colorMode or "default"
+			if colorMode == "class" then
+				-- Class Color: use player's class color
+				if addon.GetClassColorRGB then
+					local cr, cg, cb = addon.GetClassColorRGB("player")
+					c = { cr or 1, cg or 1, cb or 1, 1 }
+				else
+					c = {1.0, 0.82, 0.0, 1} -- fallback to default yellow
+				end
+			elseif colorMode == "custom" then
+				-- Custom: use stored color
+				c = damageTextCfg.color or {1.0, 0.82, 0.0, 1}
+			else
+				-- Default: use Blizzard's default yellow color (1.0, 0.82, 0.0)
+				c = damageTextCfg.color or {1.0, 0.82, 0.0, 1}
+			end
+			if damageTextFrame.SetTextColor then
+				pcall(damageTextFrame.SetTextColor, damageTextFrame, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+			end
+
+			-- Apply offset
+			local ox = (damageTextCfg.offset and tonumber(damageTextCfg.offset.x)) or 0
+			local oy = (damageTextCfg.offset and tonumber(damageTextCfg.offset.y)) or 0
+			if damageTextFrame.ClearAllPoints and damageTextFrame.SetPoint then
+				local b = ensureBaseline(damageTextFrame, "Player:damageText")
+				damageTextFrame:ClearAllPoints()
+				damageTextFrame:SetPoint(b.point or "CENTER", b.relTo or (damageTextFrame.GetParent and damageTextFrame:GetParent()) or nil, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+			end
+		end
+
 		if InCombatLockdown() then
 			-- Defer application until out of combat
 			if _G.C_Timer and _G.C_Timer.After then
@@ -4969,6 +5092,7 @@ do
 						applyMask()
 						applyBorder()
 						applyVisibility()
+						applyDamageText()
 					end
 				end)
 			end
@@ -4979,6 +5103,7 @@ do
 			applyMask()
 			applyBorder()
 			applyVisibility()
+			applyDamageText()
 		end
 	end
 
@@ -5011,6 +5136,70 @@ do
 						_G.C_Timer.After(0, function()
 							applyForUnit(unitKey)
 						end)
+					end
+				end
+			end
+		end)
+	end
+
+	-- Hook Blizzard's CombatFeedback system to prevent showing damage text when disabled
+	-- We need to hook both OnCombatEvent (when damage happens) and OnUpdate (animation loop)
+	-- CombatFeedback_OnCombatEvent receives PlayerFrame as 'self', and PlayerFrame.feedbackText is the HitText
+	-- CombatFeedback_OnUpdate also receives PlayerFrame as 'self'
+	if _G.CombatFeedback_OnCombatEvent then
+		_G.hooksecurefunc("CombatFeedback_OnCombatEvent", function(self, event, flags, amount, type)
+			-- Check if this is PlayerFrame
+			local playerFrame = _G.PlayerFrame
+			if self and self == playerFrame and self.feedbackText then
+				local db = addon and addon.db and addon.db.profile
+				if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
+					local cfg = db.unitFrames.Player.portrait
+					local damageTextDisabled = cfg.damageTextDisabled == true
+					
+					if damageTextDisabled then
+						-- Immediately set alpha to 0 if disabled, preventing it from being visible
+						-- This happens after Blizzard sets feedbackStartTime, so it won't cause nil errors
+						if self.feedbackText.SetAlpha then
+							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
+						end
+					else
+						-- Override Blizzard's font size with our custom size
+						-- Blizzard calls SetTextHeight(fontHeight) which sets the text region height
+						-- We need to use SetFont() with our custom size instead, which sets the actual font size
+						-- SetFont will properly scale the text, while SetTextHeight just scales the region (causing pixelation)
+						local damageTextCfg = cfg.damageText or {}
+						local customSize = tonumber(damageTextCfg.size) or 14
+						local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+						local customStyle = tostring(damageTextCfg.style or "OUTLINE")
+						
+						-- Use SetFont to set the actual font size (not SetTextHeight which just scales the region)
+						-- This must be called after Blizzard's SetTextHeight to override it
+						if self.feedbackText.SetFont then
+							pcall(self.feedbackText.SetFont, self.feedbackText, customFace, customSize, customStyle)
+						end
+					end
+				end
+			end
+		end)
+	end
+
+	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
+	-- This is critical because OnUpdate runs every frame and will override our alpha setting
+	-- OnUpdate receives PlayerFrame as 'self'
+	if _G.CombatFeedback_OnUpdate then
+		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)
+			-- Check if this is PlayerFrame
+			local playerFrame = _G.PlayerFrame
+			if self and self == playerFrame and self.feedbackText then
+				local db = addon and addon.db and addon.db.profile
+				if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
+					local damageTextDisabled = db.unitFrames.Player.portrait.damageTextDisabled == true
+					if damageTextDisabled then
+						-- Continuously force alpha to 0, overriding Blizzard's animation
+						-- This runs after Blizzard's SetAlpha calls, so it will override them
+						if self.feedbackText.SetAlpha then
+							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
+						end
 					end
 				end
 			end
