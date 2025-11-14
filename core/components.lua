@@ -2010,15 +2010,7 @@ do
     local function hookHealthBarUpdateTextString(bar, unit)
         if not bar or bar._ScooterHealthTextVisibilityHooked then return end
         bar._ScooterHealthTextVisibilityHooked = true
-
-        -- TEMPORARY DIAGNOSTIC (2025-11-14):
-        -- To measure the impact of ScooterMod's Unit Frame text layer on CPU usage,
-        -- we intentionally DO NOT hook StatusBar:UpdateTextString here. This means
-        -- health text visibility will only be applied during explicit styling passes
-        -- (ApplyStyles / ApplyAllUnitFrameHealthTextVisibility) and not on every
-        -- Blizzard text update. If CPU drops significantly with this disabled, the
-        -- text visibility hook path is confirmed as the main contributor.
-        if false and _G.hooksecurefunc then
+        if _G.hooksecurefunc then
             _G.hooksecurefunc(bar, "UpdateTextString", function(self, ...)
                 if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then
                     addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
@@ -2319,12 +2311,7 @@ do
 	local function hookPowerBarUpdateTextString(bar, unit)
 		if not bar or bar._ScooterPowerTextVisibilityHooked then return end
 		bar._ScooterPowerTextVisibilityHooked = true
-
-        -- TEMPORARY DIAGNOSTIC (2025-11-14):
-        -- As with health text, do not hook UpdateTextString for power bars while we
-        -- measure CPU. Power text visibility will only be applied during explicit
-        -- styling passes, not on every resource text update.
-		if false and _G.hooksecurefunc then
+		if _G.hooksecurefunc then
 			_G.hooksecurefunc(bar, "UpdateTextString", function(self, ...)
 				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then
 					addon.ApplyUnitFramePowerTextVisibilityFor(unit)
