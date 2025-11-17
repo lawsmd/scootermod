@@ -89,13 +89,18 @@ function Borders.ApplySquare(frame, opts)
     local expand = tonumber(opts.expand) or 0
     local ex = tonumber(opts.expandX) or expand
     local ey = tonumber(opts.expandY) or expand
+    -- Optional per-side overrides (used for fine-tuning specific frames like Cast Bars)
+    local exLeft  = (opts.expandLeft  ~= nil) and tonumber(opts.expandLeft)  or ex
+    local exRight = (opts.expandRight ~= nil) and tonumber(opts.expandRight) or ex
+    local eyTop   = (opts.expandTop   ~= nil) and tonumber(opts.expandTop)   or ey
+    local eyBottom= (opts.expandBottom~= nil) and tonumber(opts.expandBottom)or ey
     -- Prevent corner over-darkening without leaving gaps:
     -- let horizontal edges span the full width; trim vertical edges by the thickness.
     -- This yields a single-draw corner (from the horizontal edge) at each corner.
-    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -ex, ey);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", ex, ey);        e.Top:SetHeight(size)
-    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -ex, -ey); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", ex, -ey); e.Bottom:SetHeight(size)
-    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -ex, ey - size);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -ex, (-ey) + size);   e.Left:SetWidth(size)
-    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", ex, ey - size);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", ex, (-ey) + size); e.Right:SetWidth(size)
+    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop);        e.Top:SetHeight(size)
+    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom); e.Bottom:SetHeight(size)
+    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - size);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + size);   e.Left:SetWidth(size)
+    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - size);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + size); e.Right:SetWidth(size)
     for _, t in pairs(e) do if t.Show then t:Show() end end
     if container and container.Show then container:Show() end
 end
@@ -324,6 +329,27 @@ end
 
 function Borders.ApplyAtlas(frame, opts)
     if not frame or not opts or type(opts.atlas) ~= "string" then return end
+
+    -- If a Texture is passed (e.g., icon textures), wrap it in a small Frame so we
+    -- have a valid CreateTexture target and stable anchor bounds.
+    if frame.GetObjectType and frame:GetObjectType() == "Texture" then
+        local parent = frame:GetParent() or UIParent
+        local container = frame.ScooterAtlasBorderContainer
+        if not container then
+            container = CreateFrame("Frame", nil, parent)
+            frame.ScooterAtlasBorderContainer = container
+            container:EnableMouse(false)
+        end
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        local strata = parent.GetFrameStrata and parent:GetFrameStrata() or "HIGH"
+        container:SetFrameStrata(strata)
+        local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
+        container:SetFrameLevel(baseLevel + 5)
+        frame = container
+    end
+
     hideLegacy(frame)
     if not frame.ScootAtlasBorder then
         frame.ScootAtlasBorder = frame:CreateTexture(nil, "OVERLAY")
@@ -366,6 +392,27 @@ end
 
 function Borders.ApplyTexture(frame, opts)
     if not frame or not opts or type(opts.texture) ~= "string" then return end
+
+    -- Same wrapper logic as ApplyAtlas: ensure we have a Frame target for borders
+    -- when a raw Texture is passed in.
+    if frame.GetObjectType and frame:GetObjectType() == "Texture" then
+        local parent = frame:GetParent() or UIParent
+        local container = frame.ScooterTextureBorderContainer
+        if not container then
+            container = CreateFrame("Frame", nil, parent)
+            frame.ScooterTextureBorderContainer = container
+            container:EnableMouse(false)
+        end
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        local strata = parent.GetFrameStrata and parent:GetFrameStrata() or "HIGH"
+        container:SetFrameStrata(strata)
+        local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
+        container:SetFrameLevel(baseLevel + 5)
+        frame = container
+    end
+
     hideLegacy(frame)
     if not frame.ScootTextureBorder then
         frame.ScootTextureBorder = frame:CreateTexture(nil, "OVERLAY")

@@ -70,6 +70,30 @@ end
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 
+    -- For Texture targets (e.g., Unit Frame cast bar icons), create/reuse a small
+    -- wrapper Frame that matches the texture's bounds so the border helpers, which
+    -- expect Frames, have a valid anchor to DrawLayer against.
+    local targetFrame = frame
+    if frame.GetObjectType and frame:GetObjectType() == "Texture" then
+        local parent = frame:GetParent() or UIParent
+        local container = frame.ScooterIconBorderContainer
+        if not container then
+            container = CreateFrame("Frame", nil, parent)
+            frame.ScooterIconBorderContainer = container
+            container:EnableMouse(false)
+        end
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        -- Keep container at a predictable strata/level above its parent; let border
+        -- helpers choose DrawLayer/sublevel for the actual textures.
+        local strata = parent.GetFrameStrata and parent:GetFrameStrata() or "HIGH"
+        container:SetFrameStrata(strata)
+        local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
+        container:SetFrameLevel(baseLevel + 5)
+        targetFrame = container
+    end
+
     local key = styleKey or "square"
 
     local styleDef = addon.IconBorders and addon.IconBorders.GetStyle(key)
@@ -84,7 +108,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
     if not styleDef then
         if addon.Borders and addon.Borders.ApplySquare then
-            addon.Borders.ApplySquare(frame, {
+            addon.Borders.ApplySquare(targetFrame, {
                 size = thickness,
                 color = tintEnabled and requestedColor or {0, 0, 0, 1},
                 layer = "OVERLAY",
@@ -166,7 +190,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     local appliedTexture
 
     if styleDef.type == "atlas" then
-        addon.Borders.ApplyAtlas(frame, {
+        addon.Borders.ApplyAtlas(targetFrame, {
             atlas = styleDef.atlas,
             color = baseApplyColor,
             tintColor = baseApplyColor,
@@ -175,9 +199,9 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
         })
-        appliedTexture = frame.ScootAtlasBorder
+        appliedTexture = targetFrame.ScootAtlasBorder
     elseif styleDef.type == "texture" then
-        addon.Borders.ApplyTexture(frame, {
+        addon.Borders.ApplyTexture(targetFrame, {
             texture = styleDef.texture,
             color = baseApplyColor,
             tintColor = baseApplyColor,
@@ -186,16 +210,16 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
         })
-        appliedTexture = frame.ScootTextureBorder
+        appliedTexture = targetFrame.ScootTextureBorder
     else
-        addon.Borders.ApplySquare(frame, {
+        addon.Borders.ApplySquare(targetFrame, {
             size = thickness,
             color = baseApplyColor or {0, 0, 0, 1},
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
         })
-        local container = frame.ScootSquareBorderContainer or frame
-        local edges = (container and container.ScootSquareBorderEdges) or frame.ScootSquareBorderEdges
+        local container = targetFrame.ScootSquareBorderContainer or targetFrame
+        local edges = (container and container.ScootSquareBorderEdges) or targetFrame.ScootSquareBorderEdges
         if edges then
             for _, edge in pairs(edges) do
                 if edge and edge.SetColorTexture then
@@ -203,8 +227,8 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
                 end
             end
         end
-        if frame.ScootAtlasBorderTintOverlay then frame.ScootAtlasBorderTintOverlay:Hide() end
-        if frame.ScootTextureBorderTintOverlay then frame.ScootTextureBorderTintOverlay:Hide() end
+        if targetFrame.ScootAtlasBorderTintOverlay then targetFrame.ScootAtlasBorderTintOverlay:Hide() end
+        if targetFrame.ScootTextureBorderTintOverlay then targetFrame.ScootTextureBorderTintOverlay:Hide() end
     end
 
     if appliedTexture then
@@ -219,9 +243,9 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
         local overlay
         if styleDef.type == "atlas" then
-            overlay = frame.ScootAtlasBorderTintOverlay
+            overlay = targetFrame.ScootAtlasBorderTintOverlay
         elseif styleDef.type == "texture" then
-            overlay = frame.ScootTextureBorderTintOverlay
+            overlay = targetFrame.ScootTextureBorderTintOverlay
         end
 
         local function clampSublevel(val)
@@ -236,15 +260,15 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             local layer, sublevel = appliedTexture:GetDrawLayer()
             layer = layer or (styleDef.layer or "OVERLAY")
             sublevel = clampSublevel((sublevel or (styleDef.layerSublevel or 7)) + 1) or clampSublevel((styleDef.layerSublevel or 7))
-            local tex = frame:CreateTexture(nil, layer)
+            local tex = targetFrame:CreateTexture(nil, layer)
             tex:SetDrawLayer(layer, sublevel or 0)
             tex:SetAllPoints(appliedTexture)
             tex:SetVertexColor(1, 1, 1, 1)
             tex:Hide()
             if styleDef.type == "atlas" then
-                frame.ScootAtlasBorderTintOverlay = tex
+                targetFrame.ScootAtlasBorderTintOverlay = tex
             else
-                frame.ScootTextureBorderTintOverlay = tex
+                targetFrame.ScootTextureBorderTintOverlay = tex
             end
             return tex
         end
@@ -3441,7 +3465,10 @@ do
                 r, g, b, a = 1, 1, 1, 1
             elseif colorMode == "default" then
                 -- When using a custom texture, "Default" should tint to the stock bar color
-                if barKind == "health" and addon.GetDefaultHealthColorRGB then
+				if barKind == "cast" then
+					-- Stock cast bar yellow from CastingBarFrame mixin.
+					r, g, b, a = 1.0, 0.7, 0.0, 1
+				elseif barKind == "health" and addon.GetDefaultHealthColorRGB then
                     local hr, hg, hb = addon.GetDefaultHealthColorRGB()
                     r, g, b, a = hr or 0, hg or 1, hb or 0, 1
                 elseif barKind == "power" and addon.GetPowerColorRGB then
@@ -3489,22 +3516,57 @@ do
                         end
                     end
                 end
-                local ov = bar._ScootUFOrigVertex or {1,1,1,1}
-                r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1
+                if barKind == "cast" then
+                    -- Use Blizzard's stock cast bar yellow as the default color.
+                    -- Based on Blizzard_CastingBarFrame.lua (CastingBarFrameMixin).
+                    r, g, b, a = 1.0, 0.7, 0.0, 1
+                else
+                    local ov = bar._ScootUFOrigVertex or {1,1,1,1}
+                    r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1
+                end
             end
             if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, r, g, b, a) end
             if bar.ScooterModBG and bar.ScooterModBG.Hide then pcall(bar.ScooterModBG.Hide, bar.ScooterModBG) end
         end
     end
 
+    -- Expose helpers for other modules (Cast Bar styling, etc.)
+    addon._ApplyToStatusBar = applyToBar
+
     -- Apply background texture and color to a bar
     local function applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind)
         if not bar then return end
         
-        -- Ensure we have a background texture frame at a LOW sublevel so it appears behind the status bar fill
+        -- Ensure we have a background texture frame at an appropriate sublevel so it appears
+        -- behind the status bar fill but remains visible for cast bars.
+        --
+        -- For generic unit frame bars (health/power), we keep the background very low in the
+        -- BACKGROUND stack (-8) so any stock art sits above it if present.
+        --
+        -- For CastingBarFrame-based bars (Player/Target/Focus cast bars), Blizzard defines a
+        -- `Background` texture at BACKGROUND subLevel=2 (see CastingBarFrameBaseTemplate in
+        -- wow-ui-source). Our earlier implementation created ScooterModBG at subLevel=-8,
+        -- which meant the stock Background completely covered our overlay and made Scooter
+        -- backgrounds effectively invisible even though the region existed in Framestack.
+        --
+        -- To keep behaviour consistent with other bars while making cast bar backgrounds
+        -- visible, we render ScooterModBG above the stock Background (subLevel=3) but still
+        -- on the BACKGROUND layer so the status bar fill and FX remain on top.
         if not bar.ScooterModBG then
-            bar.ScooterModBG = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
+            local layer = "BACKGROUND"
+            local sublevel = -8
+            if barKind == "cast" then
+                sublevel = 3
+            end
+            bar.ScooterModBG = bar:CreateTexture(nil, layer, nil, sublevel)
             bar.ScooterModBG:SetAllPoints(bar)
+        elseif barKind == "cast" then
+            -- If we created ScooterModBG earlier (e.g., before cast styling was enabled),
+            -- make sure it sits above the stock Background for CastingBarFrame.
+            local _, currentSub = bar.ScooterModBG:GetDrawLayer()
+            if currentSub == nil or currentSub < 3 then
+                bar.ScooterModBG:SetDrawLayer("BACKGROUND", 3)
+            end
         end
         
         -- Get opacity (default 50% based on Blizzard's dead/ghost state alpha)
@@ -3558,6 +3620,8 @@ do
             bar.ScooterModBG:Show()
         end
     end
+
+    addon._ApplyBackgroundToStatusBar = applyBackgroundToBar
 
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
@@ -5348,6 +5412,13 @@ do
 	local originalPositions = {}
 	-- Store original widths per frame for width-percent scaling
 	local originalWidths = {}
+	-- Store original icon anchors/sizes so padding and per-axis sizing are relative to stock layout
+	local originalIconAnchors = {}
+	local originalIconSizes = {}
+	-- Baseline anchors for Cast Time text (Player only)
+	addon._ufCastTimeTextBaselines = addon._ufCastTimeTextBaselines or {}
+	-- Baseline anchors for Spell Name text (Player only)
+	addon._ufCastSpellNameBaselines = addon._ufCastSpellNameBaselines or {}
 
 	local function applyCastBarForUnit(unit)
 		if unit ~= "Player" and unit ~= "Target" and unit ~= "Focus" then return end
@@ -5363,17 +5434,77 @@ do
 		local frame = resolveCastBarFrame(unit)
 		if not frame then return end
 
-		-- Capture baseline anchor once
-		if not originalPositions[frame] and frame.GetPoint then
+		local isPlayer = (unit == "Player")
+
+		-- For the Player cast bar, read the current Edit Mode "Lock to Player Frame" setting so
+		-- we only override position when the bar is locked underneath the Player frame. When the
+		-- bar is unlocked and freely positioned in Edit Mode, ScooterMod should not fight that.
+		local isLockedToPlayerFrame = false
+		if isPlayer and addon and addon.EditMode and addon.EditMode.GetSetting then
+			local mgr = _G.EditModeManagerFrame
+			local EMSys = _G.Enum and _G.Enum.EditModeSystem
+			local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
+			if mgr and EMSys and mgr.GetRegisteredSystemFrame and sid then
+				local emFrame = mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+				if emFrame then
+					local v = addon.EditMode.GetSetting(emFrame, sid)
+					isLockedToPlayerFrame = (tonumber(v) or 0) ~= 0
+				end
+			end
+		end
+
+		-- Install lightweight hooks once to keep cast bar styling persistent when
+		-- Blizzard updates the bar's texture/color (cast start/stop, etc.).
+		if not frame._ScootCastHooksInstalled and _G.hooksecurefunc then
+			frame._ScootCastHooksInstalled = true
+			local hookUnit = unit
+			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
+				-- Ignore ScooterMod's own internal texture writes
+				if self._ScootUFInternalTextureWrite then return end
+				if addon and addon.ApplyUnitFrameCastBarFor then
+					addon.ApplyUnitFrameCastBarFor(hookUnit)
+				end
+			end)
+			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
+				if addon and addon.ApplyUnitFrameCastBarFor then
+					addon.ApplyUnitFrameCastBarFor(hookUnit)
+				end
+			end)
+		end
+
+		-- Capture baseline anchor:
+		-- - Player: capture a baseline that represents the Edit Mode "under Player" layout,
+		--   but avoid rebasing while ScooterMod offsets are non-zero so we don't compound
+		--   offsets on every apply. This keeps slider behaviour linear.
+		-- - Target/Focus: capture once so offsets remain relative to stock layout.
+		if frame.GetPoint then
 			local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(1)
 			if point then
-				originalPositions[frame] = {
-					point = point,
-					relativeTo = relativeTo,
-					relativePoint = relativePoint,
-					xOfs = xOfs or 0,
-					yOfs = yOfs or 0,
-				}
+				if isPlayer then
+					local hasOffsets =
+						(tonumber(cfg.offsetX) or 0) ~= 0 or
+						(tonumber(cfg.offsetY) or 0) ~= 0
+					-- When offsets are zero and the bar is locked to the Player frame, we
+					-- treat the current layout as the new baseline. Otherwise, we keep the
+					-- previous baseline so offset sliders remain stable.
+					if (not hasOffsets and isLockedToPlayerFrame) or not originalPositions[frame] then
+						originalPositions[frame] = {
+							point = point,
+							relativeTo = relativeTo,
+							relativePoint = relativePoint,
+							xOfs = xOfs or 0,
+							yOfs = yOfs or 0,
+						}
+					end
+				elseif not originalPositions[frame] then
+					originalPositions[frame] = {
+						point = point,
+						relativeTo = relativeTo,
+						relativePoint = relativePoint,
+						xOfs = xOfs or 0,
+						yOfs = yOfs or 0,
+					}
+				end
 			end
 		end
 
@@ -5390,9 +5521,39 @@ do
 
 		local origWidth = originalWidths[frame]
 
-		-- Target/Focus support offsets; Player remains anchored by Edit Mode
+		-- Capture original icon anchor/size once (per physical Icon texture)
+		local iconFrame = frame.Icon
+		if iconFrame then
+			if not originalIconAnchors[iconFrame] and iconFrame.GetPoint then
+				local p, relTo, rp, x, y = iconFrame:GetPoint(1)
+				if p then
+					originalIconAnchors[iconFrame] = {
+						point = p,
+						relativeTo = relTo,
+						relativePoint = rp,
+						xOfs = x or 0,
+						yOfs = y or 0,
+					}
+				end
+			end
+			if not originalIconSizes[iconFrame] and iconFrame.GetWidth and iconFrame.GetHeight then
+				local okW, w = pcall(iconFrame.GetWidth, iconFrame)
+				local okH, h = pcall(iconFrame.GetHeight, iconFrame)
+				if okW and okH and w and h then
+					originalIconSizes[iconFrame] = { width = w, height = h }
+				end
+			end
+		end
+
+		-- Offsets:
+		-- - Target/Focus always use addon-managed X/Y offsets (relative to stock layout).
+		-- - Player uses offsets only when locked to the Player frame; when unlocked, Edit Mode
+		--   owns the free position and ScooterMod must not re-anchor.
 		local offsetX, offsetY = 0, 0
 		if unit == "Target" or unit == "Focus" then
+			offsetX = tonumber(cfg.offsetX) or 0
+			offsetY = tonumber(cfg.offsetY) or 0
+		elseif isPlayer and isLockedToPlayerFrame then
 			offsetX = tonumber(cfg.offsetX) or 0
 			offsetY = tonumber(cfg.offsetY) or 0
 		end
@@ -5400,6 +5561,12 @@ do
 		-- Width percent (50–150%; 100 = stock width)
 		local widthPct = tonumber(cfg.widthPct) or 100
 		if widthPct < 50 then widthPct = 50 elseif widthPct > 150 then widthPct = 150 end
+
+		-- Icon sizing, padding, and visibility relative to bar
+		local iconWidth = tonumber(cfg.iconWidth)
+		local iconHeight = tonumber(cfg.iconHeight)
+		local iconBarPadding = tonumber(cfg.iconBarPadding) or 0
+		local iconDisabled = cfg.iconDisabled == true
 
 		local function apply()
 			if InCombatLockdown and InCombatLockdown() then
@@ -5415,8 +5582,424 @@ do
 				pcall(frame.SetWidth, frame, origWidth * scale)
 			end
 
-			frame:ClearAllPoints()
-			frame:SetPoint(orig.point, orig.relativeTo, orig.relativePoint, (orig.xOfs or 0) + offsetX, (orig.yOfs or 0) + offsetY)
+			-- Anchor behaviour:
+			-- - Player: only override anchors when locked to the Player frame so Edit Mode retains
+			--   full control when the bar is unlocked and freely positioned.
+			-- - Target/Focus: always re-anchor relative to the captured baseline plus offsets.
+			if isPlayer then
+				if isLockedToPlayerFrame then
+					frame:ClearAllPoints()
+					frame:SetPoint(
+						orig.point,
+						orig.relativeTo,
+						orig.relativePoint,
+						(orig.xOfs or 0) + offsetX,
+						(orig.yOfs or 0) + offsetY
+					)
+				end
+			else
+				frame:ClearAllPoints()
+				frame:SetPoint(
+					orig.point,
+					orig.relativeTo,
+					orig.relativePoint,
+					(orig.xOfs or 0) + offsetX,
+					(orig.yOfs or 0) + offsetY
+				)
+			end
+
+			-- Apply icon visibility, size, and padding before bar styling
+			local icon = frame.Icon
+			if icon then
+				-- Visibility: when disabled, hide the icon via alpha and clear any
+				-- container-based borders so only the bar remains.
+				if iconDisabled then
+					if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
+					if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
+						addon.Borders.HideAll(icon.ScooterIconBorderContainer)
+					end
+				else
+					if icon.SetAlpha then pcall(icon.SetAlpha, icon, 1) end
+
+					local baseSize = originalIconSizes[icon]
+					if iconWidth or iconHeight then
+						local w = tonumber(iconWidth) or (baseSize and baseSize.width) or (icon.GetWidth and icon:GetWidth()) or 16
+						local h = tonumber(iconHeight) or (baseSize and baseSize.height) or (icon.GetHeight and icon:GetHeight()) or 16
+						-- Clamp to a reasonable range for cast bar icons
+						w = math.max(8, math.min(64, w))
+						h = math.max(8, math.min(64, h))
+						pcall(icon.SetSize, icon, w, h)
+						-- Ensure contained texture follows the resized frame
+						if icon.Icon and icon.Icon.SetAllPoints then
+							icon.Icon:SetAllPoints(icon)
+						end
+						if icon.IconMask and icon.IconMask.SetAllPoints then
+							icon.IconMask:SetAllPoints(icon)
+						end
+					end
+
+					-- Icon/Bar padding: adjust icon X offset relative to its original anchor
+					local baseAnchor = originalIconAnchors[icon]
+					if baseAnchor and icon.ClearAllPoints and icon.SetPoint then
+						-- Positive padding increases the gap between icon (left) and bar by moving icon further left.
+						local pad = tonumber(iconBarPadding) or 0
+						local baseX = baseAnchor.xOfs or 0
+						local baseY = baseAnchor.yOfs or 0
+						local newX = baseX - pad
+						icon:ClearAllPoints()
+						icon:SetPoint(
+							baseAnchor.point or "LEFT",
+							baseAnchor.relativeTo or frame,
+							baseAnchor.relativePoint or baseAnchor.point or "LEFT",
+							newX,
+							baseY
+						)
+					end
+				end
+			end
+
+			-- Apply foreground and background styling via shared bar helpers
+			if addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar then
+				local db = addon and addon.db and addon.db.profile
+				db.unitFrames = db.unitFrames or {}
+				db.unitFrames[unit] = db.unitFrames[unit] or {}
+				db.unitFrames[unit].castBar = db.unitFrames[unit].castBar or {}
+				local cfgStyle = db.unitFrames[unit].castBar
+
+				-- Foreground: texture + color
+				if addon._ApplyToStatusBar and frame.GetStatusBarTexture then
+					local texKey = cfgStyle.castBarTexture or "default"
+					local colorMode = cfgStyle.castBarColorMode or "default"
+					local tint = cfgStyle.castBarTint
+					-- For class color, follow Health/Power bars and always use player's class
+					local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
+					addon._ApplyToStatusBar(frame, texKey, colorMode, tint, "player", "cast", unitId)
+				end
+
+				-- Background: texture + color + opacity
+				if addon._ApplyBackgroundToStatusBar then
+					local bgTexKey = cfgStyle.castBarBackgroundTexture or "default"
+					local bgColorMode = cfgStyle.castBarBackgroundColorMode or "default"
+					local bgOpacity = cfgStyle.castBarBackgroundOpacity or 50
+					addon._ApplyBackgroundToStatusBar(frame, bgTexKey, bgColorMode, cfgStyle.castBarBackgroundTint, bgOpacity, unit, "cast")
+				end
+			end
+
+			-- Custom Cast Bar border (per unit, uses bar border system)
+			do
+				local enabled = not not cfg.castBarBorderEnable
+				local styleKey = cfg.castBarBorderStyle or "square"
+				local colorMode = cfg.castBarBorderColorMode or "default"
+				local tintTbl = type(cfg.castBarBorderTintColor) == "table" and cfg.castBarBorderTintColor or {1,1,1,1}
+				local tintColor = {
+					tintTbl[1] or 1,
+					tintTbl[2] or 1,
+					tintTbl[3] or 1,
+					tintTbl[4] or 1,
+				}
+				local thickness = tonumber(cfg.castBarBorderThickness) or 1
+				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+
+				-- User-controlled inset plus a small thickness-derived term; we bias the Default (square)
+				-- style outward slightly, with per-unit tuning.
+				local userInset = tonumber(cfg.castBarBorderInset) or 0
+				if userInset < -4 then userInset = -4 elseif userInset > 4 then userInset = 4 end
+				local derivedInset = math.floor((thickness - 1) * 0.5)
+				local baseInset = 0
+				if styleKey == "square" then
+					if unit == "Player" then
+						-- Player cast bar: slightly outward, then user inset pulls in to an even frame.
+						baseInset = -1
+					elseif unit == "Target" then
+						-- Target cast bar: a bit more outward to start; side/top nudges handled separately.
+						baseInset = -2
+					elseif unit == "Focus" then
+						-- Focus cast bar: start closer in so the default inset=1 look is tighter on all sides.
+						baseInset = 0
+					else
+						baseInset = -2
+					end
+				end
+				local combinedInset = baseInset + userInset + derivedInset
+
+				-- Clear any prior border when disabled
+				if not enabled or styleKey == "none" then
+					if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
+					if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
+				else
+					-- Determine effective color from mode + style
+					local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+					local color
+					if colorMode == "custom" then
+						color = tintColor
+					elseif colorMode == "texture" then
+						color = {1, 1, 1, 1}
+					else -- "default"
+						if styleDef and styleKey ~= "square" then
+							color = {1, 1, 1, 1}
+						else
+							color = {0, 0, 0, 1}
+						end
+					end
+
+					local handled = false
+					if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+						if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
+
+						-- Ensure cast bar borders are parented directly to the StatusBar so they
+						-- inherit its visibility (hidden when no cast is active).
+						frame._ScooterBorderContainerParentRef = nil
+
+						-- Unit-specific per-side pad adjustments for Cast Bar:
+						-- Player: symmetric (no extra nudges; baseInset handles feel).
+						-- Target: top pulled down slightly, left/right pulled in a bit more, bottom unchanged.
+						if enabled and unit == "Target" then
+							frame._ScooterBorderPadAdjust = {
+								left = -2,
+								right = -2,
+								top = -1,
+								bottom = 0,
+							}
+						else
+							frame._ScooterBorderPadAdjust = nil
+						end
+
+						handled = addon.BarBorders.ApplyToBarFrame(frame, styleKey, {
+							color = color,
+							thickness = thickness,
+							levelOffset = 1,
+							inset = combinedInset,
+						})
+					end
+
+					if not handled then
+						-- Fallback: pixel (square) border using generic square helper
+						if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
+						if addon.Borders and addon.Borders.ApplySquare then
+							local sqColor = (colorMode == "custom") and tintColor or {0, 0, 0, 1}
+							local baseY = (thickness <= 1) and 0 or 1
+							local baseX = 1
+							local expandY = baseY - combinedInset
+							local expandX = baseX - combinedInset
+							if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+							if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+
+							-- Per-unit fine-tuning for the pixel fallback:
+							-- Player: top/bottom/left are good; pull the right edge in slightly.
+							-- Target: top pulled down a bit; left/right pulled in more; bottom remains aligned.
+							local exLeft, exRight, exTop, exBottom = expandX, expandX, expandY, expandY
+							local name = frame.GetName and frame:GetName()
+							if name == "PlayerCastingBarFrame" then
+								-- Reduce right-side expansion by 1px (clamped to >= 0)
+								exRight = math.max(0, exRight - 1)
+							elseif name == "TargetFrameSpellBar" then
+								exLeft  = math.max(0, exLeft - 2)
+								exRight = math.max(0, exRight - 2)
+								exTop   = math.max(0, exTop - 1)
+							end
+
+							addon.Borders.ApplySquare(frame, {
+								size = thickness,
+								color = sqColor,
+								layer = "OVERLAY",
+								layerSublevel = 3,
+								expandLeft = exLeft,
+								expandRight = exRight,
+								expandTop = exTop,
+								expandBottom = exBottom,
+							})
+						end
+					end
+				end
+
+				-- Hide Blizzard's stock cast bar border when custom borders are enabled (all units that expose .Border)
+				local border = frame.Border
+				if border then
+					if border.SetShown then
+						pcall(border.SetShown, border, not enabled)
+					elseif border.SetAlpha then
+						pcall(border.SetAlpha, border, enabled and 0 or 1)
+					end
+				end
+			end
+
+			-- Cast Bar Icon border (per unit; reuses icon border system from Cooldown Manager)
+			do
+				local icon = frame.Icon
+				if icon then
+					local iconBorderEnabled = not not cfg.iconBorderEnable
+					local iconStyle = cfg.iconBorderStyle or "square"
+					if iconStyle == "none" then
+						iconStyle = "square"
+						cfg.iconBorderStyle = iconStyle
+					end
+					local iconThicknessVal = tonumber(cfg.iconBorderThickness) or 1
+					if iconThicknessVal < 1 then iconThicknessVal = 1 elseif iconThicknessVal > 16 then iconThicknessVal = 16 end
+					local iconTintEnabled = not not cfg.iconBorderTintEnable
+					local tintTbl = type(cfg.iconBorderTintColor) == "table" and cfg.iconBorderTintColor or {1,1,1,1}
+					local iconTintColor = {
+						tintTbl[1] or 1,
+						tintTbl[2] or 1,
+						tintTbl[3] or 1,
+						tintTbl[4] or 1,
+					}
+
+					-- Never draw a border when the icon itself is disabled.
+					if iconBorderEnabled and not iconDisabled then
+						-- Defensive cleanup: if any legacy Scooter borders were drawn directly on the
+						-- icon texture (pre-wrapper versions), hide them once so only the current
+						-- wrapper/container-based border remains visible.
+						if (icon.ScootAtlasBorder or icon.ScootTextureBorder or icon.ScootSquareBorderContainer or icon.ScootSquareBorderEdges)
+							and addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(icon)
+						end
+
+						addon.ApplyIconBorderStyle(icon, iconStyle, {
+							thickness = iconThicknessVal,
+							color = iconTintEnabled and iconTintColor or nil,
+							tintEnabled = iconTintEnabled,
+							db = cfg,
+							thicknessKey = "iconBorderThickness",
+							tintColorKey = "iconBorderTintColor",
+							defaultThickness = 1,
+						})
+					else
+						-- Clear any existing icon border container when custom border is disabled
+						-- or when the icon itself is disabled/hidden.
+						if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(icon.ScooterIconBorderContainer)
+						elseif addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(icon)
+						end
+					end
+				end
+			end
+
+			-- Spell Name + Cast Time Text styling (Player only; standard 6 text controls each)
+			if unit == "Player" then
+				-- Spell Name Text
+				do
+					-- CastingBarFrameBaseTemplate exposes the spell-name FontString as .Text
+					local spellFS = frame.Text
+					if spellFS then
+						-- Capture a stable baseline anchor once per session so offsets are relative.
+						-- For the cast bar, we always treat the spell name as centered within the bar,
+						-- regardless of whether the bar is locked to the Player frame or free-floating.
+						local function ensureSpellBaseline(fs, key)
+							addon._ufCastSpellNameBaselines[key] = addon._ufCastSpellNameBaselines[key] or {}
+							local b = addon._ufCastSpellNameBaselines[key]
+							if b.point == nil then
+								-- Force a centered baseline: center of the cast bar frame.
+								local parent = (fs and fs.GetParent and fs:GetParent()) or frame
+								b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", parent, "CENTER", 0, 0
+							end
+							return b
+						end
+
+						local disabled = not not cfg.spellNameTextDisabled
+
+						-- Visibility: use alpha instead of Show/Hide to avoid fighting Blizzard logic
+						if spellFS.SetAlpha then
+							pcall(spellFS.SetAlpha, spellFS, disabled and 0 or 1)
+						end
+
+						if not disabled then
+							local styleCfg = cfg.spellNameText or {}
+							-- Font / size / outline
+							local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
+								or (select(1, _G.GameFontNormal:GetFont()))
+							local size = tonumber(styleCfg.size) or 14
+							local outline = tostring(styleCfg.style or "OUTLINE")
+							if spellFS.SetFont then
+								pcall(spellFS.SetFont, spellFS, face, size, outline)
+							end
+
+							-- Color (simple RGBA, no mode for now)
+							local c = styleCfg.color or {1, 1, 1, 1}
+							if spellFS.SetTextColor then
+								pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+							end
+
+							-- Offsets relative to baseline (centered)
+							local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+							local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+							if spellFS.ClearAllPoints and spellFS.SetPoint then
+								local b = ensureSpellBaseline(spellFS, "Player:spellName")
+								spellFS:ClearAllPoints()
+								-- Ensure horizontal alignment is centered so long and short strings both
+								-- grow outwards from the middle of the bar.
+								if spellFS.SetJustifyH then
+									pcall(spellFS.SetJustifyH, spellFS, "CENTER")
+								end
+								spellFS:SetPoint(
+									b.point or "CENTER",
+									b.relTo or (spellFS.GetParent and spellFS:GetParent()) or frame,
+									b.relPoint or b.point or "CENTER",
+									(b.x or 0) + ox,
+									(b.y or 0) + oy
+								)
+							end
+						end
+					end
+				end
+
+				-- Cast Time Text
+				do
+					local castTimeFS = frame.CastTimeText
+					if castTimeFS then
+						-- Capture a stable baseline anchor once per session so offsets are relative
+						local function ensureCastTimeBaseline(fs, key)
+							addon._ufCastTimeTextBaselines[key] = addon._ufCastTimeTextBaselines[key] or {}
+							local b = addon._ufCastTimeTextBaselines[key]
+							if b.point == nil then
+								if fs and fs.GetPoint then
+									local p, relTo, rp, x, y = fs:GetPoint(1)
+									b.point = p or "CENTER"
+									b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
+									b.relPoint = rp or b.point
+									b.x = tonumber(x) or 0
+									b.y = tonumber(y) or 0
+								else
+									b.point, b.relTo, b.relPoint, b.x, b.y =
+										"CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
+								end
+							end
+							return b
+						end
+
+						local styleCfg = cfg.castTimeText or {}
+						-- Font / size / outline
+						local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
+							or (select(1, _G.GameFontNormal:GetFont()))
+						local size = tonumber(styleCfg.size) or 14
+						local outline = tostring(styleCfg.style or "OUTLINE")
+						if castTimeFS.SetFont then
+							pcall(castTimeFS.SetFont, castTimeFS, face, size, outline)
+						end
+
+						-- Color (simple RGBA, no mode for now)
+						local c = styleCfg.color or {1, 1, 1, 1}
+						if castTimeFS.SetTextColor then
+							pcall(castTimeFS.SetTextColor, castTimeFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+						end
+
+						-- Offsets relative to baseline
+						local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+						local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+						if castTimeFS.ClearAllPoints and castTimeFS.SetPoint then
+							local b = ensureCastTimeBaseline(castTimeFS, "Player:castTime")
+							castTimeFS:ClearAllPoints()
+							castTimeFS:SetPoint(
+								b.point or "CENTER",
+								b.relTo or (castTimeFS.GetParent and castTimeFS:GetParent()) or frame,
+								b.relPoint or b.point or "CENTER",
+								(b.x or 0) + ox,
+								(b.y or 0) + oy
+							)
+						end
+					end
+				end
+			end
 		end
 
 		if InCombatLockdown and InCombatLockdown() then
@@ -5437,6 +6020,7 @@ do
 	end
 
 	function addon.ApplyAllUnitFrameCastBars()
+		applyCastBarForUnit("Player")
 		applyCastBarForUnit("Target")
 		applyCastBarForUnit("Focus")
 	end

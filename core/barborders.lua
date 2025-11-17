@@ -135,9 +135,23 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
     local padAdj = pad - insetPx
     if padAdj < 0 then padAdj = 0 end
 
+    -- Allow per-frame, per-side pad adjustments (used for fine-tuning Cast Bar borders).
+    local padL, padR, padT, padB = padAdj, padAdj, padAdj, padAdj
+    local perSide = barFrame and barFrame._ScooterBorderPadAdjust
+    if type(perSide) == "table" then
+        padL = padL + (tonumber(perSide.left) or 0)
+        padR = padR + (tonumber(perSide.right) or 0)
+        padT = padT + (tonumber(perSide.top) or 0)
+        padB = padB + (tonumber(perSide.bottom) or 0)
+        if padL < 0 then padL = 0 end
+        if padR < 0 then padR = 0 end
+        if padT < 0 then padT = 0 end
+        if padB < 0 then padB = 0 end
+    end
+
     holder:ClearAllPoints()
-    holder:SetPoint("TOPLEFT", barFrame, "TOPLEFT", -padAdj, padAdj)
-    holder:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", padAdj, -padAdj)
+    holder:SetPoint("TOPLEFT", barFrame, "TOPLEFT", -padL, padT)
+    holder:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", padR, -padB)
 
     if not applyBackdrop(holder, style, edgeSize) then
         holder:Hide()
