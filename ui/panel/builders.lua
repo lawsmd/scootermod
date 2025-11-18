@@ -2274,110 +2274,6 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, row)
 			end
 
-			-- Player-only: Cast Bar Underneath
-			if componentId == "ufPlayer" then
-				local function getUF()
-					return getUnitFrame()
-				end
-				local function getCastBar()
-					local mgr = _G.EditModeManagerFrame
-					local EMSys = _G.Enum and _G.Enum.EditModeSystem
-					if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-					return mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
-				end
-				local label = "Cast Bar Underneath"
-				local function getter()
-					-- Prefer Unit Frame setting when available (EditMode dump shows index [1] on PlayerFrame)
-					local frameUF = getUF()
-					local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
-					local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
-					if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.GetSetting then
-						local v = addon.EditMode.GetSetting(frameUF, sidUF)
-						if v ~= nil then return (tonumber(v) or 0) ~= 0 end
-					end
-					-- Fallback to Cast Bar system's lock (legacy)
-					local frameCB = getCastBar()
-					local sidCB = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-					if frameCB and sidCB and addon and addon.EditMode and addon.EditMode.GetSetting then
-						local v = addon.EditMode.GetSetting(frameCB, sidCB)
-						return (tonumber(v) or 0) ~= 0
-					end
-					return false
-				end
-				local function setter(b)
-					local val = (b and true) and 1 or 0
-					-- Fix note (2025-11-06): Mirror this toggle to BOTH Unit Frame [CastBarUnderneath]
-					-- and Cast Bar [LockToPlayerFrame], then call UpdateSystem/RefreshLayout, SaveOnly(),
-					-- and a coalesced RequestApplyChanges(). This ensures the on-screen element updates
-					-- immediately and the Edit Mode checkbox reflects the new value without needing a reopen.
-					-- Write to Unit Frame setting first
-					do
-						local frameUF = getUF()
-						local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
-						local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
-						if frameUF and sidUF and addon and addon.EditMode then
-							if addon.EditMode.WriteSetting then
-								-- Mirror to Unit Frame without triggering its own Save/Apply cycle; the Cast Bar write below
-								-- will perform the actual SaveOnly/ApplyChanges work.
-								addon.EditMode.WriteSetting(frameUF, sidUF, val, {
-									updaters    = { "UpdateSystem", "RefreshLayout" },
-									skipSave    = true,
-									skipApply   = true,
-								})
-							elseif addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frameUF, sidUF, val)
-								if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
-								if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							end
-						end
-					end
-					-- Also mirror to Cast Bar system to ensure immediate visual update
-					do
-						local frameCB = getCastBar()
-						local sidCB = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-						if frameCB and sidCB and addon and addon.EditMode then
-							if addon.EditMode.WriteSetting then
-								addon.EditMode.WriteSetting(frameCB, sidCB, val, {
-									updaters        = { "UpdateSystemSettingLockToPlayerFrame", "UpdateSystem", "RefreshLayout" },
-									suspendDuration = 0.5,
-								})
-							elseif addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frameCB, sidCB, val)
-								if type(frameCB.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frameCB.UpdateSystemSettingLockToPlayerFrame, frameCB) end
-								if type(frameCB.UpdateSystem) == "function" then pcall(frameCB.UpdateSystem, frameCB) end
-								if type(frameCB.RefreshLayout) == "function" then pcall(frameCB.RefreshLayout, frameCB) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-							end
-						end
-					end
-				end
-				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-				row.GetExtent = function() return 34 end
-				do
-					local base = row.InitFrame
-					row.InitFrame = function(self, frame)
-						if base then base(self, frame) end
-                        -- Remove any stray info icon from recycled rows; this row does not use an info icon
-                        if frame and frame.ScooterInfoIcon then
-                            -- Keep only if explicitly tagged for this exact row (none are)
-                            frame.ScooterInfoIcon:Hide()
-                            frame.ScooterInfoIcon:SetParent(nil)
-                            frame.ScooterInfoIcon = nil
-                        end
-						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
-						if panel and panel.ApplyRobotoWhite then
-							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
-							local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
-							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-						end
-					end
-				end
-				table.insert(init, row)
-			end
-
 			-- Focus-only: Use Larger Frame
 			if componentId == "ufFocus" then
 				local label = "Use Larger Frame"
@@ -3183,7 +3079,17 @@ local function createUFRenderer(componentId, title)
             -- Tab name is "Sizing/Direction" for Target/Focus (which support reverse fill), "Sizing" for Player/Pet
             local isTargetOrFocusPB = (componentId == "ufTarget" or componentId == "ufFocus")
             local sizingTabNamePB = isTargetOrFocusPB and "Sizing/Direction" or "Sizing"
-            local pbTabs = { sectionTitle = "", tabAText = "Positioning", tabBText = sizingTabNamePB, tabCText = "Style", tabDText = "Border", tabEText = "% Text", tabFText = "Value Text" }
+            -- Tabs: A=Positioning, B=Sizing/Direction, C=Style, D=Border, E=Visibility, F=% Text, G=Value Text
+            local pbTabs = {
+                sectionTitle = "",
+                tabAText = "Positioning",
+                tabBText = sizingTabNamePB,
+                tabCText = "Style",
+                tabDText = "Border",
+                tabEText = "Visibility",
+                tabFText = "% Text",
+                tabGText = "Value Text",
+            }
 			pbTabs.build = function(frame)
 				local function unitKey()
 					if componentId == "ufPlayer" then return "Player" end
@@ -3632,7 +3538,46 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 34
 				end
 
-				-- PageE: % Text (Power Percent)
+				-- PageE: Visibility (Power Bar)
+				do
+					local function applyNow()
+						local uk = unitKey()
+						-- Reapply bar styling (includes hide/show logic) and text visibility when the toggle changes
+						if uk and addon and addon.ApplyUnitFrameBarTexturesFor then
+							addon.ApplyUnitFrameBarTexturesFor(uk)
+						end
+						if uk and addon and addon.ApplyUnitFramePowerTextVisibilityFor then
+							addon.ApplyUnitFramePowerTextVisibilityFor(uk)
+						end
+					end
+
+					local y = { y = -50 }
+					local label = "Hide Power Bar"
+					local function getter()
+						local t = ensureUFDB()
+						return t and not not t.powerBarHidden or false
+					end
+					local function setter(v)
+						local t = ensureUFDB(); if not t then return end
+						t.powerBarHidden = (v and true) or false
+						applyNow()
+					end
+
+					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+					row.GetElementData = function() return initCb end
+					row:SetPoint("TOPLEFT", 4, y.y)
+					row:SetPoint("TOPRIGHT", -16, y.y)
+					initCb:InitFrame(row)
+					if panel and panel.ApplyRobotoWhite then
+						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+				end
+
+				-- PageF: % Text (Power Percent)
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -3653,7 +3598,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -3664,33 +3609,33 @@ local function createUFRenderer(componentId, title)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
 					y.y = y.y - 34
-					addDropdown(frame.PageE, "% Text Font", fontOptions,
+					addDropdown(frame.PageF, "% Text Font", fontOptions,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.fontFace or "FRIZQT__" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.fontFace = v; applyNow() end,
 						y)
-					addStyle(frame.PageE, "% Text Style",
+					addStyle(frame.PageF, "% Text Style",
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.style or "OUTLINE" end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.style = v; applyNow() end,
 						y)
-					addSlider(frame.PageE, "% Text Size", 6, 48, 1,
+					addSlider(frame.PageF, "% Text Size", 6, 48, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
 						y)
-					addColor(frame.PageE, "% Text Color", true,
+					addColor(frame.PageF, "% Text Color", true,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
 						y)
-					addSlider(frame.PageE, "% Text Offset X", -100, 100, 1,
+					addSlider(frame.PageF, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
 						y)
-					addSlider(frame.PageE, "% Text Offset Y", -100, 100, 1,
+					addSlider(frame.PageF, "% Text Offset Y", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.y = tonumber(v) or 0; applyNow() end,
 						y)
 				end
 
-				-- PageF: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
+				-- PageG: Value Text (Power Value / RightText). May be a no-op on classes without a separate value element.
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
@@ -3711,7 +3656,7 @@ local function createUFRenderer(componentId, title)
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+					local row = CreateFrame("Frame", nil, frame.PageG, "SettingsCheckboxControlTemplate")
 					row.GetElementData = function() return initCb end
 					row:SetPoint("TOPLEFT", 4, y.y)
 					row:SetPoint("TOPRIGHT", -16, y.y)
@@ -5398,7 +5343,7 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, expInitializerCB)
 
 				-- Cast Bar tabbed section:
-				-- Tabs (in order): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Cast Time Text, Visibility
+				-- Tabs (in order): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Cast Time Text, Spark
 				local cbData = {
 					sectionTitle = "",
 					tabAText = "Positioning",
@@ -5408,7 +5353,7 @@ local function createUFRenderer(componentId, title)
 					tabEText = "Icon",
 					tabFText = "Spell Name Text",
 					tabGText = "Cast Time Text",
-					tabHText = "Visibility",
+					tabHText = "Spark",
 				}
 				cbData.build = function(frame)
 					-- Helper: map componentId -> unit key
@@ -6258,8 +6203,137 @@ local function createUFRenderer(componentId, title)
 							_iconBorderTintFrame = row
 						end
 
-						-- Initialize gray-out state once when building
+					-- Initialize gray-out state once when building
 						refreshIconEnabledState()
+					end
+
+					-- Shared Spark tab (PageH): Hide Spark + Spark Color (Player/Target/Focus)
+					-- NOTE: Defined outside the Player-only branch so it is available for Target/Focus
+					-- as well. This prevents nil-function errors when we call buildSparkTab() for all
+					-- Unit Frames with a Cast Bar.
+					local function buildSparkTab()
+						local uk = unitKey()
+						if not uk then return end
+
+						local function applyNow()
+							if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor(uk) end
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+
+						local function ensureCastBarDB()
+							local db = addon and addon.db and addon.db.profile
+							if not db then return nil end
+							db.unitFrames = db.unitFrames or {}
+							db.unitFrames[uk] = db.unitFrames[uk] or {}
+							db.unitFrames[uk].castBar = db.unitFrames[uk].castBar or {}
+							return db.unitFrames[uk].castBar
+						end
+
+						local function isSparkEnabled()
+							local t = ensureCastBarDB() or {}
+							-- When the user checks "Hide Cast Bar Spark", we treat spark as disabled.
+							return not not (not t.castBarSparkHidden)
+						end
+
+						local sparkPage = frame.PageH
+						if not sparkPage then
+							-- Defensive guard: if the template ever omits PageH, fail safely.
+							return
+						end
+
+						local y = { y = -50 }
+
+						-- Local reference so we can gray-out the color row without rebuilding the category
+						local _sparkColorFrame
+						local function refreshSparkEnabledState()
+							local enabled = isSparkEnabled()
+
+							if _sparkColorFrame then
+								if _sparkColorFrame.Control and _sparkColorFrame.Control.SetEnabled then
+									_sparkColorFrame.Control:SetEnabled(enabled)
+								end
+								local lbl = _sparkColorFrame.Text or _sparkColorFrame.Label
+								if lbl and lbl.SetTextColor then
+									if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+								end
+								if _sparkColorFrame.ScooterInlineSwatch then
+									local sw = _sparkColorFrame.ScooterInlineSwatch
+									if sw.EnableMouse then sw:EnableMouse(enabled) end
+									if sw.SetAlpha then sw:SetAlpha(enabled and 1 or 0.5) end
+								end
+							end
+						end
+
+						-- Hide Cast Bar Spark checkbox
+						do
+							local label = "Hide Cast Bar Spark"
+							local function getter()
+								local t = ensureCastBarDB() or {}
+								return not not t.castBarSparkHidden
+							end
+							local function setter(v)
+								local t = ensureCastBarDB(); if not t then return end
+								t.castBarSparkHidden = (v == true)
+								applyNow()
+								-- Update gray-out state in-place to avoid panel flicker
+								refreshSparkEnabledState()
+							end
+							local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, sparkPage, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Cast Bar Spark Color (dropdown + inline swatch)
+						do
+							local function colorOpts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("default", "Default")
+								c:Add("custom", "Custom")
+								return c:GetData()
+							end
+							local function getMode()
+								local t = ensureCastBarDB() or {}
+								return t.castBarSparkColorMode or "default"
+							end
+							local function setMode(v)
+								local t = ensureCastBarDB(); if not t then return end
+								t.castBarSparkColorMode = v or "default"
+								applyNow()
+							end
+							local function getTint()
+								local t = ensureCastBarDB() or {}
+								local c = t.castBarSparkTint or {1,1,1,1}
+								return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+							local function setTint(r,g,b,a)
+								local t = ensureCastBarDB(); if not t then return end
+								t.castBarSparkTint = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							_sparkColorFrame = panel.DropdownWithInlineSwatch(sparkPage, y, {
+								label = "Cast Bar Spark Color",
+								getMode = getMode,
+								setMode = setMode,
+								getColor = getTint,
+								setColor = setTint,
+								options = colorOpts,
+								isEnabled = isSparkEnabled,
+								insideButton = true,
+							})
+						end
+
+						-- Initialize gray-out state once when building
+						refreshSparkEnabledState()
 					end
 
 					-- PLAYER CAST BAR (Edit Mode–managed)
@@ -6281,6 +6355,8 @@ local function createUFRenderer(componentId, title)
 
 						-- Local refs so we can gray-out the offset sliders based on the lock state
 						local _offsetXFrame, _offsetYFrame
+						-- Local ref for Spell Name Backdrop checkbox (Player-only, Spell Name Text tab)
+						local _snBackdropFrame
 
 						local lockSetting -- forward-declared so isLocked/refresh can see it
 						local function isLocked()
@@ -6301,6 +6377,24 @@ local function createUFRenderer(componentId, title)
 							end
 							applyToRow(_offsetXFrame)
 							applyToRow(_offsetYFrame)
+						end
+
+						-- Player-only: grey out the Spell Name Backdrop checkbox when the cast bar
+						-- is locked to the Player frame (the backdrop only appears when unlocked).
+						local function refreshBackdropLockState()
+							if not _snBackdropFrame then return end
+							local locked = isLocked()
+							local enabled = not locked
+							local cb = _snBackdropFrame.Checkbox or _snBackdropFrame.CheckBox or (_snBackdropFrame.Control and _snBackdropFrame.Control.Checkbox)
+							if cb and cb.SetEnabled then
+								cb:SetEnabled(enabled)
+							elseif cb and cb.Enable and cb.Disable then
+								if enabled then cb:Enable() else cb:Disable() end
+							end
+							local lbl = _snBackdropFrame.Text or _snBackdropFrame.Label or (cb and cb.Text)
+							if lbl and lbl.SetTextColor then
+								lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+							end
 						end
 
 						local function addCheckboxLock()
@@ -6392,6 +6486,11 @@ local function createUFRenderer(componentId, title)
 								-- forcing a full category rebuild (which can cause visible flicker).
 								if refreshOffsetEnabledState then
 									refreshOffsetEnabledState()
+								end
+								-- Update Spell Name Backdrop checkbox enabled state so it is only interactive
+								-- when the cast bar is unlocked (backdrop visible).
+								if refreshBackdropLockState then
+									refreshBackdropLockState()
 								end
 							end
 							local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -6677,6 +6776,65 @@ local function createUFRenderer(componentId, title)
 								y.y = y.y - 34
 							end
 
+							-- Hide Spell Name Backdrop checkbox (Player cast bar only)
+							do
+								local label = "Hide Spell Name Backdrop"
+								local function getter()
+									local t = ensureCastBarDB() or {}
+									return not not t.hideSpellNameBackdrop
+								end
+								local function setter(v)
+									local t = ensureCastBarDB(); if not t then return end
+									t.hideSpellNameBackdrop = (v == true)
+									applyNow()
+								end
+								local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+								local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+								local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+								row.GetElementData = function() return initCb end
+								row:SetPoint("TOPLEFT", 4, y.y)
+								row:SetPoint("TOPRIGHT", -16, y.y)
+								initCb:InitFrame(row)
+								if panel and panel.ApplyRobotoWhite then
+									if row.Text then panel.ApplyRobotoWhite(row.Text) end
+									local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+									if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+								end
+
+								-- Attach a contextual info icon to the label explaining when the backdrop exists.
+								if panel and panel.CreateInfoIconForLabel then
+									local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+									local labelFS = (cb and cb.Text) or row.Text
+									if labelFS then
+										local tooltipText = "When \'Lock to Player Frame\' is un-checked in the Cast Bar > Positioning tab, Blizzard shows a decorative strip behind the spell name. Enable this to hide that backdrop."
+										local icon = panel.CreateInfoIconForLabel(labelFS, tooltipText, 5, 0, 32)
+										if _G.C_Timer and _G.C_Timer.After then
+											_G.C_Timer.After(0, function()
+												if not icon or not labelFS then return end
+												icon:ClearAllPoints()
+												local textWidth = labelFS.GetStringWidth and labelFS:GetStringWidth() or 0
+												-- Nudge slightly closer to the label text so it sits comfortably
+												-- between the label and the checkbox without crowding the checkbox.
+												if textWidth and textWidth > 0 then
+													icon:SetPoint("LEFT", labelFS, "LEFT", textWidth + 2, 0)
+												else
+													icon:SetPoint("LEFT", labelFS, "RIGHT", 2, 0)
+												end
+											end)
+										end
+									end
+								end
+
+								_snBackdropFrame = row
+								-- Initial lock-based enable/disable state; this does NOT depend on the
+								-- Disable Spell Name Text checkbox and should remain independent.
+								if refreshBackdropLockState then
+									refreshBackdropLockState()
+								end
+
+								y.y = y.y - 34
+							end
+
 							-- Spell Name Font
 							_snFontFrame = addDropdown(frame.PageF, "Spell Name Font", fontOptions,
 								function()
@@ -6915,7 +7073,7 @@ local function createUFRenderer(componentId, title)
 							end,
 							y)
 
-						-- Cast Time Y Offset
+							-- Cast Time Y Offset
 						addSlider(frame.PageG, "Cast Time Y Offset", -100, 100, 1,
 							function()
 								local t = ensureCastBarDB() or {}
@@ -6932,7 +7090,6 @@ local function createUFRenderer(componentId, title)
 							end,
 							y)
 					end
-					-- Placeholder tab (Visibility) is wired by title only for now.
 
 					-- TARGET/FOCUS CAST BAR (addon-only X/Y offsets + width)
 					else
@@ -7004,10 +7161,11 @@ local function createUFRenderer(componentId, title)
 						end
 					end
 
-					-- Build Style, Border, and Icon tabs for any unit with a Cast Bar (Player/Target/Focus)
+					-- Build Style, Border, Icon, and Spark tabs for any unit with a Cast Bar (Player/Target/Focus)
 					buildStyleTab()
 					buildBorderTab()
 					buildIconTab()
+					buildSparkTab()
 				end
 
 				local tabCBC = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", cbData)

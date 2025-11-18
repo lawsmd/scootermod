@@ -2392,8 +2392,14 @@ do
         }
 
 		-- Visibility: tolerate missing LeftText on some classes/specs (no-op)
-		if leftFS and leftFS.SetShown then pcall(leftFS.SetShown, leftFS, not not (not cfg.powerPercentHidden)) end
-		if rightFS and rightFS.SetShown then pcall(rightFS.SetShown, rightFS, not not (not cfg.powerValueHidden)) end
+		local powerBarHidden = (cfg.powerBarHidden == true)
+		if leftFS and leftFS.SetShown then
+			-- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
+			pcall(leftFS.SetShown, leftFS, (not powerBarHidden) and not not (not cfg.powerPercentHidden))
+		end
+		if rightFS and rightFS.SetShown then
+			pcall(rightFS.SetShown, rightFS, (not powerBarHidden) and not not (not cfg.powerValueHidden))
+		end
 
 		-- Styling
 		addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
@@ -2454,12 +2460,14 @@ do
         local leftFS = cache.leftFS
         local rightFS = cache.rightFS
 
+		local powerBarHidden = (cfg.powerBarHidden == true)
+
         -- Visibility: tolerate missing LeftText on some classes/specs (no-op)
         if leftFS and leftFS.SetShown then
-            pcall(leftFS.SetShown, leftFS, not not (not cfg.powerPercentHidden))
+            pcall(leftFS.SetShown, leftFS, (not powerBarHidden) and not not (not cfg.powerPercentHidden))
         end
         if rightFS and rightFS.SetShown then
-            pcall(rightFS.SetShown, rightFS, not not (not cfg.powerValueHidden))
+            pcall(rightFS.SetShown, rightFS, (not powerBarHidden) and not not (not cfg.powerValueHidden))
         end
 	end
 
@@ -3032,6 +3040,7 @@ do
             "powerBarBackgroundColorMode",
             "powerBarBackgroundTint",
             "powerBarBackgroundOpacity",
+            "powerBarHidden",
         }
         for _, k in ipairs(keys) do
             if src[k] ~= nil then dst[k] = deepcopy(src[k]) else dst[k] = nil end
@@ -3805,6 +3814,36 @@ do
             -- changes (width/height/anchors/offsets) while in combat to prevent
             -- taint on protected unit frames (see taint.log: TargetFrameToT:Show()).
             local inCombat = InCombatLockdown and InCombatLockdown()
+			local powerBarHidden = (cfg.powerBarHidden == true)
+
+			-- Capture original alpha once so we can restore when the bar is un-hidden.
+			if pb.GetAlpha and pb._ScootUFOrigPBAlpha == nil then
+				local ok, a = pcall(pb.GetAlpha, pb)
+				pb._ScootUFOrigPBAlpha = ok and (a or 1) or 1
+			end
+
+			-- When the user chooses to hide the Power Bar:
+			-- - Fade the StatusBar frame to alpha 0 so the fill/background vanish.
+			-- - Hide any ScooterMod-drawn borders/backgrounds associated with this bar.
+			if powerBarHidden then
+				if pb.SetAlpha then
+					pcall(pb.SetAlpha, pb, 0)
+				end
+				if pb.ScooterModBG and pb.ScooterModBG.SetAlpha then
+					pcall(pb.ScooterModBG.SetAlpha, pb.ScooterModBG, 0)
+				end
+				if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+					addon.BarBorders.ClearBarFrame(pb)
+				end
+				if addon.Borders and addon.Borders.HideAll then
+					addon.Borders.HideAll(pb)
+				end
+			else
+				-- Restore alpha when coming back from a hidden state so the bar is visible again.
+				if pb._ScootUFOrigPBAlpha and pb.SetAlpha then
+					pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha)
+				end
+			end
             local colorModePB = cfg.powerBarColorMode or "default"
             local texKeyPB = cfg.powerBarTexture or "default"
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
@@ -4609,7 +4648,8 @@ do
 		db.unitFrames = db.unitFrames or {}
 		db.unitFrames[unit] = db.unitFrames[unit] or {}
 		db.unitFrames[unit].portrait = db.unitFrames[unit].portrait or {}
-		local cfg = db.unitFrames[unit].portrait
+		local ufCfg = db.unitFrames[unit]
+		local cfg = ufCfg.portrait
 
 		local portraitFrame = resolvePortraitFrame(unit)
 		if not portraitFrame then return end
@@ -4978,7 +5018,9 @@ do
 			local borderKey = "ScootPortraitBorder_" .. tostring(unit)
 			local borderTexture = parentFrame[borderKey]
 			
-			local borderEnabled = cfg.portraitBorderEnable
+			-- Border is enabled only when the per-portrait toggle is on AND the portrait itself is not hidden.
+			-- This ensures Portrait → Visibility → "Hide Portrait" also hides any custom border art.
+			local borderEnabled = cfg.portraitBorderEnable and not hidePortrait
 			if not borderEnabled then
 				-- Hide border if disabled
 				if borderTexture then
@@ -5118,9 +5160,11 @@ do
 				end
 			end
 
-			-- Status texture frame: hidden if "Hide Portrait" OR "Hide Status Texture" is checked (Player only)
+			-- Status texture frame: hidden if "Hide Portrait" OR "Hide Status Texture" is checked,
+			-- or when global Use Custom Borders is enabled for the Player frame.
 			if statusTextureFrame and unit == "Player" then
-				local statusHidden = hidePortrait or hideStatusTexture
+				local useCustomBorders = ufCfg and (ufCfg.useCustomBorders == true)
+				local statusHidden = hidePortrait or hideStatusTexture or useCustomBorders
 				local statusAlpha = statusHidden and 0.0 or (origStatusTextureAlpha * opacityValue)
 				if statusTextureFrame.SetAlpha then
 					statusTextureFrame:SetAlpha(statusAlpha)
@@ -5415,6 +5459,9 @@ do
 	-- Store original icon anchors/sizes so padding and per-axis sizing are relative to stock layout
 	local originalIconAnchors = {}
 	local originalIconSizes = {}
+	-- Store original spark vertex colors/alpha so "Default" can restore stock spark appearance
+	local originalSparkVertexColor = {}
+	local originalSparkAlpha = {}
 	-- Baseline anchors for Cast Time text (Player only)
 	addon._ufCastTimeTextBaselines = addon._ufCastTimeTextBaselines or {}
 	-- Baseline anchors for Spell Name text (Player only)
@@ -5685,6 +5732,57 @@ do
 				end
 			end
 
+			-- Spark visibility and color (per unit)
+			do
+				local spark = frame.Spark
+				if spark then
+					-- Capture the stock spark vertex color/alpha once so "Default" can restore it later.
+					if not originalSparkVertexColor[spark] and spark.GetVertexColor then
+						local ok, r, g, b, a = pcall(spark.GetVertexColor, spark)
+						if not ok or not r or not g or not b then
+							r, g, b, a = 1, 1, 1, 1
+						end
+						originalSparkVertexColor[spark] = { r or 1, g or 1, b or 1, a or 1 }
+					end
+					if not originalSparkAlpha[spark] and spark.GetAlpha then
+						local ok, alpha = pcall(spark.GetAlpha, spark)
+						originalSparkAlpha[spark] = (ok and alpha) or 1
+					end
+
+					local sparkHidden = cfg.castBarSparkHidden == true
+					local colorMode = cfg.castBarSparkColorMode or "default"
+					local tintTbl = type(cfg.castBarSparkTint) == "table" and cfg.castBarSparkTint or {1,1,1,1}
+
+					-- Determine effective color from mode:
+					-- - "default": use the stock vertex color we captured above.
+					-- - "custom": apply the user tint (RGBA) on top of the spark.
+					local base = originalSparkVertexColor[spark] or {1,1,1,1}
+					local r, g, b, a = base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1
+					if colorMode == "custom" then
+						r = tintTbl[1] or r
+						g = tintTbl[2] or g
+						b = tintTbl[3] or b
+						a = tintTbl[4] or a
+					end
+
+					if spark.SetVertexColor then
+						pcall(spark.SetVertexColor, spark, r, g, b, a)
+					end
+
+					-- Visibility: hide the spark via alpha so we do not fight internal Show/Hide logic.
+					if sparkHidden then
+						if spark.SetAlpha then
+							pcall(spark.SetAlpha, spark, 0)
+						end
+					else
+						if spark.SetAlpha then
+							local baseAlpha = originalSparkAlpha[spark] or a or 1
+							pcall(spark.SetAlpha, spark, baseAlpha)
+						end
+					end
+				end
+			end
+
 			-- Custom Cast Bar border (per unit, uses bar border system)
 			do
 				local enabled = not not cfg.castBarBorderEnable
@@ -5901,6 +5999,21 @@ do
 						-- Visibility: use alpha instead of Show/Hide to avoid fighting Blizzard logic
 						if spellFS.SetAlpha then
 							pcall(spellFS.SetAlpha, spellFS, disabled and 0 or 1)
+						end
+
+						-- Backdrop behind the spell text (Frame Attributes: PlayerCastingBarFrame.TextBorder).
+						-- We hide this independently of the text visibility so players can hide the strip even
+						-- when the spell name itself is disabled.
+						local hideBackdrop = not not cfg.hideSpellNameBackdrop
+						local backdrop = frame.TextBorder
+						if backdrop and backdrop.SetAlpha then
+							pcall(backdrop.SetAlpha, backdrop, hideBackdrop and 0 or 1)
+						elseif backdrop and backdrop.Hide and backdrop.Show then
+							if hideBackdrop then
+								pcall(backdrop.Hide, backdrop)
+							else
+								pcall(backdrop.Show, backdrop)
+							end
 						end
 
 						if not disabled then

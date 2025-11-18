@@ -169,7 +169,7 @@ function RightPane:Display(initializers)
     -- Base vertical gap between consecutive rows (non-tabbed sections).
     -- This intentionally provides generous breathing room now that we own
     -- the pane layout; tabbed sections retain their own internal spacing.
-    local rowGap = 10
+    local baseRowGap = 10
     local index = 1
 
     -- Instantiate rows
@@ -226,11 +226,37 @@ function RightPane:Display(initializers)
                 row:ClearAllPoints()
                 -- Provide extra vertical spacing before/after collapsible section
                 -- headers to avoid the cramped look from the stock list layout.
+                -- IMPORTANT UX TWEAK (2025-11-18):
+                -- - When a section is EXPANDED, keep generous spacing around the header so
+                --   controls in that section have breathing room above/below.
+                -- - When a section is COLLAPSED, tighten the space that follows the header
+                --   so a stack of collapsed headers does not look overly sparse.
+                -- - Spacing between the last control in a section and the NEXT section
+                --   header remains governed by the baseRowGap; only the gap AFTER a
+                --   collapsed header is reduced.
                 local topPad, bottomPad = 0, 0
+                local gapAfterRow = baseRowGap
                 if template == "ScooterExpandableSectionTemplate" then
-                    -- Extra breathing room around section headers.
-                    topPad = 8
-                    bottomPad = 6
+                    local data = init.data or {}
+                    local cid = data.componentId
+                    local sectionKey = data.sectionKey
+                    local isExpanded = false
+                    if cid and sectionKey and panel and type(panel.IsSectionExpanded) == "function" then
+                        isExpanded = panel:IsSectionExpanded(cid, sectionKey)
+                    end
+
+                    if isExpanded then
+                        -- Expanded section: keep the original, more generous padding.
+                        topPad = 8
+                        bottomPad = 6
+                        gapAfterRow = baseRowGap
+                    else
+                        -- Collapsed section: slightly tighter padding and a smaller
+                        -- post-header gap so consecutive headers sit closer together.
+                        topPad = 4
+                        bottomPad = 2
+                        gapAfterRow = 4
+                    end
                 end
 
                 y = y - topPad
@@ -251,10 +277,12 @@ function RightPane:Display(initializers)
                     height = row:GetHeight() > 0 and row:GetHeight() or 30
                 end
                 row:SetHeight(height)
-                -- After each row, add its own padding plus a small global gap so
-                -- standard controls aren't cramped together. Tabbed-section
-                -- rows are laid out inside their own frames and are unaffected.
-                y = y - height - bottomPad - rowGap
+                -- After each row, add its own padding plus a row-specific gap so
+                -- standard controls aren't cramped together. Collapsed section headers
+                -- use a slightly smaller gap, while expanded sections keep the original
+                -- breathing room. Tabbed-section rows are laid out inside their own
+                -- frames and are unaffected.
+                y = y - height - bottomPad - gapAfterRow
 
                 -- Ensure the row is visible even if the template hid it during InitFrame.
                 row:Show()
