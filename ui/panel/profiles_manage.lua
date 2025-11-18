@@ -31,9 +31,11 @@ local function renderProfilesManage()
 
     local function render()
         local f = panel.frame
-        if not f or not f.SettingsList then return end
-        local settingsList = f.SettingsList
-        settingsList.Header.Title:SetText("Manage Profiles")
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then return end
+        if right.SetTitle then
+            right:SetTitle("Manage Profiles")
+        end
 
         local init = {}
         local widgets = panel._profileWidgets or {}
@@ -79,9 +81,6 @@ local function renderProfilesManage()
                         end
                         UIDropDownMenu_SetSelectedValue(dropdown, key)
                         UIDropDownMenu_SetText(dropdown, entry.text)
-                        if panel and panel.RefreshCurrentCategoryDeferred then
-                            panel.RefreshCurrentCategoryDeferred()
-                        end
                     end
                     info.checked = (activeKey == entry.key)
                     info.notCheckable = false
@@ -451,8 +450,10 @@ local function renderProfilesManage()
                         if enabled and addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
                             addon.Profiles:OnPlayerSpecChanged()
                         end
-                        if panel and panel.RefreshCurrentCategoryDeferred then
-                            panel.RefreshCurrentCategoryDeferred()
+                        -- Spec rows use AddShownPredicate; force a structural
+                        -- re-render so their ShouldShow state is re-evaluated.
+                        if addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategory then
+                            addon.SettingsPanel.RefreshCurrentCategory()
                         end
                     end)
                     frame.SpecEnableCheck = cb
@@ -551,32 +552,10 @@ local function renderProfilesManage()
             table.insert(init, specRow)
         end
 
-        settingsList:Display(init)
-        if settingsList.RepairDisplay then
-            pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end })
-        end
-        settingsList:Show()
-        if f.Canvas then
-            f.Canvas:Hide()
-        end
+        right:Display(init)
+
         if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfilesSectionVisibility then
             addon.SettingsPanel:UpdateProfilesSectionVisibility()
-        end
-
-        do
-            local seen = false
-            if settingsList and settingsList.GetNumChildren then
-                for i = 1, settingsList:GetNumChildren() do
-                    local child = select(i, settingsList:GetChildren())
-                    if child and child.IsScooterSpecEnabledRow then
-                        if seen then
-                            child:Hide(); child:SetParent(nil)
-                        else
-                            seen = true
-                        end
-                    end
-                end
-            end
         end
     end
 

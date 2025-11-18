@@ -4,6 +4,11 @@ local function _ShouldSuppressWrites()
     if not prof or not prof.IsPostCopySuppressed then return false end
     return prof:IsPostCopySuppressed()
 end
+local function _SafePCall(method, frame)
+    if frame and type(method) == "string" and type(frame[method]) == "function" then
+        pcall(frame[method], frame)
+    end
+end
 local addonName, addon = ...
 
 addon.EditMode = {}
@@ -77,10 +82,16 @@ function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
         end
     end
 
-    -- Write to destination and persist
-    addon.EditMode.SetSetting(dstFrame, sizeSetting, v)
-    if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-    if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    -- Write to destination and persist via centralized helper (with light panel suppression)
+    if addon.EditMode and addon.EditMode.WriteSetting then
+        addon.EditMode.WriteSetting(dstFrame, sizeSetting, v, {
+            suspendDuration = 0.25,
+        })
+    else
+        addon.EditMode.SetSetting(dstFrame, sizeSetting, v)
+        if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+        if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    end
     return true
 end
 
@@ -280,6 +291,57 @@ function addon.EditMode.SaveOnly()
     if not LEO or not LEO.SaveOnly then return end
     if _ShouldSuppressWrites() then return end
     LEO:SaveOnly()
+end
+
+-- Centralized write helper for Edit Mode–controlled settings.
+-- All ScooterMod-initiated writes to Edit Mode should flow through this helper
+-- so that SaveOnly / ApplyChanges and panel refresh suppression behave
+-- consistently across systems (Cooldown Viewer, Action Bars, Unit Frames, etc.).
+--
+-- opts:
+--   updaters        = { "MethodOnFrame", { frame = otherFrame, method = "Layout" }, ... }
+--   suspendDuration = number | nil   -- seconds to suspend panel refresh (optional)
+--   applyDelay      = number | nil   -- delay used for RequestApplyChanges (default 0.2)
+--   skipSave        = boolean | nil  -- when true, do not call SaveOnly()
+--   skipApply       = boolean | nil  -- when true, do not call RequestApplyChanges()
+function addon.EditMode.WriteSetting(frame, settingId, value, opts)
+    if not frame or settingId == nil then return end
+    if not addon.EditMode or not addon.EditMode.SetSetting then return end
+
+    opts = opts or {}
+
+    -- Perform the low-level write
+    addon.EditMode.SetSetting(frame, settingId, value)
+
+    -- Run any requested update methods to nudge visuals immediately
+    local updaters = opts.updaters
+    if type(updaters) == "table" then
+        for _, u in ipairs(updaters) do
+            if type(u) == "string" then
+                _SafePCall(u, frame)
+            elseif type(u) == "table" then
+                local target = u.frame or frame
+                local method = u.method
+                if target and type(method) == "string" and type(target[method]) == "function" then
+                    pcall(target[method], target)
+                end
+            end
+        end
+    end
+
+    -- Optionally suspend Settings panel refresh while Edit Mode churn settles
+    local suspendDuration = tonumber(opts.suspendDuration)
+    if suspendDuration and suspendDuration > 0 and addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then
+        addon.SettingsPanel.SuspendRefresh(suspendDuration)
+    end
+
+    -- Persist and coalesce ApplyChanges through the existing helpers
+    if not opts.skipSave and addon.EditMode.SaveOnly then
+        addon.EditMode.SaveOnly()
+    end
+    if not opts.skipApply and addon.EditMode.RequestApplyChanges then
+        addon.EditMode.RequestApplyChanges(opts.applyDelay or 0.2)
+    end
 end
 
 function addon.EditMode.IsReady()
@@ -875,10 +937,12 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
         addon.Profiles:RefreshFromEditMode(origin)
     end
 
-    -- If settings UI is open, refresh the active category to reflect new values
-    if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-    end
+    -- UI NOTE (2025‑11‑17):
+    -- We intentionally DO NOT auto-refresh the ScooterMod settings list here.
+    -- Full category re-renders (SettingsList:Display) are reserved for STRUCTURAL
+    -- changes only (category switch, schema change). Routine Edit Mode saves are
+    -- reflected via Settings control bindings and per-row helpers without
+    -- rebuilding the entire right-hand pane to avoid visible flicker.
 
     if addon._dbgSync and origin then
         print("ScooterMod RefreshSyncAndNotify origin=" .. tostring(origin))

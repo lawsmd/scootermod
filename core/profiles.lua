@@ -155,9 +155,10 @@ local function normalizeName(name)
 end
 
 local function notifyUI()
-    if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-    end
+    -- NOTE (2025-11-17): Layout/profile mutations no longer force a structural
+    -- re-render of the ScooterMod settings list. The Profiles page is built to
+    -- update its own rows and dropdowns in place, so we avoid calling
+    -- RefreshCurrentCategoryDeferred here to prevent right-pane flicker.
 end
 
 -- Schedule robust, multi-pass sync after layout mutations to avoid stale lists

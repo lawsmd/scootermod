@@ -18,7 +18,7 @@ end
 -- racing layout during short write windows (e.g., immediate scroll after a toggle)
 function panel:PauseScrollWheel(duration)
     local f = self.frame
-    local sl = f and f.SettingsList
+    local sl = f and f.RightPane and f.RightPane.ScrollFrame
     if not sl then return end
     if not sl._wheelBlocker then
         local blocker = CreateFrame("Frame", nil, sl)
@@ -63,11 +63,6 @@ local function createComponentRenderer(componentId)
             end
 
             local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Backdrop", "Icon", "Text", "Misc"}
-            local function RefreshCurrentCategoryDeferred()
-                if panel and panel.RefreshCurrentCategoryDeferred then
-                    panel.RefreshCurrentCategoryDeferred()
-                end
-            end
             for _, sectionName in ipairs(orderedSections) do
                 if sectionName == "Text" then
                     local supportsText = component and component.settings and component.settings.supportsText
@@ -662,7 +657,6 @@ local function createComponentRenderer(componentId)
                                 end
                                 checkbox.ScooterCustomTexturesDB = db
                                 checkbox.ScooterCustomTexturesRefresh = refresh
-                                checkbox.ScooterCustomTexturesRefreshLayout = RefreshCurrentCategoryDeferred
                                 if not checkbox.ScooterCustomTexturesHooked then
                                     checkbox:HookScript("OnClick", function(btn)
                                         local checked = btn:GetChecked() and true or false
@@ -678,9 +672,6 @@ local function createComponentRenderer(componentId)
                                         end
                                         if btn.ScooterUpdateStyleControlsState then
                                             btn.ScooterUpdateStyleControlsState()
-                                        end
-                                        if btn.ScooterCustomTexturesRefreshLayout then
-                                            btn.ScooterCustomTexturesRefreshLayout()
                                         end
                                     end)
                                     checkbox.ScooterCustomTexturesHooked = true
@@ -1167,20 +1158,19 @@ local function createComponentRenderer(componentId)
                                         or settingId == "borderEnable" or settingId == "borderTintEnable"
                                         or settingId == "borderStyle" or settingId == "backdropDisable" then
                                         -- Refresh Border section enabled state when borderEnable changes
-                                        if isCDMBorder and settingId == "borderEnable" then
+				if isCDMBorder and settingId == "borderEnable" then
                                             C_Timer.After(0, function()
                                                 refreshBorderEnabledState()
                                             end)
                                             if borderRefreshFunc then borderRefreshFunc() end
                                         end
                                         -- Refresh Backdrop section enabled state when backdropDisable changes
-                                        if isABBackdrop and settingId == "backdropDisable" then
+				if isABBackdrop and settingId == "backdropDisable" then
                                             C_Timer.After(0, function()
                                                 refreshBackdropEnabledState()
                                             end)
                                             if backdropRefreshFunc then backdropRefreshFunc() end
                                         end
-                                        RefreshCurrentCategoryDeferred()
                                     end
                                 end, setting.default)
 
@@ -1644,106 +1634,13 @@ local function createComponentRenderer(componentId)
             end
 
             local f = panel.frame
-            local settingsList = f.SettingsList
-            settingsList.Header.Title:SetText(component.name or component.id)
-            -- Ensure header "Copy from" control for Action Bars (1-8)
-            do
-                local isAB = type(component and component.id) == "string" and component.id:match("^actionBar%d$") ~= nil
-                local header = settingsList and settingsList.Header
-                local collapseBtn = header and header.DefaultsButton
-                if header and collapseBtn then
-                    -- Create once
-                    if not header.ScooterCopyFromLabel then
-                        local lbl = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                        lbl:SetText("Copy from:")
-                        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-                        header.ScooterCopyFromLabel = lbl
-                    end
-                    if not header.ScooterCopyFromDropdown then
-                        local dd = CreateFrame("DropdownButton", nil, header, "WowStyle1DropdownTemplate")
-                        dd:SetSize(180, 22)
-                        header.ScooterCopyFromDropdown = dd
-                    end
-                    local lbl = header.ScooterCopyFromLabel
-                    local dd = header.ScooterCopyFromDropdown
-                    -- Position: label to the left of dropdown; dropdown just left of Collapse All
-                    dd:ClearAllPoints()
-                    dd:SetPoint("RIGHT", collapseBtn, "LEFT", -24, 0)
-                    lbl:ClearAllPoints()
-                    lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
+            local right = f and f.RightPane
+            if not f or not right or not right.Display then return end
 
-                    -- Populate dropdown only on Action Bar tabs
-                    if isAB and dd and dd.SetupMenu then
-                        -- One-time confirmation dialog registration
-                        if _G and _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] then
-                            _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] = {
-                                text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
-                                button1 = "Copy",
-                                button2 = CANCEL,
-                                OnAccept = function(self, data)
-                                    if data and addon and addon.CopyActionBarSettings then
-                                        addon.CopyActionBarSettings(data.sourceId, data.destId)
-                                        if data.dropdown then
-                                            data.dropdown._ScooterSelectedId = data.sourceId
-                                            if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
-                                        end
-                                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
-                                    end
-                                end,
-                                OnCancel = function(self, data) end,
-                                timeout = 0,
-                                whileDead = 1,
-                                hideOnEscape = 1,
-                                preferredIndex = 3,
-                            }
-                        end
-                        local currentId = component.id
-                        dd:SetupMenu(function(menu, root)
-                            -- Build a list of other action bars
-                            for i = 1, 8 do
-                                local id = "actionBar" .. tostring(i)
-                                if id ~= currentId then
-                                    local comp = addon.Components and addon.Components[id]
-                                    local text = (comp and comp.name) or ("Action Bar " .. tostring(i))
-                                    local desc = root:CreateRadio(text, function()
-                                        -- Show checked state if last chosen matches
-                                        return dd._ScooterSelectedId == id
-                                    end, function()
-                                        -- Confirmation before destructive overwrite
-                                        local which = "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
-                                        local destName = component.name or component.id
-                                        local data = { sourceId = id, destId = currentId, sourceName = text, destName = destName, dropdown = dd }
-                                        if _G and _G.StaticPopup_Show then
-                                            _G.StaticPopup_Show(which, text, destName, data)
-                                        else
-                                            -- Fallback: perform copy directly if popup system is unavailable
-                                            if addon and addon.CopyActionBarSettings then addon.CopyActionBarSettings(id, currentId) end
-                                            dd._ScooterSelectedId = id
-                                            if dd.SetText then dd:SetText(text) end
-                                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
-                                        end
-                                    end)
-                                end
-                            end
-                        end)
-                        -- Ensure a neutral prompt if nothing selected yet
-                        if not dd._ScooterSelectedId and dd.SetText then dd:SetText("Select a bar...") end
-                    end
-
-                    -- Visibility per tab
-                    if lbl then lbl:SetShown(isAB) end
-                    if dd then dd:SetShown(isAB) end
-                end
+            if right.SetTitle then
+                right:SetTitle(component.name or component.id)
             end
-            settingsList:Display(init)
-            local currentCategory = f.CurrentCategory
-            if currentCategory and f.CatRenderers then
-                local entry = f.CatRenderers[currentCategory]
-                if entry then entry._lastInitializers = init end
-            end
-            if settingsList.RepairDisplay then pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end }) end
-            settingsList:Show()
-            f.Canvas:Hide()
+            right:Display(init)
             
             -- Refresh Border/Backdrop enabled state after Display completes (frames now exist)
             if borderRefreshFunc then
@@ -1773,7 +1670,8 @@ local function createEmptySectionsRenderer(componentId, title)
     return function()
         local render = function()
             local f = panel.frame
-            if not f or not f.SettingsList then return end
+            local right = f and f.RightPane
+            if not f or not right or not right.Display then return end
 
             local init = {}
             local function addHeader(sectionKey, headerName)
@@ -1794,8 +1692,9 @@ local function createEmptySectionsRenderer(componentId, title)
             addHeader("Text", "Text")
             addHeader("Misc", "Visibility")
 
-            local settingsList = f.SettingsList
-            settingsList.Header.Title:SetText(title or componentId)
+            if right.SetTitle then
+                right:SetTitle(title or componentId)
+            end
 
             -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
             do
@@ -1848,7 +1747,6 @@ local function createEmptySectionsRenderer(componentId, title)
                                             data.dropdown._ScooterSelectedId = data.sourceUnit
                                             if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
                                         end
-                                        if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                                     else
                                         if _G and _G.StaticPopup_Show then
                                             local msg
@@ -1918,7 +1816,6 @@ local function createEmptySectionsRenderer(componentId, title)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                                                 end
                                             end
                                         end
@@ -2000,7 +1897,6 @@ local function createEmptySectionsRenderer(componentId, title)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                                                 end
                                             end
                                         end
@@ -2047,8 +1943,11 @@ local function createWIPRenderer(componentId, title)
             end
             table.insert(init, row)
 
-            local settingsList = f.SettingsList
-            settingsList.Header.Title:SetText(title or componentId)
+            local right = f and f.RightPane
+            if not f or not right or not right.Display then return end
+            if right.SetTitle then
+                right:SetTitle(title or componentId)
+            end
 
             -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
             do
@@ -2116,7 +2015,6 @@ local function createWIPRenderer(componentId, title)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                                                 end
                                             end
                                         end
@@ -2200,7 +2098,6 @@ local function createWIPRenderer(componentId, title)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                                                 end
                                             end
                                         end
@@ -2241,7 +2138,8 @@ function panel.RenderMicroBar()    return createComponentRenderer("microBar")() 
 local function createUFRenderer(componentId, title)
         local render = function()
             local f = panel.frame
-            if not f or not f.SettingsList then return end
+            local right = f and f.RightPane
+            if not f or not right or not right.Display then return end
 
             local init = {}
 
@@ -2417,29 +2315,43 @@ local function createUFRenderer(componentId, title)
 						local frameUF = getUF()
 						local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
 						local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
-						if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frameUF, sidUF, val)
-							-- Try immediate visual refresh on the unit frame
-							if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
-							if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						if frameUF and sidUF and addon and addon.EditMode then
+							if addon.EditMode.WriteSetting then
+								-- Mirror to Unit Frame without triggering its own Save/Apply cycle; the Cast Bar write below
+								-- will perform the actual SaveOnly/ApplyChanges work.
+								addon.EditMode.WriteSetting(frameUF, sidUF, val, {
+									updaters    = { "UpdateSystem", "RefreshLayout" },
+									skipSave    = true,
+									skipApply   = true,
+								})
+							elseif addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frameUF, sidUF, val)
+								if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
+								if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							end
 						end
 					end
 					-- Also mirror to Cast Bar system to ensure immediate visual update
 					do
 						local frameCB = getCastBar()
 						local sidCB = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-						if frameCB and sidCB and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frameCB, sidCB, val)
-							if type(frameCB.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frameCB.UpdateSystemSettingLockToPlayerFrame, frameCB) end
-							if type(frameCB.UpdateSystem) == "function" then pcall(frameCB.UpdateSystem, frameCB) end
-							if type(frameCB.RefreshLayout) == "function" then pcall(frameCB.RefreshLayout, frameCB) end
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+						if frameCB and sidCB and addon and addon.EditMode then
+							if addon.EditMode.WriteSetting then
+								addon.EditMode.WriteSetting(frameCB, sidCB, val, {
+									updaters        = { "UpdateSystemSettingLockToPlayerFrame", "UpdateSystem", "RefreshLayout" },
+									suspendDuration = 0.5,
+								})
+							elseif addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frameCB, sidCB, val)
+								if type(frameCB.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frameCB.UpdateSystemSettingLockToPlayerFrame, frameCB) end
+								if type(frameCB.UpdateSystem) == "function" then pcall(frameCB.UpdateSystem, frameCB) end
+								if type(frameCB.RefreshLayout) == "function" then pcall(frameCB.RefreshLayout, frameCB) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							end
 						end
 					end
-					-- Coalesced apply to propagate to Edit Mode UI immediately
-					if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-					if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.5) end
 				end
 				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
@@ -2483,11 +2395,18 @@ local function createUFRenderer(componentId, title)
 					local frameUF = getUF()
 					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
 					local val = (b and true) and 1 or 0
-					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
-						addon.EditMode.SetSetting(frameUF, settingId, val)
-						if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
-						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-						if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					if frameUF and settingId and addon and addon.EditMode then
+						if addon.EditMode.WriteSetting then
+							addon.EditMode.WriteSetting(frameUF, settingId, val, {
+								updaters        = { "UpdateSystemSettingFrameSize" },
+								suspendDuration = 0.25,
+							})
+						elseif addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, settingId, val)
+							if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
 					end
 				end
 				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -2531,10 +2450,18 @@ local function createUFRenderer(componentId, title)
 					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
 					local val = tonumber(raw) or 100
 					val = math.max(100, math.min(200, val))
-					if frameUF and settingId and addon and addon.EditMode and addon.EditMode.SetSetting then
-						addon.EditMode.SetSetting(frameUF, settingId, val)
-						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-						if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					if frameUF and settingId and addon and addon.EditMode then
+						if addon.EditMode.WriteSetting then
+							addon.EditMode.WriteSetting(frameUF, settingId, val, {
+								updaters        = { "UpdateSystemSettingFrameSize" },
+								suspendDuration = 0.25,
+							})
+						elseif addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, settingId, val)
+							if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
 					end
 				end
 				local setting = CreateLocalSetting(label, "number", getter, setter, getter())
@@ -2583,8 +2510,8 @@ local function createUFRenderer(componentId, title)
 					t.powerBarHeightPct = 100
 				end
 				if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
-				-- Rerender current category to update enabled/disabled state of Border tab controls and Bar Height sliders
-				if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
+				-- NOTE: Border tab controls and Bar Height sliders are updated in-place by their
+				-- own InitFrame/OnSettingValueChanged handlers; no structural re-render here.
 			end
 			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 			local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
@@ -2814,11 +2741,6 @@ local function createUFRenderer(componentId, title)
 							local t = ensureUFDB(); if not t then return end
 							t.healthBarReverseFill = (v == "reverse")
 							applyNow()
-							-- Refresh the page to update any dependent controls
-							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
-							if panel and panel.RefreshCurrentCategoryDeferred then
-								panel.RefreshCurrentCategoryDeferred()
-							end
 						end
 						addDropdown(frame.PageA, label, fillDirOptions, getter, setter, y)
 					end
@@ -3404,11 +3326,6 @@ local function createUFRenderer(componentId, title)
 							
 							t.powerBarReverseFill = willBeReverse
 							applyNow()
-							-- Refresh the page to update Bar Width slider enabled state
-							if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.25) end
-							if panel and panel.RefreshCurrentCategoryDeferred then
-								panel.RefreshCurrentCategoryDeferred()
-							end
 						end
 						addDropdown(frame.PageB, label, fillDirOptions, getter, setter, y)
 					end
@@ -5054,10 +4971,6 @@ local function createUFRenderer(componentId, title)
 						function(v) 
 							local t = ensureUFDB(); if not t then return end
 							t.portraitBorderEnable = (v == true)
-							-- Refresh the panel to update gray-out state
-							if panel and panel.RefreshCurrentCategoryDeferred then
-								panel:RefreshCurrentCategoryDeferred()
-							end
 							applyNow()
 						end,
 						false)
@@ -6404,18 +6317,30 @@ local function createUFRenderer(componentId, title)
 							local function setter(b)
 								local val = (b and true) and 1 or 0
 								-- Fix note (2025-11-06): Keep Cast Bar <-> Unit Frame in lockstep by writing to
-								-- Cast Bar [LockToPlayerFrame] and mirroring to Player Unit Frame [CastBarUnderneath],
-								-- then nudge UpdateSystem/RefreshLayout, SaveOnly(), and coalesced RequestApplyChanges().
-								-- This prevents stale visuals and keeps Edit Mode UI in sync instantly.
+								-- Cast Bar [LockToPlayerFrame] and mirroring to Player Unit Frame [CastBarUnderneath].
+								-- Use the centralized WriteSetting helper so SaveOnly/ApplyChanges and panel suppression
+								-- behave consistently for all Edit Mode–controlled settings.
 								-- Write to Cast Bar system
 								do
 									local frame = getCastBar()
 									local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.LockToPlayerFrame
-									if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-										addon.EditMode.SetSetting(frame, sid, val)
-										if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
-										if type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-										if type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+									if frame and sid and addon and addon.EditMode then
+										if addon.EditMode.WriteSetting then
+											-- Let the centralized WriteSetting helper perform SaveOnly + a coalesced
+											-- ApplyChanges so Edit Mode's own UI stays in sync with ScooterMod. The
+											-- custom right pane prevents the earlier flicker we saw when applying.
+											addon.EditMode.WriteSetting(frame, sid, val, {
+												updaters        = { "UpdateSystemSettingLockToPlayerFrame", "UpdateSystem", "RefreshLayout" },
+												suspendDuration = 0.4,
+											})
+										elseif addon.EditMode.SetSetting then
+											addon.EditMode.SetSetting(frame, sid, val)
+											if type(frame.UpdateSystemSettingLockToPlayerFrame) == "function" then pcall(frame.UpdateSystemSettingLockToPlayerFrame, frame) end
+											if type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+											if type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+											if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+											-- Avoid triggering ApplyChanges here; the targeted updaters above are sufficient.
+										end
 									end
 								end
 								-- Mirror to Player Unit Frame setting [Cast Bar Underneath] to keep both UIs in sync
@@ -6426,13 +6351,20 @@ local function createUFRenderer(componentId, title)
 									local frameUF = (mgr and EMSys and EMUF and mgr.GetRegisteredSystemFrame) and mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EMUF.Player) or nil
 									local UFSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
 									local sidUF = UFSetting and UFSetting.CastBarUnderneath or 1
-									if frameUF and sidUF and addon and addon.EditMode and addon.EditMode.SetSetting then
-										addon.EditMode.SetSetting(frameUF, sidUF, val)
-										if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
-										if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
+									if frameUF and sidUF and addon and addon.EditMode then
+										if addon.EditMode.WriteSetting then
+											-- Mirror Player Unit Frame's CastBarUnderneath setting as a normal
+											-- Edit Mode write so both UIs share the same persisted state.
+											addon.EditMode.WriteSetting(frameUF, sidUF, val, {
+												updaters = { "UpdateSystem", "RefreshLayout" },
+											})
+										elseif addon.EditMode.SetSetting then
+											addon.EditMode.SetSetting(frameUF, sidUF, val)
+											if type(frameUF.UpdateSystem) == "function" then pcall(frameUF.UpdateSystem, frameUF) end
+											if type(frameUF.RefreshLayout) == "function" then pcall(frameUF.RefreshLayout, frameUF) end
+										end
 									end
 								end
-								if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
 
 								-- When unlocking the Player Cast Bar (val == 0), enforce Disable Icon in
 								-- ScooterMod's DB so our icon border logic does not draw when Blizzard
@@ -6557,11 +6489,18 @@ local function createUFRenderer(componentId, title)
 							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.BarSize
 							local val = tonumber(raw) or 100
 							val = math.floor(math.max(100, math.min(150, val)) / 10 + 0.5) * 10
-							if frame and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frame, sid, val)
-								if type(frame.UpdateSystemSettingBarSize) == "function" then pcall(frame.UpdateSystemSettingBarSize, frame) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							if frame and sid and addon and addon.EditMode then
+								if addon.EditMode.WriteSetting then
+									addon.EditMode.WriteSetting(frame, sid, val, {
+										updaters        = { "UpdateSystemSettingBarSize" },
+										suspendDuration = 0.25,
+									})
+								elseif addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frame, sid, val)
+									if type(frame.UpdateSystemSettingBarSize) == "function" then pcall(frame.UpdateSystemSettingBarSize, frame) end
+									if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+									if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								end
 							end
 						end
 						local setting = CreateLocalSetting(label, "number", getter, setter, getter())
@@ -6865,11 +6804,18 @@ local function createUFRenderer(componentId, title)
 							local frameCB = getCastBar()
 							local sid = _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.ShowCastTime
 							local val = (b and true) and 1 or 0
-							if frameCB and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frameCB, sid, val)
-								if type(frameCB.UpdateSystemSettingShowCastTime) == "function" then pcall(frameCB.UpdateSystemSettingShowCastTime, frameCB) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							if frameCB and sid and addon and addon.EditMode then
+								if addon.EditMode.WriteSetting then
+									addon.EditMode.WriteSetting(frameCB, sid, val, {
+										updaters        = { "UpdateSystemSettingShowCastTime" },
+										suspendDuration = 0.25,
+									})
+								elseif addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frameCB, sid, val)
+									if type(frameCB.UpdateSystemSettingShowCastTime) == "function" then pcall(frameCB.UpdateSystemSettingShowCastTime, frameCB) end
+									if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+									if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								end
 								-- Reapply Scooter styling so Cast Time text reflects current settings immediately
 								applyNow()
 							end
@@ -7111,12 +7057,19 @@ local function createUFRenderer(componentId, title)
 						local frameUF = getUnitFrame()
 						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
 						local val = (b and true) and 1 or 0
-						if frameUF and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frameUF, sid, val)
-							-- Nudge visuals; call specific updater if present, else coalesced apply
-							if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						if frameUF and sid and addon and addon.EditMode then
+							if addon.EditMode.WriteSetting then
+								addon.EditMode.WriteSetting(frameUF, sid, val, {
+									updaters        = { "UpdateSystemSettingBuffsOnTop" },
+									suspendDuration = 0.25,
+								})
+							elseif addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frameUF, sid, val)
+								-- Nudge visuals; call specific updater if present, else coalesced apply
+								if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							end
 						end
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -7187,11 +7140,18 @@ local function createUFRenderer(componentId, title)
 						local frameUF = getUnitFrame()
 						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
 						local val = (b and true) and 1 or 0
-						if frameUF and sid and addon and addon.EditMode and addon.EditMode.SetSetting then
-							addon.EditMode.SetSetting(frameUF, sid, val)
-							if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
-							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						if frameUF and sid and addon and addon.EditMode then
+							if addon.EditMode.WriteSetting then
+								addon.EditMode.WriteSetting(frameUF, sid, val, {
+									updaters        = { "UpdateSystemSettingBuffsOnTop" },
+									suspendDuration = 0.25,
+								})
+							elseif addon.EditMode.SetSetting then
+								addon.EditMode.SetSetting(frameUF, sid, val)
+								if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							end
 						end
 					end
 					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -7237,11 +7197,10 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, tabBDF)
 			end
 
-            local settingsList = f.SettingsList
-            settingsList.Header.Title:SetText(title or componentId)
-            settingsList:Display(init)
-            settingsList:Show()
-            f.Canvas:Hide()
+            if right.SetTitle then
+                right:SetTitle(title or componentId)
+            end
+            right:Display(init)
         end
         return { mode = "list", render = render, componentId = componentId }
 end

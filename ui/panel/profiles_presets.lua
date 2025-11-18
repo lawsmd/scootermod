@@ -6,9 +6,11 @@ local panel = addon.SettingsPanel
 local function renderProfilesPresets()
     local function render()
         local f = panel.frame
-        if not f or not f.SettingsList then return end
-        local settingsList = f.SettingsList
-        settingsList.Header.Title:SetText("Presets")
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then return end
+        if right.SetTitle then
+            right:SetTitle("Presets")
+        end
         local init = {}
         local messageRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
         messageRow.GetExtent = function() return 40 end
@@ -31,14 +33,7 @@ local function renderProfilesPresets()
         end
         table.insert(init, messageRow)
 
-        settingsList:Display(init)
-        if settingsList.RepairDisplay then
-            pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(init) end, GetInitializers = function() return init end })
-        end
-        settingsList:Show()
-        if f.Canvas then
-            f.Canvas:Hide()
-        end
+        right:Display(init)
     end
     return { mode = "list", render = render, componentId = "profilesPresets" }
 end

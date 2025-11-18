@@ -69,8 +69,9 @@ end
 -- Header button visibility helper: hide "Collapse All" for non-component pages
 function panel.UpdateCollapseButtonVisibility()
     local f = panel and panel.frame
-    if not f or not f.SettingsList or not f.SettingsList.Header then return end
-    local btn = f.SettingsList.Header.DefaultsButton
+    local header = f and f.RightPane and f.RightPane.Header
+    if not header then return end
+    local btn = header.CollapseAllButton
     if not btn then return end
     local hide = false
     local cat = f.CurrentCategory
@@ -81,7 +82,7 @@ function panel.UpdateCollapseButtonVisibility()
             hide = true
         end
         -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
-        local cdmBtn = f.SettingsList.Header.ScooterCDMButton
+        local cdmBtn = header.ScooterCDMButton
         if cdmBtn then
             local onCDMTab = false
             if entry and entry.componentId then
@@ -103,7 +104,11 @@ end
 
 -- Tabbed section mixin moved to ui/panel/mixins.lua
 
--- Public: Re-render the currently selected category and preserve scroll position
+-- Public: Re-render the currently selected category and preserve scroll position.
+-- IMPORTANT (2025-11-17): This is a STRUCTURAL refresh only and should not be
+-- used from per-control handlers (checkboxes, sliders, etc.) or from routine
+-- Edit Mode save hooks. Those callers must instead update their own rows and
+-- styling in place to avoid right-pane flicker.
 function panel.RefreshCurrentCategory()
     local f = panel and panel.frame
     if not f or not f:IsShown() then return end
@@ -112,96 +117,19 @@ function panel.RefreshCurrentCategory()
     if not cat or not f.CatRenderers then return end
     local entry = f.CatRenderers[cat]
     if not entry or not entry.render then return end
-    local settingsList = f.SettingsList
-    local sb = settingsList and settingsList.ScrollBox
-    -- Prefer a previously captured percent (from a deferred request) to avoid
-    -- double-refresh sequences snapping to the top.
-    local percent = panel._desiredScrollPercent
-    if percent == nil then
-        if sb and sb.GetDerivedScrollPercentage then
-            percent = sb:GetDerivedScrollPercentage()
-        elseif sb and sb.GetScrollPercentage then
-            percent = sb:GetScrollPercentage()
-        end
-    end
-    -- Remember tab (if any) for tabbed sections before rerender
-    local activeTabIndex
-    if settingsList and settingsList:GetNumChildren() > 0 then
-        for i = 1, settingsList:GetNumChildren() do
-            local child = select(i, settingsList:GetChildren())
-            if child and child.TabA and child.TabB and child.tabsGroup and child.tabsGroup.GetSelectedIndex then
-                activeTabIndex = child.tabsGroup:GetSelectedIndex()
-                break
-            end
-        end
-    end
     entry.render()
-    if percent ~= nil and sb and sb.SetScrollPercentage then
-        C_Timer.After(0, function()
-            if panel and panel.frame and panel.frame:IsShown() then
-                pcall(sb.SetScrollPercentage, sb, percent)
-                -- Clear the one-shot desired percent once applied
-                panel._desiredScrollPercent = nil
-            end
-        end)
-    end
-    -- Restore tab after rerender
-    if activeTabIndex and settingsList and settingsList:GetNumChildren() > 0 then
-        C_Timer.After(0, function()
-            for i = 1, settingsList:GetNumChildren() do
-                local child = select(i, settingsList:GetChildren())
-                if child and child.tabsGroup and child.tabsGroup.SelectAtIndex then
-                    child.tabsGroup:SelectAtIndex(activeTabIndex)
-                    break
-                end
-            end
-            -- After restoring selection, re-apply theme to all tabbed sections present
-            for i = 1, settingsList:GetNumChildren() do
-                local child = select(i, settingsList:GetChildren())
-                if child and child.UpdateTabTheme then pcall(child.UpdateTabTheme, child) end
-            end
-        end)
-    end
 end
 
 function panel.RefreshCurrentCategoryDeferred()
-	if panel._suspendRefresh then
-		-- Queue a one-shot refresh to run when suspension ends; also capture scroll percent now
-		panel._queuedRefresh = true
-		do
-			local f = panel and panel.frame
-			local settingsList = f and f.SettingsList
-			local sb = settingsList and settingsList.ScrollBox
-			local percent
-			if sb and sb.GetDerivedScrollPercentage then
-				percent = sb:GetDerivedScrollPercentage()
-			elseif sb and sb.GetScrollPercentage then
-				percent = sb:GetScrollPercentage()
-			end
-			if percent ~= nil then
-				panel._desiredScrollPercent = percent
-			end
-		end
-		return
-	end
-    -- Capture current scroll percent immediately so we can restore it even if
-    -- multiple deferred refreshes get queued.
-    do
-        local f = panel and panel.frame
-        local settingsList = f and f.SettingsList
-        local sb = settingsList and settingsList.ScrollBox
-        local percent
-        if sb and sb.GetDerivedScrollPercentage then
-            percent = sb:GetDerivedScrollPercentage()
-        elseif sb and sb.GetScrollPercentage then
-            percent = sb:GetScrollPercentage()
-        end
-        if percent ~= nil then
-            panel._desiredScrollPercent = percent
-        end
+    if panel._suspendRefresh then
+        -- Queue a one-shot refresh to run when suspension ends.
+        panel._queuedRefresh = true
+        return
     end
     C_Timer.After(0, function()
-        if panel and not panel._suspendRefresh and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
+        if panel and not panel._suspendRefresh and panel.RefreshCurrentCategory then
+            panel.RefreshCurrentCategory()
+        end
     end)
 end
 
@@ -237,11 +165,6 @@ local function createComponentRenderer(componentId)
             end
 
             local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Icon", "Text", "Misc"}
-            local function RefreshCurrentCategoryDeferred()
-                if panel and panel.RefreshCurrentCategoryDeferred then
-                    panel.RefreshCurrentCategoryDeferred()
-                end
-            end
             for _, sectionName in ipairs(orderedSections) do
                 if sectionName == "Text" then
                     local supportsText = component and component.settings and component.settings.supportsText
@@ -1521,8 +1444,8 @@ end
 -- Ensure and configure the shared header "Copy from" controls based on a category key
 panel.ConfigureHeaderCopyFromForKey = function(key)
     local f = panel.frame
-    if not f or not f.SettingsList or not f.SettingsList.Header then return end
-    local header = f.SettingsList.Header
+    local header = f and f.RightPane and f.RightPane.Header
+    if not header then return end
     -- One-time registration of confirmation dialogs used by header "Copy from" menus
     if _G and _G.StaticPopupDialogs then
         if not _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] then
@@ -1547,11 +1470,6 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                             if data.dropdown then
                                 data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
                                 if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
-                            end
-                            if panel and panel.RefreshCurrentCategoryDeferred and C_Timer and C_Timer.After then
-                                C_Timer.After(0.36, function()
-                                    if panel and not panel._suspendRefresh then panel.RefreshCurrentCategoryDeferred() end
-                                end)
                             end
                         else
                             if _G and _G.StaticPopup_Show then
@@ -1595,11 +1513,6 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                         if data.dropdown then
                             data.dropdown._ScooterSelectedId = data.sourceId
                             if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
-                        end
-                        if panel and panel.RefreshCurrentCategoryDeferred and C_Timer and C_Timer.After then
-                            C_Timer.After(0.36, function()
-                                if panel and not panel._suspendRefresh then panel.RefreshCurrentCategoryDeferred() end
-                            end)
                         end
                     end
                 end,
@@ -1659,7 +1572,6 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                             addon.CopyActionBarSettings(id, currentId)
                             dd._ScooterSelectedId = id
                             if dd.SetText then dd:SetText(text) end
-                            if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                         end
                     end)
                 end
@@ -1713,7 +1625,6 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                             if ok then
                                 dd._ScooterSelectedId = id
                                 if dd.SetText then dd:SetText(text) end
-                                if panel and panel.RefreshCurrentCategoryDeferred then panel.RefreshCurrentCategoryDeferred() end
                             end
                         end
                     end)
@@ -1891,42 +1802,31 @@ end
 		nav:SetScript("OnSizeChanged", function()
 			UpdateNavContentWidth()
 		end)
-		local container = CreateFrame("Frame", nil, f)
-		container:ClearAllPoints(); container:SetPoint("TOPLEFT", nav, "TOPRIGHT", panel.NavLayout.rightPaneLeftOffset or 24, 0); container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 46)
+        local container = CreateFrame("Frame", nil, f)
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", nav, "TOPRIGHT", panel.NavLayout.rightPaneLeftOffset or 24, 0)
+        container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 46)
         f.Container = container
-        local settingsList = CreateFrame("Frame", nil, container, "SettingsListTemplate")
-        settingsList:SetAllPoints(container); settingsList:SetClipsChildren(true)
-        f.SettingsList = settingsList
-        -- Repurpose the header DefaultsButton as "Collapse All"
-        if f.SettingsList and f.SettingsList.Header and f.SettingsList.Header.DefaultsButton then
-            local btn = f.SettingsList.Header.DefaultsButton
-            btn.Text:SetText("Collapse All")
-            if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
-            btn:SetScript("OnClick", function()
-                local current = f.CurrentCategory
-                if not current or not f.CatRenderers then return end
-                local entry = f.CatRenderers[current]
-                if not entry or not entry.componentId then return end
-                local cid = entry.componentId
-                panel._expanded = panel._expanded or {}
-                panel._expanded[cid] = panel._expanded[cid] or {}
-                -- Dynamically collapse ALL sections for this component
-                -- This works for any section keys: current Cooldown Manager sections,
-                -- Unit Frames sections (Health Bar, Power Bar, etc.), Action Bars sections (Backdrop, etc.)
-                for sectionKey, _ in pairs(panel._expanded[cid]) do
-                    panel._expanded[cid][sectionKey] = false
-                end
-                panel.RefreshCurrentCategory()
-            end)
-            -- Insert a new button to open Blizzard's Advanced Cooldown Settings to the LEFT of Collapse All
-            do
-                local cdmBtn = f.SettingsList.Header.ScooterCDMButton
+
+        -- Initialize the custom Scooter-owned right pane (header + scrollframe).
+        if panel.RightPane and panel.RightPane.Init then
+            panel.RightPane:Init(f, container)
+            f.RightPane = panel.RightPane
+        end
+
+        -- Insert a button in the header to open Blizzard's Advanced Cooldown
+        -- Manager settings, anchored to the left of the Collapse All button.
+        do
+            local header = panel.RightPane and panel.RightPane.Header
+            local collapseBtn = header and header.CollapseAllButton
+            if header and collapseBtn then
+                local cdmBtn = header.ScooterCDMButton
                 if not cdmBtn then
-                    cdmBtn = CreateFrame("Button", nil, f.SettingsList.Header, "UIPanelButtonTemplate")
+                    cdmBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
                     cdmBtn:SetSize(200, 22)
                     cdmBtn.Text:SetText("Cooldown Manager Settings")
                     cdmBtn:ClearAllPoints()
-                    cdmBtn:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+                    cdmBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -8, 0)
                     if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(cdmBtn) end
                     cdmBtn:SetScript("OnClick", function()
                         if InCombatLockdown and InCombatLockdown() then
@@ -1963,17 +1863,10 @@ end
                         end
                         if panel and panel.frame and panel.frame:IsShown() then panel.frame:Hide() end
                     end)
-                    f.SettingsList.Header.ScooterCDMButton = cdmBtn
+                    header.ScooterCDMButton = cdmBtn
                 end
             end
-            -- Evaluate initial visibility for the current page (manage/presets should hide)
-            if panel and panel.UpdateCollapseButtonVisibility then
-                panel.UpdateCollapseButtonVisibility()
-            end
         end
-        local canvas = CreateFrame("Frame", nil, container)
-        canvas:SetAllPoints(container); canvas:SetClipsChildren(true); canvas:Hide()
-        f.Canvas = canvas
         panel.frame = f
 
         -- Prevent unintended closure during Edit Mode ApplyChanges by restoring visibility when protected
@@ -1995,11 +1888,6 @@ end
                 if panel.frame and panel.frame:IsShown() then
                     local entry = panel.frame.CatRenderers[cat]
                     if entry and entry.render then entry.render() end
-                    -- Force predicates to settle immediately on open
-                    local settingsList = panel.frame.SettingsList
-                    if settingsList and settingsList.RepairDisplay and entry and entry._lastInitializers then
-                        pcall(settingsList.RepairDisplay, settingsList, { EnumerateInitializers = function() return ipairs(entry._lastInitializers) end, GetInitializers = function() return entry._lastInitializers end })
-                    end
                     -- Reconfigure shared header "Copy from" controls on reopen to restore placeholder prompts
                     if panel and panel.ConfigureHeaderCopyFromForKey and cat then
                         panel.ConfigureHeaderCopyFromForKey(cat)
