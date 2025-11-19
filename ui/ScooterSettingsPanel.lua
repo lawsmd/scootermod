@@ -56,10 +56,29 @@ end
 function panel.UpdateProfilesSectionVisibility()
     local widgets = panel._profileWidgets
     if not widgets then return end
+
+    -- Only actively manage visibility while the Manage Profiles page is the
+    -- current category. When other categories are selected, we aggressively
+    -- hide any cached rows so they cannot linger "behind" the panel or after
+    -- the window is closed (e.g., Active Layout row floating in the world).
+    local f = panel.frame
+    local isProfilesManageActive = f and f.CurrentCategory == "profilesManage"
+
+    if not isProfilesManageActive then
+        if widgets.ActiveLayoutRow and widgets.ActiveLayoutRow:IsShown() then
+            widgets.ActiveLayoutRow:Hide()
+        end
+        if widgets.SpecEnabledRow and widgets.SpecEnabledRow:IsShown() then
+            widgets.SpecEnabledRow:Hide()
+        end
+        return
+    end
+
     local showActive = panel:IsSectionExpanded("profilesManage", "ActiveLayout")
     if widgets.ActiveLayoutRow and widgets.ActiveLayoutRow:IsShown() ~= showActive then
         widgets.ActiveLayoutRow:SetShown(showActive)
     end
+
     local showSpec = panel:IsSectionExpanded("profilesManage", "SpecProfiles")
     if widgets.SpecEnabledRow and widgets.SpecEnabledRow:IsShown() ~= showSpec then
         widgets.SpecEnabledRow:SetShown(showSpec)

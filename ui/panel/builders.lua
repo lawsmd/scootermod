@@ -7188,65 +7188,180 @@ local function createUFRenderer(componentId, title)
 				expInitializerBD.GetExtent = function() return 30 end
 				table.insert(init, expInitializerBD)
 
-				-- Tabbed section within Buffs & Debuffs: Positioning (first tab)
-				local bdData = { sectionTitle = "", tabAText = "Positioning" }
+				-- Tabbed section within Buffs & Debuffs:
+				-- Tabs (in order): Positioning, Sizing, Border, Text, Visibility
+				local bdData = {
+					sectionTitle = "",
+					tabAText = "Positioning",
+					tabBText = "Sizing",
+					tabCText = "Border",
+					tabDText = "Text",
+					tabEText = "Visibility",
+				}
 				bdData.build = function(frame)
-					-- Positioning tab (PageA): "Buffs on Top" checkbox wired to Edit Mode
-					local y = { y = -50 }
-					local function getUnitFrame()
-						local mgr = _G.EditModeManagerFrame
-						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
-						local EMSys = _G.Enum and _G.Enum.EditModeSystem
-						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-						local idx = EM.Target
-						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					-- Helper: map componentId -> unit key (Target only for this block)
+					local function unitKey()
+						return "Target"
 					end
-					local label = "Buffs on Top"
-					local function getter()
-						local frameUF = getUnitFrame()
-						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
-						if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(frameUF, sid)
-							return (tonumber(v) or 0) == 1
+
+					-- Helper: ensure Unit Frame Buffs & Debuffs DB namespace
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						local uk = unitKey()
+						db.unitFrames[uk] = db.unitFrames[uk] or {}
+						db.unitFrames[uk].buffsDebuffs = db.unitFrames[uk].buffsDebuffs or {}
+						return db.unitFrames[uk].buffsDebuffs
+					end
+
+					-- Small slider helper (integer labels)
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+						local options = Settings.CreateSliderOptions(minV, maxV, step)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+						local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						yRef.y = yRef.y - 34
+						return f
+					end
+
+					local function applyBuffsNow()
+						local uk = unitKey()
+						if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+							addon.ApplyUnitFrameBuffsDebuffsFor(uk)
 						end
-						return false
+						if addon and addon.ApplyStyles then
+							addon:ApplyStyles()
+						end
 					end
-					local function setter(b)
-						local frameUF = getUnitFrame()
-						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
-						local val = (b and true) and 1 or 0
-						if frameUF and sid and addon and addon.EditMode then
-							if addon.EditMode.WriteSetting then
-								addon.EditMode.WriteSetting(frameUF, sid, val, {
-									updaters        = { "UpdateSystemSettingBuffsOnTop" },
-									suspendDuration = 0.25,
-								})
-							elseif addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frameUF, sid, val)
-								-- Nudge visuals; call specific updater if present, else coalesced apply
-								if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+					-- PageA: Positioning tab (Buffs on Top only; no addon-side X/Y offsets)
+					do
+						local y = { y = -50 }
+
+						-- "Buffs on Top" checkbox wired to Edit Mode
+						local function getUnitFrame()
+							local mgr = _G.EditModeManagerFrame
+							local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+							local EMSys = _G.Enum and _G.Enum.EditModeSystem
+							if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+							local idx = EM.Target
+							return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+						end
+						local label = "Buffs on Top"
+						local function getter()
+							local frameUF = getUnitFrame()
+							local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+							if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frameUF, sid)
+								return (tonumber(v) or 0) == 1
+							end
+							return false
+						end
+						local function setter(b)
+							local frameUF = getUnitFrame()
+							local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+							local val = (b and true) and 1 or 0
+							if frameUF and sid and addon and addon.EditMode then
+								if addon.EditMode.WriteSetting then
+									addon.EditMode.WriteSetting(frameUF, sid, val, {
+										updaters        = { "UpdateSystemSettingBuffsOnTop" },
+										suspendDuration = 0.25,
+									})
+								elseif addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frameUF, sid, val)
+									-- Nudge visuals; call specific updater if present, else coalesced apply
+									if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+									if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+									if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								end
 							end
 						end
+						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						y.y = y.y - 34
 					end
-					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-					row.GetElementData = function() return initCb end
-					row:SetPoint("TOPLEFT", 4, y.y)
-					row:SetPoint("TOPRIGHT", -16, y.y)
-					initCb:InitFrame(row)
-					if panel and panel.ApplyRobotoWhite then
-						if row.Text then panel.ApplyRobotoWhite(row.Text) end
-						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+
+					-- PageB: Sizing tab (Scale + Icon Width/Height)
+					do
+						local y = { y = -50 }
+
+						-- Icon Scale slider (50–150%). Applies a uniform scale to all aura frames
+						-- after Blizzard has laid them out, so we can shrink/grow icons without
+						-- fighting the internal row/column layout math.
+						addSlider(frame.PageB, "Icon Scale (%)", 50, 150, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconScale) or 100
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 100
+								if val < 50 then val = 50 elseif val > 150 then val = 150 end
+								t.iconScale = val
+								applyBuffsNow()
+							end,
+							y)
+
+						-- Icon Width slider (24..48 px). Defaults are seeded from Blizzard's
+						-- stock aura size on first apply; the 44 fallback here is only used
+						-- if we have no prior DB value yet.
+						addSlider(frame.PageB, "Icon Width", 24, 48, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconWidth) or 44
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 44
+								if val < 24 then val = 24 elseif val > 48 then val = 48 end
+								t.iconWidth = val
+								applyBuffsNow()
+							end,
+							y)
+
+						-- Icon Height slider (24..48 px). Defaults are seeded from Blizzard's
+						-- stock aura size on first apply; the 44 fallback here is only used
+						-- if we have no prior DB value yet.
+						addSlider(frame.PageB, "Icon Height", 24, 48, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconHeight) or 44
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 44
+								if val < 24 then val = 24 elseif val > 48 then val = 48 end
+								t.iconHeight = val
+								applyBuffsNow()
+							end,
+							y)
 					end
-					y.y = y.y - 34
+
+					-- Tabs C/D/E (Border, Text, Visibility) are present for layout consistency and will be
+					-- populated in a later phase. For now they intentionally remain empty.
 				end
 
 				local tabBD = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdData)
-				tabBD.GetExtent = function() return 120 end
+				-- STATIC HEIGHT: Buffs & Debuffs tabs are relatively light; 180px is enough for current controls.
+				tabBD.GetExtent = function() return 180 end
 				tabBD:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBD)
 			end
@@ -7262,97 +7377,335 @@ local function createUFRenderer(componentId, title)
 				expInitializerBDF.GetExtent = function() return 30 end
 				table.insert(init, expInitializerBDF)
 
-				local bdDataF = { sectionTitle = "", tabAText = "Positioning" }
+				-- Tabbed section within Buffs & Debuffs:
+				-- Tabs (in order): Positioning, Sizing, Border, Text, Visibility
+				local bdDataF = {
+					sectionTitle = "",
+					tabAText = "Positioning",
+					tabBText = "Sizing",
+					tabCText = "Border",
+					tabDText = "Text",
+					tabEText = "Visibility",
+				}
 				bdDataF.build = function(frame)
-					local y = { y = -50 }
-					local function getUnitFrame()
-						local mgr = _G.EditModeManagerFrame
-						local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
-						local EMSys = _G.Enum and _G.Enum.EditModeSystem
-						if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
-						local idx = EM.Focus
-						return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+					-- Helper: map componentId -> unit key (Focus only for this block)
+					local function unitKey()
+						return "Focus"
 					end
-					local function isUseLargerEnabled()
-						local fUF = getUnitFrame()
-						local sidULF = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
-						if fUF and sidULF and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(fUF, sidULF)
-							return (v and v ~= 0) and true or false
+
+					-- Helper: ensure Unit Frame Buffs & Debuffs DB namespace
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						local uk = unitKey()
+						db.unitFrames[uk] = db.unitFrames[uk] or {}
+						db.unitFrames[uk].buffsDebuffs = db.unitFrames[uk].buffsDebuffs or {}
+						return db.unitFrames[uk].buffsDebuffs
+					end
+
+					-- Small slider helper (integer labels)
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+						local options = Settings.CreateSliderOptions(minV, maxV, step)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+						local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						yRef.y = yRef.y - 34
+						return f
+					end
+
+					local function applyBuffsNow()
+						local uk = unitKey()
+						if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+							addon.ApplyUnitFrameBuffsDebuffsFor(uk)
 						end
-						return false
-					end
-					local label = "Buffs on Top"
-					local function getter()
-						local frameUF = getUnitFrame()
-						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
-						if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
-							local v = addon.EditMode.GetSetting(frameUF, sid)
-							return (tonumber(v) or 0) == 1
+						if addon and addon.ApplyStyles then
+							addon:ApplyStyles()
 						end
-						return false
 					end
-					local function setter(b)
-						-- Respect gating: if Use Larger Frame is not enabled, ignore writes
-						if not isUseLargerEnabled() then return end
-						local frameUF = getUnitFrame()
-						local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
-						local val = (b and true) and 1 or 0
-						if frameUF and sid and addon and addon.EditMode then
-							if addon.EditMode.WriteSetting then
-								addon.EditMode.WriteSetting(frameUF, sid, val, {
-									updaters        = { "UpdateSystemSettingBuffsOnTop" },
-									suspendDuration = 0.25,
-								})
-							elseif addon.EditMode.SetSetting then
-								addon.EditMode.SetSetting(frameUF, sid, val)
-								if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
-								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+					-- PageA: Positioning tab (Buffs on Top + X/Y offsets)
+					do
+						local y = { y = -50 }
+
+						local function getUnitFrame()
+							local mgr = _G.EditModeManagerFrame
+							local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+							local EMSys = _G.Enum and _G.Enum.EditModeSystem
+							if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+							local idx = EM.Focus
+							return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+						end
+						local function isUseLargerEnabled()
+							local fUF = getUnitFrame()
+							local sidULF = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
+							if fUF and sidULF and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(fUF, sidULF)
+								return (v and v ~= 0) and true or false
+							end
+							return false
+						end
+						local label = "Buffs on Top"
+						local function getter()
+							local frameUF = getUnitFrame()
+							local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+							if frameUF and sid and addon and addon.EditMode and addon.EditMode.GetSetting then
+								local v = addon.EditMode.GetSetting(frameUF, sid)
+								return (tonumber(v) or 0) == 1
+							end
+							return false
+						end
+						local function setter(b)
+							-- Respect gating: if Use Larger Frame is not enabled, ignore writes
+							if not isUseLargerEnabled() then return end
+							local frameUF = getUnitFrame()
+							local sid = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.BuffsOnTop
+							local val = (b and true) and 1 or 0
+							if frameUF and sid and addon and addon.EditMode then
+								if addon.EditMode.WriteSetting then
+									addon.EditMode.WriteSetting(frameUF, sid, val, {
+										updaters        = { "UpdateSystemSettingBuffsOnTop" },
+										suspendDuration = 0.25,
+									})
+								elseif addon.EditMode.SetSetting then
+									addon.EditMode.SetSetting(frameUF, sid, val)
+									if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
+									if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+									if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								end
 							end
 						end
-					end
-					local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-					local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-					local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-					row.GetElementData = function() return initCb end
-					row:SetPoint("TOPLEFT", 4, y.y)
-					row:SetPoint("TOPRIGHT", -16, y.y)
-					initCb:InitFrame(row)
-					if panel and panel.ApplyRobotoWhite then
-						if row.Text then panel.ApplyRobotoWhite(row.Text) end
+						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						-- Gray out when Use Larger Frame is unchecked and show disclaimer
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-					end
-					-- Gray out when Use Larger Frame is unchecked and show disclaimer
-					local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-					local disabled = not isUseLargerEnabled()
-					if cb then if disabled then cb:Disable() else cb:Enable() end end
-					local disclaimer = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-					disclaimer:SetText("Parent Frame > Sizing > 'Use Larger Frame' required")
-					disclaimer:SetJustifyH("LEFT")
-					if disclaimer.SetWordWrap then disclaimer:SetWordWrap(true) end
-					if disclaimer.SetNonSpaceWrap then disclaimer:SetNonSpaceWrap(true) end
-					local anchor = (cb and cb.Text) or row.Text or row
-					disclaimer:ClearAllPoints()
-					disclaimer:SetPoint("LEFT", anchor, "RIGHT", 42, 0)
-					disclaimer:SetPoint("RIGHT", row, "RIGHT", -12, 0)
-					disclaimer:SetShown(disabled)
+						local disabled = not isUseLargerEnabled()
+						if cb then if disabled then cb:Disable() else cb:Enable() end end
+						local disclaimer = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+						disclaimer:SetText("Parent Frame > Sizing > 'Use Larger Frame' required")
+						disclaimer:SetJustifyH("LEFT")
+						if disclaimer.SetWordWrap then disclaimer:SetWordWrap(true) end
+						if disclaimer.SetNonSpaceWrap then disclaimer:SetNonSpaceWrap(true) end
+						local anchor = (cb and cb.Text) or row.Text or row
+						disclaimer:ClearAllPoints()
+						disclaimer:SetPoint("LEFT", anchor, "RIGHT", 42, 0)
+						disclaimer:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+						disclaimer:SetShown(disabled)
 
-					-- Expose a lightweight gating refresher to avoid full category rebuilds
-					panel.RefreshFocusBuffsOnTopGating = function()
-						local isDisabled = not isUseLargerEnabled()
-						if cb then if isDisabled then cb:Disable() else cb:Enable() end end
-						if disclaimer then disclaimer:SetShown(isDisabled) end
+						-- Expose a lightweight gating refresher to avoid full category rebuilds
+						panel.RefreshFocusBuffsOnTopGating = function()
+							local isDisabled = not isUseLargerEnabled()
+							if cb then if isDisabled then cb:Disable() else cb:Enable() end end
+							if disclaimer then disclaimer:SetShown(isDisabled) end
+						end
+						if panel.RefreshFocusBuffsOnTopGating then panel.RefreshFocusBuffsOnTopGating() end
+						y.y = y.y - 34
+
+						-- X Offset slider (-150..150 px)
+						addSlider(frame.PageA, "X Offset", -150, 150, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.offsetX) or 0
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								t.offsetX = tonumber(v) or 0
+								applyBuffsNow()
+							end,
+							y)
+
+						-- Y Offset slider (-150..150 px)
+						addSlider(frame.PageA, "Y Offset", -150, 150, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.offsetY) or 0
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								t.offsetY = tonumber(v) or 0
+								applyBuffsNow()
+							end,
+							y)
 					end
-					if panel.RefreshFocusBuffsOnTopGating then panel.RefreshFocusBuffsOnTopGating() end
-					y.y = y.y - 34
+
+					-- PageB: Sizing tab (Scale + Icon Width/Height)
+					do
+						local y = { y = -50 }
+
+						-- Icon Scale slider (50–150%). Applies a uniform scale to all aura frames
+						-- after Blizzard has laid them out, so we can shrink/grow icons without
+						-- fighting the internal row/column layout math.
+						addSlider(frame.PageB, "Icon Scale (%)", 50, 150, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconScale) or 100
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 100
+								if val < 50 then val = 50 elseif val > 150 then val = 150 end
+								t.iconScale = val
+								applyBuffsNow()
+							end,
+							y)
+
+						-- Icon Width slider (24..48 px). Defaults are seeded from Blizzard's
+						-- stock aura size on first apply; the 44 fallback here is only used
+						-- if we have no prior DB value yet.
+						addSlider(frame.PageB, "Icon Width", 24, 48, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconWidth) or 44
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 44
+								if val < 24 then val = 24 elseif val > 48 then val = 48 end
+								t.iconWidth = val
+								applyBuffsNow()
+							end,
+							y)
+
+						-- Icon Height slider (24..48 px). Defaults are seeded from Blizzard's
+						-- stock aura size on first apply; the 44 fallback here is only used
+						-- if we have no prior DB value yet.
+						addSlider(frame.PageB, "Icon Height", 24, 48, 1,
+							function()
+								local t = ensureUFDB() or {}
+								return tonumber(t.iconHeight) or 44
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 44
+								if val < 24 then val = 24 elseif val > 48 then val = 48 end
+								t.iconHeight = val
+								applyBuffsNow()
+							end,
+							y)
+					end
+
+					-- Tabs C/D/E (Border, Text, Visibility) are present for layout consistency and will be
+					-- populated in a later phase. For now they intentionally remain empty.
 				end
 
 				local tabBDF = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdDataF)
-				tabBDF.GetExtent = function() return 120 end
+				-- STATIC HEIGHT: Buffs & Debuffs tabs are relatively light; 180px is enough for current controls.
+				tabBDF.GetExtent = function() return 180 end
 				tabBDF:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBDF)
+			end
+
+			-- Final collapsible section: Visibility (overall opacity for this Unit Frame)
+			-- Only meaningful for Player and Pet; Target/Focus visibility is owned by Cooldown Manager layouts.
+			if componentId == "ufPlayer" or componentId == "ufPet" then
+				local unitKey = (componentId == "ufPlayer") and "Player" or "Pet"
+
+				local function ensureUFDB()
+					local db = addon and addon.db and addon.db.profile
+					if not db then return nil end
+					db.unitFrames = db.unitFrames or {}
+					db.unitFrames[unitKey] = db.unitFrames[unitKey] or {}
+					return db.unitFrames[unitKey]
+				end
+
+				-- Collapsible header for Visibility
+				local expInitializerVis = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Visibility",
+					sectionKey = "Visibility",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Visibility"),
+				})
+				expInitializerVis.GetExtent = function() return 30 end
+				table.insert(init, expInitializerVis)
+
+				local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+				local function addOpacitySlider(label, key, minV, maxV, defaultV, addPriorityTooltip)
+					local options = Settings.CreateSliderOptions(minV, maxV, 1)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+					local setting = CreateLocalSetting(label, "number",
+						function()
+							local t = ensureUFDB() or {}
+							local v = t[key]
+							if v == nil then return defaultV end
+							return tonumber(v) or defaultV
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t[key] = tonumber(v) or defaultV
+							if addon and addon.ApplyUnitFrameVisibilityFor and unitKey then
+								addon.ApplyUnitFrameVisibilityFor(unitKey)
+							end
+						end,
+						defaultV
+					)
+					local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					row.GetExtent = function() return 34 end
+					row:AddShownPredicate(function()
+						return panel:IsSectionExpanded(componentId, "Visibility")
+					end)
+					do
+						local base = row.InitFrame
+						row.InitFrame = function(self, frame)
+							if base then base(self, frame) end
+							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+							if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+							-- Optional: add the same opacity-priority tooltip used by Cooldown Manager
+							if addPriorityTooltip and panel and not frame.ScooterOpacityInfoIcon then
+								local tooltipText = "Opacity priority: With Target takes precedence, then In Combat (this slider), then Out of Combat. The highest priority condition that applies determines the opacity."
+								local labelWidget = frame.Text or frame.Label
+								if labelWidget and panel.CreateInfoIconForLabel then
+									-- Create icon using the helper, then defer repositioning based on actual text width
+									frame.ScooterOpacityInfoIcon = panel.CreateInfoIconForLabel(labelWidget, tooltipText, 5, 0, 32)
+									if C_Timer and C_Timer.After then
+										C_Timer.After(0, function()
+											if frame.ScooterOpacityInfoIcon and labelWidget then
+												frame.ScooterOpacityInfoIcon:ClearAllPoints()
+												local textWidth = labelWidget:GetStringWidth() or 0
+												if textWidth > 0 then
+													-- Position immediately after the label text
+													frame.ScooterOpacityInfoIcon:SetPoint("LEFT", labelWidget, "LEFT", textWidth + 5, 0)
+												else
+													-- Fallback: anchor to the label's right edge
+													frame.ScooterOpacityInfoIcon:SetPoint("LEFT", labelWidget, "RIGHT", 5, 0)
+												end
+											end
+										end)
+									end
+								elseif panel.CreateInfoIcon then
+									-- Fallback: anchor to the whole frame if we don't have a label
+									frame.ScooterOpacityInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 10, 0, 32)
+								end
+							end
+						end
+					end
+					table.insert(init, row)
+				end
+
+				-- Match Cooldown Manager semantics:
+				-- - Base opacity 50–100 (in combat)
+				-- - With-target and out-of-combat use 1–100 internally; slider shows 0–100 where 0/1 both behave as "fully hidden"
+				-- Add the priority tooltip to the base Opacity slider so behavior is clearly documented.
+				addOpacitySlider("Opacity", "opacity", 50, 100, 100, true)
+				addOpacitySlider("Opacity With Target", "opacityWithTarget", 1, 100, 100, false)
+				-- Allow the slider to reach 0 so it's clear that 0/1 both mean "invisible" in practice.
+				addOpacitySlider("Opacity Out of Combat", "opacityOutOfCombat", 0, 100, 100, false)
 			end
 
             if right.SetTitle then

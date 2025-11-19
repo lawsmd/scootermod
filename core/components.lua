@@ -1865,6 +1865,14 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameCastBars then
         addon.ApplyAllUnitFrameCastBars()
     end
+    -- Apply Unit Frame Buffs & Debuffs positioning/sizing (Target/Focus) if configured
+    if addon.ApplyAllUnitFrameBuffsDebuffs then
+        addon.ApplyAllUnitFrameBuffsDebuffs()
+    end
+    -- Apply Unit Frame overall visibility (opacity) per unit if configured
+    if addon.ApplyAllUnitFrameVisibility then
+        addon.ApplyAllUnitFrameVisibility()
+    end
 end
 
 -- Copy all settings from one Action Bar to another (both Edit Mode and addon-only)
@@ -3421,6 +3429,125 @@ do
         return 0, 0, 0, 1
     end
 
+    -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
+    -- This is used to visually "fill in" the right-side chip on Target/Focus when the
+    -- circular portrait is hidden, without replacing the stock StatusBar frame.
+    local function updateRectHealthOverlay(unit, bar)
+        if not bar or not bar.ScooterRectFill then return end
+        if not bar._ScootRectActive then
+            bar.ScooterRectFill:Hide()
+            return
+        end
+
+        local overlay = bar.ScooterRectFill
+        local totalWidth = bar:GetWidth() or 0
+        local minVal, maxVal = bar:GetMinMaxValues()
+        local value = bar:GetValue() or minVal
+
+        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+            overlay:Hide()
+            return
+        end
+
+        local frac = (value - minVal) / (maxVal - minVal)
+        if frac <= 0 then
+            overlay:Hide()
+            return
+        end
+        if frac > 1 then frac = 1 end
+
+        overlay:Show()
+        overlay:SetWidth(totalWidth * frac)
+        overlay:ClearAllPoints()
+
+        local reverse = not not bar._ScootRectReverseFill
+        if reverse then
+            overlay:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+            overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+        else
+            overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+        end
+    end
+
+    local function ensureRectHealthOverlay(unit, bar, cfg)
+        if not bar then return end
+
+        -- Only Target/Focus use this overlay, and only when the portrait is hidden.
+        if unit ~= "Target" and unit ~= "Focus" then
+            if bar.ScooterRectFill then
+                bar._ScootRectActive = false
+                bar.ScooterRectFill:Hide()
+            end
+            return
+        end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+        db.unitFrames = db.unitFrames or {}
+        local ufCfg = db.unitFrames[unit] or {}
+        local portraitCfg = ufCfg.portrait or {}
+        local hidePortrait = (portraitCfg.hidePortrait == true)
+
+        bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
+        bar._ScootRectActive = hidePortrait and true or false
+
+        if not hidePortrait then
+            if bar.ScooterRectFill then
+                bar.ScooterRectFill:Hide()
+            end
+            return
+        end
+
+        if not bar.ScooterRectFill then
+            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            overlay:SetVertTile(false)
+            overlay:SetHorizTile(false)
+            overlay:SetTexCoord(0, 1, 0, 1)
+            bar.ScooterRectFill = overlay
+
+            -- Drive overlay width from the health bar's own value/size changes.
+            if _G.hooksecurefunc and not bar._ScootRectHooksInstalled then
+                bar._ScootRectHooksInstalled = true
+                _G.hooksecurefunc(bar, "SetValue", function(self)
+                    updateRectHealthOverlay(unit, self)
+                end)
+                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    updateRectHealthOverlay(unit, self)
+                end)
+                if bar.HookScript then
+                    bar:HookScript("OnSizeChanged", function(self)
+                        updateRectHealthOverlay(unit, self)
+                    end)
+                end
+            end
+        end
+
+        -- Copy the current health bar texture/tint so the overlay visually matches.
+        local tex = bar:GetStatusBarTexture()
+        if tex then
+            local okTex, pathOrTex = pcall(tex.GetTexture, tex)
+            if okTex and type(pathOrTex) == "string" and pathOrTex ~= "" then
+                bar.ScooterRectFill:SetTexture(pathOrTex)
+            else
+                if bar.ScooterRectFill.SetColorTexture then
+                    bar.ScooterRectFill:SetColorTexture(1, 1, 1, 1)
+                end
+            end
+
+            if tex.GetVertexColor and bar.ScooterRectFill.SetVertexColor then
+                local ok, r, g, b, a = pcall(tex.GetVertexColor, tex)
+                if ok then
+                    bar.ScooterRectFill:SetVertexColor(r or 1, g or 1, b or 1, a or 1)
+                else
+                    bar.ScooterRectFill:SetVertexColor(1, 1, 1, 1)
+                end
+            end
+        end
+
+        updateRectHealthOverlay(unit, bar)
+    end
+
     local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower)
         if not bar or type(bar.GetStatusBarTexture) ~= "function" then return end
         local tex = bar:GetStatusBarTexture()
@@ -3655,6 +3782,9 @@ do
             local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
             local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
             applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+			-- When Target/Focus portraits are hidden, draw a rectangular overlay that fills the
+			-- right-side "chip" area using the same texture/tint as the health bar.
+			ensureRectHealthOverlay(unit, hb, cfg)
             -- If restoring default texture and we lack a captured original, restore to the known stock atlas for this unit
             local isDefaultHB = (texKeyHB == "default" or not addon.Media.ResolveBarTexturePath(texKeyHB))
             if isDefaultHB and not hb._ScootUFOrigAtlas and not hb._ScootUFOrigPath then
@@ -6137,6 +6267,274 @@ do
 		applyCastBarForUnit("Target")
 		applyCastBarForUnit("Focus")
 	end
+end
+
+-- Unit Frames: Buffs & Debuffs positioning and sizing (Target/Focus)
+do
+	-- Store original positions per aura frame so offsets remain relative to stock layout
+	local originalAuraPositions = {}
+	-- Store original sizes per aura frame so we can reason about defaults if needed
+	local originalAuraSizes = {}
+
+	local function resolveUnitFrame(unit)
+		local mgr = _G.EditModeManagerFrame
+		local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+		local EMSys = _G.Enum and _G.Enum.EditModeSystem
+		if mgr and EM and EMSys and mgr.GetRegisteredSystemFrame then
+			local idx = (unit == "Target" and EM.Target) or (unit == "Focus" and EM.Focus) or nil
+			if idx then
+				local frame = mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+				if frame then
+					return frame
+				end
+			end
+		end
+		-- Fallback to global frames if Edit Mode lookup is unavailable
+		if unit == "Target" then
+			return _G.TargetFrame
+		elseif unit == "Focus" then
+			return _G.FocusFrame
+		end
+		return nil
+	end
+
+	local function applyBuffsDebuffsForUnit(unit)
+		if unit ~= "Target" and unit ~= "Focus" then return end
+
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames[unit] = db.unitFrames[unit] or {}
+		db.unitFrames[unit].buffsDebuffs = db.unitFrames[unit].buffsDebuffs or {}
+		local cfg = db.unitFrames[unit].buffsDebuffs
+
+		local frame = resolveUnitFrame(unit)
+		if not frame then return end
+
+		local offsetX = tonumber(cfg.offsetX) or 0
+		local offsetY = tonumber(cfg.offsetY) or 0
+		local iconWidth = tonumber(cfg.iconWidth)
+		local iconHeight = tonumber(cfg.iconHeight)
+		local scalePct = tonumber(cfg.iconScale) or 100
+		if scalePct < 50 then scalePct = 50 elseif scalePct > 150 then scalePct = 150 end
+		local scaleMultiplier = scalePct / 100.0
+
+		local function applyToPool(pool)
+			if not pool or not pool.EnumerateActive then return end
+
+			for auraFrame in pool:EnumerateActive() do
+				-- Sizing: treat Blizzard's layout as the baseline and only grow/shrink
+				-- relative to the stock size. We seed cfg.iconWidth/iconHeight from the
+				-- first active aura we see so default sliders match Blizzard visuals.
+				if auraFrame and auraFrame.SetSize then
+					if not originalAuraSizes[auraFrame] then
+						originalAuraSizes[auraFrame] = {
+							width = auraFrame:GetWidth() or 21,
+							height = auraFrame:GetHeight() or 21,
+						}
+					end
+
+					-- Seed DB defaults from the first aura frame if not already set
+					if not iconWidth or not iconHeight then
+						local base = originalAuraSizes[auraFrame]
+						if base then
+							if not iconWidth then
+								cfg.iconWidth = cfg.iconWidth or base.width
+								iconWidth = tonumber(cfg.iconWidth) or base.width
+							end
+							if not iconHeight then
+								cfg.iconHeight = cfg.iconHeight or base.height
+								iconHeight = tonumber(cfg.iconHeight) or base.height
+							end
+						end
+					end
+
+					if iconWidth and iconHeight then
+						local w = iconWidth
+						local h = iconHeight
+						-- Defensive clamp against absurdly small values
+						if w < 8 then w = 8 end
+						if h < 8 then h = 8 end
+						auraFrame:SetSize(w, h)
+
+						-- Keep icon/cooldown filling the aura frame
+						local icon = auraFrame.Icon
+						if icon and icon.SetAllPoints then
+							icon:SetAllPoints(auraFrame)
+						end
+						local cd = auraFrame.Cooldown
+						if cd and cd.SetAllPoints then
+							cd:SetAllPoints(auraFrame)
+						end
+
+						-- Grow border alongside the icon so it continues to frame correctly
+						local border = auraFrame.Border
+						if border and border.SetSize then
+							border:SetSize(w + 2, h + 2)
+						end
+					end
+
+					-- Apply uniform scale so we can shrink/grow icons without fighting
+					-- Blizzard's internal aura-row math. This affects the visual size
+					-- while leaving the logical layout width/height unchanged.
+					if auraFrame.SetScale then
+						auraFrame:SetScale(scaleMultiplier)
+					end
+				end
+			end
+		end
+
+		if InCombatLockdown() then
+			if _G.C_Timer and _G.C_Timer.After then
+				local u = unit
+				_G.C_Timer.After(0.1, function()
+					if not InCombatLockdown() then
+						applyBuffsDebuffsForUnit(u)
+					end
+				end)
+			end
+			return
+		end
+
+		-- Use Blizzard's aura pools to get the active Buff/Debuff frames.
+		-- Target/Focus both inherit TargetFrameTemplate, which creates pools
+		-- for "TargetBuffFrameTemplate" and "TargetDebuffFrameTemplate".
+		local auraPools = frame.auraPools
+		if auraPools and auraPools.GetPool then
+			local buffPool = auraPools:GetPool("TargetBuffFrameTemplate")
+			local debuffPool = auraPools:GetPool("TargetDebuffFrameTemplate")
+			applyToPool(buffPool)
+			applyToPool(debuffPool)
+		end
+
+		-- Positioning: nudge the shared Buffs/Debuffs containers so rows stay intact
+		-- and all auras move together, regardless of row/column indexing.
+		local contextual = frame.TargetFrameContent and frame.TargetFrameContent.TargetFrameContentContextual
+		if contextual then
+			local containers = { contextual.buffs, contextual.debuffs }
+			for _, holder in ipairs(containers) do
+				if holder and holder.GetPoint then
+					if not originalAuraPositions[holder] then
+						local p, relTo, relPoint, xOfs, yOfs = holder:GetPoint(1)
+						if p then
+							originalAuraPositions[holder] = {
+								point = p,
+								relativeTo = relTo,
+								relativePoint = relPoint,
+								xOfs = xOfs or 0,
+								yOfs = yOfs or 0,
+							}
+						end
+					end
+					local orig = originalAuraPositions[holder]
+					if orig then
+						holder:ClearAllPoints()
+						holder:SetPoint(
+							orig.point or "CENTER",
+							orig.relativeTo,
+							orig.relativePoint or orig.point or "CENTER",
+							(orig.xOfs or 0) + offsetX,
+							(orig.yOfs or 0) + offsetY
+						)
+					end
+				end
+			end
+		end
+	end
+
+	function addon.ApplyUnitFrameBuffsDebuffsFor(unit)
+		applyBuffsDebuffsForUnit(unit)
+	end
+
+	function addon.ApplyAllUnitFrameBuffsDebuffs()
+		applyBuffsDebuffsForUnit("Target")
+		applyBuffsDebuffsForUnit("Focus")
+	end
+
+	-- Hook aura updates so ScooterMod re-applies offsets/sizing after Blizzard layouts
+	if _G.TargetFrame and _G.TargetFrame.UpdateAuras and _G.hooksecurefunc then
+		_G.hooksecurefunc(_G.TargetFrame, "UpdateAuras", function(self)
+			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+				addon.ApplyUnitFrameBuffsDebuffsFor("Target")
+			end
+		end)
+	end
+	if _G.FocusFrame and _G.FocusFrame.UpdateAuras and _G.hooksecurefunc then
+		_G.hooksecurefunc(_G.FocusFrame, "UpdateAuras", function(self)
+			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+				addon.ApplyUnitFrameBuffsDebuffsFor("Focus")
+			end
+		end)
+	end
+end
+
+-- Unit Frames: Overall visibility (opacity) per unit
+do
+    local function getUnitFrameFor(unit)
+        local mgr = _G.EditModeManagerFrame
+        local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+        local EMSys = _G.Enum and _G.Enum.EditModeSystem
+        if not (mgr and EMSys and mgr.GetRegisteredSystemFrame) then
+            -- Fallback for environments where Edit Mode indices aren't available
+            if unit == "Pet" then return _G.PetFrame end
+            return nil
+        end
+        local idx = nil
+        if EM then
+            idx = (unit == "Player" and EM.Player)
+                or (unit == "Target" and EM.Target)
+                or (unit == "Focus" and EM.Focus)
+                or (unit == "Pet" and EM.Pet)
+        end
+        if idx then
+            return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+        end
+        -- If no index was resolved (older builds lacking EM.Pet), try known globals
+        if unit == "Pet" then return _G.PetFrame end
+        return nil
+    end
+
+    local function applyVisibilityForUnit(unit)
+        local frame = getUnitFrameFor(unit)
+        if not frame or not frame.SetAlpha then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames[unit] = db.unitFrames[unit] or {}
+        local cfg = db.unitFrames[unit]
+
+        -- Base opacity (combat) uses the same 50–100 semantics as Cooldown Manager groups
+        local baseRaw = cfg.opacity
+        if baseRaw == nil then baseRaw = 100 end
+        local baseOpacity = ClampOpacity(baseRaw, 50)
+
+        -- Out-of-combat opacity; falls back to base when unset
+        local oocRaw = cfg.opacityOutOfCombat
+        local oocOpacity = ClampOpacity(oocRaw == nil and baseOpacity or oocRaw, 1)
+
+        -- With-target opacity; falls back to base when unset
+        local tgtRaw = cfg.opacityWithTarget
+        local tgtOpacity = ClampOpacity(tgtRaw == nil and baseOpacity or tgtRaw, 1)
+
+        local hasTarget = (UnitExists and UnitExists("target")) and true or false
+        local applied = hasTarget and tgtOpacity or (PlayerInCombat() and baseOpacity or oocOpacity)
+
+        pcall(frame.SetAlpha, frame, applied / 100)
+    end
+
+    function addon.ApplyUnitFrameVisibilityFor(unit)
+        applyVisibilityForUnit(unit)
+    end
+
+    function addon.ApplyAllUnitFrameVisibility()
+        applyVisibilityForUnit("Player")
+        applyVisibilityForUnit("Target")
+        applyVisibilityForUnit("Focus")
+        applyVisibilityForUnit("Pet")
+    end
 end
 
 -- (Reverted) No additional hooks for reapplying experimental sizing; rely on normal refresh
