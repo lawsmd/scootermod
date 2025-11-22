@@ -130,7 +130,11 @@ end
 -- styling in place to avoid right-pane flicker.
 function panel.RefreshCurrentCategory()
     local f = panel and panel.frame
-    if not f or not f:IsShown() then return end
+    if not f or not f:IsShown() then
+        panel._queuedRefresh = true
+        return
+    end
+    panel._queuedRefresh = false
     if panel._suspendRefresh then return end
     local cat = f.CurrentCategory
     if not cat or not f.CatRenderers then return end
@@ -1671,6 +1675,14 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
 end
 
 		local function ShowPanel()
+	    -- When the ScooterMod panel opens, ensure Edit Mode–driven state (notably Aura
+	    -- Frame Icon Size for Buffs) is reconciled back into AceDB before or shortly
+	    -- after we render categories. This mirrors the up-to-date behavior users see
+	    -- after switching tabs via the left navigation, without requiring a manual tab
+	    -- change just to see fresh values.
+	    if addon and addon.EditMode and addon.EditMode.RefreshSyncAndNotify then
+	        addon.EditMode.RefreshSyncAndNotify("OpenPanel")
+	    end
 	    if not panel.frame then
 	        local f = CreateFrame("Frame", "ScooterSettingsPanel", UIParent, "SettingsFrameTemplate")
 	        f:Hide(); f:SetSize(920, 724); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
@@ -1908,8 +1920,13 @@ end
         end
         C_Timer.After(0, BuildCategories)
     else
+        -- For reopening the panel, we need to handle Buffs differently to avoid a race condition
+        -- where the UI renders before the Aura backfill updates the DB.
         local cat = panel.frame.CurrentCategory
-        if cat and panel.frame.CatRenderers and panel.frame.CatRenderers[cat] and panel.frame.CatRenderers[cat].render then
+        local isBuffsTab = (cat == "buffs")
+        
+        -- For non-Buffs tabs, render immediately as before
+        if not isBuffsTab and cat and panel.frame.CatRenderers and panel.frame.CatRenderers[cat] and panel.frame.CatRenderers[cat].render then
             C_Timer.After(0, function()
                 if panel.frame and panel.frame:IsShown() then
                     local entry = panel.frame.CatRenderers[cat]
@@ -1928,8 +1945,40 @@ end
                 end
             end)
         end
+        -- For Buffs tab, skip the immediate render and let the delayed SelectCategory handle it below
     end
     panel.frame:Show()
+    
+    -- Buffs: schedule a targeted Aura Frame Icon Size backfill based on the live
+    -- AuraContainer.iconScale BEFORE we render the category, so the UI reflects
+    -- the correct Edit Mode value immediately on panel open.
+    local needsBackfill = false
+    if addon and addon.EditMode and addon.EditMode.QueueAuraIconSizeBackfill then
+        local current = panel.frame.CurrentCategory
+        if current == "buffs" then
+            needsBackfill = true
+            -- Run the backfill immediately (delay=0) before SelectCategory
+            addon.EditMode.QueueAuraIconSizeBackfill("buffs", {
+                origin = "OpenPanel",
+                delay = 0,
+                retryDelays = { 0.2, 0.5, 1.0 },
+            })
+        end
+    end
+    
+    -- Delay the SelectCategory call slightly to allow the immediate backfill to complete first.
+    -- For Buffs, this is the ONLY render on panel reopen (we skipped the immediate render above).
+    -- For non-buffs categories, use immediate timing (no change in behavior).
+    local selectDelay = needsBackfill and 0.15 or 0
+    C_Timer.After(selectDelay, function()
+        if not panel.frame or not panel.frame:IsShown() then return end
+        local current = panel.frame.CurrentCategory
+        if current and panel.SelectCategory then
+            panel.SelectCategory(current)
+        elseif panel.RefreshCurrentCategory then
+            panel.RefreshCurrentCategory()
+        end
+    end)
 end
 
 function panel:Toggle()

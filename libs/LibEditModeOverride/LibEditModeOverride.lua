@@ -67,7 +67,8 @@ lib._forceIndexBased = lib._forceIndexBased or {}
 --   - SetFrameSetting accepts raw and normalizes to index 0..N (based on step/min/max)
 --   - GetFrameSetting converts the stored index back to raw for callers
 -- Notes for ScooterMod maintainers:
---   - We only force index mode for Cooldown Viewer Opacity (compat flag below) and Icon Size (allowlist)
+--   - We only force index mode for Cooldown Viewer Opacity (compat flag below) and Icon Size (allowlist),
+--     plus Aura Frame Icon Size where the client behaves like an index slider.
 --   - Do not re-convert in addon code; rely on this function + overrides to perform all translations
 local function SliderIsIndexBased(frame, setting, restrictions)
   if not restrictions or restrictions.type ~= Enum.EditModeSettingDisplayType.Slider or not restrictions.stepSize then
@@ -81,8 +82,14 @@ local function SliderIsIndexBased(frame, setting, restrictions)
   if sys and lib._forceIndexBased and lib._forceIndexBased[sys] and lib._forceIndexBased[sys][setting] then
     return true
   end
-  -- Explicit allowlist: Only treat Cooldown Viewer Icon Size as index-based for our use case
+  -- Explicit allowlist: Cooldown Viewer Icon Size is index-based for our use case
   if frame and frame.system == Enum.EditModeSystem.CooldownViewer and setting == Enum.EditModeCooldownViewerSetting.IconSize then
+    return true
+  end
+  -- Aura Frame Icon Size: treat as index-based when it presents a 50–200, step-10 slider.
+  if frame and frame.system == Enum.EditModeSystem.AuraFrame
+     and restrictions.type == Enum.EditModeSettingDisplayType.Slider
+     and restrictions.minValue == 50 and restrictions.maxValue == 200 and restrictions.stepSize == 10 then
     return true
   end
   return false

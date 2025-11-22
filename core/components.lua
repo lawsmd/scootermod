@@ -1260,6 +1260,57 @@ function addon:RegisterComponent(component)
     self.Components[component.id] = component
 end
 
+-- Public helper: apply Buffs/Debuffs aura icon sizing to all aura buttons for a given component
+function addon.ApplyAuraFrameVisualsFor(component)
+    if not component or (component.id ~= "buffs" and component.id ~= "debuffs") then return end
+
+    local frameName = component.frameName
+    if not frameName or type(frameName) ~= "string" then return end
+
+    local frame = _G[frameName]
+    if not frame or not frame.AuraContainer then return end
+
+    local db = component.db or {}
+    local settings = component.settings or {}
+
+    local width = db.iconWidth or (settings.iconWidth and settings.iconWidth.default)
+    local height = db.iconHeight or (settings.iconHeight and settings.iconHeight.default)
+
+    width = tonumber(width)
+    height = tonumber(height)
+    if not width or not height then return end
+
+    local auraFrames = frame.auraFrames
+    if type(auraFrames) ~= "table" then return end
+
+    for _, aura in ipairs(auraFrames) do
+        local icon = aura and aura.Icon
+        if icon and icon.SetSize then
+            icon:SetSize(width, height)
+        end
+    end
+end
+
+local function ApplyAuraFrameStyling(self)
+    local frame = _G[self.frameName]
+    if not frame or not frame.AuraContainer then return end
+
+    -- Ensure we stay up to date when Blizzard rebuilds aura buttons
+    if hooksecurefunc and not frame._ScooterAuraHooked then
+        local componentId = self.id
+        hooksecurefunc(frame, "UpdateAuraButtons", function()
+            if addon and addon.Components and addon.Components[componentId] and addon.ApplyAuraFrameVisualsFor then
+                addon.ApplyAuraFrameVisualsFor(addon.Components[componentId])
+            end
+        end)
+        frame._ScooterAuraHooked = true
+    end
+
+    if addon and addon.ApplyAuraFrameVisualsFor then
+        addon.ApplyAuraFrameVisualsFor(self)
+    end
+end
+
 function addon:InitializeComponents()
     local essentialCooldowns = Component:New({
         id = "essentialCooldowns",
@@ -1530,14 +1581,29 @@ function addon:InitializeComponents()
                 values = { left = "Left", right = "Right" },
                 section = "Positioning", order = 3, dynamicValues = true,
             }},
+            iconPadding = { type = "editmode", default = 10, ui = {
+                label = "Icon Padding", widget = "slider",
+                min = 5, max = 15, step = 1,
+                section = "Positioning", order = 4,
+            }},
+            -- Sizing (Edit Mode-backed scale + addon-only width/height)
+            iconSize = { type = "editmode", default = 100, ui = {
+                label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1,
+            }},
+            iconWidth = { type = "addon", default = 30, ui = {
+                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2,
+            }},
+            iconHeight = { type = "addon", default = 30, ui = {
+                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3,
+            }},
             -- Marker: enable empty Border section
             supportsEmptyBorderSection = true,
             -- Marker: enable Text section (Stacks / Duration tabs) in settings UI
             supportsText = { type = "addon", default = true },
         },
-        -- Markers for empty sections that will be filled in later
-        supportsEmptySizingSection = true,
+        -- Marker: Visibility section will be filled in later
         supportsEmptyVisibilitySection = true,
+        ApplyStyling = ApplyAuraFrameStyling,
     })
     self:RegisterComponent(buffs)
 
@@ -1562,11 +1628,18 @@ function addon:InitializeComponents()
                 values = { left = "Left", right = "Right" },
                 section = "Positioning", order = 3, dynamicValues = true,
             }},
+            iconPadding = { type = "editmode", default = 10, ui = {
+                label = "Icon Padding", widget = "slider",
+                min = 5, max = 15, step = 1,
+                section = "Positioning", order = 4,
+            }},
             supportsEmptyBorderSection = true,
             supportsText = { type = "addon", default = true },
         },
+        -- Marker: Sizing/Visibility sections will be filled in later
         supportsEmptySizingSection = true,
         supportsEmptyVisibilitySection = true,
+        ApplyStyling = ApplyAuraFrameStyling,
     })
     self:RegisterComponent(debuffs)
 
@@ -3743,7 +3816,8 @@ do
 				elseif barKind == "health" and addon.GetDefaultHealthColorRGB then
                     local hr, hg, hb = addon.GetDefaultHealthColorRGB()
                     r, g, b, a = hr or 0, hg or 1, hb or 0, 1
-                elseif barKind == "power" and addon.GetPowerColorRGB then
+                elseif (barKind == "power" or barKind == "altpower") and addon.GetPowerColorRGB then
+                    -- Power and Alternate Power bars both use the player's power color for Default.
                     local pr, pg, pb = addon.GetPowerColorRGB(unitForPower or unitForClass or "player")
                     r, g, b, a = pr or 1, pg or 1, pb or 1, 1
                 else
@@ -4207,6 +4281,181 @@ do
                     local altBgColorMode = acfg.backgroundColorMode or "default"
                     local altBgOpacity = acfg.backgroundOpacity or 50
                     applyBackgroundToBar(apb, altBgTexKey, altBgColorMode, acfg.backgroundTint, altBgOpacity, unit, "altpower")
+
+                    -- Custom border (shares global Use Custom Borders; Alt Power has its own style/tint/thickness/inset)
+                    do
+                        -- Global unit-frame switch; borders only draw when this is enabled.
+                        local useCustomBorders = not not cfg.useCustomBorders
+                        if useCustomBorders then
+                            -- Style resolution: prefer Alternate Power–specific, then Power, then Health.
+                            local styleKey = acfg.borderStyle
+                                or cfg.powerBarBorderStyle
+                                or cfg.healthBarBorderStyle
+
+                            -- Tint enable: prefer Alternate Power–specific, then Power, then Health.
+                            local tintEnabled
+                            if acfg.borderTintEnable ~= nil then
+                                tintEnabled = not not acfg.borderTintEnable
+                            elseif cfg.powerBarBorderTintEnable ~= nil then
+                                tintEnabled = not not cfg.powerBarBorderTintEnable
+                            else
+                                tintEnabled = not not cfg.healthBarBorderTintEnable
+                            end
+
+                            -- Tint color: prefer Alternate Power–specific, then Power, then Health.
+                            local baseTint = type(acfg.borderTintColor) == "table" and acfg.borderTintColor
+                                or cfg.powerBarBorderTintColor
+                                or cfg.healthBarBorderTintColor
+                            local tintColor = type(baseTint) == "table" and {
+                                baseTint[1] or 1,
+                                baseTint[2] or 1,
+                                baseTint[3] or 1,
+                                baseTint[4] or 1,
+                            } or { 1, 1, 1, 1 }
+
+                            -- Thickness / inset: prefer Alternate Power–specific, then Power, then Health.
+                            local thickness = tonumber(acfg.borderThickness)
+                                or tonumber(cfg.powerBarBorderThickness)
+                                or tonumber(cfg.healthBarBorderThickness)
+                                or 1
+                            if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+
+                            local inset
+                            if acfg.borderInset ~= nil then
+                                inset = tonumber(acfg.borderInset) or 0
+                            elseif cfg.powerBarBorderInset ~= nil then
+                                inset = tonumber(cfg.powerBarBorderInset) or 0
+                            else
+                                inset = tonumber(cfg.healthBarBorderInset) or 0
+                            end
+
+                            if styleKey == "none" or styleKey == nil then
+                                if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(apb) end
+                                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(apb) end
+                            else
+                                local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+                                local color
+                                if tintEnabled then
+                                    color = tintColor
+                                else
+                                    if styleDef then
+                                        color = { 1, 1, 1, 1 }
+                                    else
+                                        color = { 0, 0, 0, 1 }
+                                    end
+                                end
+
+                                local handled = false
+                                if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+                                    if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(apb) end
+                                    handled = addon.BarBorders.ApplyToBarFrame(apb, styleKey, {
+                                        color = color,
+                                        thickness = thickness,
+                                        levelOffset = 1,
+                                        containerParent = (apb and apb:GetParent()) or nil,
+                                        inset = inset,
+                                    })
+                                end
+
+                                if not handled then
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(apb) end
+                                    if addon.Borders and addon.Borders.ApplySquare then
+                                        local sqColor = tintEnabled and tintColor or { 0, 0, 0, 1 }
+                                        local baseY = (thickness <= 1) and 0 or 1
+                                        local baseX = 1
+                                        local expandY = baseY - inset
+                                        local expandX = baseX - inset
+                                        if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                        if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                        addon.Borders.ApplySquare(apb, {
+                                            size = thickness,
+                                            color = sqColor,
+                                            layer = "OVERLAY",
+                                            layerSublevel = 3,
+                                            expandX = expandX,
+                                            expandY = expandY,
+                                        })
+                                    end
+                                end
+                            end
+                        else
+                            -- Global custom borders disabled: clear any previous Alternate Power border.
+                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(apb) end
+                            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(apb) end
+                        end
+                    end
+
+                    -- % Text and Value Text (AlternatePowerBar.LeftText / RightText)
+                    do
+                        local leftFS = apb.LeftText
+                        local rightFS = apb.RightText
+
+                        -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
+                        local percentHidden = (acfg.percentHidden == true)
+                        local valueHidden = (acfg.valueHidden == true)
+
+                        if leftFS and leftFS.SetShown then
+                            pcall(leftFS.SetShown, leftFS, (not altHidden) and (not percentHidden))
+                        end
+                        if rightFS and rightFS.SetShown then
+                            pcall(rightFS.SetShown, rightFS, (not altHidden) and (not valueHidden))
+                        end
+
+                        -- Styling (font/size/style/color/offset) using stable baseline anchors
+                        addon._ufAltPowerTextBaselines = addon._ufAltPowerTextBaselines or {}
+                        local function ensureBaseline(fs, key)
+                            addon._ufAltPowerTextBaselines[key] = addon._ufAltPowerTextBaselines[key] or {}
+                            local b = addon._ufAltPowerTextBaselines[key]
+                            if b.point == nil then
+                                if fs and fs.GetPoint then
+                                    local p, relTo, rp, x, y = fs:GetPoint(1)
+                                    b.point = p or "CENTER"
+                                    b.relTo = relTo or (fs.GetParent and fs:GetParent()) or apb
+                                    b.relPoint = rp or b.point
+                                    b.x = tonumber(x) or 0
+                                    b.y = tonumber(y) or 0
+                                else
+                                    b.point, b.relTo, b.relPoint, b.x, b.y =
+                                        "CENTER", (fs and fs.GetParent and fs:GetParent()) or apb, "CENTER", 0, 0
+                                end
+                            end
+                            return b
+                        end
+
+                        local function applyAltTextStyle(fs, styleCfg, baselineKey)
+                            if not fs or not styleCfg then return end
+                            local face = addon.ResolveFontFace
+                                and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
+                                or (select(1, _G.GameFontNormal:GetFont()))
+                            local size = tonumber(styleCfg.size) or 14
+                            local outline = tostring(styleCfg.style or "OUTLINE")
+                            if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+                            local c = styleCfg.color or { 1, 1, 1, 1 }
+                            if fs.SetTextColor then
+                                pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+                            end
+                            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+                            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+                            if fs.ClearAllPoints and fs.SetPoint then
+                                local b = ensureBaseline(fs, baselineKey)
+                                fs:ClearAllPoints()
+                                fs:SetPoint(
+                                    b.point or "CENTER",
+                                    b.relTo or (fs.GetParent and fs:GetParent()) or apb,
+                                    b.relPoint or b.point or "CENTER",
+                                    (b.x or 0) + ox,
+                                    (b.y or 0) + oy
+                                )
+                            end
+                        end
+
+                        if leftFS then
+                            applyAltTextStyle(leftFS, acfg.textPercent or {}, "Player:altpower-left")
+                        end
+                        if rightFS then
+                            applyAltTextStyle(rightFS, acfg.textValue or {}, "Player:altpower-right")
+                        end
+                    end
 
                     -- Width / height scaling (simple frame SetWidth/SetHeight based on %),
                     -- plus additive X/Y offsets applied from the captured baseline points.
@@ -5892,12 +6141,18 @@ do
 				-- Ignore ScooterMod's own internal texture writes
 				if self._ScootUFInternalTextureWrite then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
+					-- Mark this as a visual-only refresh so we can safely reapply
+					-- textures/colors in combat without re-anchoring secure frames.
+					self._ScootCastVisualOnly = true
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
+					self._ScootCastVisualOnly = nil
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
 				if addon and addon.ApplyUnitFrameCastBarFor then
+					self._ScootCastVisualOnly = true
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
+					self._ScootCastVisualOnly = nil
 				end
 			end)
 		end
@@ -5999,91 +6254,95 @@ do
 		local iconDisabled = cfg.iconDisabled == true
 
 		local function apply()
-			if InCombatLockdown and InCombatLockdown() then
-				return
-			end
-			if not (frame.ClearAllPoints and frame.SetPoint) then
-				return
-			end
+			-- When we are being invoked from a SetStatusBarTexture/SetStatusBarColor hook
+			-- during combat, treat this as a "visual-only" refresh: apply textures/colors
+			-- but avoid re-anchoring secure frames or changing layout, which can taint.
+			local inCombat = InCombatLockdown and InCombatLockdown()
+			local visualOnly = inCombat and frame._ScootCastVisualOnly
 
-			-- Apply width scaling relative to original width (if available)
-			if origWidth and frame.SetWidth then
-				local scale = widthPct / 100.0
-				pcall(frame.SetWidth, frame, origWidth * scale)
-			end
-
-			-- Anchor behaviour:
-			-- - Player: only override anchors when locked to the Player frame so Edit Mode retains
-			--   full control when the bar is unlocked and freely positioned.
-			-- - Target/Focus: always re-anchor relative to the captured baseline plus offsets.
-			if isPlayer then
-				if isLockedToPlayerFrame then
-					frame:ClearAllPoints()
-					frame:SetPoint(
-						orig.point,
-						orig.relativeTo,
-						orig.relativePoint,
-						(orig.xOfs or 0) + offsetX,
-						(orig.yOfs or 0) + offsetY
-					)
-				end
-			else
-				frame:ClearAllPoints()
-				frame:SetPoint(
-					orig.point,
-					orig.relativeTo,
-					orig.relativePoint,
-					(orig.xOfs or 0) + offsetX,
-					(orig.yOfs or 0) + offsetY
-				)
-			end
-
-			-- Apply icon visibility, size, and padding before bar styling
-			local icon = frame.Icon
-			if icon then
-				-- Visibility: when disabled, hide the icon via alpha and clear any
-				-- container-based borders so only the bar remains.
-				if iconDisabled then
-					if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
-					if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
-						addon.Borders.HideAll(icon.ScooterIconBorderContainer)
-					end
-				else
-					if icon.SetAlpha then pcall(icon.SetAlpha, icon, 1) end
-
-					local baseSize = originalIconSizes[icon]
-					if iconWidth or iconHeight then
-						local w = tonumber(iconWidth) or (baseSize and baseSize.width) or (icon.GetWidth and icon:GetWidth()) or 16
-						local h = tonumber(iconHeight) or (baseSize and baseSize.height) or (icon.GetHeight and icon:GetHeight()) or 16
-						-- Clamp to a reasonable range for cast bar icons
-						w = math.max(8, math.min(64, w))
-						h = math.max(8, math.min(64, h))
-						pcall(icon.SetSize, icon, w, h)
-						-- Ensure contained texture follows the resized frame
-						if icon.Icon and icon.Icon.SetAllPoints then
-							icon.Icon:SetAllPoints(icon)
-						end
-						if icon.IconMask and icon.IconMask.SetAllPoints then
-							icon.IconMask:SetAllPoints(icon)
-						end
+			-- Layout (position/size/icon) is skipped for in-combat visual-only refreshes.
+			if not visualOnly then
+				if frame.ClearAllPoints and frame.SetPoint then
+					-- Apply width scaling relative to original width (if available)
+					if origWidth and frame.SetWidth then
+						local scale = widthPct / 100.0
+						pcall(frame.SetWidth, frame, origWidth * scale)
 					end
 
-					-- Icon/Bar padding: adjust icon X offset relative to its original anchor
-					local baseAnchor = originalIconAnchors[icon]
-					if baseAnchor and icon.ClearAllPoints and icon.SetPoint then
-						-- Positive padding increases the gap between icon (left) and bar by moving icon further left.
-						local pad = tonumber(iconBarPadding) or 0
-						local baseX = baseAnchor.xOfs or 0
-						local baseY = baseAnchor.yOfs or 0
-						local newX = baseX - pad
-						icon:ClearAllPoints()
-						icon:SetPoint(
-							baseAnchor.point or "LEFT",
-							baseAnchor.relativeTo or frame,
-							baseAnchor.relativePoint or baseAnchor.point or "LEFT",
-							newX,
-							baseY
+					-- Anchor behaviour:
+					-- - Player: only override anchors when locked to the Player frame so Edit Mode retains
+					--   full control when the bar is unlocked and freely positioned.
+					-- - Target/Focus: always re-anchor relative to the captured baseline plus offsets.
+					if isPlayer then
+						if isLockedToPlayerFrame then
+							frame:ClearAllPoints()
+							frame:SetPoint(
+								orig.point,
+								orig.relativeTo,
+								orig.relativePoint,
+								(orig.xOfs or 0) + offsetX,
+								(orig.yOfs or 0) + offsetY
+							)
+						end
+					else
+						frame:ClearAllPoints()
+						frame:SetPoint(
+							orig.point,
+							orig.relativeTo,
+							orig.relativePoint,
+							(orig.xOfs or 0) + offsetX,
+							(orig.yOfs or 0) + offsetY
 						)
+					end
+
+					-- Apply icon visibility, size, and padding before bar styling
+					local icon = frame.Icon
+					if icon then
+						-- Visibility: when disabled, hide the icon via alpha and clear any
+						-- container-based borders so only the bar remains.
+						if iconDisabled then
+							if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
+							if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
+								addon.Borders.HideAll(icon.ScooterIconBorderContainer)
+							end
+						else
+							if icon.SetAlpha then pcall(icon.SetAlpha, icon, 1) end
+
+							local baseSize = originalIconSizes[icon]
+							if iconWidth or iconHeight then
+								local w = tonumber(iconWidth) or (baseSize and baseSize.width) or (icon.GetWidth and icon:GetWidth()) or 16
+								local h = tonumber(iconHeight) or (baseSize and baseSize.height) or (icon.GetHeight and icon:GetHeight()) or 16
+								-- Clamp to a reasonable range for cast bar icons
+								w = math.max(8, math.min(64, w))
+								h = math.max(8, math.min(64, h))
+								pcall(icon.SetSize, icon, w, h)
+								-- Ensure contained texture follows the resized frame
+								if icon.Icon and icon.Icon.SetAllPoints then
+									icon.Icon:SetAllPoints(icon)
+								end
+								if icon.IconMask and icon.IconMask.SetAllPoints then
+									icon.IconMask:SetAllPoints(icon)
+								end
+							end
+
+							-- Icon/Bar padding: adjust icon X offset relative to its original anchor
+							local baseAnchor = originalIconAnchors[icon]
+							if baseAnchor and icon.ClearAllPoints and icon.SetPoint then
+								-- Positive padding increases the gap between icon (left) and bar by moving icon further left.
+								local pad = tonumber(iconBarPadding) or 0
+								local baseX = baseAnchor.xOfs or 0
+								local baseY = baseAnchor.yOfs or 0
+								local newX = baseX - pad
+								icon:ClearAllPoints()
+								icon:SetPoint(
+									baseAnchor.point or "LEFT",
+									baseAnchor.relativeTo or frame,
+									baseAnchor.relativePoint or baseAnchor.point or "LEFT",
+									newX,
+									baseY
+								)
+							end
+						end
 					end
 				end
 			end
@@ -6498,7 +6757,12 @@ do
 			end
 		end
 
-		if InCombatLockdown and InCombatLockdown() then
+		local inCombat = InCombatLockdown and InCombatLockdown()
+		-- For normal styling passes triggered by profile changes or /reload, we avoid
+		-- touching secure cast bar anchors during combat and defer until combat ends.
+		-- For visual-only refreshes triggered from SetStatusBarTexture/Color hooks,
+		-- we allow apply() to run in combat so custom textures/colors remain active.
+		if inCombat and not frame._ScootCastVisualOnly then
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()
 					if not (InCombatLockdown and InCombatLockdown()) then

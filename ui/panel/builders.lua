@@ -4733,51 +4733,46 @@ local function createUFRenderer(componentId, title)
 							y)
 					end
 
-					-- PageD: Border (matches Power Bar border options)
+					-- PageD: Border (mirrors Power Bar border options; gated by global Use Custom Border)
 					do
 						local function applyNow()
 							if addon and addon.ApplyStyles then addon:ApplyStyles() end
 						end
 						local y = { y = -50 }
 
+						-- Global Unit Frame "Use Custom Borders" toggle (shares with Health/Power bars)
 						local function isEnabled()
-							local t = ensureUFDB() or {}
-							return not not t.borderEnable
+							local db = addon and addon.db and addon.db.profile
+							if not db then return false end
+							db.unitFrames = db.unitFrames or {}
+							local uf = db.unitFrames.Player or {}
+							return not not uf.useCustomBorders
 						end
 
-						-- Use Custom Border (Alternate Power Bar)
-						do
-							local setting = CreateLocalSetting("Use Custom Border", "boolean",
-								function() local t = ensureUFDB() or {}; return (t.borderEnable == true) end,
-								function(v) local t = ensureUFDB(); if not t then return end; t.borderEnable = (v == true); applyNow() end,
-								false)
-							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Custom Border", setting = setting, options = {} })
-							local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
-							row.GetElementData = function() return initCb end
-							row:SetPoint("TOPLEFT", 4, y.y)
-							row:SetPoint("TOPRIGHT", -16, y.y)
-							initCb:InitFrame(row)
-							if panel and panel.ApplyRobotoWhite then
-								if row.Text then panel.ApplyRobotoWhite(row.Text) end
-								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-							end
-							y.y = y.y - 34
-						end
-
-						-- Border Style
+						-- Border Style (same option list as Power Bar)
 						do
 							local function opts()
 								local c = Settings.CreateControlTextContainer()
-								c:Add("default", "Default")
-								c:Add("square", "Square")
+								c:Add("none", "None")
+								if addon and addon.BuildBarBorderOptionsContainer then
+									local base = addon.BuildBarBorderOptionsContainer()
+									if type(base) == "table" then
+										for _, entry in ipairs(base) do
+											if entry and entry.value and entry.text then
+												c:Add(entry.value, entry.text)
+											end
+										end
+									end
+								else
+									c:Add("square", "Default (Square)")
+								end
 								return c:GetData()
 							end
 							local function getStyle()
-								local t = ensureUFDB() or {}; return t.borderStyle or "default" end
+								local t = ensureUFDB() or {}; return t.borderStyle or "none" end
 							local function setStyle(v)
 								local t = ensureUFDB(); if not t then return end
-								t.borderStyle = v or "default"
+								t.borderStyle = v or "none"
 								applyNow()
 							end
 							local setting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
@@ -4791,7 +4786,9 @@ local function createUFRenderer(componentId, title)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
 							local enabled = isEnabled()
 							if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
-							if lbl and lbl.SetTextColor then lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1) end
+							if lbl and lbl.SetTextColor then
+								if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+							end
 							y.y = y.y - 34
 						end
 

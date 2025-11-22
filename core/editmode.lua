@@ -462,10 +462,23 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             end
         end
     elseif settingId == "iconPadding" then
-        -- WRITING to the library requires the RAW value.
-        editModeValue = tonumber(dbValue) or 2
+        -- WRITING to the library requires the RAW value. Ranges:
+        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–10
+        --  - Aura Frame (Buffs/Debuffs): 5–15
+        local pad = tonumber(dbValue)
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        if sysEnum and frame and frame.system == sysEnum.AuraFrame then
+            if not pad then pad = 10 end
+            if pad < 5 then pad = 5 elseif pad > 15 then pad = 15 end
+        else
+            if not pad then pad = 2 end
+            if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+        end
+        editModeValue = pad
     elseif settingId == "iconSize" then
-        -- Resolve id for non-CDM systems and send raw percent (50..200), snapped to 10
+        -- Resolve id for non-CDM systems and send raw percent (50–200), snapped to 10.
+        -- LibEditModeOverride handles index-vs-raw conversion for systems where Icon Size
+        -- behaves like an index slider (e.g., Cooldown Viewer, Aura Frame).
         setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_size") or setting.settingId
         local desiredRaw = tonumber(dbValue) or 100
         if desiredRaw < 50 then desiredRaw = 50 end
@@ -708,10 +721,19 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
             return true
         elseif settingId == "iconPadding" then
-            -- Write raw 2..10 (library handles raw for this slider), then refresh and apply
+            -- Write raw padding value, clamped per system:
+            --  - Cooldown Viewer / Action Bars / Tracked Bars: 2..10
+            --  - Aura Frame (Buffs/Debuffs): 5..15
             setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_padding") or setting.settingId
-            local pad = tonumber(component.db.iconPadding) or 2
-            if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+            local pad = tonumber(component.db.iconPadding)
+            local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+            if sysEnum and frame and frame.system == sysEnum.AuraFrame then
+                if not pad then pad = 10 end
+                if pad < 5 then pad = 5 elseif pad > 15 then pad = 15 end
+            else
+                if not pad then pad = 2 end
+                if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+            end
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
             if not (component and component.id == "stanceBar") then
                 if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
@@ -786,6 +808,177 @@ end
 
 
 --[[----------------------------------------------------------------------------
+    Aura Frame Icon Size Late Backfill
+----------------------------------------------------------------------------]]--
+local function _AuraBackfillDebugEnabled()
+    return addon and addon._dbgAuraIconSize
+end
+
+local function _AuraBackfillLog(fmt, ...)
+    if not _AuraBackfillDebugEnabled() then return end
+    addon.EditMode._auraIconSizeLog = addon.EditMode._auraIconSizeLog or {}
+    local prefix = ""
+    if type(GetTime) == "function" then
+        prefix = string.format("[%.3f] ", GetTime())
+    end
+    local message = fmt and string.format(fmt, ...) or ""
+    table.insert(addon.EditMode._auraIconSizeLog, prefix .. message)
+end
+
+local _pendingAuraIconSizeBackfill = {}
+
+local function _ClampAuraIconSizePercent(pct)
+    if not pct then return nil end
+    pct = tonumber(pct)
+    if not pct then return nil end
+    pct = math.floor(pct + 0.5)
+    if pct < 50 then pct = 50 elseif pct > 200 then pct = 200 end
+    local step = 10
+    local snapped = step * math.floor((pct / step) + 0.5)
+    if snapped < 50 then snapped = 50 elseif snapped > 200 then snapped = 200 end
+    return snapped
+end
+
+local function _ReadAuraFrameIconPercent(frame)
+    if not frame or not frame.AuraContainer then return nil end
+    local scale = tonumber(frame.AuraContainer.iconScale)
+    if not scale then return nil end
+    return _ClampAuraIconSizePercent(scale * 100)
+end
+
+function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
+    if componentId ~= "buffs" then return end
+    if not C_Timer or not C_Timer.After then return end
+    if _pendingAuraIconSizeBackfill[componentId] then return end
+    local origin = opts and opts.origin
+    local attempt = (opts and opts.attempt) or 0
+    local retryDelays = opts and opts.retryDelays
+    if type(retryDelays) ~= "table" then
+        retryDelays = nil
+    end
+
+    local delay = opts and tonumber(opts.delay) or 1.2
+    if delay < 0 then delay = 0 end
+
+    _pendingAuraIconSizeBackfill[componentId] = true
+
+    if _AuraBackfillDebugEnabled() and attempt == 0 then
+        addon.EditMode._auraIconSizeLog = {}
+    end
+    _AuraBackfillLog("QueueAuraIconSizeBackfill start component=%s origin=%s attempt=%d delay=%.2fs", tostring(componentId), tostring(origin), attempt, delay)
+
+    C_Timer.After(delay, function()
+        _pendingAuraIconSizeBackfill[componentId] = nil
+        if not addon or not addon.Components then return end
+        _AuraBackfillLog("Timer fired component=%s origin=%s attempt=%d", tostring(componentId), tostring(origin), attempt)
+
+        local updated = false
+
+        local function scheduleRetry(nextAttempt, reason, overrideDelay)
+            if not nextAttempt then return false end
+            local nextDelay = overrideDelay
+            if not nextDelay and retryDelays and retryDelays[nextAttempt] then
+                nextDelay = retryDelays[nextAttempt]
+            end
+            if not nextDelay then return false end
+            if nextDelay < 0 then nextDelay = 0 end
+            _AuraBackfillLog("Scheduling retry attempt=%d in %.2fs (reason=%s)", nextAttempt, nextDelay, tostring(reason or "retry"))
+            addon.EditMode.QueueAuraIconSizeBackfill(componentId, {
+                delay = nextDelay,
+                origin = reason or origin or "retry",
+                attempt = nextAttempt,
+                retryDelays = retryDelays,
+            })
+            return true
+        end
+
+        local function refreshPanelIfVisible()
+            local panel = addon and addon.SettingsPanel
+            if not panel then return end
+            local frame = panel.frame
+            if not frame or not frame:IsShown() then return end
+            if frame.CurrentCategory ~= componentId then return end
+
+            -- Force-clear CurrentCategory to ensure SelectCategory treats this as a fresh selection,
+            -- bypassing any potential same-category optimizations.
+            frame.CurrentCategory = nil
+
+            -- Invalidate the right pane so the next render rebuilds controls with fresh bindings.
+            local rightPane = panel.RightPane
+            if not (rightPane and rightPane.Invalidate) and frame.RightPane and frame.RightPane.Invalidate then
+                rightPane = frame.RightPane
+            end
+            if rightPane and rightPane.Invalidate then
+                rightPane:Invalidate()
+            end
+
+            -- Use SelectCategory to force a full re-bind of settings controls, mirroring the "tab switch"
+            -- behavior that reliably updates stale sliders on panel open.
+            if panel.SelectCategory then
+                panel.SelectCategory(componentId)
+            elseif panel.RefreshCurrentCategoryDeferred then
+                panel.RefreshCurrentCategoryDeferred()
+            end
+        end
+
+        if addon.EditMode and addon.EditMode._syncingEM then
+            _AuraBackfillLog("Still syncing with Edit Mode; scheduling retry")
+            local nextAttempt = attempt + 1
+            local guardOrigin = (origin and (tostring(origin) .. ":guard")) or "retry_guard"
+            if not scheduleRetry(nextAttempt, guardOrigin) then
+                scheduleRetry(nextAttempt, guardOrigin, 0.2)
+            end
+            return
+        end
+
+        local component = addon.Components[componentId]
+        if not component or not component.db then return end
+
+        if addon.EditMode and addon.EditMode.SyncEditModeSettingToComponent then
+            local before = component.db.iconSize
+            local changed = addon.EditMode.SyncEditModeSettingToComponent(component, "iconSize")
+            _AuraBackfillLog("SyncEditModeSettingToComponent returned changed=%s (db before=%s after=%s)", tostring(changed), tostring(before), tostring(component.db.iconSize))
+            if changed then
+                refreshPanelIfVisible()
+                if _AuraBackfillDebugEnabled() and addon.DebugShowWindow then
+                    addon.DebugShowWindow(string.format("Buffs Icon Size Backfill (%s)", tostring(origin or "Sync")), addon.EditMode._auraIconSizeLog)
+                end
+                return
+            end
+        end
+
+        local frame = _G[component.frameName]
+        if not frame then return end
+
+        local percent = _ReadAuraFrameIconPercent(frame)
+        _AuraBackfillLog("AuraContainer iconScale-derived percent=%s", tostring(percent))
+        if not percent then return end
+
+        if component.db.iconSize ~= percent then
+            _AuraBackfillLog("Updating component.db.iconSize from %s to %s via fallback", tostring(component.db.iconSize), tostring(percent))
+            component.db.iconSize = percent
+            updated = true
+            refreshPanelIfVisible()
+        else
+            _AuraBackfillLog("No change to component.db.iconSize (already %s)", tostring(percent))
+            refreshPanelIfVisible()
+        end
+
+        if _AuraBackfillDebugEnabled() and addon.DebugShowWindow then
+            addon.DebugShowWindow(string.format("Buffs Icon Size Backfill (%s)", tostring(origin or "Fallback")), addon.EditMode._auraIconSizeLog)
+        end
+
+        if not updated then
+            local nextAttempt = attempt + 1
+            if scheduleRetry(nextAttempt, (origin and (tostring(origin) .. ":poll")) or "retry_poll") then
+                return
+            end
+        end
+    end)
+end
+
+
+--[[----------------------------------------------------------------------------
     Back-Sync Functions (Edit Mode -> Addon DB)
 ----------------------------------------------------------------------------]]--
 
@@ -827,6 +1020,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     end
     local editModeValue = addon.EditMode.GetSetting(frame, setting.settingId)
     if editModeValue == nil then return false end
+    local initialEditModeValue = editModeValue
 
     local dbValue
     -- Convert Edit Mode value to the value addon DB expects
@@ -906,14 +1100,50 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             end
         end
     elseif settingId == "iconPadding" then
-        -- Library now returns raw value (2-10); store directly
-        dbValue = tonumber(editModeValue) or 2
+        -- Library returns raw value; clamp per system:
+        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–10
+        --  - Aura Frame (Buffs/Debuffs): 5–15
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        local v = tonumber(editModeValue)
+        if sysEnum and frame and frame.system == sysEnum.AuraFrame then
+            if not v then v = 10 end
+            if v < 5 then v = 5 elseif v > 15 then v = 15 end
+        else
+            if not v then v = 2 end
+            if v < 2 then v = 2 elseif v > 10 then v = 10 end
+        end
+        dbValue = v
     elseif settingId == "iconSize" then
-        -- Resolve id for non-CDM systems (Action Bars), then adaptive read index/raw
-        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_size") or setting.settingId
-        local raw = addon.EditMode.GetSetting(frame, setting.settingId)
-        local v = tonumber(raw) or tonumber(editModeValue) or 100
-        if v <= 15 then dbValue = (v * 10) + 50 else dbValue = v end
+        -- Resolve id for non-CDM systems and adapt index-vs-raw semantics.
+        -- LibEditModeOverride converts index-based sliders back to raw for callers when
+        -- SliderIsIndexBased returns true, so most systems will simply return 50–200 here.
+        -- For Aura Frame we additionally sample the live iconScale, which is authoritative.
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        if sysEnum and frame and frame.system == sysEnum.AuraFrame and frame.AuraContainer and frame.AuraContainer.iconScale then
+            -- Aura Frame: derive percent directly from the live iconScale on the AuraContainer.
+            local scale = tonumber(frame.AuraContainer.iconScale) or 1
+            local pct = math.floor((scale * 100) + 0.5)
+            if pct < 50 then pct = 50 elseif pct > 200 then pct = 200 end
+            dbValue = pct
+            if component.id == "buffs" and _AuraBackfillDebugEnabled() then
+                _AuraBackfillLog("Sync iconSize: AuraContainer.iconScale=%.3f -> pct=%s (editModeValue=%s)", scale or 0, tostring(pct), tostring(initialEditModeValue))
+            end
+        else
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_size") or setting.settingId
+            local raw = addon.EditMode.GetSetting(frame, setting.settingId)
+            local v = tonumber(raw) or tonumber(editModeValue) or 100
+
+            -- Heuristic: if the value looks like an index (0–15), convert to 50–200; otherwise
+            -- assume it is already a raw percent.
+            if v <= 15 then
+                dbValue = (v * 10) + 50
+            else
+                dbValue = v
+            end
+            if component.id == "buffs" and _AuraBackfillDebugEnabled() then
+                _AuraBackfillLog("Sync iconSize: LEO raw=%s editModeValue=%s -> dbValue=%s", tostring(raw), tostring(initialEditModeValue), tostring(dbValue))
+            end
+        end
     elseif settingId == "opacity" then
         -- Read RAW percent (50..100). Library returns raw even if internally stored as index.
         local resolved = ResolveSettingId(frame, "opacity")
@@ -980,6 +1210,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     end
 
     if component.db[settingId] ~= dbValue then
+        if component.id == "buffs" and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
+            _AuraBackfillLog("Sync result: updating component.db.iconSize from %s to %s", tostring(component.db[settingId]), tostring(dbValue))
+        end
         component.db[settingId] = dbValue
         if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshOrientationWidgets) == "function" then
             if settingId == "orientation" or settingId == "direction" or settingId == "iconWrap" then
@@ -987,6 +1220,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             end
         end
         return true -- Indicates a change was made
+    end
+    if component.id == "buffs" and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
+        _AuraBackfillLog("Sync result: no change (component.db.iconSize already %s)", tostring(dbValue))
     end
     return false
 end
@@ -1029,6 +1265,21 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
     if LEO and LEO.IsReady and LEO:IsReady() and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
 
     addon:SyncAllEditModeSettings()
+
+    if origin and addon.EditMode and addon.EditMode.QueueAuraIconSizeBackfill then
+        local lowerOrigin = (type(origin) == "string") and _lower(origin) or ""
+        if (lowerOrigin:find("savelayouts", 1, true) or lowerOrigin:find("editmodeexit", 1, true)) and lowerOrigin:find("pass3", 1, true) then
+            local delay = 0.35
+            if lowerOrigin:find("editmodeexit", 1, true) then
+                delay = 0.25
+            end
+            addon.EditMode.QueueAuraIconSizeBackfill("buffs", {
+                delay = delay,
+                origin = origin,
+                retryDelays = { 0.35, 0.75 },
+            })
+        end
+    end
 
     if addon and addon.Profiles and addon.Profiles.RefreshFromEditMode then
         addon.Profiles:RefreshFromEditMode(origin)

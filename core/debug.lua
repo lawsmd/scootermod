@@ -43,6 +43,13 @@ local function ShowDebugCopyWindow(title, text)
     if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
 end
 
+function addon.DebugShowWindow(title, payload)
+    if type(payload) == "table" then
+        payload = table.concat(payload, "\n")
+    end
+    ShowDebugCopyWindow(title, payload or "")
+end
+
 local function ResolveFrameByKey(key)
     key = tostring(key or ""):lower()
     local map = {

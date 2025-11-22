@@ -155,6 +155,24 @@ local function AcquireRow(self, index, template)
     return row
 end
 
+-- Clear any cached row frames so the next Display call rebuilds widgets fresh.
+function RightPane:Invalidate()
+    if not self.rows then
+        return
+    end
+    for _, row in ipairs(self.rows) do
+        if row then
+            row:Hide()
+            row:SetParent(nil)
+        end
+    end
+    if type(wipe) == "function" then
+        wipe(self.rows)
+    else
+        self.rows = {}
+    end
+end
+
 -- Render an array of Settings element initializers into the custom right pane.
 -- Each initializer is expected to expose:
 --   - .template (string) – frame template name
@@ -207,6 +225,10 @@ function RightPane:Display(initializers)
                 end
                 local row = AcquireRow(self, index, template)
                 index = index + 1
+
+                -- Force-hide the row so that Show() at the end of the loop triggers OnShow scripts.
+                -- This ensures that recycled frames (e.g. sliders) fully refresh their state/layout.
+                row:Hide()
 
                 -- Provide GetElementData/GetElementDataIndex so Blizzard mixins
                 -- such as SettingsExpandableSectionMixin can function correctly
