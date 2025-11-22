@@ -94,6 +94,26 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
         targetFrame = container
     end
 
+    -- Always clear any previous ScooterMod border textures and tint overlays for this
+    -- target before applying a new style to avoid layering multiple styles.
+    if addon.Borders and addon.Borders.HideAll then
+        addon.Borders.HideAll(targetFrame)
+    end
+    do
+        local overlays = {
+            targetFrame.ScootAtlasBorderTintOverlay,
+            targetFrame.ScootTextureBorderTintOverlay,
+        }
+        for _, ov in ipairs(overlays) do
+            if ov then
+                ov:Hide()
+                if ov.SetTexture then pcall(ov.SetTexture, ov, nil) end
+                if ov.SetAtlas then pcall(ov.SetAtlas, ov, nil) end
+                if ov.SetVertexColor then pcall(ov.SetVertexColor, ov, 1, 1, 1, 0) end
+            end
+        end
+    end
+
     local key = styleKey or "square"
 
     local styleDef = addon.IconBorders and addon.IconBorders.GetStyle(key)
@@ -1222,7 +1242,11 @@ function Component:SyncEditModeSettings()
 
     local changed = false
     for settingId, setting in pairs(self.settings) do
-        if setting.type == "editmode" then
+        -- Only process well-formed setting tables. Some components include
+        -- boolean marker flags (e.g., supportsEmptyBorderSection) in their
+        -- settings table; these are not real settings and must be ignored
+        -- by the Edit Mode sync path.
+        if type(setting) == "table" and setting.type == "editmode" then
             if addon.EditMode.SyncEditModeSettingToComponent(self, settingId) then
                 changed = true
             end
@@ -1482,6 +1506,69 @@ function addon:InitializeComponents()
         ApplyStyling = ApplyCooldownViewerStyling,
     })
     self:RegisterComponent(trackedBuffs)
+
+    -- Player Buffs/Debuffs (Aura Frame system). These are separate from the Cooldown Viewer "Tracked Buffs"
+    -- component and operate on BuffFrame / DebuffFrame directly.
+    local buffs = Component:New({
+        id = "buffs",
+        name = "Buffs",
+        frameName = "BuffFrame",
+        settings = {
+            -- Positioning (Edit Mode-backed)
+            orientation = { type = "editmode", default = "H", ui = {
+                label = "Orientation", widget = "dropdown",
+                values = { H = "Horizontal", V = "Vertical" },
+                section = "Positioning", order = 1,
+            }},
+            iconWrap = { type = "editmode", default = "down", ui = {
+                label = "Icon Wrap", widget = "dropdown",
+                values = { down = "Down", up = "Up" },
+                section = "Positioning", order = 2, dynamicValues = true,
+            }},
+            direction = { type = "editmode", default = "left", ui = {
+                label = "Icon Direction", widget = "dropdown",
+                values = { left = "Left", right = "Right" },
+                section = "Positioning", order = 3, dynamicValues = true,
+            }},
+            -- Marker: enable empty Border section
+            supportsEmptyBorderSection = true,
+            -- Marker: enable Text section (Stacks / Duration tabs) in settings UI
+            supportsText = { type = "addon", default = true },
+        },
+        -- Markers for empty sections that will be filled in later
+        supportsEmptySizingSection = true,
+        supportsEmptyVisibilitySection = true,
+    })
+    self:RegisterComponent(buffs)
+
+    local debuffs = Component:New({
+        id = "debuffs",
+        name = "Debuffs",
+        frameName = "DebuffFrame",
+        settings = {
+            -- Positioning (Edit Mode-backed)
+            orientation = { type = "editmode", default = "H", ui = {
+                label = "Orientation", widget = "dropdown",
+                values = { H = "Horizontal", V = "Vertical" },
+                section = "Positioning", order = 1,
+            }},
+            iconWrap = { type = "editmode", default = "down", ui = {
+                label = "Icon Wrap", widget = "dropdown",
+                values = { down = "Down", up = "Up" },
+                section = "Positioning", order = 2, dynamicValues = true,
+            }},
+            direction = { type = "editmode", default = "left", ui = {
+                label = "Icon Direction", widget = "dropdown",
+                values = { left = "Left", right = "Right" },
+                section = "Positioning", order = 3, dynamicValues = true,
+            }},
+            supportsEmptyBorderSection = true,
+            supportsText = { type = "addon", default = true },
+        },
+        supportsEmptySizingSection = true,
+        supportsEmptyVisibilitySection = true,
+    })
+    self:RegisterComponent(debuffs)
 
     local trackedBars = Component:New({
         id = "trackedBars",
@@ -2039,6 +2126,45 @@ do
         end
         return nil
     end
+
+    -- Helper: determine whether the current player's spec uses an Alternate Power Bar.
+    -- We intentionally key off spec IDs so the check is cheap and future‑proof.
+    -- Specs covered (per user guidance):
+    --   - Balance Druid      (specID = 102, class = DRUID)
+    --   - Shadow Priest      (specID = 258, class = PRIEST)
+    --   - Brewmaster Monk    (specID = 268, class = MONK)
+    --   - Elemental Shaman   (specID = 262, class = SHAMAN)
+    local function playerHasAlternatePowerBar()
+        if not UnitClass or not GetSpecialization or not GetSpecializationInfo then
+            return false
+        end
+        local _, classToken = UnitClass("player")
+        if not classToken then
+            return false
+        end
+        local specIndex = GetSpecialization()
+        if not specIndex then
+            return false
+        end
+        local specID = select(1, GetSpecializationInfo(specIndex))
+        if not specID then
+            return false
+        end
+
+        -- Map of class -> set of specIDs that use the global AlternatePowerBar.
+        local altSpecsByClass = {
+            DRUID  = { [102] = true },  -- Balance
+            PRIEST = { [258] = true },  -- Shadow
+            MONK   = { [268] = true },  -- Brewmaster
+            SHAMAN = { [262] = true },  -- Elemental
+        }
+
+        local classSpecs = altSpecsByClass[classToken]
+        return classSpecs and classSpecs[specID] or false
+    end
+
+    -- Expose for UI modules (builders.lua) to gate the Alternate Power Bar section.
+    addon.UnitFrames_PlayerHasAlternatePowerBar = playerHasAlternatePowerBar
 
     -- Hook UpdateTextString to reapply visibility after Blizzard's updates.
     -- IMPORTANT: Use hooksecurefunc so we don't replace the method and taint
@@ -3275,6 +3401,16 @@ do
         return findStatusBarByHints(frame, {"ManaBar", ".ManaBar", "PowerBar"}, {"Prediction"})
     end
 
+    -- Resolve the global Alternate Power Bar for the Player frame. This is a standalone
+    -- StatusBar named "AlternatePowerBar" managed by Blizzard's AlternatePowerBarBaseMixin.
+    local function resolveAlternatePowerBar()
+        local bar = _G.AlternatePowerBar
+        if bar and bar.GetObjectType and bar:GetObjectType() == "StatusBar" then
+            return bar
+        end
+        return nil
+    end
+
     -- Resolve mask textures per unit and bar type to ensure proper shaping after texture swaps
     local function resolveHealthMask(unit)
         if unit == "Player" then
@@ -4038,6 +4174,110 @@ do
                 end
             end
 
+            -- Alternate Power Bar styling (Player-only, class/spec gated)
+            if unit == "Player" and addon.UnitFrames_PlayerHasAlternatePowerBar and addon.UnitFrames_PlayerHasAlternatePowerBar() then
+                local apb = resolveAlternatePowerBar()
+                if apb then
+                    -- DB namespace for Alternate Power Bar
+                    cfg.altPowerBar = cfg.altPowerBar or {}
+                    local acfg = cfg.altPowerBar
+
+                    -- Optional hide toggle
+                    local altHidden = (acfg.hidden == true)
+                    if apb.GetAlpha and apb._ScootUFOrigAltAlpha == nil then
+                        local ok, a = pcall(apb.GetAlpha, apb)
+                        apb._ScootUFOrigAltAlpha = ok and (a or 1) or 1
+                    end
+                    if altHidden then
+                        if apb.SetAlpha then pcall(apb.SetAlpha, apb, 0) end
+                    else
+                        if apb._ScootUFOrigAltAlpha and apb.SetAlpha then
+                            pcall(apb.SetAlpha, apb, apb._ScootUFOrigAltAlpha)
+                        end
+                    end
+
+                    -- Foreground texture / color
+                    local altTexKey = acfg.texture or "default"
+                    local altColorMode = acfg.colorMode or "default"
+                    local altTint = acfg.tint
+                    applyToBar(apb, altTexKey, altColorMode, altTint, "player", "altpower", "player")
+
+                    -- Background texture / color / opacity
+                    local altBgTexKey = acfg.backgroundTexture or "default"
+                    local altBgColorMode = acfg.backgroundColorMode or "default"
+                    local altBgOpacity = acfg.backgroundOpacity or 50
+                    applyBackgroundToBar(apb, altBgTexKey, altBgColorMode, acfg.backgroundTint, altBgOpacity, unit, "altpower")
+
+                    -- Width / height scaling (simple frame SetWidth/SetHeight based on %),
+                    -- plus additive X/Y offsets applied from the captured baseline points.
+                    if not inCombat then
+                        -- Capture originals once
+                        if not apb._ScootUFOrigWidth then
+                            if apb.GetWidth then
+                                local ok, w = pcall(apb.GetWidth, apb)
+                                if ok and w then apb._ScootUFOrigWidth = w end
+                            end
+                        end
+                        if not apb._ScootUFOrigHeight then
+                            if apb.GetHeight then
+                                local ok, h = pcall(apb.GetHeight, apb)
+                                if ok and h then apb._ScootUFOrigHeight = h end
+                            end
+                        end
+                        if not apb._ScootUFOrigPoints then
+                            local pts = {}
+                            local n = (apb.GetNumPoints and apb:GetNumPoints()) or 0
+                            for i = 1, n do
+                                local p, rel, rp, x, y = apb:GetPoint(i)
+                                table.insert(pts, { p, rel, rp, x or 0, y or 0 })
+                            end
+                            apb._ScootUFOrigPoints = pts
+                        end
+
+                        local wPct = tonumber(acfg.widthPct) or 100
+                        local hPct = tonumber(acfg.heightPct) or 100
+                        local scaleX = math.max(0.5, math.min(1.5, wPct / 100))
+                        local scaleY = math.max(0.5, math.min(2.0, hPct / 100))
+
+                        -- Restore baseline first
+                        if apb._ScootUFOrigWidth and apb.SetWidth then
+                            pcall(apb.SetWidth, apb, apb._ScootUFOrigWidth)
+                        end
+                        if apb._ScootUFOrigHeight and apb.SetHeight then
+                            pcall(apb.SetHeight, apb, apb._ScootUFOrigHeight)
+                        end
+                        if apb._ScootUFOrigPoints and apb.ClearAllPoints and apb.SetPoint then
+                            pcall(apb.ClearAllPoints, apb)
+                            for _, pt in ipairs(apb._ScootUFOrigPoints) do
+                                pcall(apb.SetPoint, apb, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", pt[4] or 0, pt[5] or 0)
+                            end
+                        end
+
+                        -- Apply width/height scaling (from center)
+                        if apb._ScootUFOrigWidth and apb.SetWidth then
+                            pcall(apb.SetWidth, apb, apb._ScootUFOrigWidth * scaleX)
+                        end
+                        if apb._ScootUFOrigHeight and apb.SetHeight then
+                            pcall(apb.SetHeight, apb, apb._ScootUFOrigHeight * scaleY)
+                        end
+
+                        -- Apply positioning offsets relative to the original anchor points.
+                        local offsetX = tonumber(acfg.offsetX) or 0
+                        local offsetY = tonumber(acfg.offsetY) or 0
+                        if apb._ScootUFOrigPoints and apb.ClearAllPoints and apb.SetPoint then
+                            pcall(apb.ClearAllPoints, apb)
+                            for _, pt in ipairs(apb._ScootUFOrigPoints) do
+                                local baseX = pt[4] or 0
+                                local baseY = pt[5] or 0
+                                local newX = baseX + offsetX
+                                local newY = baseY + offsetY
+                                pcall(apb.SetPoint, apb, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", newX, newY)
+                            end
+                        end
+                    end
+                end
+            end
+
             -- Experimental: Power Bar Width scaling (texture/mask only)
             -- For Target/Focus: Only when reverse fill is enabled
             -- For Player/Pet: Always available
@@ -4474,6 +4714,19 @@ do
             if ft and ft.SetShown then
                 local hide = not not (cfg.useCustomBorders or cfg.healthBarHideBorder)
                 pcall(ft.SetShown, ft, not hide)
+            end
+        end
+        -- Hide the Player's Alternate Power frame art when Use Custom Borders is enabled.
+        -- Framestack: PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture
+        if unit == "Player" and _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
+            local altTex = _G.PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture
+            if altTex and altTex.SetShown then
+                if cfg.useCustomBorders then
+                    pcall(altTex.SetShown, altTex, false)
+                else
+                    -- Restore the Alternate Power frame art when custom borders are disabled.
+                    pcall(altTex.SetShown, altTex, true)
+                end
             end
         end
         
@@ -6368,10 +6621,11 @@ do
 							cd:SetAllPoints(auraFrame)
 						end
 
-						-- Grow border alongside the icon so it continues to frame correctly
-						local border = auraFrame.Border
-						if border and border.SetSize then
-							border:SetSize(w + 2, h + 2)
+						-- Grow Blizzard's default debuff border alongside the icon so it continues
+						-- to frame correctly when custom borders are disabled.
+						local blizzBorder = auraFrame.Border
+						if blizzBorder and blizzBorder.SetSize and (not cfg.borderEnable) then
+							blizzBorder:SetSize(w + 2, h + 2)
 						end
 					end
 
@@ -6380,6 +6634,70 @@ do
 					-- while leaving the logical layout width/height unchanged.
 					if auraFrame.SetScale then
 						auraFrame:SetScale(scaleMultiplier)
+					end
+
+					-- Custom icon border styling (Essential Cooldowns-style) when enabled
+					local icon = auraFrame.Icon
+					local blizzBorder = auraFrame.Border
+					if icon then
+						if cfg.borderEnable then
+							-- Hide Blizzard's default debuff border so it doesn't compete visually
+							if blizzBorder and blizzBorder.Hide then
+								blizzBorder:Hide()
+							elseif blizzBorder and blizzBorder.SetAlpha then
+								blizzBorder:SetAlpha(0)
+							end
+
+							local styleKey = cfg.borderStyle or "square"
+							local thickness = tonumber(cfg.borderThickness) or 1
+							if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+							local tintEnabled = cfg.borderTintEnable and type(cfg.borderTintColor) == "table"
+							local tintColor
+							if tintEnabled then
+								local c = cfg.borderTintColor or {1,1,1,1}
+								tintColor = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+
+							-- Hard reset any existing ScooterMod borders on this icon and its wrapper
+							-- before applying a new style to avoid any chance of layered leftovers.
+							if addon.Borders and addon.Borders.HideAll then
+								addon.Borders.HideAll(icon)
+								local container = icon.ScooterIconBorderContainer
+								if container then
+									addon.Borders.HideAll(container)
+								end
+							end
+
+							if addon.ApplyIconBorderStyle then
+								addon.ApplyIconBorderStyle(icon, styleKey, {
+									thickness = thickness,
+									color = tintEnabled and tintColor or nil,
+									tintEnabled = tintEnabled,
+									db = cfg,
+									thicknessKey = "borderThickness",
+									tintColorKey = "borderTintColor",
+									defaultThickness = 1,
+								})
+							end
+						else
+							-- Restore Blizzard's default border and hide any custom border textures
+							if addon.Borders and addon.Borders.HideAll then
+								addon.Borders.HideAll(icon)
+								-- Also clear any borders attached to the icon's wrapper container created
+								-- by ApplyIconBorderStyle when the icon is a Texture.
+								local container = icon.ScooterIconBorderContainer
+								if container then
+									addon.Borders.HideAll(container)
+								end
+							end
+							if blizzBorder then
+								if blizzBorder.Show then
+									blizzBorder:Show()
+								elseif blizzBorder.SetAlpha then
+									blizzBorder:SetAlpha(1)
+								end
+							end
+						end
 					end
 				end
 			end

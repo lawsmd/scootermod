@@ -1232,6 +1232,9 @@ local function BuildCategories()
 	addEntry("ufTarget", addon.SettingsPanel.RenderUFTarget())
 	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
 	addEntry("ufPet",    addon.SettingsPanel.RenderUFPet())
+    -- Buffs/Debuffs children (scaffolded)
+    addEntry("buffs",   addon.SettingsPanel.RenderBuffs())
+    addEntry("debuffs", addon.SettingsPanel.RenderDebuffs())
 	addEntry("actionBar2", addon.SettingsPanel.RenderActionBar2())
 	addEntry("actionBar3", addon.SettingsPanel.RenderActionBar3())
 	addEntry("actionBar4", addon.SettingsPanel.RenderActionBar4())
@@ -1272,6 +1275,10 @@ local function BuildCategories()
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
 			{ type = "child", key = "ufPet",    label = "Pet"    },
 		}},
+        { type = "parent", key = "Buffs/Debuffs", label = "Buffs/Debuffs", collapsible = true, children = {
+            { type = "child", key = "buffs",   label = "Buffs"   },
+            { type = "child", key = "debuffs", label = "Debuffs" },
+        }},
 	}
 
 	-- Initialize expand state defaults (Profiles always expanded)

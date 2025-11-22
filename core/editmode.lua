@@ -187,6 +187,14 @@ local function ResolveSettingId(frame, logicalKey)
             if tp == Enum.EditModeSettingDisplayType.Slider and nm:find("padding", 1, true) then
                 pick = pick or setup
             end
+        elseif lk == "icon_wrap" or lk == "wrap" then
+            if tp == Enum.EditModeSettingDisplayType.Dropdown and nm:find("wrap", 1, true) then
+                pick = pick or setup
+            end
+        elseif lk == "icon_direction" or lk == "direction" then
+            if tp == Enum.EditModeSettingDisplayType.Dropdown and nm:find("direction", 1, true) and nm:find("icon", 1, true) then
+                pick = pick or setup
+            end
         elseif lk == "hide_bar_art" then
             if tp == Enum.EditModeSettingDisplayType.Checkbox and nm:find("hide", 1, true) and nm:find("art", 1, true) then
                 pick = pick or setup
@@ -204,6 +212,16 @@ local function ResolveSettingId(frame, logicalKey)
     local id = pick and pick.setting or nil
     _resolvedSettingIdCache[sys][logicalKey] = id
     return id
+end
+
+-- Expose a safe resolver for other modules (e.g., settings panel builders) that
+-- need to query Edit Mode settings for a given component without duplicating
+-- the display-info walking logic above.
+function addon.EditMode.ResolveSettingIdForComponent(component, logicalKey)
+    if not component or not component.frameName then return nil end
+    local frame = _G[component.frameName]
+    if not frame then return nil end
+    return ResolveSettingId(frame, logicalKey)
 end
 
 -- Low-level wrappers for LibEditModeOverride
@@ -408,12 +426,40 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             editModeValue = (dbValue == "down") and 1 or 0 -- default Up => 0
         end
         setting.settingId = setting.settingId or 1
-    elseif settingId == "direction" then
-        local orientation = component.db.orientation or "H"
-        if orientation == "H" then
-            editModeValue = (dbValue == "right") and 1 or 0
+    elseif settingId == "iconWrap" then
+        -- Icon Wrap is stored as a simple 0/1 index whose semantics depend on orientation:
+        --  Horizontal: 0=Down, 1=Up
+        --  Vertical:   0=Left, 1=Right
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_wrap") or setting.settingId
+        local o = component.db.orientation or "H"
+        local v = tostring(dbValue)
+        if o == "H" then
+            editModeValue = (v == "up") and 1 or 0
         else
-            editModeValue = (dbValue == "up") and 1 or 0
+            editModeValue = (v == "right") and 1 or 0
+        end
+    elseif settingId == "direction" then
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        if sysEnum and frame.system == sysEnum.AuraFrame then
+            -- Aura Frame: direction is also a 0/1 index whose meaning depends on orientation:
+            --  Horizontal: 0=Left,  1=Right
+            --  Vertical:   0=Up,    1=Down
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_direction") or setting.settingId
+            local o = component.db.orientation or "H"
+            local v = tostring(dbValue)
+            if o == "H" then
+                editModeValue = (v == "right") and 1 or 0
+            else
+                editModeValue = (v == "down") and 1 or 0
+            end
+        else
+            -- Default mapping used by Cooldown Viewer / Action Bars (orientation-aware)
+            local orientation = component.db.orientation or "H"
+            if orientation == "H" then
+                editModeValue = (dbValue == "right") and 1 or 0
+            else
+                editModeValue = (dbValue == "up") and 1 or 0
+            end
         end
     elseif settingId == "iconPadding" then
         -- WRITING to the library requires the RAW value.
@@ -768,6 +814,12 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
             if EM and EM.Opacity then setting.settingId = EM.Opacity else setting.settingId = 5 end
         end
+    elseif settingId == "iconWrap" then
+        -- Aura Frame and any other systems that expose an "Icon Wrap" dropdown
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_wrap") or setting.settingId
+    elseif settingId == "direction" then
+        -- Aura Frame "Icon Direction" and other systems sharing the logical key
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_direction") or setting.settingId
     end
 
     if settingId == "orientation" then
@@ -794,6 +846,27 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         local iconsSetting = ResolveSettingId(frame, "num_icons")
         local v = iconsSetting and addon.EditMode.GetSetting(frame, iconsSetting) or editModeValue
         dbValue = math.max(6, math.min(12, tonumber(v) or 12))
+    elseif settingId == "iconWrap" then
+        -- Decode Icon Wrap 0/1 index back into semantic value based on orientation:
+        --  Horizontal: 0=Down, 1=Up
+        --  Vertical:   0=Left, 1=Right
+        -- NOTE: For Aura Frame we may have just performed a Scooter-initiated
+        -- orientation remap in AceDB. In that narrow case, the settings panel
+        -- marks component._skipNextAuraBackSync and we skip this readback once
+        -- to avoid clobbering the freshly remapped DB state with a stale EM snapshot.
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        if sysEnum and frame.system == sysEnum.AuraFrame and component._skipNextAuraBackSync then
+            component._skipNextAuraBackSync = nil
+            return false
+        end
+
+        local o = component.db.orientation or "H"
+        local v = tonumber(editModeValue) or 0
+        if o == "H" then
+            dbValue = (v == 1) and "up" or "down"
+        else
+            dbValue = (v == 1) and "right" or "left"
+        end
     elseif component and component.id == "microBar" and settingId == "direction" then
         -- Micro Bar: 0 = default (Right/Up), 1 = reverse (Left/Down)
         setting.settingId = setting.settingId or 1
@@ -807,11 +880,30 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         if component.db[settingId] ~= dbValue then component.db[settingId] = dbValue return true end
         return false
     elseif settingId == "direction" then
-        local orientation = component.db.orientation or "H"
-        if orientation == "H" then
-            dbValue = (editModeValue == 1) and "right" or "left"
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        if sysEnum and frame.system == sysEnum.AuraFrame then
+            if component._skipNextAuraBackSync then
+                component._skipNextAuraBackSync = nil
+                return false
+            end
+            -- Aura Frame: decode 0/1 index according to current orientation:
+            --  Horizontal: 0=Left,  1=Right
+            --  Vertical:   0=Up,    1=Down
+            local orientation = component.db.orientation or "H"
+            local v = tonumber(editModeValue) or 0
+            if orientation == "H" then
+                dbValue = (v == 1) and "right" or "left"
+            else
+                dbValue = (v == 1) and "down" or "up"
+            end
         else
-            dbValue = (editModeValue == 1) and "up" or "down"
+            -- Default mapping used by Cooldown Viewer / Action Bars (orientation-aware)
+            local orientation = component.db.orientation or "H"
+            if orientation == "H" then
+                dbValue = (editModeValue == 1) and "right" or "left"
+            else
+                dbValue = (editModeValue == 1) and "up" or "down"
+            end
         end
     elseif settingId == "iconPadding" then
         -- Library now returns raw value (2-10); store directly
@@ -889,6 +981,11 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
 
     if component.db[settingId] ~= dbValue then
         component.db[settingId] = dbValue
+        if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshOrientationWidgets) == "function" then
+            if settingId == "orientation" or settingId == "direction" or settingId == "iconWrap" then
+                addon.SettingsPanel:RefreshOrientationWidgets(component)
+            end
+        end
         return true -- Indicates a change was made
     end
     return false

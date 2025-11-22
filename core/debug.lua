@@ -59,6 +59,9 @@ local function ResolveFrameByKey(key)
         -- New debug targets
         micro = "MicroMenuContainer",
         stance = "StanceBar",
+        -- Aura Frame
+        buffs  = "BuffFrame",
+        debuffs = "DebuffFrame",
         -- Unit Frames
         player = "PlayerFrame",
         target = "TargetFrame",
@@ -96,6 +99,63 @@ local function DumpEditModeSettingsForFrame(frame, frameName)
     local lines = {}
     local function push(s) table.insert(lines, s) end
     push(string.format("Frame: %s  system=%s index=%s", tostring(frameName), tostring(frame.system), tostring(frame.systemIndex)))
+
+    -- Special Aura Frame dump for Buffs/Debuffs to troubleshoot Orientation/Wrap/Direction.
+    local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+    local dirEnum = _G.Enum and _G.Enum.AuraFrameIconDirection
+    if sysEnum and frame.system == sysEnum.AuraFrame and dirEnum then
+        local LEO = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO and LEO.IsReady and LEO:IsReady() then
+            if LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
+            local function safeGet(settingLogical)
+                local id = addon.EditMode and addon.EditMode.ResolveSettingIdForComponent and addon.EditMode.ResolveSettingIdForComponent({ frameName = frameName }, settingLogical)
+                if not id then return "id=nil", nil end
+                local ok, v = pcall(function() return LEO:GetFrameSetting(frame, id) end)
+                if not ok then return string.format("id=%s error", tostring(id)), nil end
+                return string.format("id=%s value=%s", tostring(id), tostring(v)), v
+            end
+
+            push("")
+            push("== Aura Frame Orientation/Wrap/Direction (raw) ==")
+            local orientStr, orientVal = safeGet("orientation")
+            local wrapStr,   wrapVal   = safeGet("icon_wrap")
+            local dirStr,    dirVal    = safeGet("icon_direction")
+            push("Orientation: "..orientStr)
+            push("IconWrap   : "..wrapStr)
+            push("IconDir    : "..dirStr)
+
+            local function mapDirEnum(v)
+                if v == dirEnum.Up then return "Up"
+                elseif v == dirEnum.Down then return "Down"
+                elseif v == dirEnum.Left then return "Left"
+                elseif v == dirEnum.Right then return "Right"
+                end
+                return tostring(v)
+            end
+
+            if wrapVal ~= nil or dirVal ~= nil then
+                push("")
+                push("Interpreted (AuraFrameIconDirection):")
+                push("  Wrap enum -> "..mapDirEnum(wrapVal))
+                push("  Dir  enum -> "..mapDirEnum(dirVal))
+            end
+
+            -- Also dump ScooterMod DB snapshot for Buffs component if present.
+            if addon.Components and addon.Components.buffs then
+                local c = addon.Components.buffs
+                push("")
+                push("ScooterMod Buffs DB snapshot:")
+                push("  orientation = "..tostring(c.db and c.db.orientation))
+                push("  iconWrap    = "..tostring(c.db and c.db.iconWrap))
+                push("  direction   = "..tostring(c.db and c.db.direction))
+            end
+        else
+            push("")
+            push("Aura Frame: LibEditModeOverride not ready; raw dump unavailable.")
+        end
+        push("")
+        push("-- Full Edit Mode setting list follows --")
+    end
     local entries = _G.EditModeSettingDisplayInfoManager and _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo and _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo[frame.system]
     if type(entries) ~= "table" then
         push("No setting display info available for this system.")

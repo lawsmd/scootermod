@@ -37,6 +37,205 @@ function panel:PauseScrollWheel(duration)
     end)
 end
 
+local function BuildAuraWrapOptions(component)
+    local container = Settings.CreateControlTextContainer()
+    local orientation = (component and component.db and component.db.orientation) or "H"
+    if orientation == "H" then
+        container:Add("down", "Down")
+        container:Add("up", "Up")
+    else
+        container:Add("left", "Left")
+        container:Add("right", "Right")
+    end
+    return container:GetData()
+end
+
+local function BuildAuraDirectionOptions(component)
+    local container = Settings.CreateControlTextContainer()
+    local orientation = (component and component.db and component.db.orientation) or "H"
+    if orientation == "H" then
+        container:Add("left", "Left")
+        container:Add("right", "Right")
+    else
+        container:Add("down", "Down")
+        container:Add("up", "Up")
+    end
+    return container:GetData()
+end
+
+-- Orientation-sensitive control management -----------------------------------
+panel._orientationWidgets = panel._orientationWidgets or {}
+
+local function EnsureOrientationBucket(componentId)
+    panel._orientationWidgets = panel._orientationWidgets or {}
+    if componentId and not panel._orientationWidgets[componentId] then
+        panel._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {} }
+    end
+    return componentId and panel._orientationWidgets[componentId]
+end
+
+function panel:PrepareOrientationWidgets(componentId)
+    if not componentId then return end
+    self._orientationWidgets = self._orientationWidgets or {}
+    self._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {} }
+end
+
+function panel:RegisterOrientationWidget(componentId, kind, frame)
+    if not componentId or not frame then return end
+    local bucket = EnsureOrientationBucket(componentId)
+    if not bucket then return end
+    bucket[kind] = bucket[kind] or {}
+    bucket[kind][frame] = true
+end
+
+local function EnumerateOrientationFrames(bucket, kind)
+    if not bucket then return function() end end
+    local frames = {}
+    for frame, _ in pairs(bucket[kind] or {}) do
+        table.insert(frames, frame)
+    end
+    return ipairs(frames)
+end
+
+local function GetFrameLabel(frame)
+    local lbl = frame and (frame.Text or frame.Label)
+    if not lbl and frame and frame.GetRegions then
+        local regions = { frame:GetRegions() }
+        for i = 1, #regions do
+            local r = regions[i]
+            if r and r.IsObjectType and r:IsObjectType("FontString") then
+                lbl = r
+                break
+            end
+        end
+    end
+    return lbl
+end
+
+local function ApplyColumnsLabel(component, frame)
+    if not component or not frame then return end
+    local orientation = (component.db and component.db.orientation) or "H"
+    local labelText = (orientation == "H") and "# Columns" or "# Rows"
+    local lbl = GetFrameLabel(frame)
+    if lbl and lbl.SetText then
+        lbl:SetText(labelText)
+        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+    end
+    local initializer = frame.GetElementData and frame:GetElementData()
+    if initializer and initializer.data then
+        initializer.data.name = labelText
+    end
+end
+
+local function BuildDirectionOptions(component)
+    local orientation = (component and component.db and component.db.orientation) or "H"
+    local container = Settings.CreateControlTextContainer()
+    if orientation == "H" then
+        container:Add("left", "Left")
+        container:Add("right", "Right")
+    else
+        container:Add("up", "Up")
+        container:Add("down", "Down")
+    end
+    return container:GetData()
+end
+
+local function EnsureDirectionValue(component)
+    if not component or not component.db then return end
+    local orientation = component.db.orientation or "H"
+    local dir = component.db.direction
+    if orientation == "H" then
+        if dir ~= "left" and dir ~= "right" then
+            dir = "right"
+            component.db.direction = dir
+        end
+    else
+        if dir ~= "up" and dir ~= "down" then
+            dir = "up"
+            component.db.direction = dir
+        end
+    end
+    return dir
+end
+
+local function EnsureWrapValue(component)
+    if not component or not component.db then return end
+    local orientation = component.db.orientation or "H"
+    local wrap = component.db.iconWrap
+    if orientation == "H" then
+        if wrap ~= "down" and wrap ~= "up" then
+            wrap = "down"
+            component.db.iconWrap = wrap
+        end
+    else
+        if wrap ~= "left" and wrap ~= "right" then
+            wrap = "left"
+            component.db.iconWrap = wrap
+        end
+    end
+    return wrap
+end
+
+function panel:RefreshOrientationWidgets(component)
+    local comp = component
+    if type(comp) ~= "table" then
+        comp = addon.Components and addon.Components[component]
+    end
+    if not comp or not comp.id then return end
+    local bucket = self._orientationWidgets and self._orientationWidgets[comp.id]
+    if not bucket then return end
+
+    for _, frame in EnumerateOrientationFrames(bucket, "columns") do
+        ApplyColumnsLabel(comp, frame)
+    end
+
+    for _, frame in EnumerateOrientationFrames(bucket, "direction") do
+        local initializer = frame.GetElementData and frame:GetElementData()
+        if initializer and initializer.data then
+            if comp.id == "buffs" or comp.id == "debuffs" then
+                initializer.data.options = function()
+                    return BuildAuraDirectionOptions(comp)
+                end
+            else
+                initializer.data.options = function()
+                    return BuildDirectionOptions(comp)
+                end
+            end
+        end
+        EnsureDirectionValue(comp)
+        if frame.InitDropdown then
+            frame:InitDropdown()
+        end
+        local setting = frame.GetSetting and frame:GetSetting()
+        if setting and frame.Control and frame.Control.Dropdown and frame.Control.Dropdown.SetSelectedValue then
+            local current = setting and setting.GetValue and setting:GetValue()
+            if current ~= nil then
+                frame.Control.Dropdown:SetSelectedValue(current)
+            end
+        end
+    end
+
+    for _, frame in EnumerateOrientationFrames(bucket, "iconWrap") do
+        local initializer = frame.GetElementData and frame:GetElementData()
+        if initializer and initializer.data then
+            initializer.data.options = function()
+                return BuildAuraWrapOptions(comp)
+            end
+        end
+        EnsureWrapValue(comp)
+        if frame.InitDropdown then
+            frame:InitDropdown()
+        end
+        local setting = frame.GetSetting and frame:GetSetting()
+        if setting and frame.Control and frame.Control.Dropdown and frame.Control.Dropdown.SetSelectedValue then
+            local current = setting and setting.GetValue and setting:GetValue()
+            if current ~= nil then
+                frame.Control.Dropdown:SetSelectedValue(current)
+            end
+        end
+    end
+end
+
 -- Component settings list renderers and helpers moved from ScooterSettingsPanel.lua
 
 local function createComponentRenderer(componentId)
@@ -45,13 +244,20 @@ local function createComponentRenderer(componentId)
             local component = addon.Components[componentId]
             if not component then return end
 
+            if panel and panel.PrepareOrientationWidgets then
+                panel:PrepareOrientationWidgets(component.id)
+            end
+
             local init = {}
             local sections = {}
             -- Store refresh functions for Border/Backdrop sections to call after Display completes
             local borderRefreshFunc = nil
             local backdropRefreshFunc = nil
             for settingId, setting in pairs(component.settings) do
-                if setting.ui and not setting.ui.hidden then
+				-- Some entries in component.settings are boolean markers
+				-- (e.g., supportsEmptyBorderSection). Only real setting
+				-- tables with UI metadata should be turned into controls.
+				if type(setting) == "table" and setting.ui and not setting.ui.hidden then
                     local section = setting.ui.section or "General"
                     if not sections[section] then sections[section] = {} end
                     table.insert(sections[section], {id = settingId, setting = setting})
@@ -213,7 +419,7 @@ local function createComponentRenderer(componentId)
                         end
 
                         local tabAName, tabBName
-                        if component and component.id == "trackedBuffs" then
+                        if component and (component.id == "trackedBuffs" or component.id == "buffs" or component.id == "debuffs") then
                             tabAName, tabBName = "Stacks", "Cooldown"
                         elseif component and component.id == "trackedBars" then
                             tabAName, tabBName = "Name", "Duration"
@@ -242,7 +448,7 @@ local function createComponentRenderer(componentId)
                             end
 
                             local labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY
-                            if component and component.id == "trackedBuffs" then
+                            if component and (component.id == "trackedBuffs" or component.id == "buffs" or component.id == "debuffs") then
                                 labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Stacks Font", "Stacks Font Size", "Stacks Style", "Stacks Color", "Stacks Offset X", "Stacks Offset Y"
                             elseif component and component.id == "trackedBars" then
                                 labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Name Font", "Name Font Size", "Name Style", "Name Color", "Name Offset X", "Name Offset Y"
@@ -864,7 +1070,11 @@ local function createComponentRenderer(componentId)
                         return panel:IsSectionExpanded(component.id, "Style")
                     end)
                     table.insert(init, initializer)
-                elseif (sections[sectionName] and #sections[sectionName] > 0) or (sectionName == "Border" and component and component.settings and component.settings.supportsEmptyBorderSection) or (sectionName == "Misc" and component and component.supportsEmptyVisibilitySection) then
+                elseif (sections[sectionName] and #sections[sectionName] > 0)
+                    or (sectionName == "Border" and component and component.settings and component.settings.supportsEmptyBorderSection)
+                    or (sectionName == "Misc" and component and component.supportsEmptyVisibilitySection)
+                    or (sectionName == "Sizing" and component and component.supportsEmptySizingSection)
+                then
                     local headerName = (sectionName == "Misc") and "Visibility" or sectionName
 
                     local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -1028,8 +1238,28 @@ local function createComponentRenderer(componentId)
                             label = (component.db.orientation or "H") == "H" and "# Columns" or "# Rows"
                         end
 
+                        if ui.dynamicValues and settingId == "iconWrap" then
+                            local o = component.db.orientation or "H"
+                            -- Aura Frame and default behavior:
+                            --  - Horizontal: Wrap domain is Down/Up.
+                            --  - Vertical:   Wrap domain is Left/Right.
+                            if o == "H" then
+                                values = { down = "Down", up = "Up" }
+                            else
+                                values = { left = "Left", right = "Right" }
+                            end
+                        end
+
                         if ui.dynamicValues and settingId == "direction" then
-                            values = ((component.db.orientation or "H") == "H") and {left="Left", right="Right"} or {up="Up", down="Down"}
+                            local o = component.db.orientation or "H"
+                            -- Uniform behavior for Aura Frame, Cooldowns, and Action Bars:
+                            --  - Horizontal: Left/Right
+                            --  - Vertical:   Up/Down
+                            if o == "H" then
+                                values = { left = "Left", right = "Right" }
+                            else
+                                values = { up = "Up", down = "Down" }
+                            end
                         end
 
                         if (sectionName == "Border" and settingId == "borderTintColor") or (sectionName == "Icon" and settingId == "iconBorderTintColor") then
@@ -1038,8 +1268,48 @@ local function createComponentRenderer(componentId)
                                 function()
                                     local v = component.db[settingId]
                                     if v == nil then v = setting.default end
-                                    -- Coerce direction to a valid option for current orientation to avoid transient 'Custom'
+                                    -- Normalize Aura Frame iconWrap numeric/enums back to string keys to avoid 'Custom'
+                                    if settingId == "iconWrap" then
+                                        if type(v) == "number" then
+                                            local dirEnum = _G.Enum and _G.Enum.AuraFrameIconDirection
+                                            if dirEnum and (v == dirEnum.Up or v == dirEnum.Down or v == dirEnum.Left or v == dirEnum.Right) then
+                                                if v == dirEnum.Up then
+                                                    v = "up"
+                                                elseif v == dirEnum.Down then
+                                                    v = "down"
+                                                elseif v == dirEnum.Left then
+                                                    v = "left"
+                                                elseif v == dirEnum.Right then
+                                                    v = "right"
+                                                end
+                                            else
+                                                -- Fallback: treat as simple 0/1 index whose meaning depends on orientation.
+                                                local o = component.db.orientation or "H"
+                                                if o == "H" then
+                                                    v = (v == 1) and "up" or "down"
+                                                else
+                                                    v = (v == 1) and "right" or "left"
+                                                end
+                                            end
+                                        end
+                                    end
+                                    -- Direction handling:
+                                    --  - For Aura Frame (Buffs/Debuffs), underlying values are Left/Right only; we
+                                    --    relabel to Up/Down for vertical orientation in the UI. Normalize any
+                                    --    legacy 'up'/'down' saved values back into Left/Right so the dropdown
+                                    --    does not fall back to 'Custom'.
+                                    --  - For Cooldown Viewer / Action Bars, keep orientation-aware coercion to
+                                    --    avoid transient 'Custom'.
                                     if settingId == "direction" then
+                                        if type(v) == "number" then
+                                            local oNum = component.db.orientation or "H"
+                                            if oNum == "H" then
+                                                v = (v == 1) and "right" or "left"
+                                            else
+                                                v = (v == 1) and "up" or "down"
+                                            end
+                                        end
+                                        
                                         local o = component.db.orientation or "H"
                                         if o == "H" then
                                             if v ~= "left" and v ~= "right" then v = "right" end
@@ -1097,25 +1367,99 @@ local function createComponentRenderer(componentId)
                                             end
                                         
                                     elseif settingId == "orientation" then
-                                        -- Pre-adjust direction to a valid option for the new orientation BEFORE syncing, to avoid transient 'Custom'
-                                        do
+                                        local isAuraFrame = component and (component.id == "buffs" or component.id == "debuffs")
+
+                                        if isAuraFrame then
+                                            ------------------------------------------------------------------
+                                            -- Aura Frame (Buffs/Debuffs):
+                                            -- Mirror Blizzard's orientation remap logic in AceDB and then
+                                            -- push the resulting Wrap/Direction into Edit Mode. We rely on
+                                            -- our own DB as the source of truth instead of trying to read
+                                            -- back mid-flight values from Edit Mode.
+                                            ------------------------------------------------------------------
+                                            -- Signal the back-sync layer to skip ONE immediate Aura Frame
+                                            -- Wrap/Direction read so these freshly remapped values are not
+                                            -- clobbered by a stale mid-flight snapshot.
+                                            component._skipNextAuraBackSync = true
+
+                                            local oldWrap = component.db.iconWrap or "down"
+                                            local oldDir  = component.db.direction or "right"
+
+                                            -- Ensure legacy/string oddities are normalized into the
+                                            -- 'down'/'up'/'left'/'right' space before applying the remap.
+                                            if oldWrap == "Up" then oldWrap = "up" end
+                                            if oldWrap == "Down" then oldWrap = "down" end
+                                            if oldWrap == "Left" then oldWrap = "left" end
+                                            if oldWrap == "Right" then oldWrap = "right" end
+                                            if oldDir == "Up" then oldDir = "up" end
+                                            if oldDir == "Down" then oldDir = "down" end
+                                            if oldDir == "Left" then oldDir = "left" end
+                                            if oldDir == "Right" then oldDir = "right" end
+
+                                            local newWrap = oldWrap
+                                            local newDir  = oldDir
                                             local newOrientation = tostring(v)
-                                            local dir = component.db.direction or "right"
+
                                             if newOrientation == "H" then
-                                                if dir ~= "left" and dir ~= "right" then component.db.direction = "right" end
+                                                -- Switching to Horizontal:
+                                                --  - If oldWrap was Left/Right, it becomes the new Direction.
+                                                --  - If oldDir  was Down/Up, it becomes the new Wrap.
+                                                if oldWrap == "left" or oldWrap == "right" then
+                                                    newDir = oldWrap
+                                                end
+                                                if oldDir == "down" or oldDir == "up" then
+                                                    newWrap = oldDir
+                                                end
                                             else
-                                                if dir ~= "up" and dir ~= "down" then component.db.direction = "up" end
+                                                -- Switching to Vertical:
+                                                --  - If oldWrap was Down/Up, it becomes the new Direction.
+                                                --  - If oldDir  was Left/Right, it becomes the new Wrap.
+                                                if oldWrap == "down" or oldWrap == "up" then
+                                                    newDir = oldWrap
+                                                end
+                                                if oldDir == "left" or oldDir == "right" then
+                                                    newWrap = oldDir
+                                                end
                                             end
-                                            -- Also push direction immediately so Edit Mode reflects valid value during transition
+
+                                            component.db.iconWrap  = newWrap
+                                            component.db.direction = newDir
+
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                                -- Push the remapped values so Edit Mode matches our DB.
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, "iconWrap")
                                                 addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
                                             end
+                                            if panel and panel.RefreshOrientationWidgets then
+                                                panel:RefreshOrientationWidgets(component)
+                                            end
+                                        else
+                                            -- Non-Aura systems: pre-adjust direction to a valid option for the
+                                            -- new orientation BEFORE syncing, to avoid transient 'Custom'.
+                                            do
+                                                local newOrientation = tostring(v)
+                                                local dir = component.db.direction or "right"
+                                                if newOrientation == "H" then
+                                                    if dir ~= "left" and dir ~= "right" then component.db.direction = "right" end
+                                                else
+                                                    if dir ~= "up" and dir ~= "down" then component.db.direction = "up" end
+                                                end
+                                                -- Also push direction immediately so Edit Mode reflects valid value during transition
+                                                if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                                    addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
+                                                end
+                                            end
+                                            if panel and panel.RefreshOrientationWidgets then
+                                                panel:RefreshOrientationWidgets(component)
+                                            end
+                                            -- Hold re-render just a bit longer to let both writes settle
+                                            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
+                                            -- Hide the direction control very briefly to avoid 'Custom' while options swap
+                                            if panel then panel._dirReinitHoldUntil = (GetTime and (GetTime() + 0.25)) or (panel._dirReinitHoldUntil or 0) end
                                         end
-                                        -- Hold re-render just a bit longer to let both writes settle
-                                        if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
-                                        -- Hide the direction control very briefly to avoid 'Custom' while options swap
-                                        if panel then panel._dirReinitHoldUntil = (GetTime and (GetTime() + 0.25)) or (panel._dirReinitHoldUntil or 0) end
+
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+                                            -- ScooterMod -> Edit Mode (orientation) plus coalesced apply.
                                             addon.EditMode.SyncComponentSettingToEditMode(component, "orientation")
                                             safeSaveOnly(); requestApply()
                                         end
@@ -1142,11 +1486,21 @@ local function createComponentRenderer(componentId)
                                     -- Removed: Action Bars addon-only width/height handling (see ACTIONBARS.md limitation)
 
                                     if settingId == "orientation" then
-                                        local dir = component.db.direction or "right"
-                                        if v == "H" then
-                                            if dir ~= "left" and dir ~= "right" then component.db.direction = "right" end
-                                        else
-                                            if dir ~= "up" and dir ~= "down" then component.db.direction = "up" end
+                                        -- For most components (Cooldown Viewer, Action Bars, Unit Frames),
+                                        -- coerce the direction domain to match the new orientation:
+                                        --  - Horizontal: Left/Right
+                                        --  - Vertical:   Up/Down
+                                        -- Aura Frame (Buffs/Debuffs) and Micro Bar have bespoke logic
+                                        -- and should not be auto-coerced here.
+                                        local id = component and component.id
+                                        local skipDirClamp = (id == "buffs" or id == "debuffs" or id == "microBar")
+                                        if not skipDirClamp then
+                                            local dir = component.db.direction or "right"
+                                            if v == "H" then
+                                                if dir ~= "left" and dir ~= "right" then component.db.direction = "right" end
+                                            else
+           					if dir ~= "up" and dir ~= "down" then component.db.direction = "up" end
+                                            end
                                         end
                                     end
 
@@ -1157,6 +1511,13 @@ local function createComponentRenderer(componentId)
                                         or settingId == "iconBorderStyle"
                                         or settingId == "borderEnable" or settingId == "borderTintEnable"
                                         or settingId == "borderStyle" or settingId == "backdropDisable" then
+                                        -- For settings that affect dynamic labels/values (including Aura
+                                        -- Orientation/Wrap/Direction), trigger a lightweight re-render of
+                                        -- the current category so dropdowns rebuild their option sets and
+                                        -- selected values from the updated DB, avoiding stale 'Custom' UI.
+                                        if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
+                                            addon.SettingsPanel.RefreshCurrentCategoryDeferred()
+                                        end
                                         -- Refresh Border section enabled state when borderEnable changes
 				if isCDMBorder and settingId == "borderEnable" then
                                             C_Timer.After(0, function()
@@ -1303,6 +1664,12 @@ local function createComponentRenderer(componentId)
                                             end
                                         end
                                         if lbl and lbl.SetTextColor then panel.ApplyRobotoWhite(lbl) end
+                                        if ui.dynamicLabel and settingId == "columns" then
+                                            ApplyColumnsLabel(component, frame)
+                                            if panel and panel.RegisterOrientationWidget then
+                                                panel:RegisterOrientationWidget(component.id, "columns", frame)
+                                            end
+                                        end
                                     end
                                 end
                                 table.insert(init, initSlider)
@@ -1319,18 +1686,47 @@ local function createComponentRenderer(componentId)
                                         data = { setting = settingObj, options = addon.BuildIconBorderOptionsContainer, name = label }
                                     end
                                 elseif settingId == "direction" then
-                                    local containerOpts = Settings.CreateControlTextContainer()
                                     local orientation = component and component.db and (component.db.orientation or "H") or "H"
-                                    local orderedValues = {}
-                                    if orientation == "H" then
-                                        table.insert(orderedValues, "right")
-                                        table.insert(orderedValues, "left")
+                                    if component and (component.id == "buffs" or component.id == "debuffs") then
+                                        data = {
+                                            setting = settingObj,
+                                            options = function() return BuildAuraDirectionOptions(component) end,
+                                            name = label,
+                                        }
                                     else
-                                        table.insert(orderedValues, "up")
-                                        table.insert(orderedValues, "down")
+                                        local containerOpts = Settings.CreateControlTextContainer()
+                                        local orderedValues = {}
+                                        if orientation == "H" then
+                                            table.insert(orderedValues, "right")
+                                            table.insert(orderedValues, "left")
+                                        else
+                                            table.insert(orderedValues, "up")
+                                            table.insert(orderedValues, "down")
+                                        end
+                                        local hasOptions = false
+                                        for _, valKey in ipairs(orderedValues) do
+                                            local vLabel = values and values[valKey]
+                                            if vLabel then
+                                                containerOpts:Add(valKey, vLabel)
+                                                hasOptions = true
+                                            end
+                                        end
+                                        if not hasOptions and values then
+                                            for valKey, vLabel in pairs(values) do
+                                                if vLabel then
+                                                    containerOpts:Add(valKey, vLabel)
+                                                    hasOptions = true
+                                                end
+                                            end
+                                        end
+                                        data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
                                     end
-                                    for _, valKey in ipairs(orderedValues) do containerOpts:Add(valKey, values[valKey]) end
-                                    data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
+                                elseif settingId == "iconWrap" and component and (component.id == "buffs" or component.id == "debuffs") then
+                                    data = {
+                                        setting = settingObj,
+                                        options = function() return BuildAuraWrapOptions(component) end,
+                                        name = label,
+                                    }
                                 else
                                     local containerOpts = Settings.CreateControlTextContainer()
                                     local orderedValues = {}
@@ -1343,7 +1739,14 @@ local function createComponentRenderer(componentId)
                                     else
                                         for val, _ in pairs(values) do table.insert(orderedValues, val) end
                                     end
-                                    for _, valKey in ipairs(orderedValues) do containerOpts:Add(valKey, values[valKey]) end
+                                    for _, valKey in ipairs(orderedValues) do
+                                        if values then
+                                            local vLabel = values[valKey]
+                                            if vLabel ~= nil then
+                                                containerOpts:Add(valKey, vLabel)
+                                            end
+                                        end
+                                    end
                                     data = { setting = settingObj, options = function() return containerOpts:GetData() end, name = label }
                                 end
                                 local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", data)
@@ -1392,7 +1795,7 @@ local function createComponentRenderer(componentId)
                                     end
                                 end
                                 -- For Micro Bar 'direction', hide momentarily during orientation swap to avoid transient 'Custom'
-                                if settingId == "direction" then
+                                if settingId == "direction" and component.id == "microBar" then
                                     initDrop:AddShownPredicate(function()
                                         if not panel or not panel._dirReinitHoldUntil then return true end
                                         local now = GetTime and GetTime() or 0
@@ -1410,6 +1813,21 @@ local function createComponentRenderer(componentId)
                                         if prev then prev(self, frame) end
                                         local lbl = frame and (frame.Text or frame.Label)
                                         if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                                        if settingId == "direction" then
+                                            if panel and panel.RegisterOrientationWidget then
+                                                panel:RegisterOrientationWidget(component.id, "direction", frame)
+                                            end
+                                            if panel and panel.RefreshOrientationWidgets then
+                                                panel:RefreshOrientationWidgets(component)
+                                            end
+                                        elseif settingId == "iconWrap" and (component.id == "buffs" or component.id == "debuffs") then
+                                            if panel and panel.RegisterOrientationWidget then
+                                                panel:RegisterOrientationWidget(component.id, "iconWrap", frame)
+                                            end
+                                            if panel and panel.RefreshOrientationWidgets then
+                                                panel:RefreshOrientationWidgets(component)
+                                            end
+                                        end
                                     end
                                 end
                                 table.insert(init, initDrop)
@@ -1642,6 +2060,12 @@ local function createComponentRenderer(componentId)
             end
             right:Display(init)
             
+            if panel.RefreshOrientationWidgets then
+                C_Timer.After(0, function()
+                    panel:RefreshOrientationWidgets(component)
+                end)
+            end
+            
             -- Refresh Border/Backdrop enabled state after Display completes (frames now exist)
             if borderRefreshFunc then
                 C_Timer.After(0.05, function()
@@ -1663,7 +2087,8 @@ function panel.RenderEssentialCooldowns() return createComponentRenderer("essent
 function panel.RenderUtilityCooldowns()  return createComponentRenderer("utilityCooldowns")()  end
 function panel.RenderTrackedBars()       return createComponentRenderer("trackedBars")()       end
 function panel.RenderTrackedBuffs()      return createComponentRenderer("trackedBuffs")()      end
-
+function panel.RenderBuffs()             return createComponentRenderer("buffs")()             end
+function panel.RenderDebuffs()           return createComponentRenderer("debuffs")()           end
 
 -- Action Bars: simple scaffold renderers (empty collapsible sections)
 local function createEmptySectionsRenderer(componentId, title)
@@ -3986,6 +4411,653 @@ local function createUFRenderer(componentId, title)
 				return panel:IsSectionExpanded(componentId, "Power Bar")
 			end)
 			table.insert(init, pbInit)
+
+			-- Optional fourth collapsible section: Alternate Power Bar (Player-only, class/spec gated)
+			if componentId == "ufPlayer" and addon and addon.UnitFrames_PlayerHasAlternatePowerBar and addon.UnitFrames_PlayerHasAlternatePowerBar() then
+				local expInitializerAPB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Alternate Power Bar",
+					sectionKey = "Alternate Power Bar",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Alternate Power Bar"),
+				})
+				expInitializerAPB.GetExtent = function() return 30 end
+				table.insert(init, expInitializerAPB)
+
+				-- Alternate Power Bar tabs (mirrors Power Bar: Positioning, Sizing, Style, Border, Visibility, % Text, Value Text)
+				local apbTabs = {
+					sectionTitle = "",
+					tabAText = "Positioning",
+					tabBText = "Sizing",
+					tabCText = "Style",
+					tabDText = "Border",
+					tabEText = "Visibility",
+					tabFText = "% Text",
+					tabGText = "Value Text",
+				}
+				apbTabs.build = function(frame)
+					-- This section is Player-only.
+					local function unitKey()
+						return "Player"
+					end
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Player = db.unitFrames.Player or {}
+						db.unitFrames.Player.altPowerBar = db.unitFrames.Player.altPowerBar or {}
+						return db.unitFrames.Player.altPowerBar
+					end
+
+					-- Font options provider for % Text / Value Text dropdowns.
+					local function fontOptions()
+						if addon and addon.BuildFontOptionsContainer then
+							return addon.BuildFontOptionsContainer()
+						end
+						-- Fallback: minimal container when font helper is missing
+						local container = Settings.CreateControlTextContainer()
+						container:Add("FRIZQT__", "FRIZQT__")
+						return container:GetData()
+					end
+
+					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+						local options = Settings.CreateSliderOptions(minV, maxV, step)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+						local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+						f.GetElementData = function() return initSlider end
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						initSlider:InitFrame(f)
+						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						yRef.y = yRef.y - 34
+						return f
+					end
+					local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+						local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+						local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+						local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+						f.GetElementData = function() return initDrop end
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						initDrop:InitFrame(f)
+						local lbl = f and (f.Text or f.Label)
+						if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+						if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+							addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+						end
+						yRef.y = yRef.y - 34
+						return f
+					end
+					local function addStyle(parent, label, getFunc, setFunc, yRef)
+						local function styleOptions()
+							local container = Settings.CreateControlTextContainer();
+							container:Add("NONE", "Regular");
+							container:Add("OUTLINE", "Outline");
+							container:Add("THICKOUTLINE", "Thick Outline");
+							return container:GetData()
+						end
+						return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+					end
+					local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+						local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+						f:SetHeight(26)
+						f:SetPoint("TOPLEFT", 4, yRef.y)
+						f:SetPoint("TOPRIGHT", -16, yRef.y)
+						f.Text:SetText(label)
+						if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						local right = CreateFrame("Frame", nil, f)
+						right:SetSize(250, 26)
+						right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+						f.Text:ClearAllPoints()
+						f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+						f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+						f.Text:SetJustifyH("LEFT")
+						-- Use centralized color swatch factory
+						local function getColorTable()
+							local r, g, b, a = getFunc()
+							return {r or 1, g or 1, b or 1, a or 1}
+						end
+						local function setColorTable(r, g, b, a)
+							setFunc(r, g, b, a)
+						end
+						local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+						swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+						yRef.y = yRef.y - 34
+						return f
+					end
+
+					-- PageA: Positioning (Alternate Power Bar)
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						addSlider(frame.PageA, "X Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; return tonumber(t.offsetX) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.offsetX = tonumber(v) or 0; applyNow() end,
+							y)
+						addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; return tonumber(t.offsetY) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.offsetY = tonumber(v) or 0; applyNow() end,
+							y)
+					end
+
+					-- PageB: Sizing (Alternate Power Bar) – width/height scaling
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						-- Bar Width (%)
+						addSlider(frame.PageB, "Bar Width (%)", 50, 150, 1,
+							function() local t = ensureUFDB() or {}; return tonumber(t.widthPct) or 100 end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 100
+								if val < 50 then val = 50 elseif val > 150 then val = 150 end
+								t.widthPct = val
+								applyNow()
+							end,
+							y)
+
+						-- Bar Height (%)
+						addSlider(frame.PageB, "Bar Height (%)", 50, 200, 1,
+							function() local t = ensureUFDB() or {}; return tonumber(t.heightPct) or 100 end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 100
+								if val < 50 then val = 50 elseif val > 200 then val = 200 end
+								t.heightPct = val
+								applyNow()
+							end,
+							y)
+					end
+
+					-- PageC: Style (Alternate Power Bar foreground/background texture & color)
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						-- Foreground Texture
+						do
+							local function getTex()
+								local t = ensureUFDB() or {}; return t.texture or "default" end
+							local function setTex(v)
+								local t = ensureUFDB(); if not t then return end
+								t.texture = v
+								applyNow()
+							end
+							local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
+							local function texOptions()
+								if addon.BuildBarTextureOptionsContainer then
+									return addon.BuildBarTextureOptionsContainer()
+								end
+								local container = Settings.CreateControlTextContainer()
+								container:Add("default", "Default")
+								return container:GetData()
+							end
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = texOptions })
+							local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							if panel and panel.ApplyRobotoWhite then
+								local lbl = f and (f.Text or f.Label)
+								if lbl then panel.ApplyRobotoWhite(lbl) end
+							end
+							if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
+							y.y = y.y - 34
+						end
+
+						-- Foreground Color (Default / Texture Original / Custom)
+						do
+							local function colorOpts()
+								local container = Settings.CreateControlTextContainer()
+								container:Add("default", "Default")
+								container:Add("texture", "Texture Original")
+								container:Add("custom", "Custom")
+								return container:GetData()
+							end
+							local function getMode()
+								local t = ensureUFDB() or {}; return t.colorMode or "default" end
+							local function setMode(v)
+								local t = ensureUFDB(); if not t then return end
+								t.colorMode = v or "default"
+								applyNow()
+							end
+							local function getTint()
+								local t = ensureUFDB() or {}; local c = t.tint or {1,1,1,1}
+								return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+							local function setTint(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.tint = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							panel.DropdownWithInlineSwatch(frame.PageC, y, {
+								label = "Foreground Color",
+								getMode = getMode,
+								setMode = setMode,
+								getColor = getTint,
+								setColor = setTint,
+								options = colorOpts,
+								insideButton = true,
+							})
+						end
+
+						-- Background Texture
+						do
+							local function getBgTex()
+								local t = ensureUFDB() or {}; return t.backgroundTexture or "default" end
+							local function setBgTex(v)
+								local t = ensureUFDB(); if not t then return end
+								t.backgroundTexture = v
+								applyNow()
+							end
+							local bgSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
+							local function bgOptions()
+								if addon.BuildBarTextureOptionsContainer then
+									return addon.BuildBarTextureOptionsContainer()
+								end
+								local container = Settings.CreateControlTextContainer()
+								container:Add("default", "Default")
+								return container:GetData()
+							end
+							local initBg = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgSetting, options = bgOptions })
+							local fbg = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+							fbg.GetElementData = function() return initBg end
+							fbg:SetPoint("TOPLEFT", 4, y.y)
+							fbg:SetPoint("TOPRIGHT", -16, y.y)
+							initBg:InitFrame(fbg)
+							if panel and panel.ApplyRobotoWhite then
+								local lbl = fbg and (fbg.Text or fbg.Label)
+								if lbl then panel.ApplyRobotoWhite(lbl) end
+							end
+							if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgSetting) end
+							y.y = y.y - 34
+						end
+
+						-- Background Color (Default / Texture Original / Custom)
+						do
+							local function bgColorOpts()
+								local container = Settings.CreateControlTextContainer()
+								container:Add("default", "Default")
+								container:Add("texture", "Texture Original")
+								container:Add("custom", "Custom")
+								return container:GetData()
+							end
+							local function getBgMode()
+								local t = ensureUFDB() or {}; return t.backgroundColorMode or "default" end
+							local function setBgMode(v)
+								local t = ensureUFDB(); if not t then return end
+								t.backgroundColorMode = v or "default"
+								applyNow()
+							end
+							local function getBgTint()
+								local t = ensureUFDB() or {}; local c = t.backgroundTint or {0,0,0,1}
+								return { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
+							end
+							local function setBgTint(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.backgroundTint = { r or 0, g or 0, b or 0, a or 1 }
+								applyNow()
+							end
+							panel.DropdownWithInlineSwatch(frame.PageC, y, {
+								label = "Background Color",
+								getMode = getBgMode,
+								setMode = setBgMode,
+								getColor = getBgTint,
+								setColor = setBgTint,
+								options = bgColorOpts,
+								insideButton = true,
+							})
+						end
+
+						-- Background Opacity
+						addSlider(frame.PageC, "Background Opacity", 0, 100, 1,
+							function() local t = ensureUFDB() or {}; return tonumber(t.backgroundOpacity) or 50 end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								local val = tonumber(v) or 50
+								if val < 0 then val = 0 elseif val > 100 then val = 100 end
+								t.backgroundOpacity = val
+								applyNow()
+							end,
+							y)
+					end
+
+					-- PageD: Border (matches Power Bar border options)
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						local function isEnabled()
+							local t = ensureUFDB() or {}
+							return not not t.borderEnable
+						end
+
+						-- Use Custom Border (Alternate Power Bar)
+						do
+							local setting = CreateLocalSetting("Use Custom Border", "boolean",
+								function() local t = ensureUFDB() or {}; return (t.borderEnable == true) end,
+								function(v) local t = ensureUFDB(); if not t then return end; t.borderEnable = (v == true); applyNow() end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Custom Border", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Border Style
+						do
+							local function opts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("default", "Default")
+								c:Add("square", "Square")
+								return c:GetData()
+							end
+							local function getStyle()
+								local t = ensureUFDB() or {}; return t.borderStyle or "default" end
+							local function setStyle(v)
+								local t = ensureUFDB(); if not t then return end
+								t.borderStyle = v or "default"
+								applyNow()
+							end
+							local setting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = setting, options = opts })
+							local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							local lbl = f and (f.Text or f.Label)
+							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							local enabled = isEnabled()
+							if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
+							if lbl and lbl.SetTextColor then lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1) end
+							y.y = y.y - 34
+						end
+
+						-- Border Tint (checkbox + swatch)
+						do
+							local function getTintEnabled()
+								local t = ensureUFDB() or {}; return not not t.borderTintEnable end
+							local function setTintEnabled(b)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintEnable = not not b
+								applyNow()
+							end
+							local function getTint()
+								local t = ensureUFDB() or {}
+								local c = t.borderTintColor or {1,1,1,1}
+								return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+							local function setTint(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+							local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+							local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							local enabled = isEnabled()
+							local ctrl = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox) or row.Control
+							if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+							if row.ScooterInlineSwatch and row.ScooterInlineSwatch.EnableMouse then
+								row.ScooterInlineSwatch:EnableMouse(enabled)
+								if row.ScooterInlineSwatch.SetAlpha then row.ScooterInlineSwatch:SetAlpha(enabled and 1 or 0.5) end
+							end
+							local labelFS = (ctrl and ctrl.Text) or row.Text
+							if labelFS and labelFS.SetTextColor then
+								if enabled then labelFS:SetTextColor(1, 1, 1, 1) else labelFS:SetTextColor(0.6, 0.6, 0.6, 1) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Border Thickness
+						do
+							local function getThk()
+								local t = ensureUFDB() or {}; return tonumber(t.borderThickness) or 1 end
+							local function setThk(v)
+								local t = ensureUFDB(); if not t then return end
+								local nv = tonumber(v) or 1
+								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								t.borderThickness = nv
+								applyNow()
+							end
+							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
+							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
+							local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+							sf.GetElementData = function() return initSlider end
+							sf:SetPoint("TOPLEFT", 4, y.y)
+							sf:SetPoint("TOPRIGHT", -16, y.y)
+							initSlider:InitFrame(sf)
+							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							local enabled = isEnabled()
+							if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
+							if sf.Text and sf.Text.SetTextColor then
+								if enabled then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Border Inset
+						do
+							local function getInset()
+								local t = ensureUFDB() or {}; return tonumber(t.borderInset) or 0 end
+							local function setInset(v)
+								local t = ensureUFDB(); if not t then return end
+								local nv = tonumber(v) or 0
+								if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
+								t.borderInset = nv
+								applyNow()
+							end
+							local opts = Settings.CreateSliderOptions(-4, 4, 1)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
+							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
+							local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
+							sf.GetElementData = function() return initSlider end
+							sf:SetPoint("TOPLEFT", 4, y.y)
+							sf:SetPoint("TOPRIGHT", -16, y.y)
+							initSlider:InitFrame(sf)
+							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							local enabled = isEnabled()
+							if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
+							if sf.Text and sf.Text.SetTextColor then
+								if enabled then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
+							end
+							y.y = y.y - 34
+						end
+					end
+
+					-- PageE: Visibility (Hide bar + text toggles)
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						-- Hide Alternate Power Bar
+						do
+							local setting = CreateLocalSetting("Hide Alternate Power Bar", "boolean",
+								function() local t = ensureUFDB() or {}; return (t.hidden == true) end,
+								function(v) local t = ensureUFDB(); if not t then return end; t.hidden = (v == true); applyNow() end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Alternate Power Bar", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+					end
+
+					-- PageF: % Text
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						-- Hide % Text
+						do
+							local setting = CreateLocalSetting("Hide % Text", "boolean",
+								function() local t = ensureUFDB() or {}; return (t.percentHidden == true) end,
+								function(v) local t = ensureUFDB(); if not t then return end; t.percentHidden = (v == true); applyNow() end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide % Text", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- % Text Font
+						addDropdown(frame.PageF, "Font", fontOptions,
+							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; return s.fontFace or "FRIZQT__" end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textPercent = t.textPercent or {}; t.textPercent.fontFace = v; applyNow() end,
+							y)
+						-- % Text Style
+						addStyle(frame.PageF, "Font Style",
+							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; return s.style or "OUTLINE" end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textPercent = t.textPercent or {}; t.textPercent.style = v; applyNow() end,
+							y)
+						-- % Text Size
+						addSlider(frame.PageF, "Font Size", 6, 48, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; return tonumber(s.size) or 14 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textPercent = t.textPercent or {}; t.textPercent.size = tonumber(v) or 14; applyNow() end,
+							y)
+						-- % Text Color
+						addColor(frame.PageF, "Font Color", false,
+							function()
+								local t = ensureUFDB() or {}; local s = t.textPercent or {}; local c = s.color or {1,1,1,1}
+								return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+							end,
+							function(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.textPercent = t.textPercent or {}; t.textPercent.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
+							end,
+							y)
+						-- % Text Offset X/Y
+						addSlider(frame.PageF, "Font X Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textPercent = t.textPercent or {}; t.textPercent.offset = t.textPercent.offset or {}; t.textPercent.offset.x = tonumber(v) or 0; applyNow() end,
+							y)
+						addSlider(frame.PageF, "Font Y Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textPercent = t.textPercent or {}; t.textPercent.offset = t.textPercent.offset or {}; t.textPercent.offset.y = tonumber(v) or 0; applyNow() end,
+							y)
+					end
+
+					-- PageG: Value Text
+					do
+						local function applyNow()
+							if addon and addon.ApplyStyles then addon:ApplyStyles() end
+						end
+						local y = { y = -50 }
+
+						-- Hide Value Text
+						do
+							local setting = CreateLocalSetting("Hide Value Text", "boolean",
+								function() local t = ensureUFDB() or {}; return (t.valueHidden == true) end,
+								function(v) local t = ensureUFDB(); if not t then return end; t.valueHidden = (v == true); applyNow() end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Value Text", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageG, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Value Text Font
+						addDropdown(frame.PageG, "Font", fontOptions,
+							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; return s.fontFace or "FRIZQT__" end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textValue = t.textValue or {}; t.textValue.fontFace = v; applyNow() end,
+							y)
+						-- Value Text Style
+						addStyle(frame.PageG, "Font Style",
+							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; return s.style or "OUTLINE" end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textValue = t.textValue or {}; t.textValue.style = v; applyNow() end,
+							y)
+						-- Value Text Size
+						addSlider(frame.PageG, "Font Size", 6, 48, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; return tonumber(s.size) or 14 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textValue = t.textValue or {}; t.textValue.size = tonumber(v) or 14; applyNow() end,
+							y)
+						-- Value Text Color
+						addColor(frame.PageG, "Font Color", false,
+							function()
+								local t = ensureUFDB() or {}; local s = t.textValue or {}; local c = s.color or {1,1,1,1}
+								return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+							end,
+							function(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.textValue = t.textValue or {}; t.textValue.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
+							end,
+							y)
+						-- Value Text Offset X/Y
+						addSlider(frame.PageG, "Font X Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textValue = t.textValue or {}; t.textValue.offset = t.textValue.offset or {}; t.textValue.offset.x = tonumber(v) or 0; applyNow() end,
+							y)
+						addSlider(frame.PageG, "Font Y Offset", -100, 100, 1,
+							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+							function(v) local t = ensureUFDB(); if not t then return end; t.textValue = t.textValue or {}; t.textValue.offset = t.textValue.offset or {}; t.textValue.offset.y = tonumber(v) or 0; applyNow() end,
+							y)
+					end
+				end
+
+				local apbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", apbTabs)
+				apbInit.GetExtent = function() return 330 end
+				apbInit:AddShownPredicate(function()
+					return panel:IsSectionExpanded(componentId, "Alternate Power Bar")
+				end)
+				table.insert(init, apbInit)
+			end
 
 		-- Fourth collapsible section: Name & Level Text (all unit frames)
 		local expInitializerNLT = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -7355,13 +8427,201 @@ local function createUFRenderer(componentId, title)
 							y)
 					end
 
-					-- Tabs C/D/E (Border, Text, Visibility) are present for layout consistency and will be
+					-- PageC: Border tab (Use Custom Border + Style/Tint/Thickness, matching Essential Cooldowns)
+					do
+						local y = { y = -50 }
+
+						local function applyNow()
+							local uk = unitKey()
+							if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+								addon.ApplyUnitFrameBuffsDebuffsFor(uk)
+							end
+							if addon and addon.ApplyStyles then
+								addon:ApplyStyles()
+							end
+						end
+
+						local function isEnabled()
+							local t = ensureUFDB() or {}
+							return not not t.borderEnable
+						end
+
+						local _styleFrame, _tintRow, _thkFrame
+						local function refreshBorderEnabledState()
+							local enabled = isEnabled()
+
+							-- Style dropdown
+							if _styleFrame then
+								if _styleFrame.Control and _styleFrame.Control.SetEnabled then
+									_styleFrame.Control:SetEnabled(enabled)
+								end
+								local lbl = _styleFrame.Text or _styleFrame.Label
+								if lbl and lbl.SetTextColor then
+									lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+
+							-- Tint checkbox + swatch
+							if _tintRow then
+								local ctrl = _tintRow.Checkbox or _tintRow.CheckBox or (_tintRow.Control and _tintRow.Control.Checkbox) or _tintRow.Control
+								if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+								if _tintRow.ScooterInlineSwatch and _tintRow.ScooterInlineSwatch.EnableMouse then
+									_tintRow.ScooterInlineSwatch:EnableMouse(enabled)
+									if _tintRow.ScooterInlineSwatch.SetAlpha then
+										_tintRow.ScooterInlineSwatch:SetAlpha(enabled and 1 or 0.5)
+									end
+								end
+								local labelFS = (ctrl and ctrl.Text) or _tintRow.Text
+								if labelFS and labelFS.SetTextColor then
+									labelFS:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+
+							-- Thickness slider
+							if _thkFrame then
+								if _thkFrame.Control and _thkFrame.Control.SetEnabled then
+									_thkFrame.Control:SetEnabled(enabled)
+								end
+								local lbl = _thkFrame.Text or _thkFrame.Label
+								if lbl and lbl.SetTextColor then
+									lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+						end
+
+						-- Use Custom Border checkbox
+						do
+							local setting = CreateLocalSetting("Use Custom Border", "boolean",
+								function()
+									local t = ensureUFDB() or {}
+									return t.borderEnable == true
+								end,
+								function(v)
+									local t = ensureUFDB(); if not t then return end
+									t.borderEnable = (v == true)
+									applyNow()
+									refreshBorderEnabledState()
+								end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Custom Border", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Border Style dropdown (shares options with Essential Cooldowns / IconBorders)
+						do
+							local function styleOptions()
+								if addon.BuildIconBorderOptionsContainer then
+									return addon.BuildIconBorderOptionsContainer()
+								end
+								local c = Settings.CreateControlTextContainer()
+								c:Add("square", "Default")
+								c:Add("blizzard", "Blizzard Default")
+								return c:GetData()
+							end
+							local function getStyle()
+								local t = ensureUFDB() or {}
+								return t.borderStyle or "square"
+							end
+							local function setStyle(v)
+								local t = ensureUFDB(); if not t then return end
+								t.borderStyle = v or "square"
+								applyNow()
+							end
+							local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = styleOptions })
+							local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+							_styleFrame = f
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							local lbl = f and (f.Text or f.Label)
+							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							y.y = y.y - 34
+						end
+
+						-- Border Tint (checkbox + swatch)
+						do
+							local function getTintEnabled()
+								local t = ensureUFDB() or {}
+								return not not t.borderTintEnable
+							end
+							local function setTintEnabled(b)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintEnable = not not b
+								applyNow()
+							end
+							local function getTint()
+								local t = ensureUFDB() or {}
+								local c = t.borderTintColor or {1,1,1,1}
+								return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+							local function setTint(r, g, b, a)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+							local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+							local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+							_tintRow = row
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							y.y = y.y - 34
+						end
+
+						-- Border Thickness slider
+						do
+							local function getThk()
+								local t = ensureUFDB() or {}
+								return tonumber(t.borderThickness) or 1
+							end
+							local function setThk(v)
+								local t = ensureUFDB(); if not t then return end
+								local nv = tonumber(v) or 1
+								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								t.borderThickness = nv
+								applyNow()
+							end
+							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
+							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
+							_thkFrame = sf
+							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
+							sf.GetElementData = function() return initSlider end
+							sf:SetPoint("TOPLEFT", 4, y.y)
+							sf:SetPoint("TOPRIGHT", -16, y.y)
+							initSlider:InitFrame(sf)
+							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							y.y = y.y - 34
+						end
+
+						-- Initial gray-out state
+						refreshBorderEnabledState()
+					end
+
+					-- Tabs D/E (Text, Visibility) are present for layout consistency and will be
 					-- populated in a later phase. For now they intentionally remain empty.
 				end
 
 				local tabBD = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdData)
-				-- STATIC HEIGHT: Buffs & Debuffs tabs are relatively light; 180px is enough for current controls.
-				tabBD.GetExtent = function() return 180 end
+				-- STATIC HEIGHT: Buffs & Debuffs tabs now host multiple controls per tab (Scale, Width/Height,
+				-- Border options, and upcoming Text settings). Match the standard Unit Frame tabbed height (330px)
+				-- used by Health/Power/Portrait text sections to accommodate up to ~7 controls per tab.
+				tabBD.GetExtent = function() return 330 end
 				tabBD:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBD)
 			end
@@ -7606,8 +8866,9 @@ local function createUFRenderer(componentId, title)
 				end
 
 				local tabBDF = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdDataF)
-				-- STATIC HEIGHT: Buffs & Debuffs tabs are relatively light; 180px is enough for current controls.
-				tabBDF.GetExtent = function() return 180 end
+				-- STATIC HEIGHT: align Focus Buffs & Debuffs tab height with Target/Health/Power/Portrait (330px)
+				-- so the layout can comfortably display up to ~7 controls per tab without clipping.
+				tabBDF.GetExtent = function() return 330 end
 				tabBDF:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBDF)
 			end

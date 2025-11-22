@@ -36,8 +36,13 @@ function addon:GetDefaults()
 
     for id, component in pairs(self.Components) do
         defaults.profile.components[id] = {}
-        for settingId, setting in pairs(component.settings) do
-            defaults.profile.components[id][settingId] = setting.default
+        local settings = component.settings or {}
+        for settingId, setting in pairs(settings) do
+            -- Some entries in component.settings are boolean flags or helper values rather than
+            -- full setting descriptors. Only copy those that are tables with an explicit default.
+            if type(setting) == "table" and setting.default ~= nil then
+                defaults.profile.components[id][settingId] = setting.default
+            end
         end
     end
 
