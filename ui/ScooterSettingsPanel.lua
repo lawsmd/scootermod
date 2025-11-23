@@ -116,6 +116,81 @@ function panel.UpdateCollapseButtonVisibility()
     btn:SetShown(not hide)
 end
 
+panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+
+local function InvalidatePanelRightPane(pnl)
+    if not pnl then
+        return false
+    end
+    local rp = pnl.RightPane
+    if rp and type(rp.Invalidate) == "function" then
+        rp:Invalidate()
+        return true
+    end
+    local frame = pnl.frame
+    if frame and frame.RightPane and type(frame.RightPane.Invalidate) == "function" then
+        frame.RightPane:Invalidate()
+        return true
+    end
+    return false
+end
+
+function panel:HandleEditModeBackSync(componentId, settingId)
+    if not componentId then
+        return
+    end
+
+    self._pendingComponentRefresh = self._pendingComponentRefresh or {}
+    self._pendingComponentRefresh[componentId] = true
+
+    local frame = self.frame
+    if not frame or not frame:IsShown() or not frame.CatRenderers then
+        return
+    end
+
+    local currentKey = frame.CurrentCategory
+    if not currentKey then
+        return
+    end
+
+    local entry = frame.CatRenderers[currentKey]
+    if not entry or entry.componentId ~= componentId then
+        return
+    end
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if not panel or panel.frame ~= frame or not frame:IsShown() then
+                return
+            end
+            if frame.CurrentCategory ~= currentKey then
+                return
+            end
+            if panel.SelectCategory then
+                panel.SelectCategory(currentKey)
+            elseif panel.RefreshCurrentCategory then
+                panel.RefreshCurrentCategory()
+            else
+                InvalidatePanelRightPane(panel)
+                if entry and entry.render then
+                    entry.render()
+                end
+            end
+        end)
+    else
+        if self.SelectCategory then
+            self.SelectCategory(currentKey)
+        elseif self.RefreshCurrentCategory then
+            self.RefreshCurrentCategory()
+        else
+            InvalidatePanelRightPane(self)
+            if entry and entry.render then
+                entry.render()
+            end
+        end
+    end
+end
+
 -- Theming helpers moved to ui/panel/theme.lua
 
 -- Collapsible section header (Keybindings-style) ---------------------------------
@@ -137,7 +212,12 @@ function panel.RefreshCurrentCategory()
     panel._queuedRefresh = false
     if panel._suspendRefresh then return end
     local cat = f.CurrentCategory
-    if not cat or not f.CatRenderers then return end
+    if not cat then return end
+    if panel.SelectCategory then
+        panel.SelectCategory(cat)
+        return
+    end
+    if not f.CatRenderers then return end
     local entry = f.CatRenderers[cat]
     if not entry or not entry.render then return end
     entry.render()
@@ -840,6 +920,19 @@ local function createComponentRenderer(componentId)
                                     end
                                     if settingId == "positionX" or settingId == "positionY" then
                                         if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                            -- Mark this as a recent position write so the back-sync layer
+                                            -- can skip immediately re-writing the same offsets back into
+                                            -- the DB. This prevents a second Settings row rebuild that
+                                            -- would otherwise steal focus from the numeric text input.
+                                            component._recentPositionWrite = component._recentPositionWrite or {}
+                                            if type(GetTime) == "function" then
+                                                component._recentPositionWrite.time = GetTime()
+                                            else
+                                                component._recentPositionWrite.time = nil
+                                            end
+                                            component._recentPositionWrite.x = component.db.positionX
+                                            component._recentPositionWrite.y = component.db.positionY
+
                                             addon.EditMode.SyncComponentToEditMode(component)
                                             safeSaveOnly(); requestApply()
                                         end
@@ -900,7 +993,16 @@ local function createComponentRenderer(componentId)
                             else
                                 options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
                             end
-                            local data = { setting = settingObj, options = options, name = label }
+                            local data = {
+                                setting = settingObj,
+                                options = options,
+                                name = label,
+                                -- Metadata consumed by shared helpers (e.g., numeric text inputs)
+                                -- so that position sliders can participate in focus-retention
+                                -- logic after Settings list reinitialization.
+                                componentId = component.id,
+                                settingId = settingId,
+                            }
                             local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", data)
                             initSlider:AddShownPredicate(function()
                                 return panel:IsSectionExpanded(component.id, sectionName)
@@ -1455,7 +1557,25 @@ local function BuildCategories()
 		f.CurrentCategory = key
 		local entry = catRenderers[key]
 		if entry and entry.mode == "list" and entry.render then
-			entry.render()
+			local needsInvalidate = false
+			if panel._pendingComponentRefresh and entry.componentId then
+				needsInvalidate = panel._pendingComponentRefresh[entry.componentId] and true or false
+			end
+			if needsInvalidate then
+				InvalidatePanelRightPane(panel)
+			end
+			if panel._renderingCategory == key then
+				return
+			end
+			panel._renderingCategory = key
+			local ok, err = pcall(entry.render)
+			panel._renderingCategory = nil
+			if not ok then
+				error(err)
+			end
+			if needsInvalidate and entry.componentId then
+				panel._pendingComponentRefresh[entry.componentId] = nil
+			end
 			-- After rendering, configure the shared header "Copy from" controls for this category
 			if panel and panel.ConfigureHeaderCopyFromForKey then panel.ConfigureHeaderCopyFromForKey(key) end
 			if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
@@ -1920,45 +2040,51 @@ end
         end
         C_Timer.After(0, BuildCategories)
     else
-        -- For reopening the panel, we need to handle Buffs differently to avoid a race condition
+        -- For reopening the panel, we need to handle Buffs/Debuffs differently to avoid a race condition
         -- where the UI renders before the Aura backfill updates the DB.
         local cat = panel.frame.CurrentCategory
-        local isBuffsTab = (cat == "buffs")
+        local isAuraTab = (cat == "buffs" or cat == "debuffs")
         
-        -- For non-Buffs tabs, render immediately as before
-        if not isBuffsTab and cat and panel.frame.CatRenderers and panel.frame.CatRenderers[cat] and panel.frame.CatRenderers[cat].render then
+        -- For non-Aura tabs, render immediately as before
+        if not isAuraTab and cat and panel.frame.CatRenderers and panel.frame.CatRenderers[cat] and panel.frame.CatRenderers[cat].render then
             C_Timer.After(0, function()
                 if panel.frame and panel.frame:IsShown() then
                     local entry = panel.frame.CatRenderers[cat]
-                    if entry and entry.render then entry.render() end
-                    -- Reconfigure shared header "Copy from" controls on reopen to restore placeholder prompts
-                    if panel and panel.ConfigureHeaderCopyFromForKey and cat then
-                        panel.ConfigureHeaderCopyFromForKey(cat)
-                        if C_Timer and C_Timer.After then
-                            C_Timer.After(0, function()
-                                if panel and panel.ConfigureHeaderCopyFromForKey and panel.frame and panel.frame:IsShown() then
-                                    panel.ConfigureHeaderCopyFromForKey(cat)
-                                end
-                            end)
+                    local needsDeferred = false
+                    if entry and entry.componentId and panel._pendingComponentRefresh and panel._pendingComponentRefresh[entry.componentId] then
+                        needsDeferred = true
+                    end
+                    if entry and entry.render and not needsDeferred then
+                        entry.render()
+                        -- Reconfigure shared header "Copy from" controls on reopen to restore placeholder prompts
+                        if panel and panel.ConfigureHeaderCopyFromForKey and cat then
+                            panel.ConfigureHeaderCopyFromForKey(cat)
+                            if C_Timer and C_Timer.After then
+                                C_Timer.After(0, function()
+                                    if panel and panel.ConfigureHeaderCopyFromForKey and panel.frame and panel.frame:IsShown() then
+                                        panel.ConfigureHeaderCopyFromForKey(cat)
+                                    end
+                                end)
+                            end
                         end
                     end
                 end
             end)
         end
-        -- For Buffs tab, skip the immediate render and let the delayed SelectCategory handle it below
+        -- For Buffs/Debuffs tabs, skip the immediate render and let the delayed SelectCategory handle it below
     end
     panel.frame:Show()
     
-    -- Buffs: schedule a targeted Aura Frame Icon Size backfill based on the live
+    -- Buffs/Debuffs: schedule a targeted Aura Frame Icon Size backfill based on the live
     -- AuraContainer.iconScale BEFORE we render the category, so the UI reflects
     -- the correct Edit Mode value immediately on panel open.
     local needsBackfill = false
     if addon and addon.EditMode and addon.EditMode.QueueAuraIconSizeBackfill then
         local current = panel.frame.CurrentCategory
-        if current == "buffs" then
+        if current == "buffs" or current == "debuffs" then
             needsBackfill = true
             -- Run the backfill immediately (delay=0) before SelectCategory
-            addon.EditMode.QueueAuraIconSizeBackfill("buffs", {
+            addon.EditMode.QueueAuraIconSizeBackfill(current, {
                 origin = "OpenPanel",
                 delay = 0,
                 retryDelays = { 0.2, 0.5, 1.0 },
@@ -1967,8 +2093,8 @@ end
     end
     
     -- Delay the SelectCategory call slightly to allow the immediate backfill to complete first.
-    -- For Buffs, this is the ONLY render on panel reopen (we skipped the immediate render above).
-    -- For non-buffs categories, use immediate timing (no change in behavior).
+    -- For Buffs/Debuffs, this is the ONLY render on panel reopen (we skipped the immediate render above).
+    -- For non-Aura categories, use immediate timing (no change in behavior).
     local selectDelay = needsBackfill and 0.15 or 0
     C_Timer.After(selectDelay, function()
         if not panel.frame or not panel.frame:IsShown() then return end

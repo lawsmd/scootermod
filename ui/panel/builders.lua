@@ -69,7 +69,7 @@ panel._orientationWidgets = panel._orientationWidgets or {}
 local function EnsureOrientationBucket(componentId)
     panel._orientationWidgets = panel._orientationWidgets or {}
     if componentId and not panel._orientationWidgets[componentId] then
-        panel._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {} }
+        panel._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
     end
     return componentId and panel._orientationWidgets[componentId]
 end
@@ -77,7 +77,7 @@ end
 function panel:PrepareOrientationWidgets(componentId)
     if not componentId then return end
     self._orientationWidgets = self._orientationWidgets or {}
-    self._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {} }
+    self._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
 end
 
 function panel:RegisterOrientationWidget(componentId, kind, frame)
@@ -116,6 +116,21 @@ local function ApplyColumnsLabel(component, frame)
     if not component or not frame then return end
     local orientation = (component.db and component.db.orientation) or "H"
     local labelText = (orientation == "H") and "# Columns" or "# Rows"
+    local lbl = GetFrameLabel(frame)
+    if lbl and lbl.SetText then
+        lbl:SetText(labelText)
+        if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+    end
+    local initializer = frame.GetElementData and frame:GetElementData()
+    if initializer and initializer.data then
+        initializer.data.name = labelText
+    end
+end
+
+local function ApplyIconLimitLabel(component, frame)
+    if not component or not frame then return end
+    local orientation = (component.db and component.db.orientation) or "H"
+    local labelText = (orientation == "H") and "Icons per Row" or "Icons per Column"
     local lbl = GetFrameLabel(frame)
     if lbl and lbl.SetText then
         lbl:SetText(labelText)
@@ -187,6 +202,10 @@ function panel:RefreshOrientationWidgets(component)
 
     for _, frame in EnumerateOrientationFrames(bucket, "columns") do
         ApplyColumnsLabel(comp, frame)
+    end
+
+    for _, frame in EnumerateOrientationFrames(bucket, "iconLimit") do
+        ApplyIconLimitLabel(comp, frame)
     end
 
     for _, frame in EnumerateOrientationFrames(bucket, "direction") do
@@ -261,6 +280,30 @@ local function createComponentRenderer(componentId)
                     local section = setting.ui.section or "General"
                     if not sections[section] then sections[section] = {} end
                     table.insert(sections[section], {id = settingId, setting = setting})
+                end
+            end
+
+            -- Regression guard: ensure Cooldown Manager components always render both X/Y controls.
+            do
+                local requiresPositionAxes = component.id == "essentialCooldowns"
+                    or component.id == "utilityCooldowns"
+                    or component.id == "trackedBuffs"
+                    or component.id == "trackedBars"
+                if requiresPositionAxes then
+                    sections["Positioning"] = sections["Positioning"] or {}
+                    local hasPositionX = false
+                    local hasPositionY = false
+                    for _, entry in ipairs(sections["Positioning"]) do
+                        if entry.id == "positionX" then hasPositionX = true end
+                        if entry.id == "positionY" then hasPositionY = true end
+                        if hasPositionX and hasPositionY then break end
+                    end
+                    if not hasPositionX and component.settings.positionX then
+                        table.insert(sections["Positioning"], { id = "positionX", setting = component.settings.positionX })
+                    end
+                    if not hasPositionY and component.settings.positionY then
+                        table.insert(sections["Positioning"], { id = "positionY", setting = component.settings.positionY })
+                    end
                 end
             end
 
@@ -1354,8 +1397,21 @@ local function createComponentRenderer(componentId)
                                         local function requestApply()
                                             if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
                                         end
-                                    if settingId == "positionX" or settingId == "positionY" then
+                                        if settingId == "positionX" or settingId == "positionY" then
                                             if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                                -- Mark this as a recent position write so the back-sync layer
+                                                -- can skip immediately re-writing the same offsets back into
+                                                -- the DB. This prevents a second Settings row rebuild that
+                                                -- would otherwise steal focus from the numeric text input.
+                                                component._recentPositionWrite = component._recentPositionWrite or {}
+                                                if type(GetTime) == "function" then
+                                                    component._recentPositionWrite.time = GetTime()
+                                                else
+                                                    component._recentPositionWrite.time = nil
+                                                end
+                                                component._recentPositionWrite.x = component.db.positionX
+                                                component._recentPositionWrite.y = component.db.positionY
+
                                                 addon.EditMode.SyncComponentToEditMode(component)
                                                 safeSaveOnly(); requestApply()
                                             end
@@ -1549,7 +1605,17 @@ local function createComponentRenderer(componentId)
                                 else
                                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
                                 end
-                                local data = { setting = settingObj, options = options, name = label }
+                                local data = {
+                                    setting = settingObj,
+                                    options = options,
+                                    name = label,
+                                    -- Metadata so helpers (e.g., text inputs) can distinguish which
+                                    -- component/setting this row belongs to. Used by the X/Y position
+                                    -- focus-retention logic to auto-refocus after Settings list
+                                    -- reinitialization.
+                                    componentId = component.id,
+                                    settingId = settingId,
+                                }
                                 local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", data)
                                 initSlider:AddShownPredicate(function()
                                     return panel:IsSectionExpanded(component.id, sectionName)
@@ -1664,6 +1730,25 @@ local function createComponentRenderer(componentId)
                                             end
                                         end
                                         if lbl and lbl.SetTextColor then panel.ApplyRobotoWhite(lbl) end
+                                        if frame.ScooterIconLimitInfoIcon then
+                                            frame.ScooterIconLimitInfoIcon:Hide()
+                                            frame.ScooterIconLimitInfoIcon:SetParent(nil)
+                                            frame.ScooterIconLimitInfoIcon = nil
+                                        end
+                                        if settingId == "iconLimit" then
+                                            ApplyIconLimitLabel(component, frame)
+                                            if panel and panel.RegisterOrientationWidget then
+                                                panel:RegisterOrientationWidget(component.id, "iconLimit", frame)
+                                            end
+                                            if lbl and panel and panel.CreateInfoIconForLabel then
+                                                local tooltipText = "Sets how many buff icons appear in each row or column before wrapping continues in the Icon Wrap direction."
+                                                frame.ScooterIconLimitInfoIcon = panel.CreateInfoIconForLabel(lbl, tooltipText, 5, 0, 32)
+                                                if frame.ScooterIconLimitInfoIcon then
+                                                    frame.ScooterIconLimitInfoIcon:ClearAllPoints()
+                                                    frame.ScooterIconLimitInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                                end
+                                            end
+                                        end
                                         if ui.dynamicLabel and settingId == "columns" then
                                             ApplyColumnsLabel(component, frame)
                                             if panel and panel.RegisterOrientationWidget then

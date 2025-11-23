@@ -33,7 +33,26 @@ function ConvertSliderInitializerToTextInput(initializer)
     local baseInitFrame = initializer.InitFrame
     initializer.InitFrame = function(self, frame)
         if baseInitFrame then baseInitFrame(self, frame) end
-        if frame.SliderWithSteppers then frame.SliderWithSteppers:Hide() end
+        -- Attach simple metadata from the initializer so commit/Init logic can
+        -- distinguish which logical setting this row represents.
+        if self and self.data then
+            if self.data.settingId then
+                frame.ScooterSettingId = self.data.settingId
+            end
+            if self.data.componentId then
+                frame.ScooterComponentId = self.data.componentId
+            end
+        end
+        if frame.SliderWithSteppers then
+            frame.SliderWithSteppers:Hide()
+            if frame.SliderWithSteppers.EnableMouse then frame.SliderWithSteppers:EnableMouse(false) end
+            if frame.SliderWithSteppers.SetEnabled then frame.SliderWithSteppers:SetEnabled(false) end
+            local slider = frame.SliderWithSteppers.Slider
+            if slider then
+                if slider.EnableMouse then slider:EnableMouse(false) end
+                if slider.SetEnabled then slider:SetEnabled(false) end
+            end
+        end
         local input = frame.ScooterTextInput
         if not input then
             input = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
@@ -47,15 +66,50 @@ function ConvertSliderInitializerToTextInput(initializer)
                 input:SetText(value == nil and "" or string.format("%.0f", value))
             end
             local function commit()
+                local function scheduleClear()
+                    if not input then return end
+                    local function clearInhibit()
+                        if input then input.ScooterFocusInhibit = nil end
+                    end
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0.12, clearInhibit)
+                    else
+                        clearInhibit()
+                    end
+                end
+                if input then
+                    input.ScooterFocusInhibit = true
+                end
                 local num = roundPositionValue(tonumber(input:GetText()))
-                if not num then restore(); return end
+                if not num then restore(); scheduleClear(); return end
                 local options = self:GetOptions()
                 if options then
                     if options.minValue ~= nil then num = math.max(options.minValue, num) end
                     if options.maxValue ~= nil then num = math.min(options.maxValue, num) end
                 end
                 local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
-                if setting and setting.GetValue and setting:GetValue() ~= num then setting:SetValue(num) else input:SetText(string.format("%.0f", num)) end
+                if setting and setting.GetValue and setting:GetValue() ~= num then
+                    setting:SetValue(num)
+                    -- For position X/Y text inputs, remember that we just authored
+                    -- a value so that when the Settings list later reinitializes
+                    -- the row (after Edit Mode Save/Apply), we can automatically
+                    -- restore focus to this box. This mitigates the focus drop
+                    -- caused by the late row rebuild described in HOLDING.md.
+                    if panel and frame.ScooterSettingId and (frame.ScooterSettingId == "positionX" or frame.ScooterSettingId == "positionY") then
+                        local pending = panel._pendingPositionRefocus or {}
+                        pending.settingId = frame.ScooterSettingId
+                        pending.settingName = setting.GetName and setting:GetName() or nil
+                        if type(GetTime) == "function" then
+                            pending.expire = GetTime() + 0.8
+                        else
+                            pending.expire = nil
+                        end
+                        panel._pendingPositionRefocus = pending
+                    end
+                else
+                    input:SetText(string.format("%.0f", num))
+                end
+                scheduleClear()
             end
             input:SetScript("OnEnterPressed", function(b) commit(); b:ClearFocus() end)
             input:SetScript("OnEditFocusLost", function(b) commit(); b:HighlightText(0, 0) end)
@@ -65,6 +119,45 @@ function ConvertSliderInitializerToTextInput(initializer)
         local value = setting and setting.GetValue and setting:GetValue() or nil
         frame.ScooterTextInput:SetText(value == nil and "" or string.format("%.0f", value))
         if frame.ScooterTextInput then frame.ScooterTextInput:Show() end
+        if frame.ScooterTextInput and not frame.ScooterTextInput.ScooterFocusHooks then
+            frame.ScooterTextInput.ScooterFocusHooks = true
+            frame.ScooterTextInput:HookScript("OnEditFocusGained", function(box)
+                box.ScooterFocusInhibit = nil
+            end)
+            frame.ScooterTextInput:HookScript("OnEscapePressed", function(box)
+                box.ScooterFocusInhibit = nil
+            end)
+        end
+        if frame and not frame.ScooterFocusRetainHooked then
+            frame.ScooterFocusRetainHooked = true
+            frame:HookScript("OnMouseDown", function(rowFrame, button)
+                if button ~= "LeftButton" then return end
+                local box = rowFrame and rowFrame.ScooterTextInput
+                if not box then return end
+                local function attemptFocus(delay, retries)
+                    if not box or not box:IsShown() or not box:IsVisible() or not box.SetFocus then return end
+                    if box.ScooterFocusInhibit then
+                        if retries <= 0 then return end
+                        if C_Timer and C_Timer.After then
+                            C_Timer.After(delay or 0.05, function()
+                                attemptFocus(delay, retries - 1)
+                            end)
+                        end
+                        return
+                    end
+                    if box.HasFocus and box:HasFocus() then return end
+                    box:SetFocus()
+                    if box.HighlightText then box:HighlightText(0, -1) end
+                end
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0.01, function()
+                        attemptFocus(0.05, 4)
+                    end)
+                else
+                    attemptFocus(0, 0)
+                end
+            end)
+        end
         if not frame.ScooterOriginalOnSettingValueChanged then
             frame.ScooterOriginalOnSettingValueChanged = frame.OnSettingValueChanged
             frame.OnSettingValueChanged = function(ctrl, setting, val)
@@ -76,6 +169,38 @@ function ConvertSliderInitializerToTextInput(initializer)
             end
         end
         if frame.ScooterTextInput and SettingsControlMixin and SettingsControlMixin.IsEnabled then frame.ScooterTextInput:SetEnabled(SettingsControlMixin.IsEnabled(frame)) end
+
+        -- If a recent X/Y position edit was just committed, and this row
+        -- corresponds to that same logical setting, auto-refocus the text box
+        -- once the row has finished initializing. This specifically targets the
+        -- second Settings row rebuild that occurs after Edit Mode save/apply,
+        -- preventing it from stealing focus from the user's active input.
+        if panel and panel._pendingPositionRefocus and frame.ScooterSettingId and (frame.ScooterSettingId == "positionX" or frame.ScooterSettingId == "positionY") then
+            local pending = panel._pendingPositionRefocus
+            local now = type(GetTime) == "function" and GetTime() or nil
+            local withinWindow = (not pending.expire) or (now and now <= pending.expire)
+            if withinWindow and frame.ScooterTextInput then
+                -- Clear the pending flag so we only refocus once per commit.
+                panel._pendingPositionRefocus = nil
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if frame and frame.ScooterTextInput and frame.ScooterTextInput.SetFocus then
+                            frame.ScooterTextInput:SetFocus()
+                            if frame.ScooterTextInput.HighlightText then
+                                frame.ScooterTextInput:HighlightText(0, -1)
+                            end
+                        end
+                    end)
+                else
+                    if frame.ScooterTextInput and frame.ScooterTextInput.SetFocus then
+                        frame.ScooterTextInput:SetFocus()
+                        if frame.ScooterTextInput.HighlightText then
+                            frame.ScooterTextInput:HighlightText(0, -1)
+                        end
+                    end
+                end
+            end
+        end
     end
     initializer._scooterTextInput = true
     return initializer

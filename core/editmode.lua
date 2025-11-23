@@ -117,15 +117,57 @@ local function ResolveSettingId(frame, logicalKey)
         if logicalKey == "bar_content" then return EM.BarContent end
     end
     local sys = frame.system
+    if not sys then return nil end
+
+    local auraSystem = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.AuraFrame
+    local cacheKey = logicalKey
+    if sys == auraSystem then
+        local frameKey
+        if frame == _G.BuffFrame then
+            frameKey = "buff"
+        elseif frame == _G.DebuffFrame then
+            frameKey = "debuff"
+        else
+            frameKey = (frame and frame.GetName and frame:GetName()) or tostring(frame)
+        end
+        cacheKey = (frameKey or "frame") .. "::" .. tostring(logicalKey)
+    end
+
     _resolvedSettingIdCache[sys] = _resolvedSettingIdCache[sys] or {}
-    if _resolvedSettingIdCache[sys][logicalKey] ~= nil then
-        return _resolvedSettingIdCache[sys][logicalKey]
+    if _resolvedSettingIdCache[sys][cacheKey] ~= nil then
+        return _resolvedSettingIdCache[sys][cacheKey]
     end
 
     local entries = _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo and _G.EditModeSettingDisplayInfoManager.systemSettingDisplayInfo[sys]
     if type(entries) ~= "table" then return nil end
 
     local lk = _lower(logicalKey)
+
+    local auraEnum = _G.Enum and _G.Enum.EditModeAuraFrameSetting
+    if auraEnum and sys == auraSystem then
+        local id
+        if lk == "orientation" then
+            id = auraEnum.Orientation
+        elseif lk == "icon_wrap" or lk == "wrap" then
+            id = auraEnum.IconWrap
+        elseif lk == "icon_direction" or lk == "direction" then
+            id = auraEnum.IconDirection
+        elseif lk == "icon_size" then
+            id = auraEnum.IconSize
+        elseif lk == "icon_padding" then
+            id = auraEnum.IconPadding
+        elseif lk == "icon_limit" or lk == "iconlimit" or lk == "aura_icon_limit" then
+            if frame == _G.BuffFrame then
+                id = auraEnum.IconLimitBuffFrame
+            elseif frame == _G.DebuffFrame then
+                id = auraEnum.IconLimitDebuffFrame
+            end
+        end
+        if id ~= nil then
+            _resolvedSettingIdCache[sys][cacheKey] = id
+            return id
+        end
+    end
     local pick
     for _, setup in ipairs(entries) do
         local nm = _lower(setup.name or "")
@@ -187,6 +229,10 @@ local function ResolveSettingId(frame, logicalKey)
             if tp == Enum.EditModeSettingDisplayType.Slider and nm:find("padding", 1, true) then
                 pick = pick or setup
             end
+        elseif lk == "icon_limit" or lk == "iconlimit" or lk == "aura_icon_limit" then
+            if tp == Enum.EditModeSettingDisplayType.Slider and nm:find("limit", 1, true) and nm:find("icon", 1, true) then
+                pick = pick or setup
+            end
         elseif lk == "icon_wrap" or lk == "wrap" then
             if tp == Enum.EditModeSettingDisplayType.Dropdown and nm:find("wrap", 1, true) then
                 pick = pick or setup
@@ -210,7 +256,7 @@ local function ResolveSettingId(frame, logicalKey)
         end
     end
     local id = pick and pick.setting or nil
-    _resolvedSettingIdCache[sys][logicalKey] = id
+    _resolvedSettingIdCache[sys][cacheKey] = id
     return id
 end
 
@@ -398,6 +444,19 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
     local frame = _G[component.frameName]
     if not frame or not addon.EditMode.HasEditModeSettings(frame) then return false end
 
+    local function markBackSyncSkip(forSetting, count)
+        if not component then return end
+        component._skipNextBackSync = component._skipNextBackSync or {}
+        local key = forSetting or settingId
+        local current = component._skipNextBackSync[key]
+        local desired = tonumber(count) or 2
+        if type(current) == "number" then
+            component._skipNextBackSync[key] = math.max(current, desired)
+        else
+            component._skipNextBackSync[key] = desired
+        end
+    end
+
     local setting = component.settings[settingId]
     if not setting or setting.type ~= "editmode" then return false end
 
@@ -450,7 +509,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if o == "H" then
                 editModeValue = (v == "right") and 1 or 0
             else
-                editModeValue = (v == "down") and 1 or 0
+                editModeValue = (v == "up") and 1 or 0
             end
         else
             -- Default mapping used by Cooldown Viewer / Action Bars (orientation-aware)
@@ -475,6 +534,21 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
         end
         editModeValue = pad
+    elseif settingId == "iconLimit" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_limit") or setting.settingId
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        local minV, maxV, defaultV = 1, 32, 8
+        if sysEnum and frame and frame.system == sysEnum.AuraFrame then
+            local isBuffFrame = frame == _G.BuffFrame
+            minV = isBuffFrame and 2 or 1
+            maxV = isBuffFrame and 32 or 16
+            defaultV = isBuffFrame and 11 or math.min(math.max(defaultV, minV), maxV)
+        end
+        local limit = tonumber(dbValue)
+        if not limit then limit = defaultV end
+        limit = math.floor(limit + 0.5)
+        if limit < minV then limit = minV elseif limit > maxV then limit = maxV end
+        editModeValue = limit
     elseif settingId == "iconSize" then
         -- Resolve id for non-CDM systems and send raw percent (50–200), snapped to 10.
         -- LibEditModeOverride handles index-vs-raw conversion for systems where Icon Size
@@ -504,6 +578,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         if raw < minV then raw = minV elseif raw > maxV then raw = maxV end
         raw = minV + math.floor(((raw - minV) / step) + 0.5) * step -- snap to step within range
         setting.settingId = setting.settingId or ((settingId == "menuSize") and 2 or 3)
+        markBackSyncSkip()
         addon.EditMode.SetSetting(frame, setting.settingId, raw)
         local updater = (settingId == "menuSize") and frame.UpdateSystemSettingSize or frame.UpdateSystemSettingEyeSize
         if frame and type(updater) == "function" then pcall(updater, frame) end
@@ -552,6 +627,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
 
         -- Opacity: unconditionally write, and immediately refresh the system mixin so alpha updates
         if settingId == "opacity" then
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
                 pcall(frame.UpdateSystemSettingOpacity, frame)
@@ -561,6 +637,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             return true
         elseif settingId == "displayMode" then
             -- Write and immediately update bar content on the viewer so icon/name hide/show applies without Edit Mode roundtrip
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if frame and type(frame.UpdateSystemSettingBarContent) == "function" then
                 pcall(frame.UpdateSystemSettingBarContent, frame)
@@ -584,6 +661,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 end
             end
             local emVal = (component.db.orientation == "H") and 0 or 1
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, emVal)
             -- For Stance Bar, skip all immediate updaters to avoid taint; rely on deferred ApplyChanges
             if not (component and component.id == "stanceBar") then
@@ -610,6 +688,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             value = math.floor(math.max(1, math.min(4, value)))
             -- Resolve rows setting id dynamically
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_rows") or setting.settingId
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
             -- Skip all immediate updaters for Stance Bar to avoid taint
             if not (component and component.id == "stanceBar") then
@@ -634,6 +713,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if not value then value = 12 end
             value = math.floor(math.max(6, math.min(12, value)))
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_icons") or setting.settingId
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
             if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
             if frame and type(frame.UpdateSystemSettingNumIcons) == "function" then pcall(frame.UpdateSystemSettingNumIcons, frame) end
@@ -652,6 +732,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             return true
         elseif settingId == "visibilityMode" then
             -- Write and immediately update visible state on the viewer
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then
                 pcall(frame.UpdateSystemSettingVisibleSetting, frame)
@@ -661,6 +742,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             return true
         elseif component and component.id == "microBar" and settingId == "direction" then
             -- Write and immediately update ordering for Micro bar
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if frame and type(frame.UpdateSystemSettingOrder) == "function" then pcall(frame.UpdateSystemSettingOrder, frame) end
             if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
@@ -673,6 +755,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local map = { always = 0, combat = 1, not_in_combat = 2, hidden = 3 }
             local idx = map[tostring(dbValue)]
             if idx == nil then idx = 0 end
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, idx)
             if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then pcall(frame.UpdateSystemSettingVisibleSetting, frame) end
             wrote = true
@@ -681,6 +764,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "hideBarArt" then
             setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_art") or setting.settingId
             local v = not not dbValue
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
             if frame and type(frame.UpdateSystemSettingHideBarArt) == "function" then pcall(frame.UpdateSystemSettingHideBarArt, frame) end
             wrote = true
@@ -689,6 +773,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "hideBarScrolling" then
             setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_bar_scrolling") or setting.settingId
             local v = not not dbValue
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
             if frame and type(frame.UpdateSystemSettingHideBarScrolling) == "function" then pcall(frame.UpdateSystemSettingHideBarScrolling, frame) end
             wrote = true
@@ -697,12 +782,30 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "alwaysShowButtons" then
             setting.settingId = setting.settingId or ResolveSettingId(frame, "always_show_buttons") or setting.settingId
             local v = not not dbValue
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
             if frame and type(frame.UpdateSystemSettingAlwaysShowButtons) == "function" then pcall(frame.UpdateSystemSettingAlwaysShowButtons, frame) end
             wrote = true
             persist()
             return true
+        elseif settingId == "iconLimit" then
+            markBackSyncSkip()
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingIconLimit) == "function" then pcall(frame.UpdateSystemSettingIconLimit, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
+            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
+            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+            if frame and type(frame.GetItemContainerFrame) == "function" then
+                local ic = frame:GetItemContainerFrame()
+                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            end
+            wrote = true
+            persist()
+            return true
         elseif settingId == "iconSize" then
+            markBackSyncSkip(nil, 2)
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if not (component and component.id == "stanceBar") then
                 if frame and type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
@@ -714,6 +817,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if frame and type(frame.GetItemContainerFrame) == "function" then
                     local ic = frame:GetItemContainerFrame()
                     if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
+            end
+            if component and (component.id == "buffs" or component.id == "debuffs") then
+                component._pendingAuraIconSizeTarget = editModeValue
+                if GetTime then
+                    component._pendingAuraIconSizeExpiry = GetTime() + 2.0
+                else
+                    component._pendingAuraIconSizeExpiry = os and os.time and (os.time() + 2) or nil
                 end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
@@ -734,6 +845,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if not pad then pad = 2 end
                 if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
             end
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
             if not (component and component.id == "stanceBar") then
                 if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
@@ -755,6 +867,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         -- Others: skip write if no change
         local current = addon.EditMode.GetSetting(frame, setting.settingId)
         if current ~= editModeValue then
+            markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if settingId == "hideWhenInactive" and frame and type(frame.UpdateSystemSettingHideWhenInactive) == "function" then
                 pcall(frame.UpdateSystemSettingHideWhenInactive, frame)
@@ -786,7 +899,7 @@ function addon.EditMode.SyncComponentToEditMode(component)
 
     -- 2. Sync all other Edit Mode settings
     for settingId, setting in pairs(component.settings) do
-        if setting.type == "editmode" then
+        if type(setting) == "table" and setting.type == "editmode" then
             addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         end
     end
@@ -847,7 +960,7 @@ local function _ReadAuraFrameIconPercent(frame)
 end
 
 function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
-    if componentId ~= "buffs" then return end
+    if componentId ~= "buffs" and componentId ~= "debuffs" then return end
     if not C_Timer or not C_Timer.After then return end
     if _pendingAuraIconSizeBackfill[componentId] then return end
     local origin = opts and opts.origin
@@ -866,6 +979,8 @@ function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
         addon.EditMode._auraIconSizeLog = {}
     end
     _AuraBackfillLog("QueueAuraIconSizeBackfill start component=%s origin=%s attempt=%d delay=%.2fs", tostring(componentId), tostring(origin), attempt, delay)
+
+    local titlePrefix = (componentId == "buffs") and "Buffs" or (componentId == "debuffs" and "Debuffs" or tostring(componentId or "Aura"))
 
     C_Timer.After(delay, function()
         _pendingAuraIconSizeBackfill[componentId] = nil
@@ -941,7 +1056,7 @@ function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
             if changed then
                 refreshPanelIfVisible()
                 if _AuraBackfillDebugEnabled() and addon.DebugShowWindow then
-                    addon.DebugShowWindow(string.format("Buffs Icon Size Backfill (%s)", tostring(origin or "Sync")), addon.EditMode._auraIconSizeLog)
+                    addon.DebugShowWindow(string.format("%s Icon Size Backfill (%s)", titlePrefix, tostring(origin or "Sync")), addon.EditMode._auraIconSizeLog)
                 end
                 return
             end
@@ -954,10 +1069,32 @@ function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
         _AuraBackfillLog("AuraContainer iconScale-derived percent=%s", tostring(percent))
         if not percent then return end
 
+        if component._pendingAuraIconSizeTarget then
+            local expire = component._pendingAuraIconSizeExpiry
+            local now = GetTime and GetTime() or nil
+            if expire and now and now >= expire then
+                component._pendingAuraIconSizeTarget = nil
+                component._pendingAuraIconSizeExpiry = nil
+                _AuraBackfillLog("Pending target expired; clearing guard")
+            else
+                local target = component._pendingAuraIconSizeTarget
+                if target and math.abs(percent - target) >= 0.5 then
+                    _AuraBackfillLog("Pending target %s differs from fallback percent=%s; retrying instead of reverting", tostring(target), tostring(percent))
+                    local nextAttempt = attempt + 1
+                    if scheduleRetry(nextAttempt, "pending_target") then return end
+                    return
+                end
+            end
+        end
+
         if component.db.iconSize ~= percent then
             _AuraBackfillLog("Updating component.db.iconSize from %s to %s via fallback", tostring(component.db.iconSize), tostring(percent))
             component.db.iconSize = percent
             updated = true
+            if component._pendingAuraIconSizeTarget and math.abs((tonumber(component._pendingAuraIconSizeTarget) or 0) - percent) < 0.5 then
+                component._pendingAuraIconSizeTarget = nil
+                component._pendingAuraIconSizeExpiry = nil
+            end
             refreshPanelIfVisible()
         else
             _AuraBackfillLog("No change to component.db.iconSize (already %s)", tostring(percent))
@@ -965,7 +1102,7 @@ function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
         end
 
         if _AuraBackfillDebugEnabled() and addon.DebugShowWindow then
-            addon.DebugShowWindow(string.format("Buffs Icon Size Backfill (%s)", tostring(origin or "Fallback")), addon.EditMode._auraIconSizeLog)
+            addon.DebugShowWindow(string.format("%s Icon Size Backfill (%s)", titlePrefix, tostring(origin or "Fallback")), addon.EditMode._auraIconSizeLog)
         end
 
         if not updated then
@@ -991,6 +1128,20 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
 
     local setting = component.settings[settingId]
     if not setting or setting.type ~= "editmode" then return false end
+
+    if component._skipNextBackSync and component._skipNextBackSync[settingId] then
+        local remaining = component._skipNextBackSync[settingId]
+        if type(remaining) == "number" then
+            if remaining <= 1 then
+                component._skipNextBackSync[settingId] = nil
+            else
+                component._skipNextBackSync[settingId] = remaining - 1
+            end
+        else
+            component._skipNextBackSync[settingId] = nil
+        end
+        return false
+    end
 
     -- Resolve dynamic ids if needed
     if settingId == "visibilityMode" then
@@ -1088,7 +1239,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             if orientation == "H" then
                 dbValue = (v == 1) and "right" or "left"
             else
-                dbValue = (v == 1) and "down" or "up"
+                dbValue = (v == 1) and "up" or "down"
             end
         else
             -- Default mapping used by Cooldown Viewer / Action Bars (orientation-aware)
@@ -1113,6 +1264,21 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             if v < 2 then v = 2 elseif v > 10 then v = 10 end
         end
         dbValue = v
+    elseif settingId == "iconLimit" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_limit") or setting.settingId
+        local v = addon.EditMode.GetSetting(frame, setting.settingId)
+        if v == nil then return false end
+        local sysEnum = _G.Enum and _G.Enum.EditModeSystem
+        local minV, maxV = 1, 32
+        if sysEnum and frame and frame.system == sysEnum.AuraFrame then
+            local isBuffFrame = frame == _G.BuffFrame
+            minV = isBuffFrame and 2 or 1
+            maxV = isBuffFrame and 32 or 16
+        end
+        v = tonumber(v) or minV
+        v = math.floor(v + 0.5)
+        if v < minV then v = minV elseif v > maxV then v = maxV end
+        dbValue = v
     elseif settingId == "iconSize" then
         -- Resolve id for non-CDM systems and adapt index-vs-raw semantics.
         -- LibEditModeOverride converts index-based sliders back to raw for callers when
@@ -1125,7 +1291,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             local pct = math.floor((scale * 100) + 0.5)
             if pct < 50 then pct = 50 elseif pct > 200 then pct = 200 end
             dbValue = pct
-            if component.id == "buffs" and _AuraBackfillDebugEnabled() then
+            if (component.id == "buffs" or component.id == "debuffs") and _AuraBackfillDebugEnabled() then
                 _AuraBackfillLog("Sync iconSize: AuraContainer.iconScale=%.3f -> pct=%s (editModeValue=%s)", scale or 0, tostring(pct), tostring(initialEditModeValue))
             end
         else
@@ -1140,7 +1306,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             else
                 dbValue = v
             end
-            if component.id == "buffs" and _AuraBackfillDebugEnabled() then
+            if (component.id == "buffs" or component.id == "debuffs") and _AuraBackfillDebugEnabled() then
                 _AuraBackfillLog("Sync iconSize: LEO raw=%s editModeValue=%s -> dbValue=%s", tostring(raw), tostring(initialEditModeValue), tostring(dbValue))
             end
         end
@@ -1210,18 +1376,28 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
     end
 
     if component.db[settingId] ~= dbValue then
-        if component.id == "buffs" and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
+        if (component.id == "buffs" or component.id == "debuffs") and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
             _AuraBackfillLog("Sync result: updating component.db.iconSize from %s to %s", tostring(component.db[settingId]), tostring(dbValue))
         end
         component.db[settingId] = dbValue
+        if settingId == "iconSize" and component and (component.id == "buffs" or component.id == "debuffs") then
+            local pending = component._pendingAuraIconSizeTarget
+            if pending and math.abs((tonumber(dbValue) or 0) - pending) <= 0.5 then
+                component._pendingAuraIconSizeTarget = nil
+                component._pendingAuraIconSizeExpiry = nil
+            end
+        end
         if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshOrientationWidgets) == "function" then
             if settingId == "orientation" or settingId == "direction" or settingId == "iconWrap" then
                 addon.SettingsPanel:RefreshOrientationWidgets(component)
             end
         end
+        if addon and addon.SettingsPanel and type(addon.SettingsPanel.HandleEditModeBackSync) == "function" then
+            addon.SettingsPanel:HandleEditModeBackSync(component.id, settingId)
+        end
         return true -- Indicates a change was made
     end
-    if component.id == "buffs" and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
+    if (component.id == "buffs" or component.id == "debuffs") and settingId == "iconSize" and _AuraBackfillDebugEnabled() then
         _AuraBackfillLog("Sync result: no change (component.db.iconSize already %s)", tostring(dbValue))
     end
     return false
@@ -1242,6 +1418,20 @@ function addon.EditMode.SyncComponentPositionFromEditMode(component)
     end
 
     if offsetX == nil or offsetY == nil then return false end
+
+    -- If this position matches a very recent Scooter-authored write (e.g., from
+    -- the X/Y numeric text inputs), skip writing it back into the DB. This
+    -- avoids a redundant Settings row reinitialization that would otherwise
+    -- steal focus from the text box shortly after the user edits it.
+    local recent = component._recentPositionWrite
+    if recent and (recent.x ~= nil and recent.y ~= nil) then
+        local now = type(GetTime) == "function" and GetTime() or nil
+        if now and recent.time and (now - recent.time) <= 0.6 then
+            if recent.x == offsetX and recent.y == offsetY then
+                return false
+            end
+        end
+    end
 
     local changed = false
     if component.db.positionX ~= offsetX then
@@ -1273,11 +1463,13 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
             if lowerOrigin:find("editmodeexit", 1, true) then
                 delay = 0.25
             end
-            addon.EditMode.QueueAuraIconSizeBackfill("buffs", {
-                delay = delay,
-                origin = origin,
-                retryDelays = { 0.35, 0.75 },
-            })
+            for _, auraId in ipairs({ "buffs", "debuffs" }) do
+                addon.EditMode.QueueAuraIconSizeBackfill(auraId, {
+                    delay = delay,
+                    origin = origin,
+                    retryDelays = { 0.35, 0.75 },
+                })
+            end
         end
     end
 

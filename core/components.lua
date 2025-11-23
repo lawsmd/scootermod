@@ -1586,15 +1586,30 @@ function addon:InitializeComponents()
                 min = 5, max = 15, step = 1,
                 section = "Positioning", order = 4,
             }},
+            iconLimit = { type = "editmode", default = 11, ui = {
+                label = "Icon Limit", widget = "slider",
+                min = 2, max = 32, step = 1,
+                section = "Positioning", order = 5,
+            }},
+            positionX = { type = "addon", default = 0, ui = {
+                label = "X Position", widget = "slider",
+                min = -1000, max = 1000, step = 1,
+                section = "Positioning", order = 6,
+            }},
+            positionY = { type = "addon", default = 0, ui = {
+                label = "Y Position", widget = "slider",
+                min = -1000, max = 1000, step = 1,
+                section = "Positioning", order = 7,
+            }},
             -- Sizing (Edit Mode-backed scale + addon-only width/height)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1,
             }},
             iconWidth = { type = "addon", default = 30, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2,
+                label = "Icon Width", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 2,
             }},
             iconHeight = { type = "addon", default = 30, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3,
+                label = "Icon Height", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 3,
             }},
             -- Marker: enable empty Border section
             supportsEmptyBorderSection = true,
@@ -1633,11 +1648,25 @@ function addon:InitializeComponents()
                 min = 5, max = 15, step = 1,
                 section = "Positioning", order = 4,
             }},
+            iconLimit = { type = "editmode", default = 8, ui = {
+                label = "Icon Limit", widget = "slider",
+                min = 1, max = 16, step = 1,
+                section = "Positioning", order = 5,
+            }},
+            -- Sizing (Edit Mode-backed scale + addon-only width/height)
+            iconSize = { type = "editmode", default = 100, ui = {
+                label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1,
+            }},
+            iconWidth = { type = "addon", default = 30, ui = {
+                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2,
+            }},
+            iconHeight = { type = "addon", default = 30, ui = {
+                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3,
+            }},
             supportsEmptyBorderSection = true,
             supportsText = { type = "addon", default = true },
         },
-        -- Marker: Sizing/Visibility sections will be filled in later
-        supportsEmptySizingSection = true,
+        -- Marker: Visibility section will be filled in later
         supportsEmptyVisibilitySection = true,
         ApplyStyling = ApplyAuraFrameStyling,
     })
