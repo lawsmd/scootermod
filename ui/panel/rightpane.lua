@@ -130,11 +130,10 @@ function RightPane:SetTitle(text)
     self.Header.Title:SetText(text or "")
 end
 
--- Acquire or create a reusable row frame for a given template.
-local function AcquireRow(self, index, template)
+local function AcquireRow(self, index, template, reuseKey)
     self.rows = self.rows or {}
     local row = self.rows[index]
-    if row and row._template ~= template then
+    if row and (row._template ~= template or row._reuseKey ~= reuseKey) then
         -- Template changed; discard the old frame and create a fresh one.
         -- Explicitly hide and detach the previous frame so it cannot remain
         -- visible "behind" the panel when we switch categories.
@@ -149,8 +148,11 @@ local function AcquireRow(self, index, template)
         row = CreateFrame("Frame", nil, self.Content, template or "Frame")
         self.rows[index] = row
         row._template = template
+        row._reuseKey = reuseKey
     else
         row:SetParent(self.Content)
+        row._template = template
+        row._reuseKey = reuseKey
     end
     return row
 end
@@ -223,7 +225,27 @@ function RightPane:Display(initializers)
                 if type(template) ~= "string" or template == "" then
                     template = "SettingsListElementTemplate"
                 end
-                local row = AcquireRow(self, index, template)
+                local reuseKey
+                do
+                    local data = init.data
+                    if type(data) == "table" then
+                        local componentId = data.componentId or data.ComponentID or data.componentID
+                        if componentId and data.settingId then
+                            reuseKey = string.format("%s::setting::%s", tostring(componentId), tostring(data.settingId))
+                        elseif componentId and data.sectionKey then
+                            reuseKey = string.format("%s::section::%s", tostring(componentId), tostring(data.sectionKey))
+                        elseif componentId and data.name then
+                            reuseKey = string.format("%s::name::%s", tostring(componentId), tostring(data.name))
+                        elseif data.settingId then
+                            reuseKey = string.format("setting::%s", tostring(data.settingId))
+                        elseif data.sectionKey then
+                            reuseKey = string.format("section::%s", tostring(data.sectionKey))
+                        elseif data.name then
+                            reuseKey = string.format("name::%s", tostring(data.name))
+                        end
+                    end
+                end
+                local row = AcquireRow(self, index, template, reuseKey)
                 index = index + 1
 
                 -- Force-hide the row so that Show() at the end of the loop triggers OnShow scripts.

@@ -462,8 +462,10 @@ local function createComponentRenderer(componentId)
                         end
 
                         local tabAName, tabBName
-                        if component and (component.id == "trackedBuffs" or component.id == "buffs" or component.id == "debuffs") then
+                        if component and component.id == "trackedBuffs" then
                             tabAName, tabBName = "Stacks", "Cooldown"
+                        elseif component and (component.id == "buffs" or component.id == "debuffs") then
+                            tabAName, tabBName = "Stacks", "Duration"
                         elseif component and component.id == "trackedBars" then
                             tabAName, tabBName = "Name", "Duration"
                         else
@@ -622,130 +624,83 @@ local function createComponentRenderer(componentId)
                                 end,
                                 yA)
 
-                            local labelB_Font = (component and component.id == "trackedBars") and "Duration Font" or "Cooldown Font"
-                            local labelB_Size = (component and component.id == "trackedBars") and "Duration Font Size" or "Cooldown Font Size"
-                            local labelB_Style = (component and component.id == "trackedBars") and "Duration Style" or "Cooldown Style"
-                            local labelB_Color = (component and component.id == "trackedBars") and "Duration Color" or "Cooldown Color"
-                            local labelB_OffsetX = (component and component.id == "trackedBars") and "Duration Offset X" or "Cooldown Offset X"
-                            local labelB_OffsetY = (component and component.id == "trackedBars") and "Duration Offset Y" or "Cooldown Offset Y"
+                            local isDurationTab = component and (component.id == "trackedBars" or component.id == "buffs" or component.id == "debuffs")
+                            local textBKey = isDurationTab and "textDuration" or "textCooldown"
+                            local labelBBase = isDurationTab and "Duration" or "Cooldown"
+                            local labelB_Font = labelBBase .. " Font"
+                            local labelB_Size = labelBBase .. " Font Size"
+                            local labelB_Style = labelBBase .. " Style"
+                            local labelB_Color = labelBBase .. " Color"
+                            local labelB_OffsetX = labelBBase .. " Offset X"
+                            local labelB_OffsetY = labelBBase .. " Offset Y"
+                            local defaultBSize = (component and component.id == "trackedBars") and 14 or 16
 
                             addDropdown(frame.PageB, labelB_Font, fontOptions,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.fontFace) or "FRIZQT__"
-                                    else
-                                        return (db.textCooldown and db.textCooldown.fontFace) or "FRIZQT__"
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.fontFace) or "FRIZQT__"
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.fontFace = v
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.fontFace = v
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].fontFace = v
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_Size, 6, 32, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.size) or 14
-                                    else
-                                        return (db.textCooldown and db.textCooldown.size) or 16
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.size) or defaultBSize
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.size = tonumber(v) or 14
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.size = tonumber(v) or 16
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].size = tonumber(v) or defaultBSize
                                     applyText()
                                 end,
                                 yB)
                             addStyle(frame.PageB, labelB_Style,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.style) or "OUTLINE"
-                                    else
-                                        return (db.textCooldown and db.textCooldown.style) or "OUTLINE"
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.style) or "OUTLINE"
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.style = v
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.style = v
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].style = v
                                     applyText()
                                 end,
                                 yB)
                             addColor(frame.PageB, labelB_Color, true,
                                 function()
-                                    local c
-                                    if component and component.id == "trackedBars" then
-                                        c = (db.textDuration and db.textDuration.color) or {1,1,1,1}
-                                    else
-                                        c = (db.textCooldown and db.textCooldown.color) or {1,1,1,1}
-                                    end
+                                    local cfg = db[textBKey]
+                                    local c = (cfg and cfg.color) or {1,1,1,1}
                                     return c[1], c[2], c[3], c[4]
                                 end,
                                 function(r,g,b,a)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.color = { r, g, b, a }
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.color = { r, g, b, a }
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].color = { r, g, b, a }
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_OffsetX, -50, 50, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.x) or 0
-                                    else
-                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.x) or 0
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.offset and cfg.offset.x) or 0
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.offset = db.textDuration.offset or {}
-                                        db.textDuration.offset.x = tonumber(v) or 0
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.offset = db.textCooldown.offset or {}
-                                        db.textCooldown.offset.x = tonumber(v) or 0
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].offset = db[textBKey].offset or {}
+                                    db[textBKey].offset.x = tonumber(v) or 0
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_OffsetY, -50, 50, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.y) or 0
-                                    else
-                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.y) or 0
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.offset and cfg.offset.y) or 0
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.offset = db.textDuration.offset or {}
-                                        db.textDuration.offset.y = tonumber(v) or 0
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.offset = db.textCooldown.offset or {}
-                                        db.textCooldown.offset.y = tonumber(v) or 0
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].offset = db[textBKey].offset or {}
+                                    db[textBKey].offset.y = tonumber(v) or 0
                                     applyText()
                                 end,
                                 yB)
@@ -1132,6 +1087,7 @@ local function createComponentRenderer(componentId)
                         component.id == "essentialCooldowns" or 
                         component.id == "utilityCooldowns" or 
                         component.id == "trackedBuffs" or 
+                        component.id == "buffs" or
                         component.id == "trackedBars" or
                         (type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil)
                     )
@@ -1159,11 +1115,12 @@ local function createComponentRenderer(componentId)
                     end
                     table.insert(init, expInitializer)
 
-                    -- Track Border section controls for Cooldown Manager groups and Action Bars to enable graying out
+                    -- Track Border section controls for Cooldown Manager groups, Buffs, and Action Bars to enable graying out
                     local isCDMBorder = (sectionName == "Border") and (
                         component.id == "essentialCooldowns" or 
                         component.id == "utilityCooldowns" or 
                         component.id == "trackedBuffs" or 
+                        component.id == "buffs" or
                         component.id == "trackedBars" or
                         (type(component.id) == "string" and component.id:match("^actionBar%d$") ~= nil)
                     )
@@ -1683,27 +1640,42 @@ local function createComponentRenderer(componentId)
                                                 hasOpacityPriority = (component.settings.barOpacityOutOfCombat ~= nil) and (component.settings.barOpacityWithTarget ~= nil)
                                             end
                                             if hasOpacityPriority and not frame.ScooterOpacityInfoIcon then
-                                                local tooltipText = "Opacity priority: With Target takes precedence, then In Combat (this slider), then Out of Combat. The highest priority condition that applies determines the opacity."
-                                                -- Position icon next to the label text ("Opacity"), not the slider
+                                                local tooltipText = "Opacity priority: With Target takes precedence, then In Combat, then Out of Combat. The highest priority condition that applies determines the opacity."
+                                                -- Position icon next to the label text ("Opacity in Combat"), not the slider
                                                 local label = frame.Text or frame.Label
                                                 if label and panel and panel.CreateInfoIcon then
                                                     -- Create icon using the helper function, which anchors to label's right edge
                                                     frame.ScooterOpacityInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
+                                                    if frame.ScooterOpacityInfoIcon then
+                                                        frame.ScooterOpacityInfoIcon:Hide()
+                                                    end
                                                     -- Defer positioning to ensure label is laid out first, then adjust based on actual text width
-                                                    C_Timer.After(0, function()
-                                                        if frame.ScooterOpacityInfoIcon and label then
-                                                            frame.ScooterOpacityInfoIcon:ClearAllPoints()
-                                                            -- Get the actual text width and position icon right after the text
-                                                            local textWidth = label:GetStringWidth() or 0
-                                                            if textWidth > 0 then
-                                                                -- Position relative to label's left edge + text width
-                                                                frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
-                                                            else
-                                                                -- Fallback: use label's right edge if text width unavailable
-                                                                frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+                                                    if C_Timer and C_Timer.After then
+                                                        C_Timer.After(0, function()
+                                                            if frame.ScooterOpacityInfoIcon and label then
+                                                                frame.ScooterOpacityInfoIcon:ClearAllPoints()
+                                                                -- Get the actual text width and position icon right after the text
+                                                                local textWidth = label:GetStringWidth() or 0
+                                                                if textWidth > 0 then
+                                                                    -- Position relative to label's left edge + text width
+                                                                    frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+                                                                else
+                                                                    -- Fallback: use label's right edge if text width unavailable
+                                                                    frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "RIGHT", 5, 0)
+                                                                end
+                                                                frame.ScooterOpacityInfoIcon:Show()
                                                             end
+                                                        end)
+                                                    else
+                                                        frame.ScooterOpacityInfoIcon:ClearAllPoints()
+                                                        local textWidth = label:GetStringWidth() or 0
+                                                        if textWidth > 0 then
+                                                            frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "LEFT", textWidth + 5, 0)
+                                                        else
+                                                            frame.ScooterOpacityInfoIcon:SetPoint("LEFT", label, "RIGHT", 5, 0)
                                                         end
-                                                    end)
+                                                        frame.ScooterOpacityInfoIcon:Show()
+                                                    end
                                                 else
                                                     -- Fallback: create icon anchored to frame if label not found
                                                     frame.ScooterOpacityInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 10, 0, 32)
@@ -1729,7 +1701,28 @@ local function createComponentRenderer(componentId)
                                                 end
                                             end
                                         end
+                                        local canonicalLabel
+                                        -- Defense-in-depth for recycled Settings rows:
+                                        -- always reset the visible label text from the
+                                        -- component's canonical UI metadata so a row
+                                        -- that previously represented a different
+                                        -- setting (e.g., Icon Height) cannot retain
+                                        -- its old caption when reused for a new logical
+                                        -- row (e.g., Icon Padding).
+                                        if lbl and lbl.SetText then
+                                            local effectiveLabel = label
+                                            if setting and setting.ui and type(setting.ui.label) == "string" then
+                                                effectiveLabel = setting.ui.label
+                                            end
+                                            if effectiveLabel then
+                                                canonicalLabel = effectiveLabel
+                                                lbl:SetText(effectiveLabel)
+                                            end
+                                        end
                                         if lbl and lbl.SetTextColor then panel.ApplyRobotoWhite(lbl) end
+                                        frame.ScooterComponentId = component and component.id or nil
+                                        frame.ScooterSettingId = settingId
+                                        frame.ScooterCanonicalLabel = canonicalLabel
                                         if frame.ScooterIconLimitInfoIcon then
                                             frame.ScooterIconLimitInfoIcon:Hide()
                                             frame.ScooterIconLimitInfoIcon:SetParent(nil)
@@ -1753,6 +1746,31 @@ local function createComponentRenderer(componentId)
                                             ApplyColumnsLabel(component, frame)
                                             if panel and panel.RegisterOrientationWidget then
                                                 panel:RegisterOrientationWidget(component.id, "columns", frame)
+                                            end
+                                        end
+                                        local skipLabelRepair = ui.dynamicLabel or settingId == "iconLimit" or settingId == "columns"
+                                        if canonicalLabel and not skipLabelRepair then
+                                            local function enforceLabel()
+                                                local target = frame and (frame.Text or frame.Label)
+                                                if not target and frame and frame.GetRegions then
+                                                    local regions = { frame:GetRegions() }
+                                                    for i = 1, #regions do
+                                                        local region = regions[i]
+                                                        if region and region.IsObjectType and region:IsObjectType("FontString") then
+                                                            target = region
+                                                            break
+                                                        end
+                                                    end
+                                                end
+                                                if target and target.GetText and target:GetText() ~= canonicalLabel then
+                                                    target:SetText(canonicalLabel)
+                                                    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(target) end
+                                                end
+                                            end
+                                            if C_Timer and C_Timer.After then
+                                                C_Timer.After(0, enforceLabel)
+                                            else
+                                                enforceLabel()
                                             end
                                         end
                                     end
@@ -9011,11 +9029,14 @@ local function createUFRenderer(componentId, title)
 							if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
 							-- Optional: add the same opacity-priority tooltip used by Cooldown Manager
 							if addPriorityTooltip and panel and not frame.ScooterOpacityInfoIcon then
-								local tooltipText = "Opacity priority: With Target takes precedence, then In Combat (this slider), then Out of Combat. The highest priority condition that applies determines the opacity."
+								local tooltipText = "Opacity priority: With Target takes precedence, then In Combat, then Out of Combat. The highest priority condition that applies determines the opacity."
 								local labelWidget = frame.Text or frame.Label
 								if labelWidget and panel.CreateInfoIconForLabel then
 									-- Create icon using the helper, then defer repositioning based on actual text width
 									frame.ScooterOpacityInfoIcon = panel.CreateInfoIconForLabel(labelWidget, tooltipText, 5, 0, 32)
+									if frame.ScooterOpacityInfoIcon then
+										frame.ScooterOpacityInfoIcon:Hide()
+									end
 									if C_Timer and C_Timer.After then
 										C_Timer.After(0, function()
 											if frame.ScooterOpacityInfoIcon and labelWidget then
@@ -9028,8 +9049,18 @@ local function createUFRenderer(componentId, title)
 													-- Fallback: anchor to the label's right edge
 													frame.ScooterOpacityInfoIcon:SetPoint("LEFT", labelWidget, "RIGHT", 5, 0)
 												end
+												frame.ScooterOpacityInfoIcon:Show()
 											end
 										end)
+									else
+										frame.ScooterOpacityInfoIcon:ClearAllPoints()
+										local textWidth = labelWidget:GetStringWidth() or 0
+										if textWidth > 0 then
+											frame.ScooterOpacityInfoIcon:SetPoint("LEFT", labelWidget, "LEFT", textWidth + 5, 0)
+										else
+											frame.ScooterOpacityInfoIcon:SetPoint("LEFT", labelWidget, "RIGHT", 5, 0)
+										end
+										frame.ScooterOpacityInfoIcon:Show()
 									end
 								elseif panel.CreateInfoIcon then
 									-- Fallback: anchor to the whole frame if we don't have a label
@@ -9044,8 +9075,8 @@ local function createUFRenderer(componentId, title)
 				-- Match Cooldown Manager semantics:
 				-- - Base opacity 50–100 (in combat)
 				-- - With-target and out-of-combat use 1–100 internally; slider shows 0–100 where 0/1 both behave as "fully hidden"
-				-- Add the priority tooltip to the base Opacity slider so behavior is clearly documented.
-				addOpacitySlider("Opacity", "opacity", 50, 100, 100, true)
+				-- Add the priority tooltip to the base Opacity in Combat slider so behavior is clearly documented.
+				addOpacitySlider("Opacity in Combat", "opacity", 50, 100, 100, true)
 				addOpacitySlider("Opacity With Target", "opacityWithTarget", 1, 100, 100, false)
 				-- Allow the slider to reach 0 so it's clear that 0/1 both mean "invisible" in practice.
 				addOpacitySlider("Opacity Out of Combat", "opacityOutOfCombat", 0, 100, 100, false)

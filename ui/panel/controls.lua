@@ -427,8 +427,35 @@ do
         addon._sliderControlGuarded = true
         if type(SettingsSliderControlMixin) == "table" and type(SettingsSliderControlMixin.Init) == "function" then
             hooksecurefunc(SettingsSliderControlMixin, "Init", function(frame)
+                -- Ensure default slider widgets are visible when no Scooter
+                -- text-input override is active.
                 if frame.ScooterTextInput then frame.ScooterTextInput:Hide() end
                 if frame.SliderWithSteppers then frame.SliderWithSteppers:Show() end
+
+                -- Defense-in-depth for label text on recycled Settings rows:
+                -- when a Slider control is rebound to a new Setting, always
+                -- refresh the visible label from the Setting's canonical name,
+                -- but only for sliders that live inside the ScooterMod panel.
+                local function belongsToScooterPanel(ctrl)
+                    local p = ctrl
+                    local root = addon and addon.SettingsPanel and addon.SettingsPanel.frame
+                    while p do
+                        if p == root then return true end
+                        p = (p.GetParent and p:GetParent()) or nil
+                    end
+                    return false
+                end
+
+                if not belongsToScooterPanel(frame) then
+                    return
+                end
+
+                local setting = frame.GetSetting and frame:GetSetting() or nil
+                local name = setting and setting.GetName and setting:GetName() or nil
+                local lbl = frame.Text or frame.Label
+                if lbl and lbl.SetText and type(name) == "string" and name ~= "" then
+                    lbl:SetText(name)
+                end
             end)
         end
     end

@@ -3,6 +3,18 @@ local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
+-- Base window background color/opacity for the ScooterMod settings frame.
+-- You can tweak these values to taste:
+--   r,g,b: 0 (black) to 1 (white)
+--   a:     0 (fully transparent) to 1 (fully opaque)
+-- Current defaults: slightly dark gray with medium-high opacity.
+panel.WindowBackgroundColor = panel.WindowBackgroundColor or {
+    r = 0.2,
+    g = 0.2,
+    b = 0.2,
+    a = 0.8,
+}
+
 local function PlayerInCombat()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         return true
@@ -420,6 +432,8 @@ local function createComponentRenderer(componentId)
                         local tabAName, tabBName
                         if component and component.id == "trackedBuffs" then
                             tabAName, tabBName = "Stacks", "Cooldown"
+                        elseif component and (component.id == "buffs" or component.id == "debuffs") then
+                            tabAName, tabBName = "Stacks", "Duration"
                         elseif component and component.id == "trackedBars" then
                             tabAName, tabBName = "Name", "Duration"
                         else
@@ -439,7 +453,7 @@ local function createComponentRenderer(componentId)
 
                             -- Page A labels vary per component
                             local labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY
-                            if component and component.id == "trackedBuffs" then
+                            if component and (component.id == "trackedBuffs" or component.id == "buffs" or component.id == "debuffs") then
                                 labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Stacks Font", "Stacks Font Size", "Stacks Style", "Stacks Color", "Stacks Offset X", "Stacks Offset Y"
                             elseif component and component.id == "trackedBars" then
                                 labelA_Font, labelA_Size, labelA_Style, labelA_Color, labelA_OffsetX, labelA_OffsetY = "Name Font", "Name Font Size", "Name Style", "Name Color", "Name Offset X", "Name Offset Y"
@@ -571,130 +585,83 @@ local function createComponentRenderer(componentId)
                                 yA)
 
                             -- Page B (Cooldown or Duration)
-                            local labelB_Font = (component and component.id == "trackedBars") and "Duration Font" or "Cooldown Font"
-                            local labelB_Size = (component and component.id == "trackedBars") and "Duration Font Size" or "Cooldown Font Size"
-                            local labelB_Style = (component and component.id == "trackedBars") and "Duration Style" or "Cooldown Style"
-                            local labelB_Color = (component and component.id == "trackedBars") and "Duration Color" or "Cooldown Color"
-                            local labelB_OffsetX = (component and component.id == "trackedBars") and "Duration Offset X" or "Cooldown Offset X"
-                            local labelB_OffsetY = (component and component.id == "trackedBars") and "Duration Offset Y" or "Cooldown Offset Y"
+                            local isDurationTab = component and (component.id == "trackedBars" or component.id == "buffs" or component.id == "debuffs")
+                            local textBKey = isDurationTab and "textDuration" or "textCooldown"
+                            local labelBBase = isDurationTab and "Duration" or "Cooldown"
+                            local labelB_Font = labelBBase .. " Font"
+                            local labelB_Size = labelBBase .. " Font Size"
+                            local labelB_Style = labelBBase .. " Style"
+                            local labelB_Color = labelBBase .. " Color"
+                            local labelB_OffsetX = labelBBase .. " Offset X"
+                            local labelB_OffsetY = labelBBase .. " Offset Y"
+                            local defaultBSize = (component and component.id == "trackedBars") and 14 or 16
 
                             addDropdown(frame.PageB, labelB_Font, fontOptions,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.fontFace) or "FRIZQT__"
-                                    else
-                                        return (db.textCooldown and db.textCooldown.fontFace) or "FRIZQT__"
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.fontFace) or "FRIZQT__"
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.fontFace = v
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.fontFace = v
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].fontFace = v
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_Size, 6, 32, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.size) or 14
-                                    else
-                                        return (db.textCooldown and db.textCooldown.size) or 16
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.size) or defaultBSize
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.size = tonumber(v) or 14
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.size = tonumber(v) or 16
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].size = tonumber(v) or defaultBSize
                                     applyText()
                                 end,
                                 yB)
                             addStyle(frame.PageB, labelB_Style,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.style) or "OUTLINE"
-                                    else
-                                        return (db.textCooldown and db.textCooldown.style) or "OUTLINE"
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.style) or "OUTLINE"
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.style = v
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.style = v
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].style = v
                                     applyText()
                                 end,
                                 yB)
                             addColor(frame.PageB, labelB_Color, true,
                                 function()
-                                    local c
-                                    if component and component.id == "trackedBars" then
-                                        c = (db.textDuration and db.textDuration.color) or {1,1,1,1}
-                                    else
-                                        c = (db.textCooldown and db.textCooldown.color) or {1,1,1,1}
-                                    end
+                                    local cfg = db[textBKey]
+                                    local c = (cfg and cfg.color) or {1,1,1,1}
                                     return c[1], c[2], c[3], c[4]
                                 end,
                                 function(r,g,b,a)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.color = { r, g, b, a }
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.color = { r, g, b, a }
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].color = { r, g, b, a }
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_OffsetX, -50, 50, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.x) or 0
-                                    else
-                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.x) or 0
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.offset and cfg.offset.x) or 0
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.offset = db.textDuration.offset or {}
-                                        db.textDuration.offset.x = tonumber(v) or 0
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.offset = db.textCooldown.offset or {}
-                                        db.textCooldown.offset.x = tonumber(v) or 0
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].offset = db[textBKey].offset or {}
+                                    db[textBKey].offset.x = tonumber(v) or 0
                                     applyText()
                                 end,
                                 yB)
                             addSlider(frame.PageB, labelB_OffsetY, -50, 50, 1,
                                 function()
-                                    if component and component.id == "trackedBars" then
-                                        return (db.textDuration and db.textDuration.offset and db.textDuration.offset.y) or 0
-                                    else
-                                        return (db.textCooldown and db.textCooldown.offset and db.textCooldown.offset.y) or 0
-                                    end
+                                    local cfg = db[textBKey]
+                                    return (cfg and cfg.offset and cfg.offset.y) or 0
                                 end,
                                 function(v)
-                                    if component and component.id == "trackedBars" then
-                                        db.textDuration = db.textDuration or {}
-                                        db.textDuration.offset = db.textDuration.offset or {}
-                                        db.textDuration.offset.y = tonumber(v) or 0
-                                    else
-                                        db.textCooldown = db.textCooldown or {}
-                                        db.textCooldown.offset = db.textCooldown.offset or {}
-                                        db.textCooldown.offset.y = tonumber(v) or 0
-                                    end
+                                    db[textBKey] = db[textBKey] or {}
+                                    db[textBKey].offset = db[textBKey].offset or {}
+                                    db[textBKey].offset.y = tonumber(v) or 0
                                     applyText()
                                 end,
                                 yB)
@@ -1812,16 +1779,16 @@ end
             end
 	        -- Remove default title text; we'll render a custom title area
 	        if f.NineSlice and f.NineSlice.Text then f.NineSlice.Text:SetText("") end
-
-	        -- Increase window background opacity with a subtle overlay (no true blur available in WoW UI API)
-	        do
-	            local bg = f:CreateTexture(nil, "BACKGROUND")
-	            bg:SetColorTexture(0.3, 0.3, 0.3, 0.5) -- midpoint between original and lighter gray
-	            -- Inset slightly so NineSlice borders remain visible
-	            bg:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
-	            bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
-	            f._ScooterBgOverlay = bg
-	        end
+            -- Increase window background opacity with a subtle overlay (no true blur available in WoW UI API)
+            do
+                local bg = f:CreateTexture(nil, "BACKGROUND")
+                local c = panel.WindowBackgroundColor or { r = 0.27, g = 0.27, b = 0.27, a = 0.625 }
+                bg:SetColorTexture(c.r or 0.27, c.g or 0.27, c.b or 0.27, c.a or 0.625)
+                -- Inset slightly so NineSlice borders remain visible
+                bg:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
+                bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+                f._ScooterBgOverlay = bg
+            end
 
 	        -- Custom title area: circular icon overlapping top-left + green "ScooterMod" label in Roboto Bold
 	        do
@@ -1856,9 +1823,9 @@ end
 	            title:SetJustifyH("LEFT")
 	            -- Use bundled Roboto Bold if available, else fall back; set font BEFORE text
             if fonts and fonts.ROBOTO_BLD then
-                title:SetFont(fonts.ROBOTO_BLD, 20, "THICKOUTLINE")
+                title:SetFont(fonts.ROBOTO_BLD, 25, "THICKOUTLINE")
             else
-                title:SetFont("Fonts\\ARIALN.TTF", 20, "THICKOUTLINE")
+                title:SetFont("Fonts\\ARIALN.TTF", 25, "THICKOUTLINE")
             end
             title:SetShadowColor(0, 0, 0, 1)
             title:SetShadowOffset(1, -1)

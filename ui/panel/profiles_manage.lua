@@ -208,7 +208,12 @@ local function renderProfilesManage()
                     text:SetJustifyV("TOP")
                     text:SetWordWrap(true)
                     text:SetText("ScooterMod profiles stay synchronized with Edit Mode layouts. Switch layouts here or via Edit Mode and ScooterMod will keep them in sync.")
-                    scaleFont(text, GameFontHighlight, 1.2)
+                    -- Apply Roboto theming for consistency with other labels
+                    if panel and panel.ApplyRoboto then
+                        panel.ApplyRoboto(text)
+                    else
+                        scaleFont(text, GameFontHighlight, 1.2)
+                    end
                     frame.InfoText = text
                 else
                     frame.InfoText:Show()
