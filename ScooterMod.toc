@@ -37,6 +37,7 @@ core/components/unitframes/portraits.lua
 core/components/unitframes/cast.lua
 core/components/unitframes/buffs.lua
 core/components/unitframes/visibility.lua
+core/components/unitframes/copy.lua
 core/debug.lua
 
 ui/ScooterTabbedSection.xml

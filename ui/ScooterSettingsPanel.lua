@@ -15,6 +15,13 @@ panel.WindowBackgroundColor = panel.WindowBackgroundColor or {
     a = 0.8,
 }
 
+panel.UnitFrameCategoryToUnit = panel.UnitFrameCategoryToUnit or {
+    ufPlayer = "Player",
+    ufTarget = "Target",
+    ufFocus  = "Focus",
+    ufPet    = "Pet",
+}
+
 local function PlayerInCombat()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         return true
@@ -97,6 +104,36 @@ function panel.UpdateProfilesSectionVisibility()
     end
 end
 
+panel.CategoryResetHandlers = panel.CategoryResetHandlers or {}
+function panel.GetDefaultsHandlerForKey(key)
+    if not key then
+        return nil
+    end
+
+    if panel.CategoryResetHandlers and panel.CategoryResetHandlers[key] then
+        return panel.CategoryResetHandlers[key]
+    end
+
+    local frame = panel and panel.frame
+    local entry = frame and frame.CatRenderers and frame.CatRenderers[key]
+    if entry and entry.componentId and addon and addon.ResetComponentToDefaults then
+        local component = addon.Components and addon.Components[entry.componentId]
+        if component then
+            return function()
+                return addon:ResetComponentToDefaults(entry.componentId)
+            end
+        end
+    end
+
+    if panel.UnitFrameCategoryToUnit and panel.UnitFrameCategoryToUnit[key] and addon and addon.ResetUnitFrameCategoryToDefaults then
+        return function()
+            return addon:ResetUnitFrameCategoryToDefaults(key)
+        end
+    end
+
+    return nil
+end
+
 -- Header button visibility helper: hide "Collapse All" for non-component pages
 function panel.UpdateCollapseButtonVisibility()
     local f = panel and panel.frame
@@ -126,6 +163,22 @@ function panel.UpdateCollapseButtonVisibility()
         end
     end
     btn:SetShown(not hide)
+end
+
+function panel.UpdateDefaultsButtonState(key)
+    local frame = panel and panel.frame
+    local btn = frame and frame.DefaultsButton
+    if not btn then return end
+
+    key = key or (frame and frame.CurrentCategory)
+    local handler = panel.GetDefaultsHandlerForKey and panel.GetDefaultsHandlerForKey(key) or nil
+    btn.ScooterCurrentDefaultsHandler = handler
+    btn.ScooterCurrentCategoryKey = key
+    local shouldShow = handler ~= nil
+    btn:SetShown(shouldShow)
+    if btn.SetEnabled then
+        btn:SetEnabled(shouldShow)
+    end
 end
 
 panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
@@ -1546,6 +1599,7 @@ local function BuildCategories()
 			-- After rendering, configure the shared header "Copy from" controls for this category
 			if panel and panel.ConfigureHeaderCopyFromForKey then panel.ConfigureHeaderCopyFromForKey(key) end
 			if panel and panel.UpdateCollapseButtonVisibility then panel.UpdateCollapseButtonVisibility() end
+			if panel and panel.UpdateDefaultsButtonState then panel.UpdateDefaultsButtonState(key) end
 		end
 	end
 
@@ -1571,30 +1625,27 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                 button1 = "Copy",
                 button2 = CANCEL,
                 OnAccept = function(self, data)
-                    if data and addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
-                local ok, err = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
-                if addon and addon.CopyUnitFrameTextSettings then
-                    pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit)
-                end
-                if addon and addon.CopyUnitFramePowerTextSettings then
-                    pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit)
-                end
-                if addon and addon.CopyUnitFrameBarStyleSettings then
-                    pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit)
-                end
+                    if data and addon and addon.CopyUnitFrameSettings then
+                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                        local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                         if ok then
                             if data.dropdown then
                                 data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
-                                if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
+                                if data.dropdown.SetText and data.sourceLabel then
+                                    data.dropdown:SetText(data.sourceLabel)
+                                end
                             end
                         else
                             if _G and _G.StaticPopup_Show then
                                 local msg
                                 if err == "focus_requires_larger" then
                                     msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
-                                elseif err == "pet_excluded" then
-                                    msg = "Pet is excluded from copy operations."
+                                elseif err == "invalid_unit" then
+                                    msg = "Copy failed. Unsupported unit selection."
+                                elseif err == "same_unit" then
+                                    msg = "Copy failed. Choose a different source frame."
+                                elseif err == "db_unavailable" then
+                                    msg = "Copy failed. Profile database unavailable."
                                 else
                                     msg = "Copy failed. Please try again."
                                 end
@@ -1734,11 +1785,8 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                         }
                         if _G and _G.StaticPopup_Show then
                             _G.StaticPopup_Show(which, text, destLabel, data)
-                        elseif addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                            local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
-                            if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
-                            if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
-                            if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                        elseif addon and addon.CopyUnitFrameSettings then
+                            local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                             if ok then
                                 dd._ScooterSelectedId = id
                                 if dd.SetText then dd:SetText(text) end
@@ -1845,8 +1893,12 @@ end
         headerDrag:SetScript("OnDragStart", function() f:StartMoving() end)
         headerDrag:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
         local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-        closeBtn:SetSize(96, 22); closeBtn:SetPoint("BOTTOMRIGHT", -16, 16)
+        closeBtn:SetSize(96, 22)
+        closeBtn:SetPoint("BOTTOMRIGHT", -16, 16)
         closeBtn.Text:SetText(SETTINGS_CLOSE)
+        if panel and panel.ApplyButtonTheme then
+            panel.ApplyButtonTheme(closeBtn)
+        end
         closeBtn:SetScript("OnClick", function() f:Hide() end)
         -- Header Edit Mode button placed ~10% from right edge
         local headerEditBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate")
@@ -1932,6 +1984,96 @@ end
         container:SetPoint("TOPLEFT", nav, "TOPRIGHT", panel.NavLayout.rightPaneLeftOffset or 24, 0)
         container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 46)
         f.Container = container
+
+        local function performDefaultsReset(categoryKey, handler)
+            if not categoryKey or not handler then
+                return
+            end
+            if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+            local ok, err = handler()
+            if ok == false and err and addon and addon.Print then
+                addon:Print("Unable to reset defaults: " .. tostring(err))
+            end
+
+            local frameRef = panel and panel.frame
+            if panel and panel.RefreshCurrentCategory then
+                panel.RefreshCurrentCategory()
+            elseif frameRef and frameRef.CatRenderers then
+                local entry = frameRef.CatRenderers[categoryKey]
+                if entry and entry.render then
+                    entry.render()
+                end
+            end
+            if panel and panel.UpdateDefaultsButtonState then
+                panel.UpdateDefaultsButtonState(categoryKey)
+            end
+        end
+
+        local defaultsBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        defaultsBtn:SetSize(110, 22)
+        defaultsBtn:SetText(DEFAULTS or "Defaults")
+        defaultsBtn:ClearAllPoints()
+        defaultsBtn:SetPoint("LEFT", container, "LEFT", 0, 0)
+        defaultsBtn:SetPoint("BOTTOM", closeBtn, "BOTTOM", 0, 0)
+        if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(defaultsBtn) end
+        defaultsBtn:SetScript("OnClick", function()
+            if ShouldBlockForCombat() then
+                NotifyCombatLocked()
+                return
+            end
+            local frameRef = panel and panel.frame
+            if not frameRef then return end
+            local currentKey = defaultsBtn.ScooterCurrentCategoryKey or frameRef.CurrentCategory
+            if not currentKey then return end
+            local handler = defaultsBtn.ScooterCurrentDefaultsHandler
+            if (not handler) and panel.GetDefaultsHandlerForKey then
+                handler = panel.GetDefaultsHandlerForKey(currentKey)
+            end
+            if not handler then return end
+
+            local displayName = ""
+            do
+                local entry = frameRef.CatRenderers and frameRef.CatRenderers[currentKey]
+                if entry and entry.componentId then
+                    local component = addon and addon.Components and addon.Components[entry.componentId]
+                    displayName = (component and component.name) or entry.componentId or ""
+                else
+                    displayName = entry and entry.title or ""
+                end
+                if displayName == "" then
+                    displayName = tostring(currentKey)
+                end
+            end
+
+            if _G and _G.StaticPopup_Show then
+                if not _G.StaticPopupDialogs["SCOOTERMOD_RESET_DEFAULTS"] then
+                    _G.StaticPopupDialogs["SCOOTERMOD_RESET_DEFAULTS"] = {
+                        text = "Are you sure you want to reset %s to all default settings and location?",
+                        button1 = YES,
+                        button2 = CANCEL,
+                        OnAccept = function(_, data)
+                            if data and data.handler and data.key then
+                                performDefaultsReset(data.key, data.handler)
+                            end
+                        end,
+                        OnCancel = function() end,
+                        timeout = 0,
+                        whileDead = 1,
+                        hideOnEscape = 1,
+                        preferredIndex = 3,
+                    }
+                end
+                _G.StaticPopup_Show("SCOOTERMOD_RESET_DEFAULTS", displayName, nil, {
+                    handler = handler,
+                    key = currentKey,
+                })
+                return
+            end
+
+            performDefaultsReset(currentKey, handler)
+        end)
+        defaultsBtn:Hide()
+        f.DefaultsButton = defaultsBtn
 
         -- Initialize the custom Scooter-owned right pane (header + scrollframe).
         if panel.RightPane and panel.RightPane.Init then

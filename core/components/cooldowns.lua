@@ -372,6 +372,7 @@ local function ApplyCooldownViewerStyling(self)
             local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar or child
             local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")
             local durFS  = (barFrame and barFrame.Duration) or findFontStringByNameHint(barFrame or child, "Bar.Duration") or findFontStringByNameHint(child, "Duration")
+            local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
 
             if nameFS and nameFS.SetFont then
                 local cfg = self.db.textName or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
@@ -404,6 +405,38 @@ local function ApplyCooldownViewerStyling(self)
                     durFS:ClearAllPoints()
                     local anchorTo = barFrame or child
                     durFS:SetPoint("RIGHT", anchorTo, "RIGHT", ox, oy)
+                end
+            end
+
+            local stacksFS
+            if iconFrame and iconFrame.Applications then
+                if iconFrame.Applications.GetObjectType and iconFrame.Applications:GetObjectType() == "FontString" then
+                    stacksFS = iconFrame.Applications
+                else
+                    stacksFS = findFontStringOn(iconFrame.Applications)
+                end
+            end
+            if not stacksFS and iconFrame then
+                stacksFS = findFontStringByNameHint(iconFrame, "Applications")
+            end
+            if not stacksFS then
+                stacksFS = findFontStringByNameHint(child, "Applications")
+            end
+
+            if stacksFS and stacksFS.SetFont then
+                local cfg = self.db.textStacks or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+                pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
+                stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE")
+                local c = cfg.color or {1,1,1,1}
+                if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+                if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
+                local ox = (cfg.offset and cfg.offset.x) or 0
+                local oy = (cfg.offset and cfg.offset.y) or 0
+                if stacksFS.ClearAllPoints and stacksFS.SetPoint then
+                    stacksFS:ClearAllPoints()
+                    local anchorTo = iconFrame or child
+                    stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
                 end
             end
         else

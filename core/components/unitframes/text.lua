@@ -937,7 +937,8 @@ do
 			local hb = resolveHealthBar_NLT(unit)
 			local cfg = db.unitFrames[unit] or {}
 			local texKey = cfg.nameBackdropTexture or ""
-			local enabledBackdrop = (cfg.nameBackdropEnabled == nil) and true or not not cfg.nameBackdropEnabled
+			-- Default to disabled backdrop unless explicitly enabled in the profile.
+			local enabledBackdrop = not not cfg.nameBackdropEnabled
 			local colorMode = cfg.nameBackdropColorMode or "default" -- default | texture | custom
 			local tint = cfg.nameBackdropTint or {1,1,1,1}
 			local opacity = tonumber(cfg.nameBackdropOpacity) or 50
@@ -1005,8 +1006,9 @@ do
 			local hb = resolveHealthBar_NLT(unit)
 			local cfg = db.unitFrames[unit] or {}
 			local styleKey = cfg.nameBackdropBorderStyle or "square"
-			local localEnabled = (cfg.nameBackdropBorderEnabled == nil) and true or not not cfg.nameBackdropBorderEnabled
-			local globalEnabled = not not (cfg.useCustomBorders ~= false)
+			-- Align border gating with UI defaults: disabled until explicitly enabled.
+			local localEnabled = not not cfg.nameBackdropBorderEnabled
+			local globalEnabled = not not cfg.useCustomBorders
 			local useBorders = localEnabled and globalEnabled
 			local thickness = tonumber(cfg.nameBackdropBorderThickness) or 1
 			if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end

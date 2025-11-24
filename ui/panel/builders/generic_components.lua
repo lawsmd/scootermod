@@ -16,8 +16,8 @@ local function createComponentRenderer(componentId)
             local component = addon.Components[componentId]
             if not component then return end
 
-            if panel and panel.PrepareOrientationWidgets then
-                panel:PrepareOrientationWidgets(component.id)
+            if panel and panel.PrepareDynamicSettingWidgets then
+                panel:PrepareDynamicSettingWidgets(component.id)
             end
 
             local init = {}
@@ -230,6 +230,9 @@ local function createComponentRenderer(componentId)
                             data = { sectionTitle = "", tabAText = "Charges", tabBText = "Cooldowns", tabCText = "Hotkey", tabDText = "Macro Name" }
                         else
                             data = { sectionTitle = "", tabAText = tabAName, tabBText = tabBName }
+                            if component and component.id == "trackedBars" then
+                                data.tabCText = "Stacks"
+                            end
                         end
 
                         data.build = function(frame)
@@ -457,6 +460,79 @@ local function createComponentRenderer(componentId)
                                     applyText()
                                 end,
                                 yB)
+
+                            if component and component.id == "trackedBars" then
+                                local labelC_Font = "Stacks Font"
+                                local labelC_Size = "Stacks Font Size"
+                                local labelC_Style = "Stacks Style"
+                                local labelC_Color = "Stacks Color"
+                                local labelC_OffsetX = "Stacks Offset X"
+                                local labelC_OffsetY = "Stacks Offset Y"
+
+                                addDropdown(frame.PageC, labelC_Font, fontOptions,
+                                    function()
+                                        return (db.textStacks and db.textStacks.fontFace) or "FRIZQT__"
+                                    end,
+                                    function(v)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.fontFace = v
+                                        applyText()
+                                    end,
+                                    yC)
+                                addSlider(frame.PageC, labelC_Size, 6, 32, 1,
+                                    function()
+                                        return (db.textStacks and db.textStacks.size) or 14
+                                    end,
+                                    function(v)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.size = tonumber(v) or 14
+                                        applyText()
+                                    end,
+                                    yC)
+                                addStyle(frame.PageC, labelC_Style,
+                                    function()
+                                        return (db.textStacks and db.textStacks.style) or "OUTLINE"
+                                    end,
+                                    function(v)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.style = v
+                                        applyText()
+                                    end,
+                                    yC)
+                                addColor(frame.PageC, labelC_Color, true,
+                                    function()
+                                        local c = (db.textStacks and db.textStacks.color) or {1,1,1,1}
+                                        return c[1], c[2], c[3], c[4]
+                                    end,
+                                    function(r, g, b, a)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.color = { r, g, b, a }
+                                        applyText()
+                                    end,
+                                    yC)
+                                addSlider(frame.PageC, labelC_OffsetX, -50, 50, 1,
+                                    function()
+                                        return (db.textStacks and db.textStacks.offset and db.textStacks.offset.x) or 0
+                                    end,
+                                    function(v)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.offset = db.textStacks.offset or {}
+                                        db.textStacks.offset.x = tonumber(v) or 0
+                                        applyText()
+                                    end,
+                                    yC)
+                                addSlider(frame.PageC, labelC_OffsetY, -50, 50, 1,
+                                    function()
+                                        return (db.textStacks and db.textStacks.offset and db.textStacks.offset.y) or 0
+                                    end,
+                                    function(v)
+                                        db.textStacks = db.textStacks or {}
+                                        db.textStacks.offset = db.textStacks.offset or {}
+                                        db.textStacks.offset.y = tonumber(v) or 0
+                                        applyText()
+                                    end,
+                                    yC)
+                            end
 
                             -- Action Bars only: Page C (Hotkey) and Page D (Macro Name)
                             if isActionBar() then
@@ -1196,8 +1272,8 @@ local function createComponentRenderer(componentId)
                                                 addon.EditMode.SyncComponentSettingToEditMode(component, "iconWrap")
                                                 addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
                                             end
-                                            if panel and panel.RefreshOrientationWidgets then
-                                                panel:RefreshOrientationWidgets(component)
+                                            if panel and panel.RefreshDynamicSettingWidgets then
+                                                panel:RefreshDynamicSettingWidgets(component)
                                             end
                                         else
                                             -- Non-Aura systems: pre-adjust direction to a valid option for the
@@ -1215,8 +1291,8 @@ local function createComponentRenderer(componentId)
                                                     addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
                                                 end
                                             end
-                                            if panel and panel.RefreshOrientationWidgets then
-                                                panel:RefreshOrientationWidgets(component)
+                                            if panel and panel.RefreshDynamicSettingWidgets then
+                                                panel:RefreshDynamicSettingWidgets(component)
                                             end
                                             -- Hold re-render just a bit longer to let both writes settle
                                             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
@@ -1483,8 +1559,8 @@ local function createComponentRenderer(componentId)
                                         end
                                         if settingId == "iconLimit" then
                                             ApplyIconLimitLabel(component, frame)
-                                            if panel and panel.RegisterOrientationWidget then
-                                                panel:RegisterOrientationWidget(component.id, "iconLimit", frame)
+                                            if panel and panel.RegisterDynamicSettingWidget then
+                                                panel:RegisterDynamicSettingWidget(component.id, "iconLimit", frame)
                                             end
                                             if lbl and panel and panel.CreateInfoIconForLabel then
                                                 local tooltipText = "Sets how many buff icons appear in each row or column before wrapping continues in the Icon Wrap direction."
@@ -1497,8 +1573,8 @@ local function createComponentRenderer(componentId)
                                         end
                                         if ui.dynamicLabel and settingId == "columns" then
                                             ApplyColumnsLabel(component, frame)
-                                            if panel and panel.RegisterOrientationWidget then
-                                                panel:RegisterOrientationWidget(component.id, "columns", frame)
+                                            if panel and panel.RegisterDynamicSettingWidget then
+                                                panel:RegisterDynamicSettingWidget(component.id, "columns", frame)
                                             end
                                         end
                                         local skipLabelRepair = ui.dynamicLabel or settingId == "iconLimit" or settingId == "columns"
@@ -1670,18 +1746,18 @@ local function createComponentRenderer(componentId)
                                         local lbl = frame and (frame.Text or frame.Label)
                                         if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
                                         if settingId == "direction" then
-                                            if panel and panel.RegisterOrientationWidget then
-                                                panel:RegisterOrientationWidget(component.id, "direction", frame)
+                                            if panel and panel.RegisterDynamicSettingWidget then
+                                                panel:RegisterDynamicSettingWidget(component.id, "direction", frame)
                                             end
-                                            if panel and panel.RefreshOrientationWidgets then
-                                                panel:RefreshOrientationWidgets(component)
+                                            if panel and panel.RefreshDynamicSettingWidgets then
+                                                panel:RefreshDynamicSettingWidgets(component)
                                             end
                                         elseif settingId == "iconWrap" and (component.id == "buffs" or component.id == "debuffs") then
-                                            if panel and panel.RegisterOrientationWidget then
-                                                panel:RegisterOrientationWidget(component.id, "iconWrap", frame)
+                                            if panel and panel.RegisterDynamicSettingWidget then
+                                                panel:RegisterDynamicSettingWidget(component.id, "iconWrap", frame)
                                             end
-                                            if panel and panel.RefreshOrientationWidgets then
-                                                panel:RefreshOrientationWidgets(component)
+                                            if panel and panel.RefreshDynamicSettingWidgets then
+                                                panel:RefreshDynamicSettingWidgets(component)
                                             end
                                         end
                                     end
@@ -1916,9 +1992,9 @@ local function createComponentRenderer(componentId)
             end
             right:Display(init)
             
-            if panel.RefreshOrientationWidgets then
+            if panel.RefreshDynamicSettingWidgets then
                 C_Timer.After(0, function()
-                    panel:RefreshOrientationWidgets(component)
+                    panel:RefreshDynamicSettingWidgets(component)
                 end)
             end
             

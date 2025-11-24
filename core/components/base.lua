@@ -5,6 +5,24 @@ addon.ComponentInitializers = addon.ComponentInitializers or {}
 addon.ComponentsUtil = addon.ComponentsUtil or {}
 
 local Util = addon.ComponentsUtil
+local UNIT_FRAME_CATEGORY_TO_UNIT = {
+    ufPlayer = "Player",
+    ufTarget = "Target",
+    ufFocus  = "Focus",
+    ufPet    = "Pet",
+}
+
+local function CopyDefaultValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local copy = {}
+    for k, v in pairs(value) do
+        copy[k] = CopyDefaultValue(v)
+    end
+    return copy
+end
 
 local function HideDefaultBarTextures(barFrame, restore)
     if not barFrame or not barFrame.GetRegions then return end
@@ -505,6 +523,118 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameVisibility then
         addon.ApplyAllUnitFrameVisibility()
     end
+end
+
+function addon:ResetComponentToDefaults(componentOrId)
+    local component = componentOrId
+    if type(componentOrId) == "string" then
+        component = self.Components and self.Components[componentOrId]
+    end
+
+    if not component then
+        return false, "component_missing"
+    end
+
+    if not component.db then
+        if type(self.LinkComponentsToDB) == "function" then
+            self:LinkComponentsToDB()
+        end
+    end
+
+    if not component.db then
+        return false, "component_db_unavailable"
+    end
+
+    local seen = {}
+    for settingId, setting in pairs(component.settings or {}) do
+        if type(setting) == "table" then
+            seen[settingId] = true
+            if setting.default ~= nil then
+                component.db[settingId] = CopyDefaultValue(setting.default)
+            else
+                component.db[settingId] = nil
+            end
+        end
+    end
+
+    for key in pairs(component.db) do
+        if not seen[key] then
+            component.db[key] = nil
+        end
+    end
+
+    if self.EditMode and self.EditMode.ResetComponentPositionToDefault then
+        self.EditMode.ResetComponentPositionToDefault(component)
+    end
+
+    if self.EditMode and self.EditMode.SyncComponentToEditMode then
+        self.EditMode.SyncComponentToEditMode(component)
+    end
+
+    if self.ApplyStyles then
+        self:ApplyStyles()
+    end
+
+    return true
+end
+
+function addon:ResetUnitFrameCategoryToDefaults(categoryKey)
+    if type(categoryKey) ~= "string" then
+        return false, "invalid_category"
+    end
+
+    local unit = UNIT_FRAME_CATEGORY_TO_UNIT[categoryKey]
+    if not unit then
+        return false, "unknown_unit"
+    end
+
+    local profile = self.db and self.db.profile
+    if not profile then
+        return false, "db_unavailable"
+    end
+
+    if profile.unitFrames then
+        profile.unitFrames[unit] = nil
+        local hasAny = false
+        for _ in pairs(profile.unitFrames) do
+            hasAny = true
+            break
+        end
+        if not hasAny then
+            profile.unitFrames = nil
+        end
+    end
+
+    if self.EditMode and self.EditMode.ResetUnitFramePosition then
+        self.EditMode.ResetUnitFramePosition(unit)
+    end
+
+    if self.ApplyUnitFrameBarTexturesFor then
+        self.ApplyUnitFrameBarTexturesFor(unit)
+    end
+    if self.ApplyUnitFrameHealthTextVisibilityFor then
+        self.ApplyUnitFrameHealthTextVisibilityFor(unit)
+    end
+    if self.ApplyUnitFramePowerTextVisibilityFor then
+        self.ApplyUnitFramePowerTextVisibilityFor(unit)
+    end
+    if self.ApplyUnitFrameNameLevelTextFor then
+        self.ApplyUnitFrameNameLevelTextFor(unit)
+    end
+    if self.ApplyUnitFramePortraitFor then
+        self.ApplyUnitFramePortraitFor(unit)
+    end
+    if self.ApplyUnitFrameCastBarFor then
+        self.ApplyUnitFrameCastBarFor(unit)
+    end
+    if self.ApplyUnitFrameBuffsDebuffsFor then
+        self.ApplyUnitFrameBuffsDebuffsFor(unit)
+    end
+    if self.ApplyUnitFrameVisibilityFor then
+        self.ApplyUnitFrameVisibilityFor(unit)
+    end
+
+    return true
 end
 
 function addon:SyncAllEditModeSettings()

@@ -71,29 +71,26 @@ local function createEmptySectionsRenderer(componentId, title)
                             button1 = "Copy",
                             button2 = CANCEL,
                             OnAccept = function(self, data)
-                                if data and addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                                    local ok, err = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
-                                    if addon and addon.CopyUnitFrameTextSettings then
-                                        pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit)
-                                    end
-                                    if addon and addon.CopyUnitFramePowerTextSettings then
-                                        pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit)
-                                    end
-                                    if addon and addon.CopyUnitFrameBarStyleSettings then
-                                        pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit)
-                                    end
+                                if data and addon and addon.CopyUnitFrameSettings then
+                                    local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit, { skipFrameSize = false })
                                     if ok then
                                         if data.dropdown then
                                             data.dropdown._ScooterSelectedId = data.sourceUnit
-                                            if data.dropdown.SetText and data.sourceLabel then data.dropdown:SetText(data.sourceLabel) end
+                                            if data.dropdown.SetText and data.sourceLabel then
+                                                data.dropdown:SetText(data.sourceLabel)
+                                            end
                                         end
                                     else
                                         if _G and _G.StaticPopup_Show then
                                             local msg
                                             if err == "focus_requires_larger" then
                                                 msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
-                                            elseif err == "pet_excluded" then
-                                                msg = "Pet is excluded from copy operations."
+                                            elseif err == "invalid_unit" then
+                                                msg = "Copy failed. Unsupported unit selection."
+                                            elseif err == "same_unit" then
+                                                msg = "Copy failed. Choose a different source frame."
+                                            elseif err == "db_unavailable" then
+                                                msg = "Copy failed. Profile database unavailable."
                                             else
                                                 msg = "Copy failed. Please try again."
                                             end
@@ -148,11 +145,8 @@ local function createEmptySectionsRenderer(componentId, title)
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
                                             -- Fallback: perform copy directly if popup system is unavailable
-                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
-                                                if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
-                                                if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
-                                                if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                                            if addon and addon.CopyUnitFrameSettings then
+                                                local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
@@ -229,11 +223,8 @@ local function createEmptySectionsRenderer(componentId, title)
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
-                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
-                                                if addon and addon.CopyUnitFrameTextSettings then pcall(addon.CopyUnitFrameTextSettings, data.sourceUnit, data.destUnit) end
-                                                if addon and addon.CopyUnitFramePowerTextSettings then pcall(addon.CopyUnitFramePowerTextSettings, data.sourceUnit, data.destUnit) end
-                                                if addon and addon.CopyUnitFrameBarStyleSettings then pcall(addon.CopyUnitFrameBarStyleSettings, data.sourceUnit, data.destUnit) end
+                                            if addon and addon.CopyUnitFrameSettings then
+                                                local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
@@ -350,8 +341,8 @@ local function createWIPRenderer(componentId, title)
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
-                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                            if addon and addon.CopyUnitFrameSettings then
+                                                local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
@@ -433,8 +424,8 @@ local function createWIPRenderer(componentId, title)
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
-                                            if addon and addon.EditMode and addon.EditMode.CopyUnitFrameFrameSize then
-                                                local ok = addon.EditMode.CopyUnitFrameFrameSize(data.sourceUnit, data.destUnit)
+                                            if addon and addon.CopyUnitFrameSettings then
+                                                local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end

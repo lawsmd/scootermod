@@ -884,5 +884,46 @@ do
 			end
 		end)
 	end
+
+	-- Keep the Player Frame status halo hidden when ScooterMod wants it hidden.
+	local function EnforcePlayerStatusTextureVisibility()
+		local db = addon and addon.db and addon.db.profile
+		if not db then
+			return
+		end
+
+		local ufCfg = db.unitFrames and db.unitFrames.Player
+		if not ufCfg then
+			return
+		end
+
+		local portraitCfg = ufCfg.portrait or {}
+		local hidePortrait = portraitCfg.hidePortrait == true
+		local hideStatusTexture = portraitCfg.hideStatusTexture == true
+		local useCustomBorders = ufCfg.useCustomBorders == true
+
+		if not (hidePortrait or hideStatusTexture or useCustomBorders) then
+			-- Respect Blizzard visuals when no ScooterMod rule wants it hidden.
+			return
+		end
+
+		local playerFrame = _G.PlayerFrame
+		local main = playerFrame and playerFrame.PlayerFrameContent and playerFrame.PlayerFrameContent.PlayerFrameContentMain
+		local statusTexture = main and main.StatusTexture
+		if not statusTexture then
+			return
+		end
+
+		if statusTexture.SetAlpha then
+			statusTexture:SetAlpha(0)
+		end
+		if statusTexture.Hide then
+			statusTexture:Hide()
+		end
+	end
+
+	if _G.PlayerFrame_UpdateStatus then
+		_G.hooksecurefunc("PlayerFrame_UpdateStatus", EnforcePlayerStatusTextureVisibility)
+	end
 end
 

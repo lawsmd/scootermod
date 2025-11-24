@@ -23,11 +23,38 @@ local function _lower(s)
     return string.lower(s)
 end
 
+local function _GetUnitFrameForUnit(unit)
+    local mgr = _G.EditModeManagerFrame
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+    if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then
+        return nil
+    end
+
+    local idx
+    if unit == "Player" then
+        idx = EM.Player
+    elseif unit == "Target" then
+        idx = EM.Target
+    elseif unit == "Focus" then
+        idx = EM.Focus
+    elseif unit == "Pet" then
+        idx = EM.Pet
+    end
+
+    if not idx then
+        return nil
+    end
+
+    return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
+end
+
 --[[----------------------------------------------------------------------------
     Copy helpers (Edit Mode only)
 ----------------------------------------------------------------------------]]--
 -- Copy Unit Frame "Frame Size (Scale)" from one unit to another.
--- Allowed units: "Player", "Target", "Focus". Pet is intentionally excluded.
+-- Allowed units: "Player", "Target", "Focus". Pet returns success (no-op) because
+-- Blizzard does not expose a frame size setting for the pet frame.
 -- Returns true on success; false and an error key on failure.
 function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
     local function norm(u)
@@ -36,13 +63,20 @@ function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
         if u == "player" then return "Player" end
         if u == "target" then return "Target" end
         if u == "focus"  then return "Focus" end
+        if u == "pet"    then return "Pet" end
         return nil
     end
     local src = norm(sourceUnit)
     local dst = norm(destUnit)
     if not src or not dst then return false, "invalid_unit" end
-    if src == "Pet" or dst == "Pet" then return false, "pet_excluded" end
     if src == dst then return false, "same_unit" end
+
+    -- Pet frame size is managed internally by Blizzard and does not expose a
+    -- configurable Frame Size setting. Treat Pet copy requests as a no-op so
+    -- the broader copy flow can continue without surfacing an error.
+    if src == "Pet" or dst == "Pet" then
+        return true
+    end
 
     local mgr = _G.EditModeManagerFrame
     local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
@@ -54,6 +88,7 @@ function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
         if unit == "Player" then return EM.Player end
         if unit == "Target" then return EM.Target end
         if unit == "Focus"  then return EM.Focus end
+        if unit == "Pet"    then return EM.Pet end
         return nil
     end
 
@@ -1387,9 +1422,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
                 component._pendingAuraIconSizeExpiry = nil
             end
         end
-        if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshOrientationWidgets) == "function" then
+        if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshDynamicSettingWidgets) == "function" then
             if settingId == "orientation" or settingId == "direction" or settingId == "iconWrap" then
-                addon.SettingsPanel:RefreshOrientationWidgets(component)
+                addon.SettingsPanel:RefreshDynamicSettingWidgets(component)
             end
         end
         if addon and addon.SettingsPanel and type(addon.SettingsPanel.HandleEditModeBackSync) == "function" then
@@ -1444,6 +1479,125 @@ function addon.EditMode.SyncComponentPositionFromEditMode(component)
     end
 
     return changed
+end
+
+function addon.EditMode.ResetComponentPositionToDefault(component)
+    if not component or not component.frameName then
+        return false, "missing_component"
+    end
+
+    local frame = _G[component.frameName]
+    if not frame then
+        return false, "frame_missing"
+    end
+
+    if addon.EditMode and addon.EditMode.LoadLayouts then
+        pcall(addon.EditMode.LoadLayouts)
+    end
+
+    local usedSystemReset = false
+    if type(frame.ResetToDefaultPosition) == "function" then
+        local ok = pcall(frame.ResetToDefaultPosition, frame)
+        if ok then
+            usedSystemReset = true
+        end
+    end
+
+    if not usedSystemReset then
+        local preset = _G.EditModePresetLayoutManager
+        if preset and preset.GetModernSystemAnchorInfo and frame.system and frame.systemIndex then
+            local anchorInfo = preset:GetModernSystemAnchorInfo(frame.system, frame.systemIndex)
+            if anchorInfo then
+                local relativeTo = anchorInfo.relativeTo
+                if type(relativeTo) == "string" then
+                    relativeTo = _G[relativeTo]
+                end
+                if not relativeTo then
+                    relativeTo = UIParent
+                end
+                addon.EditMode.ReanchorFrame(frame,
+                    anchorInfo.point or "CENTER",
+                    relativeTo,
+                    anchorInfo.relativePoint or "CENTER",
+                    anchorInfo.offsetX or 0,
+                    anchorInfo.offsetY or 0)
+                usedSystemReset = true
+            end
+        end
+        if not usedSystemReset then
+            return false, "anchor_unavailable"
+        end
+    end
+
+    local function syncPosition()
+        if addon.EditMode and addon.EditMode.SyncComponentPositionFromEditMode then
+            addon.EditMode.SyncComponentPositionFromEditMode(component)
+        end
+    end
+
+    syncPosition()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, syncPosition)
+    end
+
+    if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+    return true
+end
+
+function addon.EditMode.ResetUnitFramePosition(unit)
+    if type(unit) ~= "string" then
+        return false, "missing_unit"
+    end
+
+    if addon.EditMode and addon.EditMode.LoadLayouts then
+        pcall(addon.EditMode.LoadLayouts)
+    end
+
+    local frame = _GetUnitFrameForUnit(unit)
+    if not frame then
+        return false, "frame_missing"
+    end
+
+    local resetOk = false
+    if type(frame.ResetToDefaultPosition) == "function" then
+        resetOk = pcall(frame.ResetToDefaultPosition, frame) or false
+    end
+
+    if not resetOk then
+        local preset = _G.EditModePresetLayoutManager
+        if preset and preset.GetModernSystemAnchorInfo and frame.system and frame.systemIndex then
+            local anchorInfo = preset:GetModernSystemAnchorInfo(frame.system, frame.systemIndex)
+            if anchorInfo then
+                local relativeTo = anchorInfo.relativeTo
+                if type(relativeTo) == "string" then
+                    relativeTo = _G[relativeTo]
+                end
+                if not relativeTo then
+                    relativeTo = UIParent
+                end
+                addon.EditMode.ReanchorFrame(
+                    frame,
+                    anchorInfo.point or "CENTER",
+                    relativeTo,
+                    anchorInfo.relativePoint or "CENTER",
+                    anchorInfo.offsetX or 0,
+                    anchorInfo.offsetY or 0
+                )
+                resetOk = true
+            end
+        end
+
+        if not resetOk then
+            return false, "anchor_unavailable"
+        end
+    end
+
+    if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+    return true
 end
 
 --[[----------------------------------------------------------------------------

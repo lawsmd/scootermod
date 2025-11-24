@@ -161,31 +161,31 @@ local function applyIconLimitLabel(component, frame)
 	end
 end
 
-panel._orientationWidgets = panel._orientationWidgets or {}
+panel._dynamicSettingWidgets = panel._dynamicSettingWidgets or {}
 
-local function ensureOrientationBucket(componentId)
-	panel._orientationWidgets = panel._orientationWidgets or {}
-	if componentId and not panel._orientationWidgets[componentId] then
-		panel._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
+local function ensureDynamicSettingBucket(componentId)
+	panel._dynamicSettingWidgets = panel._dynamicSettingWidgets or {}
+	if componentId and not panel._dynamicSettingWidgets[componentId] then
+		panel._dynamicSettingWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
 	end
-	return componentId and panel._orientationWidgets[componentId]
+	return componentId and panel._dynamicSettingWidgets[componentId]
 end
 
-function panel:PrepareOrientationWidgets(componentId)
+function panel:PrepareDynamicSettingWidgets(componentId)
 	if not componentId then return end
-	self._orientationWidgets = self._orientationWidgets or {}
-	self._orientationWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
+	self._dynamicSettingWidgets = self._dynamicSettingWidgets or {}
+	self._dynamicSettingWidgets[componentId] = { columns = {}, direction = {}, iconWrap = {}, iconLimit = {} }
 end
 
-function panel:RegisterOrientationWidget(componentId, kind, frame)
+function panel:RegisterDynamicSettingWidget(componentId, kind, frame)
 	if not componentId or not frame then return end
-	local bucket = ensureOrientationBucket(componentId)
+	local bucket = ensureDynamicSettingBucket(componentId)
 	if not bucket then return end
 	bucket[kind] = bucket[kind] or {}
 	bucket[kind][frame] = true
 end
 
-local function enumerateOrientationFrames(bucket, kind)
+local function enumerateDynamicSettingFrames(bucket, kind)
 	if not bucket then return function() end end
 	local frames = {}
 	for frame in pairs(bucket[kind] or {}) do
@@ -194,24 +194,31 @@ local function enumerateOrientationFrames(bucket, kind)
 	return ipairs(frames)
 end
 
-function panel:RefreshOrientationWidgets(component)
+local function enumerateOrientationFrames(bucket, kind)
+	-- Currently identical to enumerateDynamicSettingFrames, but kept as a
+	-- separate helper so future orientation-specific filtering can be added
+	-- without touching the shared label updater logic.
+	return enumerateDynamicSettingFrames(bucket, kind)
+end
+
+	function panel:RefreshDynamicSettingWidgets(component)
 	local comp = component
 	if type(comp) ~= "table" then
 		comp = addon.Components and addon.Components[component]
 	end
 	if not comp or not comp.id then return end
-	local bucket = self._orientationWidgets and self._orientationWidgets[comp.id]
+	local bucket = self._dynamicSettingWidgets and self._dynamicSettingWidgets[comp.id]
 	if not bucket then return end
 
-	for _, frame in enumerateOrientationFrames(bucket, "columns") do
+	for _, frame in enumerateDynamicSettingFrames(bucket, "columns") do
 		applyColumnsLabel(comp, frame)
 	end
 
-	for _, frame in enumerateOrientationFrames(bucket, "iconLimit") do
+	for _, frame in enumerateDynamicSettingFrames(bucket, "iconLimit") do
 		applyIconLimitLabel(comp, frame)
 	end
 
-	for _, frame in enumerateOrientationFrames(bucket, "direction") do
+	for _, frame in enumerateDynamicSettingFrames(bucket, "direction") do
 		local initializer = frame.GetElementData and frame:GetElementData()
 		if initializer and initializer.data then
 			if comp.id == "buffs" or comp.id == "debuffs" then
