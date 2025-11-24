@@ -27,7 +27,16 @@ core/iconbackdrops.lua
 core/borders.lua
 core/editmode.lua
 core/profiles.lua
-core/components.lua
+core/components/base.lua
+core/components/cooldowns.lua
+core/components/actionbars.lua
+core/components/auras.lua
+core/components/unitframes/text.lua
+core/components/unitframes/bars.lua
+core/components/unitframes/portraits.lua
+core/components/unitframes/cast.lua
+core/components/unitframes/buffs.lua
+core/components/unitframes/visibility.lua
 core/debug.lua
 
 ui/ScooterTabbedSection.xml
