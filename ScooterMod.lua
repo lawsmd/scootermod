@@ -135,47 +135,11 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
 end
 
 function addon:OnEnable()
-    self:RegisterEvent("PLAYER_REGEN_DISABLED", "HandleCombatStarted")
-    self:RegisterEvent("PLAYER_REGEN_ENABLED", "HandleCombatEnded")
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "HandleTargetChanged")
 end
 
 function addon:OnDisable()
-    self:UnregisterEvent("PLAYER_REGEN_DISABLED")
-    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
     self:UnregisterEvent("PLAYER_TARGET_CHANGED")
-end
-
-function addon:HandleCombatStarted()
-    if self.ApplyStyles then
-        self:ApplyStyles()
-    end
-
-    local panel = self.SettingsPanel
-    if not panel then return end
-
-    panel._combatLocked = true
-    if panel.frame and panel.frame:IsShown() then
-        panel._shouldReopenAfterCombat = true
-        panel.frame:Hide()
-        self:Print("ScooterMod will open once combat ends.")
-    end
-end
-
-function addon:HandleCombatEnded()
-    if self.ApplyStyles then
-        self:ApplyStyles()
-    end
-
-    local panel = self.SettingsPanel
-    if not panel then return end
-
-    panel._combatLocked = false
-    local shouldReopen = panel._shouldReopenAfterCombat
-    panel._shouldReopenAfterCombat = false
-    if shouldReopen and panel.Open then
-        panel:Open()
-    end
 end
 
 function addon:HandleTargetChanged()

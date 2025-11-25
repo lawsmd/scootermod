@@ -1439,13 +1439,31 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
 end
 -- Syncs the frame's position from Edit Mode to the addon DB
 function addon.EditMode.SyncComponentPositionFromEditMode(component)
+    if not component or not component.frameName then
+        return false
+    end
+    if component.disablePositionSync then
+        return false
+    end
+    local hasPositionSettings = component.settings
+        and component.settings.positionX
+        and component.settings.positionY
+    if not hasPositionSettings then
+        return false
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        return false
+    end
+    if UnitAffectingCombat and UnitAffectingCombat("player") then
+        return false
+    end
     local frame = _G[component.frameName]
-    if not frame then return false end
+    if not frame or (frame.IsForbidden and frame:IsForbidden()) then return false end
 
     local offsetX, offsetY
     if frame.GetCenter and UIParent and UIParent.GetCenter then
-        local fx, fy = frame:GetCenter()
-        local ux, uy = UIParent:GetCenter()
+        local okFrame, fx, fy = pcall(frame.GetCenter, frame)
+        local okParent, ux, uy = pcall(UIParent.GetCenter, UIParent)
         if fx and fy and ux and uy then
             offsetX = roundPositionValue(fx - ux)
             offsetY = roundPositionValue(fy - uy)

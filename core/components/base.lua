@@ -514,6 +514,9 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFramePortraits then
         addon.ApplyAllUnitFramePortraits()
     end
+	if addon.ApplyAllUnitFrameClassResources then
+		addon.ApplyAllUnitFrameClassResources()
+	end
     if addon.ApplyAllUnitFrameCastBars then
         addon.ApplyAllUnitFrameCastBars()
     end

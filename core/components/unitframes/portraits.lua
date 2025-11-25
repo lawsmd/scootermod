@@ -79,6 +79,20 @@ do
 		return nil
 	end
 
+	-- Resolve boss portrait frame texture for a given unit (Target/Focus only)
+	-- This texture appears when targeting a boss and needs to be hidden along with the portrait
+	local function resolveBossPortraitFrameTexture(unit)
+		if unit == "Target" then
+			local root = _G.TargetFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.BossPortraitFrameTexture or nil
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return root and root.TargetFrameContainer and root.TargetFrameContainer.BossPortraitFrameTexture or nil
+		end
+		-- Player/Pet don't have BossPortraitFrameTexture
+		return nil
+	end
+
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
 	-- Store original scales (per frame, not per unit, to handle frame recreation)
@@ -109,6 +123,8 @@ do
 		local restLoopFrame = (unit == "Player") and resolvePortraitRestLoopFrame(unit) or nil
 		-- Status texture only exists for Player frame
 		local statusTextureFrame = (unit == "Player") and resolvePortraitStatusTextureFrame(unit) or nil
+		-- Boss portrait frame texture only exists for Target/Focus frames
+		local bossPortraitFrameTexture = (unit == "Target" or unit == "Focus") and resolveBossPortraitFrameTexture(unit) or nil
 
 		-- Capture original positions on first access
 		if not originalPositions[portraitFrame] then
@@ -227,12 +243,16 @@ do
 		if statusTextureFrame and not originalAlphas[statusTextureFrame] then
 			originalAlphas[statusTextureFrame] = statusTextureFrame:GetAlpha() or 1.0
 		end
+		if bossPortraitFrameTexture and not originalAlphas[bossPortraitFrameTexture] then
+			originalAlphas[bossPortraitFrameTexture] = bossPortraitFrameTexture:GetAlpha() or 1.0
+		end
 
 		local origPortraitAlpha = originalAlphas[portraitFrame] or 1.0
 		local origMaskAlpha = maskFrame and (originalAlphas[maskFrame] or 1.0) or nil
 		local origCornerIconAlpha = cornerIconFrame and (originalAlphas[cornerIconFrame] or 1.0) or nil
 		local origRestLoopAlpha = restLoopFrame and (originalAlphas[restLoopFrame] or 1.0) or nil
 		local origStatusTextureAlpha = statusTextureFrame and (originalAlphas[statusTextureFrame] or 1.0) or nil
+		local origBossPortraitFrameTextureAlpha = bossPortraitFrameTexture and (originalAlphas[bossPortraitFrameTexture] or 1.0) or nil
 
 		-- Capture original mask atlas on first access (for Player only - to support full circle mask)
 		if maskFrame and unit == "Player" and not originalMaskAtlas[maskFrame] then
@@ -621,6 +641,21 @@ do
 					statusTextureFrame:Hide()
 				elseif not statusHidden and statusTextureFrame.Show then
 					statusTextureFrame:Show()
+				end
+			end
+
+			-- Boss portrait frame texture: hidden if "Hide Portrait" is checked (Target/Focus only)
+			-- This texture appears when targeting a boss and shows as a boss-specific portrait frame overlay
+			if bossPortraitFrameTexture and (unit == "Target" or unit == "Focus") then
+				local bossTexHidden = hidePortrait
+				local bossTexAlpha = bossTexHidden and 0.0 or (origBossPortraitFrameTextureAlpha * opacityValue)
+				if bossPortraitFrameTexture.SetAlpha then
+					bossPortraitFrameTexture:SetAlpha(bossTexAlpha)
+				end
+				if bossTexHidden and bossPortraitFrameTexture.Hide then
+					bossPortraitFrameTexture:Hide()
+				elseif not bossTexHidden and bossPortraitFrameTexture.Show then
+					bossPortraitFrameTexture:Show()
 				end
 			end
 		end

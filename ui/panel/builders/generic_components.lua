@@ -10,6 +10,284 @@ local BuildDirectionOptions = common and common.BuildDirectionOptions
 local ApplyColumnsLabel = common and common.ApplyColumnsLabel
 local ApplyIconLimitLabel = common and common.ApplyIconLimitLabel
 
+local function createPRDStyleInitializer(component)
+    local initializer = Settings.CreateElementInitializer("ScooterListElementTemplate")
+    initializer.GetExtent = function()
+        return 220
+    end
+    initializer:AddShownPredicate(function()
+        return panel:IsSectionExpanded(component.id, "Style")
+    end)
+    initializer.InitFrame = function(self, frame)
+        if not component then
+            return
+        end
+        if frame._ScooterPRDStyleBuilt then
+            if frame.Refresh then
+                frame:Refresh()
+            end
+            return
+        end
+        frame._ScooterPRDStyleBuilt = true
+
+        if frame.Text then
+            frame.Text:SetText("")
+            frame.Text:Hide()
+        end
+
+        frame:SetHeight(210)
+
+        local componentSettings = component.settings or {}
+        local db = component.db or {}
+        local styleState = {}
+
+        local function applyNow()
+            if addon and addon.ApplyStyles then
+                addon:ApplyStyles()
+            end
+        end
+
+        local function getDefault(key, fallback)
+            local setting = componentSettings[key]
+            if setting and setting.default ~= nil then
+                if type(setting.default) == "table" then
+                    return CopyTable(setting.default)
+                end
+                return setting.default
+            end
+            return fallback
+        end
+
+        local function getValue(key, fallback)
+            local value = db[key]
+            if value == nil then
+                value = getDefault(key, fallback)
+            end
+            if type(value) == "table" then
+                value = CopyTable(value)
+            end
+            return value
+        end
+
+        local function setValue(key, value, fallback)
+            if not component.db then
+                return
+            end
+            if type(value) == "table" then
+                component.db[key] = CopyTable(value)
+            else
+                component.db[key] = value ~= nil and value or fallback
+            end
+        end
+
+        local y = -16
+
+        local function buildTextureOptions()
+            if addon.BuildBarTextureOptionsContainer then
+                return addon.BuildBarTextureOptionsContainer()
+            end
+            local container = Settings.CreateControlTextContainer()
+            container:Add("default", "Default")
+            return container:GetData()
+        end
+
+        local fgTextureSetting = CreateLocalSetting("Foreground Texture", "string",
+            function() return getValue("styleForegroundTexture", "default") or "default" end,
+            function(v)
+                setValue("styleForegroundTexture", v or "default", "default")
+                applyNow()
+            end,
+            getValue("styleForegroundTexture", "default") or "default"
+        )
+        local fgTextureInit = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", {
+            name = "Foreground Texture",
+            setting = fgTextureSetting,
+            options = buildTextureOptions,
+        })
+        local fgTextureFrame = CreateFrame("Frame", nil, frame, "SettingsDropdownControlTemplate")
+        fgTextureFrame.GetElementData = function() return fgTextureInit end
+        fgTextureFrame:SetPoint("TOPLEFT", 4, y)
+        fgTextureFrame:SetPoint("TOPRIGHT", -16, y)
+        fgTextureInit:InitFrame(fgTextureFrame)
+        if panel and panel.ApplyRobotoWhite then
+            local lbl = fgTextureFrame and (fgTextureFrame.Text or fgTextureFrame.Label)
+            if lbl then panel.ApplyRobotoWhite(lbl) end
+        end
+        if fgTextureFrame.Control and addon.InitBarTextureDropdown then
+            addon.InitBarTextureDropdown(fgTextureFrame.Control, fgTextureSetting)
+        end
+        y = y - 34
+        styleState.fgTexture = fgTextureSetting
+
+        local function fgColorOptions()
+            local container = Settings.CreateControlTextContainer()
+            container:Add("default", "Default")
+            container:Add("texture", "Texture Original")
+            container:Add("class", "Class Color")
+            container:Add("custom", "Custom")
+            return container:GetData()
+        end
+        local function getForegroundMode()
+            return getValue("styleForegroundColorMode", "default") or "default"
+        end
+        local function setForegroundMode(mode)
+            setValue("styleForegroundColorMode", mode or "default", "default")
+            applyNow()
+        end
+        local function getForegroundTint()
+            return getValue("styleForegroundTint", {1, 1, 1, 1}) or {1, 1, 1, 1}
+        end
+        local function setForegroundTint(r, g, b, a)
+            setValue("styleForegroundTint", {r or 1, g or 1, b or 1, a or 1}, {1, 1, 1, 1})
+            applyNow()
+        end
+        local yRef = { y = y }
+        panel.DropdownWithInlineSwatch(frame, yRef, {
+            label = "Foreground Color",
+            getMode = getForegroundMode,
+            setMode = setForegroundMode,
+            getColor = function()
+                local tint = getForegroundTint()
+                return tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+            end,
+            setColor = function(r, g, b, a)
+                setForegroundTint(r, g, b, a)
+            end,
+            options = fgColorOptions,
+            insideButton = true,
+        })
+        y = yRef.y
+
+        local spacer = CreateFrame("Frame", nil, frame, "SettingsListElementTemplate")
+        spacer:SetHeight(20)
+        spacer:SetPoint("TOPLEFT", 4, y)
+        spacer:SetPoint("TOPRIGHT", -16, y)
+        if spacer.Text then spacer.Text:SetText("") end
+        y = y - 24
+
+        local bgTextureSetting = CreateLocalSetting("Background Texture", "string",
+            function() return getValue("styleBackgroundTexture", "default") or "default" end,
+            function(v)
+                setValue("styleBackgroundTexture", v or "default", "default")
+                applyNow()
+            end,
+            getValue("styleBackgroundTexture", "default") or "default"
+        )
+        local bgTextureInit = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", {
+            name = "Background Texture",
+            setting = bgTextureSetting,
+            options = buildTextureOptions,
+        })
+        local bgTextureFrame = CreateFrame("Frame", nil, frame, "SettingsDropdownControlTemplate")
+        bgTextureFrame.GetElementData = function() return bgTextureInit end
+        bgTextureFrame:SetPoint("TOPLEFT", 4, y)
+        bgTextureFrame:SetPoint("TOPRIGHT", -16, y)
+        bgTextureInit:InitFrame(bgTextureFrame)
+        if panel and panel.ApplyRobotoWhite then
+            local lbl = bgTextureFrame and (bgTextureFrame.Text or bgTextureFrame.Label)
+            if lbl then panel.ApplyRobotoWhite(lbl) end
+        end
+        if bgTextureFrame.Control and addon.InitBarTextureDropdown then
+            addon.InitBarTextureDropdown(bgTextureFrame.Control, bgTextureSetting)
+        end
+        y = y - 34
+        styleState.bgTexture = bgTextureSetting
+
+        local function bgColorOptions()
+            local container = Settings.CreateControlTextContainer()
+            container:Add("default", "Default")
+            container:Add("texture", "Texture Original")
+            container:Add("custom", "Custom")
+            return container:GetData()
+        end
+        local function getBackgroundMode()
+            return getValue("styleBackgroundColorMode", "default") or "default"
+        end
+        local function setBackgroundMode(mode)
+            setValue("styleBackgroundColorMode", mode or "default", "default")
+            applyNow()
+        end
+        local function getBackgroundTint()
+            return getValue("styleBackgroundTint", {0, 0, 0, 1}) or {0, 0, 0, 1}
+        end
+        local function setBackgroundTint(r, g, b, a)
+            setValue("styleBackgroundTint", {r or 0, g or 0, b or 0, a or 1}, {0, 0, 0, 1})
+            applyNow()
+        end
+        yRef = { y = y }
+        panel.DropdownWithInlineSwatch(frame, yRef, {
+            label = "Background Color",
+            getMode = getBackgroundMode,
+            setMode = setBackgroundMode,
+            getColor = function()
+                local tint = getBackgroundTint()
+                return tint[1] or 0, tint[2] or 0, tint[3] or 0, tint[4] or 1
+            end,
+            setColor = function(r, g, b, a)
+                setBackgroundTint(r, g, b, a)
+            end,
+            options = bgColorOptions,
+            insideButton = true,
+        })
+        y = yRef.y
+
+        local bgOpacitySetting = CreateLocalSetting("Background Opacity", "number",
+            function() return getValue("styleBackgroundOpacity", 50) or 50 end,
+            function(v)
+                local newValue = tonumber(v) or 50
+                if newValue < 0 then
+                    newValue = 0
+                elseif newValue > 100 then
+                    newValue = 100
+                end
+                setValue("styleBackgroundOpacity", newValue, 50)
+                applyNow()
+            end,
+            getValue("styleBackgroundOpacity", 50) or 50
+        )
+        local bgOpacityOptions = Settings.CreateSliderOptions(0, 100, 1)
+        bgOpacityOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+            return tostring(math.floor((tonumber(value) or 0) + 0.5))
+        end)
+        local bgOpacityInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", {
+            name = "Background Opacity",
+            setting = bgOpacitySetting,
+            options = bgOpacityOptions,
+        })
+        local bgOpacityFrame = CreateFrame("Frame", nil, frame, "SettingsSliderControlTemplate")
+        bgOpacityFrame.GetElementData = function() return bgOpacityInit end
+        bgOpacityFrame:SetPoint("TOPLEFT", 4, y)
+        bgOpacityFrame:SetPoint("TOPRIGHT", -16, y)
+        bgOpacityInit:InitFrame(bgOpacityFrame)
+        if panel and panel.ApplyControlTheme then
+            panel.ApplyControlTheme(bgOpacityFrame)
+        end
+        if panel and panel.ApplyRobotoWhite and bgOpacityFrame.Text then
+            panel.ApplyRobotoWhite(bgOpacityFrame.Text)
+        end
+        styleState.bgOpacity = bgOpacitySetting
+
+        frame._ScooterPRDStyleSettings = styleState
+        frame.Refresh = function(self)
+            local settings = self._ScooterPRDStyleSettings
+            if not settings then return end
+            if settings.fgTexture and settings.fgTexture.SetValue then
+                settings.fgTexture:SetValue(getValue("styleForegroundTexture", "default") or "default")
+            end
+            if settings.bgTexture and settings.bgTexture.SetValue then
+                settings.bgTexture:SetValue(getValue("styleBackgroundTexture", "default") or "default")
+            end
+            if settings.bgOpacity and settings.bgOpacity.SetValue then
+                settings.bgOpacity:SetValue(getValue("styleBackgroundOpacity", 50) or 50)
+            end
+        end
+        if frame.Refresh then
+            frame:Refresh()
+        end
+    end
+    return initializer
+end
+
 local function createComponentRenderer(componentId)
     return function()
         local render = function()
@@ -635,6 +913,271 @@ local function createComponentRenderer(componentId)
                         end)
                         table.insert(init, initializer)
                     end
+                elseif sectionName == "Style" and component and (component.id == "prdHealth" or component.id == "prdPower") then
+                    local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                        name = "Style",
+                        sectionKey = "Style",
+                        componentId = component.id,
+                        expanded = panel:IsSectionExpanded(component.id, "Style"),
+                    })
+                    expInitializer.GetExtent = function()
+                        return 30
+                    end
+                    table.insert(init, expInitializer)
+
+                    local initializer = createPRDStyleInitializer(component)
+                    initializer:AddShownPredicate(function()
+                        return panel:IsSectionExpanded(component.id, "Style")
+                    end)
+                    table.insert(init, initializer)
+                elseif sectionName == "Border" and component and (component.id == "prdHealth" or component.id == "prdPower") then
+                    -- PRD Health/Power use a custom Border block (Style dropdown,
+                    -- Tint checkbox+swatch, Thickness slider) built as three
+                    -- independent rows. This avoids ScrollBox clipping issues and
+                    -- ensures consistent behavior with other settings.
+                    local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                        name = "Border",
+                        sectionKey = "Border",
+                        componentId = component.id,
+                        expanded = panel:IsSectionExpanded(component.id, "Border"),
+                    })
+                    expInitializer.GetExtent = function()
+                        return 30
+                    end
+                    table.insert(init, expInitializer)
+
+                    local componentSettings = component.settings or {}
+                    local db = component.db or {}
+
+                    local function readValue(key, fallback)
+                        local value = db[key]
+                        if value == nil then
+                            local setting = componentSettings[key]
+                            if setting and setting.default ~= nil then
+                                value = setting.default
+                            end
+                        end
+                        if value == nil then
+                            value = fallback
+                        end
+                        if type(value) == "table" then
+                            value = CopyTable(value)
+                        end
+                        return value
+                    end
+
+                    local function writeValue(key, value, fallback)
+                        if not component.db then
+                            return
+                        end
+                        if type(value) == "table" then
+                            component.db[key] = CopyTable(value)
+                        else
+                            if value == nil then
+                                component.db[key] = fallback
+                            else
+                                component.db[key] = value
+                            end
+                        end
+                    end
+
+                    -- Border Style dropdown
+                    local styleOptionsProvider
+                    if componentSettings.borderStyle and componentSettings.borderStyle.ui then
+                        styleOptionsProvider = componentSettings.borderStyle.ui.optionsProvider
+                    end
+                    styleOptionsProvider = styleOptionsProvider or function()
+                        if addon.BuildBarBorderOptionsContainer then
+                            return addon.BuildBarBorderOptionsContainer()
+                        end
+                        return {}
+                    end
+
+                    local borderStyleSetting = CreateLocalSetting("Border Style", "string",
+                        function() return readValue("borderStyle", "square") or "square" end,
+                        function(v)
+                            writeValue("borderStyle", v or "square", "square")
+                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                        end,
+                        readValue("borderStyle", "square") or "square"
+                    )
+                    local borderStyleInit = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", {
+                        name = "Border Style",
+                        setting = borderStyleSetting,
+                        options = styleOptionsProvider,
+                    })
+                    -- Apply ScooterMod theming to the Border Style row so it
+                    -- never falls back to Blizzard's stock font/colors.
+                    do
+                        local baseInit = borderStyleInit.InitFrame
+                        borderStyleInit.InitFrame = function(self, frame)
+                            if baseInit then baseInit(self, frame) end
+                            if panel and panel.ApplyControlTheme then
+                                panel.ApplyControlTheme(frame)
+                            end
+                            if panel and panel.ApplyRobotoWhite then
+                                local lbl = frame.Text or frame.Label
+                                if lbl then panel.ApplyRobotoWhite(lbl) end
+                            end
+                        end
+                    end
+                    borderStyleInit:AddShownPredicate(function()
+                        return panel:IsSectionExpanded(component.id, "Border")
+                    end)
+                    table.insert(init, borderStyleInit)
+
+                    -- Border Tint checkbox + swatch
+                    -- NOTE: getTintColor returns a TABLE {r,g,b,a} to match
+                    -- CreateCheckboxWithSwatchInitializer's expected interface.
+                    local function getTintColor()
+                        local tint = readValue("borderTintColor", {1, 1, 1, 1}) or {1, 1, 1, 1}
+                        return { tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1 }
+                    end
+
+                    local tintSetting = CreateLocalSetting("Border Tint", "boolean",
+                        function() return not not readValue("borderTintEnable", false) end,
+                        function(v)
+                            writeValue("borderTintEnable", not not v, false)
+                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                        end,
+                        readValue("borderTintEnable", false)
+                    )
+                    local tintInit = CreateCheckboxWithSwatchInitializer(
+                        tintSetting,
+                        "Border Tint",
+                        getTintColor,
+                        function(r, g, b, a)
+                            writeValue("borderTintColor", {r or 1, g or 1, b or 1, a or 1}, {1, 1, 1, 1})
+                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                        end,
+                        8
+                    )
+                    -- Ensure PRD Border Tint row always uses ScooterMod theming
+                    -- and that the swatch reliably opens the color picker even
+                    -- if other wrappers interfere.
+                    do
+                        local baseInit = tintInit.InitFrame
+                        tintInit.InitFrame = function(self, frame)
+                            if baseInit then baseInit(self, frame) end
+
+                            if panel and panel.ApplyControlTheme then
+                                panel.ApplyControlTheme(frame)
+                            end
+                            if panel and panel.ApplyRobotoWhite then
+                                local cb = frame.Checkbox or frame.CheckBox or frame.Control
+                                if cb and cb.Text then
+                                    panel.ApplyRobotoWhite(cb.Text)
+                                end
+                                if frame.Text then
+                                    panel.ApplyRobotoWhite(frame.Text)
+                                end
+                            end
+
+                            local swatch = frame.ScooterInlineSwatch
+                            if swatch then
+                                -- Ensure mouse is enabled and swatch is above other elements
+                                swatch:EnableMouse(true)
+                                swatch:SetFrameStrata("DIALOG")
+                                swatch:SetFrameLevel((frame:GetFrameLevel() or 0) + 10)
+
+                                -- Replace any prior OnClick with a direct call
+                                -- into the Blizzard color picker; this mirrors
+                                -- the shared helper but keeps PRD isolated
+                                -- from recycled-row edge cases.
+                                swatch:SetScript("OnClick", function()
+                                    local c = getTintColor()
+                                    ColorPickerFrame:SetupColorPickerAndShow({
+                                        r = c[1] or 1,
+                                        g = c[2] or 1,
+                                        b = c[3] or 1,
+                                        hasOpacity = true,
+                                        opacity = c[4] or 1,
+                                        swatchFunc = function()
+                                            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                                            local na = ColorPickerFrame:GetColorAlpha()
+                                            writeValue("borderTintColor", {nr or 1, ng or 1, nb or 1, na or 1}, {1, 1, 1, 1})
+                                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                            if swatch.Color then
+                                                swatch.Color:SetColorTexture(nr or 1, ng or 1, nb or 1, 1)
+                                            end
+                                        end,
+                                        cancelFunc = function(prev)
+                                            if not prev then return end
+                                            local pr = prev.r or 1
+                                            local pg = prev.g or 1
+                                            local pb = prev.b or 1
+                                            local pa = prev.a or 1
+                                            writeValue("borderTintColor", {pr, pg, pb, pa}, {1, 1, 1, 1})
+                                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                            if swatch.Color then
+                                                swatch.Color:SetColorTexture(pr, pg, pb, 1)
+                                            end
+                                        end,
+                                    })
+                                end)
+
+                                -- Ensure initial visibility matches checkbox state
+                                local isChecked = tintSetting:GetValue()
+                                swatch:SetShown(isChecked and true or false)
+                            end
+
+                            -- Wire up checkbox to toggle swatch visibility directly
+                            local cb = frame.Checkbox or frame.CheckBox or frame.Control
+                            if cb and frame.ScooterInlineSwatch then
+                                local swatchRef = frame.ScooterInlineSwatch
+                                if not cb._prdBorderTintHooked then
+                                    cb:HookScript("OnClick", function(button)
+                                        local checked = button:GetChecked()
+                                        swatchRef:SetShown(checked and true or false)
+                                    end)
+                                    cb._prdBorderTintHooked = true
+                                end
+                            end
+                        end
+                    end
+                    tintInit:AddShownPredicate(function()
+                        return panel:IsSectionExpanded(component.id, "Border")
+                    end)
+                    table.insert(init, tintInit)
+
+                    -- Border Thickness slider
+                    local thicknessSetting = CreateLocalSetting("Border Thickness", "number",
+                        function() return readValue("borderThickness", 1) or 1 end,
+                        function(v)
+                            local nv = tonumber(v) or 1
+                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+                            writeValue("borderThickness", nv, 1)
+                            if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                        end,
+                        readValue("borderThickness", 1) or 1
+                    )
+                    local thicknessOptions = Settings.CreateSliderOptions(1, 16, 1)
+                    thicknessOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+                        return tostring(math.floor((tonumber(value) or 0) + 0.5))
+                    end)
+                    local thicknessInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", {
+                        name = "Border Thickness",
+                        setting = thicknessSetting,
+                        options = thicknessOptions,
+                    })
+                    -- The thickness slider must always adopt ScooterMod theming
+                    -- (white Roboto label, consistent slider chrome).
+                    do
+                        local baseInit = thicknessInit.InitFrame
+                        thicknessInit.InitFrame = function(self, frame)
+                            if baseInit then baseInit(self, frame) end
+                            if panel and panel.ApplyControlTheme then
+                                panel.ApplyControlTheme(frame)
+                            end
+                            if panel and panel.ApplyRobotoWhite and frame.Text then
+                                panel.ApplyRobotoWhite(frame.Text)
+                            end
+                        end
+                    end
+                    thicknessInit:AddShownPredicate(function()
+                        return panel:IsSectionExpanded(component.id, "Border")
+                    end)
+                    table.insert(init, thicknessInit)
                 elseif sectionName == "Style" and component and component.id == "trackedBars" then
                     local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
                         name = "Style",
@@ -901,6 +1444,7 @@ local function createComponentRenderer(componentId)
                     or (sectionName == "Border" and component and component.settings and component.settings.supportsEmptyBorderSection)
                     or (sectionName == "Misc" and component and component.supportsEmptyVisibilitySection)
                     or (sectionName == "Sizing" and component and component.supportsEmptySizingSection)
+                    or (sectionName == "Style" and component and component.supportsEmptyStyleSection)
                 then
                     local headerName = (sectionName == "Misc") and "Visibility" or sectionName
 
@@ -1429,7 +1973,12 @@ local function createComponentRenderer(componentId)
                                 else
                                     initSlider.reinitializeOnValueChanged = true
                                 end
-                                if settingId == "positionX" or settingId == "positionY" then ConvertSliderInitializerToTextInput(initSlider) end
+                                if settingId == "positionX" or settingId == "positionY" then
+                                    local disableTextInput = setting and setting.ui and setting.ui.disableTextInput
+                                    if not disableTextInput then
+                                        ConvertSliderInitializerToTextInput(initSlider)
+                                    end
+                                end
                                 if settingId == "opacity" or settingId == "barOpacity" then
                                     local baseInit = initSlider.InitFrame
                                     initSlider.InitFrame = function(self, frame)
@@ -1970,6 +2519,113 @@ local function createComponentRenderer(componentId)
                                     end)
                                     table.insert(init, colorRow)
                                 end
+                            elseif ui.widget == "textEntry" then
+                                -- Text entry widget for numeric position/offset fields (e.g., PRD Global X/Y Position)
+                                -- Creates a simple edit box control without a slider
+                                -- Capture values for closures before creating the initializer
+                                local capturedLabel = label
+                                local capturedComponent = component
+                                local capturedSettingId = settingId
+                                local capturedSetting = setting
+                                local capturedUi = ui
+                                local capturedSectionName = sectionName
+                                
+                                local textEntryRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+                                textEntryRow.GetExtent = function() return 34 end
+                                textEntryRow.InitFrame = function(self, frame)
+                                    -- Defense against recycled rows: hide any stale controls from other widget types
+                                    if frame.SliderWithSteppers then frame.SliderWithSteppers:Hide() end
+                                    if frame.Control then
+                                        if frame.Control.Hide then pcall(frame.Control.Hide, frame.Control) end
+                                    end
+                                    if frame.Dropdown then pcall(frame.Dropdown.Hide, frame.Dropdown) end
+                                    if frame.Checkbox or frame.CheckBox then
+                                        local cb = frame.Checkbox or frame.CheckBox
+                                        if cb and cb.Hide then pcall(cb.Hide, cb) end
+                                    end
+                                    
+                                    -- Create or reuse label
+                                    if not frame.ScooterTextEntryLabel then
+                                        local lbl = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+                                        lbl:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                                        frame.ScooterTextEntryLabel = lbl
+                                    end
+                                    frame.ScooterTextEntryLabel:SetText(capturedLabel or "")
+                                    frame.ScooterTextEntryLabel:Show()
+                                    if panel and panel.ApplyRobotoWhite then
+                                        panel.ApplyRobotoWhite(frame.ScooterTextEntryLabel)
+                                    end
+                                    
+                                    -- Create or reuse edit box
+                                    -- Position matches the slider-to-text-input conversion used by Action Bars
+                                    if not frame.ScooterTextEntryInput then
+                                        local input = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+                                        input:SetAutoFocus(false)
+                                        input:SetWidth(120)
+                                        input:SetHeight(24)
+                                        input:SetJustifyH("CENTER")
+                                        input:SetPoint("LEFT", frame, "CENTER", -40, 0)
+                                        frame.ScooterTextEntryInput = input
+                                    end
+                                    
+                                    local input = frame.ScooterTextEntryInput
+                                    
+                                    local function restore()
+                                        local v = capturedComponent.db[capturedSettingId]
+                                        if v == nil then v = capturedSetting.default or 0 end
+                                        input:SetText(string.format("%.0f", tonumber(v) or 0))
+                                    end
+                                    local function commit()
+                                        local text = input:GetText()
+                                        local num = tonumber(text)
+                                        if not num then
+                                            restore()
+                                            return
+                                        end
+                                        -- Round to integer
+                                        num = math.floor(num + 0.5)
+                                        -- Clamp to min/max if specified
+                                        if capturedUi.min ~= nil then num = math.max(capturedUi.min, num) end
+                                        if capturedUi.max ~= nil then num = math.min(capturedUi.max, num) end
+                                        -- Update DB and apply styles
+                                        if capturedComponent.db[capturedSettingId] ~= num then
+                                            capturedComponent.db[capturedSettingId] = num
+                                            addon:ApplyStyles()
+                                        end
+                                        input:SetText(string.format("%.0f", num))
+                                    end
+                                    input:SetScript("OnEnterPressed", function(b)
+                                        commit()
+                                        b:ClearFocus()
+                                    end)
+                                    input:SetScript("OnEditFocusLost", function(b)
+                                        commit()
+                                        b:HighlightText(0, 0)
+                                    end)
+                                    input:SetScript("OnEscapePressed", function(b)
+                                        b:ClearFocus()
+                                        restore()
+                                    end)
+                                    
+                                    -- Set current value and ensure visibility
+                                    local currentValue = capturedComponent.db[capturedSettingId]
+                                    if currentValue == nil then currentValue = capturedSetting.default or 0 end
+                                    input:SetText(string.format("%.0f", tonumber(currentValue) or 0))
+                                    input:Show()
+                                    input:SetFrameLevel((frame:GetFrameLevel() or 0) + 5)
+                                    
+                                    -- Ensure frame is shown
+                                    frame:Show()
+                                    
+                                    -- Tag frame for reuse key matching
+                                    frame.ScooterComponentId = capturedComponent.id
+                                    frame.ScooterSettingId = capturedSettingId
+                                end
+                                textEntryRow:AddShownPredicate(function()
+                                    return panel:IsSectionExpanded(capturedComponent.id, capturedSectionName)
+                                end)
+                                textEntryRow.reinitializeOnValueChanged = false
+                                table.insert(init, textEntryRow)
                             end
                         end
                     end
@@ -2024,3 +2680,7 @@ function panel.RenderTrackedBars()       return createComponentRenderer("tracked
 function panel.RenderTrackedBuffs()      return createComponentRenderer("trackedBuffs")()      end
 function panel.RenderBuffs()             return createComponentRenderer("buffs")()             end
 function panel.RenderDebuffs()           return createComponentRenderer("debuffs")()           end
+function panel.RenderPRDGlobal()         return createComponentRenderer("prdGlobal")()         end
+function panel.RenderPRDHealth()         return createComponentRenderer("prdHealth")()         end
+function panel.RenderPRDPower()          return createComponentRenderer("prdPower")()          end
+function panel.RenderPRDClassResource()  return createComponentRenderer("prdClassResource")()  end

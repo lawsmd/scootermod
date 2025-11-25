@@ -2547,6 +2547,166 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, apbInit)
 			end
 
+			if componentId == "ufPlayer" then
+				local function getClassResourceTitle()
+					if addon and addon.UnitFrames_GetPlayerClassResourceTitle then
+						return addon.UnitFrames_GetPlayerClassResourceTitle()
+					end
+					return "Class Resource"
+				end
+
+				local expInitializerCR = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = getClassResourceTitle(),
+					sectionKey = "Class Resource",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Class Resource"),
+				})
+				expInitializerCR.GetExtent = function() return 30 end
+				do
+					local baseInitFrame = expInitializerCR.InitFrame
+					expInitializerCR.InitFrame = function(self, frame)
+						if baseInitFrame then baseInitFrame(self, frame) end
+						local header = frame and frame.Button and frame.Button.Text
+						if header and header.SetText then
+							header:SetText(getClassResourceTitle())
+						end
+					end
+				end
+				table.insert(init, expInitializerCR)
+
+				local crTabs = {
+					sectionTitle = "",
+					tabAText = "Positioning",
+					tabBText = "Sizing",
+					tabCText = "Visibility",
+				}
+				crTabs.build = function(frame)
+					local function ensureCRDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Player = db.unitFrames.Player or {}
+						db.unitFrames.Player.classResource = db.unitFrames.Player.classResource or {}
+						return db.unitFrames.Player.classResource
+					end
+
+					local function applyNow()
+						if addon and addon.ApplyUnitFrameClassResource then
+							addon.ApplyUnitFrameClassResource()
+						elseif addon and addon.ApplyStyles then
+							addon:ApplyStyles()
+						end
+					end
+
+					local function addSlider(parent, label, minV, maxV, stepV, getter, setter, yRef)
+						local options = Settings.CreateSliderOptions(minV, maxV, stepV)
+						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+							return tostring(math.floor((tonumber(v) or 0) + 0.5))
+						end)
+						local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+						local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+						row.GetElementData = function() return initSlider end
+						row:SetPoint("TOPLEFT", 4, yRef.y)
+						row:SetPoint("TOPRIGHT", -16, yRef.y)
+						initSlider:InitFrame(row)
+						if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+						yRef.y = yRef.y - 34
+						return row
+					end
+
+					-- PageA: Positioning
+					do
+						local y = { y = -50 }
+						addSlider(frame.PageA, "X Offset", -150, 150, 1,
+							function()
+								local cfg = ensureCRDB() or {}
+								return tonumber(cfg.offsetX) or 0
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								local nv = tonumber(v) or 0
+								if nv < -150 then nv = -150 elseif nv > 150 then nv = 150 end
+								cfg.offsetX = nv
+								applyNow()
+							end,
+							y)
+
+						addSlider(frame.PageA, "Y Offset", -150, 150, 1,
+							function()
+								local cfg = ensureCRDB() or {}
+								return tonumber(cfg.offsetY) or 0
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								local nv = tonumber(v) or 0
+								if nv < -150 then nv = -150 elseif nv > 150 then nv = 150 end
+								cfg.offsetY = nv
+								applyNow()
+							end,
+							y)
+					end
+
+					-- PageB: Sizing
+					do
+						local y = { y = -50 }
+						local function label()
+							return string.format("%s Scale", getClassResourceTitle())
+						end
+						addSlider(frame.PageB, label(), 50, 150, 1,
+							function()
+								local cfg = ensureCRDB() or {}
+								return tonumber(cfg.scale) or 100
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								local nv = tonumber(v) or 100
+								if nv < 50 then nv = 50 elseif nv > 150 then nv = 150 end
+								cfg.scale = nv
+								applyNow()
+							end,
+							y)
+					end
+
+					-- PageC: Visibility (placeholder)
+					do
+						local y = { y = -50 }
+						local function label()
+							return string.format("Hide %s", getClassResourceTitle())
+						end
+						local setting = CreateLocalSetting(label(), "boolean",
+							function()
+								local cfg = ensureCRDB() or {}
+								return cfg.hide == true
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								cfg.hide = (v == true)
+								applyNow()
+							end,
+							false)
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label(), setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+					end
+				end
+
+				local crInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", crTabs)
+				crInit.GetExtent = function() return 220 end
+				crInit:AddShownPredicate(function()
+					return panel:IsSectionExpanded(componentId, "Class Resource")
+				end)
+				table.insert(init, crInit)
+			end
+
 		-- Fourth collapsible section: Name & Level Text (all unit frames)
 		local expInitializerNLT = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 			name = "Name & Level Text",

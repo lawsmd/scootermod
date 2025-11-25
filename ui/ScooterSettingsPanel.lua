@@ -22,30 +22,6 @@ panel.UnitFrameCategoryToUnit = panel.UnitFrameCategoryToUnit or {
     ufPet    = "Pet",
 }
 
-local function PlayerInCombat()
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then
-        return true
-    end
-    if type(UnitAffectingCombat) == "function" then
-        local inCombat = UnitAffectingCombat("player")
-        if inCombat then
-            return true
-        end
-    end
-    return false
-end
-
-local function ShouldBlockForCombat()
-    if panel._combatLocked then return true end
-    return PlayerInCombat()
-end
-
-local function NotifyCombatLocked()
-    if addon and addon.Print then
-        addon:Print("ScooterMod will open once combat ends.")
-    end
-end
-
 -- Optional refresh suspension to avoid flicker when visibility-related settings write to Edit Mode
 panel._suspendRefresh = false
 panel._queuedRefresh = false
@@ -1040,7 +1016,12 @@ local function createComponentRenderer(componentId)
                             else
                                 initSlider.reinitializeOnValueChanged = true
                             end
-                            if settingId == "positionX" or settingId == "positionY" then ConvertSliderInitializerToTextInput(initSlider) end
+                            if settingId == "positionX" or settingId == "positionY" then
+                                local disableTextInput = setting and setting.ui and setting.ui.disableTextInput
+                                if not disableTextInput then
+                                    ConvertSliderInitializerToTextInput(initSlider)
+                                end
+                            end
                             if settingId == "opacity" then
                                 -- Ensure the slider reflects the immediate write to EM by re-pulling DB on value change
                                 local baseInit = initSlider.InitFrame
@@ -1351,6 +1332,11 @@ local function BuildCategories()
 	addEntry("trackedBuffs", addon.SettingsPanel.RenderTrackedBuffs())
 	addEntry("trackedBars", addon.SettingsPanel.RenderTrackedBars())
 
+	addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
+	addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
+	addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
+	addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
+
 	-- Action Bars children
 	addEntry("actionBar1", addon.SettingsPanel.RenderActionBar1())
 	-- Unit Frames children
@@ -1405,6 +1391,12 @@ local function BuildCategories()
             { type = "child", key = "buffs",   label = "Buffs"   },
             { type = "child", key = "debuffs", label = "Debuffs" },
         }},
+		{ type = "parent", key = "Personal Resource", label = "Personal Resource", collapsible = true, children = {
+			{ type = "child", key = "prdGlobal", label = "Global" },
+			{ type = "child", key = "prdHealth", label = "Health Bar" },
+			{ type = "child", key = "prdPower", label = "Power Bar" },
+			{ type = "child", key = "prdClassResource", label = "Class Resource" },
+		}},
 	}
 
 	-- Initialize expand state defaults (Profiles always expanded)
@@ -1820,13 +1812,22 @@ end
 	    end
 	    if not panel.frame then
 	        local f = CreateFrame("Frame", "ScooterSettingsPanel", UIParent, "SettingsFrameTemplate")
-	        f:Hide(); f:SetSize(920, 724); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
+        f:Hide(); f:SetSize(920, 724); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
             -- Allow closing the panel with the Escape key from anywhere in the menu
             if UISpecialFrames then
                 tinsert(UISpecialFrames, "ScooterSettingsPanel")
             end
 	        -- Remove default title text; we'll render a custom title area
 	        if f.NineSlice and f.NineSlice.Text then f.NineSlice.Text:SetText("") end
+        -- Override the template's close button to avoid calling protected HideUIPanel in combat
+        if f.ClosePanelButton then
+            f.ClosePanelButton:SetScript("OnClick", function()
+                if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_CLOSE then
+                    PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE)
+                end
+                f:Hide()
+            end)
+        end
             -- Increase window background opacity with a subtle overlay (no true blur available in WoW UI API)
             do
                 local bg = f:CreateTexture(nil, "BACKGROUND")
@@ -2017,10 +2018,6 @@ end
         defaultsBtn:SetPoint("BOTTOM", closeBtn, "BOTTOM", 0, 0)
         if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(defaultsBtn) end
         defaultsBtn:SetScript("OnClick", function()
-            if ShouldBlockForCombat() then
-                NotifyCombatLocked()
-                return
-            end
             local frameRef = panel and panel.frame
             if not frameRef then return end
             local currentKey = defaultsBtn.ScooterCurrentCategoryKey or frameRef.CurrentCategory
@@ -2218,14 +2215,7 @@ end
 
 function panel:Toggle()
     if panel.frame and panel.frame:IsShown() then
-        panel._shouldReopenAfterCombat = false
         panel.frame:Hide()
-        return
-    end
-
-    if ShouldBlockForCombat() then
-        panel._shouldReopenAfterCombat = true
-        NotifyCombatLocked()
         return
     end
 
@@ -2233,10 +2223,5 @@ function panel:Toggle()
 end
 
 function panel:Open()
-    if ShouldBlockForCombat() then
-        panel._shouldReopenAfterCombat = true
-        NotifyCombatLocked()
-        return
-    end
     ShowPanel()
 end
