@@ -39,6 +39,7 @@ do
             "powerBarBackgroundColorMode",
             "powerBarBackgroundTint",
             "powerBarBackgroundOpacity",
+            "powerBarHideFullSpikes",
             "powerBarHidden",
         }
         for _, k in ipairs(keys) do
@@ -989,6 +990,10 @@ do
             
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
 
+            if unit == "Player" and Util and Util.SetFullPowerSpikeHidden then
+                Util.SetFullPowerSpikeHidden(pb, cfg.powerBarHideFullSpikes == true or powerBarHidden)
+            end
+
             -- Apply reverse fill for Target/Focus if configured
             if (unit == "Target" or unit == "Focus") and pb and pb.SetReverseFill then
                 local shouldReverse = not not cfg.powerBarReverseFill
@@ -1580,6 +1585,10 @@ do
 						    if tex and mask and tex.RemoveMaskTexture then
 							    pcall(tex.RemoveMaskTexture, tex, mask)
 						    end
+
+							if Util and Util.ApplyFullPowerSpikeScale then
+								Util.ApplyFullPowerSpikeScale(pb, scaleY)
+							end
 						
 						    -- Force StatusBar to refresh its texture
 						    if pb and pb.GetValue and pb.SetValue then
@@ -1595,6 +1604,10 @@ do
 						    if pb and mask and widthPct == 100 then
 							    ensureMaskOnBarTexture(pb, mask)
 						    end
+
+							if Util and Util.ApplyFullPowerSpikeScale then
+								Util.ApplyFullPowerSpikeScale(pb, 1)
+							end
 					    end
 				    else
 					    -- Not scalable (Target/Focus with default fill): ensure we restore any prior height/anchors
@@ -1608,6 +1621,9 @@ do
 							    pcall(pb.SetPoint, pb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
 						    end
 					    end
+						if Util and Util.ApplyFullPowerSpikeScale then
+							Util.ApplyFullPowerSpikeScale(pb, 1)
+						end
 				    end
                 end
 			end

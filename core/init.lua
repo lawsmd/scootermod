@@ -6,6 +6,10 @@ function addon:OnInitialize()
     if addon.PreloadFonts then addon.PreloadFonts() end
     -- 1. Define components and populate self.Components
     self:InitializeComponents()
+    
+    -- Explicitly require the new ScrollingCombatText component file (if loaded via TOC, this is handled)
+    -- but we ensure its initializer runs if it used the RegisterComponent pattern
+
 
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)

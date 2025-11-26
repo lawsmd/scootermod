@@ -145,6 +145,242 @@ local function ClampOpacity(value, minValue)
 end
 Util.ClampOpacity = ClampOpacity
 
+local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+
+    local fullPowerFrame = ownerFrame.FullPowerFrame
+    if not fullPowerFrame or (fullPowerFrame.IsForbidden and fullPowerFrame:IsForbidden()) then
+        return
+    end
+
+    local scaleY = tonumber(heightScale) or 1
+    if scaleY <= 0 then
+        scaleY = 1
+    end
+    if scaleY < 0.25 then
+        scaleY = 0.25
+    elseif scaleY > 6 then
+        scaleY = 6
+    end
+
+    local spikeFrame = fullPowerFrame.SpikeFrame
+    local pulseFrame = fullPowerFrame.PulseFrame
+
+    local function captureDimensions(target)
+        if not target or (target.IsForbidden and target:IsForbidden()) then
+            return
+        end
+        if not target._ScootFullPowerOrigWidth then
+            if target.GetWidth then
+                local ok, w = pcall(target.GetWidth, target)
+                if ok and w and w > 0 then
+                    target._ScootFullPowerOrigWidth = w
+                end
+            end
+        end
+        if not target._ScootFullPowerOrigHeight then
+            if target.GetHeight then
+                local ok, h = pcall(target.GetHeight, target)
+                if ok and h and h > 0 then
+                    target._ScootFullPowerOrigHeight = h
+                end
+            end
+        end
+        if not target._ScootFullPowerOrigScale then
+            if target.GetScale then
+                local ok, s = pcall(target.GetScale, target)
+                if ok and s and s > 0 then
+                    target._ScootFullPowerOrigScale = s
+                end
+            end
+        end
+        if target._ScootFullPowerOrigAlpha == nil and target.GetAlpha then
+            local ok, a = pcall(target.GetAlpha, target)
+            if ok and a ~= nil then
+                target._ScootFullPowerOrigAlpha = a
+            end
+        end
+    end
+
+    local function applySize(target, desiredScale)
+        if not target or (target.IsForbidden and target:IsForbidden()) then
+            return
+        end
+        local baseWidth = target._ScootFullPowerOrigWidth
+        local baseHeight = target._ScootFullPowerOrigHeight
+        local baseScale = target._ScootFullPowerOrigScale
+
+        if baseWidth and baseHeight and target.SetSize then
+            local newHeight = math.max(1, baseHeight * desiredScale)
+            pcall(target.SetSize, target, baseWidth, newHeight)
+            return
+        end
+
+        local applied = false
+        if baseHeight and target.SetHeight then
+            local newHeight = math.max(1, baseHeight * desiredScale)
+            pcall(target.SetHeight, target, newHeight)
+            applied = true
+        end
+        if baseWidth and target.SetWidth then
+            pcall(target.SetWidth, target, baseWidth)
+            applied = true
+        end
+
+        if not applied and baseScale and target.SetScale then
+            local newScale = baseScale * desiredScale
+            if newScale < 0.25 then
+                newScale = 0.25
+            elseif newScale > 6 then
+                newScale = 6
+            end
+            pcall(target.SetScale, target, newScale)
+        end
+    end
+
+    local function applyHiddenState(target, hidden)
+        if not target or (target.IsForbidden and target:IsForbidden()) then
+            return
+        end
+        if hidden then
+            if target.Hide then pcall(target.Hide, target) end
+            if target.SetAlpha then pcall(target.SetAlpha, target, 0) end
+        else
+            if target.Show then pcall(target.Show, target) end
+            local restoreAlpha = target._ScootFullPowerOrigAlpha
+            if restoreAlpha == nil then
+                -- Default baseline: AlertSpikeStay/BigSpikeGlow start at alpha 0.
+                restoreAlpha = 0
+            end
+            if target.SetAlpha then pcall(target.SetAlpha, target, restoreAlpha) end
+        end
+    end
+
+    local function ensureCaptured()
+        if fullPowerFrame._ScootFullPowerCaptured then
+            return
+        end
+        fullPowerFrame._ScootFullPowerCaptured = true
+        captureDimensions(fullPowerFrame)
+        captureDimensions(spikeFrame)
+        if spikeFrame then
+            captureDimensions(spikeFrame.AlertSpikeStay)
+            captureDimensions(spikeFrame.BigSpikeGlow)
+        end
+        captureDimensions(pulseFrame)
+        if pulseFrame then
+            captureDimensions(pulseFrame.YellowGlow)
+            captureDimensions(pulseFrame.SoftGlow)
+        end
+    end
+
+    local function applyAll(desiredScale, hidden)
+        ensureCaptured()
+        if hidden then
+            if spikeFrame and spikeFrame.SpikeAnim and spikeFrame.SpikeAnim.Stop then
+                pcall(spikeFrame.SpikeAnim.Stop, spikeFrame.SpikeAnim)
+            end
+            if fullPowerFrame.FadeoutAnim and fullPowerFrame.FadeoutAnim.Stop then
+                pcall(fullPowerFrame.FadeoutAnim.Stop, fullPowerFrame.FadeoutAnim)
+            end
+            if fullPowerFrame.PulseFrame and fullPowerFrame.PulseFrame.PulseAnim and fullPowerFrame.PulseFrame.PulseAnim.Stop then
+                pcall(fullPowerFrame.PulseFrame.PulseAnim.Stop, fullPowerFrame.PulseFrame.PulseAnim)
+            end
+        end
+        applySize(fullPowerFrame, desiredScale)
+        if spikeFrame then
+            applySize(spikeFrame, desiredScale)
+            applySize(spikeFrame.AlertSpikeStay, desiredScale)
+            applySize(spikeFrame.BigSpikeGlow, desiredScale)
+        end
+        if pulseFrame then
+            applySize(pulseFrame, desiredScale)
+            applySize(pulseFrame.YellowGlow, desiredScale)
+            applySize(pulseFrame.SoftGlow, desiredScale)
+        end
+
+        applyHiddenState(spikeFrame and spikeFrame.AlertSpikeStay, hidden)
+        applyHiddenState(spikeFrame and spikeFrame.BigSpikeGlow, hidden)
+        if pulseFrame then
+            applyHiddenState(pulseFrame, hidden)
+            applyHiddenState(pulseFrame.YellowGlow, hidden)
+            applyHiddenState(pulseFrame.SoftGlow, hidden)
+        end
+    end
+
+    local function applyState()
+        ensureCaptured()
+        local storedScale = fullPowerFrame._ScootFullPowerLatestScale or 1
+        local hidden = not not fullPowerFrame._ScootFullPowerHidden
+        applyAll(storedScale, hidden)
+    end
+
+    fullPowerFrame._ScootFullPowerLatestScale = scaleY
+    if fullPowerFrame._ScootFullPowerHidden == nil then
+        fullPowerFrame._ScootFullPowerHidden = false
+    end
+    fullPowerFrame._ScootFullPowerApplyState = applyState
+    applyState()
+
+    if type(hooksecurefunc) == "function" and not fullPowerFrame._ScootFullPowerHooks then
+        fullPowerFrame._ScootFullPowerHooks = true
+        local function reapply()
+            applyState()
+        end
+        if fullPowerFrame.Initialize then
+            hooksecurefunc(fullPowerFrame, "Initialize", reapply)
+        end
+        if fullPowerFrame.RemoveAnims then
+            hooksecurefunc(fullPowerFrame, "RemoveAnims", reapply)
+        end
+        if fullPowerFrame.StartAnimIfFull then
+            hooksecurefunc(fullPowerFrame, "StartAnimIfFull", reapply)
+        end
+        if spikeFrame and spikeFrame.SpikeAnim and spikeFrame.SpikeAnim.HookScript then
+            spikeFrame.SpikeAnim:HookScript("OnPlay", reapply)
+            spikeFrame.SpikeAnim:HookScript("OnFinished", reapply)
+        end
+        if pulseFrame and pulseFrame.PulseAnim and pulseFrame.PulseAnim.HookScript then
+            pulseFrame.PulseAnim:HookScript("OnPlay", reapply)
+            pulseFrame.PulseAnim:HookScript("OnFinished", reapply)
+        end
+    end
+end
+Util.ApplyFullPowerSpikeScale = ApplyFullPowerSpikeScale
+
+local function SetFullPowerSpikeHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local fullPowerFrame = ownerFrame.FullPowerFrame
+    if not fullPowerFrame or (fullPowerFrame.IsForbidden and fullPowerFrame:IsForbidden()) then
+        return
+    end
+    fullPowerFrame._ScootFullPowerHidden = not not hidden
+    if fullPowerFrame._ScootFullPowerHidden then
+        if fullPowerFrame.SpikeFrame and fullPowerFrame.SpikeFrame.SpikeAnim and fullPowerFrame.SpikeFrame.SpikeAnim.Stop then
+            pcall(fullPowerFrame.SpikeFrame.SpikeAnim.Stop, fullPowerFrame.SpikeFrame.SpikeAnim)
+        end
+        if fullPowerFrame.PulseFrame and fullPowerFrame.PulseFrame.PulseAnim and fullPowerFrame.PulseFrame.PulseAnim.Stop then
+            pcall(fullPowerFrame.PulseFrame.PulseAnim.Stop, fullPowerFrame.PulseFrame.PulseAnim)
+        end
+        if fullPowerFrame.FadeoutAnim and fullPowerFrame.FadeoutAnim.Stop then
+            pcall(fullPowerFrame.FadeoutAnim.Stop, fullPowerFrame.FadeoutAnim)
+        end
+    end
+    if fullPowerFrame._ScootFullPowerApplyState then
+        fullPowerFrame._ScootFullPowerApplyState()
+    else
+        Util.ApplyFullPowerSpikeScale(ownerFrame, fullPowerFrame._ScootFullPowerLatestScale or 1)
+        if fullPowerFrame._ScootFullPowerApplyState then
+            fullPowerFrame._ScootFullPowerApplyState()
+        end
+    end
+end
+Util.SetFullPowerSpikeHidden = SetFullPowerSpikeHidden
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 
@@ -657,4 +893,5 @@ function addon:SyncAllEditModeSettings()
 
     return anyChanged
 end
+
 

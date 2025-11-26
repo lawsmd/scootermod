@@ -32,6 +32,7 @@ core/components/cooldowns.lua
 core/components/actionbars.lua
 core/components/auras.lua
 core/components/personal_resource_display.lua
+core/components/scrollingcombattext.lua
 core/components/unitframes/text.lua
 core/components/unitframes/bars.lua
 core/components/unitframes/portraits.lua
@@ -40,6 +41,7 @@ core/components/unitframes/cast.lua
 core/components/unitframes/buffs.lua
 core/components/unitframes/visibility.lua
 core/components/unitframes/copy.lua
+core/components/tooltip.lua
 core/debug.lua
 
 ui/ScooterTabbedSection.xml

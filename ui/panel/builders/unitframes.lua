@@ -329,7 +329,7 @@ local function createUFRenderer(componentId, title)
 							-- This is the Unit Frame checkbox - create/show the icon
 							if panel and panel.CreateInfoIcon then
 								if not frame.ScooterInfoIcon then
-									local tooltipText = "Enables custom borders by disabling Blizzard's default frame art. Note: This also temporarily disables Aggro Glow and Reputation Colors—we'll restore those features in a future update."
+									local tooltipText = "Enables custom borders by disabling Blizzard's default frame art. Note: This also disables Aggro Glow and Reputation Colors—we're aiming to replace those features in a future update."
 									-- Icon size is 32 (double the original 16) for better visibility
 									-- Position icon to the right of the checkbox to ensure no overlap
 									local checkbox = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
@@ -1300,8 +1300,10 @@ local function createUFRenderer(componentId, title)
 					y.y = y.y - 34
 					
 					-- Bar Height slider (only enabled when Use Custom Borders is checked)
+					-- NOTE: Max capped at 100 (default) because growing above default causes animation
+					-- artifacts in combat. Shrinking below default is supported. See UNITFRAMES.md.
 					local heightLabel = "Bar Height (%)"
-					local heightOptions = Settings.CreateSliderOptions(50, 200, 1)
+					local heightOptions = Settings.CreateSliderOptions(50, 100, 1)
 					heightOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
 					
 					-- Getter: Always return the actual stored value
@@ -1318,7 +1320,7 @@ local function createUFRenderer(componentId, title)
 							return -- Silently ignore changes when disabled
 						end
 						local val = tonumber(v) or 100
-						val = math.max(50, math.min(200, val))
+						val = math.max(50, math.min(100, val))
 						t.powerBarHeightPct = val
 						applyNow()
 					end
@@ -1334,7 +1336,7 @@ local function createUFRenderer(componentId, title)
 					
 					-- Add info icon to enabled slider explaining the requirement
 					if panel and panel.CreateInfoIconForLabel then
-						local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the power bar."
+						local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This slider allows shrinking the bar (50-100%). Growing above default is disabled due to animation artifacts in combat.\n\nIf you are using a custom Bar Height for this Power Bar, we recommend also hiding the 'Bar-Full Spike Animations' via the setting on the Visibility tab."
 						local label = heightSlider.Text or heightSlider.Label
 						if label and not heightSlider.ScooterBarHeightInfoIcon then
 							heightSlider.ScooterBarHeightInfoIcon = panel.CreateInfoIconForLabel(label, tooltipText, 5, 0, 32)
@@ -1418,7 +1420,7 @@ local function createUFRenderer(componentId, title)
 							end
 							-- Add info icon on the static row explaining why it's disabled
 							if panel and panel.CreateInfoIconForLabel and not heightSlider.ScooterBarHeightStaticInfo then
-								local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This setting allows you to adjust the vertical size of the power bar."
+								local tooltipText = "Bar Height customization requires 'Use Custom Borders' to be enabled. This slider allows shrinking the bar (50-100%). Growing above default is disabled due to animation artifacts in combat."
 								heightSlider.ScooterBarHeightStaticInfo = panel.CreateInfoIconForLabel(
 									heightSlider.ScooterBarHeightStatic.Text,
 									tooltipText,
@@ -1490,6 +1492,59 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+					end
+
+					y.y = y.y - 34
+
+                    if componentId == "ufPlayer" then
+                        local spikeLabel = "Hide Full Bar Animations"
+						local function spikeGetter()
+							local t = ensureUFDB()
+							return t and not not t.powerBarHideFullSpikes or false
+						end
+						local function spikeSetter(v)
+							local t = ensureUFDB(); if not t then return end
+							t.powerBarHideFullSpikes = (v and true) or false
+							applyNow()
+						end
+
+						local spikeSetting = CreateLocalSetting(spikeLabel, "boolean", spikeGetter, spikeSetter, spikeGetter())
+						local spikeInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = spikeLabel, setting = spikeSetting, options = {} })
+						local spikeRow = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+						spikeRow.GetElementData = function() return spikeInit end
+						spikeRow:SetPoint("TOPLEFT", 4, y.y)
+						spikeRow:SetPoint("TOPRIGHT", -16, y.y)
+                        spikeInit:InitFrame(spikeRow)
+                        if panel and panel.ApplyRobotoWhite then
+                            if spikeRow.Text then panel.ApplyRobotoWhite(spikeRow.Text) end
+                            local cb = spikeRow.Checkbox or spikeRow.CheckBox or (spikeRow.Control and spikeRow.Control.Checkbox)
+                            if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        end
+
+                        if panel and panel.CreateInfoIconForLabel then
+                            local tooltipText = "Disables Blizzard's full-bar celebration animations that play when the resource is full. These overlays can't be resized, so hiding them keeps custom bar heights consistent."
+                            local targetLabel = spikeRow.Text or (spikeRow.Checkbox and spikeRow.Checkbox.Text)
+                            if targetLabel and not spikeRow.ScooterFullBarAnimInfoIcon then
+                                spikeRow.ScooterFullBarAnimInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltipText, 5, 0, 32)
+                                if spikeRow.ScooterFullBarAnimInfoIcon then
+                                    local function reposition()
+                                        local icon = spikeRow.ScooterFullBarAnimInfoIcon
+                                        local lbl = spikeRow.Text or (spikeRow.Checkbox and spikeRow.Checkbox.Text)
+                                        if icon and lbl then
+                                            icon:ClearAllPoints()
+                                            icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                        end
+                                    end
+                                    if C_Timer and C_Timer.After then
+                                        C_Timer.After(0, reposition)
+                                    else
+                                        reposition()
+                                    end
+                                end
+                            end
+                        end
+
+						y.y = y.y - 34
 					end
 				end
 
@@ -2037,6 +2092,8 @@ local function createUFRenderer(componentId, title)
 					end
 
 					-- PageB: Sizing (Alternate Power Bar) – width/height scaling
+					-- NOTE: Height max capped at 100 (default) because growing above default causes
+					-- animation artifacts in combat. Shrinking below default is supported. See UNITFRAMES.md.
 					do
 						local function applyNow()
 							if addon and addon.ApplyStyles then addon:ApplyStyles() end
@@ -2056,12 +2113,12 @@ local function createUFRenderer(componentId, title)
 							y)
 
 						-- Bar Height (%)
-						addSlider(frame.PageB, "Bar Height (%)", 50, 200, 1,
+						addSlider(frame.PageB, "Bar Height (%)", 50, 100, 1,
 							function() local t = ensureUFDB() or {}; return tonumber(t.heightPct) or 100 end,
 							function(v)
 								local t = ensureUFDB(); if not t then return end
 								local val = tonumber(v) or 100
-								if val < 50 then val = 50 elseif val > 200 then val = 200 end
+								if val < 50 then val = 50 elseif val > 100 then val = 100 end
 								t.heightPct = val
 								applyNow()
 							end,

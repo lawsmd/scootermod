@@ -342,7 +342,7 @@ local function createComponentRenderer(componentId)
                 table.sort(sectionSettings, function(a, b) return (a.setting.ui.order or 999) < (b.setting.ui.order or 999) end)
             end
 
-            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Backdrop", "Icon", "Text", "Misc"}
+            local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Backdrop", "Icon", "Text", "Font", "Misc"}
             for _, sectionName in ipairs(orderedSections) do
                 if sectionName == "Text" then
                     local supportsText = component and component.settings and component.settings.supportsText
@@ -1923,7 +1923,11 @@ local function createComponentRenderer(componentId)
 
                             if ui.widget == "slider" then
                                 local options = Settings.CreateSliderOptions(ui.min, ui.max, ui.step)
-                                if settingId == "iconSize" then
+                                if ui.format == "percent" then
+                                    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+                                        return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
+                                    end)
+                                elseif settingId == "iconSize" then
                                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
                                         local snapped = math.floor(v / 10 + 0.5) * 10
                                         return tostring(snapped)
@@ -2101,6 +2105,36 @@ local function createComponentRenderer(componentId)
                                         frame.ScooterComponentId = component and component.id or nil
                                         frame.ScooterSettingId = settingId
                                         frame.ScooterCanonicalLabel = canonicalLabel
+                                        if frame.ScooterPRDBarHeightInfoIcon then
+                                            frame.ScooterPRDBarHeightInfoIcon:Hide()
+                                            frame.ScooterPRDBarHeightInfoIcon:SetParent(nil)
+                                            frame.ScooterPRDBarHeightInfoIcon = nil
+                                        end
+                                        if component and component.id == "prdPower" and settingId == "barHeight" then
+                                            local targetLabel = frame and (frame.Text or frame.Label)
+                                            if targetLabel and panel and panel.CreateInfoIconForLabel then
+                                                local tooltipText = "If you are using a custom Bar Height for this Power Bar, we recommend also hiding the 'Bar-Full Spike Animations' via the setting in the Visibility section."
+                                                frame.ScooterPRDBarHeightInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltipText, 5, 0, 32)
+                                                local function repositionIcon()
+                                                    local icon = frame.ScooterPRDBarHeightInfoIcon
+                                                    local lblRef = frame and (frame.Text or frame.Label)
+                                                    if icon and lblRef then
+                                                        icon:ClearAllPoints()
+                                                        local textWidth = lblRef:GetStringWidth() or 0
+                                                        if textWidth > 0 then
+                                                            icon:SetPoint("LEFT", lblRef, "LEFT", textWidth + 5, 0)
+                                                        else
+                                                            icon:SetPoint("LEFT", lblRef, "RIGHT", 5, 0)
+                                                        end
+                                                    end
+                                                end
+                                                if C_Timer and C_Timer.After then
+                                                    C_Timer.After(0, repositionIcon)
+                                                else
+                                                    repositionIcon()
+                                                end
+                                            end
+                                        end
                                         if frame.ScooterIconLimitInfoIcon then
                                             frame.ScooterIconLimitInfoIcon:Hide()
                                             frame.ScooterIconLimitInfoIcon:SetParent(nil)
@@ -2428,6 +2462,38 @@ local function createComponentRenderer(componentId)
                                         end
                                         if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
                                         if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
+                                        -- Clean up or create the PRD-specific info icon for Hide Full Bar Animations
+                                        if frame.ScooterFullBarAnimInfoIcon and frame.ScooterFullBarAnimInfoIcon._ScooterIsPRDIcon and not (component.id == "prdPower" and settingId == "hideSpikeAnimations") then
+                                            frame.ScooterFullBarAnimInfoIcon:Hide()
+                                            frame.ScooterFullBarAnimInfoIcon:SetParent(nil)
+                                            frame.ScooterFullBarAnimInfoIcon = nil
+                                        end
+                                        if component.id == "prdPower" and settingId == "hideSpikeAnimations" and panel and panel.CreateInfoIconForLabel then
+                                            local labelFS = frame.Text or (cb and cb.Text)
+                                            if labelFS then
+                                                if not frame.ScooterFullBarAnimInfoIcon then
+                                                    local tooltipText = "Hides Blizzard's full-bar celebration effects on the Personal Resource Display so customized bar sizes stay clean when the resource is full."
+                                                    frame.ScooterFullBarAnimInfoIcon = panel.CreateInfoIconForLabel(labelFS, tooltipText, 5, 0, 32)
+                                                    if frame.ScooterFullBarAnimInfoIcon then
+                                                        frame.ScooterFullBarAnimInfoIcon._ScooterIsPRDIcon = true
+                                                    end
+                                                end
+                                                local function repositionPRDIcon()
+                                                    local icon = frame.ScooterFullBarAnimInfoIcon
+                                                    local lbl = frame.Text or (cb and cb.Text)
+                                                    if icon and lbl then
+                                                        icon:ClearAllPoints()
+                                                        icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                                        icon:Show()
+                                                    end
+                                                end
+                                                if C_Timer and C_Timer.After then
+                                                    C_Timer.After(0, repositionPRDIcon)
+                                                else
+                                                    repositionPRDIcon()
+                                                end
+                                            end
+                                        end
                                         -- Force-stable handlers for key master toggles to avoid recycled-frame wrapper interference
                                         if settingId == "borderEnable" then
                                             local cbBtn = frame.Checkbox or frame.CheckBox or frame.Control or frame
@@ -2678,9 +2744,192 @@ function panel.RenderEssentialCooldowns() return createComponentRenderer("essent
 function panel.RenderUtilityCooldowns()  return createComponentRenderer("utilityCooldowns")()  end
 function panel.RenderTrackedBars()       return createComponentRenderer("trackedBars")()       end
 function panel.RenderTrackedBuffs()      return createComponentRenderer("trackedBuffs")()      end
+function panel.RenderSCTDamage()         return createComponentRenderer("sctDamage")()         end
+function panel.RenderSCTHealing()        return createComponentRenderer("sctHealing")()        end
 function panel.RenderBuffs()             return createComponentRenderer("buffs")()             end
 function panel.RenderDebuffs()           return createComponentRenderer("debuffs")()           end
 function panel.RenderPRDGlobal()         return createComponentRenderer("prdGlobal")()         end
 function panel.RenderPRDHealth()         return createComponentRenderer("prdHealth")()         end
 function panel.RenderPRDPower()          return createComponentRenderer("prdPower")()          end
 function panel.RenderPRDClassResource()  return createComponentRenderer("prdClassResource")()  end
+
+-- Tooltip renderer: Custom implementation for tooltip text styling
+-- Uses a single tabbed Text section with "Title" tab
+function panel.RenderTooltip()
+    local render = function()
+        local component = addon.Components["tooltip"]
+        if not component then return end
+
+        if panel and panel.PrepareDynamicSettingWidgets then
+            panel:PrepareDynamicSettingWidgets("tooltip")
+        end
+
+        local init = {}
+
+        -- Text Section (collapsible header)
+        local textExpInit = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+            name = "Text",
+            sectionKey = "Text",
+            componentId = "tooltip",
+            expanded = panel:IsSectionExpanded("tooltip", "Text"),
+        })
+        textExpInit.GetExtent = function() return 30 end
+        table.insert(init, textExpInit)
+
+        -- Tabbed Text Section data with build function
+        local data = { sectionTitle = "", tabAText = "Name & Title" }
+
+        data.build = function(frame)
+            local yA = { y = -50 }
+            local db = component.db or {}
+
+            -- Clean up deprecated settings from DB (color and offsets removed)
+            if db.textTitle then
+                db.textTitle.color = nil
+                db.textTitle.offset = nil
+            end
+
+            local function applyText()
+                if addon.ApplyStyles then addon:ApplyStyles() end
+            end
+
+            local function fontOptions()
+                return addon.BuildFontOptionsContainer()
+            end
+
+            -- Helper: format integer for slider display
+            local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+
+            -- Helper: add slider control
+            local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+                local options = Settings.CreateSliderOptions(minV, maxV, step)
+                options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+                local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+                local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+                local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+                f.GetElementData = function() return initSlider end
+                f:SetPoint("TOPLEFT", 4, yRef.y)
+                f:SetPoint("TOPRIGHT", -16, yRef.y)
+                initSlider:InitFrame(f)
+                if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+                yRef.y = yRef.y - 34
+            end
+
+            -- Helper: add dropdown control
+            local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+                local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+                local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+                local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+                f.GetElementData = function() return initDrop end
+                f:SetPoint("TOPLEFT", 4, yRef.y)
+                f:SetPoint("TOPRIGHT", -16, yRef.y)
+                initDrop:InitFrame(f)
+                local lbl = f and (f.Text or f.Label)
+                if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                yRef.y = yRef.y - 34
+            end
+
+            -- Helper: add style dropdown
+            local function addStyle(parent, label, getFunc, setFunc, yRef)
+                local styleOptions = function()
+                    local container = Settings.CreateControlTextContainer()
+                    container:Add("NONE", "Regular")
+                    container:Add("OUTLINE", "Outline")
+                    container:Add("THICKOUTLINE", "Thick Outline")
+                    return container:GetData()
+                end
+                addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+            end
+
+            -- Helper: add horizontal alignment dropdown
+            local function addAlignment(parent, label, getFunc, setFunc, yRef)
+                local alignmentOptions = function()
+                    local container = Settings.CreateControlTextContainer()
+                    container:Add("LEFT", "Left")
+                    container:Add("CENTER", "Center")
+                    container:Add("RIGHT", "Right")
+                    return container:GetData()
+                end
+                addDropdown(parent, label, alignmentOptions, getFunc, setFunc, yRef)
+            end
+
+            -- Name & Title tab (PageA) - 3 settings (font, size, style)
+            -- Color and offsets intentionally omitted: tooltip text is dynamically colored
+            -- and has static positioning
+
+            -- 1. Font Face
+            addDropdown(frame.PageA, "Name/Title Font", fontOptions,
+                function()
+                    return (db.textTitle and db.textTitle.fontFace) or "FRIZQT__"
+                end,
+                function(v)
+                    db.textTitle = db.textTitle or {}
+                    db.textTitle.fontFace = v
+                    applyText()
+                end,
+                yA)
+
+            -- 2. Font Size
+            addSlider(frame.PageA, "Name/Title Font Size", 6, 32, 1,
+                function()
+                    return (db.textTitle and db.textTitle.size) or 14
+                end,
+                function(v)
+                    db.textTitle = db.textTitle or {}
+                    db.textTitle.size = tonumber(v) or 14
+                    applyText()
+                end,
+                yA)
+
+            -- 3. Font Style
+            addStyle(frame.PageA, "Name/Title Style",
+                function()
+                    return (db.textTitle and db.textTitle.style) or "OUTLINE"
+                end,
+                function(v)
+                    db.textTitle = db.textTitle or {}
+                    db.textTitle.style = v
+                    applyText()
+                end,
+                yA)
+
+            -- 4. Text alignment within the tooltip box
+            addAlignment(frame.PageA, "Name/Title Alignment",
+                function()
+                    return (db.textTitle and db.textTitle.alignment) or "LEFT"
+                end,
+                function(v)
+                    db.textTitle = db.textTitle or {}
+                    db.textTitle.alignment = v
+                    applyText()
+                end,
+                yA)
+        end
+
+        local tabbedInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
+        -- Height: ~50 top (tabs) + 4 settings * 34px + 20 bottom = ~206px (rounded)
+        tabbedInit.GetExtent = function() return 210 end
+        tabbedInit:AddShownPredicate(function()
+            return panel:IsSectionExpanded("tooltip", "Text")
+        end)
+        table.insert(init, tabbedInit)
+
+        -- Actually display the content in the right pane
+        local f = panel.frame
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then return end
+
+        if right.SetTitle then
+            right:SetTitle(component.name or component.id)
+        end
+        right:Display(init)
+
+        if panel.RefreshDynamicSettingWidgets then
+            C_Timer.After(0, function()
+                panel:RefreshDynamicSettingWidgets(component)
+            end)
+        end
+    end
+
+    return { mode = "list", render = render, componentId = "tooltip" }
+end

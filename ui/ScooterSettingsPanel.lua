@@ -1331,6 +1331,8 @@ local function BuildCategories()
 	addEntry("utilityCooldowns", addon.SettingsPanel.RenderUtilityCooldowns())
 	addEntry("trackedBuffs", addon.SettingsPanel.RenderTrackedBuffs())
 	addEntry("trackedBars", addon.SettingsPanel.RenderTrackedBars())
+    addEntry("sctDamage", addon.SettingsPanel.RenderSCTDamage())
+    addEntry("sctHealing", addon.SettingsPanel.RenderSCTHealing())
 
 	addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
 	addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
@@ -1356,6 +1358,9 @@ local function BuildCategories()
 	addEntry("actionBar8", addon.SettingsPanel.RenderActionBar8())
 	addEntry("stanceBar", addon.SettingsPanel.RenderStanceBar())
 	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
+
+	-- Tooltip children
+	addEntry("tooltip", addon.SettingsPanel.RenderTooltip())
 
 	-- Build nav model (parents + children). Parents: Profiles (always expanded), CDM, Action Bars, Unit Frames
 	local navModel = {
@@ -1391,11 +1396,18 @@ local function BuildCategories()
             { type = "child", key = "buffs",   label = "Buffs"   },
             { type = "child", key = "debuffs", label = "Debuffs" },
         }},
-		{ type = "parent", key = "Personal Resource", label = "Personal Resource", collapsible = true, children = {
+		{ type = "parent", key = "Personal Resource Display", label = "Personal Resource Display", collapsible = true, children = {
 			{ type = "child", key = "prdGlobal", label = "Global" },
 			{ type = "child", key = "prdHealth", label = "Health Bar" },
 			{ type = "child", key = "prdPower", label = "Power Bar" },
 			{ type = "child", key = "prdClassResource", label = "Class Resource" },
+		}},
+        { type = "parent", key = "Scrolling Combat Text", label = "Scrolling Combat Text", collapsible = true, children = {
+            { type = "child", key = "sctDamage", label = "Damage Numbers" },
+            { type = "child", key = "sctHealing", label = "Healing Numbers" },
+        }},
+		{ type = "parent", key = "Tooltip", label = "Tooltip", collapsible = true, children = {
+			{ type = "child", key = "tooltip", label = "Tooltip" },
 		}},
 	}
 
@@ -1943,22 +1955,11 @@ end
 		resizeBtn:SetOnResizeStoppedCallback(function()
 			if panel and panel.RefreshCurrentCategory then panel.RefreshCurrentCategory() end
 		end)
-		-- Custom left navigation (pure-visibility model, no data-provider rebuilds)
-		local nav = CreateFrame("Frame", nil, f)
-		nav:SetSize(199, 569)
-		nav:SetPoint("TOPLEFT", 18, -76)
-		nav:SetPoint("BOTTOMLEFT", 18, 46)
-		f.Nav = nav
-		local navScroll = CreateFrame("ScrollFrame", nil, nav, "UIPanelScrollFrameTemplate")
-		navScroll:SetAllPoints(nav)
-		f.NavScroll = navScroll
-		local navContent = CreateFrame("Frame", nil, navScroll)
-		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)
-		navContent:SetHeight(10)
-		navScroll:SetScrollChild(navContent)
-		f.NavContent = navContent
 		-- Layout knobs for the nav and right pane spacing (tweak as desired)
+		-- NOTE: navWidth sized to fit longest header ("Personal Resource Display") without truncation
 		panel.NavLayout = panel.NavLayout or {
+			-- Width of the left navigation pane (increase if adding longer section headers)
+			navWidth = 240,
 			-- Horizontal gap between the nav (including its scrollbar) and the right-side content area
 			rightPaneLeftOffset = 36,
 			-- Row heights
@@ -1970,8 +1971,23 @@ end
 			gapAfterExpanded = 18,
 			gapAfterCollapsed = 8,
 		}
+		-- Custom left navigation (pure-visibility model, no data-provider rebuilds)
+		local navWidth = panel.NavLayout.navWidth or 240
+		local nav = CreateFrame("Frame", nil, f)
+		nav:SetSize(navWidth, 569)
+		nav:SetPoint("TOPLEFT", 18, -76)
+		nav:SetPoint("BOTTOMLEFT", 18, 46)
+		f.Nav = nav
+		local navScroll = CreateFrame("ScrollFrame", nil, nav, "UIPanelScrollFrameTemplate")
+		navScroll:SetAllPoints(nav)
+		f.NavScroll = navScroll
+		local navContent = CreateFrame("Frame", nil, navScroll)
+		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)
+		navContent:SetHeight(10)
+		navScroll:SetScrollChild(navContent)
+		f.NavContent = navContent
 		local function UpdateNavContentWidth()
-			local w = (nav:GetWidth() or 199) - 24
+			local w = (nav:GetWidth() or navWidth) - 24
 			if w < 80 then w = 80 end
 			navContent:SetWidth(w)
 			if navScroll and navScroll.UpdateScrollChildRect then navScroll:UpdateScrollChildRect() end

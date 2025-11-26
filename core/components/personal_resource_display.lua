@@ -1,6 +1,7 @@
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype
+local Util = addon.ComponentsUtil or {}
 
 local pendingCombatComponents = {}
 local combatWatcherFrame
@@ -987,6 +988,18 @@ local function applyPowerOffsets(component)
     safeCall(frame.SetHeight, frame, desiredHeight)
     safeCall(frame.SetWidth, frame, desiredWidth)
 
+    if Util and Util.ApplyFullPowerSpikeScale then
+        local spikeScale = 1
+        if baseHeight and baseHeight > 0 then
+            spikeScale = desiredHeight / baseHeight
+        end
+        Util.ApplyFullPowerSpikeScale(frame, spikeScale)
+        if Util and Util.SetFullPowerSpikeHidden then
+            local hideSpikes = (component.db and component.db.hideSpikeAnimations) or (component.db and component.db.hideBar)
+            Util.SetFullPowerSpikeHidden(frame, hideSpikes)
+        end
+    end
+
     local componentScale = resolveClassResourceScale(component)
     applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
     applyPRDPowerVisuals(component, frame)
@@ -1271,6 +1284,9 @@ addon:RegisterComponentInitializer(function(self)
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Power Bar", widget = "checkbox", section = "Misc", order = 1,
+            }},
+            hideSpikeAnimations = { type = "addon", default = false, ui = {
+                label = "Hide Full Bar Animations", widget = "checkbox", section = "Misc", order = 2,
             }},
         },
     })

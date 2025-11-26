@@ -29,9 +29,7 @@ local brandR, brandG, brandB = 0.20, 0.90, 0.30
 -- Helper function to apply Roboto + White styling to GameTooltip
 local function styleTooltip()
     if panel and panel.ApplyRobotoWhite then
-        -- GameTooltip has text regions that need styling
-        -- Iterate through all regions and style FontStrings
-        local regions = {GameTooltip:GetRegions()}
+        local regions = { GameTooltip:GetRegions() }
         for i = 1, #regions do
             local region = regions[i]
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
