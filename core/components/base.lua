@@ -381,6 +381,55 @@ local function SetFullPowerSpikeHidden(ownerFrame, hidden)
 end
 Util.SetFullPowerSpikeHidden = SetFullPowerSpikeHidden
 
+-- Hide/show the Power Bar FeedbackFrame (Builder/Spender animation that flashes when power is spent/gained)
+-- This frame shows a quick flash representing the amount of energy/mana/etc. spent or gained.
+-- ownerFrame: the ManaBar or ClassNameplateManaBarFrame that contains the FeedbackFrame child
+-- hidden: boolean - true to hide the feedback animation, false to restore it
+local function SetPowerFeedbackHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local feedbackFrame = ownerFrame.FeedbackFrame
+    if not feedbackFrame or (feedbackFrame.IsForbidden and feedbackFrame:IsForbidden()) then
+        return
+    end
+    feedbackFrame._ScootPowerFeedbackHidden = not not hidden
+    if feedbackFrame._ScootPowerFeedbackHidden then
+        -- Stop any running animations and hide the frame
+        if feedbackFrame.StopFeedbackAnim then
+            pcall(feedbackFrame.StopFeedbackAnim, feedbackFrame)
+        end
+        -- Hide the textures that make up the feedback animation
+        if feedbackFrame.BarTexture then
+            feedbackFrame.BarTexture:Hide()
+        end
+        if feedbackFrame.LossGlowTexture then
+            feedbackFrame.LossGlowTexture:Hide()
+        end
+        if feedbackFrame.GainGlowTexture then
+            feedbackFrame.GainGlowTexture:Hide()
+        end
+        -- Hook StartFeedbackAnim to prevent it from running while hidden
+        if not feedbackFrame._ScootFeedbackHooked then
+            feedbackFrame._ScootFeedbackHooked = true
+            local originalStart = feedbackFrame.StartFeedbackAnim
+            if originalStart then
+                feedbackFrame.StartFeedbackAnim = function(self, ...)
+                    if self._ScootPowerFeedbackHidden then
+                        return -- Block the animation from starting
+                    end
+                    return originalStart(self, ...)
+                end
+                feedbackFrame._ScootOriginalStartFeedbackAnim = originalStart
+            end
+        end
+    else
+        -- Restore visibility - the frame will show naturally when StartFeedbackAnim is called
+        -- We don't need to manually show the textures as they start hidden and are shown by the anim
+    end
+end
+Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 

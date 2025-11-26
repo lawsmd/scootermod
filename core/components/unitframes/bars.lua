@@ -40,6 +40,7 @@ do
             "powerBarBackgroundTint",
             "powerBarBackgroundOpacity",
             "powerBarHideFullSpikes",
+            "powerBarHideFeedback",
             "powerBarHidden",
         }
         for _, k in ipairs(keys) do
@@ -992,6 +993,11 @@ do
 
             if unit == "Player" and Util and Util.SetFullPowerSpikeHidden then
                 Util.SetFullPowerSpikeHidden(pb, cfg.powerBarHideFullSpikes == true or powerBarHidden)
+            end
+
+            -- Hide power feedback animation (Builder/Spender flash when power is spent/gained)
+            if unit == "Player" and Util and Util.SetPowerFeedbackHidden then
+                Util.SetPowerFeedbackHidden(pb, cfg.powerBarHideFeedback == true or powerBarHidden)
             end
 
             -- Apply reverse fill for Target/Focus if configured

@@ -1545,6 +1545,56 @@ local function createUFRenderer(componentId, title)
                         end
 
 						y.y = y.y - 34
+
+                        -- Hide Power Feedback checkbox (Player only)
+                        local feedbackLabel = "Hide Power Feedback"
+                        local function feedbackGetter()
+                            local t = ensureUFDB()
+                            return t and not not t.powerBarHideFeedback or false
+                        end
+                        local function feedbackSetter(v)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarHideFeedback = (v and true) or false
+                            applyNow()
+                        end
+
+                        local feedbackSetting = CreateLocalSetting(feedbackLabel, "boolean", feedbackGetter, feedbackSetter, feedbackGetter())
+                        local feedbackInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = feedbackLabel, setting = feedbackSetting, options = {} })
+                        local feedbackRow = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+                        feedbackRow.GetElementData = function() return feedbackInit end
+                        feedbackRow:SetPoint("TOPLEFT", 4, y.y)
+                        feedbackRow:SetPoint("TOPRIGHT", -16, y.y)
+                        feedbackInit:InitFrame(feedbackRow)
+                        if panel and panel.ApplyRobotoWhite then
+                            if feedbackRow.Text then panel.ApplyRobotoWhite(feedbackRow.Text) end
+                            local cb = feedbackRow.Checkbox or feedbackRow.CheckBox or (feedbackRow.Control and feedbackRow.Control.Checkbox)
+                            if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        end
+
+                        if panel and panel.CreateInfoIconForLabel then
+                            local feedbackTooltip = "Disables the flash animation that plays when you spend or gain power (energy, mana, rage, etc.). This animation shows a quick highlight on the portion of the bar that changed."
+                            local feedbackTargetLabel = feedbackRow.Text or (feedbackRow.Checkbox and feedbackRow.Checkbox.Text)
+                            if feedbackTargetLabel and not feedbackRow.ScooterPowerFeedbackInfoIcon then
+                                feedbackRow.ScooterPowerFeedbackInfoIcon = panel.CreateInfoIconForLabel(feedbackTargetLabel, feedbackTooltip, 5, 0, 32)
+                                if feedbackRow.ScooterPowerFeedbackInfoIcon then
+                                    local function repositionFeedback()
+                                        local icon = feedbackRow.ScooterPowerFeedbackInfoIcon
+                                        local lbl = feedbackRow.Text or (feedbackRow.Checkbox and feedbackRow.Checkbox.Text)
+                                        if icon and lbl then
+                                            icon:ClearAllPoints()
+                                            icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                        end
+                                    end
+                                    if C_Timer and C_Timer.After then
+                                        C_Timer.After(0, repositionFeedback)
+                                    else
+                                        repositionFeedback()
+                                    end
+                                end
+                            end
+                        end
+
+                        y.y = y.y - 34
 					end
 				end
 

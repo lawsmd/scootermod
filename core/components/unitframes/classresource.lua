@@ -1,21 +1,18 @@
 local addonName, addon = ...
 
-local originalPositions = setmetatable({}, { __mode = "k" })
+-- Baseline storage for managed frame offsets and scales
+local originalPaddings = setmetatable({}, { __mode = "k" })
 local originalScales = setmetatable({}, { __mode = "k" })
+local hookedFrames = setmetatable({}, { __mode = "k" })
 local layoutHooked = false
 
-local function ensureLayoutHook()
-	if layoutHooked then
-		return
-	end
-	local container = _G.PlayerFrameBottomManagedFramesContainer
-	if container and _G.hooksecurefunc then
-		layoutHooked = true
-		_G.hooksecurefunc(container, "Layout", function()
-			if addon and addon.ApplyUnitFrameClassResource then
-				addon.ApplyUnitFrameClassResource("Player")
-			end
-		end)
+-- Debug helper (disabled by default)
+local DEBUG_CLASS_RESOURCE = false
+local function debugPrint(...)
+	if DEBUG_CLASS_RESOURCE and addon and addon.DebugPrint then
+		addon.DebugPrint("[ClassResource]", ...)
+	elseif DEBUG_CLASS_RESOURCE then
+		print("[ScooterMod ClassResource]", ...)
 	end
 end
 
@@ -120,24 +117,35 @@ local function resolveClassResourceFrames()
 	return {}, fallbackLabel
 end
 
-local function captureBaseline(frame)
-	if not frame or originalPositions[frame] then
-		return
+-- Capture original padding and scale values for managed frames
+local function captureBaselines(frame)
+	if not frame then return end
+	
+	-- Capture original padding (used by LayoutFrame system for positioning)
+	if not originalPaddings[frame] then
+		originalPaddings[frame] = {
+			leftPadding = frame.leftPadding or 0,
+			topPadding = frame.topPadding or 0,
+		}
+		debugPrint("Captured baseline paddings for", frame:GetName() or "unnamed",
+			"left:", originalPaddings[frame].leftPadding,
+			"top:", originalPaddings[frame].topPadding)
 	end
-	if not frame.GetPoint then
-		return
+	
+	-- Capture original scale
+	if not originalScales[frame] then
+		if frame.GetScale then
+			local ok, scale = pcall(frame.GetScale, frame)
+			if ok and scale then
+				originalScales[frame] = scale
+			else
+				originalScales[frame] = 1
+			end
+		else
+			originalScales[frame] = 1
+		end
+		debugPrint("Captured baseline scale for", frame:GetName() or "unnamed", ":", originalScales[frame])
 	end
-	local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(1)
-	if not point then
-		return
-	end
-	originalPositions[frame] = {
-		point = point,
-		relativeTo = relativeTo,
-		relativePoint = relativePoint,
-		xOfs = xOfs or 0,
-		yOfs = yOfs or 0,
-	}
 end
 
 local function clampOffset(value)
@@ -160,6 +168,86 @@ local function clampScale(value)
 	return v
 end
 
+-- Hook visibility-restoring functions on a frame to maintain hidden state
+local function ensureVisibilityHooks(frame, cfg)
+	if not frame or hookedFrames[frame] then return end
+	hookedFrames[frame] = true
+	
+	-- Store reference to config getter for hooks
+	frame._ScooterClassResourceCfg = ensureConfig
+	
+	-- Hook Show to enforce hidden state
+	if frame.Show then
+		hooksecurefunc(frame, "Show", function(self)
+			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
+			if frameCfg and frameCfg.hide then
+				self:SetAlpha(0)
+				debugPrint("Enforcing hidden via Show hook on", self:GetName() or "unnamed")
+			end
+		end)
+	end
+	
+	-- Hook SetAlpha to prevent override when hidden
+	local origSetAlpha = frame.SetAlpha
+	if origSetAlpha then
+		frame.SetAlpha = function(self, alpha)
+			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
+			if frameCfg and frameCfg.hide then
+				alpha = 0  -- Force alpha to 0 when hidden
+			end
+			origSetAlpha(self, alpha)
+		end
+	end
+	
+	debugPrint("Installed visibility hooks on", frame:GetName() or "unnamed")
+end
+
+-- Trigger layout update on the managed container
+local function triggerLayoutUpdate()
+	local container = _G.PlayerFrameBottomManagedFramesContainer
+	if container and container.Layout then
+		-- Defer to next frame to avoid recursion
+		C_Timer.After(0, function()
+			if container and container.Layout then
+				pcall(container.Layout, container)
+			end
+		end)
+	end
+end
+
+-- Set up hook on the layout container to reapply scale after layout
+local function ensureLayoutHook()
+	if layoutHooked then return end
+	
+	local container = _G.PlayerFrameBottomManagedFramesContainer
+	if container and hooksecurefunc then
+		layoutHooked = true
+		hooksecurefunc(container, "Layout", function()
+			-- Reapply scale and visibility after layout completes
+			-- Positioning is handled via leftPadding/topPadding which the layout respects
+			local cfg = ensureConfig()
+			if not cfg then return end
+			
+			local frames, _ = resolveClassResourceFrames()
+			for _, frame in ipairs(frames) do
+				-- Reapply scale (layout doesn't override this)
+				local baseScale = originalScales[frame] or 1
+				local multiplier = clampScale(cfg.scale or 100) / 100
+				if frame.SetScale then
+					pcall(frame.SetScale, frame, baseScale * multiplier)
+				end
+				
+				-- Reapply visibility
+				if cfg.hide then
+					pcall(frame.SetAlpha, frame, 0)
+				end
+			end
+			debugPrint("Layout hook fired, reapplied scale and visibility")
+		end)
+		debugPrint("Installed layout container hook")
+	end
+end
+
 local function applyClassResourceForUnit(unit)
 	if unit ~= "Player" then
 		return
@@ -167,58 +255,71 @@ local function applyClassResourceForUnit(unit)
 
 	local cfg = ensureConfig()
 	if not cfg then
+		debugPrint("No config available, skipping apply")
 		return
 	end
 
-	if cfg.scale == nil then
-		cfg.scale = 100
-	end
-	if cfg.hide == nil then
-		cfg.hide = false
-	end
+	-- Initialize defaults
+	if cfg.scale == nil then cfg.scale = 100 end
+	if cfg.hide == nil then cfg.hide = false end
+	if cfg.offsetX == nil then cfg.offsetX = 0 end
+	if cfg.offsetY == nil then cfg.offsetY = 0 end
 
-	local frames, _ = resolveClassResourceFrames()
+	local frames, label = resolveClassResourceFrames()
 	if #frames == 0 then
+		debugPrint("No frames resolved for class resource:", label)
 		return
 	end
+	
+	debugPrint("Applying to", #frames, "frame(s) for", label)
 
+	-- Set up layout hook first
 	ensureLayoutHook()
 
-	if InCombatLockdown and InCombatLockdown() then
-		return
-	end
-
+	-- Skip layout-affecting changes during combat
+	local inCombat = InCombatLockdown and InCombatLockdown()
+	
 	local offsetX = clampOffset(cfg.offsetX)
 	local offsetY = clampOffset(cfg.offsetY)
+	local scaleMultiplier = clampScale(cfg.scale) / 100
 
 	for _, frame in ipairs(frames) do
-		captureBaseline(frame)
-		if frame and not originalScales[frame] and frame.GetScale then
-			local ok, scale = pcall(frame.GetScale, frame)
-			if ok and scale then
-				originalScales[frame] = scale
-			else
-				originalScales[frame] = 1
-			end
+		captureBaselines(frame)
+		ensureVisibilityHooks(frame, cfg)
+		
+		local origPadding = originalPaddings[frame] or { leftPadding = 0, topPadding = 0 }
+		local baseScale = originalScales[frame] or 1
+		
+		-- POSITIONING: Use leftPadding and topPadding which the LayoutFrame system respects
+		-- This is the correct way to offset managed frames without fighting the layout manager
+		-- Note: X offset uses leftPadding, Y offset uses topPadding (negative = up)
+		if not inCombat then
+			frame.leftPadding = (origPadding.leftPadding or 0) + offsetX
+			frame.topPadding = (origPadding.topPadding or 0) - offsetY  -- Negate Y so positive = up
+			debugPrint("Set padding for", frame:GetName() or "unnamed",
+				"left:", frame.leftPadding, "top:", frame.topPadding)
+		end
+		
+		-- SCALE: Apply scale multiplier - the layout respects child scale
+		if frame.SetScale then
+			local newScale = baseScale * scaleMultiplier
+			pcall(frame.SetScale, frame, newScale)
+			debugPrint("Set scale for", frame:GetName() or "unnamed", "to", newScale)
+		end
+		
+		-- VISIBILITY: Use SetAlpha for managed frames (more reliable than Hide/Show)
+		if cfg.hide then
+			pcall(frame.SetAlpha, frame, 0)
+			debugPrint("Hidden", frame:GetName() or "unnamed", "via SetAlpha(0)")
+		else
+			pcall(frame.SetAlpha, frame, 1)
+			debugPrint("Shown", frame:GetName() or "unnamed", "via SetAlpha(1)")
 		end
 	end
-
-	for _, frame in ipairs(frames) do
-		local baseline = originalPositions[frame]
-		if baseline and frame.ClearAllPoints and frame.SetPoint then
-			pcall(frame.ClearAllPoints, frame)
-			pcall(frame.SetPoint, frame, baseline.point, baseline.relativeTo, baseline.relativePoint, (baseline.xOfs or 0) + offsetX, (baseline.yOfs or 0) + offsetY)
-		end
-		local baseScale = originalScales[frame] or 1
-		if frame.SetScale then
-			local multiplier = clampScale(cfg.scale) / 100
-			pcall(frame.SetScale, frame, baseScale * multiplier)
-		end
-		if cfg.hide then
-			pcall(frame.Hide, frame)
-		else
-			pcall(frame.Show, frame)
-		end
+	
+	-- Trigger layout update to apply padding changes
+	if not inCombat and (offsetX ~= 0 or offsetY ~= 0) then
+		triggerLayoutUpdate()
 	end
 end
 

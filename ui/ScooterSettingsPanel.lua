@@ -121,8 +121,8 @@ function panel.UpdateCollapseButtonVisibility()
     local cat = f.CurrentCategory
     if cat and f.CatRenderers then
         local entry = f.CatRenderers[cat]
-        -- Profiles pages do not have collapsible component sections
-        if entry and (entry.componentId == "profilesManage" or entry.componentId == "profilesPresets") then
+        -- Profiles pages and home page do not have collapsible component sections
+        if entry and (entry.componentId == "profilesManage" or entry.componentId == "profilesPresets" or entry.componentId == "home") then
             hide = true
         end
         -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
@@ -1308,6 +1308,130 @@ end
 
 -- renderProfilesPresets moved to ui/panel/profiles_presets.lua
 
+--------------------------------------------------------------------------------
+-- Home Page Renderer
+-- Displays an enlarged logo and title as the landing page for ScooterMod.
+-- The top-left logo/title is hidden when on this page to avoid redundancy.
+--------------------------------------------------------------------------------
+function panel.RenderHome()
+    return {
+        mode = "list",
+        componentId = "home",
+        title = "Home",
+        render = function()
+            local f = panel.frame
+            if not f or not panel.RightPane then return end
+
+            -- Set the header title (empty for home page since we have our own)
+            panel.RightPane:SetTitle("")
+
+            -- Hide the header controls on home page
+            local header = panel.RightPane.Header
+            if header then
+                if header.CollapseAllButton then header.CollapseAllButton:Hide() end
+                if header.ScooterCDMButton then header.ScooterCDMButton:Hide() end
+                if header.ScooterCopyFromLabel then header.ScooterCopyFromLabel:Hide() end
+                if header.ScooterCopyFromDropdown then header.ScooterCopyFromDropdown:Hide() end
+            end
+
+            -- Hide the defaults button on home page
+            if f.DefaultsButton then f.DefaultsButton:Hide() end
+
+            -- Create (or reuse) the home page content frame
+            local content = panel.RightPane.Content
+            if not content then return end
+
+            -- Clear any existing rows from other categories
+            panel.RightPane:Invalidate()
+
+            -- Create home content container if needed
+            local homeFrame = content._ScooterHomeContent
+            if not homeFrame then
+                homeFrame = CreateFrame("Frame", nil, content)
+                content._ScooterHomeContent = homeFrame
+            end
+            homeFrame:SetAllPoints(content)
+            homeFrame:Show()
+
+            -- Calculate center positioning based on content size
+            local fonts = addon and addon.Fonts or nil
+
+            -- Create or reuse the logo
+            local logo = homeFrame._logo
+            if not logo then
+                logo = homeFrame:CreateTexture(nil, "ARTWORK")
+                homeFrame._logo = logo
+            end
+            local logoSize = 120  -- Enlarged from 56 in the title bar
+            logo:SetSize(logoSize, logoSize)
+            -- Try multiple extensions for the logo
+            local function trySetIcon(tex, base)
+                local candidates = { base .. ".png", base .. ".tga", base .. ".blp" }
+                for _, p in ipairs(candidates) do
+                    local ok = pcall(tex.SetTexture, tex, p)
+                    if ok and tex:GetTexture() then return true end
+                end
+            end
+            trySetIcon(logo, "Interface\\AddOns\\ScooterMod\\Scooter")
+            pcall(logo.SetMask, logo, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+            logo:Show()
+
+            -- Create or reuse the title text
+            local title = homeFrame._title
+            if not title then
+                title = homeFrame:CreateFontString(nil, "OVERLAY")
+                homeFrame._title = title
+            end
+            title:SetJustifyH("LEFT")
+            -- Use Roboto Bold at larger size
+            if fonts and fonts.ROBOTO_BLD then
+                title:SetFont(fonts.ROBOTO_BLD, 42, "THICKOUTLINE")
+            else
+                title:SetFont("Fonts\\ARIALN.TTF", 42, "THICKOUTLINE")
+            end
+            title:SetShadowColor(0, 0, 0, 1)
+            title:SetShadowOffset(2, -2)
+            title:SetTextColor(0.2, 0.9, 0.3, 1)  -- ScooterMod green
+            title:SetText("ScooterMod")
+            title:Show()
+
+            -- Position logo and title together, centered horizontally in the content area
+            -- Layout: [Logo] [Title] centered as a group
+            local titleWidth = title:GetStringWidth() or 200
+            local spacing = 16  -- Gap between logo and title
+            local totalWidth = logoSize + spacing + titleWidth
+            
+            -- Calculate left offset to center the group
+            local function UpdateHomeLayout()
+                local contentWidth = content:GetWidth() or 400
+                local contentHeight = content:GetHeight() or 600
+                local leftOffset = (contentWidth - totalWidth) / 2
+                local verticalCenter = -contentHeight / 3  -- Position in upper-third for visual balance
+                
+                logo:ClearAllPoints()
+                logo:SetPoint("TOPLEFT", homeFrame, "TOPLEFT", math.max(0, leftOffset), verticalCenter)
+                
+                title:ClearAllPoints()
+                title:SetPoint("LEFT", logo, "RIGHT", spacing, 0)
+            end
+            UpdateHomeLayout()
+
+            -- Update layout on resize
+            if not homeFrame._layoutHooked then
+                content:HookScript("OnSizeChanged", function()
+                    if homeFrame:IsShown() then
+                        UpdateHomeLayout()
+                    end
+                end)
+                homeFrame._layoutHooked = true
+            end
+
+            -- Set content height for scrolling (though home page doesn't need scrolling)
+            content:SetHeight(400)
+        end,
+    }
+end
+
 local function BuildCategories()
 	local f = panel.frame
 	if f.CategoriesBuilt then return end
@@ -1321,6 +1445,9 @@ local function BuildCategories()
 	local function addEntry(key, renderer)
 		catRenderers[key] = renderer
 	end
+
+	-- Home page (landing page)
+	addEntry("home", addon.SettingsPanel.RenderHome())
 
 	-- Profiles children
 	addEntry("profilesManage", addon.SettingsPanel.RenderProfilesManage())
@@ -1338,6 +1465,7 @@ local function BuildCategories()
 	addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
 	addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
 	addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
+	addEntry("nameplatesUnit", addon.SettingsPanel.RenderNameplatesUnit())
 
 	-- Action Bars children
 	addEntry("actionBar1", addon.SettingsPanel.RenderActionBar1())
@@ -1362,9 +1490,9 @@ local function BuildCategories()
 	-- Tooltip children
 	addEntry("tooltip", addon.SettingsPanel.RenderTooltip())
 
-	-- Build nav model (parents + children). Parents: Profiles (always expanded), CDM, Action Bars, Unit Frames
+	-- Build nav model (parents + children). Parents: Profiles, CDM, Action Bars, Unit Frames
 	local navModel = {
-		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = false, children = {
+		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = true, children = {
 			{ type = "child", key = "profilesManage", label = "Manage Profiles" },
 			{ type = "child", key = "profilesPresets", label = "Presets" },
 		}},
@@ -1392,6 +1520,9 @@ local function BuildCategories()
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
 			{ type = "child", key = "ufPet",    label = "Pet"    },
 		}},
+		{ type = "parent", key = "Nameplates", label = "Nameplates", collapsible = true, children = {
+			{ type = "child", key = "nameplatesUnit", label = "Unit Nameplates" },
+		}},
         { type = "parent", key = "Buffs/Debuffs", label = "Buffs/Debuffs", collapsible = true, children = {
             { type = "child", key = "buffs",   label = "Buffs"   },
             { type = "child", key = "debuffs", label = "Debuffs" },
@@ -1411,7 +1542,7 @@ local function BuildCategories()
 		}},
 	}
 
-	-- Initialize expand state defaults (Profiles always expanded)
+	-- Initialize expand state defaults (all collapsible sections start collapsed)
     for _, parent in ipairs(navModel) do
         if parent.type == "parent" then
             local key = parent.key
@@ -1573,6 +1704,27 @@ local function BuildCategories()
 
 	panel.SelectCategory = function(key)
 		panel._selectedCategory = key
+
+		-- Determine if we're on the home page
+		local isHome = (key == "home")
+
+		-- Show/hide the top-left title region based on whether we're on home
+		-- When on home, hide it (the home page shows an enlarged version)
+		-- When on any other category, show it as usual
+		if f._ScooterTitleRegion then
+			f._ScooterTitleRegion:SetShown(not isHome)
+		end
+
+		-- Hide the home content frame if navigating away from home
+		if panel.RightPane and panel.RightPane.Content then
+			local homeFrame = panel.RightPane.Content._ScooterHomeContent
+			if homeFrame and not isHome then
+				homeFrame:Hide()
+			end
+		end
+
+		-- Update sidebar selection highlights
+		-- On home page, no sidebar item should be highlighted
 		if f.NavContent and f.NavContent._rows then
 			for _, slot in ipairs(f.NavContent._rows) do
 				if slot.Child and slot.Child.UpdateSelected then slot.Child:UpdateSelected() end
@@ -1609,10 +1761,10 @@ local function BuildCategories()
 
 	-- Expose mapping for rest of panel
 	f.CategoriesBuilt, f.CatRenderers = true, catRenderers
-	-- Initial selection: first child of first parent (Manage Profiles)
+	-- Initial selection: home page (landing page on first open per session)
 	C_Timer.After(0, function()
 		panel.RebuildNav()
-		panel.SelectCategory("profilesManage")
+		panel.SelectCategory("home")
 	end)
 end
 
@@ -1851,49 +2003,82 @@ end
                 f._ScooterBgOverlay = bg
             end
 
-	        -- Custom title area: circular icon overlapping top-left + green "ScooterMod" label in Roboto Bold
+	        -- Custom title area: circular logo (clickable home button) + green "ScooterMod" label in Roboto Bold
 	        do
 	            local fonts = addon and addon.Fonts or nil
 	            local titleRegion = CreateFrame("Frame", nil, f)
 	            titleRegion:SetSize(400, 56)
 	            titleRegion:SetPoint("TOPLEFT", f, "TOPLEFT", -6, 10) -- nudge outwards to overlap corner
 
-	            -- Circular icon
-            local icon = titleRegion:CreateTexture(nil, "OVERLAY")
-	            icon:SetSize(56, 56)
-	            icon:SetPoint("LEFT", titleRegion, "LEFT", 0, -6) -- drop a bit to straddle the title bar
-	            -- Try multiple extensions so the asset can be provided as TGA/BLP/PNG; prefer TGA for production
-            local function trySetIcon(base)
-                -- Prefer PNG for header rendering to avoid conversion artifacts; fall back to TGA/BLP
-                local candidates = { base .. ".png", base .. ".tga", base .. ".blp" }
+	            -- Logo button (circular icon that navigates to home page on click)
+	            local logoBtn = CreateFrame("Button", nil, titleRegion)
+	            logoBtn:SetSize(56, 56)
+	            logoBtn:SetPoint("LEFT", titleRegion, "LEFT", 0, -6) -- drop a bit to straddle the title bar
+
+	            -- Green hover ring (hidden by default, shown on hover)
+	            -- Uses ScooterMod's circular portrait border texture, tinted green
+	            local hoverRing = logoBtn:CreateTexture(nil, "OVERLAY")
+	            hoverRing:SetTexture("Interface\\AddOns\\ScooterMod\\media\\portraitborder\\texture_c.tga")
+	            hoverRing:SetVertexColor(0.2, 0.9, 0.3, 1)
+	            -- === TWEAK THESE VALUES ===
+	            local ringSize = 78      -- Size of the ring (width and height)
+	            local ringOffsetX = 0    -- Positive = right, negative = left
+	            local ringOffsetY = 0    -- Positive = up, negative = down
+	            -- ==========================
+	            hoverRing:SetSize(ringSize, ringSize)
+	            hoverRing:SetPoint("CENTER", logoBtn, "CENTER", ringOffsetX, ringOffsetY)
+	            hoverRing:Hide()
+	            logoBtn.HoverRing = hoverRing
+
+	            -- Main logo icon texture
+	            local icon = logoBtn:CreateTexture(nil, "ARTWORK")
+	            icon:SetAllPoints(logoBtn)
+	            -- Try multiple extensions so the asset can be provided as TGA/BLP/PNG; prefer PNG for production
+	            local function trySetIcon(tex, base)
+	                local candidates = { base .. ".png", base .. ".tga", base .. ".blp" }
 	                for _, p in ipairs(candidates) do
-	                    local ok = pcall(icon.SetTexture, icon, p)
-	                    if ok and icon:GetTexture() then return true end
+	                    local ok = pcall(tex.SetTexture, tex, p)
+	                    if ok and tex:GetTexture() then return true end
 	                end
 	            end
-            trySetIcon("Interface\\AddOns\\ScooterMod\\Scooter")
-            -- Use a circular alpha mask
-            pcall(icon.SetMask, icon, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+	            trySetIcon(icon, "Interface\\AddOns\\ScooterMod\\Scooter")
+	            -- Use a circular alpha mask
+	            pcall(icon.SetMask, icon, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+	            logoBtn.Icon = icon
 
-            -- No backdrop/band for the title per design
+	            -- Hover: show green ring
+	            logoBtn:SetScript("OnEnter", function(self)
+	                self.HoverRing:Show()
+	            end)
+	            logoBtn:SetScript("OnLeave", function(self)
+	                self.HoverRing:Hide()
+	            end)
+
+	            -- Click: navigate to home page
+	            logoBtn:SetScript("OnClick", function(self)
+	                -- Navigate to home page (placeholder key "home" for future implementation)
+	                if panel and panel.SelectCategory then
+	                    panel.SelectCategory("home")
+	                end
+	            end)
+
+	            f.LogoButton = logoBtn
 
 	            -- Title text
-            local title = titleRegion:CreateFontString(nil, "OVERLAY")
-            -- Start just to the right of the circular icon; lift to align with title bar
-            title:SetPoint("LEFT", icon, "RIGHT", 2, 10)
+	            local title = titleRegion:CreateFontString(nil, "OVERLAY")
+	            -- Start just to the right of the circular logo; lift to align with title bar
+	            title:SetPoint("LEFT", logoBtn, "RIGHT", 2, 10)
 	            title:SetJustifyH("LEFT")
 	            -- Use bundled Roboto Bold if available, else fall back; set font BEFORE text
-            if fonts and fonts.ROBOTO_BLD then
-                title:SetFont(fonts.ROBOTO_BLD, 25, "THICKOUTLINE")
-            else
-                title:SetFont("Fonts\\ARIALN.TTF", 25, "THICKOUTLINE")
-            end
-            title:SetShadowColor(0, 0, 0, 1)
-            title:SetShadowOffset(1, -1)
+	            if fonts and fonts.ROBOTO_BLD then
+	                title:SetFont(fonts.ROBOTO_BLD, 25, "THICKOUTLINE")
+	            else
+	                title:SetFont("Fonts\\ARIALN.TTF", 25, "THICKOUTLINE")
+	            end
+	            title:SetShadowColor(0, 0, 0, 1)
+	            title:SetShadowOffset(1, -1)
 	            title:SetTextColor(0.2, 0.9, 0.3, 1)
 	            title:SetText("ScooterMod")
-
-            -- No backdrop sizing needed
 
 	            -- Keep region above header drag area for clicks to pass through appropriately
 	            titleRegion:SetFrameLevel((f:GetFrameLevel() or 0) + 10)
@@ -1996,6 +2181,7 @@ end
 		nav:SetScript("OnSizeChanged", function()
 			UpdateNavContentWidth()
 		end)
+
         local container = CreateFrame("Frame", nil, f)
         container:ClearAllPoints()
         container:SetPoint("TOPLEFT", nav, "TOPRIGHT", panel.NavLayout.rightPaneLeftOffset or 24, 0)

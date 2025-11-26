@@ -27,13 +27,17 @@ local panel = addon.SettingsPanel
 local brandR, brandG, brandB = 0.20, 0.90, 0.30
 
 -- Helper function to apply Roboto + White styling to GameTooltip
+-- Reduces font size by 30% since Roboto renders visually larger than default fonts
 local function styleTooltip()
     if panel and panel.ApplyRobotoWhite then
         local regions = { GameTooltip:GetRegions() }
         for i = 1, #regions do
             local region = regions[i]
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                panel.ApplyRobotoWhite(region)
+                -- Get the current font size and reduce by 30%
+                local _, currentSize = region:GetFont()
+                local reducedSize = math.floor((currentSize or 12) * 0.7 + 0.5)
+                panel.ApplyRobotoWhite(region, reducedSize)
             end
         end
     end

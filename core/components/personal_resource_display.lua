@@ -60,6 +60,70 @@ local function getPlayerPlate()
     return plate
 end
 
+-- Track the last nameplate we applied PRD styling to, so we can clean up
+-- when WoW recycles that nameplate frame to a different unit.
+local lastStyledPRDPlate = nil
+
+-- Remove PRD styling from a nameplate that is no longer the player's PRD.
+-- This handles the case where WoW recycles a nameplate frame from the player
+-- to an enemy unit - without cleanup, the enemy would inherit our styling.
+local function cleanupOldPRDStyling(oldPlate)
+    if not oldPlate then
+        return
+    end
+
+    local uf = oldPlate.UnitFrame
+    if not uf then
+        return
+    end
+
+    local container = uf.HealthBarsContainer
+    if not container then
+        return
+    end
+
+    local healthBar = container.healthBar or container.HealthBar
+    if healthBar then
+        -- Remove ScooterModBG
+        if healthBar.ScooterModBG then
+            pcall(healthBar.ScooterModBG.Hide, healthBar.ScooterModBG)
+            pcall(healthBar.ScooterModBG.SetAlpha, healthBar.ScooterModBG, 0)
+        end
+        -- Remove borders
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            pcall(addon.BarBorders.ClearBarFrame, healthBar)
+        end
+        if addon.Borders and addon.Borders.HideAll then
+            pcall(addon.Borders.HideAll, healthBar)
+        end
+        -- Clear stored alpha values so they don't persist
+        healthBar._ScooterPRDHealthAlpha = nil
+    end
+
+    -- Also clean container-level styling
+    container._ScooterPRDHealthAlpha = nil
+    container._ScooterModBaseWidth = nil
+    container._ScooterModBaseHeight = nil
+    container._ScooterModWidthDelta = nil
+end
+
+-- Check if the player's PRD has moved to a different nameplate frame,
+-- and clean up the old one if so. This prevents styling from leaking
+-- to enemy nameplates when WoW recycles nameplate frames.
+local function ensurePRDCleanup()
+    local currentPlayerPlate = getPlayerPlate()
+
+    -- If we previously styled a different plate, clean it up
+    if lastStyledPRDPlate and lastStyledPRDPlate ~= currentPlayerPlate then
+        cleanupOldPRDStyling(lastStyledPRDPlate)
+    end
+
+    -- Update tracking
+    lastStyledPRDPlate = currentPlayerPlate
+
+    return currentPlayerPlate
+end
+
 local function scheduleApply(component)
     if not component or not component.ApplyStyling then
         return
@@ -728,7 +792,8 @@ local function getAggregateOffsetsForFrame(frame)
 end
 
 local function applyHealthOffsets(component)
-    local plate = getPlayerPlate()
+    -- Clean up any old PRD styling before applying to current plate
+    local plate = ensurePRDCleanup()
     if not plate or not plate.UnitFrame then
         return
     end
@@ -997,6 +1062,11 @@ local function applyPowerOffsets(component)
         if Util and Util.SetFullPowerSpikeHidden then
             local hideSpikes = (component.db and component.db.hideSpikeAnimations) or (component.db and component.db.hideBar)
             Util.SetFullPowerSpikeHidden(frame, hideSpikes)
+        end
+        -- Hide power feedback animation (Builder/Spender flash when power is spent/gained)
+        if Util and Util.SetPowerFeedbackHidden then
+            local hideFeedback = (component.db and component.db.hidePowerFeedback) or (component.db and component.db.hideBar)
+            Util.SetPowerFeedbackHidden(frame, hideFeedback)
         end
     end
 
@@ -1287,6 +1357,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             hideSpikeAnimations = { type = "addon", default = false, ui = {
                 label = "Hide Full Bar Animations", widget = "checkbox", section = "Misc", order = 2,
+            }},
+            hidePowerFeedback = { type = "addon", default = false, ui = {
+                label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 3,
             }},
         },
     })

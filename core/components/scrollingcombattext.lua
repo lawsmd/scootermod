@@ -49,8 +49,8 @@ local function applyWorldTextStyling(self)
         face = (select(1, _G.GameFontNormal:GetFont()))
     end
 
-    -- Check if font changed from user interaction (not during init)
-    if sctDamageState.initialLoadComplete then
+    -- Check if font changed from user interaction (not during init or profile switches)
+    if sctDamageState.initialLoadComplete and not addon._profileSwitchInProgress then
         if sctDamageState.lastKnownFont and sctDamageState.lastKnownFont ~= fontKey then
             -- Font was changed by user, show the restart popup
             ensureCombatFontPopup()

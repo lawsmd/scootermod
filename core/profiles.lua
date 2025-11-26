@@ -1549,6 +1549,9 @@ function Profiles:_setActiveProfile(profileKey, opts)
 
     self:EnsureProfileExists(profileKey, { preset = self:IsPreset(profileKey) })
 
+    -- Suppress SCT font change popup during profile switches
+    addon._profileSwitchInProgress = true
+
     if current ~= profileKey or opts.force then
         self._suppressProfileCallback = true
         self.db:SetProfile(profileKey)
@@ -1559,6 +1562,9 @@ function Profiles:_setActiveProfile(profileKey, opts)
         addon:LinkComponentsToDB()
         addon:ApplyStyles()
     end
+
+    -- Clear the suppression flag after profile switch completes
+    addon._profileSwitchInProgress = false
 
     self._lastRequestedLayout = profileKey
 

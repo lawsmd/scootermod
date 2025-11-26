@@ -101,9 +101,15 @@ function ScooterTabbedSectionMixin:OnLoad()
     if self.TabG then self.TabG:Hide() end
     if self.TabH then self.TabH:Hide() end
     if self.TabI then self.TabI:Hide() end
+    if self.TabB then
+        self.TabB:Hide()
+        self.TabB._ScooterInTabsGroup = false
+    end
     local buttons = {}
-    if self.TabA then table.insert(buttons, self.TabA) end
-    if self.TabB then table.insert(buttons, self.TabB) end
+    if self.TabA then
+        table.insert(buttons, self.TabA)
+        self.TabA._ScooterInTabsGroup = true
+    end
     -- Do not add TabC/TabD here; they may be added later if enabled by SetTitles
     if #buttons == 0 then return end
     self.tabsGroup:AddButtons(buttons)
@@ -280,11 +286,26 @@ function ScooterTabbedSectionMixin:SetTitles(sectionTitle, tabAText, tabBText, t
             self.TabA:SetWidth(self.TabA.Text:GetStringWidth() + 40)
         end
     end
+    local enableB = type(tabBText) == "string" and tabBText ~= ""
     if self.TabB then
-        self.TabB.tabText = tabBText or "Tab B"
-        if self.TabB.Text then
-            self.TabB.Text:SetText(self.TabB.tabText)
-            self.TabB:SetWidth(self.TabB.Text:GetStringWidth() + 40)
+        if enableB then
+            self.TabB.tabText = tabBText
+            if self.TabB.Text then
+                self.TabB.Text:SetText(self.TabB.tabText)
+                self.TabB:SetWidth(self.TabB.Text:GetStringWidth() + 40)
+            end
+            self.TabB:Show()
+            if self.tabsGroup and self.tabsGroup.AddButtons and not self.TabB._ScooterInTabsGroup then
+                self.tabsGroup:AddButtons({ self.TabB })
+                self.TabB._ScooterInTabsGroup = true
+            end
+        else
+            if self.tabsGroup and self.tabsGroup.RemoveButton and self.TabB._ScooterInTabsGroup then
+                self.tabsGroup:RemoveButton(self.TabB)
+                self.TabB._ScooterInTabsGroup = false
+            end
+            self.TabB:Hide()
+            if self.PageB then self.PageB:Hide() end
         end
     end
     -- Optional tabs C/D: only enable when explicit text is provided

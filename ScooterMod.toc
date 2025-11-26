@@ -31,6 +31,7 @@ core/components/base.lua
 core/components/cooldowns.lua
 core/components/actionbars.lua
 core/components/auras.lua
+core/components/nameplates.lua
 core/components/personal_resource_display.lua
 core/components/scrollingcombattext.lua
 core/components/unitframes/text.lua
