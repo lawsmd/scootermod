@@ -1362,7 +1362,7 @@ function panel.RenderHome()
                 logo = homeFrame:CreateTexture(nil, "ARTWORK")
                 homeFrame._logo = logo
             end
-            local logoSize = 120  -- Enlarged from 56 in the title bar
+            local logoSize = 180  -- 50% larger than previous 120px
             logo:SetSize(logoSize, logoSize)
             -- Try multiple extensions for the logo
             local function trySetIcon(tex, base)
@@ -1376,6 +1376,27 @@ function panel.RenderHome()
             pcall(logo.SetMask, logo, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
             logo:Show()
 
+            -- Create or reuse the "Welcome to" text (above the title)
+            local welcomeText = homeFrame._welcomeText
+            if not welcomeText then
+                welcomeText = homeFrame:CreateFontString(nil, "OVERLAY")
+                homeFrame._welcomeText = welcomeText
+            end
+            welcomeText:SetJustifyH("CENTER")
+            -- White Roboto at 1/3 of title size (63 / 3 = 21)
+            if fonts and fonts.ROBOTO then
+                welcomeText:SetFont(fonts.ROBOTO, 21, "OUTLINE")
+            elseif fonts and fonts.ROBOTO_BLD then
+                welcomeText:SetFont(fonts.ROBOTO_BLD, 21, "OUTLINE")
+            else
+                welcomeText:SetFont("Fonts\\ARIALN.TTF", 21, "OUTLINE")
+            end
+            welcomeText:SetShadowColor(0, 0, 0, 1)
+            welcomeText:SetShadowOffset(1, -1)
+            welcomeText:SetTextColor(1, 1, 1, 1)  -- White
+            welcomeText:SetText("Welcome to")
+            welcomeText:Show()
+
             -- Create or reuse the title text
             local title = homeFrame._title
             if not title then
@@ -1383,11 +1404,11 @@ function panel.RenderHome()
                 homeFrame._title = title
             end
             title:SetJustifyH("LEFT")
-            -- Use Roboto Bold at larger size
+            -- Use Roboto Bold at 50% larger size (42 * 1.5 = 63)
             if fonts and fonts.ROBOTO_BLD then
-                title:SetFont(fonts.ROBOTO_BLD, 42, "THICKOUTLINE")
+                title:SetFont(fonts.ROBOTO_BLD, 63, "THICKOUTLINE")
             else
-                title:SetFont("Fonts\\ARIALN.TTF", 42, "THICKOUTLINE")
+                title:SetFont("Fonts\\ARIALN.TTF", 63, "THICKOUTLINE")
             end
             title:SetShadowColor(0, 0, 0, 1)
             title:SetShadowOffset(2, -2)
@@ -1396,9 +1417,9 @@ function panel.RenderHome()
             title:Show()
 
             -- Position logo and title together, centered horizontally in the content area
-            -- Layout: [Logo] [Title] centered as a group
-            local titleWidth = title:GetStringWidth() or 200
-            local spacing = 16  -- Gap between logo and title
+            -- Layout: [Logo] [Welcome to / Title stacked] centered as a group
+            local titleWidth = title:GetStringWidth() or 300
+            local spacing = 20  -- Gap between logo and title text block
             local totalWidth = logoSize + spacing + titleWidth
             
             -- Calculate left offset to center the group
@@ -1411,8 +1432,14 @@ function panel.RenderHome()
                 logo:ClearAllPoints()
                 logo:SetPoint("TOPLEFT", homeFrame, "TOPLEFT", math.max(0, leftOffset), verticalCenter)
                 
+                -- Title positioned to the right of the logo, vertically centered with it
                 title:ClearAllPoints()
-                title:SetPoint("LEFT", logo, "RIGHT", spacing, 0)
+                title:SetPoint("LEFT", logo, "RIGHT", spacing, -10)
+                
+                -- "Welcome to" centered above the title
+                welcomeText:ClearAllPoints()
+                welcomeText:SetPoint("BOTTOM", title, "TOP", 0, 4)
+                welcomeText:SetPoint("LEFT", title, "LEFT", 0, 0)
             end
             UpdateHomeLayout()
 
