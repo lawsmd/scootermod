@@ -764,6 +764,14 @@ function addon:ApplyStyles()
     end
 end
 
+function addon:ApplyEarlyComponentStyles()
+    for id, component in pairs(self.Components) do
+        if component.ApplyStyling and component.applyDuringInit then
+            component:ApplyStyling()
+        end
+    end
+end
+
 function addon:ResetComponentToDefaults(componentOrId)
     local component = componentOrId
     if type(componentOrId) == "string" then

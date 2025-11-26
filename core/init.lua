@@ -21,7 +21,12 @@ function addon:OnInitialize()
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
-    -- 4. Register for events
+    -- 4. Allow components that only need global resources to apply immediately (before world load)
+    if self.ApplyEarlyComponentStyles then
+        self:ApplyEarlyComponentStyles()
+    end
+
+    -- 5. Register for events
     self:RegisterEvents()
 end
 

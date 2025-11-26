@@ -83,6 +83,15 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         return
     end
 
+    if cmd == "sctlog" or cmd == "fontlog" then
+        if addon.ShowWorldTextFontLog then
+            addon.ShowWorldTextFontLog()
+        else
+            addon:Print("World Text font log not available.")
+        end
+        return
+    end
+
     -- /scoot zorder uf <unit>
     if cmd == "zorder" then
         local sub = string.lower(args[2] or "")

@@ -4,18 +4,16 @@ local addonName, addon = ...
 -- The GameTooltip creates FontStrings dynamically: GameTooltipTextLeft1, GameTooltipTextLeft2, etc.
 -- TextLeft1 is typically the "title/name" line and uses GameTooltipHeaderText by default.
 --
--- NOTE: We intentionally do NOT customize color or position:
+-- NOTE: We intentionally do NOT customize:
 -- - Color: Tooltip text is dynamically colored by the game (item quality, spell schools, etc.)
 -- - Position: Tooltip layout is static and repositioning text would break the layout
+-- - Alignment: See TOOLTIPGAME.md - alignment requires width expansion which causes infinite
+--   growth on spell/ability tooltips that update continuously for cooldowns/charges.
 --
--- ALIGNMENT STRATEGY (2025-11-26, updated):
--- The GameTooltipHeaderText font object has justifyH="LEFT" baked in. When Blizzard's C code
--- calls SetFontObject internally, it resets alignment.
---
--- We use TooltipDataProcessor.AddTooltipPostCall to apply alignment AFTER all tooltip data
--- processing is complete. CRITICAL: We apply synchronously (no deferred timer) because
--- spell/ability tooltips update continuously for cooldown timers, and deferred timers
--- cause flickering as they race with the next rebuild cycle.
+-- SUPPORTED CUSTOMIZATIONS:
+-- - Font face (family)
+-- - Font size
+-- - Font style (OUTLINE, THICKOUTLINE, etc.)
 
 -- Helper: Apply font face/size/style to a FontString
 local function ApplyFontSettings(fontString, config, defaultSize)
@@ -36,36 +34,6 @@ local function ApplyFontSettings(fontString, config, defaultSize)
     local size = tonumber(config.size) or defaults.size
     local style = config.style or defaults.style
     pcall(fontString.SetFont, fontString, face, size, style)
-end
-
--- Helper: Apply alignment and width to a FontString for centering/right-align
-local function ApplyAlignmentSettings(fontString, tooltip, config)
-    if not fontString or not fontString.SetJustifyH then return end
-
-    config = config or {}
-    local alignment = (config.alignment or "LEFT")
-    if type(alignment) == "string" then
-        alignment = alignment:upper()
-    else
-        alignment = "LEFT"
-    end
-    if alignment ~= "LEFT" and alignment ~= "CENTER" and alignment ~= "RIGHT" then
-        alignment = "LEFT"
-    end
-
-    -- Apply horizontal alignment
-    pcall(fontString.SetJustifyH, fontString, alignment)
-
-    -- For CENTER/RIGHT alignment, expand the FontString width to the tooltip's inner width
-    -- so the text has room to align within. Without this, a narrow FontString would still
-    -- appear left-aligned even with SetJustifyH("CENTER").
-    if alignment ~= "LEFT" and tooltip and tooltip.GetWidth and fontString.SetWidth then
-        local w = tooltip:GetWidth()
-        if w and w > 20 then
-            local inner = w - 20 -- 10px left + 10px right padding
-            pcall(fontString.SetWidth, fontString, inner)
-        end
-    end
 end
 
 -- Track whether we've registered the TooltipDataProcessor hook
@@ -89,20 +57,19 @@ local function RegisterTooltipPostProcessor()
         local comp = addon.Components and addon.Components.tooltip
         if not comp or not comp.db then return end
 
-        local titleFS = _G["GameTooltipTextLeft1"]
-        if not titleFS then return end
-
-        local cfg = comp.db.textTitle or {}
-
-        -- Apply font settings synchronously
-        ApplyFontSettings(titleFS, cfg, 14)
-
-        -- Apply alignment synchronously - NO DEFERRED TIMER
-        -- Deferred timers cause flickering on spell tooltips because they race with
-        -- the continuous TOOLTIP_DATA_UPDATE cycle for cooldown/charge display.
-        -- The TooltipDataProcessor callback runs AFTER ProcessLines() completes,
-        -- so the font object has already been set and we can override alignment now.
-        ApplyAlignmentSettings(titleFS, tooltip, cfg)
+        -- Apply settings for lines 1 through 7
+        for i = 1, 7 do
+            local fontString = _G["GameTooltipTextLeft"..i]
+            if fontString then
+                -- DB keys: textTitle (line 1), textLine2 (line 2), etc.
+                local key = (i == 1) and "textTitle" or ("textLine"..i)
+                local cfg = comp.db[key] or {}
+                
+                -- Apply font settings synchronously
+                -- Line 1 defaults to 14pt, others default to 12pt (standard body size)
+                ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
+            end
+        end
     end)
 
     return true
@@ -114,27 +81,25 @@ local function ApplyTooltipStyling(self)
 
     local db = self.db or {}
 
-    -- Clean up deprecated settings (color and offset were removed)
+    -- Clean up deprecated settings
     if db.textTitle then
         db.textTitle.color = nil
         db.textTitle.offset = nil
+        db.textTitle.alignment = nil -- Removed feature - see TOOLTIPGAME.md
     end
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()
 
-    -- Apply Name/Title styling (GameTooltipTextLeft1) - initial application
-    local titleFS = _G["GameTooltipTextLeft1"]
-    if titleFS then
-        local cfg = db.textTitle or {}
-        ApplyFontSettings(titleFS, cfg, 14)
-        ApplyAlignmentSettings(titleFS, tooltip, cfg)
+    -- Apply styling to existing lines (GameTooltipTextLeft1..7)
+    for i = 1, 7 do
+        local fontString = _G["GameTooltipTextLeft"..i]
+        if fontString then
+            local key = (i == 1) and "textTitle" or ("textLine"..i)
+            local cfg = db[key] or {}
+            ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
+        end
     end
-
-    -- NOTE: We intentionally do NOT add backup hooks on FontString methods or OnShow.
-    -- Those deferred timers conflict with the TooltipDataProcessor approach and cause
-    -- flickering on spell/ability tooltips that update continuously.
-    -- The TooltipDataProcessor.AddTooltipPostCall hook handles all data-driven tooltips.
 end
 
 addon:RegisterComponentInitializer(function(self)
@@ -145,13 +110,54 @@ addon:RegisterComponentInitializer(function(self)
         name = "Tooltip",
         frameName = "GameTooltip",
         settings = {
-            -- Text Title settings (font, size, style, alignment)
+            -- Line 1 (Title) settings
             textTitle = { type = "addon", default = {
                 fontFace = "FRIZQT__",
                 size = 14,
                 style = "OUTLINE",
-                alignment = "LEFT",
-            }, ui = { hidden = true }}, -- Hidden because we use tabbed UI instead
+            }, ui = { hidden = true }},
+
+            -- Line 2 settings
+            textLine2 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
+
+            -- Line 3 settings
+            textLine3 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
+
+            -- Line 4 settings
+            textLine4 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
+
+            -- Line 5 settings
+            textLine5 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
+
+            -- Line 6 settings
+            textLine6 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
+
+            -- Line 7 settings
+            textLine7 = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                size = 12,
+                style = "OUTLINE",
+            }, ui = { hidden = true }},
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

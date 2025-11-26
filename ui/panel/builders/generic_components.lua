@@ -2777,10 +2777,18 @@ function panel.RenderTooltip()
         table.insert(init, textExpInit)
 
         -- Tabbed Text Section data with build function
-        local data = { sectionTitle = "", tabAText = "Name & Title" }
+        local data = { 
+            sectionTitle = "", 
+            tabAText = "Name & Title",
+            tabBText = "Line 2",
+            tabCText = "Line 3",
+            tabDText = "Line 4",
+            tabEText = "Line 5",
+            tabFText = "Line 6",
+            tabGText = "Line 7",
+        }
 
         data.build = function(frame)
-            local yA = { y = -50 }
             local db = component.db or {}
 
             -- Clean up deprecated settings from DB (color and offsets removed)
@@ -2841,74 +2849,63 @@ function panel.RenderTooltip()
                 addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
             end
 
-            -- Helper: add horizontal alignment dropdown
-            local function addAlignment(parent, label, getFunc, setFunc, yRef)
-                local alignmentOptions = function()
-                    local container = Settings.CreateControlTextContainer()
-                    container:Add("LEFT", "Left")
-                    container:Add("CENTER", "Center")
-                    container:Add("RIGHT", "Right")
-                    return container:GetData()
-                end
-                addDropdown(parent, label, alignmentOptions, getFunc, setFunc, yRef)
+            -- Helper to build a single page's controls
+            local function buildPage(pageFrame, dbKey, labelPrefix, defaultSize)
+                local yRef = { y = -50 }
+
+                -- 1. Font Face
+                addDropdown(pageFrame, labelPrefix .. " Font", fontOptions,
+                    function()
+                        return (db[dbKey] and db[dbKey].fontFace) or "FRIZQT__"
+                    end,
+                    function(v)
+                        db[dbKey] = db[dbKey] or {}
+                        db[dbKey].fontFace = v
+                        applyText()
+                    end,
+                    yRef)
+
+                -- 2. Font Size
+                addSlider(pageFrame, labelPrefix .. " Size", 6, 32, 1,
+                    function()
+                        return (db[dbKey] and db[dbKey].size) or defaultSize
+                    end,
+                    function(v)
+                        db[dbKey] = db[dbKey] or {}
+                        db[dbKey].size = tonumber(v) or defaultSize
+                        applyText()
+                    end,
+                    yRef)
+
+                -- 3. Font Style
+                addStyle(pageFrame, labelPrefix .. " Style",
+                    function()
+                        return (db[dbKey] and db[dbKey].style) or "OUTLINE"
+                    end,
+                    function(v)
+                        db[dbKey] = db[dbKey] or {}
+                        db[dbKey].style = v
+                        applyText()
+                    end,
+                    yRef)
             end
 
-            -- Name & Title tab (PageA) - 3 settings (font, size, style)
-            -- Color and offsets intentionally omitted: tooltip text is dynamically colored
-            -- and has static positioning
-
-            -- 1. Font Face
-            addDropdown(frame.PageA, "Name/Title Font", fontOptions,
-                function()
-                    return (db.textTitle and db.textTitle.fontFace) or "FRIZQT__"
-                end,
-                function(v)
-                    db.textTitle = db.textTitle or {}
-                    db.textTitle.fontFace = v
-                    applyText()
-                end,
-                yA)
-
-            -- 2. Font Size
-            addSlider(frame.PageA, "Name/Title Font Size", 6, 32, 1,
-                function()
-                    return (db.textTitle and db.textTitle.size) or 14
-                end,
-                function(v)
-                    db.textTitle = db.textTitle or {}
-                    db.textTitle.size = tonumber(v) or 14
-                    applyText()
-                end,
-                yA)
-
-            -- 3. Font Style
-            addStyle(frame.PageA, "Name/Title Style",
-                function()
-                    return (db.textTitle and db.textTitle.style) or "OUTLINE"
-                end,
-                function(v)
-                    db.textTitle = db.textTitle or {}
-                    db.textTitle.style = v
-                    applyText()
-                end,
-                yA)
-
-            -- 4. Text alignment within the tooltip box
-            addAlignment(frame.PageA, "Name/Title Alignment",
-                function()
-                    return (db.textTitle and db.textTitle.alignment) or "LEFT"
-                end,
-                function(v)
-                    db.textTitle = db.textTitle or {}
-                    db.textTitle.alignment = v
-                    applyText()
-                end,
-                yA)
+            -- Build all 7 tabs
+            buildPage(frame.PageA, "textTitle", "Title", 14)
+            buildPage(frame.PageB, "textLine2", "Line 2", 12)
+            buildPage(frame.PageC, "textLine3", "Line 3", 12)
+            buildPage(frame.PageD, "textLine4", "Line 4", 12)
+            buildPage(frame.PageE, "textLine5", "Line 5", 12)
+            buildPage(frame.PageF, "textLine6", "Line 6", 12)
+            buildPage(frame.PageG, "textLine7", "Line 7", 12)
         end
 
         local tabbedInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
-        -- Height: ~50 top (tabs) + 4 settings * 34px + 20 bottom = ~206px (rounded)
-        tabbedInit.GetExtent = function() return 210 end
+        -- Height: 
+        -- Multi-row tabs (6+ tabs) require more height because the border is pushed down ~21px.
+        -- Formula: 30 (top) + (3 settings * 34) + 20 (bottom) + 21 (multi-row drop) = 173 + 21 = ~194px
+        -- Using 200px to be safe and provide comfortable bottom padding.
+        tabbedInit.GetExtent = function() return 200 end
         tabbedInit:AddShownPredicate(function()
             return panel:IsSectionExpanded("tooltip", "Text")
         end)

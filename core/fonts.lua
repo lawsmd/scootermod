@@ -1,6 +1,73 @@
 local addonName, addon = ...
 
 addon.Fonts = addon.Fonts or {}
+addon.WorldTextFontLog = addon.WorldTextFontLog or {}
+
+local function SnapshotFontObject(fontObj)
+    if type(fontObj) ~= "table" or not fontObj.GetFont then
+        return "<unavailable>"
+    end
+    local ok, path, size, flags = pcall(fontObj.GetFont, fontObj)
+    if not ok then
+        return "<error>"
+    end
+    return string.format("%s | size=%s | flags=%s", tostring(path or "?"), tostring(size or "?"), tostring(flags or ""))
+end
+
+local function FormatExtra(info)
+    if type(info) ~= "table" then
+        return tostring(info or "")
+    end
+    local parts = {}
+    for k, v in pairs(info) do
+        table.insert(parts, string.format("%s=%s", tostring(k), tostring(v)))
+    end
+    table.sort(parts)
+    return table.concat(parts, "; ")
+end
+
+local function AppendWorldTextFontLog(stage, info)
+    local log = addon.WorldTextFontLog
+    if type(log) ~= "table" then
+        log = {}
+        addon.WorldTextFontLog = log
+    end
+    local timestamp
+    if type(debugprofilestop) == "function" then
+        timestamp = string.format("%.1fms", debugprofilestop())
+    elseif type(GetTime) == "function" then
+        timestamp = string.format("%.2fs", GetTime())
+    else
+        timestamp = tostring(#log + 1)
+    end
+    local snapshot = string.format("DAMAGE_TEXT_FONT=%s | CombatTextFont=%s | CombatTextFontOutline=%s",
+        tostring(_G.DAMAGE_TEXT_FONT),
+        SnapshotFontObject(_G.CombatTextFont),
+        SnapshotFontObject(_G.CombatTextFontOutline)
+    )
+    local line = string.format("[%s] %s :: %s", timestamp, tostring(stage or "?"), snapshot)
+    local extra = FormatExtra(info)
+    if extra ~= "" then
+        line = line .. " || " .. extra
+    end
+    table.insert(log, line)
+    -- Limit log size
+    if #log > 200 then
+        table.remove(log, 1)
+    end
+end
+
+addon.LogWorldTextFont = AppendWorldTextFontLog
+
+function addon.ShowWorldTextFontLog()
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("World Text Font Log", addon.WorldTextFontLog)
+    elseif addon.Print then
+        addon:Print("Debug window unavailable; open after core/debug.lua loads.")
+    end
+end
+
+AppendWorldTextFontLog("fonts.lua:load", { init = true })
 
 -- Build a container compatible with Settings dropdown options for font faces.
 -- This mirrors RIP's behavior but keeps ScooterMod self-contained. We rely on

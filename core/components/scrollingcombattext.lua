@@ -2,6 +2,26 @@ local addonName, addon = ...
 
 local Component = addon.ComponentPrototype
 
+-- Track state for font change detection
+local sctDamageState = {
+    initialLoadComplete = false,
+    lastKnownFont = nil,
+}
+
+-- Register the static popup dialog for combat font restart warning
+local function ensureCombatFontPopup()
+    if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COMBAT_FONT_RESTART"] then
+        _G.StaticPopupDialogs["SCOOTERMOD_COMBAT_FONT_RESTART"] = {
+            text = "In order for Combat Font changes to take effect, you'll need to fully exit and re-open World of Warcraft.",
+            button1 = OKAY or "Okay",
+            timeout = 0,
+            whileDead = 1,
+            hideOnEscape = 1,
+            preferredIndex = 3,
+        }
+    end
+end
+
 local function clampPercent(value)
     local num = tonumber(value) or 100
     if num < 50 then
@@ -10,22 +30,6 @@ local function clampPercent(value)
         num = 150
     end
     return math.floor(num + 0.5)
-end
-
-local function buildFontStyleOptions()
-    local Settings = _G.Settings
-    if Settings and Settings.CreateControlTextContainer then
-        local container = Settings.CreateControlTextContainer()
-        container:Add("NONE", "Regular")
-        container:Add("OUTLINE", "Outline")
-        container:Add("THICKOUTLINE", "Thick Outline")
-        return container:GetData()
-    end
-    return {
-        { value = "NONE", text = "Regular" },
-        { value = "OUTLINE", text = "Outline" },
-        { value = "THICKOUTLINE", text = "Thick Outline" },
-    }
 end
 
 local function applyWorldTextStyling(self)
@@ -37,7 +41,7 @@ local function applyWorldTextStyling(self)
     local settings = self.settings or {}
 
     local fontKey = db.fontFace or (settings.fontFace and settings.fontFace.default) or "FRIZQT__"
-local resolve = addon.ResolveFontFace or function(_)
+    local resolve = addon.ResolveFontFace or function(_)
         return (select(1, _G.GameFontNormal:GetFont()))
     end
     local face = resolve(fontKey)
@@ -45,16 +49,30 @@ local resolve = addon.ResolveFontFace or function(_)
         face = (select(1, _G.GameFontNormal:GetFont()))
     end
 
-    local style = db.fontStyle or (settings.fontStyle and settings.fontStyle.default) or "OUTLINE"
-    if style == "NONE" or style == "Regular" then
-        style = ""
+    -- Check if font changed from user interaction (not during init)
+    if sctDamageState.initialLoadComplete then
+        if sctDamageState.lastKnownFont and sctDamageState.lastKnownFont ~= fontKey then
+            -- Font was changed by user, show the restart popup
+            ensureCombatFontPopup()
+            if _G.StaticPopup_Show then
+                _G.StaticPopup_Show("SCOOTERMOD_COMBAT_FONT_RESTART")
+            end
+        end
     end
+    sctDamageState.lastKnownFont = fontKey
 
     local scalePercent = clampPercent(db.fontScale or (settings.fontScale and settings.fontScale.default) or 100)
     db.fontScale = scalePercent
+    db.fontStyle = nil
 
     if type(face) == "string" and face ~= "" then
         _G.DAMAGE_TEXT_FONT = face
+    end
+    if addon.LogWorldTextFont then
+        addon.LogWorldTextFont("applyWorldTextStyling:start", {
+            face = face,
+            requestedScale = scalePercent,
+        })
     end
 
     local targets = {
@@ -71,8 +89,15 @@ local resolve = addon.ResolveFontFace or function(_)
                 existingFlags = nil
             end
             size = tonumber(size) or 24
-            local flags = style ~= "" and style or (existingFlags or "")
-            pcall(fontObj.SetFont, fontObj, face, size, flags)
+            pcall(fontObj.SetFont, fontObj, face, size, existingFlags)
+            if addon.LogWorldTextFont then
+                addon.LogWorldTextFont("applyWorldTextStyling:SetFont", {
+                    target = fontObj.GetName and fontObj:GetName() or tostring(fontObj),
+                    size = size,
+                    flags = existingFlags,
+                    face = face,
+                })
+            end
         end
     end
 
@@ -83,6 +108,14 @@ local resolve = addon.ResolveFontFace or function(_)
     elseif _G.SetCVar then
         pcall(_G.SetCVar, "WorldTextScale", scaledValue)
     end
+    if addon.LogWorldTextFont then
+        addon.LogWorldTextFont("applyWorldTextStyling:WorldTextScale", { scale = scaledValue })
+    end
+
+    -- Mark initial load as complete after first styling pass
+    if not sctDamageState.initialLoadComplete then
+        sctDamageState.initialLoadComplete = true
+    end
 end
 
 addon:RegisterComponentInitializer(function(self)
@@ -90,6 +123,7 @@ addon:RegisterComponentInitializer(function(self)
         id = "sctDamage",
         name = "Damage Numbers",
         frameName = nil,
+        applyDuringInit = true,
         settings = {
             fontFace = { type = "addon", default = "FRIZQT__", ui = {
                 label = "Font",
@@ -103,13 +137,6 @@ addon:RegisterComponentInitializer(function(self)
                     return {}
                 end,
             }},
-            fontStyle = { type = "addon", default = "OUTLINE", ui = {
-                label = "Font Style",
-                widget = "dropdown",
-                section = "Font",
-                order = 2,
-                optionsProvider = buildFontStyleOptions,
-            }},
             fontScale = { type = "addon", default = 100, ui = {
                 label = "Font Scale",
                 widget = "slider",
@@ -117,7 +144,7 @@ addon:RegisterComponentInitializer(function(self)
                 max = 150,
                 step = 1,
                 section = "Font",
-                order = 3,
+                order = 2,
                 format = "percent",
             }},
         },
