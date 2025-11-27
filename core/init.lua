@@ -33,6 +33,12 @@ end
 function addon:GetDefaults()
     local defaults = {
         profile = {
+            applyAll = {
+                fontPending = "FRIZQT__",
+                barTexturePending = "default",
+                lastFontApplied = nil,
+                lastTextureApplied = nil,
+            },
             components = {}
         },
         char = {

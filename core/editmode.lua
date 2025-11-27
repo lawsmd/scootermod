@@ -1661,6 +1661,181 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
     end
 end
 
+--[[----------------------------------------------------------------------------
+    Preset import helpers (ScooterUI / ScooterDeck)
+----------------------------------------------------------------------------]]--
+local function computeSha256(blob)
+    if type(blob) ~= "string" or blob == "" then
+        return nil
+    end
+    if not C_Crypto or type(C_Crypto.Hash) ~= "function" then
+        return nil
+    end
+    local ok, hash = pcall(C_Crypto.Hash, "SHA256", blob)
+    if not ok or type(hash) ~= "string" then
+        return nil
+    end
+    return string.lower(hash)
+end
+
+local function verifyHash(expected, blob, label)
+    if not expected or expected == "" then
+        return true
+    end
+    local computed = computeSha256(blob or "")
+    if not computed then
+        return false, string.format("%s hash could not be computed on this client.", label)
+    end
+    if computed ~= string.lower(expected) then
+        return false, string.format("%s hash mismatch (expected %s, got %s).", label, expected, computed)
+    end
+    return true
+end
+
+local function buildPresetInstanceName(preset)
+    local base = (preset and preset.name) or "Preset"
+    base = base:gsub("^%s+", ""):gsub("%s+$", "")
+    if base == "" then base = "Preset" end
+    local stamp = date and date("!%Y-%m-%d %H:%M") or tostring(time() or "")
+    local name = string.format("%s %s", base, stamp)
+    if #name > 32 then
+        name = name:sub(1, 32)
+    end
+    local attempt = name
+    local suffix = 2
+    local lookup = addon and addon.Profiles and addon.Profiles._layoutLookup or {}
+    while lookup[attempt] do
+        local trimmed = name
+        local avail = math.max(6, 32 - (#tostring(suffix) + 1))
+        if #trimmed > avail then
+            trimmed = trimmed:sub(1, avail)
+        end
+        attempt = string.format("%s-%d", trimmed, suffix)
+        suffix = suffix + 1
+    end
+    return attempt
+end
+
+local function cloneProfilePayload(preset, layoutName)
+    local payload = preset and preset.scooterProfile
+    if type(payload) ~= "table" then
+        return nil, "Preset ScooterMod profile payload missing."
+    end
+    local copy = CopyTable(payload)
+    copy.__preset = true
+    copy.__presetSource = preset.id or preset.name or "preset"
+    copy.__presetVersion = preset.version or "PENDING"
+    copy.__presetLayout = layoutName
+    return copy
+end
+
+local function importConsolePortProfile(preset, profileName)
+    if not preset or not preset.consolePortProfile then
+        return true
+    end
+    local cp = _G.ConsolePort
+    if not cp then
+        return false, "ConsolePort is required for this preset."
+    end
+
+    -- Attempt commonly-used import paths; future updates can refine this once the API is finalized.
+    local importers = {
+        cp.ImportProfile,
+        cp.ImportBindingProfile,
+        cp.ImportCustomProfile,
+        cp.Profiles and cp.Profiles.Import,
+    }
+    for _, importer in ipairs(importers) do
+        if type(importer) == "function" then
+            local ok, err = pcall(importer, cp.Profiles or cp, preset.consolePortProfile, profileName)
+            if ok then
+                return true
+            end
+            return false, "ConsolePort import failed: " .. tostring(err)
+        end
+    end
+
+    -- Fallback: stash payload for manual import; do not fail the preset.
+    addon.ConsolePortPendingProfile = {
+        target = profileName,
+        payload = preset.consolePortProfile,
+    }
+    addon:Print("ConsolePort import API not detected; stored preset payload for manual import.")
+    return true
+end
+
+function addon.EditMode:ImportPresetLayout(preset, opts)
+    opts = opts or {}
+    if type(preset) ~= "table" then
+        return false, "Preset metadata missing."
+    end
+    if not preset.editModeExport or preset.editModeExport == "" then
+        return false, "Preset Edit Mode export payload missing."
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        return false, "Cannot import presets during combat."
+    end
+    if not C_EditMode or type(C_EditMode.ImportLayout) ~= "function" then
+        return false, "C_EditMode.ImportLayout API unavailable."
+    end
+    if not LEO or not (LEO.IsReady and LEO:IsReady()) then
+        return false, "Edit Mode library is not ready."
+    end
+
+    self.LoadLayouts()
+
+    local okHash, hashErr = verifyHash(preset.editModeSha256, preset.editModeExport, "Edit Mode export")
+    if not okHash then
+        return false, hashErr
+    end
+
+    local profileCopy, profileErr = cloneProfilePayload(preset)
+    if not profileCopy then
+        return false, profileErr
+    end
+
+    local newLayoutName = buildPresetInstanceName(preset)
+    local okImport, result = pcall(C_EditMode.ImportLayout, preset.editModeExport, newLayoutName)
+    if not okImport then
+        return false, "Import failed: " .. tostring(result)
+    end
+    if type(result) == "string" and result ~= "" then
+        newLayoutName = result
+    end
+
+    self.SaveOnly()
+
+    if addon and addon.Profiles and addon.Profiles.RequestSync then
+        addon.Profiles:RequestSync("PresetImport")
+    end
+
+    if not addon or not addon.db or not addon.db.profiles then
+        return false, "AceDB not initialized."
+    end
+    addon.db.profiles[newLayoutName] = profileCopy
+
+    if addon.Profiles and addon.Profiles.SwitchToProfile then
+        addon.Profiles:SwitchToProfile(newLayoutName, { reason = "PresetImport", force = true })
+    end
+
+    local cpOk, cpErr = importConsolePortProfile(preset, newLayoutName)
+    if not cpOk then
+        addon:Print(cpErr)
+    end
+
+    addon:Print(string.format("Imported preset '%s' as new layout '%s'.", preset.name or preset.id or "Preset", newLayoutName))
+
+    if not opts.skipReload and type(ReloadUI) == "function" then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.2, ReloadUI)
+        else
+            ReloadUI()
+        end
+    end
+
+    return true, newLayoutName
+end
+
 -- Initialize Edit Mode integration
 function addon.EditMode.Initialize()
     -- Enable compatibility mode for opacity: treat as index-based in LEO to match client persistence

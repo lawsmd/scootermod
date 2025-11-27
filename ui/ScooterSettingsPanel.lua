@@ -122,7 +122,9 @@ function panel.UpdateCollapseButtonVisibility()
     if cat and f.CatRenderers then
         local entry = f.CatRenderers[cat]
         -- Profiles pages and home page do not have collapsible component sections
-        if entry and (entry.componentId == "profilesManage" or entry.componentId == "profilesPresets" or entry.componentId == "home") then
+        local compId = entry and entry.componentId
+        local isApplyAll = compId and compId:match("^applyAll")
+        if entry and (compId == "profilesManage" or compId == "profilesPresets" or compId == "home" or isApplyAll) then
             hide = true
         end
         -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
@@ -1476,9 +1478,11 @@ local function BuildCategories()
 	-- Home page (landing page)
 	addEntry("home", addon.SettingsPanel.RenderHome())
 
-	-- Profiles children
+	-- Profiles / Apply All children
 	addEntry("profilesManage", addon.SettingsPanel.RenderProfilesManage())
 	addEntry("profilesPresets", addon.SettingsPanel.RenderProfilesPresets())
+	addEntry("applyAllFonts", addon.SettingsPanel.RenderApplyAllFonts())
+	addEntry("applyAllTextures", addon.SettingsPanel.RenderApplyAllTextures())
 
 	-- Cooldown Manager children
 	addEntry("essentialCooldowns", addon.SettingsPanel.RenderEssentialCooldowns())
@@ -1522,6 +1526,10 @@ local function BuildCategories()
 		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = true, children = {
 			{ type = "child", key = "profilesManage", label = "Manage Profiles" },
 			{ type = "child", key = "profilesPresets", label = "Presets" },
+		}},
+		{ type = "parent", key = "ApplyAll", label = "Apply All", collapsible = true, children = {
+			{ type = "child", key = "applyAllFonts", label = "Fonts" },
+			{ type = "child", key = "applyAllTextures", label = "Bar Textures" },
 		}},
 		{ type = "parent", key = "Cooldown Manager", label = "Cooldown Manager", collapsible = true, children = {
 			{ type = "child", key = "essentialCooldowns", label = "Essential Cooldowns" },
@@ -1730,6 +1738,9 @@ local function BuildCategories()
 	end
 
 	panel.SelectCategory = function(key)
+		-- Track previous category to detect home->other transitions
+		local previousCategory = panel._selectedCategory
+		local wasOnHome = (previousCategory == "home")
 		panel._selectedCategory = key
 
 		-- Determine if we're on the home page
@@ -1739,7 +1750,23 @@ local function BuildCategories()
 		-- When on home, hide it (the home page shows an enlarged version)
 		-- When on any other category, show it as usual
 		if f._ScooterTitleRegion then
-			f._ScooterTitleRegion:SetShown(not isHome)
+			if isHome then
+				-- Hide immediately when going TO home
+				f._ScooterTitleRegion:Hide()
+			else
+				-- When leaving home, animate the title reveal
+				-- Otherwise just show it normally
+				local titleRegion = f._ScooterTitleRegion
+				local logoBtn = f.LogoButton
+				local titleText = titleRegion and titleRegion._titleText
+				
+				if panel.AnimateTitleReveal then
+					panel.AnimateTitleReveal(titleRegion, logoBtn, titleText, wasOnHome)
+				else
+					-- Fallback if animations module not loaded
+					titleRegion:Show()
+				end
+			end
 		end
 
 		-- Hide the home content frame if navigating away from home
@@ -2107,6 +2134,9 @@ end
 	            title:SetTextColor(0.2, 0.9, 0.3, 1)
 	            title:SetText("ScooterMod")
 
+	            -- Store reference to title FontString for animations
+	            titleRegion._titleText = title
+
 	            -- Keep region above header drag area for clicks to pass through appropriately
 	            titleRegion:SetFrameLevel((f:GetFrameLevel() or 0) + 10)
 	            f._ScooterTitleRegion = titleRegion
@@ -2369,6 +2399,11 @@ end
                 if pnl and pnl._protectVisibility then
                     pnl._protectVisibility = false
                     if pnl and pnl.frame and not pnl.frame:IsShown() then pnl.frame:Show() end
+                end
+                -- Stop any running title reveal animations when panel closes
+                if pnl and pnl.StopTitleAnimation and frame._ScooterTitleRegion then
+                    local titleRegion = frame._ScooterTitleRegion
+                    pnl.StopTitleAnimation(frame.LogoButton, titleRegion._titleText)
                 end
             end)
             f._ScooterProtectHooked = true

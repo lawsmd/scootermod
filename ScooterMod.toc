@@ -24,9 +24,11 @@ core/fonts.lua
 core/barborders.lua
 core/iconborders.lua
 core/iconbackdrops.lua
+core/presets.lua
 core/borders.lua
 core/editmode.lua
 core/profiles.lua
+core/apply_all.lua
 core/components/base.lua
 core/components/cooldowns.lua
 core/components/actionbars.lua
@@ -50,6 +52,7 @@ ui/ScooterExpandableSection.xml
 ui/panel/theme.lua
 ui/panel/mixins.lua
 ui/panel/controls.lua
+ui/panel/animations.lua
 ui/panel/rightpane.lua
 ui/panel/infoicon.lua
 ui/ScooterSettingsPanel.lua
@@ -61,6 +64,7 @@ ui/panel/builders/unitframes.lua
 ui/panel/builders.lua
 ui/panel/profiles_manage.lua
 ui/panel/profiles_presets.lua
+ui/panel/apply_all.lua
 
 core/init.lua
 
