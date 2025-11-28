@@ -828,6 +828,12 @@ do
                 pcall(hb.SetReverseFill, hb, shouldReverse)
             end
             
+            -- Hide/Show Over Absorb Glow (Player only)
+            -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.OverAbsorbGlow
+            if unit == "Player" and hb and Util and Util.SetOverAbsorbGlowHidden then
+                Util.SetOverAbsorbGlowHidden(hb, cfg.healthBarHideOverAbsorbGlow == true)
+            end
+            
             -- Health Bar custom border (Health Bar only)
             do
 				local styleKey = cfg.healthBarBorderStyle

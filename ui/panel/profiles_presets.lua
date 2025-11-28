@@ -209,7 +209,7 @@ local function renderProfilesPresets()
         local elements = {}
 
         if #list == 0 then
-            local emptyRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            local emptyRow = Settings.CreateElementInitializer("ScooterPresetsEmptyTemplate")
             emptyRow.GetExtent = function() return 40 end
             emptyRow.InitFrame = function(_, row)
                 if row.InfoText then row.InfoText:Hide() end
@@ -233,7 +233,7 @@ local function renderProfilesPresets()
             return
         end
 
-        local heroRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+        local heroRow = Settings.CreateElementInitializer("ScooterPresetsHeroTemplate")
         heroRow.GetExtent = function() return 430 end
         heroRow.InitFrame = function(_, row)
             buildHeroWidgets(row)

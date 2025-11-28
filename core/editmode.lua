@@ -134,7 +134,10 @@ end
 local function ResolveSettingId(frame, logicalKey)
     if not frame or not frame.system or not _G.EditModeSettingDisplayInfoManager then return nil end
     -- Ensure layouts are loaded so the display info table is populated
-    if addon and addon.EditMode and addon.EditMode.LoadLayouts then addon.EditMode.LoadLayouts() end
+    -- IMPORTANT: Only call LoadLayouts if not already loaded to avoid cascade of calls
+    if LEO and LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
+        if addon and addon.EditMode and addon.EditMode.LoadLayouts then addon.EditMode.LoadLayouts() end
+    end
     -- Prefer stable enum constants only for Cooldown Viewer systems
     local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
     if EM and frame and frame.system == (_G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.CooldownViewer) then
@@ -946,6 +949,45 @@ function addon.EditMode.SyncComponentToEditMode(component)
     -- Hold the syncing guard briefly to avoid back-sync races from SaveLayouts callbacks
     local function clearGuard()
         addon.EditMode._syncingEM = false
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.35, clearGuard)
+    else
+        clearGuard()
+    end
+end
+
+-- Position-only sync: Use this when ONLY position (X/Y) changed.
+-- This avoids the cascade of syncing all Edit Mode settings (orientation, columns, etc.)
+-- which would trigger many ResolveSettingId calls and LoadLayouts() invocations.
+-- NOTE: This function handles SaveOnly/ApplyChanges internally - callers should NOT
+-- call SaveOnly/RequestApplyChanges again after calling this function.
+function addon.EditMode.SyncComponentPositionToEditMode(component)
+    if not component then return end
+    local frame = _G[component.frameName]
+    if not frame then return end
+
+    -- Guard against re-entry during sync
+    if addon.EditMode._syncingPosition then return end
+    addon.EditMode._syncingPosition = true
+
+    -- Only load layouts if not already loaded (avoid cascade)
+    if LEO and LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
+        addon.EditMode.LoadLayouts()
+    end
+
+    -- Sync Position only
+    local x = component.db.positionX or 0
+    local y = component.db.positionY or 0
+    addon.EditMode.ReanchorFrame(frame, "CENTER", "UIParent", "CENTER", x, y)
+
+    -- Coalesce apply to avoid per-tick stalls during rapid changes
+    if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+    -- Clear guard after a brief delay to avoid back-sync races
+    local function clearGuard()
+        addon.EditMode._syncingPosition = false
     end
     if C_Timer and C_Timer.After then
         C_Timer.After(0.35, clearGuard)

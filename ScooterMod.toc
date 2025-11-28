@@ -46,6 +46,7 @@ core/components/unitframes/visibility.lua
 core/components/unitframes/copy.lua
 core/components/tooltip.lua
 core/debug.lua
+core/taintdebug.lua
 
 ui/ScooterTabbedSection.xml
 ui/ScooterExpandableSection.xml

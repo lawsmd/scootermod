@@ -83,32 +83,23 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         return
     end
 
-    if cmd == "sctlog" or cmd == "fontlog" then
-        if addon.ShowWorldTextFontLog then
-            addon.ShowWorldTextFontLog()
+    -- /scoot attr
+    if cmd == "attr" then
+        if addon.DumpTableAttributes then
+            addon:DumpTableAttributes()
         else
-            addon:Print("World Text font log not available.")
+            addon:Print("Attribute dumper not available.")
         end
         return
     end
 
-    -- /scoot zorder uf <unit>
-    if cmd == "zorder" then
-        local sub = string.lower(args[2] or "")
-        if sub == "uf" then
-            local unit = string.lower(args[3] or "")
-            if unit == "player" or unit == "target" or unit == "focus" or unit == "pet" then
-                if addon.DebugDumpZOrderUF then
-                    addon.DebugDumpZOrderUF(unit)
-                else
-                    addon:Print("Z-Order debug not available.")
-                end
-            else
-                addon:Print("Usage: /scoot zorder uf <player|target|focus|pet>")
-            end
-            return
+    -- /scoot taint <on|off|log|clear|status>
+    if cmd == "taint" then
+        if addon.TaintDebug and addon.TaintDebug.HandleSlashCommand then
+            addon.TaintDebug.HandleSlashCommand(args)
+        else
+            addon:Print("Taint debug module not loaded.")
         end
-        addon:Print("Usage: /scoot zorder uf <player|target|focus|pet>")
         return
     end
 

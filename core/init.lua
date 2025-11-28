@@ -410,9 +410,8 @@ function addon:ADDON_LOADED(event, name)
 	end
 end
 
--- Slash command to dump current inspector selection
-SLASH_ATTRCOPY1 = "/attrcopy"
-SlashCmdList.ATTRCOPY = function(msg)
+-- Expose the attribute dump logic for the slash command
+function addon:DumpTableAttributes()
 	local parent = _G.TableAttributeDisplay
 	if parent and parent:IsShown() and parent.focusedTable then
 		local dump = Scooter_TableInspectorBuildDump(parent.focusedTable)
@@ -428,5 +427,5 @@ SlashCmdList.ATTRCOPY = function(msg)
 		Scooter_ShowCopyWindow("Frame Attributes - "..name, dump)
 		return
 	end
-	print("/attrcopy: No Table Inspector window or highlight frame found.")
+	addon:Print("No Table Inspector window or highlight frame found to dump.")
 end

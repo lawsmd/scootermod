@@ -171,6 +171,11 @@ local MAX_POWER_BAR_HEIGHT = 40
 local MIN_CLASS_RESOURCE_SCALE_PERCENT = 50
 local MAX_CLASS_RESOURCE_SCALE_PERCENT = 150
 
+-- Capture default CVar values to restore them if Static Mode is disabled
+local defaultTopInset = (GetCVarDefault and GetCVarDefault("nameplateSelfTopInset")) or 0.5
+local defaultBottomInset = (GetCVarDefault and GetCVarDefault("nameplateSelfBottomInset")) or 0.2
+
+
 -- Power Bar dimension persistence hooks.
 --
 -- Problem: Blizzard's SetupClassNameplateBars() sets BOTH TOPLEFT and TOPRIGHT anchor points on the power bar:
@@ -1246,11 +1251,22 @@ addon:RegisterComponentInitializer(function(self)
         name = "PRD — Global",
         frameName = nil,
         settings = {
+            staticPosition = { type = "addon", default = false, ui = {
+                label = "Lock Vertical Position", widget = "checkbox", section = "Positioning", order = 1,
+                tooltip = "Prevents the PRD from moving up and down as your camera angle changes."
+            }},
+            -- Y Offset slider: Displayed as -50 to 50, stored internally as -50 to 50.
+            -- When applying CVars, we transform: (value + 50) / 100 to get the 0-1 range.
+            -- -50 = bottom of screen, 0 = center, 50 = top of screen.
+            screenPosition = { type = "addon", default = 0, ui = {
+                label = "Y Offset", widget = "slider", min = -50, max = 50, step = 1, section = "Positioning", order = 2, hidden = true,
+                tooltip = "Sets the fixed vertical position on screen (-50 = Bottom, 0 = Center, 50 = Top)."
+            }},
             positionX = { type = "addon", default = 0, ui = {
-                label = "X Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 1
+                label = "X Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 3
             }},
             positionY = { type = "addon", default = 0, ui = {
-                label = "Y Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 2
+                label = "Y Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 4
             }},
         },
     })
@@ -1258,6 +1274,69 @@ addon:RegisterComponentInitializer(function(self)
         if not addon or not addon.Components then
             return
         end
+        
+        -- Handle Static Position Logic (Vertical Clamping)
+        local db = component.db or {}
+        local settings = component.settings
+        local isStatic = db.staticPosition
+        
+        -- Update UI visibility states based on lock status
+        local visibilityChanged = false
+        if settings then
+            if settings.positionY and settings.positionY.ui then
+                if settings.positionY.ui.hidden ~= isStatic then
+                    settings.positionY.ui.hidden = isStatic
+                    visibilityChanged = true
+                end
+            end
+            if settings.screenPosition and settings.screenPosition.ui then
+                if settings.screenPosition.ui.hidden ~= (not isStatic) then
+                    settings.screenPosition.ui.hidden = not isStatic
+                    visibilityChanged = true
+                end
+            end
+        end
+        
+        -- Apply the CVars
+        if isStatic then
+            -- Calculate a ~12% band centered on the user's choice
+            -- Screen position is stored as -50 to 50 (bottom to top), with 0 = center.
+            -- Transform to 0-1 range: (value + 50) / 100
+            local posPercent = ((db.screenPosition or 0) + 50) / 100
+            
+            -- Insets are measured from the edge:
+            -- TopInset: 0 = Top edge, 1 = Bottom edge
+            -- BottomInset: 0 = Bottom edge, 1 = Top edge
+            
+            -- We want a gap of ~0.12 total to hold the nameplate
+            local bandHeight = 0.12
+            local halfBand = bandHeight / 2
+            
+            -- Clamp center so the band doesn't go off screen
+            if posPercent < halfBand then posPercent = halfBand end
+            if posPercent > (1 - halfBand) then posPercent = 1 - halfBand end
+            
+            -- Calculate insets
+            local bottomInset = posPercent - halfBand
+            local topInset = 1.0 - (posPercent + halfBand)
+            
+            if C_CVar and C_CVar.SetCVar then
+                pcall(C_CVar.SetCVar, "nameplateSelfTopInset", topInset)
+                pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", bottomInset)
+            end
+        else
+            -- Restore defaults
+            if C_CVar and C_CVar.SetCVar then
+                pcall(C_CVar.SetCVar, "nameplateSelfTopInset", defaultTopInset)
+                pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", defaultBottomInset)
+            end
+        end
+        
+        -- Refresh the panel if visibility toggled (deferred to avoid flicker/recursion)
+        if visibilityChanged and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
+             addon.SettingsPanel.RefreshCurrentCategoryDeferred()
+        end
+
         local comps = addon.Components
         local function apply(target)
             if target and target.ApplyStyling then

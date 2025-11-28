@@ -1728,7 +1728,10 @@ local function createComponentRenderer(componentId)
                                             if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
                                         end
                                         if settingId == "positionX" or settingId == "positionY" then
-                                            if addon.EditMode and addon.EditMode.SyncComponentToEditMode then
+                                            -- Use position-only sync to avoid cascade of syncing all Edit Mode settings.
+                                            -- The new SyncComponentPositionToEditMode handles Save/Apply internally,
+                                            -- so we do NOT call safeSaveOnly()/requestApply() here to avoid double calls.
+                                            if addon.EditMode and addon.EditMode.SyncComponentPositionToEditMode then
                                                 -- Mark this as a recent position write so the back-sync layer
                                                 -- can skip immediately re-writing the same offsets back into
                                                 -- the DB. This prevents a second Settings row rebuild that
@@ -1742,8 +1745,9 @@ local function createComponentRenderer(componentId)
                                                 component._recentPositionWrite.x = component.db.positionX
                                                 component._recentPositionWrite.y = component.db.positionY
 
-                                                addon.EditMode.SyncComponentToEditMode(component)
-                                                safeSaveOnly(); requestApply()
+                                                addon.EditMode.SyncComponentPositionToEditMode(component)
+                                                -- NOTE: Do NOT call safeSaveOnly()/requestApply() here!
+                                                -- SyncComponentPositionToEditMode handles Save/Apply internally.
                                             end
                                     elseif settingId == "opacity" then
                                             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
@@ -2643,9 +2647,12 @@ local function createComponentRenderer(componentId)
                                     end
                                     
                                     -- Create or reuse label
+                                    -- NOTE: Settings labels must use 36.5px left offset for consistent
+                                    -- indentation across all control types (sliders, checkboxes, dropdowns).
+                                    -- See INTERFACE.md "Settings Row Label Indentation" for requirements.
                                     if not frame.ScooterTextEntryLabel then
                                         local lbl = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-                                        lbl:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                                        lbl:SetPoint("LEFT", frame, "LEFT", 36.5, 0)
                                         frame.ScooterTextEntryLabel = lbl
                                     end
                                     frame.ScooterTextEntryLabel:SetText(capturedLabel or "")

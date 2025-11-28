@@ -92,7 +92,7 @@ local function renderProfilesManage()
                     end
                 end
             end)
-            UIDropDownMenu_SetWidth(dropdown, 220)
+            UIDropDownMenu_SetWidth(dropdown, 180)
             UIDropDownMenu_SetSelectedValue(dropdown, activeKey)
             UIDropDownMenu_SetText(dropdown, activeText or activeKey or "Select a layout")
             addon.SettingsPanel._profileDropdown = dropdown
@@ -365,44 +365,6 @@ local function renderProfilesManage()
                 return panel:IsSectionExpanded("profilesManage", "ActiveLayout")
             end)
             table.insert(init, sectionRow)
-        end
-
-        do
-            local spacer = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            spacer.GetExtent = function() return 12 end
-            spacer.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                if frame.InfoText then frame.InfoText:Hide() end
-                if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
-                if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
-                if frame.RenameBtn then frame.RenameBtn:Hide() end
-                if frame.CopyBtn then frame.CopyBtn:Hide() end
-                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
-                if frame.CreateBtn then frame.CreateBtn:Hide() end
-                if frame.SpecEnableCheck then frame.SpecEnableCheck:Hide() end
-                if frame.SpecIcon then frame.SpecIcon:Hide() end
-                if frame.SpecName then frame.SpecName:Hide() end
-                if frame.SpecDropdown then frame.SpecDropdown:Hide() end
-            end
-            table.insert(init, spacer)
-        end
-
-        do
-            local buttonRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
-            buttonRow.GetExtent = function() return 0 end
-            buttonRow.InitFrame = function(self, frame)
-                EnsureCallbackContainer(frame)
-                if frame.Text then frame.Text:Hide() end
-                if frame.ButtonContainer then
-                    frame.ButtonContainer:Hide()
-                    frame.ButtonContainer:SetAlpha(0)
-                    frame.ButtonContainer:EnableMouse(false)
-                end
-                frame:Hide()
-            end
-            buttonRow:AddShownPredicate(function() return false end)
-            table.insert(init, buttonRow)
         end
 
         do

@@ -384,7 +384,9 @@ local function createUFRenderer(componentId, title)
 			When adding or reordering tabs in Unit Frames tabbed sections, follow this priority.
 		]]--
 		-- Health Bar tabs (Direction for Target/Focus, then Style, Border, Text variants)
+		-- Player/Pet now has Visibility tab: Style(A), Border(B), Visibility(C), % Text(D), Value Text(E)
 		local isTargetOrFocusHB = (componentId == "ufTarget" or componentId == "ufFocus")
+		local isPlayerHB = (componentId == "ufPlayer")
 		local hbTabs = { sectionTitle = "" }
 		if isTargetOrFocusHB then
 			hbTabs.tabAText = "Direction"
@@ -392,7 +394,15 @@ local function createUFRenderer(componentId, title)
 			hbTabs.tabCText = "Border"
 			hbTabs.tabDText = "% Text"
 			hbTabs.tabEText = "Value Text"
+		elseif isPlayerHB then
+			-- Player gets Visibility tab between Border and Text tabs
+			hbTabs.tabAText = "Style"
+			hbTabs.tabBText = "Border"
+			hbTabs.tabCText = "Visibility"
+			hbTabs.tabDText = "% Text"
+			hbTabs.tabEText = "Value Text"
 		else
+			-- Pet keeps original 4-tab layout
 			hbTabs.tabAText = "Style"
 			hbTabs.tabBText = "Border"
 			hbTabs.tabCText = "% Text"
@@ -511,8 +521,8 @@ local function createUFRenderer(componentId, title)
 					end
 				end
 
-				-- PageC: % Text (or PageB if no Direction tab)
-				local percentTextPage = isTargetOrFocusHB and frame.PageD or frame.PageC
+				-- % Text page: PageD for Target/Focus and Player (both have extra tabs before it), PageC for Pet
+				local percentTextPage = (isTargetOrFocusHB or isPlayerHB) and frame.PageD or frame.PageC
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -571,8 +581,8 @@ local function createUFRenderer(componentId, title)
 						y)
 				end
 
-				-- PageD: Value Text (or PageD if no Direction tab)
-				local valueTextPage = isTargetOrFocusHB and frame.PageE or frame.PageD
+				-- Value Text page: PageE for Target/Focus and Player (both have extra tabs before it), PageD for Pet
+				local valueTextPage = (isTargetOrFocusHB or isPlayerHB) and frame.PageE or frame.PageD
 				do
 					local function applyNow()
 						if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
@@ -917,6 +927,71 @@ local function createUFRenderer(componentId, title)
 						if sf.Text and sf.Text.SetTextColor then
 							if enabled then sf.Text:SetTextColor(1, 1, 1, 1) else sf.Text:SetTextColor(0.6, 0.6, 0.6, 1) end
 						end
+						y.y = y.y - 34
+					end
+				end
+
+				-- PageC: Visibility (Player Health Bar only)
+				if isPlayerHB then
+					do
+						local function applyNow()
+							local uk = unitKey()
+							if uk and addon and addon.ApplyUnitFrameBarTexturesFor then
+								addon.ApplyUnitFrameBarTexturesFor(uk)
+							end
+						end
+
+						local y = { y = -50 }
+
+						-- Hide Over Absorb Glow checkbox
+						local label = "Hide Over Absorb Glow"
+						local function getter()
+							local t = ensureUFDB()
+							return t and not not t.healthBarHideOverAbsorbGlow or false
+						end
+						local function setter(v)
+							local t = ensureUFDB(); if not t then return end
+							t.healthBarHideOverAbsorbGlow = (v and true) or false
+							applyNow()
+						end
+
+						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+
+						-- Add info icon to the LEFT of the checkbox label
+						if panel and panel.CreateInfoIconForLabel then
+							local tooltipText = "Hides the glow effect on the edge of your health bar that appears when you have an absorb shield providing effective health in excess of your maximum health."
+							local targetLabel = row.Text or (row.Checkbox and row.Checkbox.Text)
+							if targetLabel and not row.ScooterOverAbsorbGlowInfoIcon then
+								row.ScooterOverAbsorbGlowInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltipText, 5, 0, 32)
+								if row.ScooterOverAbsorbGlowInfoIcon then
+									local function reposition()
+										local icon = row.ScooterOverAbsorbGlowInfoIcon
+										local lbl = row.Text or (row.Checkbox and row.Checkbox.Text)
+										if icon and lbl then
+											icon:ClearAllPoints()
+											icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+										end
+									end
+									if C_Timer and C_Timer.After then
+										C_Timer.After(0, reposition)
+									else
+										reposition()
+									end
+								end
+							end
+						end
+
 						y.y = y.y - 34
 					end
 				end

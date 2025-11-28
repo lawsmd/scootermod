@@ -204,11 +204,24 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 	end
 
 	-- Foreground (status bar fill)
-	if fgPath and barFrame.SetStatusBarTexture then
-		pcall(barFrame.SetStatusBarTexture, barFrame, fgPath)
-		local tex = barFrame:GetStatusBarTexture()
-		if tex and tex.SetDrawLayer then pcall(tex.SetDrawLayer, tex, "ARTWORK", 0) end
-		if tex and tex.SetSnapToPixelGrid then pcall(tex.SetSnapToPixelGrid, tex, false) end
+	-- Guard: Only apply texture if it's actually changing. This prevents flickering on
+	-- StatusBars with no progress (e.g., infinite/timer-less buffs in Tracked Bars) when
+	-- unrelated settings trigger ApplyStyles() and cause redundant SetStatusBarTexture calls.
+	if barFrame.SetStatusBarTexture then
+		if fgPath then
+			local needsUpdate = (barFrame._ScooterModFGPath ~= fgPath)
+			if needsUpdate then
+				barFrame._ScooterModFGPath = fgPath
+				pcall(barFrame.SetStatusBarTexture, barFrame, fgPath)
+			end
+			local tex = barFrame:GetStatusBarTexture()
+			if tex and tex.SetDrawLayer then pcall(tex.SetDrawLayer, tex, "ARTWORK", 0) end
+			if tex and tex.SetSnapToPixelGrid then pcall(tex.SetSnapToPixelGrid, tex, false) end
+		elseif barFrame._ScooterModFGPath then
+			-- Foreground key changed to "default" - clear our stored path so future
+			-- custom textures will be applied correctly
+			barFrame._ScooterModFGPath = nil
+		end
 	end
 
 	-- Background: prefer our own background texture anchored to the bar
@@ -217,20 +230,26 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		barFrame.ScooterModBG:SetAllPoints(barFrame)
 	end
 	if bgPath then
-		-- Check if it's an atlas or a texture path
-		local isAtlas = type(bgPath) == "string" and not bgPath:find("\\") and not bgPath:find("/")
-		if isAtlas then
-			pcall(barFrame.ScooterModBG.SetAtlas, barFrame.ScooterModBG, bgPath, true)
-		else
-			pcall(barFrame.ScooterModBG.SetTexture, barFrame.ScooterModBG, bgPath)
+		-- Guard: Only update background texture if it's actually changing
+		local bgNeedsUpdate = (barFrame._ScooterModBGPath ~= bgPath)
+		if bgNeedsUpdate then
+			barFrame._ScooterModBGPath = bgPath
+			-- Check if it's an atlas or a texture path
+			local isAtlas = type(bgPath) == "string" and not bgPath:find("\\") and not bgPath:find("/")
+			if isAtlas then
+				pcall(barFrame.ScooterModBG.SetAtlas, barFrame.ScooterModBG, bgPath, true)
+			else
+				pcall(barFrame.ScooterModBG.SetTexture, barFrame.ScooterModBG, bgPath)
+			end
 		end
-		-- Apply opacity (default 50% for a subtle background effect)
+		-- Apply opacity (always check as this can change independently)
 		local opacity = tonumber(backgroundOpacity) or 50
 		opacity = math.max(0, math.min(100, opacity)) / 100
 		pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, opacity)
 		barFrame.ScooterModBG:Show()
 	else
 		-- If no background selected, hide our overlay and let stock show
+		barFrame._ScooterModBGPath = nil
 		barFrame.ScooterModBG:Hide()
 	end
 

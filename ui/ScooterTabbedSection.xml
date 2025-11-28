@@ -106,4 +106,7 @@
   <Frame name="ScooterActiveListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
   <Frame name="ScooterSpecEnableListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
   <Frame name="ScooterSpecRowListElementTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
+  <!-- Separate pool for the Presets page hero row to prevent bleed-through when switching categories -->
+  <Frame name="ScooterPresetsHeroTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
+  <Frame name="ScooterPresetsEmptyTemplate" inherits="SettingsListElementTemplate" virtual="true"/>
 </Ui>

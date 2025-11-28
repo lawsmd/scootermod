@@ -430,6 +430,53 @@ local function SetPowerFeedbackHidden(ownerFrame, hidden)
 end
 Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
 
+-- Hide/show the Over Absorb Glow on the Player Health Bar
+-- This glow appears on the edge of the health bar when absorb shields exceed max health.
+-- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.OverAbsorbGlow
+-- ownerFrame: the HealthBar frame that contains the OverAbsorbGlow child
+-- hidden: boolean - true to hide the glow, false to restore it
+local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local glowFrame = ownerFrame.OverAbsorbGlow
+    if not glowFrame or (glowFrame.IsForbidden and glowFrame:IsForbidden()) then
+        return
+    end
+    glowFrame._ScootOverAbsorbGlowHidden = not not hidden
+    if glowFrame._ScootOverAbsorbGlowHidden then
+        -- Hide the glow
+        if glowFrame.Hide then
+            pcall(glowFrame.Hide, glowFrame)
+        end
+        if glowFrame.SetAlpha then
+            pcall(glowFrame.SetAlpha, glowFrame, 0)
+        end
+        -- Hook Show to prevent Blizzard from showing it while hidden
+        if not glowFrame._ScootOverAbsorbGlowHooked then
+            glowFrame._ScootOverAbsorbGlowHooked = true
+            local originalShow = glowFrame.Show
+            if originalShow then
+                glowFrame.Show = function(self, ...)
+                    if self._ScootOverAbsorbGlowHidden then
+                        return -- Block the show call
+                    end
+                    return originalShow(self, ...)
+                end
+                glowFrame._ScootOriginalShow = originalShow
+            end
+        end
+    else
+        -- Restore visibility - the glow will show naturally when Blizzard calls Show
+        if glowFrame.SetAlpha then
+            pcall(glowFrame.SetAlpha, glowFrame, 1)
+        end
+        -- Note: We don't need to manually call Show here since Blizzard will
+        -- show it automatically when absorb shields exceed max health
+    end
+end
+Util.SetOverAbsorbGlowHidden = SetOverAbsorbGlowHidden
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 

@@ -3,6 +3,102 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
+--------------------------------------------------------------------------------
+-- Proc Glow Animation Fix
+--------------------------------------------------------------------------------
+-- When a proc/spell activation overlay fires, Blizzard's ActionButtonSpellAlertManager
+-- creates a SpellActivationAlert frame sized to the button's current dimensions.
+-- If ScooterMod has customized the icon to a non-square ratio (e.g., wider than tall),
+-- the proc glow animation initially appears square until Blizzard's layout catches up (~0.5s).
+--
+-- This fix hooks ShowAlert and immediately resizes the ProcLoopFlipbook and
+-- SpellActivationAlert frame to match ScooterMod's custom dimensions.
+--------------------------------------------------------------------------------
+
+local CDM_VIEWERS = {
+    EssentialCooldownViewer = "essentialCooldowns",
+    UtilityCooldownViewer = "utilityCooldowns",
+    BuffIconCooldownViewer = "trackedBuffs",
+}
+
+local function GetScooterModIconDimensions(itemFrame)
+    -- Determine which CDM viewer this item belongs to
+    local parent = itemFrame:GetParent()
+    if not parent then return nil, nil end
+    
+    local parentName = parent:GetName()
+    local componentId = parentName and CDM_VIEWERS[parentName]
+    if not componentId then return nil, nil end
+    
+    -- Get the component's DB settings
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return nil, nil end
+    
+    local width = component.db.iconWidth or (component.settings and component.settings.iconWidth and component.settings.iconWidth.default)
+    local height = component.db.iconHeight or (component.settings and component.settings.iconHeight and component.settings.iconHeight.default)
+    
+    return width, height
+end
+
+local function UpdateProcGlowSize(itemFrame)
+    local alertFrame = itemFrame.SpellActivationAlert
+    if not alertFrame then return end
+    
+    local width, height = GetScooterModIconDimensions(itemFrame)
+    if not width or not height then return end
+    
+    -- Resize the SpellActivationAlert frame to match ScooterMod's custom icon dimensions
+    -- Blizzard uses a 1.4 multiplier for the alert frame size
+    local alertWidth = width * 1.4
+    local alertHeight = height * 1.4
+    alertFrame:SetSize(alertWidth, alertHeight)
+    
+    -- Explicitly resize and reposition the ProcLoopFlipbook texture
+    -- This is the key fix - the flipbook uses setAllPoints but doesn't update immediately
+    if alertFrame.ProcLoopFlipbook then
+        alertFrame.ProcLoopFlipbook:ClearAllPoints()
+        alertFrame.ProcLoopFlipbook:SetSize(alertWidth, alertHeight)
+        alertFrame.ProcLoopFlipbook:SetPoint("CENTER", alertFrame, "CENTER", 0, 0)
+    end
+    
+    -- Also resize ProcStartFlipbook if present (the initial burst animation)
+    if alertFrame.ProcStartFlipbook then
+        -- ProcStartFlipbook is typically larger, using a 3x multiplier from Blizzard's template (150/50)
+        local startMultiplier = 3
+        alertFrame.ProcStartFlipbook:ClearAllPoints()
+        alertFrame.ProcStartFlipbook:SetSize(width * startMultiplier, height * startMultiplier)
+        alertFrame.ProcStartFlipbook:SetPoint("CENTER", alertFrame, "CENTER", 0, 0)
+    end
+end
+
+-- Hook ActionButtonSpellAlertManager.ShowAlert to fix proc glow sizing for CDM icons
+local function HookProcGlowSizing()
+    if not ActionButtonSpellAlertManager then return end
+    if addon._procGlowHooked then return end
+    
+    hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
+        -- Only process CDM item frames (they have a parent that's a CooldownViewer)
+        if not actionButton then return end
+        local parent = actionButton:GetParent()
+        if not parent then return end
+        
+        local parentName = parent:GetName()
+        if not parentName or not CDM_VIEWERS[parentName] then return end
+        
+        -- Defer slightly to ensure the alert frame has been created
+        C_Timer.After(0, function()
+            UpdateProcGlowSize(actionButton)
+        end)
+    end)
+    
+    addon._procGlowHooked = true
+end
+
+-- Initialize the hook when the addon loads
+addon:RegisterComponentInitializer(function()
+    HookProcGlowSizing()
+end)
+
 function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not component or not child then return end
     if component.id ~= "trackedBars" then return end
@@ -169,12 +265,13 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         else
             if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
             if addon.Borders and addon.Borders.ApplySquare then
+                -- Use levelOffset to elevate the border above bar content, but don't set
+                -- containerStrata so it inherits parent's strata and stays below Blizzard menus
                 addon.Borders.ApplySquare(barFrame, {
                     size = thickness,
                     color = color,
                     layer = "OVERLAY",
                     layerSublevel = 7,
-                    containerStrata = "HIGH",
                     levelOffset = 5,
                     containerParent = barFrame,
                     expandX = 1,
@@ -276,7 +373,13 @@ local function ApplyCooldownViewerStyling(self)
     end
 
     for _, child in ipairs({ frame:GetChildren() }) do
-        if width and height and child.SetSize and self.id ~= "trackedBars" then child:SetSize(width, height) end
+        if width and height and child.SetSize and self.id ~= "trackedBars" then
+            child:SetSize(width, height)
+            -- Update any active proc glow animation to match the new icon dimensions
+            if child.SpellActivationAlert then
+                UpdateProcGlowSize(child)
+            end
+        end
         if self.id ~= "trackedBars" then
             if self.db.borderEnable then
                 local styleKey = self.db.borderStyle or "square"

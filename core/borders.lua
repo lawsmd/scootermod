@@ -79,7 +79,10 @@ function Borders.ApplySquare(frame, opts)
     local layer = (type(opts.layer) == "string") and opts.layer or "ARTWORK"
     local layerSublevel = tonumber(opts.layerSublevel) or 0
     local container
-    if opts.containerStrata then
+    -- Create a container if either containerStrata OR levelOffset is specified.
+    -- If containerStrata is nil, ensureContainer will inherit the parent frame's strata,
+    -- which keeps borders below Blizzard menus while still allowing elevated frame level.
+    if opts.containerStrata or opts.levelOffset then
         container = ensureContainer(frame, opts.containerStrata, opts.levelOffset, opts.containerParent)
     end
     local e = ensureSquare(frame, layer, layerSublevel, container)
