@@ -26,18 +26,18 @@ local panel = addon.SettingsPanel
 -- ScooterMod brand green color
 local brandR, brandG, brandB = 0.20, 0.90, 0.30
 
+-- Fixed font size for styled tooltips (Roboto renders ~30% larger than default fonts,
+-- so we use a smaller fixed size rather than the default ~12pt)
+local TOOLTIP_FONT_SIZE = 12
+
 -- Helper function to apply Roboto + White styling to GameTooltip
--- Reduces font size by 30% since Roboto renders visually larger than default fonts
 local function styleTooltip()
     if panel and panel.ApplyRobotoWhite then
         local regions = { GameTooltip:GetRegions() }
         for i = 1, #regions do
             local region = regions[i]
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                -- Get the current font size and reduce by 30%
-                local _, currentSize = region:GetFont()
-                local reducedSize = math.floor((currentSize or 12) * 0.7 + 0.5)
-                panel.ApplyRobotoWhite(region, reducedSize)
+                panel.ApplyRobotoWhite(region, TOOLTIP_FONT_SIZE)
             end
         end
     end

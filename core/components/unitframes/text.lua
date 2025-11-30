@@ -772,6 +772,8 @@ do
 		-- Optional: widen the name container for Target/Focus to reduce truncation.
 		-- This adjusts the Name FontString's width and anchor so the right edge
 		-- stays aligned relative to the ReputationColor strip while growing left.
+		-- NOTE: This function MUST incorporate the configured offset values because it
+		-- runs AFTER applyTextStyle() and overwrites the position set there.
 		addon._ufNameContainerBaselines = addon._ufNameContainerBaselines or {}
 		local function applyNameContainerWidth(unitKey, nameFSLocal)
 			if not nameFSLocal then return end
@@ -784,6 +786,10 @@ do
 
 			-- Clamp slider semantics to [80,150] (matches UI slider).
 			if pct < 80 then pct = 80 elseif pct > 150 then pct = 150 end
+
+			-- Read configured offset values (same as applyTextStyle uses)
+			local configOffsetX = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+			local configOffsetY = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
 
 			local key = unitKey .. ":nameContainer"
 			local baseline = addon._ufNameContainerBaselines[key]
@@ -804,18 +810,38 @@ do
 				addon._ufNameContainerBaselines[key] = baseline
 			end
 
-			-- When at 100%, restore original width/anchor and bail.
+			-- Read configured alignment (Target/Focus only)
+			local alignment = styleCfg.alignment or "LEFT"
+
+			-- Helper to force FontString redraw after alignment change
+			local function forceTextRedraw(fs)
+				if fs and fs.GetText and fs.SetText then
+					local txt = fs:GetText()
+					if txt then
+						fs:SetText("")
+						fs:SetText(txt)
+					end
+				end
+			end
+
+			-- When at 100%, restore original width/anchor (with offset) and bail.
 			if pct == 100 then
 				if nameFSLocal.ClearAllPoints and nameFSLocal.SetPoint and baseline.width then
 					nameFSLocal:SetWidth(baseline.width)
+					-- Apply text alignment within the container
+					if nameFSLocal.SetJustifyH then
+						pcall(nameFSLocal.SetJustifyH, nameFSLocal, alignment)
+					end
 					nameFSLocal:ClearAllPoints()
 					nameFSLocal:SetPoint(
 						baseline.point or "TOPLEFT",
 						baseline.relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame,
 						baseline.relPoint or baseline.point or "TOPLEFT",
-						baseline.x or 0,
-						baseline.y or 0
+						(baseline.x or 0) + configOffsetX,
+						(baseline.y or 0) + configOffsetY
 					)
+					-- Force redraw to apply alignment visually
+					forceTextRedraw(nameFSLocal)
 				end
 				return
 			end
@@ -840,16 +866,22 @@ do
 			if nameFSLocal.SetWidth then
 				nameFSLocal:SetWidth(newWidth)
 			end
+			-- Apply text alignment within the container
+			if nameFSLocal.SetJustifyH then
+				pcall(nameFSLocal.SetJustifyH, nameFSLocal, alignment)
+			end
 			if nameFSLocal.ClearAllPoints and nameFSLocal.SetPoint then
 				nameFSLocal:ClearAllPoints()
 				nameFSLocal:SetPoint(
 					point or "TOPLEFT",
 					relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame,
 					relPoint or point or "TOPLEFT",
-					xOff or 0,
-					yOff or 0
+					(xOff or 0) + configOffsetX,
+					(yOff or 0) + configOffsetY
 				)
 			end
+			-- Force redraw to apply alignment visually
+			forceTextRedraw(nameFSLocal)
 		end
 
 	local function applyTextStyle(fs, styleCfg, baselineKey)
@@ -1110,6 +1142,47 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+	end
+
+	-- Hook TargetFrame_Update and FocusFrame_Update to reapply name text styling
+	-- (including alignment) after Blizzard's updates reset properties.
+	-- Use hooksecurefunc to avoid taint; defer reapply by one frame to ensure
+	-- Blizzard's update has fully completed.
+	local _nameLevelTextHooksInstalled = false
+	local function installNameLevelTextHooks()
+		if _nameLevelTextHooksInstalled then return end
+		_nameLevelTextHooksInstalled = true
+
+		if _G.hooksecurefunc and type(_G.TargetFrame_Update) == "function" then
+			_G.hooksecurefunc("TargetFrame_Update", function()
+				if _G.C_Timer and _G.C_Timer.After then
+					_G.C_Timer.After(0, function()
+						if addon.ApplyUnitFrameNameLevelTextFor then
+							addon.ApplyUnitFrameNameLevelTextFor("Target")
+						end
+					end)
+				end
+			end)
+		end
+
+		if _G.hooksecurefunc and type(_G.FocusFrame_Update) == "function" then
+			_G.hooksecurefunc("FocusFrame_Update", function()
+				if _G.C_Timer and _G.C_Timer.After then
+					_G.C_Timer.After(0, function()
+						if addon.ApplyUnitFrameNameLevelTextFor then
+							addon.ApplyUnitFrameNameLevelTextFor("Focus")
+						end
+					end)
+				end
+			end)
+		end
+	end
+
+	-- Install hooks on first style application
+	local _origApplyAll = addon.ApplyAllUnitFrameNameLevelText
+	addon.ApplyAllUnitFrameNameLevelText = function()
+		installNameLevelTextHooks()
+		_origApplyAll()
 	end
 end
 

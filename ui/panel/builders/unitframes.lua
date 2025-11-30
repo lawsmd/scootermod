@@ -104,7 +104,7 @@ local function createUFRenderer(componentId, title)
 					function() local x = readOffsets(); return x end,
 					function(v) writeOffsets(v, nil) end,
 					0)
-				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
 				row.GetExtent = function() return 34 end
 				-- Present as numeric text input (previous behavior), not a slider
 				if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
@@ -128,7 +128,7 @@ local function createUFRenderer(componentId, title)
 					function() local _, y = readOffsets(); return y end,
 					function(v) writeOffsets(nil, v) end,
 					0)
-				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
 				row.GetExtent = function() return 34 end
 				-- Present as numeric text input (previous behavior), not a slider
 				if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
@@ -175,7 +175,7 @@ local function createUFRenderer(componentId, title)
 					end
 				end
 				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
 				row.GetExtent = function() return 34 end
 				do
 					local base = row.InitFrame
@@ -230,7 +230,7 @@ local function createUFRenderer(componentId, title)
 					end
 				end
 				local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
 				row.GetExtent = function() return 34 end
 				do
 					local base = row.InitFrame
@@ -279,7 +279,7 @@ local function createUFRenderer(componentId, title)
 				-- own InitFrame/OnSettingValueChanged handlers; no structural re-render here.
 			end
 			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-			local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
 			row.GetExtent = function() return 34 end
 			do
 				local base = row.InitFrame
@@ -3515,6 +3515,21 @@ local function createUFRenderer(componentId, title)
 				insideButton = true,
 			})
 		end
+
+			-- Name Text Alignment (Target/Focus only)
+			if componentId == "ufTarget" or componentId == "ufFocus" then
+				local function alignOpts()
+					local c = Settings.CreateControlTextContainer()
+					c:Add("LEFT", "Left")
+					c:Add("CENTER", "Center")
+					c:Add("RIGHT", "Right")
+					return c:GetData()
+				end
+				addDropdown(frame.PageC, "Name Text Alignment", alignOpts,
+					function() local t = ensureUFDB() or {}; local s = t.textName or {}; return s.alignment or "LEFT" end,
+					function(v) local t = ensureUFDB(); if not t then return end; t.textName = t.textName or {}; t.textName.alignment = v or "LEFT"; applyNow() end,
+					y)
+			end
 			
 			-- Name Text Offset X
 			addSlider(frame.PageC, "Name Text Offset X", -100, 100, 1,
@@ -3636,7 +3651,7 @@ local function createUFRenderer(componentId, title)
 		-- 300px was barely sufficient for 7 controls; with the 8th "Name Container Width"
 		-- control on the Name Text tab we align with the 330px class used elsewhere
 		-- for tabs with 7-8 settings (see TABBEDSECTIONS.md).
-		nltInit.GetExtent = function() return 330 end
+		nltInit.GetExtent = function() return 364 end
 		nltInit:AddShownPredicate(function()
 			return panel:IsSectionExpanded(componentId, "Name & Level Text")
 		end)

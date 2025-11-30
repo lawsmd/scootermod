@@ -124,7 +124,7 @@ function panel.UpdateCollapseButtonVisibility()
         -- Profiles pages and home page do not have collapsible component sections
         local compId = entry and entry.componentId
         local isApplyAll = compId and compId:match("^applyAll")
-        if entry and (compId == "profilesManage" or compId == "profilesPresets" or compId == "home" or isApplyAll) then
+        if entry and (compId == "profilesManage" or compId == "profilesPresets" or compId == "profilesRules" or compId == "home" or isApplyAll) then
             hide = true
         end
         -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
@@ -1485,6 +1485,7 @@ local function BuildCategories()
 	-- Profiles / Apply All children
 	addEntry("profilesManage", addon.SettingsPanel.RenderProfilesManage())
 	addEntry("profilesPresets", addon.SettingsPanel.RenderProfilesPresets())
+	addEntry("profilesRules", addon.SettingsPanel.RenderProfilesRules())
 	addEntry("applyAllFonts", addon.SettingsPanel.RenderApplyAllFonts())
 	addEntry("applyAllTextures", addon.SettingsPanel.RenderApplyAllTextures())
 
@@ -1530,6 +1531,7 @@ local function BuildCategories()
 		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = true, children = {
 			{ type = "child", key = "profilesManage", label = "Manage Profiles" },
 			{ type = "child", key = "profilesPresets", label = "Presets" },
+			{ type = "child", key = "profilesRules", label = "Rules" },
 		}},
 		{ type = "parent", key = "ApplyAll", label = "Apply All", collapsible = true, children = {
 			{ type = "child", key = "applyAllFonts", label = "Fonts" },

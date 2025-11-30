@@ -125,9 +125,66 @@ function RightPane:Init(ownerFrame, container)
 end
 
 -- Update the header title text.
-function RightPane:SetTitle(text)
+-- Optional tooltipText parameter: if provided, displays a ScooterMod info icon next to the title.
+-- The title info icon uses a larger size (40px) for better visibility at the category header level.
+function RightPane:SetTitle(text, tooltipText)
     if not self.Header or not self.Header.Title then return end
     self.Header.Title:SetText(text or "")
+
+    -- Handle info icon for category header tooltip
+    local header = self.Header
+    local TITLE_INFO_ICON_SIZE = 40  -- Larger size for category header visibility
+    if tooltipText and tooltipText ~= "" then
+        -- Create or reuse the title info icon
+        if not header.TitleInfoIcon then
+            if panel.CreateInfoIconForLabel then
+                -- Use deferred positioning to ensure the title text width is available
+                local icon = panel.CreateInfoIconForLabel(header.Title, tooltipText, 8, 0, TITLE_INFO_ICON_SIZE)
+                header.TitleInfoIcon = icon
+            end
+        else
+            -- Update existing icon's tooltip text and ensure it's visible
+            header.TitleInfoIcon.TooltipText = tooltipText
+            -- Update the OnEnter script with new tooltip text
+            header.TitleInfoIcon:SetScript("OnEnter", function(self)
+                if self.Highlight then self.Highlight:SetAlpha(0.3) end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT", -22, -22)
+                GameTooltip:SetText(tooltipText, nil, nil, nil, nil, true)
+                -- Style tooltip with Roboto white
+                if panel and panel.ApplyRobotoWhite then
+                    local regions = { GameTooltip:GetRegions() }
+                    for i = 1, #regions do
+                        local region = regions[i]
+                        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                            panel.ApplyRobotoWhite(region, 12)
+                        end
+                    end
+                end
+                GameTooltip:Show()
+            end)
+            header.TitleInfoIcon:Show()
+        end
+
+        -- Defer positioning to ensure title text width is computed
+        if header.TitleInfoIcon then
+            C_Timer.After(0, function()
+                if header.TitleInfoIcon and header.Title then
+                    header.TitleInfoIcon:ClearAllPoints()
+                    local textWidth = header.Title:GetStringWidth() or 0
+                    if textWidth > 0 then
+                        header.TitleInfoIcon:SetPoint("LEFT", header.Title, "LEFT", textWidth + 8, 0)
+                    else
+                        header.TitleInfoIcon:SetPoint("LEFT", header.Title, "RIGHT", 8, 0)
+                    end
+                end
+            end)
+        end
+    else
+        -- No tooltip text: hide the info icon if it exists
+        if header.TitleInfoIcon then
+            header.TitleInfoIcon:Hide()
+        end
+    end
 end
 
 local function AcquireRow(self, index, template, reuseKey)
@@ -255,10 +312,12 @@ function RightPane:Display(initializers)
                 -- Provide GetElementData/GetElementDataIndex so Blizzard mixins
                 -- such as SettingsExpandableSectionMixin can function correctly
                 -- without being hosted in a SettingsList ScrollBox.
-                if type(row.GetElementData) ~= "function" then
-                    row.GetElementData = function()
-                        return init
-                    end
+                -- CRITICAL: Always update GetElementData even on recycled frames
+                -- to ensure the current initializer (with correct unit/component
+                -- closures) is returned. Otherwise, recycled Unit Frame rows
+                -- would return stale initializers with wrong unit keys.
+                row.GetElementData = function()
+                    return init
                 end
                 if type(row.GetElementDataIndex) ~= "function" then
                     local thisIndex = index - 1

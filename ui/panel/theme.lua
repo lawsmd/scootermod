@@ -140,6 +140,36 @@ do
         end)
     end
 
+    -- Apply class-colored background to a spec badge frame
+    -- classFile is the uppercase class token (e.g., "DEATHKNIGHT", "MAGE")
+    function panel.ApplySpecBadgeTheme(badge, classFile)
+        if not badge then return end
+        local colors = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS) or {}
+        local color = classFile and colors[classFile]
+        local r, g, b = 0.3, 0.3, 0.3 -- fallback gray
+        if color then
+            r, g, b = color.r or 0.3, color.g or 0.3, color.b or 0.3
+        end
+        -- Semi-transparent class-colored background
+        if badge.SetBackdropColor then
+            badge:SetBackdropColor(r, g, b, 0.6)
+        end
+        -- Subtle darker border
+        if badge.SetBackdropBorderColor then
+            badge:SetBackdropBorderColor(r * 0.5, g * 0.5, b * 0.5, 0.8)
+        end
+    end
+
+    -- Get class color as r,g,b values (0-1)
+    function panel.GetClassColor(classFile)
+        local colors = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS) or {}
+        local color = classFile and colors[classFile]
+        if color then
+            return color.r or 1, color.g or 1, color.b or 1
+        end
+        return 1, 1, 1
+    end
+
     function panel.SkinCategoryList(categoryList)
         if not categoryList or not categoryList.ScrollBox or not categoryList.ScrollBox.ScrollTarget then return end
         local target = categoryList.ScrollBox.ScrollTarget

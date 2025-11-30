@@ -17,6 +17,9 @@ function addon:OnInitialize()
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
     end
+    if self.Rules and self.Rules.Initialize then
+        self.Rules:Initialize()
+    end
 
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
@@ -39,7 +42,12 @@ function addon:GetDefaults()
                 lastFontApplied = nil,
                 lastTextureApplied = nil,
             },
-            components = {}
+            components = {},
+            rules = {},
+            rulesState = {
+                baselines = {},
+                nextId = 1,
+            },
         },
         char = {
             specProfiles = {
@@ -204,6 +212,9 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             self.Profiles:OnPlayerSpecChanged()
         end
     end
+    if self.Rules and self.Rules.OnPlayerLogin then
+        self.Rules:OnPlayerLogin()
+    end
     self:ApplyStyles()
     -- Deferred reapply of Player textures to catch any Blizzard resets after initial apply
     -- This ensures textures persist even if Blizzard updates the frame after our initial styling
@@ -251,6 +262,9 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
     end
     if self.Profiles and self.Profiles.OnPlayerSpecChanged then
         self.Profiles:OnPlayerSpecChanged()
+    end
+    if self.Rules and self.Rules.OnPlayerSpecChanged then
+        self.Rules:OnPlayerSpecChanged()
     end
 end
 
