@@ -858,6 +858,9 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameVisibility then
         addon.ApplyAllUnitFrameVisibility()
     end
+    if addon.ApplyAllUnitFrameScaleMults then
+        addon.ApplyAllUnitFrameScaleMults()
+    end
 end
 
 function addon:ApplyEarlyComponentStyles()

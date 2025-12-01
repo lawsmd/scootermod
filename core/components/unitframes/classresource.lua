@@ -1,8 +1,9 @@
 local addonName, addon = ...
 
--- Baseline storage for managed frame offsets and scales
+-- Baseline storage for managed frame offsets
+-- NOTE: We do NOT capture frame scales because frames may retain our previously-applied
+-- scale across reloads. Class resource frames have no Edit Mode scale, so baseline is always 1.0.
 local originalPaddings = setmetatable({}, { __mode = "k" })
-local originalScales = setmetatable({}, { __mode = "k" })
 local hookedFrames = setmetatable({}, { __mode = "k" })
 local layoutHooked = false
 
@@ -117,7 +118,9 @@ local function resolveClassResourceFrames()
 	return {}, fallbackLabel
 end
 
--- Capture original padding and scale values for managed frames
+-- Capture original padding values for managed frames
+-- NOTE: We do NOT capture scale because frames may retain our applied scale across reloads.
+-- Class resource frames have no Edit Mode scale setting, so baseline is always 1.0.
 local function captureBaselines(frame)
 	if not frame then return end
 	
@@ -130,21 +133,6 @@ local function captureBaselines(frame)
 		debugPrint("Captured baseline paddings for", frame:GetName() or "unnamed",
 			"left:", originalPaddings[frame].leftPadding,
 			"top:", originalPaddings[frame].topPadding)
-	end
-	
-	-- Capture original scale
-	if not originalScales[frame] then
-		if frame.GetScale then
-			local ok, scale = pcall(frame.GetScale, frame)
-			if ok and scale then
-				originalScales[frame] = scale
-			else
-				originalScales[frame] = 1
-			end
-		else
-			originalScales[frame] = 1
-		end
-		debugPrint("Captured baseline scale for", frame:GetName() or "unnamed", ":", originalScales[frame])
 	end
 end
 
@@ -231,10 +219,10 @@ local function ensureLayoutHook()
 			local frames, _ = resolveClassResourceFrames()
 			for _, frame in ipairs(frames) do
 				-- Reapply scale (layout doesn't override this)
-				local baseScale = originalScales[frame] or 1
+				-- Baseline is always 1.0 for class resources (no Edit Mode scale)
 				local multiplier = clampScale(cfg.scale or 100) / 100
 				if frame.SetScale then
-					pcall(frame.SetScale, frame, baseScale * multiplier)
+					pcall(frame.SetScale, frame, multiplier)
 				end
 				
 				-- Reapply visibility
@@ -288,7 +276,6 @@ local function applyClassResourceForUnit(unit)
 		ensureVisibilityHooks(frame, cfg)
 		
 		local origPadding = originalPaddings[frame] or { leftPadding = 0, topPadding = 0 }
-		local baseScale = originalScales[frame] or 1
 		
 		-- POSITIONING: Use leftPadding and topPadding which the LayoutFrame system respects
 		-- This is the correct way to offset managed frames without fighting the layout manager
@@ -300,11 +287,10 @@ local function applyClassResourceForUnit(unit)
 				"left:", frame.leftPadding, "top:", frame.topPadding)
 		end
 		
-		-- SCALE: Apply scale multiplier - the layout respects child scale
+		-- SCALE: Apply scale multiplier - baseline is always 1.0 for class resources (no Edit Mode scale)
 		if frame.SetScale then
-			local newScale = baseScale * scaleMultiplier
-			pcall(frame.SetScale, frame, newScale)
-			debugPrint("Set scale for", frame:GetName() or "unnamed", "to", newScale)
+			pcall(frame.SetScale, frame, scaleMultiplier)
+			debugPrint("Set scale for", frame:GetName() or "unnamed", "to", scaleMultiplier)
 		end
 		
 		-- VISIBILITY: Use SetAlpha for managed frames (more reliable than Hide/Show)

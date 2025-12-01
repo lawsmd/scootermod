@@ -2530,6 +2530,39 @@ local function createComponentRenderer(componentId)
                                                 end
                                             end
                                         end
+                                        -- Clean up or create the Action Bar-specific info icon for Mouseover Mode
+                                        local isActionBarComponent = component.id and component.id:match("^actionBar%d$")
+                                        if frame.ScooterMouseoverModeInfoIcon and frame.ScooterMouseoverModeInfoIcon._ScooterIsActionBarIcon and not (isActionBarComponent and settingId == "mouseoverMode") then
+                                            frame.ScooterMouseoverModeInfoIcon:Hide()
+                                            frame.ScooterMouseoverModeInfoIcon:SetParent(nil)
+                                            frame.ScooterMouseoverModeInfoIcon = nil
+                                        end
+                                        if isActionBarComponent and settingId == "mouseoverMode" and panel and panel.CreateInfoIconForLabel then
+                                            local labelFS = frame.Text or (cb and cb.Text)
+                                            if labelFS then
+                                                if not frame.ScooterMouseoverModeInfoIcon then
+                                                    local tooltipText = "When enabled, hovering over this action bar will temporarily set its opacity to 100%, regardless of the other opacity settings configured above."
+                                                    frame.ScooterMouseoverModeInfoIcon = panel.CreateInfoIconForLabel(labelFS, tooltipText, 5, 0, 32)
+                                                    if frame.ScooterMouseoverModeInfoIcon then
+                                                        frame.ScooterMouseoverModeInfoIcon._ScooterIsActionBarIcon = true
+                                                    end
+                                                end
+                                                local function repositionMouseoverIcon()
+                                                    local icon = frame.ScooterMouseoverModeInfoIcon
+                                                    local lbl = frame.Text or (cb and cb.Text)
+                                                    if icon and lbl then
+                                                        icon:ClearAllPoints()
+                                                        icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                                        icon:Show()
+                                                    end
+                                                end
+                                                if C_Timer and C_Timer.After then
+                                                    C_Timer.After(0, repositionMouseoverIcon)
+                                                else
+                                                    repositionMouseoverIcon()
+                                                end
+                                            end
+                                        end
                                         -- Force-stable handlers for key master toggles to avoid recycled-frame wrapper interference
                                         if settingId == "borderEnable" then
                                             local cbBtn = frame.Checkbox or frame.CheckBox or frame.Control or frame

@@ -1144,14 +1144,58 @@ do
 		applyForUnit("Pet")
 	end
 
-	-- Hook TargetFrame_Update and FocusFrame_Update to reapply name text styling
-	-- (including alignment) after Blizzard's updates reset properties.
+	-- Hook TargetFrame_Update, FocusFrame_Update, and Player frame update functions
+	-- to reapply name/level text styling (including visibility and alignment) after
+	-- Blizzard's updates reset properties.
 	-- Use hooksecurefunc to avoid taint; defer reapply by one frame to ensure
 	-- Blizzard's update has fully completed.
 	local _nameLevelTextHooksInstalled = false
 	local function installNameLevelTextHooks()
 		if _nameLevelTextHooksInstalled then return end
 		_nameLevelTextHooksInstalled = true
+
+		-- Player frame hooks: PlayerFrame_Update and PlayerFrame_UpdateRolesAssigned
+		-- can reset level text visibility. Hook both to ensure our settings persist.
+		if _G.hooksecurefunc then
+			-- PlayerFrame_Update calls PlayerFrame_UpdateLevel which sets the level text
+			if type(_G.PlayerFrame_Update) == "function" then
+				_G.hooksecurefunc("PlayerFrame_Update", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, function()
+							if addon.ApplyUnitFrameNameLevelTextFor then
+								addon.ApplyUnitFrameNameLevelTextFor("Player")
+							end
+						end)
+					end
+				end)
+			end
+			
+			-- PlayerFrame_UpdateRolesAssigned directly sets PlayerLevelText:SetShown()
+			if type(_G.PlayerFrame_UpdateRolesAssigned) == "function" then
+				_G.hooksecurefunc("PlayerFrame_UpdateRolesAssigned", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, function()
+							if addon.ApplyUnitFrameNameLevelTextFor then
+								addon.ApplyUnitFrameNameLevelTextFor("Player")
+							end
+						end)
+					end
+				end)
+			end
+			
+			-- PlayerFrame_ToPlayerArt is called when switching from vehicle to player
+			if type(_G.PlayerFrame_ToPlayerArt) == "function" then
+				_G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, function()
+							if addon.ApplyUnitFrameNameLevelTextFor then
+								addon.ApplyUnitFrameNameLevelTextFor("Player")
+							end
+						end)
+					end
+				end)
+			end
+		end
 
 		if _G.hooksecurefunc and type(_G.TargetFrame_Update) == "function" then
 			_G.hooksecurefunc("TargetFrame_Update", function()

@@ -192,7 +192,7 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, row)
 			end
 
-			-- Frame Size (all four)
+			-- Frame Size (all four) - Edit Mode controlled
 			do
 				local label = "Frame Size (Scale)"
 				local function getUF() return getUnitFrame() end
@@ -228,6 +228,20 @@ local function createUFRenderer(componentId, title)
 							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
 						end
 					end
+					-- Invalidate scale multiplier baselines when Edit Mode scale changes
+					if addon.InvalidateUnitFrameScaleMultBaselines then
+						addon.InvalidateUnitFrameScaleMultBaselines()
+					end
+					-- Reapply scale multiplier after Edit Mode scale change
+					local unitKey = (componentId == "ufPlayer" and "Player")
+						or (componentId == "ufTarget" and "Target")
+						or (componentId == "ufFocus" and "Focus")
+						or (componentId == "ufPet" and "Pet")
+					if unitKey and addon.ApplyUnitFrameScaleMultFor then
+						C_Timer.After(0.3, function()
+							addon.ApplyUnitFrameScaleMultFor(unitKey)
+						end)
+					end
 				end
 				local setting = CreateLocalSetting(label, "number", getter, setter, getter())
 				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
@@ -238,6 +252,81 @@ local function createUFRenderer(componentId, title)
 						if base then base(self, frame) end
 						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
 						if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+						-- Add info icon to the left of the label
+						if frame and frame.Text and panel and panel.CreateInfoIcon and not frame.ScooterFrameSizeInfoIcon then
+							local tooltipText = "This is Blizzard's Edit Mode scale setting (max 200%). If you need larger frames for handheld or accessibility use, the Scale Multiplier below can increase size beyond this limit."
+							frame.ScooterFrameSizeInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "RIGHT", "LEFT", -5, 0, 20)
+							-- Position to the left of the label text
+							C_Timer.After(0, function()
+								if frame.ScooterFrameSizeInfoIcon and frame.Text then
+									frame.ScooterFrameSizeInfoIcon:ClearAllPoints()
+									frame.ScooterFrameSizeInfoIcon:SetPoint("RIGHT", frame.Text, "LEFT", -5, 0)
+								end
+							end)
+						end
+					end
+				end
+				table.insert(init, row)
+			end
+
+			-- Scale Multiplier (addon-only, layers on top of Edit Mode scale)
+			do
+				local label = "Scale Multiplier"
+				local unitKey = (componentId == "ufPlayer" and "Player")
+					or (componentId == "ufTarget" and "Target")
+					or (componentId == "ufFocus" and "Focus")
+					or (componentId == "ufPet" and "Pet")
+				local function ensureUFDB()
+					local db = addon and addon.db and addon.db.profile
+					if not db then return nil end
+					db.unitFrames = db.unitFrames or {}
+					db.unitFrames[unitKey] = db.unitFrames[unitKey] or {}
+					return db.unitFrames[unitKey]
+				end
+				local function fmtMult(v)
+					local val = tonumber(v) or 1.0
+					return string.format("%.1fx", val)
+				end
+				local options = Settings.CreateSliderOptions(1.0, 2.0, 0.1)
+				options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, fmtMult)
+				local function getter()
+					local t = ensureUFDB()
+					if not t then return 1.0 end
+					return tonumber(t.scaleMult) or 1.0
+				end
+				local function setter(v)
+					local t = ensureUFDB()
+					if not t then return end
+					local val = tonumber(v) or 1.0
+					if val < 1.0 then val = 1.0 end
+					if val > 2.0 then val = 2.0 end
+					t.scaleMult = val
+					-- Apply scale multiplier immediately
+					if addon.ApplyUnitFrameScaleMultFor then
+						addon.ApplyUnitFrameScaleMultFor(unitKey)
+					end
+				end
+				local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+				local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
+				row.GetExtent = function() return 34 end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+						-- Add info icon to the left of the label
+						if frame and frame.Text and panel and panel.CreateInfoIcon and not frame.ScooterScaleMultInfoIcon then
+							local tooltipText = "This addon-only multiplier layers on top of Edit Mode's scale. A 1.5x multiplier combined with Edit Mode's 200% produces an effective 300% scale. Use this for ScooterDeck or other large-UI needs."
+							frame.ScooterScaleMultInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "RIGHT", "LEFT", -5, 0, 20)
+							-- Position to the left of the label text
+							C_Timer.After(0, function()
+								if frame.ScooterScaleMultInfoIcon and frame.Text then
+									frame.ScooterScaleMultInfoIcon:ClearAllPoints()
+									frame.ScooterScaleMultInfoIcon:SetPoint("RIGHT", frame.Text, "LEFT", -5, 0)
+								end
+							end)
+						end
 					end
 				end
 				table.insert(init, row)

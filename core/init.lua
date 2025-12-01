@@ -223,6 +223,13 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             addon.ApplyUnitFrameBarTexturesFor("Player")
         end)
     end
+    -- Deferred reapply of Player name/level text visibility to catch Blizzard resets
+    -- (e.g., PlayerFrame_Update, PlayerFrame_UpdateRolesAssigned) that run after initial styling
+    if C_Timer and C_Timer.After and addon.ApplyUnitFrameNameLevelTextFor then
+        C_Timer.After(0.1, function()
+            addon.ApplyUnitFrameNameLevelTextFor("Player")
+        end)
+    end
 end
 
 function addon:PLAYER_TARGET_CHANGED()
@@ -252,6 +259,10 @@ function addon:EDIT_MODE_LAYOUTS_UPDATED()
     addon.EditMode.RefreshSyncAndNotify("EDIT_MODE_LAYOUTS_UPDATED")
     if self.Profiles and self.Profiles.RequestSync then
         self.Profiles:RequestSync("EDIT_MODE_LAYOUTS_UPDATED")
+    end
+    -- Invalidate scale multiplier baselines so they get recaptured with new Edit Mode scale
+    if addon.OnUnitFrameScaleMultLayoutsUpdated then
+        addon.OnUnitFrameScaleMultLayoutsUpdated()
     end
     self:ApplyStyles()
 end

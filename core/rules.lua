@@ -7,6 +7,38 @@ local ACTIONS = {}
 local SPEC_CACHE = nil
 local SPEC_BY_ID = nil
 
+-- Tracks which actionIds are currently overridden by active rules (in-memory).
+-- Used to detect when an action was previously overridden but is no longer.
+local ACTIVE_OVERRIDES = {}
+
+-- Baseline tracking helper functions.
+-- Baselines are persisted in profile.ruleBaselines so they survive logout/login.
+-- Key: actionId, Value: the value that was in place before the first rule override.
+
+local function getBaselinesTable()
+    local profile = addon.db and addon.db.profile
+    if not profile then
+        return {}
+    end
+    profile.ruleBaselines = profile.ruleBaselines or {}
+    return profile.ruleBaselines
+end
+
+local function getBaseline(actionId)
+    local baselines = getBaselinesTable()
+    return baselines[actionId]
+end
+
+local function setBaseline(actionId, value)
+    local baselines = getBaselinesTable()
+    baselines[actionId] = value
+end
+
+local function clearBaseline(actionId)
+    local baselines = getBaselinesTable()
+    baselines[actionId] = nil
+end
+
 local function ensureProfile()
     local db = addon.db
     local profile = db and db.profile
@@ -593,6 +625,33 @@ function Rules:GetActionPath(actionId)
     return {}
 end
 
+-- Clear all stored baselines. Use this to reset the "normal" values for all actions.
+-- After clearing, the next time a rule activates, it will capture fresh baselines.
+function Rules:ClearAllBaselines()
+    local profile = addon.db and addon.db.profile
+    if profile then
+        profile.ruleBaselines = {}
+    end
+    ACTIVE_OVERRIDES = {}
+end
+
+-- Clear the baseline for a specific action.
+function Rules:ClearBaseline(actionId)
+    if actionId then
+        clearBaseline(actionId)
+    end
+end
+
+-- Check if a baseline exists for an action (useful for debugging)
+function Rules:HasBaseline(actionId)
+    return getBaseline(actionId) ~= nil
+end
+
+-- Get the baseline value for an action (useful for debugging)
+function Rules:GetBaseline(actionId)
+    return getBaseline(actionId)
+end
+
 function Rules:ApplyAll(reason)
     if not self:IsInitialized() then
         return
@@ -603,9 +662,9 @@ function Rules:ApplyAll(reason)
         self._lastSpecID = currentSpec
     end
 
-    -- Only apply values for rules that match the current spec.
-    -- When no rule matches, the setting stays at its configured value in the main settings.
-    local applied = {}
+    -- Determine which actions will be overridden by matching rules this cycle.
+    -- Key: actionId, Value: the value to apply
+    local newOverrides = {}
     local rules = getRulesTable()
 
     for _, rule in ipairs(rules) do
@@ -614,17 +673,54 @@ function Rules:ApplyAll(reason)
         if handler and ruleMatches(rule, currentSpec) then
             local value = rule.action.value
             value = normalizeValue(value, handler.valueType)
-            applied[actionId] = value
+            -- Last matching rule wins (rules are processed in order)
+            newOverrides[actionId] = value
         end
     end
 
-    for actionId, value in pairs(applied) do
+    -- Step 1: Capture baselines for actions that are newly overridden.
+    -- Only capture if we don't already have a baseline (first override wins).
+    -- Baselines persist across sessions in profile.ruleBaselines.
+    for actionId, _ in pairs(newOverrides) do
+        if getBaseline(actionId) == nil then
+            local handler = ACTIONS[actionId]
+            if handler and handler.get then
+                local ok, currentValue = pcall(handler.get)
+                if ok then
+                    -- Store the current (non-overridden) value as the baseline
+                    setBaseline(actionId, currentValue)
+                end
+            end
+        end
+    end
+
+    -- Step 2: Restore baselines for actions that were previously overridden but are not anymore.
+    for actionId, _ in pairs(ACTIVE_OVERRIDES) do
+        if not newOverrides[actionId] then
+            -- This action was overridden before but no rule matches now - restore baseline
+            local baseline = getBaseline(actionId)
+            if baseline ~= nil then
+                applyActionValue(actionId, baseline, reason .. " (restore baseline)")
+            end
+            -- Keep the baseline in the profile - it represents the user's "normal" setting
+            -- and will be used again if rules reactivate later.
+        end
+    end
+
+    -- Step 3: Apply the new override values.
+    for actionId, value in pairs(newOverrides) do
         applyActionValue(actionId, value, reason)
     end
+
+    -- Step 4: Update the active overrides tracking table for the next cycle.
+    ACTIVE_OVERRIDES = newOverrides
 end
 
 function Rules:OnProfileChanged()
     self._actionMenuCache = nil
+    -- Clear in-memory override tracking when switching profiles.
+    -- Baselines are stored in profile.ruleBaselines, so they come with the new profile.
+    ACTIVE_OVERRIDES = {}
     buildSpecCache()
     self:ApplyAll("ProfileChanged")
     -- Refresh UI to show the new profile's rules list

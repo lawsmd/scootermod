@@ -21,7 +21,75 @@ local function ApplyActionBarStyling(self)
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
-    if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+
+    -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
+    local mouseoverEnabled = self.db and self.db.mouseoverMode
+    if mouseoverEnabled then
+        -- Store the component reference and opacity values on the bar for script access
+        bar._ScooterMouseoverComponent = self
+        bar._ScooterBaseOpacity = appliedOp / 100
+
+        -- Helper functions for mouseover handling
+        local function onMouseEnter()
+            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+                bar._ScooterIsMousedOver = true
+                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+            end
+        end
+        local function onMouseLeave()
+            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+                -- Only restore opacity if mouse is not over the bar or any of its buttons
+                local isOverBar = bar:IsMouseOver()
+                if not isOverBar then
+                    bar._ScooterIsMousedOver = false
+                    local restoreOp = bar._ScooterBaseOpacity or 1
+                    if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
+                end
+            end
+        end
+
+        -- Hook the bar frame itself (for gaps between buttons)
+        if not bar._ScooterMouseoverHooked then
+            bar:HookScript("OnEnter", onMouseEnter)
+            bar:HookScript("OnLeave", onMouseLeave)
+            bar._ScooterMouseoverHooked = true
+        end
+
+        -- Hook each button on the bar for mouseover
+        local function enumerateButtonsForMouseover()
+            local buttons = {}
+            local prefix
+            if self.frameName == "MainMenuBar" then
+                prefix = "ActionButton"
+            else
+                prefix = tostring(self.frameName) .. "Button"
+            end
+            for i = 1, 12 do
+                local btn = _G[prefix .. i]
+                if btn then buttons[#buttons + 1] = btn end
+            end
+            return buttons
+        end
+
+        for _, btn in ipairs(enumerateButtonsForMouseover()) do
+            if not btn._ScooterMouseoverHooked then
+                btn:HookScript("OnEnter", onMouseEnter)
+                btn:HookScript("OnLeave", onMouseLeave)
+                btn._ScooterMouseoverHooked = true
+            end
+        end
+
+        -- If currently moused over, keep at 100%; otherwise use calculated opacity
+        if bar._ScooterIsMousedOver then
+            if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+        else
+            if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+        end
+    else
+        -- Mouseover mode disabled - just apply the calculated opacity
+        bar._ScooterIsMousedOver = false
+        if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+    end
 
     local function enumerateButtons()
         local buttons = {}
@@ -365,6 +433,9 @@ addon:RegisterComponentInitializer(function(self)
                 }},
                 barOpacityWithTarget = { type = "addon", default = 100, ui = {
                     label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+                }},
+                mouseoverMode = { type = "addon", default = false, ui = {
+                    label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
                 }},
                 positionX = { type = "addon", default = 0, ui = {
                     label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98

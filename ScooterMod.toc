@@ -45,6 +45,7 @@ core/components/unitframes/cast.lua
 core/components/unitframes/buffs.lua
 core/components/unitframes/visibility.lua
 core/components/unitframes/copy.lua
+core/components/unitframes/scalemult.lua
 core/components/tooltip.lua
 core/debug.lua
 core/taintdebug.lua

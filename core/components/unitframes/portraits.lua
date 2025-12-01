@@ -95,8 +95,8 @@ do
 
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
-	-- Store original scales (per frame, not per unit, to handle frame recreation)
-	local originalScales = {}
+	-- NOTE: We do NOT capture original scales because frames may retain our applied scale across reloads.
+	-- Portrait frames have no Edit Mode scale setting, so baseline is always 1.0.
 	-- Store original texture coordinates (per frame, not per unit, to handle frame recreation)
 	local originalTexCoords = {}
 	-- Store original alpha values (per frame, not per unit, to handle frame recreation)
@@ -174,20 +174,8 @@ do
 		local origMask = maskFrame and originalPositions[maskFrame] or nil
 		local origCornerIcon = cornerIconFrame and originalPositions[cornerIconFrame] or nil
 
-		-- Capture original scales on first access
-		if not originalScales[portraitFrame] then
-			originalScales[portraitFrame] = portraitFrame:GetScale() or 1.0
-		end
-		if maskFrame and not originalScales[maskFrame] then
-			originalScales[maskFrame] = maskFrame:GetScale() or 1.0
-		end
-		if cornerIconFrame and not originalScales[cornerIconFrame] then
-			originalScales[cornerIconFrame] = cornerIconFrame:GetScale() or 1.0
-		end
-
-		local origPortraitScale = originalScales[portraitFrame] or 1.0
-		local origMaskScale = maskFrame and (originalScales[maskFrame] or 1.0) or nil
-		local origCornerIconScale = cornerIconFrame and (originalScales[cornerIconFrame] or 1.0) or nil
+		-- NOTE: Portrait scale baseline is always 1.0 (no Edit Mode scale setting for portraits)
+		-- We do NOT capture frame:GetScale() because the frame may retain our applied scale across reloads
 
 		-- Get portrait texture
 		-- For unit frames, the portraitFrame IS the texture itself (not a frame containing a texture)
@@ -342,19 +330,20 @@ do
 		end
 
 		-- Apply scaling to portrait, mask, and corner icon frames
+		-- Baseline is always 1.0 for portraits (no Edit Mode scale setting)
 		local function applyScale()
 			if not InCombatLockdown() then
-				-- Scale portrait frame
-				portraitFrame:SetScale(origPortraitScale * scaleMultiplier)
+				-- Scale portrait frame (baseline 1.0 × multiplier)
+				portraitFrame:SetScale(scaleMultiplier)
 
 				-- Scale mask frame if it exists
-				if maskFrame and origMaskScale then
-					maskFrame:SetScale(origMaskScale * scaleMultiplier)
+				if maskFrame then
+					maskFrame:SetScale(scaleMultiplier)
 				end
 
 				-- Scale corner icon frame if it exists (Player only)
-				if cornerIconFrame and origCornerIconScale and unit == "Player" then
-					cornerIconFrame:SetScale(origCornerIconScale * scaleMultiplier)
+				if cornerIconFrame and unit == "Player" then
+					cornerIconFrame:SetScale(scaleMultiplier)
 				end
 			end
 		end
