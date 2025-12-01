@@ -109,6 +109,7 @@ local unitCaps = {
 }
 
 local copyKeysRoot = {
+    "scaleMult",
     "useCustomBorders",
     "healthBarTexture",
     "healthBarBackgroundTexture",
@@ -387,6 +388,9 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
 
     copyShowCastTimeSetting(src, dst)
 
+    if addon.ApplyUnitFrameScaleMultFor then
+        addon.ApplyUnitFrameScaleMultFor(dst)
+    end
     if addon.ApplyUnitFrameBarTexturesFor then
         addon.ApplyUnitFrameBarTexturesFor(dst)
     end

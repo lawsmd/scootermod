@@ -481,7 +481,7 @@ local function ApplyCooldownViewerStyling(self)
                 local cfg = self.db.textName or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
-                nameFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE")
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(nameFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else nameFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
                 local c = cfg.color or {1,1,1,1}
                 if nameFS.SetTextColor then nameFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
@@ -498,7 +498,7 @@ local function ApplyCooldownViewerStyling(self)
                 local cfg = self.db.textDuration or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
-                durFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE")
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(durFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else durFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
                 local c = cfg.color or {1,1,1,1}
                 if durFS.SetTextColor then durFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
@@ -530,7 +530,7 @@ local function ApplyCooldownViewerStyling(self)
                 local cfg = self.db.textStacks or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
-                stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE")
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
                 local c = cfg.color or {1,1,1,1}
                 if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
@@ -552,7 +552,7 @@ local function ApplyCooldownViewerStyling(self)
                 local cfg = self.db.textStacks or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
-                stacksFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE")
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") end
                 local c = cfg.color or {1,1,1,1}
                 if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if stacksFS.ClearAllPoints and stacksFS.SetPoint then
@@ -567,7 +567,7 @@ local function ApplyCooldownViewerStyling(self)
                 local cfg = self.db.textCooldown or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(cdFS.SetDrawLayer, cdFS, "OVERLAY", 10)
-                cdFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE")
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(cdFS, face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") else cdFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") end
                 local c = cfg.color or {1,1,1,1}
                 if cdFS.SetTextColor then cdFS.SetTextColor(cdFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if cdFS.ClearAllPoints and cdFS.SetPoint then

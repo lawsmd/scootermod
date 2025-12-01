@@ -550,6 +550,11 @@ local function createUFRenderer(componentId, title)
 						container:Add("NONE", "Regular");
 						container:Add("OUTLINE", "Outline");
 						container:Add("THICKOUTLINE", "Thick Outline");
+						container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+						container:Add("SHADOW", "Shadow");
+						container:Add("SHADOWOUTLINE", "Shadow Outline");
+						container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+						container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
 						return container:GetData()
 					end
 					addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
@@ -660,6 +665,37 @@ local function createUFRenderer(componentId, title)
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.color = {r,g,b,a}; applyNow() end,
 						y)
+					-- % Text Alignment dropdown
+					do
+						local function alignOpts()
+							local c = Settings.CreateControlTextContainer()
+							c:Add("LEFT", "Left")
+							c:Add("CENTER", "Center")
+							c:Add("RIGHT", "Right")
+							return c:GetData()
+						end
+						local function getAlign()
+							local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; return s.alignment or "LEFT"
+						end
+						local function setAlign(v)
+							local t = ensureUFDB(); if not t then return end
+							t.textHealthPercent = t.textHealthPercent or {}
+							t.textHealthPercent.alignment = v or "LEFT"
+							applyNow()
+						end
+						local setting = CreateLocalSetting("% Text Alignment", "string", getAlign, setAlign, getAlign())
+						local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "% Text Alignment", setting = setting, options = alignOpts })
+						local f = CreateFrame("Frame", nil, percentTextPage, "SettingsDropdownControlTemplate")
+						f.GetElementData = function() return initDrop end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initDrop:InitFrame(f)
+						if panel and panel.ApplyRobotoWhite then
+							local lbl = f and (f.Text or f.Label)
+							if lbl then panel.ApplyRobotoWhite(lbl) end
+						end
+						y.y = y.y - 34
+					end
 					addSlider(percentTextPage, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthPercent = t.textHealthPercent or {}; t.textHealthPercent.offset = t.textHealthPercent.offset or {}; t.textHealthPercent.offset.x = tonumber(v) or 0; applyNow() end,
@@ -721,6 +757,37 @@ local function createUFRenderer(componentId, title)
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.color = {r,g,b,a}; applyNow() end,
 						y)
+					-- Value Text Alignment dropdown
+					do
+						local function alignOpts()
+							local c = Settings.CreateControlTextContainer()
+							c:Add("LEFT", "Left")
+							c:Add("CENTER", "Center")
+							c:Add("RIGHT", "Right")
+							return c:GetData()
+						end
+						local function getAlign()
+							local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; return s.alignment or "RIGHT"
+						end
+						local function setAlign(v)
+							local t = ensureUFDB(); if not t then return end
+							t.textHealthValue = t.textHealthValue or {}
+							t.textHealthValue.alignment = v or "RIGHT"
+							applyNow()
+						end
+						local setting = CreateLocalSetting("Value Text Alignment", "string", getAlign, setAlign, getAlign())
+						local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Value Text Alignment", setting = setting, options = alignOpts })
+						local f = CreateFrame("Frame", nil, valueTextPage, "SettingsDropdownControlTemplate")
+						f.GetElementData = function() return initDrop end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initDrop:InitFrame(f)
+						if panel and panel.ApplyRobotoWhite then
+							local lbl = f and (f.Text or f.Label)
+							if lbl then panel.ApplyRobotoWhite(lbl) end
+						end
+						y.y = y.y - 34
+					end
 					addSlider(valueTextPage, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textHealthValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textHealthValue = t.textHealthValue or {}; t.textHealthValue.offset = t.textHealthValue.offset or {}; t.textHealthValue.offset.x = tonumber(v) or 0; applyNow() end,
@@ -1089,10 +1156,10 @@ local function createUFRenderer(componentId, title)
 				if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor(unitKey()) end
 			end
 			local hbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", hbTabs)
-			-- STATIC HEIGHT for tabbed sections with up to 7-8 settings per tab.
-			-- Current: 330px provides comfortable spacing with 2px top gap and room at bottom.
-			-- DO NOT reduce below 315px or settings will bleed past the bottom border.
-			hbInit.GetExtent = function() return 330 end
+			-- STATIC HEIGHT for tabbed sections with up to 8 settings per tab.
+			-- Current: 364px provides comfortable spacing for 8 controls (including alignment dropdown).
+			-- DO NOT reduce below 350px or settings will bleed past the bottom border.
+			hbInit.GetExtent = function() return 364 end
 			hbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Health Bar")
 			end)
@@ -1175,6 +1242,11 @@ local function createUFRenderer(componentId, title)
 						container:Add("NONE", "Regular");
 						container:Add("OUTLINE", "Outline");
 						container:Add("THICKOUTLINE", "Thick Outline");
+						container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+						container:Add("SHADOW", "Shadow");
+						container:Add("SHADOWOUTLINE", "Shadow Outline");
+						container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+						container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
 						return container:GetData()
 					end
 					addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
@@ -1810,6 +1882,37 @@ local function createUFRenderer(componentId, title)
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
 						y)
+					-- % Text Alignment dropdown
+					do
+						local function alignOpts()
+							local c = Settings.CreateControlTextContainer()
+							c:Add("LEFT", "Left")
+							c:Add("CENTER", "Center")
+							c:Add("RIGHT", "Right")
+							return c:GetData()
+						end
+						local function getAlign()
+							local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.alignment or "LEFT"
+						end
+						local function setAlign(v)
+							local t = ensureUFDB(); if not t then return end
+							t.textPowerPercent = t.textPowerPercent or {}
+							t.textPowerPercent.alignment = v or "LEFT"
+							applyNow()
+						end
+						local setting = CreateLocalSetting("% Text Alignment", "string", getAlign, setAlign, getAlign())
+						local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "% Text Alignment", setting = setting, options = alignOpts })
+						local f = CreateFrame("Frame", nil, frame.PageF, "SettingsDropdownControlTemplate")
+						f.GetElementData = function() return initDrop end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initDrop:InitFrame(f)
+						if panel and panel.ApplyRobotoWhite then
+							local lbl = f and (f.Text or f.Label)
+							if lbl then panel.ApplyRobotoWhite(lbl) end
+						end
+						y.y = y.y - 34
+					end
 					addSlider(frame.PageF, "% Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
@@ -1868,6 +1971,37 @@ local function createUFRenderer(componentId, title)
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
 						function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
 						y)
+					-- Value Text Alignment dropdown
+					do
+						local function alignOpts()
+							local c = Settings.CreateControlTextContainer()
+							c:Add("LEFT", "Left")
+							c:Add("CENTER", "Center")
+							c:Add("RIGHT", "Right")
+							return c:GetData()
+						end
+						local function getAlign()
+							local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.alignment or "RIGHT"
+						end
+						local function setAlign(v)
+							local t = ensureUFDB(); if not t then return end
+							t.textPowerValue = t.textPowerValue or {}
+							t.textPowerValue.alignment = v or "RIGHT"
+							applyNow()
+						end
+						local setting = CreateLocalSetting("Value Text Alignment", "string", getAlign, setAlign, getAlign())
+						local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Value Text Alignment", setting = setting, options = alignOpts })
+						local f = CreateFrame("Frame", nil, frame.PageG, "SettingsDropdownControlTemplate")
+						f.GetElementData = function() return initDrop end
+						f:SetPoint("TOPLEFT", 4, y.y)
+						f:SetPoint("TOPRIGHT", -16, y.y)
+						initDrop:InitFrame(f)
+						if panel and panel.ApplyRobotoWhite then
+							local lbl = f and (f.Text or f.Label)
+							if lbl then panel.ApplyRobotoWhite(lbl) end
+						end
+						y.y = y.y - 34
+					end
 					addSlider(frame.PageF, "Value Text Offset X", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.x = tonumber(v) or 0; applyNow() end,
@@ -2163,10 +2297,10 @@ local function createUFRenderer(componentId, title)
 			end
 
 			local pbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", pbTabs)
-			-- STATIC HEIGHT for tabbed sections with up to 7-8 settings per tab.
-			-- Current: 330px provides comfortable spacing with 2px top gap and room at bottom.
-			-- DO NOT reduce below 315px or settings will bleed past the bottom border.
-			pbInit.GetExtent = function() return 330 end
+			-- STATIC HEIGHT for tabbed sections with up to 8 settings per tab.
+			-- Current: 364px provides comfortable spacing for 8 controls (including alignment dropdown).
+			-- DO NOT reduce below 350px or settings will bleed past the bottom border.
+			pbInit.GetExtent = function() return 364 end
 			pbInit:AddShownPredicate(function()
 				return panel:IsSectionExpanded(componentId, "Power Bar")
 			end)
@@ -2256,6 +2390,11 @@ local function createUFRenderer(componentId, title)
 							container:Add("NONE", "Regular");
 							container:Add("OUTLINE", "Outline");
 							container:Add("THICKOUTLINE", "Thick Outline");
+							container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+							container:Add("SHADOW", "Shadow");
+							container:Add("SHADOWOUTLINE", "Shadow Outline");
+							container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+							container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
 							return container:GetData()
 						end
 						return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
@@ -2734,6 +2873,37 @@ local function createUFRenderer(componentId, title)
 								t.textPercent = t.textPercent or {}; t.textPercent.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 							end,
 							y)
+						-- % Text Alignment dropdown
+						do
+							local function alignOpts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("LEFT", "Left")
+								c:Add("CENTER", "Center")
+								c:Add("RIGHT", "Right")
+								return c:GetData()
+							end
+							local function getAlign()
+								local t = ensureUFDB() or {}; local s = t.textPercent or {}; return s.alignment or "LEFT"
+							end
+							local function setAlign(v)
+								local t = ensureUFDB(); if not t then return end
+								t.textPercent = t.textPercent or {}
+								t.textPercent.alignment = v or "LEFT"
+								applyNow()
+							end
+							local setting = CreateLocalSetting("Alignment", "string", getAlign, setAlign, getAlign())
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Alignment", setting = setting, options = alignOpts })
+							local f = CreateFrame("Frame", nil, frame.PageF, "SettingsDropdownControlTemplate")
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							if panel and panel.ApplyRobotoWhite then
+								local lbl = f and (f.Text or f.Label)
+								if lbl then panel.ApplyRobotoWhite(lbl) end
+							end
+							y.y = y.y - 34
+						end
 						-- % Text Offset X/Y
 						addSlider(frame.PageF, "Font X Offset", -100, 100, 1,
 							function() local t = ensureUFDB() or {}; local s = t.textPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
@@ -2798,6 +2968,37 @@ local function createUFRenderer(componentId, title)
 								t.textValue = t.textValue or {}; t.textValue.color = { r or 1, g or 1, b or 1, a or 1 }; applyNow()
 							end,
 							y)
+						-- Value Text Alignment dropdown
+						do
+							local function alignOpts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("LEFT", "Left")
+								c:Add("CENTER", "Center")
+								c:Add("RIGHT", "Right")
+								return c:GetData()
+							end
+							local function getAlign()
+								local t = ensureUFDB() or {}; local s = t.textValue or {}; return s.alignment or "RIGHT"
+							end
+							local function setAlign(v)
+								local t = ensureUFDB(); if not t then return end
+								t.textValue = t.textValue or {}
+								t.textValue.alignment = v or "RIGHT"
+								applyNow()
+							end
+							local setting = CreateLocalSetting("Alignment", "string", getAlign, setAlign, getAlign())
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Alignment", setting = setting, options = alignOpts })
+							local f = CreateFrame("Frame", nil, frame.PageG, "SettingsDropdownControlTemplate")
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							if panel and panel.ApplyRobotoWhite then
+								local lbl = f and (f.Text or f.Label)
+								if lbl then panel.ApplyRobotoWhite(lbl) end
+							end
+							y.y = y.y - 34
+						end
 						-- Value Text Offset X/Y
 						addSlider(frame.PageG, "Font X Offset", -100, 100, 1,
 							function() local t = ensureUFDB() or {}; local s = t.textValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
@@ -2811,7 +3012,8 @@ local function createUFRenderer(componentId, title)
 				end
 
 				local apbInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", apbTabs)
-				apbInit.GetExtent = function() return 330 end
+				-- STATIC HEIGHT for tabbed sections with up to 8 settings per tab.
+				apbInit.GetExtent = function() return 364 end
 				apbInit:AddShownPredicate(function()
 					return panel:IsSectionExpanded(componentId, "Alternate Power Bar")
 				end)
@@ -3048,6 +3250,11 @@ local function createUFRenderer(componentId, title)
 				container:Add("NONE", "Regular");
 				container:Add("OUTLINE", "Outline");
 				container:Add("THICKOUTLINE", "Thick Outline");
+				container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+				container:Add("SHADOW", "Shadow");
+				container:Add("SHADOWOUTLINE", "Shadow Outline");
+				container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+				container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
 				return container:GetData()
 			end
 			addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
@@ -3819,6 +4026,11 @@ local function createUFRenderer(componentId, title)
 					container:Add("NONE", "Regular");
 					container:Add("OUTLINE", "Outline");
 					container:Add("THICKOUTLINE", "Thick Outline");
+					container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+					container:Add("SHADOW", "Shadow");
+					container:Add("SHADOWOUTLINE", "Shadow Outline");
+					container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+					container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
 					return container:GetData()
 				end
 				return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
@@ -4426,6 +4638,11 @@ local function createUFRenderer(componentId, title)
 							container:Add("NONE", "Regular")
 							container:Add("OUTLINE", "Outline")
 							container:Add("THICKOUTLINE", "Thick Outline")
+							container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline")
+							container:Add("SHADOW", "Shadow")
+							container:Add("SHADOWOUTLINE", "Shadow Outline")
+							container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline")
+							container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline")
 							return container:GetData()
 						end
 						return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)

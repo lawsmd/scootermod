@@ -1238,7 +1238,7 @@ do
                                 or (select(1, _G.GameFontNormal:GetFont()))
                             local size = tonumber(styleCfg.size) or 14
                             local outline = tostring(styleCfg.style or "OUTLINE")
-                            if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+                            if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
                             local c = styleCfg.color or { 1, 1, 1, 1 }
                             if fs.SetTextColor then
                                 pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)

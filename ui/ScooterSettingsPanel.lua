@@ -380,6 +380,11 @@ local function createComponentRenderer(componentId)
 											{ key = "NONE", text = "Regular" },
 											{ key = "OUTLINE", text = "Outline" },
 											{ key = "THICKOUTLINE", text = "Thick Outline" },
+											{ key = "HEAVYTHICKOUTLINE", text = "Heavy Thick Outline" },
+											{ key = "SHADOW", text = "Shadow" },
+											{ key = "SHADOWOUTLINE", text = "Shadow Outline" },
+											{ key = "SHADOWTHICKOUTLINE", text = "Shadow Thick Outline" },
+											{ key = "HEAVYSHADOWTHICKOUTLINE", text = "Heavy Shadow Thick Outline" },
 										}
 										for _, e in ipairs(options) do
 											local desc = root:CreateRadio(e.text, function()
@@ -429,6 +434,11 @@ local function createComponentRenderer(componentId)
                                 container:Add("NONE", "Regular");
                                 container:Add("OUTLINE", "Outline");
                                 container:Add("THICKOUTLINE", "Thick Outline");
+                                container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline");
+                                container:Add("SHADOW", "Shadow");
+                                container:Add("SHADOWOUTLINE", "Shadow Outline");
+                                container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline");
+                                container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline");
                                 return container:GetData()
                             end
                             addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)

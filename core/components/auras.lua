@@ -114,7 +114,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local size = tonumber(cfg.size) or defaultSize
         local style = cfg.style or "OUTLINE"
         pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
-        fs:SetFont(face, size, style)
+        if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
         local color = cfg.color
         if color and fs.SetTextColor then
             fs._ScooterColorApplying = true

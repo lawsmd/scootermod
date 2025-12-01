@@ -215,14 +215,50 @@ do
             return b
         end
 
+        -- Helper to force FontString redraw after alignment change
+        local function forceTextRedraw(fs)
+            if fs and fs.GetText and fs.SetText then
+                local txt = fs:GetText()
+                if txt then
+                    fs:SetText("")
+                    fs:SetText(txt)
+                end
+            end
+        end
+
         local function applyTextStyle(fs, styleCfg, baselineKey)
             if not fs or not styleCfg then return end
             local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
             local size = tonumber(styleCfg.size) or 14
             local outline = tostring(styleCfg.style or "OUTLINE")
-            if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+            if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
             local c = styleCfg.color or {1,1,1,1}
             if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+
+            -- Determine default alignment based on whether this is left (%) or right (value) text
+            local defaultAlign = "LEFT"
+            if baselineKey and baselineKey:find(":right") then
+                defaultAlign = "RIGHT"
+            end
+            local alignment = styleCfg.alignment or defaultAlign
+
+            -- Set explicit width on FontString to enable alignment (use full parent bar width)
+            local parentBar = fs:GetParent()
+            if parentBar and parentBar.GetWidth then
+                local barWidth = parentBar:GetWidth()
+                if barWidth and barWidth > 0 then
+                    -- Use full bar width so alignment spans the entire bar
+                    if fs.SetWidth then
+                        pcall(fs.SetWidth, fs, barWidth)
+                    end
+                end
+            end
+
+            -- Apply text alignment
+            if fs.SetJustifyH then
+                pcall(fs.SetJustifyH, fs, alignment)
+            end
+
             -- Offset relative to a stable baseline anchor captured at first apply this session
             local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
             local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
@@ -231,6 +267,9 @@ do
                 fs:ClearAllPoints()
                 fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
             end
+
+            -- Force redraw to apply alignment visually
+            forceTextRedraw(fs)
         end
 
         if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left") end
@@ -525,14 +564,50 @@ do
 			return b
 		end
 
+		-- Helper to force FontString redraw after alignment change
+		local function forceTextRedraw(fs)
+			if fs and fs.GetText and fs.SetText then
+				local txt = fs:GetText()
+				if txt then
+					fs:SetText("")
+					fs:SetText(txt)
+				end
+			end
+		end
+
 		local function applyTextStyle(fs, styleCfg, baselineKey)
 			if not fs or not styleCfg then return end
 			local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 			local size = tonumber(styleCfg.size) or 14
 			local outline = tostring(styleCfg.style or "OUTLINE")
-			if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+			if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 			local c = styleCfg.color or {1,1,1,1}
 			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+
+			-- Determine default alignment based on whether this is left (%) or right (value) text
+			local defaultAlign = "LEFT"
+			if baselineKey and baselineKey:find("%-right") then
+				defaultAlign = "RIGHT"
+			end
+			local alignment = styleCfg.alignment or defaultAlign
+
+			-- Set explicit width on FontString to enable alignment (use full parent bar width)
+			local parentBar = fs:GetParent()
+			if parentBar and parentBar.GetWidth then
+				local barWidth = parentBar:GetWidth()
+				if barWidth and barWidth > 0 then
+					-- Use full bar width so alignment spans the entire bar
+					if fs.SetWidth then
+						pcall(fs.SetWidth, fs, barWidth)
+					end
+				end
+			end
+
+			-- Apply text alignment
+			if fs.SetJustifyH then
+				pcall(fs.SetJustifyH, fs, alignment)
+			end
+
 			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
 			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
 			if fs.ClearAllPoints and fs.SetPoint then
@@ -540,6 +615,9 @@ do
 				fs:ClearAllPoints()
 				fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
 			end
+
+			-- Force redraw to apply alignment visually
+			forceTextRedraw(fs)
 		end
 
 		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left") end
@@ -889,7 +967,7 @@ do
 		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
-		if fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 		-- Determine color based on colorMode
 		local c = nil
 		local colorMode = styleCfg.colorMode or "default"

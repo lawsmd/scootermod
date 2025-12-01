@@ -688,7 +688,9 @@ do
 							-- But we still need to call SetFont to set the actual font size
 							local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 							local customStyle = tostring(damageTextCfg.style or "OUTLINE")
-							if self.SetFont then
+							if addon.ApplyFontStyle then
+								addon.ApplyFontStyle(self, customFace, customSize, customStyle)
+							elseif self.SetFont then
 								pcall(self.SetFont, self, customFace, customSize, customStyle)
 							end
 							-- Don't call original SetTextHeight - SetFont handles the size
@@ -726,7 +728,9 @@ do
 			local face = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 			local size = tonumber(damageTextCfg.size) or 14
 			local outline = tostring(damageTextCfg.style or "OUTLINE")
-			if damageTextFrame.SetFont then
+			if addon.ApplyFontStyle then
+				addon.ApplyFontStyle(damageTextFrame, face, size, outline)
+			elseif damageTextFrame.SetFont then
 				pcall(damageTextFrame.SetFont, damageTextFrame, face, size, outline)
 			end
 
@@ -855,7 +859,9 @@ do
 						
 						-- Use SetFont to set the actual font size (not SetTextHeight which just scales the region)
 						-- This must be called after Blizzard's SetTextHeight to override it
-						if self.feedbackText.SetFont then
+						if addon.ApplyFontStyle then
+							addon.ApplyFontStyle(self.feedbackText, customFace, customSize, customStyle)
+						elseif self.feedbackText.SetFont then
 							pcall(self.feedbackText.SetFont, self.feedbackText, customFace, customSize, customStyle)
 						end
 					end

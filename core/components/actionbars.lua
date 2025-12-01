@@ -223,7 +223,7 @@ local function ApplyActionBarStyling(self)
                 local style = cfg.style or "OUTLINE"
                 local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
                 pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
-                fs:SetFont(face, size, style)
+                if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
                 local c = cfg.color or {1,1,1,1}
                 if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
                 if justify and fs.SetJustifyH then pcall(fs.SetJustifyH, fs, justify) end

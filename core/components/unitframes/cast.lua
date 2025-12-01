@@ -597,7 +597,9 @@ do
 								or (select(1, _G.GameFontNormal:GetFont()))
 							local size = tonumber(styleCfg.size) or 14
 							local outline = tostring(styleCfg.style or "OUTLINE")
-							if spellFS.SetFont then
+							if addon.ApplyFontStyle then
+								addon.ApplyFontStyle(spellFS, face, size, outline)
+							elseif spellFS.SetFont then
 								pcall(spellFS.SetFont, spellFS, face, size, outline)
 							end
 
@@ -660,7 +662,9 @@ do
 							or (select(1, _G.GameFontNormal:GetFont()))
 						local size = tonumber(styleCfg.size) or 14
 						local outline = tostring(styleCfg.style or "OUTLINE")
-						if castTimeFS.SetFont then
+						if addon.ApplyFontStyle then
+							addon.ApplyFontStyle(castTimeFS, face, size, outline)
+						elseif castTimeFS.SetFont then
 							pcall(castTimeFS.SetFont, castTimeFS, face, size, outline)
 						end
 

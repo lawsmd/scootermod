@@ -253,6 +253,7 @@ function panel.RenderApplyAllFonts()
         componentId = "applyAllFonts",
         title = "Apply All: Fonts",
         disclaimer = "Applying fonts overwrites every ScooterMod font face across all components and forces a /reload. Sizes, colors, offsets, and outline styles are not changed.",
+        applyFontPreview = true,  -- Enable custom 3-column font picker popup
         optionsProvider = function()
             return addon.BuildFontOptionsContainer and addon.BuildFontOptionsContainer() or {}
         end,
@@ -271,7 +272,9 @@ function panel.RenderApplyAllFonts()
                 addon:Print("Select a font before applying.")
                 return
             end
-            StaticPopup_Show("SCOOTERMOD_APPLYALL_FONTS", pending, nil, { fontKey = pending })
+            -- Use display name in the confirmation dialog
+            local displayName = addon.FontDisplayNames and addon.FontDisplayNames[pending] or pending
+            StaticPopup_Show("SCOOTERMOD_APPLYALL_FONTS", displayName, nil, { fontKey = pending })
         end,
     })
 end
