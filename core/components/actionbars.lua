@@ -61,10 +61,13 @@ local function ApplyActionBarStyling(self)
             local prefix
             if self.frameName == "MainMenuBar" then
                 prefix = "ActionButton"
+            elseif self.frameName == "PetActionBar" then
+                prefix = "PetActionButton"
             else
                 prefix = tostring(self.frameName) .. "Button"
             end
-            for i = 1, 12 do
+            local maxButtons = self.maxButtons or 12
+            for i = 1, maxButtons do
                 local btn = _G[prefix .. i]
                 if btn then buttons[#buttons + 1] = btn end
             end
@@ -96,10 +99,13 @@ local function ApplyActionBarStyling(self)
         local prefix
         if self.frameName == "MainMenuBar" then
             prefix = "ActionButton"
+        elseif self.frameName == "PetActionBar" then
+            prefix = "PetActionButton"
         else
             prefix = tostring(self.frameName) .. "Button"
         end
-        for i = 1, 12 do
+        local maxButtons = self.maxButtons or 12
+        for i = 1, maxButtons do
             local btn = _G[prefix .. i]
             if btn then buttons[#buttons + 1] = btn end
         end
@@ -291,6 +297,119 @@ local function ApplyActionBarStyling(self)
     end
 end
 
+-- Micro Bar opacity and mouseover styling function
+local function ApplyMicroBarStyling(self)
+    local bar = _G[self.frameName]
+    if not bar then return end
+
+    -- Read opacity settings with fallbacks to defaults
+    local baseOp = tonumber(self.db and self.db.barOpacity)
+    if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
+    baseOp = tonumber(baseOp) or 100
+    if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
+
+    local oocOp = tonumber(self.db and self.db.barOpacityOutOfCombat)
+    if oocOp == nil and self.settings and self.settings.barOpacityOutOfCombat then oocOp = self.settings.barOpacityOutOfCombat.default end
+    oocOp = tonumber(oocOp) or baseOp
+    if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
+
+    local tgtOp = tonumber(self.db and self.db.barOpacityWithTarget)
+    if tgtOp == nil and self.settings and self.settings.barOpacityWithTarget then tgtOp = self.settings.barOpacityWithTarget.default end
+    tgtOp = tonumber(tgtOp) or baseOp
+    if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
+
+    -- Determine which opacity to apply based on priority: target > combat > out of combat
+    local hasTarget = (UnitExists and UnitExists("target")) and true or false
+    local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
+
+    -- Helper to enumerate micro buttons
+    local function enumerateMicroButtons()
+        local buttons = {}
+        -- Standard micro button names in the retail client
+        local microButtonNames = {
+            "CharacterMicroButton",
+            "SpellbookMicroButton",
+            "TalentMicroButton",
+            "AchievementMicroButton",
+            "QuestLogMicroButton",
+            "GuildMicroButton",
+            "LFDMicroButton",
+            "CollectionsMicroButton",
+            "EJMicroButton",
+            "StoreMicroButton",
+            "MainMenuMicroButton",
+        }
+        for _, name in ipairs(microButtonNames) do
+            local btn = _G[name]
+            if btn then buttons[#buttons + 1] = btn end
+        end
+        -- Fallback: enumerate children if standard buttons not found
+        if #buttons == 0 and bar.GetChildren then
+            for _, child in ipairs({ bar:GetChildren() }) do
+                local t = child.GetObjectType and child:GetObjectType()
+                if t == "Button" or t == "CheckButton" then
+                    buttons[#buttons + 1] = child
+                end
+            end
+        end
+        return buttons
+    end
+
+    -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
+    local mouseoverEnabled = self.db and self.db.mouseoverMode
+    if mouseoverEnabled then
+        -- Store the component reference and opacity values on the bar for script access
+        bar._ScooterMouseoverComponent = self
+        bar._ScooterBaseOpacity = appliedOp / 100
+
+        -- Helper functions for mouseover handling
+        local function onMouseEnter()
+            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+                bar._ScooterIsMousedOver = true
+                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+            end
+        end
+        local function onMouseLeave()
+            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+                -- Only restore opacity if mouse is not over the bar or any of its buttons
+                local isOverBar = bar:IsMouseOver()
+                if not isOverBar then
+                    bar._ScooterIsMousedOver = false
+                    local restoreOp = bar._ScooterBaseOpacity or 1
+                    if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
+                end
+            end
+        end
+
+        -- Hook the bar frame itself (for gaps between buttons)
+        if not bar._ScooterMouseoverHooked then
+            bar:HookScript("OnEnter", onMouseEnter)
+            bar:HookScript("OnLeave", onMouseLeave)
+            bar._ScooterMouseoverHooked = true
+        end
+
+        -- Hook each micro button for mouseover
+        for _, btn in ipairs(enumerateMicroButtons()) do
+            if not btn._ScooterMouseoverHooked then
+                btn:HookScript("OnEnter", onMouseEnter)
+                btn:HookScript("OnLeave", onMouseLeave)
+                btn._ScooterMouseoverHooked = true
+            end
+        end
+
+        -- If currently moused over, keep at 100%; otherwise use calculated opacity
+        if bar._ScooterIsMousedOver then
+            if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+        else
+            if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+        end
+    else
+        -- Mouseover mode disabled - just apply the calculated opacity
+        bar._ScooterIsMousedOver = false
+        if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+    end
+end
+
 addon:RegisterComponentInitializer(function(self)
     local microBar = Component:New({
         id = "microBar",
@@ -315,7 +434,21 @@ addon:RegisterComponentInitializer(function(self)
             eyeSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Eye Size", widget = "slider", min = 50, max = 150, step = 5, section = "Sizing", order = 2
             }},
+            -- Visibility / Opacity settings (section "Misc" renders as "Visibility" header)
+            barOpacity = { type = "addon", default = 100, ui = {
+                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 1
+            }},
+            barOpacityWithTarget = { type = "addon", default = 100, ui = {
+                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 2
+            }},
+            barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+            }},
+            mouseoverMode = { type = "addon", default = false, ui = {
+                label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 4
+            }},
         },
+        ApplyStyling = ApplyMicroBarStyling,
     })
     self:RegisterComponent(microBar)
 
@@ -389,7 +522,7 @@ addon:RegisterComponentInitializer(function(self)
                     end
                 }},
                 borderThickness = { type = "addon", default = 1, ui = {
-                    label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 6
+                    label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 6
                 }},
                 backdropDisable = { type = "addon", default = false, ui = {
                     label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
@@ -483,6 +616,110 @@ addon:RegisterComponentInitializer(function(self)
         end
         self:RegisterComponent(comp)
     end
+
+    -- Pet Bar: 10 buttons, similar Edit Mode settings to Action Bars but no visibility/art/scrolling options
+    local petBar = Component:New({
+        id = "petBar",
+        name = "Pet Bar",
+        frameName = "PetActionBar",
+        maxButtons = 10,
+        settings = {
+            orientation = { type = "editmode", settingId = 0, default = "H", ui = {
+                label = "Orientation", widget = "dropdown", values = { H = "Horizontal", V = "Vertical" }, section = "Positioning", order = 1
+            }},
+            columns = { type = "editmode", default = 1, ui = {
+                label = "# Columns/Rows", widget = "slider", min = 1, max = 4, step = 1, section = "Positioning", order = 2, dynamicLabel = true
+            }},
+            iconPadding = { type = "editmode", default = 2, ui = {
+                label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 3
+            }},
+            positionX = { type = "addon", default = 0, ui = {
+                label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 98
+            }},
+            positionY = { type = "addon", default = 0, ui = {
+                label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 99
+            }},
+            iconSize = { type = "editmode", default = 100, ui = {
+                label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
+            }},
+            borderDisableAll = { type = "addon", default = false, ui = {
+                label = "Disable All Borders", widget = "checkbox", section = "Border", order = 1
+            }},
+            borderEnable = { type = "addon", default = false, ui = {
+                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 3
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 4
+            }},
+            borderStyle = { type = "addon", default = "square", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 5,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
+            }},
+            borderThickness = { type = "addon", default = 1, ui = {
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 6
+            }},
+            backdropDisable = { type = "addon", default = false, ui = {
+                label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
+            }},
+            backdropStyle = { type = "addon", default = "blizzardBg", ui = {
+                label = "Backdrop Style", widget = "dropdown", section = "Backdrop", order = 2,
+                optionsProvider = function()
+                    if addon.BuildIconBackdropOptionsContainer then
+                        return addon.BuildIconBackdropOptionsContainer()
+                    end
+                    return {}
+                end
+            }},
+            backdropOpacity = { type = "addon", default = 100, ui = {
+                label = "Backdrop Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Backdrop", order = 3
+            }},
+            backdropTintEnable = { type = "addon", default = false, ui = {
+                label = "Backdrop Tint", widget = "checkbox", section = "Backdrop", order = 4
+            }},
+            backdropTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Backdrop", order = 5
+            }},
+            backdropInset = { type = "addon", default = 0, ui = {
+                label = "Backdrop Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Backdrop", order = 6
+            }},
+            textStacks = { type = "addon", default = { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
+            textCooldown = { type = "addon", default = { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
+            textHotkeyHidden = { type = "addon", default = false, ui = {
+                label = "Hide Hotkey Text", widget = "checkbox", section = "Text", order = 10
+            }},
+            textHotkey = { type = "addon", default = { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
+            textMacroHidden = { type = "addon", default = false, ui = {
+                label = "Hide Macro Text", widget = "checkbox", section = "Text", order = 20
+            }},
+            textMacro = { type = "addon", default = { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
+            alwaysShowButtons = { type = "editmode", default = true, ui = {
+                label = "Always Show Buttons", widget = "checkbox", section = "Misc", order = 1
+            }},
+            barOpacity = { type = "addon", default = 100, ui = {
+                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+            }},
+            barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+            }},
+            barOpacityWithTarget = { type = "addon", default = 100, ui = {
+                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+            }},
+            mouseoverMode = { type = "addon", default = false, ui = {
+                label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
+            }},
+            supportsText = { type = "addon", default = true },
+        },
+        ApplyStyling = ApplyActionBarStyling,
+    })
+    self:RegisterComponent(petBar)
 end)
 
 function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
@@ -491,7 +728,10 @@ function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
     local src = addon.Components and addon.Components[sourceComponentId]
     local dst = addon.Components and addon.Components[destComponentId]
     if not src or not dst then return end
-    if not (sourceComponentId:match("^actionBar%d$") and destComponentId:match("^actionBar%d$")) then return end
+    -- Source must be actionBar1-8; destination can be actionBar1-8 or petBar (destination-only)
+    local srcValid = sourceComponentId:match("^actionBar%d$") ~= nil
+    local dstValid = destComponentId:match("^actionBar%d$") or destComponentId == "petBar"
+    if not (srcValid and dstValid) then return end
 
     if not src.db or not dst.db then return end
 
@@ -537,7 +777,8 @@ function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
     end
 
     if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    -- Note: Skip RequestApplyChanges to avoid taint from opening Edit Mode panel.
+    -- Edit Mode layout changes persist via SaveOnly and take effect on reload.
     addon:ApplyStyles()
 end
 

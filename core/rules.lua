@@ -188,6 +188,13 @@ local function currentSpecID()
     return specID
 end
 
+local function currentPlayerLevel()
+    if type(UnitLevel) ~= "function" then
+        return 0
+    end
+    return UnitLevel("player") or 0
+end
+
 local function applyActionValue(actionId, value, reason)
     local handler = ACTIONS[actionId]
     if not handler or not handler.set then
@@ -245,16 +252,51 @@ local function registerDefaultActions()
             return true
         end,
     }
+
+    -- Target/Focus Unit Frames: Hide Level Text (applies to both Target and Focus frames)
+    ACTIONS["ufTargetFocus.levelTextHidden"] = {
+        id = "ufTargetFocus.levelTextHidden",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "ufTargetFocus",
+        settingId = "levelTextHidden",
+        defaultValue = false,
+        path = { "Target/Focus Unit Frames", "Name & Level Text", "Visibility", "Hide Level Text" },
+        get = function()
+            -- Return true if EITHER Target or Focus has it hidden
+            local profile = addon.db and addon.db.profile
+            local uf = profile and profile.unitFrames
+            local target = uf and uf.Target
+            local focus = uf and uf.Focus
+            return (target and target.levelTextHidden) or (focus and focus.levelTextHidden) or false
+        end,
+        set = function(value)
+            -- Apply to BOTH Target and Focus
+            local profile = addon.db and addon.db.profile
+            if not profile then return false end
+            profile.unitFrames = profile.unitFrames or {}
+            profile.unitFrames.Target = profile.unitFrames.Target or {}
+            profile.unitFrames.Focus = profile.unitFrames.Focus or {}
+            local boolVal = value and true or false
+            local changed = false
+            if profile.unitFrames.Target.levelTextHidden ~= boolVal then
+                profile.unitFrames.Target.levelTextHidden = boolVal
+                changed = true
+            end
+            if profile.unitFrames.Focus.levelTextHidden ~= boolVal then
+                profile.unitFrames.Focus.levelTextHidden = boolVal
+                changed = true
+            end
+            if changed and addon.ApplyUnitFrameNameLevelTextFor then
+                pcall(addon.ApplyUnitFrameNameLevelTextFor, "Target")
+                pcall(addon.ApplyUnitFrameNameLevelTextFor, "Focus")
+            end
+            return changed
+        end,
+    }
 end
 
-local function ruleMatches(rule, specID)
-    if not rule or rule.enabled == false then
-        return false
-    end
-    local trigger = rule.trigger or {}
-    if trigger.type ~= "specialization" then
-        return false
-    end
+local function ruleMatchesSpecialization(trigger, specID)
     local specs = trigger.specIds
     if type(specs) ~= "table" then
         return false
@@ -264,6 +306,30 @@ local function ruleMatches(rule, specID)
             return true
         end
     end
+    return false
+end
+
+local function ruleMatchesPlayerLevel(trigger, playerLevel)
+    local targetLevel = tonumber(trigger.level)
+    if not targetLevel then
+        return false
+    end
+    return playerLevel == targetLevel
+end
+
+local function ruleMatches(rule, specID, playerLevel)
+    if not rule or rule.enabled == false then
+        return false
+    end
+    local trigger = rule.trigger or {}
+    local triggerType = trigger.type
+
+    if triggerType == "specialization" then
+        return ruleMatchesSpecialization(trigger, specID)
+    elseif triggerType == "playerLevel" then
+        return ruleMatchesPlayerLevel(trigger, playerLevel)
+    end
+
     return false
 end
 
@@ -318,7 +384,8 @@ function Rules:IsRuleActive(ruleId)
         return false
     end
     local specID = currentSpecID()
-    return ruleMatches(rule, specID)
+    local playerLevel = currentPlayerLevel()
+    return ruleMatches(rule, specID, playerLevel)
 end
 
 function Rules:CreateRule(opts)
@@ -434,6 +501,39 @@ function Rules:ToggleRuleSpec(ruleId, specID)
         table.sort(rule.trigger.specIds)
     end
     self:ApplyAll("ToggleSpec")
+end
+
+-- Change the trigger type and reset trigger-specific data
+function Rules:SetRuleTriggerType(ruleId, triggerType)
+    local rule = self:GetRuleById(ruleId)
+    if not rule then
+        return
+    end
+    if rule.trigger.type == triggerType then
+        return  -- No change
+    end
+    -- Reset trigger data when switching types
+    rule.trigger = rule.trigger or {}
+    rule.trigger.type = triggerType
+    if triggerType == "specialization" then
+        rule.trigger.specIds = {}
+        rule.trigger.level = nil
+    elseif triggerType == "playerLevel" then
+        rule.trigger.specIds = nil
+        rule.trigger.level = nil  -- User must set the level
+    end
+    self:ApplyAll("ChangeTriggerType")
+end
+
+-- Set the level value for playerLevel triggers
+function Rules:SetRuleTriggerLevel(ruleId, level)
+    local rule = self:GetRuleById(ruleId)
+    if not rule or rule.trigger.type ~= "playerLevel" then
+        return
+    end
+    local numLevel = tonumber(level)
+    rule.trigger.level = numLevel
+    self:ApplyAll("ChangeTriggerLevel")
 end
 
 function Rules:SetRuleAction(ruleId, actionId)
@@ -658,6 +758,7 @@ function Rules:ApplyAll(reason)
     end
 
     local currentSpec = currentSpecID()
+    local playerLevel = currentPlayerLevel()
     if currentSpec ~= self._lastSpecID then
         self._lastSpecID = currentSpec
     end
@@ -670,7 +771,7 @@ function Rules:ApplyAll(reason)
     for _, rule in ipairs(rules) do
         local actionId = rule.action and rule.action.id
         local handler = ACTIONS[actionId]
-        if handler and ruleMatches(rule, currentSpec) then
+        if handler and ruleMatches(rule, currentSpec, playerLevel) then
             local value = rule.action.value
             value = normalizeValue(value, handler.valueType)
             -- Last matching rule wins (rules are processed in order)
@@ -739,6 +840,10 @@ function Rules:OnPlayerLogin()
     buildSpecCache()
     self._lastSpecID = currentSpecID()
     self:ApplyAll("Login")
+end
+
+function Rules:OnPlayerLevelUp()
+    self:ApplyAll("LevelUp")
 end
 
 return Rules

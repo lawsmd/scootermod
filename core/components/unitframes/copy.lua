@@ -37,6 +37,22 @@ local function setOffsetX(setting, value)
     offset.x = value
 end
 
+-- Helper to get font size from a text settings table
+local function getFontSize(setting)
+    if type(setting) ~= "table" then
+        return nil
+    end
+    return setting.size
+end
+
+-- Helper to set font size on a text settings table
+local function setFontSize(setting, value)
+    if type(setting) ~= "table" then
+        return
+    end
+    setting.size = value
+end
+
 local function canonicalUnit(unit)
     if type(unit) ~= "string" then
         return nil
@@ -157,6 +173,10 @@ local copyKeysRoot = {
     "textName",
     "levelTextHidden",
     "textLevel",
+    -- Visibility (opacity sliders)
+    "opacity",
+    "opacityWithTarget",
+    "opacityOutOfCombat",
 }
 
 local preserveXOffsetKeys = {
@@ -168,74 +188,19 @@ local preserveXOffsetKeys = {
     textLevel = true,
 }
 
-local castBarCommonKeys = {
-    "widthPct",
-    "castBarTexture",
-    "castBarColorMode",
-    "castBarTint",
-    "castBarBackgroundTexture",
-    "castBarBackgroundColorMode",
-    "castBarBackgroundTint",
-    "castBarBackgroundOpacity",
-    "castBarBorderEnable",
-    "castBarBorderStyle",
-    "castBarBorderColorMode",
-    "castBarBorderTintColor",
-    "castBarBorderThickness",
-    "castBarBorderInset",
-    "iconDisabled",
-    "iconHeight",
-    "iconWidth",
-    "iconBarPadding",
-    "iconBorderEnable",
-    "iconBorderStyle",
-    "iconBorderThickness",
-    "iconBorderTintEnable",
-    "iconBorderTintColor",
-    "castBarSparkHidden",
-    "castBarSparkColorMode",
-    "castBarSparkTint",
+-- Keys that have a .size field which should be preserved when copying to Pet
+-- (Pet frame is smaller, so font sizes should remain independent)
+local preserveSizeKeys = {
+    textHealthPercent = true,
+    textHealthValue = true,
+    textPowerPercent = true,
+    textPowerValue = true,
+    textName = true,
+    textLevel = true,
 }
 
-local function copyShowCastTimeSetting(srcUnit, dstUnit)
-    local srcCap = unitCaps[srcUnit]
-    local dstCap = unitCaps[dstUnit]
-    if not (srcCap and dstCap and srcCap.supportsShowCastTime and dstCap.supportsShowCastTime) then
-        return
-    end
-    local mgr = _G and _G.EditModeManagerFrame
-    local EMSys = _G and _G.Enum and _G.Enum.EditModeSystem
-    local settingEnum = _G and _G.Enum and _G.Enum.EditModeCastBarSetting and _G.Enum.EditModeCastBarSetting.ShowCastTime
-    if not (mgr and EMSys and mgr.GetRegisteredSystemFrame and settingEnum) then
-        return
-    end
-    local frame = mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
-    if not frame then
-        return
-    end
-    if not (addon.EditMode and addon.EditMode.GetSetting) then
-        return
-    end
-    local raw = addon.EditMode.GetSetting(frame, settingEnum)
-    if raw == nil then
-        return
-    end
-    local value = tonumber(raw) or 0
-    value = (value ~= 0) and 1 or 0
-    if addon.EditMode and addon.EditMode.WriteSetting then
-        addon.EditMode.WriteSetting(frame, settingEnum, value, {
-            updaters = { "UpdateSystemSettingShowCastTime" },
-            suspendDuration = 0.25,
-        })
-    elseif addon.EditMode and addon.EditMode.SetSetting then
-        addon.EditMode.SetSetting(frame, settingEnum, value)
-        if type(frame.UpdateSystemSettingShowCastTime) == "function" then
-            pcall(frame.UpdateSystemSettingShowCastTime, frame)
-        end
-        if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-        if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-    end
-end
+-- Cast Bar settings are intentionally excluded from Copy From functionality.
+-- Each unit frame's cast bar must be configured independently.
 
 function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
     local src = canonicalUnit(sourceUnit)
@@ -277,12 +242,20 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
             return
         end
         local prevOffsetX = nil
+        local prevSize = nil
         if preserveXOffsetKeys[key] then
             prevOffsetX = getOffsetX(dstCfg[key])
+        end
+        -- When copying to Pet, preserve font sizes (Pet frame is smaller)
+        if dst == "Pet" and preserveSizeKeys[key] then
+            prevSize = getFontSize(dstCfg[key])
         end
         dstCfg[key] = deepCopy(srcCfg[key])
         if preserveXOffsetKeys[key] then
             setOffsetX(dstCfg[key], prevOffsetX)
+        end
+        if dst == "Pet" and preserveSizeKeys[key] then
+            setFontSize(dstCfg[key], prevSize)
         end
     end
 
@@ -353,40 +326,12 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
         dstPortrait.damageText = nil
     end
 
+    -- Cast Bar settings are intentionally NOT copied between unit frames.
+    -- Each unit frame's cast bar settings are independent and must be configured separately.
+    -- Pet does not have a cast bar, so we clear its castBar table if copying to Pet.
     if not dstCap.hasCastBar then
         dstCfg.castBar = nil
-    else
-        dstCfg.castBar = dstCfg.castBar or {}
-        local dstCast = dstCfg.castBar
-        if srcCap.hasCastBar then
-            local srcCast = type(srcCfg.castBar) == "table" and srcCfg.castBar or {}
-            for _, key in ipairs(castBarCommonKeys) do
-                dstCast[key] = deepCopy(srcCast[key])
-            end
-            if dstCap.supportsSpellNameText and srcCap.supportsSpellNameText then
-                local prevSpellNameOffsetX = getOffsetX(dstCast.spellNameText)
-                dstCast.spellNameTextDisabled = deepCopy(srcCast.spellNameTextDisabled)
-                dstCast.hideSpellNameBackdrop = deepCopy(srcCast.hideSpellNameBackdrop)
-                dstCast.spellNameText = deepCopy(srcCast.spellNameText)
-                setOffsetX(dstCast.spellNameText, prevSpellNameOffsetX)
-            elseif not dstCap.supportsSpellNameText then
-                dstCast.spellNameTextDisabled = nil
-                dstCast.hideSpellNameBackdrop = nil
-                dstCast.spellNameText = nil
-            end
-            if dstCap.supportsCastTimeText and srcCap.supportsCastTimeText then
-                local prevCastTimeOffsetX = getOffsetX(dstCast.castTimeText)
-                dstCast.castTimeTextDisabled = deepCopy(srcCast.castTimeTextDisabled)
-                dstCast.castTimeText = deepCopy(srcCast.castTimeText)
-                setOffsetX(dstCast.castTimeText, prevCastTimeOffsetX)
-            elseif not dstCap.supportsCastTimeText then
-                dstCast.castTimeTextDisabled = nil
-                dstCast.castTimeText = nil
-            end
-        end
     end
-
-    copyShowCastTimeSetting(src, dst)
 
     if addon.ApplyUnitFrameScaleMultFor then
         addon.ApplyUnitFrameScaleMultFor(dst)

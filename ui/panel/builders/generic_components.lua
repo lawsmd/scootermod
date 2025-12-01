@@ -395,7 +395,7 @@ local function createComponentRenderer(componentId)
                                     end)
                                 end
                             end
-                            if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown then
+                            if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown then
                                 if addon.InitFontDropdown then
                                     addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
                                 end
@@ -499,7 +499,7 @@ local function createComponentRenderer(componentId)
 
                         local function isActionBar()
                             local id = tostring(component and component.id or "")
-                            return id:find("actionBar", 1, true) == 1
+                            return id:find("actionBar", 1, true) == 1 or id == "petBar"
                         end
 
                         local tabAName, tabBName
@@ -1161,7 +1161,7 @@ local function createComponentRenderer(componentId)
                         end,
                         readValue("borderThickness", 1) or 1
                     )
-                    local thicknessOptions = Settings.CreateSliderOptions(1, 16, 1)
+                    local thicknessOptions = Settings.CreateSliderOptions(1, 16, 0.34)
                     thicknessOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
                         return tostring(math.floor((tonumber(value) or 0) + 0.5))
                     end)
@@ -2168,6 +2168,22 @@ local function createComponentRenderer(componentId)
                                                 end
                                             end
                                         end
+                                        -- Tracked Bars: Icon Padding tooltip (clarifies this controls vertical bar spacing)
+                                        if frame.ScooterIconPaddingInfoIcon then
+                                            frame.ScooterIconPaddingInfoIcon:Hide()
+                                            frame.ScooterIconPaddingInfoIcon:SetParent(nil)
+                                            frame.ScooterIconPaddingInfoIcon = nil
+                                        end
+                                        if settingId == "iconPadding" and component and component.id == "trackedBars" then
+                                            if lbl and panel and panel.CreateInfoIconForLabel then
+                                                local tooltipText = "Controls the vertical spacing between stacked Tracked Bars."
+                                                frame.ScooterIconPaddingInfoIcon = panel.CreateInfoIconForLabel(lbl, tooltipText, 5, 0, 32)
+                                                if frame.ScooterIconPaddingInfoIcon then
+                                                    frame.ScooterIconPaddingInfoIcon:ClearAllPoints()
+                                                    frame.ScooterIconPaddingInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                                end
+                                            end
+                                        end
                                         if ui.dynamicLabel and settingId == "columns" then
                                             ApplyColumnsLabel(component, frame)
                                             if panel and panel.RegisterDynamicSettingWidget then
@@ -2355,6 +2371,12 @@ local function createComponentRenderer(componentId)
                                             end
                                             if panel and panel.RefreshDynamicSettingWidgets then
                                                 panel:RefreshDynamicSettingWidgets(component)
+                                            end
+                                        end
+                                        -- Apply custom font picker popup for font dropdowns (but not font style dropdowns)
+                                        if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and frame.Control and frame.Control.Dropdown then
+                                            if addon.InitFontDropdown then
+                                                addon.InitFontDropdown(frame.Control.Dropdown, settingObj, data.options)
                                             end
                                         end
                                     end
@@ -2744,7 +2766,13 @@ local function createComponentRenderer(componentId)
                                     end
                                     input:SetScript("OnEnterPressed", function(b)
                                         commit()
-                                        b:ClearFocus()
+                                        -- Delay ClearFocus to prevent Enter key from propagating after
+                                        -- the EditBox releases keyboard focus. Without this delay, the
+                                        -- Enter key can interact with other UI elements and cause
+                                        -- unintended actions like closing the settings panel.
+                                        C_Timer.After(0, function()
+                                            if b and b.ClearFocus then b:ClearFocus() end
+                                        end)
                                     end)
                                     input:SetScript("OnEditFocusLost", function(b)
                                         commit()
@@ -3170,6 +3198,12 @@ function panel.RenderTooltip()
                 initDrop:InitFrame(f)
                 local lbl = f and (f.Text or f.Label)
                 if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                -- Apply custom font picker popup for font dropdowns (but not font style dropdowns)
+                if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown then
+                    if addon.InitFontDropdown then
+                        addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+                    end
+                end
                 yRef.y = yRef.y - 34
             end
 
@@ -3246,6 +3280,47 @@ function panel.RenderTooltip()
             return panel:IsSectionExpanded("tooltip", "Text")
         end)
         table.insert(init, tabbedInit)
+
+        -- Visibility Section (collapsible header)
+        local visExpInit = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+            name = "Visibility",
+            sectionKey = "Visibility",
+            componentId = "tooltip",
+            expanded = panel:IsSectionExpanded("tooltip", "Visibility"),
+        })
+        visExpInit.GetExtent = function() return 30 end
+        table.insert(init, visExpInit)
+
+        -- Hide Tooltip Health Bar checkbox
+        local db = component.db or {}
+        local hideHealthBarSetting = CreateLocalSetting("Hide Tooltip Health Bar", "boolean",
+            function() return not not db.hideHealthBar end,
+            function(v)
+                db.hideHealthBar = not not v
+                if addon and addon.ApplyStyles then addon:ApplyStyles() end
+            end,
+            db.hideHealthBar or false
+        )
+        local hideHealthBarInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+            name = "Hide Tooltip Health Bar",
+            setting = hideHealthBarSetting,
+            options = {},
+        })
+        hideHealthBarInit.GetExtent = function() return 34 end
+        hideHealthBarInit:AddShownPredicate(function()
+            return panel:IsSectionExpanded("tooltip", "Visibility")
+        end)
+        -- Apply theme to checkbox
+        local baseInitFrame = hideHealthBarInit.InitFrame
+        hideHealthBarInit.InitFrame = function(self, frame)
+            if baseInitFrame then baseInitFrame(self, frame) end
+            if panel and panel.ApplyRobotoWhite then
+                if frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+                local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+            end
+        end
+        table.insert(init, hideHealthBarInit)
 
         -- Actually display the content in the right pane
         local f = panel.frame

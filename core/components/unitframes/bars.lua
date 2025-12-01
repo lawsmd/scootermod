@@ -740,6 +740,12 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
+            
+            -- For cast bars, hide the stock Background frame so our custom texture is visible
+            -- (PlayerCastingBarFrame.Background, TargetFrameSpellBar.Background, FocusFrameSpellBar.Background)
+            if barKind == "cast" and bar.Background then
+                if bar.Background.Hide then pcall(bar.Background.Hide, bar.Background) end
+            end
         else
             -- Default: always show our background with default black color
             -- We don't rely on Blizzard's stock Background texture since it's hidden by default
@@ -758,6 +764,12 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
+            
+            -- For cast bars with default texture, show the stock Background frame again
+            -- (PlayerCastingBarFrame.Background, TargetFrameSpellBar.Background, FocusFrameSpellBar.Background)
+            if barKind == "cast" and bar.Background then
+                if bar.Background.Show then pcall(bar.Background.Show, bar.Background) end
+            end
         end
     end
 

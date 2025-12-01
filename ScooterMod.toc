@@ -17,6 +17,8 @@ libs/AceConsole-3.0/AceConsole-3.0.xml
 libs/AceGUI-3.0/AceGUI-3.0.xml
 libs/AceConfig-3.0/AceConfig-3.0.xml
 libs/LibEditModeOverride/LibEditModeOverride.xml
+libs/LibDataBroker-1.1/LibDataBroker-1.1.lua
+libs/LibDBIcon-1.0/lib.xml
 
 core/media.lua
 core/colors.lua
@@ -55,6 +57,7 @@ ui/ScooterExpandableSection.xml
 ui/panel/theme.lua
 ui/panel/mixins.lua
 ui/panel/controls.lua
+ui/panel/dialogs.lua
 ui/panel/animations.lua
 ui/panel/rightpane.lua
 ui/panel/infoicon.lua
@@ -71,5 +74,6 @@ ui/panel/profiles_rules.lua
 ui/panel/apply_all.lua
 
 core/init.lua
+core/minimap.lua
 
 ScooterMod.lua

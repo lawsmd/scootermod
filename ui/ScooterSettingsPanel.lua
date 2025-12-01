@@ -365,8 +365,8 @@ local function createComponentRenderer(componentId)
                                     end)
                                 end
                             end
-                            -- If this is the Font dropdown, install font preview renderer
-                            if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown then
+                            -- If this is the Font dropdown (but not Font Style), install font preview renderer
+                            if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown then
                                 if addon.InitFontDropdown then
                                     addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
                                 end
@@ -1530,6 +1530,7 @@ local function BuildCategories()
 	addEntry("actionBar6", addon.SettingsPanel.RenderActionBar6())
 	addEntry("actionBar7", addon.SettingsPanel.RenderActionBar7())
 	addEntry("actionBar8", addon.SettingsPanel.RenderActionBar8())
+	addEntry("petBar", addon.SettingsPanel.RenderPetBar())
 	addEntry("stanceBar", addon.SettingsPanel.RenderStanceBar())
 	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
 
@@ -1562,6 +1563,7 @@ local function BuildCategories()
 			{ type = "child", key = "actionBar6", label = "Action Bar 6" },
 			{ type = "child", key = "actionBar7", label = "Action Bar 7" },
 			{ type = "child", key = "actionBar8", label = "Action Bar 8" },
+			{ type = "child", key = "petBar", label = "Pet Bar" },
 			{ type = "child", key = "stanceBar", label = "Stance Bar" },
 			{ type = "child", key = "microBar", label = "Micro Bar" },
 		}},
@@ -1843,79 +1845,71 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
     local f = panel.frame
     local header = f and f.RightPane and f.RightPane.Header
     if not header then return end
-    -- One-time registration of confirmation dialogs used by header "Copy from" menus
-    if _G and _G.StaticPopupDialogs then
-        if not _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] then
-    _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] = {
-        text = "Copy supported Unit Frame settings from %s to %s?",
-                button1 = "Copy",
-                button2 = CANCEL,
-                OnAccept = function(self, data)
-                    if data and addon and addon.CopyUnitFrameSettings then
-                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
-                        local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
-                        if ok then
-                            if data.dropdown then
-                                data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
-                                if data.dropdown.SetText and data.sourceLabel then
-                                    data.dropdown:SetText(data.sourceLabel)
-                                end
-                            end
-                        else
-                            if _G and _G.StaticPopup_Show then
-                                local msg
-                                if err == "focus_requires_larger" then
-                                    msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
-                                elseif err == "invalid_unit" then
-                                    msg = "Copy failed. Unsupported unit selection."
-                                elseif err == "same_unit" then
-                                    msg = "Copy failed. Choose a different source frame."
-                                elseif err == "db_unavailable" then
-                                    msg = "Copy failed. Profile database unavailable."
-                                else
-                                    msg = "Copy failed. Please try again."
-                                end
-                                _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] = _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] or {
-                                    text = "%s",
-                                    button1 = OKAY,
-                                    timeout = 0,
-                                    whileDead = 1,
-                                    hideOnEscape = 1,
-                                    preferredIndex = 3,
-                                }
-                                _G.StaticPopup_Show("SCOOTERMOD_COPY_UF_ERROR", msg)
-                            end
+    -- Helper functions for copy confirmation dialogs
+    -- (Uses ScooterMod's custom dialog system to avoid tainting StaticPopupDialogs)
+    if not panel._copyDialogHandlersRegistered then
+        panel._copyDialogHandlersRegistered = true
+        
+        -- Unit Frame copy handler
+        panel._handleUFCopyConfirm = function(data)
+            if data and addon and addon.CopyUnitFrameSettings then
+                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
+                if ok then
+                    if data.dropdown then
+                        data.dropdown._ScooterSelectedId = data.sourceId or data.sourceUnit
+                        if data.dropdown.SetText and data.sourceLabel then
+                            data.dropdown:SetText(data.sourceLabel)
                         end
                     end
-                end,
-                OnCancel = function(self, data) end,
-                timeout = 0,
-                whileDead = 1,
-                hideOnEscape = 1,
-                preferredIndex = 3,
-            }
+                    local destComponentId = data.destId
+                    if destComponentId then
+                        panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                        panel._pendingComponentRefresh[destComponentId] = true
+                    end
+                    InvalidatePanelRightPane(panel)
+                    if panel and panel.RefreshCurrentCategoryDeferred then
+                        panel.RefreshCurrentCategoryDeferred()
+                    end
+                else
+                    local msg
+                    if err == "focus_requires_larger" then
+                        msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
+                    elseif err == "invalid_unit" then
+                        msg = "Copy failed. Unsupported unit selection."
+                    elseif err == "same_unit" then
+                        msg = "Copy failed. Choose a different source frame."
+                    elseif err == "db_unavailable" then
+                        msg = "Copy failed. Profile database unavailable."
+                    else
+                        msg = "Copy failed. Please try again."
+                    end
+                    if addon.Dialogs and addon.Dialogs.Show then
+                        addon.Dialogs:Show("SCOOTERMOD_COPY_UF_ERROR", { formatArgs = { msg } })
+                    end
+                end
+            end
         end
-        if not _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] then
-            _G.StaticPopupDialogs["SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"] = {
-                text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
-                button1 = "Copy",
-                button2 = CANCEL,
-                OnAccept = function(self, data)
-                    if data and addon and addon.CopyActionBarSettings then
-                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
-                        addon.CopyActionBarSettings(data.sourceId, data.destId)
-                        if data.dropdown then
-                            data.dropdown._ScooterSelectedId = data.sourceId
-                            if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
-                        end
-                    end
-                end,
-                OnCancel = function(self, data) end,
-                timeout = 0,
-                whileDead = 1,
-                hideOnEscape = 1,
-                preferredIndex = 3,
-            }
+        
+        -- Action Bar copy handler
+        panel._handleActionBarCopyConfirm = function(data)
+            if data and addon and addon.CopyActionBarSettings then
+                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                addon.CopyActionBarSettings(data.sourceId, data.destId)
+                if data.dropdown then
+                    data.dropdown._ScooterSelectedId = data.sourceId
+                    if data.dropdown.SetText and data.sourceName then data.dropdown:SetText(data.sourceName) end
+                end
+                local destComponentId = data.destId
+                if destComponentId then
+                    panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                    panel._pendingComponentRefresh[destComponentId] = true
+                end
+                InvalidatePanelRightPane(panel)
+                if panel and panel.RefreshCurrentCategoryDeferred then
+                    panel.RefreshCurrentCategoryDeferred()
+                end
+            end
         end
     end
     -- Create once
@@ -1942,31 +1936,40 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
     end
     lbl:ClearAllPoints(); lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
 
-    local isAB = type(key) == "string" and key:match("^actionBar%d$") ~= nil
-    local isUF = (key == "ufPlayer") or (key == "ufTarget") or (key == "ufFocus")
+    local isAB = type(key) == "string" and (key:match("^actionBar%d$") or key == "petBar")
+    local isUF = (key == "ufPlayer") or (key == "ufTarget") or (key == "ufFocus") or (key == "ufPet")
 
     -- Reset any previous selection text to avoid stale prompts between categories
     dd._ScooterSelectedId = nil
 
     if isAB and dd and dd.SetupMenu then
         local currentId = key
+        local isPetBar = (currentId == "petBar")
         dd:SetupMenu(function(menu, root)
+            -- Always show Action Bars 1-8 as sources; Pet Bar is destination-only
             for i = 1, 8 do
                 local id = "actionBar" .. tostring(i)
+                -- For actionBar pages, exclude self; for petBar, show all 8
                 if id ~= currentId then
                     local comp = addon and addon.Components and addon.Components[id]
                     local text = (comp and comp.name) or ("Action Bar " .. tostring(i))
                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
-                        local which = "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
-                        local destName = (addon and addon.Components and addon.Components[currentId] and addon.Components[currentId].name) or currentId
-                        local data = { sourceId = id, destId = currentId, sourceName = text, destName = destName, dropdown = dd }
-                        if _G and _G.StaticPopup_Show then
-                            _G.StaticPopup_Show(which, text, destName, data)
-                        elseif addon and addon.CopyActionBarSettings then
-                            addon.CopyActionBarSettings(id, currentId)
-                            dd._ScooterSelectedId = id
-                            if dd.SetText then dd:SetText(text) end
-                        end
+                        -- Defer callback execution to break taint chain from menu system
+                        C_Timer.After(0, function()
+                            local destName = (addon and addon.Components and addon.Components[currentId] and addon.Components[currentId].name) or currentId
+                            local data = { sourceId = id, destId = currentId, sourceName = text, destName = destName, dropdown = dd }
+                            -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                            if addon.Dialogs and addon.Dialogs.Show then
+                                addon.Dialogs:Show("SCOOTERMOD_COPY_ACTIONBAR_CONFIRM", {
+                                    formatArgs = { text, destName },
+                                    data = data,
+                                    onAccept = function() panel._handleActionBarCopyConfirm(data) end,
+                                })
+                            elseif addon and addon.CopyActionBarSettings then
+                                -- Fallback if dialogs not loaded
+                                panel._handleActionBarCopyConfirm(data)
+                            end
+                        end)
                     end)
                 end
             end
@@ -1983,22 +1986,24 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
             if id == "ufPlayer" then return "Player" end
             if id == "ufTarget" then return "Target" end
             if id == "ufFocus"  then return "Focus" end
+            if id == "ufPet"    then return "Pet" end
             return id
         end
         local function unitKeyFor(id)
             if id == "ufPlayer" then return "Player" end
             if id == "ufTarget" then return "Target" end
             if id == "ufFocus"  then return "Focus" end
+            if id == "ufPet"    then return "Pet" end
             return nil
         end
         local currentId = key
         dd:SetupMenu(function(menu, root)
-            local candidates = { "ufPlayer", "ufTarget", "ufFocus" } -- Pet excluded
+            -- Pet can be a destination but not a source (too different from other frames)
+            local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
             for _, id in ipairs(candidates) do
                 if id ~= currentId then
                     local text = unitLabelFor(id)
                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
-                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                         local destLabel = unitLabelFor(currentId)
                         local data = {
                             sourceUnit = unitKeyFor(id),
@@ -2009,14 +2014,16 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
                             sourceId = id,
                             destId = currentId,
                         }
-                        if _G and _G.StaticPopup_Show then
-                            _G.StaticPopup_Show(which, text, destLabel, data)
+                        -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                        if addon.Dialogs and addon.Dialogs.Show then
+                            addon.Dialogs:Show("SCOOTERMOD_COPY_UF_CONFIRM", {
+                                formatArgs = { text, destLabel },
+                                data = data,
+                                onAccept = function() panel._handleUFCopyConfirm(data) end,
+                            })
                         elseif addon and addon.CopyUnitFrameSettings then
-                            local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
-                            if ok then
-                                dd._ScooterSelectedId = id
-                                if dd.SetText then dd:SetText(text) end
-                            end
+                            -- Fallback if dialogs not loaded
+                            panel._handleUFCopyConfirm(data)
                         end
                     end)
                 end
@@ -2317,27 +2324,15 @@ end
                 end
             end
 
-            if _G and _G.StaticPopup_Show then
-                if not _G.StaticPopupDialogs["SCOOTERMOD_RESET_DEFAULTS"] then
-                    _G.StaticPopupDialogs["SCOOTERMOD_RESET_DEFAULTS"] = {
-                        text = "Are you sure you want to reset %s to all default settings and location?",
-                        button1 = YES,
-                        button2 = CANCEL,
-                        OnAccept = function(_, data)
-                            if data and data.handler and data.key then
-                                performDefaultsReset(data.key, data.handler)
-                            end
-                        end,
-                        OnCancel = function() end,
-                        timeout = 0,
-                        whileDead = 1,
-                        hideOnEscape = 1,
-                        preferredIndex = 3,
-                    }
-                end
-                _G.StaticPopup_Show("SCOOTERMOD_RESET_DEFAULTS", displayName, nil, {
-                    handler = handler,
-                    key = currentKey,
+            -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+            if addon.Dialogs and addon.Dialogs.Show then
+                local data = { handler = handler, key = currentKey }
+                addon.Dialogs:Show("SCOOTERMOD_RESET_DEFAULTS", {
+                    formatArgs = { displayName },
+                    data = data,
+                    onAccept = function()
+                        performDefaultsReset(currentKey, handler)
+                    end,
                 })
                 return
             end
@@ -2420,6 +2415,21 @@ end
                 if pnl and pnl.StopTitleAnimation and frame._ScooterTitleRegion then
                     local titleRegion = frame._ScooterTitleRegion
                     pnl.StopTitleAnimation(frame.LogoButton, titleRegion._titleText)
+                end
+                -- Close any open dropdown menus to prevent lingering UI
+                if CloseDropDownMenus then
+                    pcall(CloseDropDownMenus)
+                end
+                -- Explicitly hide profile widgets to prevent them lingering on screen
+                -- after deferred callbacks from profile switching or action bar copy
+                local widgets = pnl and pnl._profileWidgets
+                if widgets then
+                    if widgets.ActiveLayoutRow then
+                        widgets.ActiveLayoutRow:Hide()
+                    end
+                    if widgets.SpecEnabledRow then
+                        widgets.SpecEnabledRow:Hide()
+                    end
                 end
             end)
             f._ScooterProtectHooked = true

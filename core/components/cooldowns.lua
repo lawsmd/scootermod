@@ -748,7 +748,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 5
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
@@ -825,7 +825,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 5
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
@@ -902,7 +902,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 5
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
@@ -997,7 +997,7 @@ addon:RegisterComponentInitializer(function(self)
                 end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 5
             }},
             iconWidth = { type = "addon", default = 30, ui = {
                 label = "Icon Width", widget = "slider", min = 8, max = 32, step = 1, section = "Icon", order = 1
@@ -1024,7 +1024,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             iconBorderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Icon", order = 7
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Icon", order = 7
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1

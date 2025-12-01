@@ -1926,6 +1926,7 @@ function addon.EditMode.Initialize()
             "MultiBar5",
             "MultiBar6",
             "MultiBar7",
+            "PetActionBar",
         }
         for _, name in ipairs(candidates) do
             local fr = _G[name]

@@ -53,6 +53,37 @@ do
 		local scalePct = tonumber(cfg.iconScale) or 100
 		if scalePct < 50 then scalePct = 50 elseif scalePct > 150 then scalePct = 150 end
 		local scaleMultiplier = scalePct / 100.0
+		local hideBuffsDebuffs = cfg.hideBuffsDebuffs == true
+
+		-- Helper: hide or show all aura frames in a pool
+		local function setPoolVisibility(pool, hidden)
+			if not pool or not pool.EnumerateActive then return end
+			for auraFrame in pool:EnumerateActive() do
+				if auraFrame then
+					if hidden then
+						auraFrame:SetAlpha(0)
+						if auraFrame.EnableMouse then auraFrame:EnableMouse(false) end
+					else
+						auraFrame:SetAlpha(1)
+						if auraFrame.EnableMouse then auraFrame:EnableMouse(true) end
+					end
+				end
+			end
+		end
+
+		-- Apply visibility to all active aura frames in the pools
+		local auraPools = frame.auraPools
+		if auraPools and auraPools.GetPool then
+			local buffPool = auraPools:GetPool("TargetBuffFrameTemplate")
+			local debuffPool = auraPools:GetPool("TargetDebuffFrameTemplate")
+			setPoolVisibility(buffPool, hideBuffsDebuffs)
+			setPoolVisibility(debuffPool, hideBuffsDebuffs)
+		end
+
+		-- If hidden, skip all the detailed styling work (positioning, sizing, borders)
+		if hideBuffsDebuffs then
+			return
+		end
 
 		local function applyToPool(pool)
 			if not pool or not pool.EnumerateActive then return end

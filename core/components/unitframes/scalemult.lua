@@ -124,8 +124,13 @@ local function applyScaleMultFor(unit)
     -- Calculate new scale: Edit Mode scale × our multiplier
     local newScale = emScaleFactor * scaleMult
     
-    -- Skip layout changes during combat, but still allow scale changes (cosmetic only)
-    -- SetScale is generally safe during combat as it doesn't affect secure frame properties
+    -- Skip ALL scale changes during combat - SetScale on unit frames triggers
+    -- Edit Mode's protected SetScaleBase() method, causing taint errors
+    if InCombatLockdown and InCombatLockdown() then
+        debugPrint("Skipping scale change for", unit, "during combat")
+        return
+    end
+    
     if frame.SetScale then
         local ok, err = pcall(frame.SetScale, frame, newScale)
         if ok then
@@ -150,9 +155,16 @@ local function onLayoutsUpdated()
     -- Defer application slightly to let Edit Mode finish its updates
     if C_Timer and C_Timer.After then
         C_Timer.After(0.1, function()
+            -- Skip if we entered combat during the delay
+            if InCombatLockdown and InCombatLockdown() then
+                return
+            end
             applyAllScaleMults()
         end)
     else
+        if InCombatLockdown and InCombatLockdown() then
+            return
+        end
         applyAllScaleMults()
     end
 end

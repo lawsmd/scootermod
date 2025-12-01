@@ -6,19 +6,14 @@ local Component = addon.ComponentPrototype
 local sctDamageState = {
     initialLoadComplete = false,
     lastKnownFont = nil,
+    damageTextFontApplied = false, -- Track if we've set DAMAGE_TEXT_FONT this session
 }
 
--- Register the static popup dialog for combat font restart warning
-local function ensureCombatFontPopup()
-    if _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COMBAT_FONT_RESTART"] then
-        _G.StaticPopupDialogs["SCOOTERMOD_COMBAT_FONT_RESTART"] = {
-            text = "In order for Combat Font changes to take effect, you'll need to fully exit and re-open World of Warcraft.",
-            button1 = OKAY or "Okay",
-            timeout = 0,
-            whileDead = 1,
-            hideOnEscape = 1,
-            preferredIndex = 3,
-        }
+-- Show combat font restart warning using ScooterMod's custom dialog system
+-- (Avoids tainting StaticPopupDialogs which can block protected functions like ForceQuit)
+local function showCombatFontRestartWarning()
+    if addon.Dialogs and addon.Dialogs.Show then
+        addon.Dialogs:Show("SCOOTERMOD_COMBAT_FONT_RESTART")
     end
 end
 
@@ -52,11 +47,8 @@ local function applyWorldTextStyling(self)
     -- Check if font changed from user interaction (not during init or profile switches)
     if sctDamageState.initialLoadComplete and not addon._profileSwitchInProgress then
         if sctDamageState.lastKnownFont and sctDamageState.lastKnownFont ~= fontKey then
-            -- Font was changed by user, show the restart popup
-            ensureCombatFontPopup()
-            if _G.StaticPopup_Show then
-                _G.StaticPopup_Show("SCOOTERMOD_COMBAT_FONT_RESTART")
-            end
+            -- Font was changed by user, show the restart warning
+            showCombatFontRestartWarning()
         end
     end
     sctDamageState.lastKnownFont = fontKey
@@ -65,9 +57,21 @@ local function applyWorldTextStyling(self)
     db.fontScale = scalePercent
     db.fontStyle = nil
 
-    if type(face) == "string" and face ~= "" then
+    -- Set _G.DAMAGE_TEXT_FONT ONLY during initial addon load (ApplyEarlyComponentStyles).
+    -- The C++ engine reads this global once at game startup to determine world damage text font.
+    -- Setting it during early init (before any secure code runs) is safe from taint.
+    -- Setting it later (e.g., during gameplay events) would cause taint propagation.
+    -- After initial load, font changes require a full game restart to take effect.
+    if not sctDamageState.damageTextFontApplied then
         _G.DAMAGE_TEXT_FONT = face
+        sctDamageState.damageTextFontApplied = true
+        if addon.LogWorldTextFont then
+            addon.LogWorldTextFont("applyWorldTextStyling:DAMAGE_TEXT_FONT set", {
+                face = face,
+            })
+        end
     end
+
     if addon.LogWorldTextFont then
         addon.LogWorldTextFont("applyWorldTextStyling:start", {
             face = face,

@@ -61,7 +61,8 @@ function ConvertSliderInitializerToTextInput(initializer)
             input:SetPoint("LEFT", frame, "CENTER", -40, 0)
             frame.ScooterTextInput = input
             local function restore()
-                local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+                -- Try frame:GetSetting() first, fall back to initializer's setting
+                local setting = (frame and frame.GetSetting and frame:GetSetting()) or (self and self.data and self.data.setting) or nil
                 local value = setting and setting.GetValue and setting:GetValue() or nil
                 input:SetText(value == nil and "" or string.format("%.0f", value))
             end
@@ -87,7 +88,8 @@ function ConvertSliderInitializerToTextInput(initializer)
                     if options.minValue ~= nil then num = math.max(options.minValue, num) end
                     if options.maxValue ~= nil then num = math.min(options.maxValue, num) end
                 end
-                local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+                -- Try frame:GetSetting() first, fall back to initializer's setting
+                local setting = (frame and frame.GetSetting and frame:GetSetting()) or (self and self.data and self.data.setting) or nil
                 if setting and setting.GetValue and setting:GetValue() ~= num then
                     setting:SetValue(num)
                     -- For position X/Y text inputs, remember that we just authored
@@ -111,11 +113,22 @@ function ConvertSliderInitializerToTextInput(initializer)
                 end
                 scheduleClear()
             end
-            input:SetScript("OnEnterPressed", function(b) commit(); b:ClearFocus() end)
+            input:SetScript("OnEnterPressed", function(b)
+                commit()
+                -- Delay ClearFocus to prevent Enter key from propagating after
+                -- the EditBox releases keyboard focus. Without this delay, the
+                -- Enter key can interact with other UI elements (e.g., addons
+                -- like DialogKey, or platform-specific behaviors) and cause
+                -- unintended actions like closing the settings panel.
+                C_Timer.After(0, function()
+                    if b and b.ClearFocus then b:ClearFocus() end
+                end)
+            end)
             input:SetScript("OnEditFocusLost", function(b) commit(); b:HighlightText(0, 0) end)
             input:SetScript("OnEscapePressed", function(b) b:ClearFocus(); restore() end)
         end
-        local setting = (frame and frame.data and frame.GetSetting) and frame:GetSetting() or nil
+        -- Try frame:GetSetting() first, fall back to initializer's setting
+        local setting = (frame and frame.GetSetting and frame:GetSetting()) or (self and self.data and self.data.setting) or nil
         local value = setting and setting.GetValue and setting:GetValue() or nil
         frame.ScooterTextInput:SetText(value == nil and "" or string.format("%.0f", value))
         if frame.ScooterTextInput then frame.ScooterTextInput:Show() end
@@ -561,7 +574,10 @@ function panel.DropdownWithInlineSwatch(parent, yRef, opts)
     swatch:SetFrameLevel(baseLvl + 6)
 
     -- Prevent clicks on the swatch from propagating to the dropdown button
-    if swatch.SetPropagateMouseClicks then swatch:SetPropagateMouseClicks(false) end
+    -- SetPropagateMouseClicks is protected during combat, so skip it then
+    if swatch.SetPropagateMouseClicks and not (InCombatLockdown and InCombatLockdown()) then
+        swatch:SetPropagateMouseClicks(false)
+    end
     if swatch.RegisterForClicks then swatch:RegisterForClicks("LeftButtonUp") end
     swatch:SetScript("OnMouseDown", function() end)
     -- Normalize inner color texture if present

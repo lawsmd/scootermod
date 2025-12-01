@@ -167,11 +167,10 @@ local function ensureComponentFontStructures(profile)
         end
     end
     
-    -- Scrolling Combat Text component (fontFace is at top level)
-    profile.components.sctDamage = profile.components.sctDamage or {}
-    if profile.components.sctDamage.fontFace == nil then
-        profile.components.sctDamage.fontFace = "FRIZQT__"
-    end
+    -- NOTE: Scrolling Combat Text (sctDamage) is intentionally excluded from Apply All.
+    -- SCT font changes require a full game restart (not just /reload), so users must
+    -- change SCT fonts directly via the Scrolling Combat Text settings panel to see
+    -- the restart warning. See SCROLLINGCOMBATTEXT.md for details.
     
     -- Tooltip component (fontFace is at top level)
     profile.components.tooltip = profile.components.tooltip or {}
@@ -306,7 +305,13 @@ function ApplyAll:ApplyFonts(fontKey, opts)
     ensureUnitFrameFontStructures(profile)
     ensureComponentFontStructures(profile)
     
+    -- Skip the applyAll state table and sctDamage component.
+    -- SCT is excluded because font changes require a full game restart (not /reload),
+    -- and users need to see the restart warning when changing SCT fonts directly.
     local skip = { [state] = true }
+    if profile.components and profile.components.sctDamage then
+        skip[profile.components.sctDamage] = true
+    end
     local changed = replaceKeys(profile, FONT_KEYS, selection, { skipTables = skip })
     state.lastFontApplied = state.lastFontApplied or {}
     recordSummary(state.lastFontApplied, selection, changed)

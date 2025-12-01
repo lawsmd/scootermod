@@ -1,0 +1,365 @@
+-- ScooterMod Custom Dialog System
+-- Replaces StaticPopupDialogs usage to avoid tainting Blizzard's global table,
+-- which can block protected functions like ForceQuit(), Logout(), etc.
+local addonName, addon = ...
+
+addon.Dialogs = addon.Dialogs or {}
+local Dialogs = addon.Dialogs
+
+-- Registry of dialog definitions (local to avoid taint)
+local dialogRegistry = {}
+
+-- The reusable dialog frame
+local dialogFrame
+
+--------------------------------------------------------------------------------
+-- Internal Theming Helpers (use SettingsPanel helpers when available)
+--------------------------------------------------------------------------------
+
+local function GetRobotoFont()
+    local fonts = addon and addon.Fonts or nil
+    return (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+end
+
+local function ApplyDialogRobotoWhite(fs, size, flags)
+    if not fs or not fs.SetFont then return end
+    local face = GetRobotoFont()
+    local _, currentSize, currentFlags = fs:GetFont()
+    fs:SetFont(face, size or currentSize or 12, flags or currentFlags or "")
+    if fs.SetTextColor then fs:SetTextColor(1, 1, 1, 1) end
+end
+
+local function ApplyDialogButtonTheme(btn)
+    if not btn then return end
+    local brandR, brandG, brandB = 0.20, 0.90, 0.30 -- Scooter green
+
+    -- Apply Roboto green to button text
+    if btn.Text then
+        local face = GetRobotoFont()
+        local _, sz, fl = btn.Text:GetFont()
+        btn.Text:SetFont(face, sz or 12, fl or "")
+        btn.Text:SetTextColor(brandR, brandG, brandB, 1)
+    end
+
+    -- Desaturate and tint button textures to neutral gray
+    local function tintTexture(tex, gray)
+        if not tex or not tex.SetVertexColor then return end
+        pcall(tex.SetDesaturated, tex, true)
+        tex:SetVertexColor(gray, gray, gray)
+    end
+
+    tintTexture(btn.GetNormalTexture and btn:GetNormalTexture() or nil, 0.97)
+    tintTexture(btn.GetPushedTexture and btn:GetPushedTexture() or nil, 0.93)
+
+    -- Highlight texture
+    if btn.SetHighlightTexture then
+        pcall(btn.SetHighlightTexture, btn, "Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD")
+    end
+    local hl = btn.GetHighlightTexture and btn:GetHighlightTexture() or nil
+    if hl then
+        hl:SetDesaturated(false)
+        hl:SetVertexColor(1, 1, 1)
+        hl:SetAlpha(0.45)
+    end
+
+    tintTexture(btn.GetDisabledTexture and btn:GetDisabledTexture() or nil, 0.90)
+
+    -- Tint any remaining texture regions
+    local regions = { btn:GetRegions() }
+    for i = 1, #regions do
+        local r = regions[i]
+        if r and r.IsObjectType and r:IsObjectType("Texture") then
+            tintTexture(r, 0.97)
+        end
+    end
+end
+
+local function ApplyDialogCloseButtonTheme(closeBtn)
+    if not closeBtn then return end
+    local brandR, brandG, brandB = 0.20, 0.90, 0.30 -- Scooter green
+
+    local function tintGreen(tex)
+        if tex and tex.SetVertexColor then
+            pcall(tex.SetDesaturated, tex, true)
+            tex:SetVertexColor(brandR, brandG, brandB)
+        end
+    end
+
+    tintGreen(closeBtn.GetNormalTexture and closeBtn:GetNormalTexture() or nil)
+    tintGreen(closeBtn.GetPushedTexture and closeBtn:GetPushedTexture() or nil)
+
+    -- Highlight
+    if closeBtn.SetHighlightTexture then
+        pcall(closeBtn.SetHighlightTexture, closeBtn, "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+    end
+    local hl = closeBtn.GetHighlightTexture and closeBtn:GetHighlightTexture() or nil
+    if hl then
+        hl:SetDesaturated(false)
+        hl:SetVertexColor(1, 1, 1)
+        hl:SetAlpha(0.25)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Dialog Frame Creation
+--------------------------------------------------------------------------------
+
+local function CreateDialogFrame()
+    if dialogFrame then
+        return dialogFrame
+    end
+
+    local f = CreateFrame("Frame", "ScooterModDialog", UIParent, "BasicFrameTemplateWithInset")
+    f:SetSize(340, 140)
+    f:SetPoint("CENTER")
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(100)
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetClampedToScreen(true)
+    f:Hide()
+
+    -- Title (use TitleText if available, otherwise create one)
+    if f.TitleText then
+        f.TitleText:SetText("ScooterMod")
+    else
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        title:SetPoint("TOP", f, "TOP", 0, -5)
+        title:SetText("ScooterMod")
+        f.TitleText = title
+    end
+    -- Apply Roboto white styling to title
+    ApplyDialogRobotoWhite(f.TitleText, 14, "")
+
+    -- Message text
+    local text = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    text:SetPoint("TOP", f, "TOP", 0, -35)
+    text:SetPoint("LEFT", f, "LEFT", 20, 0)
+    text:SetPoint("RIGHT", f, "RIGHT", -20, 0)
+    text:SetJustifyH("CENTER")
+    text:SetWordWrap(true)
+    f.Text = text
+    -- Apply Roboto white styling to message text
+    ApplyDialogRobotoWhite(f.Text, 13, "")
+
+    -- Accept button (primary action)
+    local acceptBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    acceptBtn:SetSize(100, 24)
+    acceptBtn:SetText(YES or "Yes")
+    f.AcceptButton = acceptBtn
+    -- Apply Scooter button theming
+    ApplyDialogButtonTheme(acceptBtn)
+
+    -- Cancel button (secondary action)
+    local cancelBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    cancelBtn:SetSize(100, 24)
+    cancelBtn:SetText(NO or "No")
+    f.CancelButton = cancelBtn
+    -- Apply Scooter button theming
+    ApplyDialogButtonTheme(cancelBtn)
+
+    -- Close button behavior and theming
+    if f.CloseButton then
+        ApplyDialogCloseButtonTheme(f.CloseButton)
+        f.CloseButton:SetScript("OnClick", function()
+            f:Hide()
+            if f._onCancel then
+                f._onCancel()
+            end
+        end)
+    end
+
+    -- Escape to close
+    f:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:SetPropagateKeyboardInput(false)
+            self:Hide()
+            if self._onCancel then
+                self._onCancel()
+            end
+        else
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+
+    dialogFrame = f
+    return f
+end
+
+--------------------------------------------------------------------------------
+-- Public API
+--------------------------------------------------------------------------------
+
+-- Register a dialog definition (call once at load time)
+-- Example:
+--   Dialogs:Register("DELETE_RULE", {
+--       text = "Are you sure you want to delete this rule?",
+--       acceptText = "Delete",
+--       cancelText = "Cancel",
+--   })
+function Dialogs:Register(name, definition)
+    if not name or not definition then
+        return
+    end
+    dialogRegistry[name] = definition
+end
+
+-- Show a registered dialog
+-- Example:
+--   Dialogs:Show("DELETE_RULE", {
+--       onAccept = function() deleteTheRule() end,
+--       onCancel = function() print("cancelled") end,
+--       data = { ruleId = 123 },
+--       formatArgs = { "arg1", "arg2" }, -- For %s placeholders in text
+--       infoOnly = true, -- If true, only show OK button (no cancel)
+--   })
+function Dialogs:Show(name, options)
+    options = options or {}
+    local def = dialogRegistry[name]
+    if not def then
+        -- Fallback: treat name as text if not registered
+        def = { text = name }
+    end
+
+    local f = CreateDialogFrame()
+
+    -- Set text (with optional format arguments)
+    local displayText = options.text or def.text or "Are you sure?"
+    local formatArgs = options.formatArgs or def.formatArgs
+    if formatArgs and type(formatArgs) == "table" and #formatArgs > 0 then
+        displayText = string.format(displayText, unpack(formatArgs))
+    end
+    f.Text:SetText(displayText)
+    -- Reapply Roboto white styling after text change
+    ApplyDialogRobotoWhite(f.Text, 13, "")
+
+    -- Determine if this is info-only (just OK, no cancel)
+    local infoOnly = options.infoOnly or def.infoOnly
+
+    -- Set button text
+    local acceptText = options.acceptText or def.acceptText or (infoOnly and (OKAY or "OK")) or YES or "Yes"
+    local cancelText = options.cancelText or def.cancelText or NO or "No"
+    f.AcceptButton:SetText(acceptText)
+    f.CancelButton:SetText(cancelText)
+    -- Reapply button theming after text change (ensures Roboto green text)
+    ApplyDialogButtonTheme(f.AcceptButton)
+    ApplyDialogButtonTheme(f.CancelButton)
+
+    -- Position buttons based on dialog type
+    f.AcceptButton:ClearAllPoints()
+    f.CancelButton:ClearAllPoints()
+    
+    if infoOnly then
+        -- Single centered OK button
+        f.AcceptButton:SetPoint("BOTTOM", f, "BOTTOM", 0, 15)
+        f.CancelButton:Hide()
+    else
+        -- Two buttons side by side
+        f.AcceptButton:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 15)
+        f.CancelButton:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 15)
+        f.CancelButton:Show()
+    end
+
+    -- Store callbacks
+    f._onAccept = options.onAccept
+    f._onCancel = options.onCancel
+    f._data = options.data
+
+    -- Wire up buttons
+    f.AcceptButton:SetScript("OnClick", function()
+        f:Hide()
+        if f._onAccept then
+            f._onAccept(f._data)
+        end
+    end)
+
+    f.CancelButton:SetScript("OnClick", function()
+        f:Hide()
+        if f._onCancel then
+            f._onCancel(f._data)
+        end
+    end)
+
+    -- Show the dialog
+    f:Show()
+    f:Raise()
+
+    return f
+end
+
+-- Hide any open dialog
+function Dialogs:Hide()
+    if dialogFrame and dialogFrame:IsShown() then
+        dialogFrame:Hide()
+    end
+end
+
+-- Quick confirmation dialog (no registration needed)
+-- Example:
+--   Dialogs:Confirm("Delete this item?", function() doDelete() end)
+function Dialogs:Confirm(message, onAccept, onCancel)
+    return self:Show(nil, {
+        text = message,
+        onAccept = onAccept,
+        onCancel = onCancel,
+    })
+end
+
+-- Quick info dialog (just OK button, no registration needed)
+-- Example:
+--   Dialogs:Info("Operation completed successfully")
+function Dialogs:Info(message, onDismiss)
+    return self:Show(nil, {
+        text = message,
+        onAccept = onDismiss,
+        infoOnly = true,
+    })
+end
+
+--------------------------------------------------------------------------------
+-- Pre-register common ScooterMod dialogs
+--------------------------------------------------------------------------------
+
+Dialogs:Register("SCOOTERMOD_DELETE_RULE", {
+    text = "Are you sure you want to delete this rule?",
+    acceptText = YES or "Yes",
+    cancelText = NO or "No",
+})
+
+Dialogs:Register("SCOOTERMOD_RESET_DEFAULTS", {
+    text = "Are you sure you want to reset %s to all default settings and location?",
+    acceptText = YES or "Yes",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_COPY_UF_CONFIRM", {
+    text = "Copy supported Unit Frame settings from %s to %s?",
+    acceptText = "Copy",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_COPY_UF_ERROR", {
+    text = "%s",
+    infoOnly = true,
+})
+
+Dialogs:Register("SCOOTERMOD_COPY_ACTIONBAR_CONFIRM", {
+    text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
+    acceptText = "Copy",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_COMBAT_FONT_RESTART", {
+    text = "In order for Combat Font changes to take effect, you'll need to fully exit and re-open World of Warcraft.",
+    infoOnly = true,
+})
+
+Dialogs:Register("SCOOTERMOD_DELETE_LAYOUT", {
+    text = "Delete layout '%s'?",
+    acceptText = OKAY or "OK",
+    cancelText = CANCEL or "Cancel",
+})
+

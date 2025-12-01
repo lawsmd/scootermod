@@ -128,6 +128,10 @@ local function scheduleApply(component)
     if not component or not component.ApplyStyling then
         return
     end
+    -- NOTE: We DO allow styling during combat because most operations (SetAlpha,
+    -- SetTexture, borders, sizing) are cosmetic and not protected. Only specific
+    -- operations like C_CVar.SetCVar are protected and are guarded individually
+    -- within the ApplyStyling functions themselves.
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if component and component.ApplyStyling then
@@ -148,12 +152,27 @@ local function ensureHooks(component)
     if hooksecurefunc then
         if type(NamePlateDriverFrame) == "table" then
             hooksecurefunc(NamePlateDriverFrame, "SetupClassNameplateBars", function()
-                scheduleApply(component)
+                -- scheduleApply already defers via C_Timer.After, but wrap in another
+                -- defer to ensure we don't taint the execution context at all
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        scheduleApply(component)
+                    end)
+                else
+                    scheduleApply(component)
+                end
             end)
         end
         if type(DefaultCompactNamePlatePlayerFrameAnchor) == "function" then
             hooksecurefunc("DefaultCompactNamePlatePlayerFrameAnchor", function()
-                scheduleApply(component)
+                -- Defer to avoid tainting execution context
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        scheduleApply(component)
+                    end)
+                else
+                    scheduleApply(component)
+                end
             end)
         end
     end
@@ -308,28 +327,36 @@ local function ensurePowerBarHooks(component)
 
         if hooksecurefunc and NamePlateDriverFrame and type(NamePlateDriverFrame.SetupClassNameplateBars) == "function" then
             hooksecurefunc(NamePlateDriverFrame, "SetupClassNameplateBars", function()
-                local powerFrame = _G.ClassNameplateManaBarFrame
-                if not powerFrame then
-                    return
-                end
+                -- CRITICAL: Defer to avoid tainting Blizzard's nameplate setup chain.
+                -- Accessing _ScooterModPowerComponent and comp.db taints execution;
+                -- if we run synchronously, protected functions like SetTargetClampingInsets()
+                -- called in the same frame/tick will be blocked.
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        local powerFrame = _G.ClassNameplateManaBarFrame
+                        if not powerFrame then
+                            return
+                        end
 
-                local comp = powerFrame._ScooterModPowerComponent
-                if not comp or not comp.db then
-                    return
-                end
+                        local comp = powerFrame._ScooterModPowerComponent
+                        if not comp or not comp.db then
+                            return
+                        end
 
-                if powerFrame._ScooterModApplyingDimensions then
-                    return
-                end
+                        if powerFrame._ScooterModApplyingDimensions then
+                            return
+                        end
 
-                -- Only apply if we have a custom width set
-                local storedWidth = comp.db.barWidth
-                if not storedWidth or storedWidth < MIN_POWER_BAR_WIDTH then
-                    return
-                end
+                        -- Only apply if we have a custom width set
+                        local storedWidth = comp.db.barWidth
+                        if not storedWidth or storedWidth < MIN_POWER_BAR_WIDTH then
+                            return
+                        end
 
-                -- Convert from dual-anchor (TOPLEFT+TOPRIGHT) to single-anchor (TOP) + explicit width
-                applyPowerBarSinglePointAnchor(powerFrame, comp)
+                        -- Convert from dual-anchor (TOPLEFT+TOPRIGHT) to single-anchor (TOP) + explicit width
+                        applyPowerBarSinglePointAnchor(powerFrame, comp)
+                    end)
+                end
             end)
         end
     end
@@ -1320,13 +1347,14 @@ addon:RegisterComponentInitializer(function(self)
             local bottomInset = posPercent - halfBand
             local topInset = 1.0 - (posPercent + halfBand)
             
-            if C_CVar and C_CVar.SetCVar then
+            -- Only apply CVar changes outside of combat to avoid taint
+            if C_CVar and C_CVar.SetCVar and not (InCombatLockdown and InCombatLockdown()) then
                 pcall(C_CVar.SetCVar, "nameplateSelfTopInset", topInset)
                 pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", bottomInset)
             end
         else
-            -- Restore defaults
-            if C_CVar and C_CVar.SetCVar then
+            -- Restore defaults (only outside of combat to avoid taint)
+            if C_CVar and C_CVar.SetCVar and not (InCombatLockdown and InCombatLockdown()) then
                 pcall(C_CVar.SetCVar, "nameplateSelfTopInset", defaultTopInset)
                 pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", defaultBottomInset)
             end
@@ -1383,7 +1411,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {
@@ -1428,7 +1456,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {

@@ -114,36 +114,10 @@ local function EnsureCallbackContainer(frame)
 end
 
 --------------------------------------------------------------------------------
--- Static Popup: Confirm Rule Deletion
+-- Rule Deletion Confirmation (using ScooterMod's custom dialog system)
+-- Note: We avoid StaticPopupDialogs to prevent tainting Blizzard's global,
+-- which can block protected functions like ForceQuit(), Logout(), etc.
 --------------------------------------------------------------------------------
-
-StaticPopupDialogs = StaticPopupDialogs or {}
-
-StaticPopupDialogs["SCOOTERMOD_DELETE_RULE"] = {
-    text = "Are you sure you want to delete this rule?",
-    button1 = YES,
-    button2 = NO,
-    OnAccept = function(self, data)
-        local payload = data or self.data
-        if not payload then
-            return
-        end
-        local ruleId = payload.ruleId
-        local refreshCard = payload.refreshCard
-        if ruleId and addon.Rules and addon.Rules.DeleteRule then
-            editingRules[ruleId] = nil
-            breadcrumbSelections[ruleId] = nil  -- Clean up partial selections
-            addon.Rules:DeleteRule(ruleId)
-            if type(refreshCard) == "function" then
-                refreshCard()
-            end
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = STATICPOPUP_NUMDIALOGS,
-}
 
 local function ResetListRow(frame)
     EnsureCallbackContainer(frame)
@@ -373,6 +347,9 @@ local function CreateSimpleDropdown(parent, options, currentValue, onSelect, pla
     end
     btn.SetOptions = function(self, opts)
         options = opts
+    end
+    btn.SetOnSelect = function(self, callback)
+        onSelect = callback
     end
 
     return btn
@@ -841,7 +818,17 @@ local function RenderDisplayModeCard(card, rule, frame, refreshCard)
     whenLabel:SetTextColor(0.5, 0.8, 0.5, 1)
     whenLabel:Show()
 
-    -- Spec badges container
+    local triggerType = rule.trigger and rule.trigger.type or "specialization"
+
+    -- Player Level display text (shown for playerLevel triggers)
+    local playerLevelText = card.PlayerLevelText
+    if not playerLevelText then
+        playerLevelText = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        playerLevelText:SetPoint("LEFT", whenLabel, "RIGHT", 12, 0)
+        card.PlayerLevelText = playerLevelText
+    end
+
+    -- Spec badges container (shown for specialization triggers)
     local specContainer = card.SpecBadgeContainer
     if not specContainer then
         specContainer = CreateFrame("Frame", nil, card)
@@ -858,107 +845,128 @@ local function RenderDisplayModeCard(card, rule, frame, refreshCard)
     end
     specContainer.badges = {}
 
-    -- Create badges for selected specs (with overflow handling)
-    local specIds = rule.trigger and rule.trigger.specIds or {}
-    local xOffset = 0
-    local visibleCount = math.min(#specIds, MAX_DISPLAY_BADGES)
+    -- Show content based on trigger type
+    if triggerType == "playerLevel" then
+        -- Hide spec container and show player level text
+        specContainer:Hide()
+        if specContainer.OverflowText then specContainer.OverflowText:Hide() end
+        if specContainer.NoSpecText then specContainer.NoSpecText:Hide() end
 
-    for i = 1, visibleCount do
-        local specID = specIds[i]
-        local badge = CreateSpecBadge(specContainer, specID)
-        if badge then
-            badge:SetPoint("LEFT", specContainer, "LEFT", xOffset, 0)
-            badge:Show()
-            table.insert(specContainer.badges, badge)
-            xOffset = xOffset + badge:GetWidth() + 4
+        local levelVal = rule.trigger and rule.trigger.level
+        if levelVal then
+            playerLevelText:SetText(string.format("Player Level |cff88ff88=|r %d", levelVal))
+        else
+            playerLevelText:SetText("Player Level |cff88ff88=|r |cff888888(not set)|r")
         end
-    end
+        StyleLabel(playerLevelText, 12)
+        playerLevelText:Show()
 
-    -- Show "+X more" overflow indicator
-    local overflowCount = #specIds - visibleCount
-    local overflowText = specContainer.OverflowText
-    if not overflowText then
-        overflowText = CreateFrame("Frame", nil, specContainer, "BackdropTemplate")
-        overflowText:SetSize(60, 24)
-        overflowText:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        overflowText:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-        overflowText:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
-        local text = overflowText:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("CENTER")
-        overflowText.Text = text
-        overflowText:EnableMouse(true)
-        specContainer.OverflowText = overflowText
-    end
+    else  -- specialization
+        -- Hide player level text and show spec container
+        playerLevelText:Hide()
+        specContainer:Show()
 
-    if overflowCount > 0 then
-        overflowText:SetPoint("LEFT", specContainer, "LEFT", xOffset, 0)
-        overflowText.Text:SetText(string.format("+%d more", overflowCount))
-        StyleLabel(overflowText.Text, 10)
+        -- Create badges for selected specs (with overflow handling)
+        local specIds = rule.trigger and rule.trigger.specIds or {}
+        local xOffset = 0
+        local visibleCount = math.min(#specIds, MAX_DISPLAY_BADGES)
 
-        -- Copy the overflow spec IDs for the tooltip (not a reference)
-        local overflowSpecIds = {}
-        for i = visibleCount + 1, #specIds do
-            table.insert(overflowSpecIds, specIds[i])
+        for i = 1, visibleCount do
+            local specID = specIds[i]
+            local badge = CreateSpecBadge(specContainer, specID)
+            if badge then
+                badge:SetPoint("LEFT", specContainer, "LEFT", xOffset, 0)
+                badge:Show()
+                table.insert(specContainer.badges, badge)
+                xOffset = xOffset + badge:GetWidth() + 4
+            end
         end
-        overflowText.overflowSpecIds = overflowSpecIds
 
-        overflowText:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:AddLine("Additional Specs:", 1, 0.82, 0) -- Gold header with explicit RGB
+        -- Show "+X more" overflow indicator
+        local overflowCount = #specIds - visibleCount
+        local overflowText = specContainer.OverflowText
+        if not overflowText then
+            overflowText = CreateFrame("Frame", nil, specContainer, "BackdropTemplate")
+            overflowText:SetSize(60, 24)
+            overflowText:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            overflowText:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+            overflowText:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+            local text = overflowText:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetPoint("CENTER")
+            overflowText.Text = text
+            overflowText:EnableMouse(true)
+            specContainer.OverflowText = overflowText
+        end
 
-            -- Build a single multiline body string so we reuse one font string
-            local lines = {}
-            if addon.Rules then
-                local _, specById = addon.Rules:GetSpecBuckets()
-                if self.overflowSpecIds and specById then
-                    for _, specID in ipairs(self.overflowSpecIds) do
-                        local entry = specById[specID]
-                        if entry and entry.name then
-                            local className = entry.className or ""
-                            if className ~= "" then
-                                table.insert(lines, entry.name .. " (" .. className .. ")")
-                            else
-                                table.insert(lines, entry.name)
+        if overflowCount > 0 then
+            overflowText:SetPoint("LEFT", specContainer, "LEFT", xOffset, 0)
+            overflowText.Text:SetText(string.format("+%d more", overflowCount))
+            StyleLabel(overflowText.Text, 10)
+
+            -- Copy the overflow spec IDs for the tooltip (not a reference)
+            local overflowSpecIds = {}
+            for i = visibleCount + 1, #specIds do
+                table.insert(overflowSpecIds, specIds[i])
+            end
+            overflowText.overflowSpecIds = overflowSpecIds
+
+            overflowText:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine("Additional Specs:", 1, 0.82, 0) -- Gold header with explicit RGB
+
+                -- Build a single multiline body string so we reuse one font string
+                local lines = {}
+                if addon.Rules then
+                    local _, specById = addon.Rules:GetSpecBuckets()
+                    if self.overflowSpecIds and specById then
+                        for _, specID in ipairs(self.overflowSpecIds) do
+                            local entry = specById[specID]
+                            if entry and entry.name then
+                                local className = entry.className or ""
+                                if className ~= "" then
+                                    table.insert(lines, entry.name .. " (" .. className .. ")")
+                                else
+                                    table.insert(lines, entry.name)
+                                end
                             end
                         end
                     end
                 end
-            end
 
-            if #lines > 0 then
-                GameTooltip:AddLine(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
-            end
+                if #lines > 0 then
+                    GameTooltip:AddLine(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
+                end
 
-            GameTooltip:Show()
-        end)
-        overflowText:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        overflowText:Show()
-    else
-        overflowText:Hide()
-    end
-
-    -- Show placeholder if no specs selected
-    if #specIds == 0 then
-        local noSpecText = specContainer.NoSpecText
-        if not noSpecText then
-            noSpecText = specContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            noSpecText:SetPoint("LEFT", specContainer, "LEFT", 0, 0)
-            specContainer.NoSpecText = noSpecText
+                GameTooltip:Show()
+            end)
+            overflowText:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            overflowText:Show()
+        else
+            overflowText:Hide()
         end
-        noSpecText:SetText("(no specs selected)")
-        StyleLabelMuted(noSpecText, 11)
-        noSpecText:Show()
-    elseif specContainer.NoSpecText then
-        specContainer.NoSpecText:Hide()
+
+        -- Show placeholder if no specs selected
+        if #specIds == 0 then
+            local noSpecText = specContainer.NoSpecText
+            if not noSpecText then
+                noSpecText = specContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                noSpecText:SetPoint("LEFT", specContainer, "LEFT", 0, 0)
+                specContainer.NoSpecText = noSpecText
+            end
+            noSpecText:SetText("(no specs selected)")
+            StyleLabelMuted(noSpecText, 11)
+            noSpecText:Show()
+        elseif specContainer.NoSpecText then
+            specContainer.NoSpecText:Hide()
+        end
     end
-    specContainer:Show()
 
     -- === DO ROW ===
     local doLabel = card.DoLabel
@@ -1044,6 +1052,7 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     -- Hide display-mode specific elements
     if card.WhenLabel then card.WhenLabel:Hide() end
     if card.SpecBadgeContainer then card.SpecBadgeContainer:Hide() end
+    if card.PlayerLevelText then card.PlayerLevelText:Hide() end
     if card.DoLabel then card.DoLabel:Hide() end
     if card.ActionText then card.ActionText:Hide() end
     if card.PathText then card.PathText:Hide() end
@@ -1066,8 +1075,21 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     deleteBtn:ClearAllPoints()
     deleteBtn:SetPoint("TOPRIGHT", card, "TOPRIGHT", -70, -8)
     deleteBtn:SetScript("OnClick", function()
-        local payload = { ruleId = rule.id, refreshCard = refreshCard }
-        StaticPopup_Show("SCOOTERMOD_DELETE_RULE", nil, nil, payload)
+        -- Use ScooterMod's custom dialog to avoid tainting StaticPopupDialogs
+        if addon.Dialogs and addon.Dialogs.Show then
+            addon.Dialogs:Show("SCOOTERMOD_DELETE_RULE", {
+                onAccept = function()
+                    if rule.id and addon.Rules and addon.Rules.DeleteRule then
+                        editingRules[rule.id] = nil
+                        breadcrumbSelections[rule.id] = nil
+                        addon.Rules:DeleteRule(rule.id)
+                        if type(refreshCard) == "function" then
+                            refreshCard()
+                        end
+                    end
+                end,
+            })
+        end
     end)
     deleteBtn:Show()
 
@@ -1122,7 +1144,7 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     triggerHeader:SetTextColor(0.5, 0.8, 0.5, 1)
     triggerHeader:Show()
 
-    -- Type label + value (locked to Specialization for MVP)
+    -- Type label + dropdown
     local typeLabel = triggerSection.TypeLabel
     if not typeLabel then
         typeLabel = triggerSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1133,17 +1155,45 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     StyleLabel(typeLabel, 11)
     typeLabel:Show()
 
-    local typeValue = triggerSection.TypeValue
-    if not typeValue then
-        typeValue = triggerSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        typeValue:SetPoint("LEFT", typeLabel, "RIGHT", 6, 0)
-        typeValue:SetText("Specialization")
-        triggerSection.TypeValue = typeValue
+    -- Hide the old static typeValue if it exists
+    if triggerSection.TypeValue then
+        triggerSection.TypeValue:Hide()
     end
-    StyleLabelMuted(typeValue, 11)
-    typeValue:Show()
 
-    -- Specs row with badges
+    -- Trigger type dropdown
+    local triggerType = rule.trigger and rule.trigger.type or "specialization"
+    local typeDropdownOptions = {
+        { text = "Specialization", value = "specialization" },
+        { text = "Player Level", value = "playerLevel" },
+    }
+
+    local typeDropdown = triggerSection.TypeDropdown
+    if not typeDropdown then
+        typeDropdown = CreateSimpleDropdown(
+            triggerSection,
+            typeDropdownOptions,
+            triggerType,
+            nil,  -- Callback set below
+            "Select Type..."
+        )
+        typeDropdown:SetSize(130, 22)
+        triggerSection.TypeDropdown = typeDropdown
+    end
+    typeDropdown:ClearAllPoints()
+    typeDropdown:SetPoint("LEFT", typeLabel, "RIGHT", 6, 0)
+    typeDropdown:SetOptions(typeDropdownOptions)
+    typeDropdown:SetCurrentValue(triggerType)
+    -- Update callback with current rule.id (important when card is reused)
+    typeDropdown:SetOnSelect(function(opt)
+        if addon.Rules and addon.Rules.SetRuleTriggerType then
+            addon.Rules:SetRuleTriggerType(rule.id, opt.value)
+        end
+        refreshCard()
+    end)
+    typeDropdown:Show()
+
+    -- === SPECIALIZATION-SPECIFIC CONTROLS ===
+    -- Specs row with badges (only shown for specialization trigger)
     local specsLabel = triggerSection.SpecsLabel
     if not specsLabel then
         specsLabel = triggerSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1152,9 +1202,8 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
         triggerSection.SpecsLabel = specsLabel
     end
     StyleLabel(specsLabel, 11)
-    specsLabel:Show()
 
-    -- Add/Remove Specs button - always on the LEFT, always visible
+    -- Add/Remove Specs button
     local addSpecBtn = triggerSection.AddSpecBtn
     if not addSpecBtn then
         addSpecBtn = CreateFrame("Button", nil, triggerSection, "UIPanelButtonTemplate")
@@ -1166,14 +1215,11 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     addSpecBtn:ClearAllPoints()
     addSpecBtn:SetPoint("LEFT", specsLabel, "RIGHT", 8, 0)
     addSpecBtn:SetScript("OnClick", function()
-        -- Close any existing picker first
         CloseSpecPicker()
-        -- Open below the trigger section
         OpenSpecPicker(triggerSection, rule, refreshCard)
     end)
-    addSpecBtn:Show()
 
-    -- Edit mode spec badges container (positioned after the button)
+    -- Edit mode spec badges container
     local editSpecContainer = triggerSection.SpecBadgeContainer
     if not editSpecContainer then
         editSpecContainer = CreateFrame("Frame", nil, triggerSection)
@@ -1192,93 +1238,143 @@ local function RenderEditModeCard(card, rule, frame, refreshCard)
     end
     editSpecContainer.badges = {}
 
-    -- Create badges (with overflow handling)
-    local specIds = rule.trigger and rule.trigger.specIds or {}
-    local xOffset = 0
-    local visibleCount = math.min(#specIds, MAX_EDIT_BADGES)
-
-    for i = 1, visibleCount do
-        local specID = specIds[i]
-        local badge = CreateSpecBadge(editSpecContainer, specID)
-        if badge then
-            badge:SetPoint("LEFT", editSpecContainer, "LEFT", xOffset, 0)
-            badge:Show()
-            table.insert(editSpecContainer.badges, badge)
-            xOffset = xOffset + badge:GetWidth() + 4
-        end
+    -- === PLAYER LEVEL-SPECIFIC CONTROLS ===
+    -- Level label
+    local levelLabel = triggerSection.LevelLabel
+    if not levelLabel then
+        levelLabel = triggerSection:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        levelLabel:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 0, -12)
+        levelLabel:SetText("Level:")
+        triggerSection.LevelLabel = levelLabel
     end
+    StyleLabel(levelLabel, 11)
 
-    -- Show "+X more" overflow indicator in edit mode
-    local overflowCount = #specIds - visibleCount
-    local editOverflow = editSpecContainer.OverflowText
-    if not editOverflow then
-        editOverflow = CreateFrame("Frame", nil, editSpecContainer, "BackdropTemplate")
-        editOverflow:SetSize(55, 22)
-        editOverflow:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        editOverflow:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-        editOverflow:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
-        local text = editOverflow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        text:SetPoint("CENTER")
-        editOverflow.Text = text
-        editOverflow:EnableMouse(true)
-        editSpecContainer.OverflowText = editOverflow
+    -- Level input editbox
+    local levelInput = triggerSection.LevelInput
+    if not levelInput then
+        levelInput = CreateFrame("EditBox", nil, triggerSection, "InputBoxTemplate")
+        levelInput:SetSize(60, 22)
+        levelInput:SetAutoFocus(false)
+        levelInput:SetNumeric(true)
+        levelInput:SetMaxLetters(3)
+        triggerSection.LevelInput = levelInput
     end
-
-    if overflowCount > 0 then
-        editOverflow:SetPoint("LEFT", editSpecContainer, "LEFT", xOffset, 0)
-        editOverflow.Text:SetText(string.format("+%d more", overflowCount))
-        StyleLabel(editOverflow.Text, 10)
-
-        -- Copy the overflow spec IDs for the tooltip (not a reference)
-        local overflowSpecIds = {}
-        for i = visibleCount + 1, #specIds do
-            table.insert(overflowSpecIds, specIds[i])
+    levelInput:ClearAllPoints()
+    levelInput:SetPoint("LEFT", levelLabel, "RIGHT", 8, 0)
+    local currentLevel = rule.trigger and rule.trigger.level
+    levelInput:SetText(currentLevel and tostring(currentLevel) or "")
+    levelInput:SetScript("OnEnterPressed", function(self)
+        local val = tonumber(self:GetText())
+        if addon.Rules and addon.Rules.SetRuleTriggerLevel then
+            addon.Rules:SetRuleTriggerLevel(rule.id, val)
         end
-        editOverflow.overflowSpecIds = overflowSpecIds
+        self:ClearFocus()
+        refreshCard()
+    end)
+    levelInput:SetScript("OnEscapePressed", function(self)
+        self:SetText(currentLevel and tostring(currentLevel) or "")
+        self:ClearFocus()
+    end)
 
-        editOverflow:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:AddLine("Additional Specs:", 1, 0.82, 0) -- Gold header with explicit RGB
+    -- Show/hide controls based on trigger type
+    if triggerType == "specialization" then
+        specsLabel:Show()
+        addSpecBtn:Show()
+        editSpecContainer:Show()
+        levelLabel:Hide()
+        levelInput:Hide()
 
-            -- Build a single multiline body string so we reuse one font string
-            local lines = {}
-            if addon.Rules then
-                local _, specById = addon.Rules:GetSpecBuckets()
-                if self.overflowSpecIds and specById then
-                    for _, specID in ipairs(self.overflowSpecIds) do
-                        local entry = specById[specID]
-                        if entry and entry.name then
-                            local className = entry.className or ""
-                            if className ~= "" then
-                                table.insert(lines, entry.name .. " (" .. className .. ")")
-                            else
-                                table.insert(lines, entry.name)
+        -- Create badges (with overflow handling)
+        local specIds = rule.trigger and rule.trigger.specIds or {}
+        local xOffset = 0
+        local visibleCount = math.min(#specIds, MAX_EDIT_BADGES)
+
+        for i = 1, visibleCount do
+            local specID = specIds[i]
+            local badge = CreateSpecBadge(editSpecContainer, specID)
+            if badge then
+                badge:SetPoint("LEFT", editSpecContainer, "LEFT", xOffset, 0)
+                badge:Show()
+                table.insert(editSpecContainer.badges, badge)
+                xOffset = xOffset + badge:GetWidth() + 4
+            end
+        end
+
+        -- Show "+X more" overflow indicator in edit mode
+        local overflowCount = #specIds - visibleCount
+        local editOverflow = editSpecContainer.OverflowText
+        if not editOverflow then
+            editOverflow = CreateFrame("Frame", nil, editSpecContainer, "BackdropTemplate")
+            editOverflow:SetSize(55, 22)
+            editOverflow:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            editOverflow:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+            editOverflow:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+            local text = editOverflow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetPoint("CENTER")
+            editOverflow.Text = text
+            editOverflow:EnableMouse(true)
+            editSpecContainer.OverflowText = editOverflow
+        end
+
+        if overflowCount > 0 then
+            editOverflow:SetPoint("LEFT", editSpecContainer, "LEFT", xOffset, 0)
+            editOverflow.Text:SetText(string.format("+%d more", overflowCount))
+            StyleLabel(editOverflow.Text, 10)
+
+            local overflowSpecIds = {}
+            for i = visibleCount + 1, #specIds do
+                table.insert(overflowSpecIds, specIds[i])
+            end
+            editOverflow.overflowSpecIds = overflowSpecIds
+
+            editOverflow:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine("Additional Specs:", 1, 0.82, 0)
+                local lines = {}
+                if addon.Rules then
+                    local _, specById = addon.Rules:GetSpecBuckets()
+                    if self.overflowSpecIds and specById then
+                        for _, specID in ipairs(self.overflowSpecIds) do
+                            local entry = specById[specID]
+                            if entry and entry.name then
+                                local className = entry.className or ""
+                                if className ~= "" then
+                                    table.insert(lines, entry.name .. " (" .. className .. ")")
+                                else
+                                    table.insert(lines, entry.name)
+                                end
                             end
                         end
                     end
                 end
-            end
+                if #lines > 0 then
+                    GameTooltip:AddLine(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
+                end
+                GameTooltip:Show()
+            end)
+            editOverflow:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            editOverflow:Show()
+        elseif editOverflow then
+            editOverflow:Hide()
+        end
 
-            if #lines > 0 then
-                GameTooltip:AddLine(table.concat(lines, "\n"), 0.8, 0.8, 0.8)
-            end
-
-            GameTooltip:Show()
-        end)
-        editOverflow:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        editOverflow:Show()
-    elseif editOverflow then
-        editOverflow:Hide()
+    elseif triggerType == "playerLevel" then
+        specsLabel:Hide()
+        addSpecBtn:Hide()
+        editSpecContainer:Hide()
+        if editSpecContainer.OverflowText then
+            editSpecContainer.OverflowText:Hide()
+        end
+        levelLabel:Show()
+        levelInput:Show()
     end
-
-    editSpecContainer:Show()
 
     -- === ACTION SECTION ===
     local actionSection = card.ActionSection

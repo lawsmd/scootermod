@@ -539,7 +539,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-					if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+					if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 					end
 					yRef.y = yRef.y - 34
@@ -1037,7 +1037,7 @@ local function createUFRenderer(componentId, title)
 							t.healthBarBorderThickness = nv
 							applyNow()
 						end
-						local opts = Settings.CreateSliderOptions(1, 16, 1)
+						local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -1231,7 +1231,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-					if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+					if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 					end
 					yRef.y = yRef.y - 34
@@ -2243,7 +2243,7 @@ local function createUFRenderer(componentId, title)
                             t.powerBarBorderThickness = nv
                             applyNow()
                         end
-                        local opts = Settings.CreateSliderOptions(1, 16, 1)
+                        local opts = Settings.CreateSliderOptions(1, 16, 0.34)
                         opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
                         local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
                         local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -2378,7 +2378,7 @@ local function createUFRenderer(componentId, title)
 						initDrop:InitFrame(f)
 						local lbl = f and (f.Text or f.Label)
 						if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-						if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+						if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 							addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 						end
 						yRef.y = yRef.y - 34
@@ -2744,7 +2744,7 @@ local function createUFRenderer(componentId, title)
 								t.borderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -3238,7 +3238,7 @@ local function createUFRenderer(componentId, title)
 			initDrop:InitFrame(f)
 			local lbl = f and (f.Text or f.Label)
 			if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-			if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+			if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 				addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 			end
 			yRef.y = yRef.y - 34
@@ -3608,7 +3608,7 @@ local function createUFRenderer(componentId, title)
 					t.nameBackdropBorderThickness = nv
 					applyNow()
 				end
-				local opts = Settings.CreateSliderOptions(1, 16, 1)
+				local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 				local setting = CreateLocalSetting("Border Thickness", "number", get, set, get())
 				local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
@@ -4014,7 +4014,7 @@ local function createUFRenderer(componentId, title)
 				initDrop:InitFrame(f)
 				local lbl = f and (f.Text or f.Label)
 				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-				if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+				if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 					addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 				end
 				yRef.y = yRef.y - 34
@@ -4219,7 +4219,7 @@ local function createUFRenderer(componentId, title)
 						t.portraitBorderThickness = nv
 						applyNow()
 					end
-					local opts = Settings.CreateSliderOptions(1, 16, 1)
+					local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 					opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 					local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
@@ -4562,7 +4562,10 @@ local function createUFRenderer(componentId, title)
 				table.insert(init, expInitializerCB)
 
 				-- Cast Bar tabbed section:
-				-- Tabs (in order): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Cast Time Text, Spark
+				-- Player tabs (8): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Cast Time Text, Visibility
+				-- Target/Focus tabs (7): Positioning, Sizing, Style, Border, Icon, Spell Name Text, Visibility
+				-- (Cast Time Text is not supported on Target/Focus Cast Bars)
+				local isPlayerCastBar = (componentId == "ufPlayer")
 				local cbData = {
 					sectionTitle = "",
 					tabAText = "Positioning",
@@ -4571,8 +4574,8 @@ local function createUFRenderer(componentId, title)
 					tabDText = "Border",
 					tabEText = "Icon",
 					tabFText = "Spell Name Text",
-					tabGText = "Cast Time Text",
-					tabHText = "Spark",
+					tabGText = isPlayerCastBar and "Cast Time Text" or "Visibility",
+					tabHText = isPlayerCastBar and "Visibility" or nil,
 				}
 				cbData.build = function(frame)
 					-- Helper: map componentId -> unit key
@@ -4624,8 +4627,8 @@ local function createUFRenderer(componentId, title)
 						initDrop:InitFrame(f)
 						local lbl = f and (f.Text or f.Label)
 						if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-						-- When the label mentions "Font", initialize the font dropdown wrapper
-						if type(label) == "string" and string.find(label, "Font") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+						-- When the label mentions "Font" (but not "Style"), initialize the font dropdown wrapper
+						if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 							addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 						end
 						yRef.y = yRef.y - 34
@@ -5063,7 +5066,7 @@ local function createUFRenderer(componentId, title)
 								t.castBarBorderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 							local setting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = setting, options = opts })
@@ -5375,7 +5378,7 @@ local function createUFRenderer(componentId, title)
 								t.iconBorderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end)
 							local setting = CreateLocalSetting("Icon Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Icon Border Thickness", setting = setting, options = opts })
@@ -5431,13 +5434,16 @@ local function createUFRenderer(componentId, title)
 						refreshIconEnabledState()
 					end
 
-					-- Shared Spark tab (PageH): Hide Spark + Spark Color (Player/Target/Focus)
+					-- Shared Spark tab: Hide Spark + Spark Color (Player/Target/Focus)
 					-- NOTE: Defined outside the Player-only branch so it is available for Target/Focus
-					-- as well. This prevents nil-function errors when we call buildSparkTab() for all
-					-- Unit Frames with a Cast Bar.
-					local function buildSparkTab()
+					-- Visibility tab builder (all Cast Bar units: Player, Target, Focus)
+					-- Contains Spark visibility/color controls for all units, plus TextBorder control for Player only
+					-- Visibility tab is on PageH for Player, PageG for Target/Focus (since they lack Cast Time Text tab)
+					local function buildVisibilityTab()
 						local uk = unitKey()
 						if not uk then return end
+
+						local isPlayer = (componentId == "ufPlayer")
 
 						local function applyNow()
 							if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor(uk) end
@@ -5459,15 +5465,16 @@ local function createUFRenderer(componentId, title)
 							return not not (not t.castBarSparkHidden)
 						end
 
-						local sparkPage = frame.PageH
-						if not sparkPage then
-							-- Defensive guard: if the template ever omits PageH, fail safely.
+						-- Visibility tab is PageH for Player (8 tabs), PageG for Target/Focus (7 tabs)
+						local visPage = isPlayer and frame.PageH or frame.PageG
+						if not visPage then
+							-- Defensive guard: if the template ever omits the page, fail safely.
 							return
 						end
 
 						local y = { y = -50 }
 
-						-- Local reference so we can gray-out the color row without rebuilding the category
+						-- Local reference so we can gray-out the spark color row without rebuilding the category
 						local _sparkColorFrame
 						local function refreshSparkEnabledState()
 							local enabled = isSparkEnabled()
@@ -5488,7 +5495,7 @@ local function createUFRenderer(componentId, title)
 							end
 						end
 
-						-- Hide Cast Bar Spark checkbox
+						-- Hide Cast Bar Spark checkbox (all units)
 						do
 							local label = "Hide Cast Bar Spark"
 							local function getter()
@@ -5504,7 +5511,7 @@ local function createUFRenderer(componentId, title)
 							end
 							local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-							local row = CreateFrame("Frame", nil, sparkPage, "SettingsCheckboxControlTemplate")
+							local row = CreateFrame("Frame", nil, visPage, "SettingsCheckboxControlTemplate")
 							row.GetElementData = function() return initCb end
 							row:SetPoint("TOPLEFT", 4, y.y)
 							row:SetPoint("TOPRIGHT", -16, y.y)
@@ -5517,7 +5524,7 @@ local function createUFRenderer(componentId, title)
 							y.y = y.y - 34
 						end
 
-						-- Cast Bar Spark Color (dropdown + inline swatch)
+						-- Cast Bar Spark Color (dropdown + inline swatch, all units)
 						do
 							local function colorOpts()
 								local c = Settings.CreateControlTextContainer()
@@ -5544,7 +5551,7 @@ local function createUFRenderer(componentId, title)
 								t.castBarSparkTint = { r or 1, g or 1, b or 1, a or 1 }
 								applyNow()
 							end
-							_sparkColorFrame = panel.DropdownWithInlineSwatch(sparkPage, y, {
+							_sparkColorFrame = panel.DropdownWithInlineSwatch(visPage, y, {
 								label = "Cast Bar Spark Color",
 								getMode = getMode,
 								setMode = setMode,
@@ -5558,6 +5565,91 @@ local function createUFRenderer(componentId, title)
 
 						-- Initialize gray-out state once when building
 						refreshSparkEnabledState()
+
+						-- Hide Cast Bar Text Border checkbox (Player only - TextBorder only exists on unlocked Player Cast Bar)
+						if isPlayer then
+							local label = "Hide Cast Bar Text Border"
+							local function getter()
+								local t = ensureCastBarDB() or {}
+								return not not t.hideTextBorder
+							end
+							local function setter(v)
+								local t = ensureCastBarDB(); if not t then return end
+								t.hideTextBorder = (v == true)
+								applyNow()
+							end
+							local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, visPage, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+
+							-- Add info icon tooltip to the left of the label
+							if panel and panel.CreateInfoIcon and row.Text then
+								local tooltipText = "Hides the border frame around the cast bar text. This setting only takes effect when 'Lock to Player Frame' is unchecked (Cast Bar is freely positioned), as the text border only appears in that mode."
+								if not row.ScooterTextBorderInfoIcon then
+									row.ScooterTextBorderInfoIcon = panel.CreateInfoIcon(row, tooltipText, "RIGHT", "LEFT", -5, 0, 20)
+									-- Position to the left of the label text
+									C_Timer.After(0, function()
+										if row.ScooterTextBorderInfoIcon and row.Text then
+											row.ScooterTextBorderInfoIcon:ClearAllPoints()
+											row.ScooterTextBorderInfoIcon:SetPoint("RIGHT", row.Text, "LEFT", -5, 0)
+										end
+									end)
+								end
+							end
+
+							y.y = y.y - 34
+						end
+
+						-- Hide Channeling Shadow checkbox (Player only - ChannelShadow only exists on Player Cast Bar)
+						if isPlayer then
+							local label = "Hide Channeling Shadow"
+							local function getter()
+								local t = ensureCastBarDB() or {}
+								return not not t.hideChannelingShadow
+							end
+							local function setter(v)
+								local t = ensureCastBarDB(); if not t then return end
+								t.hideChannelingShadow = (v == true)
+								applyNow()
+							end
+							local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, visPage, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+
+							-- Add info icon tooltip to the left of the label
+							if panel and panel.CreateInfoIcon and row.Text then
+								local tooltipText = "Hides the shadow effect that appears behind the cast bar during channeled spells."
+								if not row.ScooterChannelShadowInfoIcon then
+									row.ScooterChannelShadowInfoIcon = panel.CreateInfoIcon(row, tooltipText, "RIGHT", "LEFT", -5, 0, 20)
+									C_Timer.After(0, function()
+										if row.ScooterChannelShadowInfoIcon and row.Text then
+											row.ScooterChannelShadowInfoIcon:ClearAllPoints()
+											row.ScooterChannelShadowInfoIcon:SetPoint("RIGHT", row.Text, "LEFT", -5, 0)
+										end
+									end)
+								end
+							end
+
+							y.y = y.y - 34
+						end
 					end
 
 					-- PLAYER CAST BAR (Edit Mode–managed)
@@ -5878,9 +5970,10 @@ local function createUFRenderer(componentId, title)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
 					end
 
-					-- Spell Name Text tab (PageF): Disable Spell Name Text + styling (Player only)
+					-- Spell Name Text tab (PageF): styling controls
+					-- Player: Disable Spell Name Text + Hide Backdrop + full styling
+					-- Target/Focus: Hide Border + full styling (implemented in the else branch below)
 					do
-						-- Only meaningful for the Player cast bar; leave PageF empty for Target/Focus
 						if unitKey() == "Player" then
 							local function applyNow()
 								if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor("Player") end
@@ -6323,9 +6416,34 @@ local function createUFRenderer(componentId, title)
 								if addon and addon.ApplyUnitFrameCastBarFor then addon.ApplyUnitFrameCastBarFor(uk) end
 								if addon and addon.ApplyStyles then addon:ApplyStyles() end
 							end
-							-- PageA: Positioning (X/Y offsets)
+							-- PageA: Positioning (Anchor Mode dropdown + X/Y offsets)
 							do
 								local y = { y = -50 }
+
+								-- Anchor Position to... dropdown
+								do
+									local label = "Anchor Position to..."
+									local function anchorModeOptions()
+										local container = Settings.CreateControlTextContainer()
+										container:Add("default", "Default")
+										container:Add("healthTop", "Health Bar (Top)")
+										container:Add("healthBottom", "Health Bar (Bottom)")
+										container:Add("powerTop", "Power Bar (Top)")
+										container:Add("powerBottom", "Power Bar (Bottom)")
+										return container:GetData()
+									end
+									local function getter()
+										local t = ensureCastBarDB() or {}
+										return t.anchorMode or "default"
+									end
+									local function setter(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.anchorMode = v or "default"
+										applyNow()
+									end
+									addDropdown(frame.PageA, label, anchorModeOptions, getter, setter, y)
+								end
+
 								-- X Offset slider (-150..150 px)
 								addSlider(frame.PageA, "X Offset", -150, 150, 1,
 									function()
@@ -6353,43 +6471,208 @@ local function createUFRenderer(componentId, title)
 									y)
 							end
 
-							-- PageB: Sizing (Bar Width %)
+							-- PageB: Sizing (Cast Bar Scale + Bar Width %)
 							do
 								local y = { y = -50 }
 								local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
-								local options = Settings.CreateSliderOptions(50, 150, 1)
-								options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
 
-								local label = "Bar Width (%)"
-								local function getter()
-									local t = ensureCastBarDB() or {}
-									return tonumber(t.widthPct) or 100
-								end
-								local function setter(v)
-									local t = ensureCastBarDB(); if not t then return end
-									local val = tonumber(v) or 100
-									if val < 50 then val = 50 elseif val > 150 then val = 150 end
-									t.widthPct = val
-									applyNow()
+								-- Cast Bar Scale slider (50-150%)
+								do
+									local options = Settings.CreateSliderOptions(50, 150, 1)
+									options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+
+									local label = "Cast Bar Scale (%)"
+									local function getter()
+										local t = ensureCastBarDB() or {}
+										return tonumber(t.castBarScale) or 100
+									end
+									local function setter(v)
+										local t = ensureCastBarDB(); if not t then return end
+										local val = tonumber(v) or 100
+										if val < 50 then val = 50 elseif val > 150 then val = 150 end
+										t.castBarScale = val
+										applyNow()
+									end
+
+									local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+									local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+									local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+									f.GetElementData = function() return initSlider end
+									f:SetPoint("TOPLEFT", 4, y.y)
+									f:SetPoint("TOPRIGHT", -16, y.y)
+									initSlider:InitFrame(f)
+									if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+									y.y = y.y - 34
 								end
 
-								local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-								local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-								local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
-								f.GetElementData = function() return initSlider end
-								f:SetPoint("TOPLEFT", 4, y.y)
-								f:SetPoint("TOPRIGHT", -16, y.y)
-								initSlider:InitFrame(f)
-								if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+								-- Bar Width slider (50-150%)
+								do
+									local options = Settings.CreateSliderOptions(50, 150, 1)
+									options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+
+									local label = "Bar Width (%)"
+									local function getter()
+										local t = ensureCastBarDB() or {}
+										return tonumber(t.widthPct) or 100
+									end
+									local function setter(v)
+										local t = ensureCastBarDB(); if not t then return end
+										local val = tonumber(v) or 100
+										if val < 50 then val = 50 elseif val > 150 then val = 150 end
+										t.widthPct = val
+										applyNow()
+									end
+
+									local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+									local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+									local f = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
+									f.GetElementData = function() return initSlider end
+									f:SetPoint("TOPLEFT", 4, y.y)
+									f:SetPoint("TOPRIGHT", -16, y.y)
+									initSlider:InitFrame(f)
+									if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+								end
+							end
+
+							-- PageF: Spell Name Text (Target/Focus Cast Bars)
+							-- Targets: TargetFrameSpellBar.Text / FocusFrameSpellBar.Text
+							-- Border: TargetFrameSpellBar.TextBorder / FocusFrameSpellBar.TextBorder
+							do
+								local function fontOptions()
+									return addon.BuildFontOptionsContainer()
+								end
+								local y = { y = -50 }
+
+								-- Hide Spell Name Border checkbox (first control)
+								do
+									local label = "Hide Spell Name Border"
+									local function getter()
+										local t = ensureCastBarDB() or {}
+										return not not t.hideSpellNameBorder
+									end
+									local function setter(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.hideSpellNameBorder = (v == true)
+										applyNow()
+									end
+									local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+									local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+									local row = CreateFrame("Frame", nil, frame.PageF, "SettingsCheckboxControlTemplate")
+									row.GetElementData = function() return initCb end
+									row:SetPoint("TOPLEFT", 4, y.y)
+									row:SetPoint("TOPRIGHT", -16, y.y)
+									initCb:InitFrame(row)
+									if panel and panel.ApplyRobotoWhite then
+										if row.Text then panel.ApplyRobotoWhite(row.Text) end
+										local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+										if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+									end
+									y.y = y.y - 34
+								end
+
+								-- Spell Name Font
+								addDropdown(frame.PageF, "Spell Name Font", fontOptions,
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										return s.fontFace or "FRIZQT__"
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.fontFace = v
+										applyNow()
+									end,
+									y)
+
+								-- Spell Name Font Style
+								addStyle(frame.PageF, "Spell Name Font Style",
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										return s.style or "OUTLINE"
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.style = v
+										applyNow()
+									end,
+									y)
+
+								-- Spell Name Font Size
+								addSlider(frame.PageF, "Spell Name Font Size", 6, 48, 1,
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										return tonumber(s.size) or 14
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.size = tonumber(v) or 14
+										applyNow()
+									end,
+									y)
+
+								-- Spell Name Font Color
+								addColor(frame.PageF, "Spell Name Font Color", true,
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										local c = s.color or {1,1,1,1}
+										return c[1], c[2], c[3], c[4]
+									end,
+									function(r,g,b,a)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.color = {r or 1, g or 1, b or 1, a or 1}
+										applyNow()
+									end,
+									y)
+
+								-- Spell Name X Offset
+								addSlider(frame.PageF, "Spell Name X Offset", -100, 100, 1,
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										local o = s.offset or {}
+										return tonumber(o.x) or 0
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.offset = t.spellNameText.offset or {}
+										t.spellNameText.offset.x = tonumber(v) or 0
+										applyNow()
+									end,
+									y)
+
+								-- Spell Name Y Offset
+								addSlider(frame.PageF, "Spell Name Y Offset", -100, 100, 1,
+									function()
+										local t = ensureCastBarDB() or {}
+										local s = t.spellNameText or {}
+										local o = s.offset or {}
+										return tonumber(o.y) or 0
+									end,
+									function(v)
+										local t = ensureCastBarDB(); if not t then return end
+										t.spellNameText = t.spellNameText or {}
+										t.spellNameText.offset = t.spellNameText.offset or {}
+										t.spellNameText.offset.y = tonumber(v) or 0
+										applyNow()
+									end,
+									y)
 							end
 						end
 					end
 
-					-- Build Style, Border, Icon, and Spark tabs for any unit with a Cast Bar (Player/Target/Focus)
+					-- Build Style, Border, Icon, and Visibility tabs for any unit with a Cast Bar (Player/Target/Focus)
 					buildStyleTab()
 					buildBorderTab()
 					buildIconTab()
-					buildSparkTab()
+					buildVisibilityTab() -- All units (Spark settings) + Player-only (TextBorder)
 				end
 
 				local tabCBC = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", cbData)
@@ -6747,7 +7030,7 @@ local function createUFRenderer(componentId, title)
 								t.borderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 1)
+							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
@@ -6765,8 +7048,47 @@ local function createUFRenderer(componentId, title)
 						refreshBorderEnabledState()
 					end
 
-					-- Tabs D/E (Text, Visibility) are present for layout consistency and will be
-					-- populated in a later phase. For now they intentionally remain empty.
+					-- Tab D (Text) is present for layout consistency and will be
+					-- populated in a later phase. For now it intentionally remains empty.
+
+					-- PageE: Visibility tab (Hide Buffs & Debuffs)
+					do
+						local y = { y = -50 }
+
+						local function applyNow()
+							local uk = unitKey()
+							if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+								addon.ApplyUnitFrameBuffsDebuffsFor(uk)
+							end
+						end
+
+						-- Hide Buffs & Debuffs checkbox
+						do
+							local setting = CreateLocalSetting("Hide Buffs & Debuffs", "boolean",
+								function()
+									local t = ensureUFDB() or {}
+									return t.hideBuffsDebuffs == true
+								end,
+								function(v)
+									local t = ensureUFDB(); if not t then return end
+									t.hideBuffsDebuffs = (v == true)
+									applyNow()
+								end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Buffs & Debuffs", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+					end
 				end
 
 				local tabBD = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdData)
@@ -7013,8 +7335,233 @@ local function createUFRenderer(componentId, title)
 							y)
 					end
 
-					-- Tabs C/D/E (Border, Text, Visibility) are present for layout consistency and will be
-					-- populated in a later phase. For now they intentionally remain empty.
+					-- PageC: Border tab (Use Custom Border + Style/Tint/Thickness, matching Essential Cooldowns)
+					do
+						local y = { y = -50 }
+
+						local function applyNow()
+							local uk = unitKey()
+							if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+								addon.ApplyUnitFrameBuffsDebuffsFor(uk)
+							end
+							if addon and addon.ApplyStyles then
+								addon:ApplyStyles()
+							end
+						end
+
+						local function isEnabled()
+							local t = ensureUFDB() or {}
+							return not not t.borderEnable
+						end
+
+						local _styleFrame, _tintRow, _thkFrame
+						local function refreshBorderEnabledState()
+							local enabled = isEnabled()
+
+							-- Style dropdown
+							if _styleFrame then
+								if _styleFrame.Control and _styleFrame.Control.SetEnabled then
+									_styleFrame.Control:SetEnabled(enabled)
+								end
+								local lbl = _styleFrame.Text or _styleFrame.Label
+								if lbl and lbl.SetTextColor then
+									lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+
+							-- Tint checkbox + swatch
+							if _tintRow then
+								local ctrl = _tintRow.Checkbox or _tintRow.CheckBox or (_tintRow.Control and _tintRow.Control.Checkbox) or _tintRow.Control
+								if ctrl and ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+								if _tintRow.ScooterInlineSwatch and _tintRow.ScooterInlineSwatch.EnableMouse then
+									_tintRow.ScooterInlineSwatch:EnableMouse(enabled)
+									if _tintRow.ScooterInlineSwatch.SetAlpha then
+										_tintRow.ScooterInlineSwatch:SetAlpha(enabled and 1 or 0.5)
+									end
+								end
+								local labelFS = (ctrl and ctrl.Text) or _tintRow.Text
+								if labelFS and labelFS.SetTextColor then
+									labelFS:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+
+							-- Thickness slider
+							if _thkFrame then
+								if _thkFrame.Control and _thkFrame.Control.SetEnabled then
+									_thkFrame.Control:SetEnabled(enabled)
+								end
+								local lbl = _thkFrame.Text or _thkFrame.Label
+								if lbl and lbl.SetTextColor then
+									lbl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+								end
+							end
+						end
+
+						-- Use Custom Border checkbox
+						do
+							local setting = CreateLocalSetting("Use Custom Border", "boolean",
+								function()
+									local t = ensureUFDB() or {}
+									return t.borderEnable == true
+								end,
+								function(v)
+									local t = ensureUFDB(); if not t then return end
+									t.borderEnable = (v == true)
+									applyNow()
+									refreshBorderEnabledState()
+								end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Use Custom Border", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+
+						-- Border Style dropdown (shares options with Essential Cooldowns / IconBorders)
+						do
+							local function styleOptions()
+								if addon.BuildIconBorderOptionsContainer then
+									return addon.BuildIconBorderOptionsContainer()
+								end
+								local c = Settings.CreateControlTextContainer()
+								c:Add("square", "Default")
+								c:Add("blizzard", "Blizzard Default")
+								return c:GetData()
+							end
+							local function getStyle()
+								local t = ensureUFDB() or {}
+								return t.borderStyle or "square"
+							end
+							local function setStyle(v)
+								local t = ensureUFDB(); if not t then return end
+								t.borderStyle = v or "square"
+								applyNow()
+							end
+							local styleSetting = CreateLocalSetting("Border Style", "string", getStyle, setStyle, getStyle())
+							local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Border Style", setting = styleSetting, options = styleOptions })
+							local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+							_styleFrame = f
+							f.GetElementData = function() return initDrop end
+							f:SetPoint("TOPLEFT", 4, y.y)
+							f:SetPoint("TOPRIGHT", -16, y.y)
+							initDrop:InitFrame(f)
+							local lbl = f and (f.Text or f.Label)
+							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							y.y = y.y - 34
+						end
+
+						-- Border Tint (checkbox + swatch)
+						do
+							local function getTintEnabled()
+								local t = ensureUFDB() or {}
+								return not not t.borderTintEnable
+							end
+							local function setTintEnabled(b)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintEnable = not not b
+								applyNow()
+							end
+							local function getTint()
+								local t = ensureUFDB() or {}
+								local c = t.borderTintColor or {1,1,1,1}
+								return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+							end
+							local function setTint(r, g, b, a)
+								local t = ensureUFDB(); if not t then return end
+								t.borderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							local tintSetting = CreateLocalSetting("Border Tint", "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+							local initCb = CreateCheckboxWithSwatchInitializer(tintSetting, "Border Tint", getTint, setTint, 8)
+							local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+							_tintRow = row
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							y.y = y.y - 34
+						end
+
+						-- Border Thickness slider
+						do
+							local function getThk()
+								local t = ensureUFDB() or {}
+								return tonumber(t.borderThickness) or 1
+							end
+							local function setThk(v)
+								local t = ensureUFDB(); if not t then return end
+								local nv = tonumber(v) or 1
+								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								t.borderThickness = nv
+								applyNow()
+							end
+							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
+							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
+							_thkFrame = sf
+							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
+							sf.GetElementData = function() return initSlider end
+							sf:SetPoint("TOPLEFT", 4, y.y)
+							sf:SetPoint("TOPRIGHT", -16, y.y)
+							initSlider:InitFrame(sf)
+							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							y.y = y.y - 34
+						end
+
+						-- Initial gray-out state
+						refreshBorderEnabledState()
+					end
+
+					-- Tab D (Text) is present for layout consistency and will be
+					-- populated in a later phase. For now it intentionally remains empty.
+
+					-- PageE: Visibility tab (Hide Buffs & Debuffs)
+					do
+						local y = { y = -50 }
+
+						local function applyNow()
+							local uk = unitKey()
+							if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+								addon.ApplyUnitFrameBuffsDebuffsFor(uk)
+							end
+						end
+
+						-- Hide Buffs & Debuffs checkbox
+						do
+							local setting = CreateLocalSetting("Hide Buffs & Debuffs", "boolean",
+								function()
+									local t = ensureUFDB() or {}
+									return t.hideBuffsDebuffs == true
+								end,
+								function(v)
+									local t = ensureUFDB(); if not t then return end
+									t.hideBuffsDebuffs = (v == true)
+									applyNow()
+								end,
+								false)
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = "Hide Buffs & Debuffs", setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							y.y = y.y - 34
+						end
+					end
 				end
 
 				local tabBDF = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", bdDataF)

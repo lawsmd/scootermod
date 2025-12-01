@@ -16,6 +16,47 @@ do
 		return nil
 	end
 
+	-- Helper to traverse nested keys safely (copied from bars.lua pattern)
+	local function getNested(root, ...)
+		if not root then return nil end
+		local cur = root
+		for i = 1, select("#", ...) do
+			local key = select(i, ...)
+			if type(cur) ~= "table" then return nil end
+			cur = cur[key]
+		end
+		return cur
+	end
+
+	-- Resolve Health Bar for Target/Focus (deterministic paths from framestack findings)
+	local function resolveHealthBar(unit)
+		if unit == "Target" then
+			local root = _G.TargetFrame
+			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+		end
+		return nil
+	end
+
+	-- Resolve Power Bar (ManaBar) for Target/Focus (deterministic paths from framestack findings)
+	local function resolvePowerBar(unit)
+		if unit == "Target" then
+			local root = _G.TargetFrame
+			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+		elseif unit == "Focus" then
+			local root = _G.FocusFrame
+			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+		end
+		return nil
+	end
+
+	-- Track which cast bars have custom anchor mode active, so the SetPoint hook knows when to re-apply
+	local activeAnchorModes = {}
+	-- Track scheduled re-apply timers to avoid duplicate scheduling
+	local pendingReapply = {}
+
 	-- Store original positions per frame so offsets are always relative to stock layout
 	local originalPositions = {}
 	-- Store original widths per frame for width-percent scaling
@@ -85,6 +126,29 @@ do
 					self._ScootCastVisualOnly = true
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
 					self._ScootCastVisualOnly = nil
+				end
+			end)
+			-- Hook SetPoint to detect when Blizzard re-anchors the cast bar and re-apply
+			-- our custom anchoring if we have a non-default anchor mode active.
+			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
+				-- Ignore our own SetPoint calls (flagged to prevent infinite loops)
+				if self._ScootIgnoreSetPoint then return end
+				-- Only re-apply if we have a custom anchor mode active for this unit
+				local mode = activeAnchorModes[hookUnit]
+				if mode and mode ~= "default" then
+					-- Schedule a re-apply on the next frame to avoid recursive issues
+					-- and to let Blizzard finish its update first
+					if not pendingReapply[hookUnit] then
+						pendingReapply[hookUnit] = true
+						C_Timer.After(0, function()
+							pendingReapply[hookUnit] = nil
+							-- Skip if in combat to avoid taint
+							if InCombatLockdown and InCombatLockdown() then return end
+							if addon and addon.ApplyUnitFrameCastBarFor then
+								addon.ApplyUnitFrameCastBarFor(hookUnit)
+							end
+						end)
+					end
 				end
 			end)
 		end
@@ -163,7 +227,7 @@ do
 		end
 
 		-- Offsets:
-		-- - Target/Focus always use addon-managed X/Y offsets (relative to stock layout).
+		-- - Target/Focus always use addon-managed X/Y offsets (relative to stock layout or custom anchor).
 		-- - Player uses offsets only when locked to the Player frame; when unlocked, Edit Mode
 		--   owns the free position and ScooterMod must not re-anchor.
 		local offsetX, offsetY = 0, 0
@@ -175,9 +239,17 @@ do
 			offsetY = tonumber(cfg.offsetY) or 0
 		end
 
+		-- Anchor Mode (Target/Focus only): determines anchor point for cast bar positioning
+		-- "default" = stock Blizzard position, "healthTop/healthBottom/powerTop/powerBottom" = custom anchors
+		local anchorMode = (unit == "Target" or unit == "Focus") and (cfg.anchorMode or "default") or "default"
+
 		-- Width percent (50–150%; 100 = stock width)
 		local widthPct = tonumber(cfg.widthPct) or 100
 		if widthPct < 50 then widthPct = 50 elseif widthPct > 150 then widthPct = 150 end
+
+		-- Cast Bar Scale (addon-only, Target/Focus only; 50–150%; 100 = stock scale)
+		local castBarScale = tonumber(cfg.castBarScale) or 100
+		if castBarScale < 50 then castBarScale = 50 elseif castBarScale > 150 then castBarScale = 150 end
 
 		-- Icon sizing, padding, and visibility relative to bar
 		local iconWidth = tonumber(cfg.iconWidth)
@@ -204,9 +276,10 @@ do
 					-- Anchor behaviour:
 					-- - Player: only override anchors when locked to the Player frame so Edit Mode retains
 					--   full control when the bar is unlocked and freely positioned.
-					-- - Target/Focus: always re-anchor relative to the captured baseline plus offsets.
+					-- - Target/Focus: anchor based on anchorMode setting (default = stock baseline, or custom anchor to Health/Power bar).
 					if isPlayer then
 						if isLockedToPlayerFrame then
+							frame._ScootIgnoreSetPoint = true
 							frame:ClearAllPoints()
 							frame:SetPoint(
 								orig.point,
@@ -215,16 +288,68 @@ do
 								(orig.xOfs or 0) + offsetX,
 								(orig.yOfs or 0) + offsetY
 							)
+							frame._ScootIgnoreSetPoint = nil
 						end
 					else
-						frame:ClearAllPoints()
-						frame:SetPoint(
-							orig.point,
-							orig.relativeTo,
-							orig.relativePoint,
-							(orig.xOfs or 0) + offsetX,
-							(orig.yOfs or 0) + offsetY
-						)
+						-- Target/Focus: check anchorMode for custom anchoring
+						-- Track the active anchor mode so the SetPoint hook knows when to re-apply
+						activeAnchorModes[unit] = anchorMode
+
+						local anchorApplied = false
+						if anchorMode ~= "default" then
+							-- Resolve the target bar based on anchor mode
+							local anchorBar
+							local anchorEdge -- "top" or "bottom"
+							if anchorMode == "healthTop" then
+								anchorBar = resolveHealthBar(unit)
+								anchorEdge = "top"
+							elseif anchorMode == "healthBottom" then
+								anchorBar = resolveHealthBar(unit)
+								anchorEdge = "bottom"
+							elseif anchorMode == "powerTop" then
+								anchorBar = resolvePowerBar(unit)
+								anchorEdge = "top"
+							elseif anchorMode == "powerBottom" then
+								anchorBar = resolvePowerBar(unit)
+								anchorEdge = "bottom"
+							end
+
+							if anchorBar then
+								-- Use direct relative anchoring to the Health/Power bar
+								-- This automatically handles scale and position changes
+								-- - For "top" edges: cast bar sits ABOVE the anchor bar (cast bar's BOTTOM to bar's TOP)
+								-- - For "bottom" edges: cast bar sits BELOW the anchor bar (cast bar's TOP to bar's BOTTOM)
+								local castBarPoint = (anchorEdge == "top") and "BOTTOM" or "TOP"
+								local anchorPoint = (anchorEdge == "top") and "TOP" or "BOTTOM"
+
+								-- Flag to prevent our SetPoint hook from triggering a re-apply loop
+								frame._ScootIgnoreSetPoint = true
+								frame:ClearAllPoints()
+								frame:SetPoint(
+									castBarPoint,
+									anchorBar,
+									anchorPoint,
+									offsetX,
+									offsetY
+								)
+								frame._ScootIgnoreSetPoint = nil
+								anchorApplied = true
+							end
+						end
+
+						-- Fallback to default (stock baseline) positioning if custom anchor not applied
+						if not anchorApplied then
+							frame._ScootIgnoreSetPoint = true
+							frame:ClearAllPoints()
+							frame:SetPoint(
+								orig.point,
+								orig.relativeTo,
+								orig.relativePoint,
+								(orig.xOfs or 0) + offsetX,
+								(orig.yOfs or 0) + offsetY
+							)
+							frame._ScootIgnoreSetPoint = nil
+						end
 					end
 
 					-- Apply icon visibility, size, and padding before bar styling
@@ -274,6 +399,47 @@ do
 									baseY
 								)
 							end
+						end
+					end
+
+					-- Cast Bar Scale (addon-only, Target/Focus only)
+					if (unit == "Target" or unit == "Focus") and frame.SetScale then
+						local scale = castBarScale / 100.0
+						pcall(frame.SetScale, frame, scale)
+					end
+				end
+
+				-- Player Cast Bar: TextBorder visibility (only visible when unlocked)
+				-- The TextBorder frame only exists on PlayerCastingBarFrame when it's not locked to the Player Frame.
+				if isPlayer and not isLockedToPlayerFrame then
+					local textBorder = frame.TextBorder
+					if textBorder then
+						local hideTextBorder = cfg.hideTextBorder == true
+						if hideTextBorder then
+							if textBorder.SetShown then
+								pcall(textBorder.SetShown, textBorder, false)
+							elseif textBorder.Hide then
+								pcall(textBorder.Hide, textBorder)
+							end
+						else
+							if textBorder.SetShown then
+								pcall(textBorder.SetShown, textBorder, true)
+							elseif textBorder.Show then
+								pcall(textBorder.Show, textBorder)
+							end
+						end
+					end
+				end
+
+				-- Player Cast Bar: ChannelShadow visibility
+				-- The ChannelShadow is the shadow effect behind the cast bar during channeled spells.
+				-- Use SetAlpha instead of SetShown/Hide to avoid fighting Blizzard's internal show/hide logic during channeling.
+				if isPlayer then
+					local channelShadow = frame.ChannelShadow
+					if channelShadow then
+						local hideChannelingShadow = cfg.hideChannelingShadow == true
+						if channelShadow.SetAlpha then
+							pcall(channelShadow.SetAlpha, channelShadow, hideChannelingShadow and 0 or 1)
 						end
 					end
 				end
@@ -547,92 +713,100 @@ do
 				end
 			end
 
-			-- Spell Name + Cast Time Text styling (Player only; standard 6 text controls each)
-			if unit == "Player" then
-				-- Spell Name Text
-				do
-					-- CastingBarFrameBaseTemplate exposes the spell-name FontString as .Text
-					local spellFS = frame.Text
-					if spellFS then
-						-- Capture a stable baseline anchor once per session so offsets are relative.
-						-- For the cast bar, we always treat the spell name as centered within the bar,
-						-- regardless of whether the bar is locked to the Player frame or free-floating.
-						local function ensureSpellBaseline(fs, key)
-							addon._ufCastSpellNameBaselines[key] = addon._ufCastSpellNameBaselines[key] or {}
-							local b = addon._ufCastSpellNameBaselines[key]
-							if b.point == nil then
-								-- Force a centered baseline: center of the cast bar frame.
-								local parent = (fs and fs.GetParent and fs:GetParent()) or frame
-								b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", parent, "CENTER", 0, 0
-							end
-							return b
+			-- Spell Name Text styling (Player/Target/Focus)
+			-- Targets: PlayerCastingBarFrame.Text, TargetFrameSpellBar.Text, FocusFrameSpellBar.Text
+			-- Borders: PlayerCastingBarFrame.TextBorder, TargetFrameSpellBar.TextBorder, FocusFrameSpellBar.TextBorder
+			do
+				-- CastingBarFrameBaseTemplate exposes the spell-name FontString as .Text
+				local spellFS = frame.Text
+				if spellFS then
+					-- Capture a stable baseline anchor once per session so offsets are relative.
+					-- For the cast bar, we always treat the spell name as centered within the bar,
+					-- regardless of whether the bar is locked to the Player frame or free-floating.
+					local function ensureSpellBaseline(fs, key)
+						addon._ufCastSpellNameBaselines[key] = addon._ufCastSpellNameBaselines[key] or {}
+						local b = addon._ufCastSpellNameBaselines[key]
+						if b.point == nil then
+							-- Force a centered baseline: center of the cast bar frame.
+							local parent = (fs and fs.GetParent and fs:GetParent()) or frame
+							b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", parent, "CENTER", 0, 0
+						end
+						return b
+					end
+
+					-- Player has a "Disable Spell Name Text" toggle; Target/Focus do not
+					local disabled = (unit == "Player") and (not not cfg.spellNameTextDisabled) or false
+
+					-- Visibility: use alpha instead of Show/Hide to avoid fighting Blizzard logic
+					if spellFS.SetAlpha then
+						pcall(spellFS.SetAlpha, spellFS, disabled and 0 or 1)
+					end
+
+					-- Border/Backdrop behind the spell text
+					-- Player: cfg.hideSpellNameBackdrop (TextBorder only visible when unlocked)
+					-- Target/Focus: cfg.hideSpellNameBorder (TextBorder is always present)
+					local hideBorder = false
+					if unit == "Player" then
+						hideBorder = not not cfg.hideSpellNameBackdrop
+					else
+						-- Target/Focus use hideSpellNameBorder
+						hideBorder = not not cfg.hideSpellNameBorder
+					end
+					local border = frame.TextBorder
+					if border and border.SetAlpha then
+						pcall(border.SetAlpha, border, hideBorder and 0 or 1)
+					elseif border and border.Hide and border.Show then
+						if hideBorder then
+							pcall(border.Hide, border)
+						else
+							pcall(border.Show, border)
+						end
+					end
+
+					if not disabled then
+						local styleCfg = cfg.spellNameText or {}
+						-- Font / size / outline
+						local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
+							or (select(1, _G.GameFontNormal:GetFont()))
+						local size = tonumber(styleCfg.size) or 14
+						local outline = tostring(styleCfg.style or "OUTLINE")
+						if addon.ApplyFontStyle then
+							addon.ApplyFontStyle(spellFS, face, size, outline)
+						elseif spellFS.SetFont then
+							pcall(spellFS.SetFont, spellFS, face, size, outline)
 						end
 
-						local disabled = not not cfg.spellNameTextDisabled
-
-						-- Visibility: use alpha instead of Show/Hide to avoid fighting Blizzard logic
-						if spellFS.SetAlpha then
-							pcall(spellFS.SetAlpha, spellFS, disabled and 0 or 1)
+						-- Color (simple RGBA, no mode for now)
+						local c = styleCfg.color or {1, 1, 1, 1}
+						if spellFS.SetTextColor then
+							pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
 						end
 
-						-- Backdrop behind the spell text (Frame Attributes: PlayerCastingBarFrame.TextBorder).
-						-- We hide this independently of the text visibility so players can hide the strip even
-						-- when the spell name itself is disabled.
-						local hideBackdrop = not not cfg.hideSpellNameBackdrop
-						local backdrop = frame.TextBorder
-						if backdrop and backdrop.SetAlpha then
-							pcall(backdrop.SetAlpha, backdrop, hideBackdrop and 0 or 1)
-						elseif backdrop and backdrop.Hide and backdrop.Show then
-							if hideBackdrop then
-								pcall(backdrop.Hide, backdrop)
-							else
-								pcall(backdrop.Show, backdrop)
+						-- Offsets relative to baseline (centered)
+						local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+						local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+						if spellFS.ClearAllPoints and spellFS.SetPoint then
+							local b = ensureSpellBaseline(spellFS, unit .. ":spellName")
+							spellFS:ClearAllPoints()
+							-- Ensure horizontal alignment is centered so long and short strings both
+							-- grow outwards from the middle of the bar.
+							if spellFS.SetJustifyH then
+								pcall(spellFS.SetJustifyH, spellFS, "CENTER")
 							end
-						end
-
-						if not disabled then
-							local styleCfg = cfg.spellNameText or {}
-							-- Font / size / outline
-							local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
-								or (select(1, _G.GameFontNormal:GetFont()))
-							local size = tonumber(styleCfg.size) or 14
-							local outline = tostring(styleCfg.style or "OUTLINE")
-							if addon.ApplyFontStyle then
-								addon.ApplyFontStyle(spellFS, face, size, outline)
-							elseif spellFS.SetFont then
-								pcall(spellFS.SetFont, spellFS, face, size, outline)
-							end
-
-							-- Color (simple RGBA, no mode for now)
-							local c = styleCfg.color or {1, 1, 1, 1}
-							if spellFS.SetTextColor then
-								pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-							end
-
-							-- Offsets relative to baseline (centered)
-							local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-							local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-							if spellFS.ClearAllPoints and spellFS.SetPoint then
-								local b = ensureSpellBaseline(spellFS, "Player:spellName")
-								spellFS:ClearAllPoints()
-								-- Ensure horizontal alignment is centered so long and short strings both
-								-- grow outwards from the middle of the bar.
-								if spellFS.SetJustifyH then
-									pcall(spellFS.SetJustifyH, spellFS, "CENTER")
-								end
-								spellFS:SetPoint(
-									b.point or "CENTER",
-									b.relTo or (spellFS.GetParent and spellFS:GetParent()) or frame,
-									b.relPoint or b.point or "CENTER",
-									(b.x or 0) + ox,
-									(b.y or 0) + oy
-								)
-							end
+							spellFS:SetPoint(
+								b.point or "CENTER",
+								b.relTo or (spellFS.GetParent and spellFS:GetParent()) or frame,
+								b.relPoint or b.point or "CENTER",
+								(b.x or 0) + ox,
+								(b.y or 0) + oy
+							)
 						end
 					end
 				end
+			end
 
-				-- Cast Time Text
+			-- Cast Time Text styling (Player only; Target/Focus Cast Bars do not have cast time display)
+			if unit == "Player" then
 				do
 					local castTimeFS = frame.CastTimeText
 					if castTimeFS then

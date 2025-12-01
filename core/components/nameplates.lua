@@ -193,9 +193,21 @@ local function applyToAllActive(component)
 end
 
 local function restyleFromHook(namePlate)
-    local component = addon.Components and addon.Components.nameplatesUnit
-    if component and component.db then
-        applyToNamePlate(component, namePlate)
+    -- CRITICAL: Defer to avoid tainting Blizzard's nameplate setup chain.
+    -- Accessing addon.Components taints execution; if we run synchronously,
+    -- protected functions like SetTargetClampingInsets() will be blocked.
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            local component = addon.Components and addon.Components.nameplatesUnit
+            if component and component.db then
+                applyToNamePlate(component, namePlate)
+            end
+        end)
+    else
+        local component = addon.Components and addon.Components.nameplatesUnit
+        if component and component.db then
+            applyToNamePlate(component, namePlate)
+        end
     end
 end
 
@@ -212,12 +224,26 @@ local function ensureNamePlateHooks()
         if not updateNameHookInstalled and _G.CompactUnitFrame_UpdateName then
             updateNameHookInstalled = true
             secureHook("CompactUnitFrame_UpdateName", function(frame)
-                if not frame or not frame.unit or not string.find(frame.unit, "nameplate", 1, true) then
-                    return
-                end
-                local parent = frame:GetParent()
-                if parent and parent.UnitFrame == frame then
-                    restyleFromHook(parent)
+                -- CRITICAL: Defer check to avoid tainting execution context.
+                -- The actual styling is already deferred inside restyleFromHook.
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if not frame or not frame.unit or not string.find(frame.unit, "nameplate", 1, true) then
+                            return
+                        end
+                        local parent = frame:GetParent()
+                        if parent and parent.UnitFrame == frame then
+                            restyleFromHook(parent)
+                        end
+                    end)
+                else
+                    if not frame or not frame.unit or not string.find(frame.unit, "nameplate", 1, true) then
+                        return
+                    end
+                    local parent = frame:GetParent()
+                    if parent and parent.UnitFrame == frame then
+                        restyleFromHook(parent)
+                    end
                 end
             end)
         end

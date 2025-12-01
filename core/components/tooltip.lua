@@ -57,18 +57,28 @@ local function RegisterTooltipPostProcessor()
         local comp = addon.Components and addon.Components.tooltip
         if not comp or not comp.db then return end
 
+        local db = comp.db
+
         -- Apply settings for lines 1 through 7
         for i = 1, 7 do
             local fontString = _G["GameTooltipTextLeft"..i]
             if fontString then
                 -- DB keys: textTitle (line 1), textLine2 (line 2), etc.
                 local key = (i == 1) and "textTitle" or ("textLine"..i)
-                local cfg = comp.db[key] or {}
+                local cfg = db[key] or {}
                 
                 -- Apply font settings synchronously
                 -- Line 1 defaults to 14pt, others default to 12pt (standard body size)
                 ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
             end
+        end
+
+        -- Hide health bar if setting is enabled (must be done on every tooltip show)
+        if db.hideHealthBar then
+            local statusBar = _G["GameTooltipStatusBar"]
+            if statusBar then statusBar:Hide() end
+            local statusBarTexture = _G["GameTooltipStatusBarTexture"]
+            if statusBarTexture then statusBarTexture:Hide() end
         end
     end)
 
@@ -98,6 +108,25 @@ local function ApplyTooltipStyling(self)
             local key = (i == 1) and "textTitle" or ("textLine"..i)
             local cfg = db[key] or {}
             ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
+        end
+    end
+
+    -- Apply visibility settings: Hide/Show GameTooltipStatusBar (health bar)
+    local statusBar = _G["GameTooltipStatusBar"]
+    if statusBar then
+        if db.hideHealthBar then
+            statusBar:Hide()
+        else
+            statusBar:Show()
+        end
+    end
+    -- Also hide/show the status bar texture (child element)
+    local statusBarTexture = _G["GameTooltipStatusBarTexture"]
+    if statusBarTexture then
+        if db.hideHealthBar then
+            statusBarTexture:Hide()
+        else
+            statusBarTexture:Show()
         end
     end
 end
@@ -158,6 +187,11 @@ addon:RegisterComponentInitializer(function(self)
                 size = 12,
                 style = "OUTLINE",
             }, ui = { hidden = true }},
+
+            -- Visibility settings
+            hideHealthBar = { type = "addon", default = false, ui = {
+                label = "Hide Tooltip Health Bar", widget = "checkbox", section = "Visibility", order = 1
+            }},
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

@@ -42,6 +42,10 @@ function addon:GetDefaults()
                 lastFontApplied = nil,
                 lastTextureApplied = nil,
             },
+            minimap = {
+                hide = false,
+                minimapPos = 220,
+            },
             components = {},
             rules = {},
             rulesState = {
@@ -80,19 +84,24 @@ function addon:RegisterEvents()
     -- Ensure Unit Frame styling is re-applied when target/focus units change
     self:RegisterEvent("PLAYER_TARGET_CHANGED")
     self:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
+    self:RegisterEvent("PLAYER_LEVEL_UP")
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
 end
 
 function addon:ApplyDropdownStepperFixes()
+    -- IMPORTANT: Use hooksecurefunc instead of direct method replacement to avoid taint.
+    -- Direct replacement of Blizzard mixin methods spreads taint to any code path that
+    -- calls those methods, causing "blocked from an action" errors for protected functions
+    -- like FocusUnit(), ClearFocus(), etc.
+
     -- Ensure dropdown steppers (left/right arrows) refresh enable/disable state after selection changes
     do
         local mixin = _G.SettingsDropdownControlMixin
         if mixin and type(mixin.OnSettingValueChanged) == "function" and not addon._dropdownReinitPatched then
-            local original = mixin.OnSettingValueChanged
-            mixin.OnSettingValueChanged = function(self, setting, value)
-                if original then pcall(original, self, setting, value) end
+            hooksecurefunc(mixin, "OnSettingValueChanged", function(self, setting, value)
                 -- Reinitialize dropdown so steppers recalc based on current selection and options order
                 if self and type(self.InitDropdown) == "function" then
                     pcall(self.InitDropdown, self)
@@ -106,7 +115,7 @@ function addon:ApplyDropdownStepperFixes()
                         end)
                     end
                 end
-            end
+            end)
             addon._dropdownReinitPatched = true
         end
     end
@@ -115,25 +124,25 @@ function addon:ApplyDropdownStepperFixes()
     do
         local mixin = _G.DropdownWithSteppersMixin
         if mixin and not addon._dropdownStepperPatched then
-            local origInc = mixin.Increment
-            local origDec = mixin.Decrement
-            mixin.Increment = function(self, ...)
-                if origInc then pcall(origInc, self, ...) end
-                if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
-                    pcall(self.Dropdown.Update, self.Dropdown)
-                end
-                if type(self.UpdateSteppers) == "function" then
-                    pcall(self.UpdateSteppers, self)
-                end
+            if type(mixin.Increment) == "function" then
+                hooksecurefunc(mixin, "Increment", function(self, ...)
+                    if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
+                        pcall(self.Dropdown.Update, self.Dropdown)
+                    end
+                    if type(self.UpdateSteppers) == "function" then
+                        pcall(self.UpdateSteppers, self)
+                    end
+                end)
             end
-            mixin.Decrement = function(self, ...)
-                if origDec then pcall(origDec, self, ...) end
-                if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
-                    pcall(self.Dropdown.Update, self.Dropdown)
-                end
-                if type(self.UpdateSteppers) == "function" then
-                    pcall(self.UpdateSteppers, self)
-                end
+            if type(mixin.Decrement) == "function" then
+                hooksecurefunc(mixin, "Decrement", function(self, ...)
+                    if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
+                        pcall(self.Dropdown.Update, self.Dropdown)
+                    end
+                    if type(self.UpdateSteppers) == "function" then
+                        pcall(self.UpdateSteppers, self)
+                    end
+                end)
             end
             addon._dropdownStepperPatched = true
         end
@@ -143,18 +152,12 @@ function addon:ApplyDropdownStepperFixes()
     do
         local mixin = _G.DropdownButtonMixin
         if mixin and type(mixin.Pick) == "function" and not addon._dropdownSignalUpdatePatched then
-            local originalPick = mixin.Pick
-            mixin.Pick = function(self, description, ...)
-                local responded = false
-                if originalPick then
-                    responded = originalPick(self, description, ...)
-                end
+            hooksecurefunc(mixin, "Pick", function(self, description, ...)
                 -- After a selection is picked, explicitly signal an update so steppers recompute
                 if self and type(self.SignalUpdate) == "function" then
                     pcall(self.SignalUpdate, self)
                 end
-                return responded
-            end
+            end)
             addon._dropdownSignalUpdatePatched = true
         end
     end
@@ -233,24 +236,53 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
 end
 
 function addon:PLAYER_TARGET_CHANGED()
-    -- Re-apply Target styling (health/power textures, borders, width) after Blizzard rebuilds layout
-    if addon.ApplyUnitFrameBarTexturesFor then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Target") end)
-        else
+    -- Re-apply Target styling after Blizzard rebuilds layout
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor("Target")
+            end
+            -- Also apply Name & Level Text visibility to ensure hidden settings persist
+            if addon.ApplyUnitFrameNameLevelTextFor then
+                addon.ApplyUnitFrameNameLevelTextFor("Target")
+            end
+        end)
+    else
+        if addon.ApplyUnitFrameBarTexturesFor then
             addon.ApplyUnitFrameBarTexturesFor("Target")
+        end
+        if addon.ApplyUnitFrameNameLevelTextFor then
+            addon.ApplyUnitFrameNameLevelTextFor("Target")
         end
     end
 end
 
 function addon:PLAYER_FOCUS_CHANGED()
-    -- Re-apply Focus styling (health/power textures, borders, width) after Blizzard rebuilds layout
-    if addon.ApplyUnitFrameBarTexturesFor then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Focus") end)
-        else
+    -- Re-apply Focus styling after Blizzard rebuilds layout
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor("Focus")
+            end
+            -- Also apply Name & Level Text visibility to ensure hidden settings persist
+            if addon.ApplyUnitFrameNameLevelTextFor then
+                addon.ApplyUnitFrameNameLevelTextFor("Focus")
+            end
+        end)
+    else
+        if addon.ApplyUnitFrameBarTexturesFor then
             addon.ApplyUnitFrameBarTexturesFor("Focus")
         end
+        if addon.ApplyUnitFrameNameLevelTextFor then
+            addon.ApplyUnitFrameNameLevelTextFor("Focus")
+        end
+    end
+end
+
+function addon:PLAYER_LEVEL_UP()
+    -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
+    if self.Rules and self.Rules.OnPlayerLevelUp then
+        self.Rules:OnPlayerLevelUp()
     end
 end
 

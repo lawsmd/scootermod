@@ -516,7 +516,7 @@ addon:RegisterComponentInitializer(function(self)
                 end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 1, section = "Border", order = 5,
+                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 5,
             }},
             opacity = { type = "addon", default = 100, ui = {
                 label = "Opacity in Combat", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 1,

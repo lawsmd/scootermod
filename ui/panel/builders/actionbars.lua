@@ -36,9 +36,9 @@ local function createEmptySectionsRenderer(componentId, title)
                 right:SetTitle(title or componentId)
             end
 
-            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
+            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus/Pet)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
                 local header = settingsList and settingsList.Header
                 local collapseBtn = header and (header.DefaultsButton or header.CollapseAllButton or header.CollapseButton)
                 if header then
@@ -64,94 +64,86 @@ local function createEmptySectionsRenderer(componentId, title)
                         lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
                     end
 
-                    -- Confirmation and error dialogs (one-time registration)
-                    if _G and _G.StaticPopupDialogs and not _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] then
-                        _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_CONFIRM"] = {
-                            text = "Copy supported Unit Frame settings from %s to %s?",
-                            button1 = "Copy",
-                            button2 = CANCEL,
-                            OnAccept = function(self, data)
-                                if data and addon and addon.CopyUnitFrameSettings then
-                                    local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit, { skipFrameSize = false })
-                                    if ok then
-                                        if data.dropdown then
-                                            data.dropdown._ScooterSelectedId = data.sourceUnit
-                                            if data.dropdown.SetText and data.sourceLabel then
-                                                data.dropdown:SetText(data.sourceLabel)
-                                            end
-                                        end
-                                    else
-                                        if _G and _G.StaticPopup_Show then
-                                            local msg
-                                            if err == "focus_requires_larger" then
-                                                msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
-                                            elseif err == "invalid_unit" then
-                                                msg = "Copy failed. Unsupported unit selection."
-                                            elseif err == "same_unit" then
-                                                msg = "Copy failed. Choose a different source frame."
-                                            elseif err == "db_unavailable" then
-                                                msg = "Copy failed. Profile database unavailable."
-                                            else
-                                                msg = "Copy failed. Please try again."
-                                            end
-                                            _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] = _G.StaticPopupDialogs["SCOOTERMOD_COPY_UF_ERROR"] or {
-                                                text = "%s",
-                                                button1 = OKAY,
-                                                timeout = 0,
-                                                whileDead = 1,
-                                                hideOnEscape = 1,
-                                                preferredIndex = 3,
-                                            }
-                                            _G.StaticPopup_Show("SCOOTERMOD_COPY_UF_ERROR", msg)
-                                        end
+                    -- Copy handler helper (uses ScooterMod custom dialogs to avoid tainting StaticPopupDialogs)
+                    local function handleUFCopyInBuilders(data)
+                        if data and addon and addon.CopyUnitFrameSettings then
+                            if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                            local ok, err = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit, { skipFrameSize = false })
+                            if ok then
+                                if data.dropdown then
+                                    data.dropdown._ScooterSelectedId = data.sourceUnit
+                                    if data.dropdown.SetText and data.sourceLabel then
+                                        data.dropdown:SetText(data.sourceLabel)
                                     end
                                 end
-                            end,
-                            OnCancel = function(self, data) end,
-                            timeout = 0,
-                            whileDead = 1,
-                            hideOnEscape = 1,
-                            preferredIndex = 3,
-                        }
+                                local destComponentId = data.destId
+                                if destComponentId then
+                                    panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                    panel._pendingComponentRefresh[destComponentId] = true
+                                end
+                                local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                if panel and panel.RefreshCurrentCategoryDeferred then
+                                    panel.RefreshCurrentCategoryDeferred()
+                                end
+                            else
+                                local msg
+                                if err == "focus_requires_larger" then
+                                    msg = "Cannot copy to Focus unless 'Use Larger Frame' is enabled."
+                                elseif err == "invalid_unit" then
+                                    msg = "Copy failed. Unsupported unit selection."
+                                elseif err == "same_unit" then
+                                    msg = "Copy failed. Choose a different source frame."
+                                elseif err == "db_unavailable" then
+                                    msg = "Copy failed. Profile database unavailable."
+                                else
+                                    msg = "Copy failed. Please try again."
+                                end
+                                if addon.Dialogs and addon.Dialogs.Show then
+                                    addon.Dialogs:Show("SCOOTERMOD_COPY_UF_ERROR", { formatArgs = { msg } })
+                                end
+                            end
+                        end
                     end
 
-                    -- Populate dropdown only on UF tabs (Player/Target/Focus). Pet excluded entirely.
+                    -- Populate dropdown only on UF tabs (Player/Target/Focus/Pet). Pet can be destination only.
                     if isUF and dd and dd.SetupMenu then
                         local currentId = componentId
                         local function unitLabelFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return id
                         end
                         local function unitKeyFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return nil
                         end
                         dd:SetupMenu(function(menu, root)
-                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" } -- Pet excluded
+                            -- Pet can be a destination but not a source (too different from other frames)
+                            local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
                             for _, id in ipairs(candidates) do
                                 if id ~= currentId then
                                     local text = unitLabelFor(id)
                                     root:CreateRadio(text, function()
                                         return dd._ScooterSelectedId == id
                                     end, function()
-                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
-                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
-                                        if _G and _G.StaticPopup_Show then
-                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
+                                        -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                                        if addon.Dialogs and addon.Dialogs.Show then
+                                            addon.Dialogs:Show("SCOOTERMOD_COPY_UF_CONFIRM", {
+                                                formatArgs = { text, destLabel },
+                                                data = data,
+                                                onAccept = function() handleUFCopyInBuilders(data) end,
+                                            })
                                         else
-                                            -- Fallback: perform copy directly if popup system is unavailable
-                                            if addon and addon.CopyUnitFrameSettings then
-                                                local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
-                                                if ok then
-                                                    dd._ScooterSelectedId = id
-                                                    if dd.SetText then dd:SetText(text) end
-                                                end
-                                            end
+                                            -- Fallback: perform copy directly if dialog system is unavailable
+                                            handleUFCopyInBuilders(data)
                                         end
                                     end)
                                 end
@@ -172,7 +164,7 @@ local function createEmptySectionsRenderer(componentId, title)
             settingsList:Display(init)
             -- Ensure header "Copy from" is present AFTER Display as well (some templates rebuild header)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
                 local header = settingsList and settingsList.Header
                 if header then
                     local lbl = header.ScooterCopyFromLabel
@@ -202,16 +194,19 @@ local function createEmptySectionsRenderer(componentId, title)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return id
                         end
                         local function unitKeyFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return nil
                         end
                         local currentId = componentId
                         dd:SetupMenu(function(menu, root)
+                            -- Pet can be a destination but not a source
                             local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
                             for _, id in ipairs(candidates) do
                                 if id ~= currentId then
@@ -219,15 +214,24 @@ local function createEmptySectionsRenderer(componentId, title)
                                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
                                         local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
-                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
                                             if addon and addon.CopyUnitFrameSettings then
+                                                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
+                                                    -- Mark component for invalidation + refresh
+                                                    panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                    panel._pendingComponentRefresh[currentId] = true
+                                                    local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                    if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then
+                                                        panel.RefreshCurrentCategoryDeferred()
+                                                    end
                                                 end
                                             end
                                         end
@@ -280,9 +284,9 @@ local function createWIPRenderer(componentId, title)
                 right:SetTitle(title or componentId)
             end
 
-            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus)
+            -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus/Pet)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
                 local header = settingsList and settingsList.Header
                 if header then
                     -- Create once
@@ -312,22 +316,25 @@ local function createWIPRenderer(componentId, title)
                         lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
                     end
 
-                    -- Populate dropdown only on UF tabs (exclude Pet)
+                    -- Populate dropdown only on UF tabs. Pet can be destination only.
                     if isUF and dd and dd.SetupMenu then
                         local function unitLabelFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return id
                         end
                         local function unitKeyFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return nil
                         end
                         local currentId = componentId
                         dd:SetupMenu(function(menu, root)
+                            -- Pet can be a destination but not a source
                             local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
                             for _, id in ipairs(candidates) do
                                 if id ~= currentId then
@@ -337,15 +344,24 @@ local function createWIPRenderer(componentId, title)
                                     end, function()
                                         local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
-                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
                                             if addon and addon.CopyUnitFrameSettings then
+                                                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
+                                                    -- Mark component for invalidation + refresh
+                                                    panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                    panel._pendingComponentRefresh[currentId] = true
+                                                    local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                    if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then
+                                                        panel.RefreshCurrentCategoryDeferred()
+                                                    end
                                                 end
                                             end
                                         end
@@ -368,7 +384,7 @@ local function createWIPRenderer(componentId, title)
 
             -- Post-Display: ensure header controls still exist (some templates rebuild header)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
                 local header = settingsList and settingsList.Header
                 if header then
                     local lbl = header.ScooterCopyFromLabel
@@ -403,16 +419,19 @@ local function createWIPRenderer(componentId, title)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return id
                         end
                         local function unitKeyFor(id)
                             if id == "ufPlayer" then return "Player" end
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
+                            if id == "ufPet"    then return "Pet" end
                             return nil
                         end
                         local currentId = componentId
                         dd:SetupMenu(function(menu, root)
+                            -- Pet can be a destination but not a source
                             local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
                             for _, id in ipairs(candidates) do
                                 if id ~= currentId then
@@ -420,15 +439,24 @@ local function createWIPRenderer(componentId, title)
                                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
                                         local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
-                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd }
+                                        local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
                                         if _G and _G.StaticPopup_Show then
                                             _G.StaticPopup_Show(which, text, destLabel, data)
                                         else
                                             if addon and addon.CopyUnitFrameSettings then
+                                                if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
+                                                    -- Mark component for invalidation + refresh
+                                                    panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                    panel._pendingComponentRefresh[currentId] = true
+                                                    local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                    if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                    if panel and panel.RefreshCurrentCategoryDeferred then
+                                                        panel.RefreshCurrentCategoryDeferred()
+                                                    end
                                                 end
                                             end
                                         end
@@ -462,5 +490,6 @@ function panel.RenderActionBar5()  return createComponentRenderer("actionBar5")(
 function panel.RenderActionBar6()  return createComponentRenderer("actionBar6")() end
 function panel.RenderActionBar7()  return createComponentRenderer("actionBar7")() end
 function panel.RenderActionBar8()  return createComponentRenderer("actionBar8")() end
+function panel.RenderPetBar()      return createComponentRenderer("petBar")()     end
 function panel.RenderStanceBar()   return createComponentRenderer("stanceBar")()           end
 function panel.RenderMicroBar()    return createComponentRenderer("microBar")()              end
