@@ -1389,16 +1389,38 @@ do
                         local rightFS = apb.RightText
 
                         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-                        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+                        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
                         local function applyAltPowerTextVisibility(fs, hidden)
                             if not fs then return end
                             if hidden then
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                                -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
                                 if not fs._ScooterAltPowerTextVisibilityHooked then
                                     fs._ScooterAltPowerTextVisibilityHooked = true
                                     if _G.hooksecurefunc then
+                                        -- Hook Show() to re-enforce alpha=0
                                         _G.hooksecurefunc(fs, "Show", function(self)
+                                            if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                                pcall(self.SetAlpha, self, 0)
+                                            end
+                                        end)
+                                        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
+                                        _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                                            if self._ScooterAltPowerTextHidden and alpha and alpha > 0 then
+                                                -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                                                if not self._ScooterAltPowerTextAlphaDeferred then
+                                                    self._ScooterAltPowerTextAlphaDeferred = true
+                                                    C_Timer.After(0, function()
+                                                        self._ScooterAltPowerTextAlphaDeferred = nil
+                                                        if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                                            pcall(self.SetAlpha, self, 0)
+                                                        end
+                                                    end)
+                                                end
+                                            end
+                                        end)
+                                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                                        _G.hooksecurefunc(fs, "SetText", function(self)
                                             if self._ScooterAltPowerTextHidden and self.SetAlpha then
                                                 pcall(self.SetAlpha, self, 0)
                                             end

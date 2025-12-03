@@ -192,16 +192,38 @@ do
         }
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         local function applyHealthTextVisibility(fs, hidden)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
                 if not fs._ScooterHealthTextVisibilityHooked then
                     fs._ScooterHealthTextVisibilityHooked = true
                     if _G.hooksecurefunc then
+                        -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
+                        _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if self._ScooterHealthTextHidden and alpha and alpha > 0 then
+                                -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                                if not self._ScooterHealthTextAlphaDeferred then
+                                    self._ScooterHealthTextAlphaDeferred = true
+                                    C_Timer.After(0, function()
+                                        self._ScooterHealthTextAlphaDeferred = nil
+                                        if self._ScooterHealthTextHidden and self.SetAlpha then
+                                            pcall(self.SetAlpha, self, 0)
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                        _G.hooksecurefunc(fs, "SetText", function(self)
                             if self._ScooterHealthTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -320,15 +342,38 @@ do
         local rightFS = cache.rightFS
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         local function applyVisibility(fs, hidden)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
                 if not fs._ScooterHealthTextVisibilityHooked then
                     fs._ScooterHealthTextVisibilityHooked = true
                     if _G.hooksecurefunc then
+                        -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
+                        _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if self._ScooterHealthTextHidden and alpha and alpha > 0 then
+                                -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                                if not self._ScooterHealthTextAlphaDeferred then
+                                    self._ScooterHealthTextAlphaDeferred = true
+                                    C_Timer.After(0, function()
+                                        self._ScooterHealthTextAlphaDeferred = nil
+                                        if self._ScooterHealthTextHidden and self.SetAlpha then
+                                            pcall(self.SetAlpha, self, 0)
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                        _G.hooksecurefunc(fs, "SetText", function(self)
                             if self._ScooterHealthTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -579,16 +624,39 @@ do
         }
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         local function applyPowerTextVisibility(fs, hidden)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
                 if not fs._ScooterPowerTextVisibilityHooked then
                     fs._ScooterPowerTextVisibilityHooked = true
                     if _G.hooksecurefunc then
+                        -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
+                        _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if self._ScooterPowerTextHidden and alpha and alpha > 0 then
+                                -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                                if not self._ScooterPowerTextAlphaDeferred then
+                                    self._ScooterPowerTextAlphaDeferred = true
+                                    C_Timer.After(0, function()
+                                        self._ScooterPowerTextAlphaDeferred = nil
+                                        if self._ScooterPowerTextHidden and self.SetAlpha then
+                                            pcall(self.SetAlpha, self, 0)
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                        -- This catches code paths that don't go through UpdateTextString (e.g. target changes out of combat)
+                        _G.hooksecurefunc(fs, "SetText", function(self)
                             if self._ScooterPowerTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -708,15 +776,38 @@ do
         local rightFS = cache.rightFS
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         local function applyVisibility(fs, hidden)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
                 if not fs._ScooterPowerTextVisibilityHooked then
                     fs._ScooterPowerTextVisibilityHooked = true
                     if _G.hooksecurefunc then
+                        -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
+                        _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if self._ScooterPowerTextHidden and alpha and alpha > 0 then
+                                -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                                if not self._ScooterPowerTextAlphaDeferred then
+                                    self._ScooterPowerTextAlphaDeferred = true
+                                    C_Timer.After(0, function()
+                                        self._ScooterPowerTextAlphaDeferred = nil
+                                        if self._ScooterPowerTextHidden and self.SetAlpha then
+                                            pcall(self.SetAlpha, self, 0)
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
+                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                        _G.hooksecurefunc(fs, "SetText", function(self)
                             if self._ScooterPowerTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -907,35 +998,10 @@ do
 		if not nameFS then nameFS = findFontStringByNameHint(frame, "Name") end
 		if not levelFS then levelFS = findFontStringByNameHint(frame, "LevelText") end
 
-        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
-        local function applyNameLevelTextVisibility(fs, hidden, hookKey)
-            if not fs then return end
-            local hookFlag = "_ScooterNameLevelTextVisibilityHooked_" .. hookKey
-            local hiddenFlag = "_ScooterNameLevelTextHidden_" .. hookKey
-            if hidden then
-                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
-                -- Install hook once to re-enforce alpha when Blizzard calls Show()
-                if not fs[hookFlag] then
-                    fs[hookFlag] = true
-                    if _G.hooksecurefunc then
-                        _G.hooksecurefunc(fs, "Show", function(self)
-                            if self[hiddenFlag] and self.SetAlpha then
-                                pcall(self.SetAlpha, self, 0)
-                            end
-                        end)
-                    end
-                end
-                fs[hiddenFlag] = true
-            else
-                fs[hiddenFlag] = false
-                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
-            end
-        end
-
-		-- Apply visibility
-		applyNameLevelTextVisibility(nameFS, cfg.nameTextHidden == true, "name")
-		applyNameLevelTextVisibility(levelFS, cfg.levelTextHidden == true, "level")
+		-- Apply visibility using SetShown (Name/Level text are NOT StatusBar children,
+		-- so they don't have the taint issue that Health/Power bar text has)
+		if nameFS and nameFS.SetShown then pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden) end
+		if levelFS and levelFS.SetShown then pcall(levelFS.SetShown, levelFS, not cfg.levelTextHidden) end
 
 		-- Apply styling
 		addon._ufNameLevelTextBaselines = addon._ufNameLevelTextBaselines or {}
