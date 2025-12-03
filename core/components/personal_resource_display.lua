@@ -3,6 +3,10 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil or {}
 
+local function isPRDEnabled()
+    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
+end
+
 local pendingCombatComponents = {}
 local combatWatcherFrame
 
@@ -1031,6 +1035,10 @@ local function buildPRDBorderOptions()
         table.insert(results, { value = "square", text = "Default (Square)" })
     end
     return results
+end
+
+if not isPRDEnabled() then
+    return
 end
 
 addon:RegisterComponentInitializer(function(self)

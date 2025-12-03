@@ -3,6 +3,10 @@ local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
+local function IsPRDEnabled()
+    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
+end
+
 -- Base window background color/opacity for the ScooterMod settings frame.
 -- You can tweak these values to taste:
 --   r,g,b: 0 (black) to 1 (white)
@@ -1506,11 +1510,12 @@ local function BuildCategories()
 	addEntry("trackedBars", addon.SettingsPanel.RenderTrackedBars())
     addEntry("sctDamage", addon.SettingsPanel.RenderSCTDamage())
     addEntry("sctHealing", addon.SettingsPanel.RenderSCTHealing())
-
-	addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
-	addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
-	addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
-	addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
+    if IsPRDEnabled() then
+        addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
+        addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
+        addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
+        addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
+    end
 	addEntry("nameplatesUnit", addon.SettingsPanel.RenderNameplatesUnit())
 
 	-- Action Bars children
@@ -1580,19 +1585,39 @@ local function BuildCategories()
             { type = "child", key = "buffs",   label = "Buffs"   },
             { type = "child", key = "debuffs", label = "Debuffs" },
         }},
-		{ type = "parent", key = "Personal Resource Display", label = "Personal Resource Display", collapsible = true, children = {
-			{ type = "child", key = "prdGlobal", label = "Global" },
-			{ type = "child", key = "prdHealth", label = "Health Bar" },
-			{ type = "child", key = "prdPower", label = "Power Bar" },
-			{ type = "child", key = "prdClassResource", label = "Class Resource" },
-		}},
-        { type = "parent", key = "Scrolling Combat Text", label = "Scrolling Combat Text", collapsible = true, children = {
-            { type = "child", key = "sctDamage", label = "Damage Numbers" },
-        }},
-		{ type = "parent", key = "Tooltip", label = "Tooltip", collapsible = true, children = {
-			{ type = "child", key = "tooltip", label = "Tooltip" },
-		}},
 	}
+    if IsPRDEnabled() then
+        table.insert(navModel, {
+            type = "parent",
+            key = "Personal Resource Display",
+            label = "Personal Resource Display",
+            collapsible = true,
+            children = {
+                { type = "child", key = "prdGlobal", label = "Global" },
+                { type = "child", key = "prdHealth", label = "Health Bar" },
+                { type = "child", key = "prdPower", label = "Power Bar" },
+                { type = "child", key = "prdClassResource", label = "Class Resource" },
+            },
+        })
+    end
+    table.insert(navModel, {
+        type = "parent",
+        key = "Scrolling Combat Text",
+        label = "Scrolling Combat Text",
+        collapsible = true,
+        children = {
+            { type = "child", key = "sctDamage", label = "Damage Numbers" },
+        },
+    })
+	table.insert(navModel, {
+        type = "parent",
+        key = "Tooltip",
+        label = "Tooltip",
+        collapsible = true,
+        children = {
+			{ type = "child", key = "tooltip", label = "Tooltip" },
+		},
+    })
 
 	-- Initialize expand state defaults (all collapsible sections start collapsed)
     for _, parent in ipairs(navModel) do

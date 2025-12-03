@@ -1,5 +1,34 @@
 local addonName, addon = ...
 
+addon.FeatureToggles = addon.FeatureToggles or {}
+addon.FeatureToggles.enablePRD = addon.FeatureToggles.enablePRD or false
+
+local function purgeDisabledPRDComponents(db)
+    if addon.FeatureToggles and addon.FeatureToggles.enablePRD then
+        return
+    end
+    local profile = db and db.profile
+    local components = profile and profile.components
+    if not components then
+        return
+    end
+    local removed = {}
+    for _, key in ipairs({"prdGlobal", "prdHealth", "prdPower", "prdClassResource"}) do
+        if components[key] ~= nil then
+            components[key] = nil
+            table.insert(removed, key)
+        end
+    end
+    if #removed > 0 then
+        local message = string.format("PRD disabled – purged SavedVariables for: %s", table.concat(removed, ", "))
+        if addon.DebugPrint then
+            addon.DebugPrint("[ScooterMod]", message)
+        elseif addon.Print then
+            addon:Print(message)
+        end
+    end
+end
+
 function addon:OnInitialize()
     C_AddOns.LoadAddOn("Blizzard_Settings")
     -- Warm up bundled fonts early to avoid first-open rendering differences
@@ -13,6 +42,7 @@ function addon:OnInitialize()
 
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
+    purgeDisabledPRDComponents(self.db)
 
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()

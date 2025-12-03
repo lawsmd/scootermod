@@ -3,6 +3,10 @@ local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
+local function isPRDEnabled()
+    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
+end
+
 local common = panel.common or {}
 local BuildAuraWrapOptions = common and common.BuildAuraWrapOptions
 local BuildAuraDirectionOptions = common and common.BuildAuraDirectionOptions
@@ -2882,6 +2886,13 @@ end
 panel.builders = panel.builders or {}
 panel.builders.createComponentRenderer = createComponentRenderer
 
+local function renderPRDComponent(componentId)
+    if isPRDEnabled() then
+        return createComponentRenderer(componentId)()
+    end
+    return { mode = "list", render = function() end, componentId = componentId }
+end
+
 function panel.RenderEssentialCooldowns() return createComponentRenderer("essentialCooldowns")() end
 function panel.RenderUtilityCooldowns()  return createComponentRenderer("utilityCooldowns")()  end
 function panel.RenderTrackedBars()       return createComponentRenderer("trackedBars")()       end
@@ -2890,10 +2901,10 @@ function panel.RenderSCTDamage()         return createComponentRenderer("sctDama
 function panel.RenderSCTHealing()        return createComponentRenderer("sctHealing")()        end
 function panel.RenderBuffs()             return createComponentRenderer("buffs")()             end
 function panel.RenderDebuffs()           return createComponentRenderer("debuffs")()           end
-function panel.RenderPRDGlobal()         return createComponentRenderer("prdGlobal")()         end
-function panel.RenderPRDHealth()         return createComponentRenderer("prdHealth")()         end
-function panel.RenderPRDPower()          return createComponentRenderer("prdPower")()          end
-function panel.RenderPRDClassResource()  return createComponentRenderer("prdClassResource")()  end
+function panel.RenderPRDGlobal()         return renderPRDComponent("prdGlobal")                end
+function panel.RenderPRDHealth()         return renderPRDComponent("prdHealth")                end
+function panel.RenderPRDPower()          return renderPRDComponent("prdPower")                 end
+function panel.RenderPRDClassResource()  return renderPRDComponent("prdClassResource")         end
 
 function panel.RenderNameplatesUnit()
     local render = function()
