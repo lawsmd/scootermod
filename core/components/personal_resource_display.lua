@@ -836,66 +836,43 @@ local function applyPowerOffsets(component)
         return ok
     end
 
-    -- NOTE: We intentionally do NOT manage anchors or width for the power bar.
-    -- Blizzard's SetupClassNameplateBars() continuously re-applies TOPLEFT+TOPRIGHT anchors
-    -- which control width via the anchor system. Fighting this causes visible flickering.
-    -- Width now follows the health bar automatically via Blizzard's anchoring.
-
-    -- Clear any stored barWidth from old profiles to ensure clean state
-    if component.db and component.db.barWidth then
-        component.db.barWidth = nil
-    end
-
-    -- Height management - this works because OnSizeChanged hook re-applies our height
-    local baseHeight = frame._ScooterModBaseHeight
-    if not baseHeight or baseHeight <= 0 then
-        baseHeight = (frame.GetHeight and frame:GetHeight()) or 0
-        if not baseHeight or baseHeight <= 0 then
-            baseHeight = 8
-        end
-        frame._ScooterModBaseHeight = baseHeight
-    end
-
-    if component.settings and component.settings.barHeight then
-        local defaultHeight = math.floor(baseHeight + 0.5)
-        if component.settings.barHeight.default ~= defaultHeight then
-            component.settings.barHeight.default = defaultHeight
-        end
-    end
-
-    local storedHeight = component.db and component.db.barHeight
-    if not storedHeight or storedHeight < MIN_POWER_BAR_HEIGHT then
-        storedHeight = component.settings and component.settings.barHeight and component.settings.barHeight.default or baseHeight
-    end
-    storedHeight = clampValue(math.floor((storedHeight or baseHeight) + 0.5), MIN_POWER_BAR_HEIGHT, MAX_POWER_BAR_HEIGHT)
-    if component.db then
-        component.db.barHeight = storedHeight
-    end
-    local desiredHeight = storedHeight
-
-    -- Only set height - width is controlled by Blizzard's anchor system
-    safeCall(frame.SetHeight, frame, desiredHeight)
-
-    if Util and Util.ApplyFullPowerSpikeScale then
-        local spikeScale = 1
-        if baseHeight and baseHeight > 0 then
-            spikeScale = desiredHeight / baseHeight
-        end
-        Util.ApplyFullPowerSpikeScale(frame, spikeScale)
-        if Util and Util.SetFullPowerSpikeHidden then
+    -- TAINT INVESTIGATION: We're testing which modifications cause the SetTargetClampingInsets taint.
+    -- 
+    -- HYPOTHESIS: Direct modifications to ClassNameplateManaBarFrame (SetHeight, SetScale, SetAlpha,
+    -- textures, borders, custom properties) may cause taint that propagates to NamePlateDriverFrame.
+    -- Child frame modifications (FullPowerFrame, FeedbackFrame) might be safe.
+    --
+    -- TEST: Skip all direct power bar modifications, but keep child frame features.
+    -- If this fixes the taint, we know which features are safe to keep.
+    
+    -- ========== DISABLED FOR TAINT TESTING ==========
+    -- The following direct power bar modifications are disabled:
+    -- - SetHeight
+    -- - SetScale  
+    -- - Setting custom properties (_ScooterModBaseHeight, _ScooterModBaseScale)
+    -- - Texture/color styling (applyPRDStatusBarStyle)
+    -- - Border styling (applyPRDBarBorder)
+    -- - Alpha changes for hiding (applyHiddenAlpha)
+    -- ================================================
+    
+    -- KEPT: Child frame features only (these MIGHT be safe)
+    if Util then
+        -- Hide Full Power Spike animations (operates on frame.FullPowerFrame, not frame itself)
+        if Util.SetFullPowerSpikeHidden then
             local hideSpikes = (component.db and component.db.hideSpikeAnimations) or (component.db and component.db.hideBar)
             Util.SetFullPowerSpikeHidden(frame, hideSpikes)
         end
-        -- Hide power feedback animation (Builder/Spender flash when power is spent/gained)
-        if Util and Util.SetPowerFeedbackHidden then
+        -- Hide power feedback animation (operates on frame.FeedbackFrame, not frame itself)
+        if Util.SetPowerFeedbackHidden then
             local hideFeedback = (component.db and component.db.hidePowerFeedback) or (component.db and component.db.hideBar)
             Util.SetPowerFeedbackHidden(frame, hideFeedback)
         end
     end
-
-    local componentScale = resolveClassResourceScale(component)
-    applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
-    applyPRDPowerVisuals(component, frame)
+    
+    -- DISABLED: Direct power bar styling
+    -- local componentScale = resolveClassResourceScale(component)
+    -- applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
+    -- applyPRDPowerVisuals(component, frame)
 end
 
 local function resolveClassMechanicFrame()
