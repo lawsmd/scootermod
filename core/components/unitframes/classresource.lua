@@ -250,10 +250,14 @@ local function ensureCustomClassResourceSeed(cfg, frame)
 	if not cfg or not cfg.classResourceCustomPositionEnabled or not frame then
 		return
 	end
-	if cfg.classResourcePosX == nil or cfg.classResourcePosY == nil then
-		local px, py = getFrameScreenOffsets(frame)
-		cfg.classResourcePosX = clampScreenCoordinate(px)
-		cfg.classResourcePosY = clampScreenCoordinate(py)
+	-- Force 0,0 (screen center) for new users to avoid unexpected positioning
+	-- Previously tried to seed from current frame position but this caused
+	-- the bar to disappear on first enable due to coordinate conversion issues
+	if cfg.classResourcePosX == nil then
+		cfg.classResourcePosX = 0
+	end
+	if cfg.classResourcePosY == nil then
+		cfg.classResourcePosY = 0
 	end
 end
 

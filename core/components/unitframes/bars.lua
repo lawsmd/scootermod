@@ -118,10 +118,14 @@ local function ensurePowerBarCustomSeed(cfg, pb)
     if not cfg or not cfg.powerBarCustomPositionEnabled or not pb then
         return
     end
-    if cfg.powerBarPosX == nil or cfg.powerBarPosY == nil then
-        local px, py = getFrameScreenOffsets(pb)
-        cfg.powerBarPosX = clampScreenCoordinate(px)
-        cfg.powerBarPosY = clampScreenCoordinate(py)
+    -- Force 0,0 (screen center) for new users to avoid unexpected positioning
+    -- Previously tried to seed from current frame position but this caused
+    -- the bar to disappear on first enable due to coordinate conversion issues
+    if cfg.powerBarPosX == nil then
+        cfg.powerBarPosX = 0
+    end
+    if cfg.powerBarPosY == nil then
+        cfg.powerBarPosY = 0
     end
 end
 

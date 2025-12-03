@@ -1435,12 +1435,11 @@ local function createUFRenderer(componentId, title)
 						return t.powerBarCustomPositionEnabled == true
 					end
 					local function seedCurrentPosition(t)
-						if not (addon and addon.UnitFrames_GetPowerBarScreenPosition) then
-							return
-						end
-						local px, py = addon.UnitFrames_GetPowerBarScreenPosition()
-						t.powerBarPosX = clampScreenInput(px)
-						t.powerBarPosY = clampScreenInput(py)
+						-- Force 0,0 (screen center) for new users to avoid unexpected positioning
+						-- Previously tried to seed from current frame position but this caused
+						-- the bar to disappear on first enable due to coordinate conversion issues
+						t.powerBarPosX = 0
+						t.powerBarPosY = 0
 					end
 					local function setCustomPositionEnabled(state)
 						local t = ensureUFDB(); if not t then return end
@@ -3397,11 +3396,11 @@ local function createUFRenderer(componentId, title)
 								local desired = state and true or false
 								if cfg.classResourceCustomPositionEnabled ~= desired then
 									cfg.classResourceCustomPositionEnabled = desired
-									if desired and (cfg.classResourcePosX == nil or cfg.classResourcePosY == nil) and addon and addon.UnitFrames_GetClassResourceScreenPosition then
-										local px, py = addon.UnitFrames_GetClassResourceScreenPosition()
-										cfg.classResourcePosX = clampScreenInput(px)
-										cfg.classResourcePosY = clampScreenInput(py)
-									end
+								if desired and (cfg.classResourcePosX == nil or cfg.classResourcePosY == nil) then
+									-- Force 0,0 (screen center) for new users to avoid unexpected positioning
+									cfg.classResourcePosX = 0
+									cfg.classResourcePosY = 0
+								end
 									applyNow()
 								end
 								refreshState()

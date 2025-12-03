@@ -1775,8 +1775,6 @@ function Profiles:OnPlayerSpecChanged()
     if not self._layoutLookup[targetProfile] then
         return
     end
-    -- Hint the chat suppression wrapper about the impending desired layout
-    self._pendingSpecTarget = targetProfile
     self:SwitchToProfile(targetProfile, { reason = "SpecChanged" })
 end
 
