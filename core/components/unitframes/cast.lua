@@ -446,9 +446,10 @@ do
 			end
 
 			-- Apply foreground and background styling via shared bar helpers
-			-- CRITICAL: Skip during combat - _ApplyToStatusBar calls SetStatusBarTexture/SetVertexColor
-			-- which taints the StatusBar and causes "blocked from an action" errors.
-			if not inCombat and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
+			-- When visualOnly is true (combat + hook path from SetStatusBarTexture/SetStatusBarColor),
+			-- we allow texture/color application so custom styling persists through Blizzard's updates.
+			-- Layout changes are already skipped above when visualOnly is true.
+			if (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
 				local db = addon and addon.db and addon.db.profile
 				db.unitFrames = db.unitFrames or {}
 				db.unitFrames[unit] = db.unitFrames[unit] or {}

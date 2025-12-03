@@ -720,6 +720,18 @@ do
 
     local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower)
         if not bar or type(bar.GetStatusBarTexture) ~= "function" then return end
+        
+        -- Power bars with default texture + default color: be completely hands-off.
+        -- Blizzard dynamically updates power bar texture AND vertex color when power type changes
+        -- (e.g., Druid switching between Mana/Energy forms). If we touch ANYTHING here, we risk
+        -- overwriting Blizzard's correctly-set state with our stale captured values. By returning
+        -- early, we let Blizzard's native system handle everything.
+        local isDefaultTexture = (textureKey == nil or textureKey == "" or textureKey == "default")
+        local isDefaultColor = (colorMode == nil or colorMode == "" or colorMode == "default")
+        if (barKind == "power" or barKind == "altpower") and isDefaultTexture and isDefaultColor then
+            return
+        end
+        
         local tex = bar:GetStatusBarTexture()
         -- Capture original once
         if not bar._ScootUFOrigCaptured then
@@ -803,6 +815,7 @@ do
                 if tex and tex.SetColorTexture then pcall(tex.SetColorTexture, tex, 1, 1, 1, 1) end
             else
                 -- Default color: restore Blizzard's original fill
+                -- Note: Power bars with default texture + default color already returned early above.
                 if bar._ScootUFOrigCaptured then
                     if bar._ScootUFOrigAtlas then
                         if tex and tex.SetAtlas then
@@ -833,7 +846,6 @@ do
                 end
             end
             if tex and tex.SetVertexColor then pcall(tex.SetVertexColor, tex, r, g, b, a) end
-            if bar.ScooterModBG and bar.ScooterModBG.Hide then pcall(bar.ScooterModBG.Hide, bar.ScooterModBG) end
         end
     end
 
@@ -1176,6 +1188,11 @@ do
                 Util.SetPowerFeedbackHidden(pb, cfg.powerBarHideFeedback == true or powerBarHidden)
             end
 
+            -- Hide power bar spark (e.g., Elemental Shaman Maelstrom indicator)
+            if unit == "Player" and Util and Util.SetPowerBarSparkHidden then
+                Util.SetPowerBarSparkHidden(pb, cfg.powerBarHideSpark == true or powerBarHidden)
+            end
+
             -- Apply reverse fill for Target/Focus if configured
             if (unit == "Target" or unit == "Focus") and pb and pb.SetReverseFill then
                 local shouldReverse = not not cfg.powerBarReverseFill
@@ -1185,6 +1202,8 @@ do
             -- Lightweight persistence hooks for Player Power Bar:
             --  - Texture: keep custom texture applied if Blizzard swaps StatusBarTexture.
             --  - Color:   keep Foreground Color (default/class/custom) applied if Blizzard calls SetStatusBarColor.
+            -- Note: We allow these hooks to run during combat to maintain visual consistency.
+            -- The applyToBar function only changes texture/color (no layout), similar to Cast Bar.
             if unit == "Player" and _G.hooksecurefunc then
                 if not pb._ScootPowerTextureHooked then
                     pb._ScootPowerTextureHooked = true
@@ -1193,9 +1212,6 @@ do
                         if self._ScootUFInternalTextureWrite then
                             return
                         end
-                        -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
-                        -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
-                        if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
                         db.unitFrames = db.unitFrames or {}
@@ -1213,9 +1229,6 @@ do
                 if not pb._ScootPowerColorHooked then
                     pb._ScootPowerColorHooked = true
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
-                        -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
-                        -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
-                        if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
                         db.unitFrames = db.unitFrames or {}
@@ -1375,16 +1388,36 @@ do
                         local leftFS = apb.LeftText
                         local rightFS = apb.RightText
 
+                        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+                        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+                        local function applyAltPowerTextVisibility(fs, hidden)
+                            if not fs then return end
+                            if hidden then
+                                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                                if not fs._ScooterAltPowerTextVisibilityHooked then
+                                    fs._ScooterAltPowerTextVisibilityHooked = true
+                                    if _G.hooksecurefunc then
+                                        _G.hooksecurefunc(fs, "Show", function(self)
+                                            if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                                pcall(self.SetAlpha, self, 0)
+                                            end
+                                        end)
+                                    end
+                                end
+                                fs._ScooterAltPowerTextHidden = true
+                            else
+                                fs._ScooterAltPowerTextHidden = false
+                                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                            end
+                        end
+
                         -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
                         local percentHidden = (acfg.percentHidden == true)
                         local valueHidden = (acfg.valueHidden == true)
 
-                        if leftFS and leftFS.SetShown then
-                            pcall(leftFS.SetShown, leftFS, (not altHidden) and (not percentHidden))
-                        end
-                        if rightFS and rightFS.SetShown then
-                            pcall(rightFS.SetShown, rightFS, (not altHidden) and (not valueHidden))
-                        end
+                        applyAltPowerTextVisibility(leftFS, altHidden or percentHidden)
+                        applyAltPowerTextVisibility(rightFS, altHidden or valueHidden)
 
                         -- Styling (font/size/style/color/offset) using stable baseline anchors
                         addon._ufAltPowerTextBaselines = addon._ufAltPowerTextBaselines or {}
@@ -1419,6 +1452,20 @@ do
                             if fs.SetTextColor then
                                 pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
                             end
+
+                            -- Apply text alignment (requires explicit width on the FontString)
+                            local alignment = styleCfg.alignment or "LEFT"
+                            local parentBar = fs:GetParent()
+                            if parentBar and parentBar.GetWidth then
+                                local barWidth = parentBar:GetWidth()
+                                if barWidth and barWidth > 0 and fs.SetWidth then
+                                    pcall(fs.SetWidth, fs, barWidth)
+                                end
+                            end
+                            if fs.SetJustifyH then
+                                pcall(fs.SetJustifyH, fs, alignment)
+                            end
+
                             local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
                             local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
                             if fs.ClearAllPoints and fs.SetPoint then
@@ -1431,6 +1478,15 @@ do
                                     (b.x or 0) + ox,
                                     (b.y or 0) + oy
                                 )
+                            end
+
+                            -- Force text redraw to apply alignment visually
+                            if fs.GetText and fs.SetText then
+                                local txt = fs:GetText()
+                                if txt then
+                                    fs:SetText("")
+                                    fs:SetText(txt)
+                                end
                             end
                         end
 
@@ -1924,6 +1980,50 @@ do
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                     if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                 end
+
+                -- Player Power Bar: Adjust the Spark when borders are enabled
+                -- This prevents the Spark's glow from extending below the border (e.g., Elemental Shaman)
+                if unit == "Player" and pb and pb.Spark then
+                    local spark = pb.Spark
+                    local shouldAdjust = cfg.useCustomBorders and styleKey and styleKey ~= "none"
+                    
+                    -- Store the adjustment state on the spark
+                    spark._ScootSparkShouldAdjust = shouldAdjust
+                    
+                    -- Helper function to apply the adjustment
+                    local function applySparkAdjustment(sparkFrame)
+                        if not sparkFrame or not sparkFrame._ScootSparkShouldAdjust then return end
+                        -- Reduce height to crop the bottom glow
+                        if sparkFrame.GetHeight and sparkFrame.SetHeight then
+                            if not sparkFrame._ScootSparkOrigHeight then
+                                sparkFrame._ScootSparkOrigHeight = sparkFrame:GetHeight()
+                            end
+                            local newHeight = (sparkFrame._ScootSparkOrigHeight or 20) * 0.85
+                            pcall(sparkFrame.SetHeight, sparkFrame, newHeight)
+                        end
+                    end
+                    
+                    -- Install hook to persistently apply adjustment after Blizzard updates
+                    if spark.UpdateSize and not spark._ScootSparkHooked then
+                        spark._ScootSparkHooked = true
+                        hooksecurefunc(spark, "UpdateSize", function(self)
+                            if self._ScootSparkShouldAdjust then
+                                C_Timer.After(0, function()
+                                    applySparkAdjustment(self)
+                                end)
+                            end
+                        end)
+                    end
+                    
+                    if shouldAdjust then
+                        applySparkAdjustment(spark)
+                    else
+                        -- Restore original height
+                        if spark._ScootSparkOrigHeight and spark.SetHeight then
+                            pcall(spark.SetHeight, spark, spark._ScootSparkOrigHeight)
+                        end
+                    end
+                end
             end
         end
 
@@ -2031,22 +2131,23 @@ do
                         if frameFlash.Hide then pcall(frameFlash.Hide, frameFlash) end
                         
                         -- Install OnShow hook to prevent Blizzard's code from showing it during combat
+                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
                         if not frameFlash._ScootHideHookInstalled then
                             frameFlash._ScootHideHookInstalled = true
                             frameFlash._ScootOrigOnShow = frameFlash:GetScript("OnShow")
-                        end
-                        frameFlash:SetScript("OnShow", function(self)
-                            local db = addon and addon.db and addon.db.profile
-                            if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
-                                -- Keep it hidden while Use Custom Borders is enabled
-                                self:Hide()
-                            else
-                                -- Allow it to show if custom borders are disabled
-                                if self._ScootOrigOnShow then
-                                    self._ScootOrigOnShow(self)
+                            frameFlash:SetScript("OnShow", function(self)
+                                local db = addon and addon.db and addon.db.profile
+                                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                                    -- Keep it hidden while Use Custom Borders is enabled
+                                    self:Hide()
+                                else
+                                    -- Allow it to show if custom borders are disabled
+                                    if self._ScootOrigOnShow then
+                                        self._ScootOrigOnShow(self)
+                                    end
                                 end
-                            end
-                        end)
+                            end)
+                        end
                     else
                         -- Restore FrameFlash when Use Custom Borders is disabled
                         -- Restore original OnShow handler
@@ -2074,22 +2175,23 @@ do
                         if targetFlash.Hide then pcall(targetFlash.Hide, targetFlash) end
                         
                         -- Install OnShow hook to prevent Blizzard's code from showing it during combat
+                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
                         if not targetFlash._ScootHideHookInstalled then
                             targetFlash._ScootHideHookInstalled = true
                             targetFlash._ScootOrigOnShow = targetFlash:GetScript("OnShow")
-                        end
-                        targetFlash:SetScript("OnShow", function(self)
-                            local db = addon and addon.db and addon.db.profile
-                            if db and db.unitFrames and db.unitFrames.Target and db.unitFrames.Target.useCustomBorders then
-                                -- Keep it hidden while Use Custom Borders is enabled
-                                self:Hide()
-                            else
-                                -- Allow it to show if custom borders are disabled
-                                if self._ScootOrigOnShow then
-                                    self._ScootOrigOnShow(self)
+                            targetFlash:SetScript("OnShow", function(self)
+                                local db = addon and addon.db and addon.db.profile
+                                if db and db.unitFrames and db.unitFrames.Target and db.unitFrames.Target.useCustomBorders then
+                                    -- Keep it hidden while Use Custom Borders is enabled
+                                    self:Hide()
+                                else
+                                    -- Allow it to show if custom borders are disabled
+                                    if self._ScootOrigOnShow then
+                                        self._ScootOrigOnShow(self)
+                                    end
                                 end
-                            end
-                        end)
+                            end)
+                        end
                     else
                         -- Restore Flash when Use Custom Borders is disabled
                         -- Restore original OnShow handler

@@ -97,13 +97,18 @@ function Borders.ApplySquare(frame, opts)
     local exRight = (opts.expandRight ~= nil) and tonumber(opts.expandRight) or ex
     local eyTop   = (opts.expandTop   ~= nil) and tonumber(opts.expandTop)   or ey
     local eyBottom= (opts.expandBottom~= nil) and tonumber(opts.expandBottom)or ey
+    -- Optional per-edge thickness overrides (e.g., thicker bottom edge for Player Power Bar Spark)
+    local sizeTop    = (opts.sizeTop    ~= nil) and math.max(1, tonumber(opts.sizeTop))    or size
+    local sizeBottom = (opts.sizeBottom ~= nil) and math.max(1, tonumber(opts.sizeBottom)) or size
+    local sizeLeft   = (opts.sizeLeft   ~= nil) and math.max(1, tonumber(opts.sizeLeft))   or size
+    local sizeRight  = (opts.sizeRight  ~= nil) and math.max(1, tonumber(opts.sizeRight))  or size
     -- Prevent corner over-darkening without leaving gaps:
     -- let horizontal edges span the full width; trim vertical edges by the thickness.
     -- This yields a single-draw corner (from the horizontal edge) at each corner.
-    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop);        e.Top:SetHeight(size)
-    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom); e.Bottom:SetHeight(size)
-    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - size);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + size);   e.Left:SetWidth(size)
-    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - size);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + size); e.Right:SetWidth(size)
+    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop);        e.Top:SetHeight(sizeTop)
+    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom); e.Bottom:SetHeight(sizeBottom)
+    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - sizeTop);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + sizeBottom);   e.Left:SetWidth(sizeLeft)
+    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - sizeTop);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + sizeBottom); e.Right:SetWidth(sizeRight)
     for _, t in pairs(e) do if t.Show then t:Show() end end
     if container and container.Show then container:Show() end
 end

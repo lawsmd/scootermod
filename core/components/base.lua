@@ -495,6 +495,49 @@ local function SetPowerFeedbackHidden(ownerFrame, hidden)
 end
 Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
 
+-- Hide/show the Power Bar Spark (e.g., Elemental Shaman Maelstrom indicator)
+-- Frame: ManaBar.Spark
+-- ownerFrame: the ManaBar frame that contains the Spark child
+-- hidden: boolean - true to hide the spark, false to restore it
+local function SetPowerBarSparkHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local sparkFrame = ownerFrame.Spark
+    if not sparkFrame or (sparkFrame.IsForbidden and sparkFrame:IsForbidden()) then
+        return
+    end
+    sparkFrame._ScootPowerBarSparkHidden = not not hidden
+    -- CRITICAL: Guard against combat. Hiding frames during combat
+    -- would taint the execution context, causing blocked actions.
+    local canModifyNow = not (InCombatLockdown and InCombatLockdown())
+    if sparkFrame._ScootPowerBarSparkHidden and canModifyNow then
+        -- Hide the spark frame
+        if sparkFrame.Hide then
+            pcall(sparkFrame.Hide, sparkFrame)
+        end
+        -- Hook UpdateShown to keep it hidden when Blizzard tries to show it
+        if _G.hooksecurefunc and not sparkFrame._ScootSparkHooked then
+            sparkFrame._ScootSparkHooked = true
+            _G.hooksecurefunc(sparkFrame, "UpdateShown", function(self)
+                -- CRITICAL: Skip during combat to avoid taint
+                if InCombatLockdown and InCombatLockdown() then return end
+                if self._ScootPowerBarSparkHidden then
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
+    elseif not sparkFrame._ScootPowerBarSparkHidden and canModifyNow then
+        -- Restore visibility - let Blizzard's UpdateShown manage it
+        if sparkFrame.UpdateShown then
+            pcall(sparkFrame.UpdateShown, sparkFrame)
+        elseif sparkFrame.Show then
+            pcall(sparkFrame.Show, sparkFrame)
+        end
+    end
+end
+Util.SetPowerBarSparkHidden = SetPowerBarSparkHidden
+
 -- Hide/show the Over Absorb Glow on the Player Health Bar
 -- This glow appears on the edge of the health bar when absorb shields exceed max health.
 -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.OverAbsorbGlow

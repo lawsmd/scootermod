@@ -358,15 +358,22 @@ local function ensureVisibilityHooks(frame, cfg)
 end
 
 -- Trigger layout update on the managed container
+-- Cache the closure to avoid memory allocation on every call
+local layoutTriggerClosure = nil
 local function triggerLayoutUpdate()
 	local container = _G.PlayerFrameBottomManagedFramesContainer
 	if container and container.Layout then
 		-- Defer to next frame to avoid recursion
-		C_Timer.After(0, function()
-			if container and container.Layout then
-				pcall(container.Layout, container)
+		-- CRITICAL: Use cached closure to avoid creating new functions every call
+		if not layoutTriggerClosure then
+			layoutTriggerClosure = function()
+				local c = _G.PlayerFrameBottomManagedFramesContainer
+				if c and c.Layout then
+					pcall(c.Layout, c)
+				end
 			end
-		end)
+		end
+		C_Timer.After(0, layoutTriggerClosure)
 	end
 end
 

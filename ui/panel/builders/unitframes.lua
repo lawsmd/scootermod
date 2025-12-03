@@ -2064,6 +2064,56 @@ local function createUFRenderer(componentId, title)
                         end
 
                         y.y = y.y - 34
+
+                        -- Hide Power Bar Spark checkbox (Player only)
+                        local sparkLabel = "Hide Power Bar Spark"
+                        local function sparkGetter()
+                            local t = ensureUFDB()
+                            return t and not not t.powerBarHideSpark or false
+                        end
+                        local function sparkSetter(v)
+                            local t = ensureUFDB(); if not t then return end
+                            t.powerBarHideSpark = (v and true) or false
+                            applyNow()
+                        end
+
+                        local sparkSetting = CreateLocalSetting(sparkLabel, "boolean", sparkGetter, sparkSetter, sparkGetter())
+                        local sparkInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = sparkLabel, setting = sparkSetting, options = {} })
+                        local sparkRow = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+                        sparkRow.GetElementData = function() return sparkInit end
+                        sparkRow:SetPoint("TOPLEFT", 4, y.y)
+                        sparkRow:SetPoint("TOPRIGHT", -16, y.y)
+                        sparkInit:InitFrame(sparkRow)
+                        if panel and panel.ApplyRobotoWhite then
+                            if sparkRow.Text then panel.ApplyRobotoWhite(sparkRow.Text) end
+                            local cb = sparkRow.Checkbox or sparkRow.CheckBox or (sparkRow.Control and sparkRow.Control.Checkbox)
+                            if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        end
+
+                        if panel and panel.CreateInfoIconForLabel then
+                            local sparkTooltip = "Hides the spark/glow indicator that appears at the current power level on certain classes (e.g., Elemental Shaman)."
+                            local sparkTargetLabel = sparkRow.Text or (sparkRow.Checkbox and sparkRow.Checkbox.Text)
+                            if sparkTargetLabel and not sparkRow.ScooterPowerSparkInfoIcon then
+                                sparkRow.ScooterPowerSparkInfoIcon = panel.CreateInfoIconForLabel(sparkTargetLabel, sparkTooltip, 5, 0, 32)
+                                if sparkRow.ScooterPowerSparkInfoIcon then
+                                    local function repositionSpark()
+                                        local icon = sparkRow.ScooterPowerSparkInfoIcon
+                                        local lbl = sparkRow.Text or (sparkRow.Checkbox and sparkRow.Checkbox.Text)
+                                        if icon and lbl then
+                                            icon:ClearAllPoints()
+                                            icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                        end
+                                    end
+                                    if C_Timer and C_Timer.After then
+                                        C_Timer.After(0, repositionSpark)
+                                    else
+                                        repositionSpark()
+                                    end
+                                end
+                            end
+                        end
+
+                        y.y = y.y - 34
 					end
 				end
 

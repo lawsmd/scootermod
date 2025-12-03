@@ -191,9 +191,33 @@ do
             rightFS = rightFS,
         }
 
+        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+        local function applyHealthTextVisibility(fs, hidden)
+            if not fs then return end
+            if hidden then
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                if not fs._ScooterHealthTextVisibilityHooked then
+                    fs._ScooterHealthTextVisibilityHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+                fs._ScooterHealthTextHidden = true
+            else
+                fs._ScooterHealthTextHidden = false
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+            end
+        end
+
         -- Apply current visibility once as part of the styling pass.
-        if leftFS and leftFS.SetShown then pcall(leftFS.SetShown, leftFS, not not (not cfg.healthPercentHidden)) end
-        if rightFS and rightFS.SetShown then pcall(rightFS.SetShown, rightFS, not not (not cfg.healthValueHidden)) end
+        applyHealthTextVisibility(leftFS, cfg.healthPercentHidden == true)
+        applyHealthTextVisibility(rightFS, cfg.healthValueHidden == true)
 
         -- Apply styling (font/size/style/color/offset) with stable baseline anchoring
         addon._ufTextBaselines = addon._ufTextBaselines or {}
@@ -277,10 +301,8 @@ do
     end
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
+    -- Uses SetAlpha instead of SetShown to avoid taint during combat.
     function addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
-        -- CRITICAL: Do NOT modify Blizzard FontStrings during combat - calling SetShown on
-        -- StatusBar children (LeftText, RightText) taints the parent and causes "blocked from an action" errors.
-        if InCombatLockdown and InCombatLockdown() then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         db.unitFrames = db.unitFrames or {}
@@ -297,12 +319,31 @@ do
         local leftFS = cache.leftFS
         local rightFS = cache.rightFS
 
-        if leftFS and leftFS.SetShown then
-            pcall(leftFS.SetShown, leftFS, not not (not cfg.healthPercentHidden))
+        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
+        local function applyVisibility(fs, hidden)
+            if not fs then return end
+            if hidden then
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                if not fs._ScooterHealthTextVisibilityHooked then
+                    fs._ScooterHealthTextVisibilityHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+                fs._ScooterHealthTextHidden = true
+            else
+                fs._ScooterHealthTextHidden = false
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+            end
         end
-        if rightFS and rightFS.SetShown then
-            pcall(rightFS.SetShown, rightFS, not not (not cfg.healthValueHidden))
-        end
+
+        applyVisibility(leftFS, cfg.healthPercentHidden == true)
+        applyVisibility(rightFS, cfg.healthValueHidden == true)
     end
 
 	function addon.ApplyAllUnitFrameHealthTextVisibility()
@@ -537,15 +578,35 @@ do
             rightFS = rightFS,
         }
 
+        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+        local function applyPowerTextVisibility(fs, hidden)
+            if not fs then return end
+            if hidden then
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                if not fs._ScooterPowerTextVisibilityHooked then
+                    fs._ScooterPowerTextVisibilityHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+                fs._ScooterPowerTextHidden = true
+            else
+                fs._ScooterPowerTextHidden = false
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+            end
+        end
+
 		-- Visibility: tolerate missing LeftText on some classes/specs (no-op)
+		-- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
 		local powerBarHidden = (cfg.powerBarHidden == true)
-		if leftFS and leftFS.SetShown then
-			-- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
-			pcall(leftFS.SetShown, leftFS, (not powerBarHidden) and not not (not cfg.powerPercentHidden))
-		end
-		if rightFS and rightFS.SetShown then
-			pcall(rightFS.SetShown, rightFS, (not powerBarHidden) and not not (not cfg.powerValueHidden))
-		end
+		applyPowerTextVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true))
+		applyPowerTextVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true))
 
 		-- Styling
 		addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
@@ -628,10 +689,8 @@ do
 	end
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
+    -- Uses SetAlpha instead of SetShown to avoid taint during combat.
 	function addon.ApplyUnitFramePowerTextVisibilityFor(unit)
-        -- CRITICAL: Do NOT modify Blizzard FontStrings during combat - calling SetShown on
-        -- StatusBar children (LeftText, RightText) taints the parent and causes "blocked from an action" errors.
-        if InCombatLockdown and InCombatLockdown() then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         db.unitFrames = db.unitFrames or {}
@@ -648,15 +707,34 @@ do
         local leftFS = cache.leftFS
         local rightFS = cache.rightFS
 
-		local powerBarHidden = (cfg.powerBarHidden == true)
+        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
+        local function applyVisibility(fs, hidden)
+            if not fs then return end
+            if hidden then
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                if not fs._ScooterPowerTextVisibilityHooked then
+                    fs._ScooterPowerTextVisibilityHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "Show", function(self)
+                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+                fs._ScooterPowerTextHidden = true
+            else
+                fs._ScooterPowerTextHidden = false
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+            end
+        end
 
         -- Visibility: tolerate missing LeftText on some classes/specs (no-op)
-        if leftFS and leftFS.SetShown then
-            pcall(leftFS.SetShown, leftFS, (not powerBarHidden) and not not (not cfg.powerPercentHidden))
-        end
-        if rightFS and rightFS.SetShown then
-            pcall(rightFS.SetShown, rightFS, (not powerBarHidden) and not not (not cfg.powerValueHidden))
-        end
+        -- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
+		local powerBarHidden = (cfg.powerBarHidden == true)
+        applyVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true))
+        applyVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true))
 	end
 
 	function addon.ApplyAllUnitFramePowerTextVisibility()
@@ -829,9 +907,35 @@ do
 		if not nameFS then nameFS = findFontStringByNameHint(frame, "Name") end
 		if not levelFS then levelFS = findFontStringByNameHint(frame, "LevelText") end
 
+        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Hooks Show() to re-enforce alpha when Blizzard shows the element during combat.
+        local function applyNameLevelTextVisibility(fs, hidden, hookKey)
+            if not fs then return end
+            local hookFlag = "_ScooterNameLevelTextVisibilityHooked_" .. hookKey
+            local hiddenFlag = "_ScooterNameLevelTextHidden_" .. hookKey
+            if hidden then
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
+                -- Install hook once to re-enforce alpha when Blizzard calls Show()
+                if not fs[hookFlag] then
+                    fs[hookFlag] = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "Show", function(self)
+                            if self[hiddenFlag] and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+                fs[hiddenFlag] = true
+            else
+                fs[hiddenFlag] = false
+                if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+            end
+        end
+
 		-- Apply visibility
-		if nameFS and nameFS.SetShown then pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden) end
-		if levelFS and levelFS.SetShown then pcall(levelFS.SetShown, levelFS, not cfg.levelTextHidden) end
+		applyNameLevelTextVisibility(nameFS, cfg.nameTextHidden == true, "name")
+		applyNameLevelTextVisibility(levelFS, cfg.levelTextHidden == true, "level")
 
 		-- Apply styling
 		addon._ufNameLevelTextBaselines = addon._ufNameLevelTextBaselines or {}
