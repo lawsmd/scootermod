@@ -528,6 +528,7 @@ local function createUFRenderer(componentId, title)
 					initSlider:InitFrame(f)
 					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
 					yRef.y = yRef.y - 34
+					return f
 				end
 				local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
 					local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
@@ -584,6 +585,73 @@ local function createUFRenderer(componentId, title)
 					local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
 					swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
 					yRef.y = yRef.y - 34
+				end
+
+				local function addTextInput(parent, label, minV, maxV, getFunc, setFunc, yRef, settingId)
+					local options = Settings.CreateSliderOptions(minV, maxV, 1)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+						return tostring(roundPositionValue(v))
+					end)
+					local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					initSlider.data = initSlider.data or {}
+					initSlider.data.settingId = settingId
+					initSlider.data.componentId = componentId
+					if ConvertSliderInitializerToTextInput then
+						ConvertSliderInitializerToTextInput(initSlider)
+					end
+					local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+					row.GetElementData = function() return initSlider end
+					row:SetPoint("TOPLEFT", 4, yRef.y)
+					row:SetPoint("TOPRIGHT", -16, yRef.y)
+					initSlider:InitFrame(row)
+					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					yRef.y = yRef.y - 34
+					return row
+				end
+
+				local function setRowEnabled(row, enabled)
+					if not row then return end
+					local alpha = enabled and 1 or 0.4
+					local label = row.Text or row.Label
+					if label and label.SetTextColor then
+						label:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+					end
+					if row.ScooterTextInput then
+						row.ScooterTextInput:SetEnabled(enabled)
+						row.ScooterTextInput:SetAlpha(alpha)
+					end
+					local controls = {
+						row.Control,
+						row.SliderWithSteppers,
+						row.Slider,
+					}
+					for _, ctrl in ipairs(controls) do
+						if ctrl then
+							if ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+							if ctrl.EnableMouse then ctrl:EnableMouse(enabled) end
+							if enabled and ctrl.Enable then ctrl:Enable() end
+							if not enabled and ctrl.Disable then ctrl:Disable() end
+							if ctrl.SetAlpha then ctrl:SetAlpha(alpha) end
+						end
+					end
+					if row.EnableMouse then row:EnableMouse(enabled) end
+					row:SetAlpha(alpha)
+				end
+
+				local function clampScreenInput(value)
+					local v = roundPositionValue(value or 0)
+					if v > 2000 then v = 2000 elseif v < -2000 then v = -2000 end
+					return v
+				end
+
+				local customPositionRows = {}
+				local function refreshPowerPositionState()
+					local enabled = customPositionRows.isEnabled and customPositionRows.isEnabled()
+					setRowEnabled(customPositionRows.customX, enabled)
+					setRowEnabled(customPositionRows.customY, enabled)
+					setRowEnabled(customPositionRows.offsetX, not enabled)
+					setRowEnabled(customPositionRows.offsetY, not enabled)
 				end
 
 				-- PageA: Direction (Target/Focus only)
@@ -1220,6 +1288,7 @@ local function createUFRenderer(componentId, title)
 					initSlider:InitFrame(f)
 					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
 					yRef.y = yRef.y - 34
+					return f
 				end
 				local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
 					local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
@@ -1278,6 +1347,82 @@ local function createUFRenderer(componentId, title)
 					yRef.y = yRef.y - 34
 				end
 
+				-- Helper: Convert position value to rounded integer
+				local function roundPositionValuePB(v)
+					return math.floor((tonumber(v) or 0) + 0.5)
+				end
+
+				-- Helper: Add text input (for position coordinates)
+				local function addTextInput(parent, label, minV, maxV, getFunc, setFunc, yRef, settingId)
+					local options = Settings.CreateSliderOptions(minV, maxV, 1)
+					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+						return tostring(roundPositionValuePB(v))
+					end)
+					local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+					initSlider.data = initSlider.data or {}
+					initSlider.data.settingId = settingId
+					initSlider.data.componentId = componentId
+					if ConvertSliderInitializerToTextInput then
+						ConvertSliderInitializerToTextInput(initSlider)
+					end
+					local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+					row.GetElementData = function() return initSlider end
+					row:SetPoint("TOPLEFT", 4, yRef.y)
+					row:SetPoint("TOPRIGHT", -16, yRef.y)
+					initSlider:InitFrame(row)
+					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					yRef.y = yRef.y - 34
+					return row
+				end
+
+				-- Helper: Enable/disable a settings row
+				local function setRowEnabled(row, enabled)
+					if not row then return end
+					local alpha = enabled and 1 or 0.4
+					local labelEl = row.Text or row.Label
+					if labelEl and labelEl.SetTextColor then
+						labelEl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+					end
+					if row.ScooterTextInput then
+						row.ScooterTextInput:SetEnabled(enabled)
+						row.ScooterTextInput:SetAlpha(alpha)
+					end
+					local controls = {
+						row.Control,
+						row.SliderWithSteppers,
+						row.Slider,
+					}
+					for _, ctrl in ipairs(controls) do
+						if ctrl then
+							if ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+							if ctrl.EnableMouse then ctrl:EnableMouse(enabled) end
+							if enabled and ctrl.Enable then ctrl:Enable() end
+							if not enabled and ctrl.Disable then ctrl:Disable() end
+							if ctrl.SetAlpha then ctrl:SetAlpha(alpha) end
+						end
+					end
+					if row.EnableMouse then row:EnableMouse(enabled) end
+					row:SetAlpha(alpha)
+				end
+
+				-- Helper: Clamp screen position input
+				local function clampScreenInput(value)
+					local v = roundPositionValuePB(value or 0)
+					if v > 2000 then v = 2000 elseif v < -2000 then v = -2000 end
+					return v
+				end
+
+				-- State table for custom position controls
+				local customPositionRows = {}
+				local function refreshPowerPositionState()
+					local enabled = customPositionRows.isEnabled and customPositionRows.isEnabled()
+					setRowEnabled(customPositionRows.customX, enabled)
+					setRowEnabled(customPositionRows.customY, enabled)
+					setRowEnabled(customPositionRows.offsetX, not enabled)
+					setRowEnabled(customPositionRows.offsetY, not enabled)
+				end
+
 				-- PageA: Positioning (Power Bar)
 				do
 					local function applyNow()
@@ -1285,18 +1430,107 @@ local function createUFRenderer(componentId, title)
 					end
 					local y = { y = -50 }
 					local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+					local function isCustomPositionEnabled()
+						local t = ensureUFDB() or {}
+						return t.powerBarCustomPositionEnabled == true
+					end
+					local function seedCurrentPosition(t)
+						if not (addon and addon.UnitFrames_GetPowerBarScreenPosition) then
+							return
+						end
+						local px, py = addon.UnitFrames_GetPowerBarScreenPosition()
+						t.powerBarPosX = clampScreenInput(px)
+						t.powerBarPosY = clampScreenInput(py)
+					end
+					local function setCustomPositionEnabled(state)
+						local t = ensureUFDB(); if not t then return end
+						local newState = state and true or false
+						if t.powerBarCustomPositionEnabled ~= newState then
+							t.powerBarCustomPositionEnabled = newState
+							if newState and (t.powerBarPosX == nil or t.powerBarPosY == nil) then
+								seedCurrentPosition(t)
+							end
+							applyNow()
+						end
+						refreshPowerPositionState()
+					end
+
+					-- Custom Position toggle
+					do
+						local label = "Custom Position"
+						local setting = CreateLocalSetting(label, "boolean", isCustomPositionEnabled, setCustomPositionEnabled, isCustomPositionEnabled())
+						local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+						local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+						row.GetElementData = function() return initCb end
+						row:SetPoint("TOPLEFT", 4, y.y)
+						row:SetPoint("TOPRIGHT", -16, y.y)
+						initCb:InitFrame(row)
+						if panel and panel.ApplyRobotoWhite then
+							if row.Text then panel.ApplyRobotoWhite(row.Text) end
+							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						end
+						if panel and panel.CreateInfoIconForLabel then
+							local tooltip = "Detach the Player Power Bar from the Player frame and place it using exact screen coordinates. When enabled, the X/Y Offset sliders are disabled."
+							local targetLabel = row.Text or (row.Checkbox and row.Checkbox.Text)
+							if targetLabel then
+								row.ScooterCustomPowerInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltip, -6, 0, 32)
+								if row.ScooterCustomPowerInfoIcon then
+									C_Timer.After(0, function()
+										if not row or not row.ScooterCustomPowerInfoIcon then return end
+										local lbl = row.Text or (row.Checkbox and row.Checkbox.Text)
+										if not lbl then return end
+										row.ScooterCustomPowerInfoIcon:ClearAllPoints()
+										row.ScooterCustomPowerInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+									end)
+								end
+							end
+						end
+						y.y = y.y - 34
+						customPositionRows.checkbox = row
+						customPositionRows.isEnabled = isCustomPositionEnabled
+					end
+
+					-- Custom X/Y coordinate inputs
+					customPositionRows.customX = addTextInput(frame.PageA, "X Position (px)", -2000, 2000,
+						function()
+							local t = ensureUFDB() or {}
+							return clampScreenInput(t.powerBarPosX or 0)
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.powerBarPosX = clampScreenInput(v)
+							applyNow()
+						end,
+						y,
+						"powerBarCustomPosX")
+
+					customPositionRows.customY = addTextInput(frame.PageA, "Y Position (px)", -2000, 2000,
+						function()
+							local t = ensureUFDB() or {}
+							return clampScreenInput(t.powerBarPosY or 0)
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.powerBarPosY = clampScreenInput(v)
+							applyNow()
+						end,
+						y,
+						"powerBarCustomPosY")
 					
 					-- X Offset slider
-					addSlider(frame.PageA, "X Offset", -100, 100, 1,
+					customPositionRows.offsetX = addSlider(frame.PageA, "X Offset", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetX) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetX = tonumber(v) or 0; applyNow() end,
 						y)
 					
 					-- Y Offset slider
-					addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+					customPositionRows.offsetY = addSlider(frame.PageA, "Y Offset", -100, 100, 1,
 						function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetY) or 0 end,
 						function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetY = tonumber(v) or 0; applyNow() end,
 						y)
+
+					refreshPowerPositionState()
 				end
 
 				-- PageB: Sizing/Direction (Power Bar)
@@ -3091,7 +3325,148 @@ local function createUFRenderer(componentId, title)
 					-- PageA: Positioning
 					do
 						local y = { y = -50 }
-						addSlider(frame.PageA, "X Offset", -150, 150, 1,
+						local function clampScreenInput(value)
+							local v = roundPositionValue(value or 0)
+							if v > 2000 then v = 2000 elseif v < -2000 then v = -2000 end
+							return v
+						end
+						local function addTextInput(parent, label, getter, setter, yRef, settingId)
+							local options = Settings.CreateSliderOptions(-2000, 2000, 1)
+							options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+								return tostring(roundPositionValue(v))
+							end)
+							local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+							initSlider.data = initSlider.data or {}
+							initSlider.data.settingId = settingId
+							initSlider.data.componentId = componentId
+							if ConvertSliderInitializerToTextInput then
+								ConvertSliderInitializerToTextInput(initSlider)
+							end
+							local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+							row.GetElementData = function() return initSlider end
+							row:SetPoint("TOPLEFT", 4, yRef.y)
+							row:SetPoint("TOPRIGHT", -16, yRef.y)
+							initSlider:InitFrame(row)
+							if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+							yRef.y = yRef.y - 34
+							return row
+						end
+						local function setRowEnabled(row, enabled)
+							if not row then return end
+							local alpha = enabled and 1 or 0.4
+							local label = row.Text or row.Label
+							if label and label.SetTextColor then
+								label:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
+							end
+							if row.ScooterTextInput then
+								row.ScooterTextInput:SetEnabled(enabled)
+								row.ScooterTextInput:SetAlpha(alpha)
+							end
+							local controls = { row.Control, row.SliderWithSteppers, row.Slider }
+							for _, ctrl in ipairs(controls) do
+								if ctrl then
+									if ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
+									if ctrl.EnableMouse then ctrl:EnableMouse(enabled) end
+									if enabled and ctrl.Enable then ctrl:Enable() end
+									if not enabled and ctrl.Disable then ctrl:Disable() end
+									if ctrl.SetAlpha then ctrl:SetAlpha(alpha) end
+								end
+							end
+							if row.EnableMouse then row:EnableMouse(enabled) end
+							row:SetAlpha(alpha)
+						end
+
+						local customRows = {}
+						local function refreshState()
+							local enabled = customRows.isEnabled and customRows.isEnabled()
+							setRowEnabled(customRows.customX, enabled)
+							setRowEnabled(customRows.customY, enabled)
+							setRowEnabled(customRows.offsetX, not enabled)
+							setRowEnabled(customRows.offsetY, not enabled)
+						end
+
+						-- Custom Position checkbox
+						do
+							local function isCustomEnabled()
+								local cfg = ensureCRDB() or {}
+								return cfg.classResourceCustomPositionEnabled == true
+							end
+							local function setCustomEnabled(state)
+								local cfg = ensureCRDB(); if not cfg then return end
+								local desired = state and true or false
+								if cfg.classResourceCustomPositionEnabled ~= desired then
+									cfg.classResourceCustomPositionEnabled = desired
+									if desired and (cfg.classResourcePosX == nil or cfg.classResourcePosY == nil) and addon and addon.UnitFrames_GetClassResourceScreenPosition then
+										local px, py = addon.UnitFrames_GetClassResourceScreenPosition()
+										cfg.classResourcePosX = clampScreenInput(px)
+										cfg.classResourcePosY = clampScreenInput(py)
+									end
+									applyNow()
+								end
+								refreshState()
+							end
+							local label = "Custom Position"
+							local setting = CreateLocalSetting(label, "boolean", isCustomEnabled, setCustomEnabled, isCustomEnabled())
+							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+							local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
+							row.GetElementData = function() return initCb end
+							row:SetPoint("TOPLEFT", 4, y.y)
+							row:SetPoint("TOPRIGHT", -16, y.y)
+							initCb:InitFrame(row)
+							if panel and panel.ApplyRobotoWhite then
+								if row.Text then panel.ApplyRobotoWhite(row.Text) end
+								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+							if panel and panel.CreateInfoIconForLabel then
+								local tooltip = "Detach the class resource from the Player frame and position it anywhere on the screen using absolute coordinates."
+								local targetLabel = row.Text or (row.Checkbox and row.Checkbox.Text)
+								if targetLabel then
+									row.ScooterClassResourceInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltip, -6, 0, 32)
+									if row.ScooterClassResourceInfoIcon then
+										C_Timer.After(0, function()
+											if not row or not row.ScooterClassResourceInfoIcon then return end
+											local lbl = row.Text or (row.Checkbox and row.Checkbox.Text)
+											if not lbl then return end
+											row.ScooterClassResourceInfoIcon:ClearAllPoints()
+											row.ScooterClassResourceInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+										end)
+									end
+								end
+							end
+							y.y = y.y - 34
+							customRows.checkbox = row
+							customRows.isEnabled = isCustomEnabled
+						end
+
+						customRows.customX = addTextInput(frame.PageA, "X Position (px)",
+							function()
+								local cfg = ensureCRDB() or {}
+								return clampScreenInput(cfg.classResourcePosX or 0)
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								cfg.classResourcePosX = clampScreenInput(v)
+								applyNow()
+							end,
+							y,
+							"classResourceCustomPosX")
+
+						customRows.customY = addTextInput(frame.PageA, "Y Position (px)",
+							function()
+								local cfg = ensureCRDB() or {}
+								return clampScreenInput(cfg.classResourcePosY or 0)
+							end,
+							function(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								cfg.classResourcePosY = clampScreenInput(v)
+								applyNow()
+							end,
+							y,
+							"classResourceCustomPosY")
+
+						customRows.offsetX = addSlider(frame.PageA, "X Offset", -150, 150, 1,
 							function()
 								local cfg = ensureCRDB() or {}
 								return tonumber(cfg.offsetX) or 0
@@ -3105,7 +3480,7 @@ local function createUFRenderer(componentId, title)
 							end,
 							y)
 
-						addSlider(frame.PageA, "Y Offset", -150, 150, 1,
+						customRows.offsetY = addSlider(frame.PageA, "Y Offset", -150, 150, 1,
 							function()
 								local cfg = ensureCRDB() or {}
 								return tonumber(cfg.offsetY) or 0
@@ -3118,6 +3493,8 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end,
 							y)
+
+						refreshState()
 					end
 
 					-- PageB: Sizing
@@ -3173,7 +3550,9 @@ local function createUFRenderer(componentId, title)
 				end
 
 				local crInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", crTabs)
-				crInit.GetExtent = function() return 220 end
+				-- Height for 5 settings: checkbox + 2 text inputs + 2 sliders = 30 + (5 * 34) + 20 = 220px
+				-- Increased to 270px to accommodate Custom Position controls with proper spacing
+				crInit.GetExtent = function() return 270 end
 				crInit:AddShownPredicate(function()
 					return panel:IsSectionExpanded(componentId, "Class Resource")
 				end)

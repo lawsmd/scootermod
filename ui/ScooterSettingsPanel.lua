@@ -3,6 +3,9 @@ local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
+-- Combat guard state: track whether to reopen panel when combat ends
+panel._closedByCombat = false
+
 local function IsPRDEnabled()
     return addon.FeatureToggles and addon.FeatureToggles.enablePRD
 end
@@ -2217,10 +2220,9 @@ end
         headerEditBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
         headerEditBtn:EnableMouse(true)
         headerEditBtn:SetScript("OnClick", function()
-            if InCombatLockdown and InCombatLockdown() then
-                if addon and addon.Print then addon:Print("Cannot open Edit Mode during combat.") end
-                return
-            end
+            -- Note: Blizzard allows opening Edit Mode during combat, and ScooterMod's
+            -- edit mode sync system properly handles combat by using SaveOnly() instead
+            -- of ApplyChanges() during combat, then applying changes when combat ends.
             if SlashCmdList and SlashCmdList["EDITMODE"] then
                 SlashCmdList["EDITMODE"]("")
             elseif RunBinding then
@@ -2533,9 +2535,59 @@ function panel:Toggle()
         return
     end
 
+    -- Combat guard: prevent opening during combat
+    if InCombatLockdown and InCombatLockdown() then
+        panel._closedByCombat = true
+        if addon and addon.Print then
+            addon:Print("ScooterMod will open once combat ends.")
+        end
+        return
+    end
+
     ShowPanel()
 end
 
 function panel:Open()
+    -- Combat guard: prevent opening during combat
+    if InCombatLockdown and InCombatLockdown() then
+        panel._closedByCombat = true
+        if addon and addon.Print then
+            addon:Print("ScooterMod will open once combat ends.")
+        end
+        return
+    end
+
     ShowPanel()
 end
+
+-- Combat event handling: close panel on combat start, reopen when combat ends
+local combatWatcher = CreateFrame("Frame")
+combatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatWatcher:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        -- Combat started: close panel if open
+        if panel.frame and panel.frame:IsShown() then
+            panel._closedByCombat = true
+            panel.frame:Hide()
+            if addon and addon.Print then
+                addon:Print("ScooterMod will reopen once combat ends.")
+            end
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: reopen panel if it was closed by combat
+        if panel._closedByCombat then
+            panel._closedByCombat = false
+            -- Defer slightly to ensure combat lockdown is fully cleared
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, function()
+                    if not InCombatLockdown() then
+                        ShowPanel()
+                    end
+                end)
+            else
+                ShowPanel()
+            end
+        end
+    end
+end)

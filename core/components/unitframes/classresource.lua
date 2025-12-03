@@ -1,9 +1,74 @@
 local addonName, addon = ...
 
+local Util = addon.ComponentsUtil
+local PlayerInCombat = Util and Util.PlayerInCombat or function() return InCombatLockdown and InCombatLockdown() end
+
+local function getUiScale()
+	local parent = UIParent
+	if parent and parent.GetEffectiveScale then
+		local scale = parent:GetEffectiveScale()
+		if scale and scale > 0 then
+			return scale
+		end
+	end
+	return 1
+end
+
+local function pixelsToUiUnits(px)
+	return (tonumber(px) or 0) / getUiScale()
+end
+
+local function clampScreenCoordinate(value)
+	local v = tonumber(value) or 0
+	if v > 2000 then
+		v = 2000
+	elseif v < -2000 then
+		v = -2000
+	end
+	return math.floor(v + (v >= 0 and 0.5 or -0.5))
+end
+
+local function getFrameScreenOffsets(frame)
+	if not (frame and frame.GetCenter and UIParent and UIParent.GetCenter) then
+		return 0, 0
+	end
+	local fx, fy = frame:GetCenter()
+	local px, py = UIParent:GetCenter()
+	if not (fx and fy and px and py) then
+		return 0, 0
+	end
+	return math.floor((fx - px) + 0.5), math.floor((fy - py) + 0.5)
+end
+
+local pendingClassResourceReapply = false
+local classResourceCombatWatcher = nil
+
+local function ensureClassResourceCombatWatcher()
+	if classResourceCombatWatcher then
+		return
+	end
+	classResourceCombatWatcher = CreateFrame("Frame")
+	classResourceCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+	classResourceCombatWatcher:SetScript("OnEvent", function()
+		if pendingClassResourceReapply then
+			pendingClassResourceReapply = false
+			if addon.ApplyUnitFrameClassResource then
+				addon.ApplyUnitFrameClassResource("Player")
+			end
+		end
+	end)
+end
+
+local function queueClassResourceReapply()
+	ensureClassResourceCombatWatcher()
+	pendingClassResourceReapply = true
+end
+
 -- Baseline storage for managed frame offsets
 -- NOTE: We do NOT capture frame scales because frames may retain our previously-applied
 -- scale across reloads. Class resource frames have no Edit Mode scale, so baseline is always 1.0.
 local originalPaddings = setmetatable({}, { __mode = "k" })
+local originalAnchors = setmetatable({}, { __mode = "k" })
 local hookedFrames = setmetatable({}, { __mode = "k" })
 local layoutHooked = false
 
@@ -134,6 +199,89 @@ local function captureBaselines(frame)
 			"left:", originalPaddings[frame].leftPadding,
 			"top:", originalPaddings[frame].topPadding)
 	end
+end
+
+local function captureAnchorState(frame)
+	if not frame or originalAnchors[frame] then
+		return
+	end
+	local info = {
+		parent = frame:GetParent(),
+		points = {},
+		leftPadding = frame.leftPadding,
+		topPadding = frame.topPadding,
+		ignoreManager = frame.IsIgnoringFramePositionManager and frame:IsIgnoringFramePositionManager() or false,
+	}
+	if frame.GetNumPoints then
+		local numPoints = frame:GetNumPoints()
+		for i = 1, numPoints do
+			local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(i)
+			table.insert(info.points, { point, relativeTo, relativePoint, xOfs, yOfs })
+		end
+	end
+	originalAnchors[frame] = info
+end
+
+local function restoreAnchorState(frame)
+	local info = originalAnchors[frame]
+	if not frame or not info then
+		return
+	end
+	-- Note: We do NOT re-parent. The frame stays with its original parent at all times.
+	-- We only restore the layout manager state and original anchor points.
+	if frame.SetIgnoreFramePositionManager then
+		pcall(frame.SetIgnoreFramePositionManager, frame, info.ignoreManager or false)
+	end
+	if info.points and frame.ClearAllPoints and frame.SetPoint then
+		pcall(frame.ClearAllPoints, frame)
+		for _, pt in ipairs(info.points) do
+			pcall(frame.SetPoint, frame, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", pt[4] or 0, pt[5] or 0)
+		end
+	end
+	if info.leftPadding ~= nil then
+		frame.leftPadding = info.leftPadding
+	end
+	if info.topPadding ~= nil then
+		frame.topPadding = info.topPadding
+	end
+end
+
+local function ensureCustomClassResourceSeed(cfg, frame)
+	if not cfg or not cfg.classResourceCustomPositionEnabled or not frame then
+		return
+	end
+	if cfg.classResourcePosX == nil or cfg.classResourcePosY == nil then
+		local px, py = getFrameScreenOffsets(frame)
+		cfg.classResourcePosX = clampScreenCoordinate(px)
+		cfg.classResourcePosY = clampScreenCoordinate(py)
+	end
+end
+
+local function applyCustomClassResourcePosition(frame, cfg)
+	if not frame or not cfg or not cfg.classResourceCustomPositionEnabled then
+		return false
+	end
+	if PlayerInCombat() then
+		queueClassResourceReapply()
+		return true
+	end
+	captureAnchorState(frame)
+	ensureCustomClassResourceSeed(cfg, frame)
+	-- POLICY COMPLIANT: Do NOT re-parent the frame. Instead:
+	-- 1. Keep the frame parented where Blizzard placed it
+	-- 2. Use SetIgnoreFramePositionManager to prevent layout manager from overriding
+	-- 3. Anchor to UIParent for absolute screen positioning (frames CAN anchor to non-parents)
+	-- This preserves scale and all other customizations.
+	if frame.SetIgnoreFramePositionManager then
+		pcall(frame.SetIgnoreFramePositionManager, frame, true)
+	end
+	if frame.ClearAllPoints and frame.SetPoint then
+		pcall(frame.ClearAllPoints, frame)
+		local posX = clampScreenCoordinate(cfg.classResourcePosX or 0)
+		local posY = clampScreenCoordinate(cfg.classResourcePosY or 0)
+		pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", pixelsToUiUnits(posX), pixelsToUiUnits(posY))
+	end
+	return true
 end
 
 local function clampOffset(value)
@@ -288,17 +436,24 @@ local function applyClassResourceForUnit(unit)
 	local offsetX = clampOffset(cfg.offsetX)
 	local offsetY = clampOffset(cfg.offsetY)
 	local scaleMultiplier = clampScale(cfg.scale) / 100
+	local customPositionActive = cfg.classResourceCustomPositionEnabled == true
 
 	for _, frame in ipairs(frames) do
 		captureBaselines(frame)
 		ensureVisibilityHooks(frame, cfg)
+		if not customPositionActive then
+			restoreAnchorState(frame)
+		end
 		
 		local origPadding = originalPaddings[frame] or { leftPadding = 0, topPadding = 0 }
 		
-		-- POSITIONING: Use leftPadding and topPadding which the LayoutFrame system respects
-		-- This is the correct way to offset managed frames without fighting the layout manager
-		-- Note: X offset uses leftPadding, Y offset uses topPadding (negative = up)
-		if not inCombat then
+		local customHandled = false
+		if customPositionActive then
+			customHandled = applyCustomClassResourcePosition(frame, cfg)
+		end
+
+		-- POSITIONING: Use leftPadding/topPadding only when custom positioning is disabled
+		if not customHandled and not inCombat then
 			frame.leftPadding = (origPadding.leftPadding or 0) + offsetX
 			frame.topPadding = (origPadding.topPadding or 0) - offsetY  -- Negate Y so positive = up
 			debugPrint("Set padding for", frame:GetName() or "unnamed",
@@ -321,8 +476,8 @@ local function applyClassResourceForUnit(unit)
 		end
 	end
 	
-	-- Trigger layout update to apply padding changes
-	if not inCombat and (offsetX ~= 0 or offsetY ~= 0) then
+	-- Trigger layout update to apply padding changes when using offsets
+	if not inCombat and not customPositionActive and (offsetX ~= 0 or offsetY ~= 0) then
 		triggerLayoutUpdate()
 	end
 end
@@ -333,6 +488,16 @@ end
 
 function addon.ApplyAllUnitFrameClassResources()
 	applyClassResourceForUnit("Player")
+end
+
+function addon.UnitFrames_GetClassResourceScreenPosition()
+	local frames = resolveClassResourceFrames()
+	local frame = frames and frames[1]
+	if not frame then
+		return 0, 0
+	end
+	local x, y = getFrameScreenOffsets(frame)
+	return clampScreenCoordinate(x), clampScreenCoordinate(y)
 end
 
 function addon.UnitFrames_GetPlayerClassResourceTitle()

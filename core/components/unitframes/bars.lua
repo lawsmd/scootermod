@@ -6,6 +6,165 @@ local PlayerInCombat = Util.PlayerInCombat
 local HideDefaultBarTextures = Util.HideDefaultBarTextures
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
 
+local function getUiScale()
+    if UIParent and UIParent.GetEffectiveScale then
+        local scale = UIParent:GetEffectiveScale()
+        if scale and scale > 0 then
+            return scale
+        end
+    end
+    return 1
+end
+
+local function pixelsToUiUnits(px)
+    return (tonumber(px) or 0) / getUiScale()
+end
+
+local function uiUnitsToPixels(u)
+    return math.floor(((tonumber(u) or 0) * getUiScale()) + 0.5)
+end
+
+local function clampScreenCoordinate(value)
+    local v = tonumber(value) or 0
+    if v > 2000 then
+        v = 2000
+    elseif v < -2000 then
+        v = -2000
+    end
+    return math.floor(v + (v >= 0 and 0.5 or -0.5))
+end
+
+local function getFrameScreenOffsets(frame)
+    if not (frame and frame.GetCenter and UIParent and UIParent.GetCenter) then
+        return 0, 0
+    end
+    local fx, fy = frame:GetCenter()
+    local px, py = UIParent:GetCenter()
+    if not (fx and fy and px and py) then
+        return 0, 0
+    end
+    return math.floor((fx - px) + 0.5), math.floor((fy - py) + 0.5)
+end
+
+local pendingPowerBarUnits = {}
+local powerBarCombatWatcher = nil
+
+local function ensurePowerBarCombatWatcher()
+    if powerBarCombatWatcher then
+        return
+    end
+    powerBarCombatWatcher = CreateFrame("Frame")
+    powerBarCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    powerBarCombatWatcher:SetScript("OnEvent", function()
+        for unit in pairs(pendingPowerBarUnits) do
+            pendingPowerBarUnits[unit] = nil
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor(unit)
+            end
+        end
+    end)
+end
+
+local function queuePowerBarReapply(unit)
+    ensurePowerBarCombatWatcher()
+    pendingPowerBarUnits[unit] = true
+end
+
+local function capturePowerBarBaseline(pb)
+    if not pb then
+        return
+    end
+    if not pb._ScootPowerBarOrigParent then
+        pb._ScootPowerBarOrigParent = pb:GetParent()
+    end
+    if pb.SetIgnoreFramePositionManager and pb.IsIgnoringFramePositionManager then
+        if pb._ScootPowerBarOrigIgnoreManager == nil then
+            local ok, ignoring = pcall(pb.IsIgnoringFramePositionManager, pb)
+            pb._ScootPowerBarOrigIgnoreManager = ok and ignoring or false
+        end
+    end
+    if not pb._ScootPowerBarOrigPoints and pb.GetNumPoints then
+        pb._ScootPowerBarOrigPoints = {}
+        local numPoints = pb:GetNumPoints()
+        for i = 1, numPoints do
+            local point, relativeTo, relativePoint, xOfs, yOfs = pb:GetPoint(i)
+            table.insert(pb._ScootPowerBarOrigPoints, { point, relativeTo, relativePoint, xOfs, yOfs })
+        end
+    end
+end
+
+local function restorePowerBarBaseline(pb)
+    if not pb then
+        return
+    end
+    -- Note: We do NOT re-parent. The frame stays with its original parent at all times.
+    -- We only restore the layout manager state and original anchor points.
+    if pb.SetIgnoreFramePositionManager then
+        local desired = pb._ScootPowerBarOrigIgnoreManager
+        if desired == nil then
+            desired = false
+        end
+        pcall(pb.SetIgnoreFramePositionManager, pb, desired)
+    end
+    if pb._ScootPowerBarOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+        pcall(pb.ClearAllPoints, pb)
+        for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
+            pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+        end
+    end
+end
+
+local function ensurePowerBarCustomSeed(cfg, pb)
+    if not cfg or not cfg.powerBarCustomPositionEnabled or not pb then
+        return
+    end
+    if cfg.powerBarPosX == nil or cfg.powerBarPosY == nil then
+        local px, py = getFrameScreenOffsets(pb)
+        cfg.powerBarPosX = clampScreenCoordinate(px)
+        cfg.powerBarPosY = clampScreenCoordinate(py)
+    end
+end
+
+local function applyCustomPowerBarPosition(unit, pb, cfg)
+    if unit ~= "Player" or not cfg or not pb then
+        return false
+    end
+    if not cfg.powerBarCustomPositionEnabled then
+        -- Restore original state when custom positioning is disabled
+        if pb._ScootPowerBarCustomActive then
+            restorePowerBarBaseline(pb)
+            pb._ScootPowerBarCustomActive = nil
+        end
+        return false
+    end
+
+    if PlayerInCombat() then
+        queuePowerBarReapply(unit)
+        return true
+    end
+
+    capturePowerBarBaseline(pb)
+    ensurePowerBarCustomSeed(cfg, pb)
+
+    local posX = clampScreenCoordinate(cfg.powerBarPosX or 0)
+    local posY = clampScreenCoordinate(cfg.powerBarPosY or 0)
+
+    -- POLICY COMPLIANT: Do NOT re-parent the frame. Instead:
+    -- 1. Keep the frame parented where Blizzard placed it
+    -- 2. Use SetIgnoreFramePositionManager to prevent layout manager from overriding
+    -- 3. Anchor to UIParent for absolute screen positioning (frames CAN anchor to non-parents)
+    -- This preserves scale, text styling, and all other customizations.
+    if pb.SetIgnoreFramePositionManager then
+        pcall(pb.SetIgnoreFramePositionManager, pb, true)
+    end
+    if pb.ClearAllPoints and pb.SetPoint then
+        pcall(pb.ClearAllPoints, pb)
+        pcall(pb.SetPoint, pb, "CENTER", UIParent, "CENTER", pixelsToUiUnits(posX), pixelsToUiUnits(posY))
+    end
+    pb._ScootPowerBarCustomActive = true
+    return true
+end
+
 -- Unit Frames: Copy Health/Power Bar Style settings (texture, color mode, tint)
 do
     function addon.CopyUnitFrameBarStyleSettings(sourceUnit, destUnit)
@@ -1643,24 +1802,22 @@ do
                 end
 			end
 						
-            -- Power Bar positioning offsets
+            -- Power Bar positioning offsets / custom positioning (Player only)
             do
-                -- Do not re-anchor Power Bar while in combat; this uses ClearAllPoints/SetPoint
-                -- on protected frames and can taint downstream secure operations.
-                if not inCombat then
+                capturePowerBarBaseline(pb)
+                local customHandled = applyCustomPowerBarPosition(unit, pb, cfg)
+                if not customHandled and not inCombat then
                     local offsetX = tonumber(cfg.powerBarOffsetX) or 0
                     local offsetY = tonumber(cfg.powerBarOffsetY) or 0
-                
-                    -- Store original points if not already stored
+
                     if not pb._ScootPowerBarOrigPoints then
                         pb._ScootPowerBarOrigPoints = {}
                         for i = 1, pb:GetNumPoints() do
                             local point, relativeTo, relativePoint, xOfs, yOfs = pb:GetPoint(i)
-                            table.insert(pb._ScootPowerBarOrigPoints, {point, relativeTo, relativePoint, xOfs, yOfs})
+                            table.insert(pb._ScootPowerBarOrigPoints, { point, relativeTo, relativePoint, xOfs, yOfs })
                         end
-				    end
-						
-                    -- Apply offsets if non-zero, otherwise restore original anchors
+                    end
+
                     if offsetX ~= 0 or offsetY ~= 0 then
                         if pb.ClearAllPoints and pb.SetPoint then
                             pcall(pb.ClearAllPoints, pb)
@@ -1671,16 +1828,15 @@ do
                             end
                         end
                     else
-                        -- Restore original points when offsets are zero
                         if pb.ClearAllPoints and pb.SetPoint then
                             pcall(pb.ClearAllPoints, pb)
                             for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
                                 pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
                             end
                         end
-				    end
+                    end
                 end
-			end
+            end
 
             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
             do
@@ -1845,6 +2001,19 @@ do
                     pcall(reputationColor.SetShown, reputationColor, true)
                 end
             end
+
+    function addon.UnitFrames_GetPowerBarScreenPosition()
+        local frame = getUnitFrameFor("Player")
+        if not frame then
+            return 0, 0
+        end
+        local pb = resolvePowerBar(frame, "Player")
+        if not pb then
+            return 0, 0
+        end
+        local x, y = getFrameScreenOffsets(pb)
+        return clampScreenCoordinate(x), clampScreenCoordinate(y)
+    end
         end
         
         -- Hide FrameFlash (aggro/threat glow) for Player when Use Custom Borders is enabled
