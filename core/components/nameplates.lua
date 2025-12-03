@@ -2,8 +2,8 @@ local addonName, addon = ...
 
 local Component = addon.ComponentPrototype
 
-local plateAddHookInstalled = false
-local updateNameHookInstalled = false
+-- Nameplate styling uses event-based re-application instead of hooksecurefunc
+-- to avoid taint errors. See ApplyNameplateStyling() for details.
 
 local function isDefaultWhiteColor(color)
     if type(color) ~= "table" then
@@ -192,69 +192,77 @@ local function applyToAllActive(component)
     end
 end
 
-local function restyleFromHook(namePlate)
-    -- CRITICAL: Defer to avoid tainting Blizzard's nameplate setup chain.
-    -- Accessing addon.Components taints execution; if we run synchronously,
-    -- protected functions like SetTargetClampingInsets() will be blocked.
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            local component = addon.Components and addon.Components.nameplatesUnit
-            if component and component.db then
-                applyToNamePlate(component, namePlate)
-            end
-        end)
-    else
-        local component = addon.Components and addon.Components.nameplatesUnit
-        if component and component.db then
-            applyToNamePlate(component, namePlate)
-        end
-    end
-end
+-- Nameplate re-application via events.
+--
+-- CRITICAL: We cannot use hooksecurefunc on any nameplate-related functions because
+-- hook callbacks can taint the execution context, causing SetTargetClampingInsets()
+-- to be blocked.
+--
+-- Instead, we use EVENT HANDLERS to re-apply styling. Events fire in separate execution
+-- contexts and don't cause taint. The NAME_PLATE_UNIT_ADDED event fires AFTER Blizzard's
+-- nameplate setup completes, making it safe to style.
+--
+-- We use C_Timer.After(0, ...) to defer styling to the next frame, ensuring we're
+-- completely outside any Blizzard execution chain.
 
-local function ensureNamePlateHooks()
-    local secureHook = _G.hooksecurefunc
-    if secureHook then
-        local driver = _G.NamePlateDriverFrame
-        if not plateAddHookInstalled and driver and driver.OnNamePlateAdded then
-            plateAddHookInstalled = true
-            secureHook(driver, "OnNamePlateAdded", function(_, namePlate)
-                restyleFromHook(namePlate)
+local nameplateEventFrame = nil
+local nameplateComponent = nil
+
+local function onNameplateEvent(self, event, unitToken)
+    if not nameplateComponent or not nameplateComponent.db then
+        return
+    end
+    
+    -- For NAME_PLATE_UNIT_ADDED, style the specific nameplate
+    if event == "NAME_PLATE_UNIT_ADDED" and unitToken then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if not nameplateComponent or not nameplateComponent.db then
+                    return
+                end
+                local namePlateApi = _G.C_NamePlate
+                if not namePlateApi or not namePlateApi.GetNamePlateForUnit then
+                    return
+                end
+                local ok, plate = pcall(namePlateApi.GetNamePlateForUnit, unitToken)
+                if ok and plate then
+                    applyToNamePlate(nameplateComponent, plate)
+                end
             end)
         end
-        if not updateNameHookInstalled and _G.CompactUnitFrame_UpdateName then
-            updateNameHookInstalled = true
-            secureHook("CompactUnitFrame_UpdateName", function(frame)
-                -- CRITICAL: Defer check to avoid tainting execution context.
-                -- The actual styling is already deferred inside restyleFromHook.
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        if not frame or not frame.unit or not string.find(frame.unit, "nameplate", 1, true) then
-                            return
-                        end
-                        local parent = frame:GetParent()
-                        if parent and parent.UnitFrame == frame then
-                            restyleFromHook(parent)
-                        end
-                    end)
-                else
-                    if not frame or not frame.unit or not string.find(frame.unit, "nameplate", 1, true) then
-                        return
-                    end
-                    local parent = frame:GetParent()
-                    if parent and parent.UnitFrame == frame then
-                        restyleFromHook(parent)
-                    end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Re-apply to all on world enter (e.g., after loading screens)
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.5, function()
+                if nameplateComponent then
+                    applyToAllActive(nameplateComponent)
                 end
             end)
         end
     end
-    if (not plateAddHookInstalled) and _G.C_Timer and _G.C_Timer.After then
-        _G.C_Timer.After(1, ensureNamePlateHooks)
+end
+
+local function ensureNameplateEventFrame(component)
+    nameplateComponent = component
+    
+    if nameplateEventFrame then
+        return
     end
+    
+    nameplateEventFrame = CreateFrame("Frame")
+    nameplateEventFrame:SetScript("OnEvent", onNameplateEvent)
+    
+    -- Register events that indicate nameplate state may have changed
+    -- NAME_PLATE_UNIT_ADDED fires AFTER Blizzard's setup completes
+    nameplateEventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+    nameplateEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 end
 
 local function ApplyNameplateStyling(self)
-    ensureNamePlateHooks()
+    -- Ensure event frame is set up for automatic re-application
+    ensureNameplateEventFrame(self)
+    
+    -- Apply styling to all currently active nameplates
     applyToAllActive(self)
 end
 

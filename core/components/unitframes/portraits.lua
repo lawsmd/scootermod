@@ -671,12 +671,17 @@ do
 
 			local damageTextCfg = cfg.damageText or {}
 			
-			-- Hook SetTextHeight on the frame to intercept Blizzard's calls and override with our custom size
-			-- This prevents Blizzard from overriding our font size with SetTextHeight
+			-- Hook SetTextHeight to re-apply our custom font size after Blizzard changes it
+			-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
+			-- cause taint that spreads through the execution context, blocking protected functions
+			-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
 			if not damageTextFrame._scooterSetTextHeightHooked then
 				damageTextFrame._scooterSetTextHeightHooked = true
-				local originalSetTextHeight = damageTextFrame.SetTextHeight
-				damageTextFrame.SetTextHeight = function(self, height)
+				
+				hooksecurefunc(damageTextFrame, "SetTextHeight", function(self, height)
+					-- Guard against recursion (though we use SetFont, not SetTextHeight, to apply)
+					if self._scooterApplyingTextHeight then return end
+					
 					-- Check if we have custom settings
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
@@ -684,24 +689,20 @@ do
 						local damageTextCfg = cfg.damageText or {}
 						local customSize = tonumber(damageTextCfg.size)
 						if customSize then
-							-- Use our custom size instead of Blizzard's height
-							-- But we still need to call SetFont to set the actual font size
+							-- Re-apply our custom size using SetFont (overrides what Blizzard just set)
 							local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 							local customStyle = tostring(damageTextCfg.style or "OUTLINE")
+							self._scooterApplyingTextHeight = true
 							if addon.ApplyFontStyle then
 								addon.ApplyFontStyle(self, customFace, customSize, customStyle)
 							elseif self.SetFont then
 								pcall(self.SetFont, self, customFace, customSize, customStyle)
 							end
-							-- Don't call original SetTextHeight - SetFont handles the size
-							return
+							self._scooterApplyingTextHeight = nil
 						end
 					end
-					-- No custom settings, use original behavior
-					if originalSetTextHeight then
-						return originalSetTextHeight(self, height)
-					end
-				end
+					-- If no custom settings configured, Blizzard's size remains (hook does nothing)
+				end)
 			end
 			
 			-- Initialize baseline storage

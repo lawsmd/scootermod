@@ -53,7 +53,7 @@ end
 local function ResolveFrameByKey(key)
     key = tostring(key or ""):lower()
     local map = {
-        ab1 = "MainMenuBar",
+        ab1 = "MainActionBar",
         ab2 = "MultiBarBottomLeft",
         ab3 = "MultiBarBottomRight",
         ab4 = "MultiBarRight",

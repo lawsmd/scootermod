@@ -3,6 +3,19 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
+-- Store action bar state in a separate table to avoid writing addon data to Blizzard frames.
+-- Writing addon data directly to frames (e.g., bar._ScooterMouseoverComponent = self) can
+-- taint the frames, causing protected functions like SetShownBase() to be blocked.
+local actionBarState = {}  -- { [frame] = { component, baseOpacity, isMousedOver } }
+local actionBarHooked = {} -- { [frame] = true } - tracks which frames have had HookScript called
+
+local function getBarState(bar)
+    if not actionBarState[bar] then
+        actionBarState[bar] = {}
+    end
+    return actionBarState[bar]
+end
+
 local function ApplyActionBarStyling(self)
     local bar = _G[self.frameName]
     if not bar then return end
@@ -24,45 +37,51 @@ local function ApplyActionBarStyling(self)
 
     -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
     local mouseoverEnabled = self.db and self.db.mouseoverMode
+    local state = getBarState(bar)
+    
     if mouseoverEnabled then
-        -- Store the component reference and opacity values on the bar for script access
-        bar._ScooterMouseoverComponent = self
-        bar._ScooterBaseOpacity = appliedOp / 100
+        -- Store the component reference and opacity values in our separate table (NOT on the bar frame)
+        state.component = self
+        state.baseOpacity = appliedOp / 100
 
-        -- Helper functions for mouseover handling
+        -- Helper functions for mouseover handling (use closure to capture bar reference)
         local function onMouseEnter()
-            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
-                bar._ScooterIsMousedOver = true
+            local s = actionBarState[bar]
+            if s and s.component and s.component.db and s.component.db.mouseoverMode then
+                s.isMousedOver = true
                 if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
             end
         end
         local function onMouseLeave()
-            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+            local s = actionBarState[bar]
+            if s and s.component and s.component.db and s.component.db.mouseoverMode then
                 -- Only restore opacity if mouse is not over the bar or any of its buttons
                 local isOverBar = bar:IsMouseOver()
                 if not isOverBar then
-                    bar._ScooterIsMousedOver = false
-                    local restoreOp = bar._ScooterBaseOpacity or 1
+                    s.isMousedOver = false
+                    local restoreOp = s.baseOpacity or 1
                     if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
                 end
             end
         end
 
         -- Hook the bar frame itself (for gaps between buttons)
-        if not bar._ScooterMouseoverHooked then
+        if not actionBarHooked[bar] then
             bar:HookScript("OnEnter", onMouseEnter)
             bar:HookScript("OnLeave", onMouseLeave)
-            bar._ScooterMouseoverHooked = true
+            actionBarHooked[bar] = true
         end
 
         -- Hook each button on the bar for mouseover
         local function enumerateButtonsForMouseover()
             local buttons = {}
             local prefix
-            if self.frameName == "MainMenuBar" then
+            if self.frameName == "MainActionBar" then
                 prefix = "ActionButton"
             elseif self.frameName == "PetActionBar" then
                 prefix = "PetActionButton"
+            elseif self.frameName == "StanceBar" then
+                prefix = "StanceButton"
             else
                 prefix = tostring(self.frameName) .. "Button"
             end
@@ -75,32 +94,34 @@ local function ApplyActionBarStyling(self)
         end
 
         for _, btn in ipairs(enumerateButtonsForMouseover()) do
-            if not btn._ScooterMouseoverHooked then
+            if not actionBarHooked[btn] then
                 btn:HookScript("OnEnter", onMouseEnter)
                 btn:HookScript("OnLeave", onMouseLeave)
-                btn._ScooterMouseoverHooked = true
+                actionBarHooked[btn] = true
             end
         end
 
         -- If currently moused over, keep at 100%; otherwise use calculated opacity
-        if bar._ScooterIsMousedOver then
+        if state.isMousedOver then
             if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
         else
             if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
         end
     else
         -- Mouseover mode disabled - just apply the calculated opacity
-        bar._ScooterIsMousedOver = false
+        state.isMousedOver = false
         if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
     end
 
     local function enumerateButtons()
         local buttons = {}
         local prefix
-        if self.frameName == "MainMenuBar" then
+        if self.frameName == "MainActionBar" then
             prefix = "ActionButton"
         elseif self.frameName == "PetActionBar" then
             prefix = "PetActionButton"
+        elseif self.frameName == "StanceBar" then
+            prefix = "StanceButton"
         else
             prefix = tostring(self.frameName) .. "Button"
         end
@@ -164,24 +185,24 @@ local function ApplyActionBarStyling(self)
                     layer = "OVERLAY",
                     layerSublevel = 7,
                     expandX = -1,
-                    expandY = -1,
+                    expandY = 0,
                 })
                 local container = btn.ScootSquareBorderContainer or btn
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
                 if edges and edges.Right then
                     edges.Right:ClearAllPoints()
-                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, -1)
-                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 1)
+                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, 0)
+                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 0)
                 end
                 if edges and edges.Top then
                     edges.Top:ClearAllPoints()
-                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 1, -1)
-                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, -1)
+                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 1, 0)
+                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, 0)
                 end
                 if edges and edges.Bottom then
                     edges.Bottom:ClearAllPoints()
-                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 1, 1)
-                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 1)
+                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 1, 0)
+                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 0)
                 end
             else
                 addon.ApplyIconBorderStyle(btn, styleKey, {
@@ -357,55 +378,59 @@ local function ApplyMicroBarStyling(self)
 
     -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
     local mouseoverEnabled = self.db and self.db.mouseoverMode
+    local state = getBarState(bar)
+    
     if mouseoverEnabled then
-        -- Store the component reference and opacity values on the bar for script access
-        bar._ScooterMouseoverComponent = self
-        bar._ScooterBaseOpacity = appliedOp / 100
+        -- Store the component reference and opacity values in our separate table (NOT on the bar frame)
+        state.component = self
+        state.baseOpacity = appliedOp / 100
 
-        -- Helper functions for mouseover handling
+        -- Helper functions for mouseover handling (use closure to capture bar reference)
         local function onMouseEnter()
-            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
-                bar._ScooterIsMousedOver = true
+            local s = actionBarState[bar]
+            if s and s.component and s.component.db and s.component.db.mouseoverMode then
+                s.isMousedOver = true
                 if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
             end
         end
         local function onMouseLeave()
-            if bar._ScooterMouseoverComponent and bar._ScooterMouseoverComponent.db and bar._ScooterMouseoverComponent.db.mouseoverMode then
+            local s = actionBarState[bar]
+            if s and s.component and s.component.db and s.component.db.mouseoverMode then
                 -- Only restore opacity if mouse is not over the bar or any of its buttons
                 local isOverBar = bar:IsMouseOver()
                 if not isOverBar then
-                    bar._ScooterIsMousedOver = false
-                    local restoreOp = bar._ScooterBaseOpacity or 1
+                    s.isMousedOver = false
+                    local restoreOp = s.baseOpacity or 1
                     if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
                 end
             end
         end
 
         -- Hook the bar frame itself (for gaps between buttons)
-        if not bar._ScooterMouseoverHooked then
+        if not actionBarHooked[bar] then
             bar:HookScript("OnEnter", onMouseEnter)
             bar:HookScript("OnLeave", onMouseLeave)
-            bar._ScooterMouseoverHooked = true
+            actionBarHooked[bar] = true
         end
 
         -- Hook each micro button for mouseover
         for _, btn in ipairs(enumerateMicroButtons()) do
-            if not btn._ScooterMouseoverHooked then
+            if not actionBarHooked[btn] then
                 btn:HookScript("OnEnter", onMouseEnter)
                 btn:HookScript("OnLeave", onMouseLeave)
-                btn._ScooterMouseoverHooked = true
+                actionBarHooked[btn] = true
             end
         end
 
         -- If currently moused over, keep at 100%; otherwise use calculated opacity
-        if bar._ScooterIsMousedOver then
+        if state.isMousedOver then
             if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
         else
             if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
         end
     else
         -- Mouseover mode disabled - just apply the calculated opacity
-        bar._ScooterIsMousedOver = false
+        state.isMousedOver = false
         if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
     end
 end
@@ -456,6 +481,7 @@ addon:RegisterComponentInitializer(function(self)
         id = "stanceBar",
         name = "Stance Bar",
         frameName = "StanceBar",
+        maxButtons = 10,
         settings = {
             orientation = { type = "editmode", default = "H", ui = {
                 label = "Orientation", widget = "dropdown", values = { H = "Horizontal", V = "Vertical" }, section = "Positioning", order = 1
@@ -475,7 +501,20 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
+            barOpacity = { type = "addon", default = 100, ui = {
+                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+            }},
+            barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
+                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+            }},
+            barOpacityWithTarget = { type = "addon", default = 100, ui = {
+                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+            }},
+            mouseoverMode = { type = "addon", default = false, ui = {
+                label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
+            }},
         },
+        ApplyStyling = ApplyActionBarStyling,
     })
     self:RegisterComponent(stanceBar)
 
@@ -583,7 +622,7 @@ addon:RegisterComponentInitializer(function(self)
     end
 
     local defs = {
-        { "actionBar1", "Action Bar 1", "MainMenuBar",         "H", false },
+        { "actionBar1", "Action Bar 1", "MainActionBar",        "H", false },
         { "actionBar2", "Action Bar 2", "MultiBarBottomLeft",  "H", true },
         { "actionBar3", "Action Bar 3", "MultiBarBottomRight", "H", true },
         { "actionBar4", "Action Bar 4", "MultiBarRight",       "V", true },

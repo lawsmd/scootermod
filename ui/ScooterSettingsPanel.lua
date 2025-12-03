@@ -1588,7 +1588,6 @@ local function BuildCategories()
 		}},
         { type = "parent", key = "Scrolling Combat Text", label = "Scrolling Combat Text", collapsible = true, children = {
             { type = "child", key = "sctDamage", label = "Damage Numbers" },
-            { type = "child", key = "sctHealing", label = "Healing Numbers" },
         }},
 		{ type = "parent", key = "Tooltip", label = "Tooltip", collapsible = true, children = {
 			{ type = "child", key = "tooltip", label = "Tooltip" },

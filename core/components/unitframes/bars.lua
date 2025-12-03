@@ -510,16 +510,20 @@ do
             bar.ScooterRectFill = overlay
 
             -- Drive overlay width from the health bar's own value/size changes.
+            -- CRITICAL: Skip during combat to avoid any potential taint propagation.
             if _G.hooksecurefunc and not bar._ScootRectHooksInstalled then
                 bar._ScootRectHooksInstalled = true
                 _G.hooksecurefunc(bar, "SetValue", function(self)
+                    if InCombatLockdown and InCombatLockdown() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    if InCombatLockdown and InCombatLockdown() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 if bar.HookScript then
                     bar:HookScript("OnSizeChanged", function(self)
+                        if InCombatLockdown and InCombatLockdown() then return end
                         updateRectHealthOverlay(unit, self)
                     end)
                 end
@@ -740,12 +744,6 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
-            
-            -- For cast bars, hide the stock Background frame so our custom texture is visible
-            -- (PlayerCastingBarFrame.Background, TargetFrameSpellBar.Background, FocusFrameSpellBar.Background)
-            if barKind == "cast" and bar.Background then
-                if bar.Background.Hide then pcall(bar.Background.Hide, bar.Background) end
-            end
         else
             -- Default: always show our background with default black color
             -- We don't rely on Blizzard's stock Background texture since it's hidden by default
@@ -764,12 +762,6 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
-            
-            -- For cast bars with default texture, show the stock Background frame again
-            -- (PlayerCastingBarFrame.Background, TargetFrameSpellBar.Background, FocusFrameSpellBar.Background)
-            if barKind == "cast" and bar.Background then
-                if bar.Background.Show then pcall(bar.Background.Show, bar.Background) end
-            end
         end
     end
 
@@ -940,6 +932,9 @@ do
             if unit == "Player" and not hb._ScootHealthColorHooked and _G.hooksecurefunc then
                 hb._ScootHealthColorHooked = true
                 _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
+                    -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
+                    -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
+                    if InCombatLockdown and InCombatLockdown() then return end
                     local db = addon and addon.db and addon.db.profile
                     if not db then return end
                     db.unitFrames = db.unitFrames or {}
@@ -1035,6 +1030,9 @@ do
                         if self._ScootUFInternalTextureWrite then
                             return
                         end
+                        -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
+                        -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
+                        if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
                         db.unitFrames = db.unitFrames or {}
@@ -1052,6 +1050,9 @@ do
                 if not pb._ScootPowerColorHooked then
                     pb._ScootPowerColorHooked = true
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
+                        -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
+                        -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
+                        if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
                         db.unitFrames = db.unitFrames or {}
@@ -1438,14 +1439,9 @@ do
                         if tex and mask and tex.RemoveMaskTexture then
                             pcall(tex.RemoveMaskTexture, tex, mask)
                         end
-
-                        -- Force StatusBar to refresh its texture
-                        if pb and pb.GetValue and pb.SetValue then
-                            local currentValue = pb:GetValue()
-                            if currentValue then
-                                pcall(pb.SetValue, pb, currentValue)
-                            end
-                        end
+                        -- NOTE: Do NOT call SetValue to "refresh" the texture - it taints the protected StatusBar
+                        -- and causes "blocked from an action" errors when Blizzard later calls Show().
+                        -- The StatusBar refreshes automatically when its dimensions change.
                     elseif pct < 100 then
 						-- Narrow the status bar frame
 						if pb and pb.SetWidth and pb._ScootUFOrigWidth then
@@ -1613,14 +1609,9 @@ do
 							if Util and Util.ApplyFullPowerSpikeScale then
 								Util.ApplyFullPowerSpikeScale(pb, scaleY)
 							end
-						
-						    -- Force StatusBar to refresh its texture
-						    if pb and pb.GetValue and pb.SetValue then
-							    local currentValue = pb:GetValue()
-							    if currentValue then
-								    pcall(pb.SetValue, pb, currentValue)
-							    end
-						    end
+						    -- NOTE: Do NOT call SetValue to "refresh" the texture - it taints the protected StatusBar
+						    -- and causes "blocked from an action" errors when Blizzard later calls Show().
+						    -- The StatusBar refreshes automatically when its dimensions change.
 					    else
 						    -- Restore (already done above in the restore-first step)
 						    -- Re-apply mask ONLY if both Width and Height are at 100%

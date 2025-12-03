@@ -2562,6 +2562,38 @@ local function createComponentRenderer(componentId)
                                                 end
                                             end
                                         end
+                                        -- Clean up or create the PRD-specific info icon for Minimize Vertical Movement
+                                        if frame.ScooterLockVerticalInfoIcon and frame.ScooterLockVerticalInfoIcon._ScooterIsPRDIcon and not (component.id == "prdGlobal" and settingId == "staticPosition") then
+                                            frame.ScooterLockVerticalInfoIcon:Hide()
+                                            frame.ScooterLockVerticalInfoIcon:SetParent(nil)
+                                            frame.ScooterLockVerticalInfoIcon = nil
+                                        end
+                                        if component.id == "prdGlobal" and settingId == "staticPosition" and panel and panel.CreateInfoIconForLabel then
+                                            local labelFS = frame.Text or (cb and cb.Text)
+                                            if labelFS then
+                                                if not frame.ScooterLockVerticalInfoIcon then
+                                                    local tooltipText = "Greatly reduces PRD vertical movement as your camera angle changes. Use the Y Offset slider to set the preferred screen position. Note: A small amount of movement at one specific camera angle is unavoidable due to Blizzard's 3D-to-screen projection system."
+                                                    frame.ScooterLockVerticalInfoIcon = panel.CreateInfoIconForLabel(labelFS, tooltipText, 5, 0, 32)
+                                                    if frame.ScooterLockVerticalInfoIcon then
+                                                        frame.ScooterLockVerticalInfoIcon._ScooterIsPRDIcon = true
+                                                    end
+                                                end
+                                                local function repositionLockVerticalIcon()
+                                                    local icon = frame.ScooterLockVerticalInfoIcon
+                                                    local lbl = frame.Text or (cb and cb.Text)
+                                                    if icon and lbl then
+                                                        icon:ClearAllPoints()
+                                                        icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+                                                        icon:Show()
+                                                    end
+                                                end
+                                                if C_Timer and C_Timer.After then
+                                                    C_Timer.After(0, repositionLockVerticalIcon)
+                                                else
+                                                    repositionLockVerticalIcon()
+                                                end
+                                            end
+                                        end
                                         -- Clean up or create the Action Bar-specific info icon for Mouseover Mode
                                         local isActionBarComponent = component.id and component.id:match("^actionBar%d$")
                                         if frame.ScooterMouseoverModeInfoIcon and frame.ScooterMouseoverModeInfoIcon._ScooterIsActionBarIcon and not (isActionBarComponent and settingId == "mouseoverMode") then

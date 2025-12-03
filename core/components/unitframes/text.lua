@@ -278,6 +278,9 @@ do
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
     function addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
+        -- CRITICAL: Do NOT modify Blizzard FontStrings during combat - calling SetShown on
+        -- StatusBar children (LeftText, RightText) taints the parent and causes "blocked from an action" errors.
+        if InCombatLockdown and InCombatLockdown() then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         db.unitFrames = db.unitFrames or {}
@@ -626,6 +629,9 @@ do
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
 	function addon.ApplyUnitFramePowerTextVisibilityFor(unit)
+        -- CRITICAL: Do NOT modify Blizzard FontStrings during combat - calling SetShown on
+        -- StatusBar children (LeftText, RightText) taints the parent and causes "blocked from an action" errors.
+        if InCombatLockdown and InCombatLockdown() then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         db.unitFrames = db.unitFrames or {}
@@ -1006,38 +1012,38 @@ do
 		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
 		
 		-- For Player level text, Blizzard uses SetVertexColor (not SetTextColor!) which requires special handling
-		-- Blizzard constantly resets the level color, so we intercept SetVertexColor calls
-		if unit == "Player" and levelFS and cfg.textLevel and cfg.textLevel.color then
-			-- Install a hook directly on the frame's SetVertexColor to override Blizzard's calls
+		-- Blizzard constantly resets the level color, so we use hooksecurefunc to re-apply our custom color
+		-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
+		-- cause taint that spreads through the execution context, blocking protected functions
+		-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
+		if unit == "Player" and levelFS then
+			-- Install hook once (hooksecurefunc runs AFTER Blizzard's SetVertexColor)
 			if not levelFS._scooterVertexColorHooked then
 				levelFS._scooterVertexColorHooked = true
-				levelFS._scooterOrigSetVertexColor = levelFS.SetVertexColor
 				
-				levelFS.SetVertexColor = function(self, r, g, b, a)
+				hooksecurefunc(levelFS, "SetVertexColor", function(self, r, g, b, a)
+					-- Guard against recursion since we call SetVertexColor inside the hook
+					if self._scooterApplyingVertexColor then return end
+					
 					-- Check if we have a custom color configured
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
 						local c = db.unitFrames.Player.textLevel.color
-						-- Use our custom color instead of Blizzard's
-						levelFS._scooterOrigSetVertexColor(self, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-					else
-						-- No custom color, use Blizzard's
-						levelFS._scooterOrigSetVertexColor(self, r, g, b, a)
+						-- Re-apply our custom color (overrides what Blizzard just set)
+						self._scooterApplyingVertexColor = true
+						pcall(self.SetVertexColor, self, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+						self._scooterApplyingVertexColor = nil
 					end
-				end
+					-- If no custom color configured, Blizzard's color remains (hook does nothing)
+				end)
 			end
 			
-		-- Apply our color immediately (use Blizzard's default yellow)
-		local c = cfg.textLevel.color or {1.0,0.82,0.0,1}
-			if levelFS._scooterOrigSetVertexColor then
-				pcall(levelFS._scooterOrigSetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-			end
-		elseif unit == "Player" and levelFS and levelFS._scooterVertexColorHooked then
-			-- Custom color disabled, restore original behavior
-			if levelFS._scooterOrigSetVertexColor then
-				levelFS.SetVertexColor = levelFS._scooterOrigSetVertexColor
-				levelFS._scooterVertexColorHooked = nil
-				levelFS._scooterOrigSetVertexColor = nil
+			-- Apply our color immediately if configured
+			if cfg.textLevel and cfg.textLevel.color then
+				local c = cfg.textLevel.color
+				levelFS._scooterApplyingVertexColor = true
+				pcall(levelFS.SetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+				levelFS._scooterApplyingVertexColor = nil
 			end
 		end
 	end

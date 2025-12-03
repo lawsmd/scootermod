@@ -124,58 +124,83 @@ local function ensurePRDCleanup()
     return currentPlayerPlate
 end
 
-local function scheduleApply(component)
+-- PRD re-application via events.
+--
+-- CRITICAL: We cannot use hooksecurefunc on any nameplate-related functions because
+-- hook callbacks that run during Blizzard's nameplate setup chain taint the execution
+-- context, causing SetTargetClampingInsets() to be blocked.
+--
+-- Instead, we use EVENT HANDLERS to re-apply styling. Events fire in separate execution
+-- contexts and don't cause taint. We use:
+-- - NAME_PLATE_UNIT_ADDED: Fires when a nameplate appears (after setup completes)
+-- - PLAYER_TARGET_CHANGED: PRD may move when targeting changes
+-- - PLAYER_REGEN_DISABLED/ENABLED: PRD visibility often changes with combat state
+--
+-- We use C_Timer.After(0, ...) to defer styling to the next frame, ensuring we're
+-- completely outside any Blizzard execution chain.
+
+local prdEventFrame = nil
+local prdRegisteredComponents = {}
+
+local function scheduleComponentApply(component)
     if not component or not component.ApplyStyling then
         return
     end
-    -- NOTE: We DO allow styling during combat because most operations (SetAlpha,
-    -- SetTexture, borders, sizing) are cosmetic and not protected. Only specific
-    -- operations like C_CVar.SetCVar are protected and are guarded individually
-    -- within the ApplyStyling functions themselves.
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if component and component.ApplyStyling then
                 component:ApplyStyling()
             end
         end)
-    else
-        component:ApplyStyling()
     end
 end
 
+local function onPRDEvent(self, event, ...)
+    -- Defer all styling to next frame to ensure we're outside any execution chain
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            for component, _ in pairs(prdRegisteredComponents) do
+                if component and component.ApplyStyling then
+                    component:ApplyStyling()
+                end
+            end
+        end)
+    end
+end
+
+local function ensureEventFrame()
+    if prdEventFrame then
+        return prdEventFrame
+    end
+    
+    prdEventFrame = CreateFrame("Frame")
+    prdEventFrame:SetScript("OnEvent", onPRDEvent)
+    
+    -- Register events that indicate PRD state may have changed
+    -- These fire AFTER Blizzard's nameplate setup completes
+    prdEventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+    prdEventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+    prdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+    prdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    prdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    prdEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    prdEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    
+    return prdEventFrame
+end
+
 local function ensureHooks(component)
+    -- Register component for event-based re-application
     if component._hooksInstalled then
         return
     end
     component._hooksInstalled = true
-
-    if hooksecurefunc then
-        if type(NamePlateDriverFrame) == "table" then
-            hooksecurefunc(NamePlateDriverFrame, "SetupClassNameplateBars", function()
-                -- scheduleApply already defers via C_Timer.After, but wrap in another
-                -- defer to ensure we don't taint the execution context at all
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        scheduleApply(component)
-                    end)
-                else
-                    scheduleApply(component)
-                end
-            end)
-        end
-        if type(DefaultCompactNamePlatePlayerFrameAnchor) == "function" then
-            hooksecurefunc("DefaultCompactNamePlatePlayerFrameAnchor", function()
-                -- Defer to avoid tainting execution context
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        scheduleApply(component)
-                    end)
-                else
-                    scheduleApply(component)
-                end
-            end)
-        end
-    end
+    
+    -- Set up the event frame (shared across all PRD components)
+    ensureEventFrame()
+    
+    -- Register this component for event-driven updates
+    prdRegisteredComponents[component] = true
 end
 
 local MAX_OFFSET = 500
@@ -195,208 +220,26 @@ local defaultTopInset = (GetCVarDefault and GetCVarDefault("nameplateSelfTopInse
 local defaultBottomInset = (GetCVarDefault and GetCVarDefault("nameplateSelfBottomInset")) or 0.2
 
 
--- Power Bar dimension persistence hooks.
+-- Power Bar height management.
 --
--- Problem: Blizzard's SetupClassNameplateBars() sets BOTH TOPLEFT and TOPRIGHT anchor points on the power bar:
---   frame:SetPoint("TOPLEFT", HealthBarsContainer, "BOTTOMLEFT", 0, 0)
---   frame:SetPoint("TOPRIGHT", HealthBarsContainer, "BOTTOMRIGHT", 0, 0)
--- 
--- When a frame has both LEFT and RIGHT anchors, its width is determined by the anchor system - 
--- the frame stretches to fill the space between the two anchor points. This happens continuously
--- during layout passes, overriding any explicit SetWidth() calls we make.
+-- CRITICAL: We no longer hook OnSizeChanged or any other nameplate-related methods.
 --
--- Solution: TAKE FULL CONTROL by removing the dual-anchor system entirely.
--- Instead of fighting Blizzard's anchors with SetWidth, we:
--- 1. Hook SetupClassNameplateBars to immediately convert from dual-anchor to single-anchor
--- 2. Clear all points and re-anchor with ONLY TOP (single point) + explicit SetWidth/SetHeight
--- 3. Hook SetPoint (via hooksecurefunc, NOT blocking) to immediately re-apply single-anchor
---    after any horizontal anchor is set - this catches anchor changes outside SetupClassNameplateBars
--- 4. Keep the OnSizeChanged hooks as backup for height persistence
+-- The problem: ANY hooksecurefunc callback that runs during Blizzard's nameplate setup
+-- chain (including OnSizeChanged which fires when SetShown() is called) will taint the
+-- execution context, causing SetTargetClampingInsets() to be blocked.
 --
--- IMPORTANT: We must NOT block SetPoint calls, as that causes the frame to have no anchors
--- momentarily, making it disappear. Instead, we let Blizzard set its anchors, then immediately
--- override with our single-point anchor.
-local powerBarHookInstalled = false
-local setupClassNameplateBarsHookInstalled = false
-local setPointHookInstalled = false
-
--- Helper function to re-establish single-point anchoring with explicit dimensions
--- CRITICAL: This function must be safe to call at any time and must never leave the frame
--- without anchors if it fails partway through.
-local function applyPowerBarSinglePointAnchor(frame, component)
-    if not frame or not component or not component.db then
-        return false
-    end
-
-    local storedWidth = component.db.barWidth
-    local storedHeight = component.db.barHeight
-
-    if not storedWidth or storedWidth < MIN_POWER_BAR_WIDTH then
-        return false
-    end
-    if not storedHeight or storedHeight < MIN_POWER_BAR_HEIGHT then
-        storedHeight = MIN_POWER_BAR_HEIGHT
-    end
-
-    -- Find the health container to anchor to
-    local plate = getPlayerPlate()
-    if not plate or not plate.UnitFrame or not plate.UnitFrame.HealthBarsContainer then
-        -- IMPORTANT: If we can't find the container, do NOT clear points - leave existing anchors
-        -- This prevents the frame from disappearing
-        return false
-    end
-
-    local container = plate.UnitFrame.HealthBarsContainer
-    if container.IsForbidden and container:IsForbidden() then
-        return false
-    end
-
-    frame._ScooterModApplyingDimensions = true
-
-    -- Clear all points and set ONLY a single TOP anchor (no left/right stretching)
-    local ok1 = pcall(frame.ClearAllPoints, frame)
-    if not ok1 then
-        frame._ScooterModApplyingDimensions = nil
-        return false
-    end
-
-    -- Use TOP anchor centered on container - no horizontal stretching
-    local ok2 = pcall(frame.SetPoint, frame, "TOP", container, "BOTTOM", 0, 0)
-    if not ok2 then
-        -- If SetPoint fails, we need to restore SOME anchor to prevent disappearing
-        -- Try to re-anchor with Blizzard's default approach as fallback
-        pcall(frame.SetPoint, frame, "TOPLEFT", container, "BOTTOMLEFT", 0, 0)
-        pcall(frame.SetPoint, frame, "TOPRIGHT", container, "BOTTOMRIGHT", 0, 0)
-        frame._ScooterModApplyingDimensions = nil
-        return false
-    end
-
-    -- Now set explicit dimensions - these won't be overridden since we only have one anchor point
-    pcall(frame.SetWidth, frame, storedWidth)
-    pcall(frame.SetHeight, frame, storedHeight)
-
-    frame._ScooterModApplyingDimensions = nil
-    return true
-end
+-- Instead, power bar height is applied directly via SetHeight() in applyPowerOffsets().
+-- This height may be reset by Blizzard during spec changes, instance transitions, etc.,
+-- but that's preferable to causing taint errors. Users can re-apply via settings or /reload.
+--
+-- NOTE: Width control was removed entirely because Blizzard's SetupClassNameplateBars()
+-- continuously re-applies TOPLEFT+TOPRIGHT anchors which control width via the layout system.
+-- Power bar width now automatically follows the health bar width.
 
 local function ensurePowerBarHooks(component)
-    local frame = _G.ClassNameplateManaBarFrame
-    if not frame then
-        return
-    end
-
-    -- Always update the component reference (important for profile switches)
-    frame._ScooterModPowerComponent = component
-
-    -- Layer 1: Hook OnSizeChanged MIXIN METHOD for height persistence
-    if not powerBarHookInstalled then
-        powerBarHookInstalled = true
-
-        if hooksecurefunc and frame.OnSizeChanged then
-            hooksecurefunc(frame, "OnSizeChanged", function(self)
-                if self._ScooterModApplyingDimensions then
-                    return
-                end
-
-                local comp = self._ScooterModPowerComponent
-                if not comp or not comp.db then
-                    return
-                end
-
-                local storedHeight = comp.db.barHeight
-                if not storedHeight or storedHeight < MIN_POWER_BAR_HEIGHT then
-                    return
-                end
-
-                local currentHeight = self:GetHeight()
-                if currentHeight and math.abs(currentHeight - storedHeight) < 0.5 then
-                    return
-                end
-
-                self._ScooterModApplyingDimensions = true
-                pcall(self.SetHeight, self, storedHeight)
-                self._ScooterModApplyingDimensions = nil
-            end)
-        end
-    end
-
-    -- Layer 2: Hook SetupClassNameplateBars - convert dual-anchor to single-anchor
-    -- This is the KEY fix: after Blizzard sets TOPLEFT+TOPRIGHT, we clear and re-anchor with just TOP
-    if not setupClassNameplateBarsHookInstalled then
-        setupClassNameplateBarsHookInstalled = true
-
-        if hooksecurefunc and NamePlateDriverFrame and type(NamePlateDriverFrame.SetupClassNameplateBars) == "function" then
-            hooksecurefunc(NamePlateDriverFrame, "SetupClassNameplateBars", function()
-                -- CRITICAL: Defer to avoid tainting Blizzard's nameplate setup chain.
-                -- Accessing _ScooterModPowerComponent and comp.db taints execution;
-                -- if we run synchronously, protected functions like SetTargetClampingInsets()
-                -- called in the same frame/tick will be blocked.
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        local powerFrame = _G.ClassNameplateManaBarFrame
-                        if not powerFrame then
-                            return
-                        end
-
-                        local comp = powerFrame._ScooterModPowerComponent
-                        if not comp or not comp.db then
-                            return
-                        end
-
-                        if powerFrame._ScooterModApplyingDimensions then
-                            return
-                        end
-
-                        -- Only apply if we have a custom width set
-                        local storedWidth = comp.db.barWidth
-                        if not storedWidth or storedWidth < MIN_POWER_BAR_WIDTH then
-                            return
-                        end
-
-                        -- Convert from dual-anchor (TOPLEFT+TOPRIGHT) to single-anchor (TOP) + explicit width
-                        applyPowerBarSinglePointAnchor(powerFrame, comp)
-                    end)
-                end
-            end)
-        end
-    end
-
-    -- Layer 3: Hook SetPoint via hooksecurefunc (NOT replacing/blocking)
-    -- After Blizzard sets any horizontal anchor, immediately re-apply our single-anchor
-    -- This catches anchor changes that happen outside SetupClassNameplateBars
-    -- IMPORTANT: Using hooksecurefunc means Blizzard's call completes FIRST, so the frame
-    -- always has valid anchors - we just override them immediately after
-    if not setPointHookInstalled then
-        setPointHookInstalled = true
-
-        if hooksecurefunc then
-            hooksecurefunc(frame, "SetPoint", function(self, point, ...)
-                -- If we're applying our own dimensions, skip
-                if self._ScooterModApplyingDimensions then
-                    return
-                end
-
-                -- Check if this is a horizontal anchor that would enable stretching
-                local pointUpper = point and string.upper(point) or ""
-                local isHorizontalAnchor = pointUpper == "TOPLEFT" or pointUpper == "TOPRIGHT" or
-                                           pointUpper == "BOTTOMLEFT" or pointUpper == "BOTTOMRIGHT" or
-                                           pointUpper == "LEFT" or pointUpper == "RIGHT"
-
-                if not isHorizontalAnchor then
-                    return
-                end
-
-                -- If Blizzard just set a horizontal anchor and we have custom width, override
-                local comp = self._ScooterModPowerComponent
-                if comp and comp.db and comp.db.barWidth and comp.db.barWidth >= MIN_POWER_BAR_WIDTH then
-                    -- Re-apply our single-anchor setup immediately
-                    -- Note: Blizzard's SetPoint already completed, so frame has valid anchors
-                    -- We're just overriding them now
-                    applyPowerBarSinglePointAnchor(self, comp)
-                end
-            end)
-        end
-    end
+    -- INTENTIONALLY EMPTY: No hooks are installed to avoid taint.
+    -- Height is applied directly in applyPowerOffsets().
+    -- See comment block above for explanation.
 end
 
 local function clampOffsetValue(value)
@@ -983,7 +826,6 @@ local function applyPowerOffsets(component)
         return
     end
 
-    local offsetX, offsetY = resolveGlobalOffsets()
     local scaleMultiplier = resolveGlobalScaleMultiplier()
 
     local function safeCall(func, ...)
@@ -994,46 +836,17 @@ local function applyPowerOffsets(component)
         return ok
     end
 
-    if not safeCall(frame.ClearAllPoints, frame) then
-        return
+    -- NOTE: We intentionally do NOT manage anchors or width for the power bar.
+    -- Blizzard's SetupClassNameplateBars() continuously re-applies TOPLEFT+TOPRIGHT anchors
+    -- which control width via the anchor system. Fighting this causes visible flickering.
+    -- Width now follows the health bar automatically via Blizzard's anchoring.
+
+    -- Clear any stored barWidth from old profiles to ensure clean state
+    if component.db and component.db.barWidth then
+        component.db.barWidth = nil
     end
 
-    local relX, relY = getAggregateOffsetsForFrame(container)
-    local baseX = -relX
-    local baseY = -relY
-    local healthWidthDelta = container._ScooterModWidthDelta or 0
-
-    local baseWidth = frame._ScooterModBaseWidth
-    if not baseWidth or baseWidth <= 0 then
-        baseWidth = (frame.GetWidth and frame:GetWidth()) or 0
-        if not baseWidth or baseWidth <= 0 then
-            baseWidth = (container.GetWidth and container:GetWidth()) or 0
-        end
-        if not baseWidth or baseWidth <= 0 then
-            baseWidth = 200
-        end
-        frame._ScooterModBaseWidth = baseWidth
-    end
-
-    if component.settings and component.settings.barWidth then
-        local defaultWidth = math.floor(baseWidth + 0.5)
-        if component.settings.barWidth.default ~= defaultWidth then
-            component.settings.barWidth.default = defaultWidth
-        end
-    end
-
-    local storedWidth = component.db and component.db.barWidth
-    if not storedWidth or storedWidth < MIN_POWER_BAR_WIDTH then
-        storedWidth = component.settings and component.settings.barWidth and component.settings.barWidth.default or baseWidth
-    end
-    storedWidth = clampValue(math.floor((storedWidth or baseWidth) + 0.5), MIN_POWER_BAR_WIDTH, MAX_POWER_BAR_WIDTH)
-    if component.db then
-        component.db.barWidth = storedWidth
-    end
-    local desiredWidth = storedWidth
-    local powerWidthDelta = (desiredWidth - baseWidth) * 0.5
-    frame._ScooterModWidthDelta = powerWidthDelta
-
+    -- Height management - this works because OnSizeChanged hook re-applies our height
     local baseHeight = frame._ScooterModBaseHeight
     if not baseHeight or baseHeight <= 0 then
         baseHeight = (frame.GetHeight and frame:GetHeight()) or 0
@@ -1060,30 +873,8 @@ local function applyPowerOffsets(component)
     end
     local desiredHeight = storedHeight
 
-    local baseLeft = baseX + offsetX + healthWidthDelta
-    local baseRight = baseX + offsetX - healthWidthDelta
-    local leftOffset = baseLeft - powerWidthDelta
-    local rightOffset = baseRight + powerWidthDelta
-
-    local setter = PixelUtil and PixelUtil.SetPoint
-    if setter then
-        if not safeCall(setter, frame, "TOPLEFT", container, "BOTTOMLEFT", leftOffset, baseY + offsetY) then
-            return
-        end
-        if not safeCall(setter, frame, "TOPRIGHT", container, "BOTTOMRIGHT", rightOffset, baseY + offsetY) then
-            return
-        end
-    else
-        if not safeCall(frame.SetPoint, frame, "TOPLEFT", container, "BOTTOMLEFT", leftOffset, baseY + offsetY) then
-            return
-        end
-        if not safeCall(frame.SetPoint, frame, "TOPRIGHT", container, "BOTTOMRIGHT", rightOffset, baseY + offsetY) then
-            return
-        end
-    end
-
+    -- Only set height - width is controlled by Blizzard's anchor system
     safeCall(frame.SetHeight, frame, desiredHeight)
-    safeCall(frame.SetWidth, frame, desiredWidth)
 
     if Util and Util.ApplyFullPowerSpikeScale then
         local spikeScale = 1
@@ -1279,15 +1070,14 @@ addon:RegisterComponentInitializer(function(self)
         frameName = nil,
         settings = {
             staticPosition = { type = "addon", default = false, ui = {
-                label = "Lock Vertical Position", widget = "checkbox", section = "Positioning", order = 1,
-                tooltip = "Prevents the PRD from moving up and down as your camera angle changes."
+                label = "Minimize Vertical Movement", widget = "checkbox", section = "Positioning", order = 1
             }},
             -- Y Offset slider: Displayed as -50 to 50, stored internally as -50 to 50.
             -- When applying CVars, we transform: (value + 50) / 100 to get the 0-1 range.
             -- -50 = bottom of screen, 0 = center, 50 = top of screen.
             screenPosition = { type = "addon", default = 0, ui = {
                 label = "Y Offset", widget = "slider", min = -50, max = 50, step = 1, section = "Positioning", order = 2, hidden = true,
-                tooltip = "Sets the fixed vertical position on screen (-50 = Bottom, 0 = Center, 50 = Top)."
+                tooltip = "Sets the preferred vertical position on screen (-50 = Bottom, 0 = Center, 50 = Top)."
             }},
             positionX = { type = "addon", default = 0, ui = {
                 label = "X Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 3
@@ -1326,7 +1116,7 @@ addon:RegisterComponentInitializer(function(self)
         
         -- Apply the CVars
         if isStatic then
-            -- Calculate a ~12% band centered on the user's choice
+            -- Calculate a very narrow band to effectively "pin" the PRD to a fixed position.
             -- Screen position is stored as -50 to 50 (bottom to top), with 0 = center.
             -- Transform to 0-1 range: (value + 50) / 100
             local posPercent = ((db.screenPosition or 0) + 50) / 100
@@ -1335,13 +1125,15 @@ addon:RegisterComponentInitializer(function(self)
             -- TopInset: 0 = Top edge, 1 = Bottom edge
             -- BottomInset: 0 = Bottom edge, 1 = Top edge
             
-            -- We want a gap of ~0.12 total to hold the nameplate
-            local bandHeight = 0.12
+            -- Use an extremely narrow band (0.1% of screen) to effectively pin the position.
+            -- The previous 12% band allowed too much camera-angle-based movement.
+            local bandHeight = 0.001
             local halfBand = bandHeight / 2
             
-            -- Clamp center so the band doesn't go off screen
-            if posPercent < halfBand then posPercent = halfBand end
-            if posPercent > (1 - halfBand) then posPercent = 1 - halfBand end
+            -- Clamp center so the band doesn't go off screen (with a small minimum margin)
+            local minMargin = 0.05  -- 5% from edges to keep PRD visible
+            if posPercent < minMargin then posPercent = minMargin end
+            if posPercent > (1 - minMargin) then posPercent = 1 - minMargin end
             
             -- Calculate insets
             local bottomInset = posPercent - halfBand
@@ -1430,12 +1222,11 @@ addon:RegisterComponentInitializer(function(self)
         supportsEmptyStyleSection = true,
         supportsEmptyVisibilitySection = true,
         settings = {
-            barWidth = { type = "addon", default = MIN_POWER_BAR_WIDTH, ui = {
-                label = "Bar Width", widget = "slider", min = MIN_POWER_BAR_WIDTH, max = MAX_POWER_BAR_WIDTH, step = 1, section = "Sizing", order = 1, disableTextInput = true,
-                tooltip = "Adjusts the power bar width."
-            }},
+            -- NOTE: Bar Width was removed because Blizzard's SetupClassNameplateBars() continuously
+            -- re-applies dual anchors (TOPLEFT+TOPRIGHT) which override any custom width. This caused
+            -- visible flickering during combat transitions. Width is now controlled by Health Bar width.
             barHeight = { type = "addon", default = MIN_POWER_BAR_HEIGHT, ui = {
-                label = "Bar Height", widget = "slider", min = MIN_POWER_BAR_HEIGHT, max = MAX_POWER_BAR_HEIGHT, step = 1, section = "Sizing", order = 2, disableTextInput = true,
+                label = "Bar Height", widget = "slider", min = MIN_POWER_BAR_HEIGHT, max = MAX_POWER_BAR_HEIGHT, step = 1, section = "Sizing", order = 1, disableTextInput = true,
                 tooltip = "Adjusts the power bar height."
             }},
             styleForegroundTexture = { type = "addon", default = "default", ui = { hidden = true }},

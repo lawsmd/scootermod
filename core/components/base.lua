@@ -12,6 +12,33 @@ local UNIT_FRAME_CATEGORY_TO_UNIT = {
     ufPet    = "Pet",
 }
 
+-- Combat watcher for FullPowerFrame pending reapplies.
+-- When hooks fire during combat (e.g., druid form change), we defer reapplication
+-- to avoid tainting the execution context.
+local fullPowerFrameCombatWatcher = nil
+local pendingFullPowerFrames = {}
+
+local function ensureFullPowerFrameCombatWatcher()
+    if fullPowerFrameCombatWatcher then return end
+    fullPowerFrameCombatWatcher = CreateFrame("Frame")
+    fullPowerFrameCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    fullPowerFrameCombatWatcher:SetScript("OnEvent", function()
+        for frame in pairs(pendingFullPowerFrames) do
+            if frame and frame._ScootFullPowerPendingReapply and frame._ScootFullPowerApplyState then
+                frame._ScootFullPowerPendingReapply = nil
+                frame._ScootFullPowerApplyState()
+            end
+            pendingFullPowerFrames[frame] = nil
+        end
+    end)
+end
+
+local function queueFullPowerFrameReapply(fullPowerFrame)
+    if not fullPowerFrame then return end
+    ensureFullPowerFrameCombatWatcher()
+    pendingFullPowerFrames[fullPowerFrame] = true
+end
+
 local function CopyDefaultValue(value)
     if type(value) ~= "table" then
         return value
@@ -322,11 +349,30 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
         fullPowerFrame._ScootFullPowerHidden = false
     end
     fullPowerFrame._ScootFullPowerApplyState = applyState
-    applyState()
+    -- CRITICAL: Guard against combat. If ApplyFullPowerSpikeScale is called during combat
+    -- (e.g., via PRD ApplyStyling triggered by form change), calling applyState() would
+    -- modify frames (SetSize, SetAlpha, etc.) and taint the execution context, causing
+    -- SetTargetClampingInsets() to be blocked. Defer to after combat.
+    if InCombatLockdown and InCombatLockdown() then
+        fullPowerFrame._ScootFullPowerPendingReapply = true
+        queueFullPowerFrameReapply(fullPowerFrame)
+    else
+        applyState()
+    end
 
     if type(hooksecurefunc) == "function" and not fullPowerFrame._ScootFullPowerHooks then
         fullPowerFrame._ScootFullPowerHooks = true
+        -- CRITICAL: Guard against combat to prevent taint. When these hooks fire during
+        -- Blizzard's nameplate setup chain (e.g., druid form change in combat), any frame
+        -- modifications (SetSize, SetAlpha, etc.) taint the execution context, causing
+        -- SetTargetClampingInsets() to be blocked. See DEBUG.md for details.
         local function reapply()
+            if InCombatLockdown and InCombatLockdown() then
+                -- Defer to after combat - queue for PLAYER_REGEN_ENABLED
+                fullPowerFrame._ScootFullPowerPendingReapply = true
+                queueFullPowerFrameReapply(fullPowerFrame)
+                return
+            end
             applyState()
         end
         if fullPowerFrame.Initialize then
@@ -359,6 +405,14 @@ local function SetFullPowerSpikeHidden(ownerFrame, hidden)
         return
     end
     fullPowerFrame._ScootFullPowerHidden = not not hidden
+    -- CRITICAL: Guard against combat. Stopping animations and calling applyState() during combat
+    -- would taint the execution context, causing SetTargetClampingInsets() to be blocked.
+    if InCombatLockdown and InCombatLockdown() then
+        -- Just store the hidden state; it will be applied after combat via queued reapply
+        fullPowerFrame._ScootFullPowerPendingReapply = true
+        queueFullPowerFrameReapply(fullPowerFrame)
+        return
+    end
     if fullPowerFrame._ScootFullPowerHidden then
         if fullPowerFrame.SpikeFrame and fullPowerFrame.SpikeFrame.SpikeAnim and fullPowerFrame.SpikeFrame.SpikeAnim.Stop then
             pcall(fullPowerFrame.SpikeFrame.SpikeAnim.Stop, fullPowerFrame.SpikeFrame.SpikeAnim)
@@ -394,38 +448,49 @@ local function SetPowerFeedbackHidden(ownerFrame, hidden)
         return
     end
     feedbackFrame._ScootPowerFeedbackHidden = not not hidden
-    if feedbackFrame._ScootPowerFeedbackHidden then
+    -- CRITICAL: Guard against combat. Stopping animations and calling Hide() during combat
+    -- would taint the execution context, causing SetTargetClampingInsets() to be blocked.
+    -- The hook installation below is still safe (hooksecurefunc doesn't cause taint),
+    -- but the actual hiding must be deferred.
+    local canModifyNow = not (InCombatLockdown and InCombatLockdown())
+    if feedbackFrame._ScootPowerFeedbackHidden and canModifyNow then
         -- Stop any running animations and hide the frame
         if feedbackFrame.StopFeedbackAnim then
             pcall(feedbackFrame.StopFeedbackAnim, feedbackFrame)
         end
         -- Hide the textures that make up the feedback animation
         if feedbackFrame.BarTexture then
-            feedbackFrame.BarTexture:Hide()
+            pcall(feedbackFrame.BarTexture.Hide, feedbackFrame.BarTexture)
         end
         if feedbackFrame.LossGlowTexture then
-            feedbackFrame.LossGlowTexture:Hide()
+            pcall(feedbackFrame.LossGlowTexture.Hide, feedbackFrame.LossGlowTexture)
         end
         if feedbackFrame.GainGlowTexture then
-            feedbackFrame.GainGlowTexture:Hide()
+            pcall(feedbackFrame.GainGlowTexture.Hide, feedbackFrame.GainGlowTexture)
         end
-        -- Hook StartFeedbackAnim to prevent it from running while hidden
-        if not feedbackFrame._ScootFeedbackHooked then
+        -- NOTE: Do NOT override StartFeedbackAnim - method overrides cause persistent taint
+        -- that propagates to the parent StatusBar and causes "blocked from an action" errors.
+        -- The animation textures are already hidden above; if they flash briefly, use a
+        -- hooksecurefunc to re-hide them after the animation starts:
+        -- CRITICAL: This hook MUST have a combat guard because it can fire during form changes
+        -- (e.g., druid cat->human) which triggers nameplate updates. Calling Hide()/StopFeedbackAnim()
+        -- during combat taints the execution context, blocking SetTargetClampingInsets().
+        if _G.hooksecurefunc and not feedbackFrame._ScootFeedbackHooked then
             feedbackFrame._ScootFeedbackHooked = true
-            local originalStart = feedbackFrame.StartFeedbackAnim
-            if originalStart then
-                feedbackFrame.StartFeedbackAnim = function(self, ...)
-                    if self._ScootPowerFeedbackHidden then
-                        return -- Block the animation from starting
-                    end
-                    return originalStart(self, ...)
+            _G.hooksecurefunc(feedbackFrame, "StartFeedbackAnim", function(self, ...)
+                -- CRITICAL: Skip during combat to avoid tainting nameplate operations
+                if InCombatLockdown and InCombatLockdown() then return end
+                if self._ScootPowerFeedbackHidden then
+                    -- Re-hide the textures after the animation shows them
+                    if self.BarTexture and self.BarTexture.Hide then pcall(self.BarTexture.Hide, self.BarTexture) end
+                    if self.LossGlowTexture and self.LossGlowTexture.Hide then pcall(self.LossGlowTexture.Hide, self.LossGlowTexture) end
+                    if self.GainGlowTexture and self.GainGlowTexture.Hide then pcall(self.GainGlowTexture.Hide, self.GainGlowTexture) end
+                    if self.StopFeedbackAnim then pcall(self.StopFeedbackAnim, self) end
                 end
-                feedbackFrame._ScootOriginalStartFeedbackAnim = originalStart
-            end
+            end)
         end
     else
         -- Restore visibility - the frame will show naturally when StartFeedbackAnim is called
-        -- We don't need to manually show the textures as they start hidden and are shown by the anim
     end
 end
 Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
@@ -452,27 +517,17 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
         if glowFrame.SetAlpha then
             pcall(glowFrame.SetAlpha, glowFrame, 0)
         end
-        -- Hook Show to prevent Blizzard from showing it while hidden
-        if not glowFrame._ScootOverAbsorbGlowHooked then
-            glowFrame._ScootOverAbsorbGlowHooked = true
-            local originalShow = glowFrame.Show
-            if originalShow then
-                glowFrame.Show = function(self, ...)
-                    if self._ScootOverAbsorbGlowHidden then
-                        return -- Block the show call
-                    end
-                    return originalShow(self, ...)
-                end
-                glowFrame._ScootOriginalShow = originalShow
-            end
-        end
+        -- NOTE: Do NOT override Show() on this frame - method overrides cause persistent taint
+        -- that propagates to the parent StatusBar and causes "blocked from an action" errors.
+        -- SetAlpha(0) is sufficient to make the glow invisible even if Blizzard shows it.
+        --
+        -- If the glow becomes visible despite alpha 0, use hooksecurefunc instead:
+        -- hooksecurefunc(glowFrame, "Show", function(self) if self._ScootOverAbsorbGlowHidden then self:SetAlpha(0) end end)
     else
         -- Restore visibility - the glow will show naturally when Blizzard calls Show
         if glowFrame.SetAlpha then
             pcall(glowFrame.SetAlpha, glowFrame, 1)
         end
-        -- Note: We don't need to manually call Show here since Blizzard will
-        -- show it automatically when absorb shields exceed max health
     end
 end
 Util.SetOverAbsorbGlowHidden = SetOverAbsorbGlowHidden
@@ -826,6 +881,17 @@ function addon:LinkComponentsToDB()
 end
 
 function addon:ApplyStyles()
+    -- CRITICAL: Do NOT apply styles during combat - many styling functions call
+    -- SetStatusBarTexture, SetVertexColor, SetShown, etc. on protected Blizzard frames,
+    -- which taints them and causes "blocked from an action" errors.
+    if InCombatLockdown and InCombatLockdown() then
+        -- Defer styling until combat ends
+        if not self._pendingApplyStyles then
+            self._pendingApplyStyles = true
+            self:RegisterEvent("PLAYER_REGEN_ENABLED")
+        end
+        return
+    end
     for id, component in pairs(self.Components) do
         if component.ApplyStyling then
             component:ApplyStyling()

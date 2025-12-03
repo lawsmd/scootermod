@@ -1,4 +1,4 @@
-## Interface: 110105
+## Interface: 110207
 ## Title: ScooterMod
 ## Notes: A modern, cosmetic-only UI addon.
 ## Author: Scooter

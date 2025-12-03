@@ -86,9 +86,26 @@ function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_FOCUS_CHANGED")
     -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
     self:RegisterEvent("PLAYER_LEVEL_UP")
+    -- PLAYER_REGEN_ENABLED is registered dynamically when ApplyStyles is called during combat
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
+end
+
+-- Handle deferred styling when combat ends
+function addon:PLAYER_REGEN_ENABLED()
+    if self._pendingApplyStyles then
+        self._pendingApplyStyles = nil
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        -- Defer slightly to ensure combat lockdown is fully cleared
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.1, function()
+                self:ApplyStyles()
+            end)
+        else
+            self:ApplyStyles()
+        end
+    end
 end
 
 function addon:ApplyDropdownStepperFixes()
@@ -233,6 +250,18 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             addon.ApplyUnitFrameNameLevelTextFor("Player")
         end)
     end
+    -- Deferred reapply of Player health/power bar text visibility to catch Blizzard resets
+    -- (TextStatusBarMixin:UpdateTextStringWithValues shows LeftText/RightText after initial styling)
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.1, function()
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then
+                addon.ApplyUnitFrameHealthTextVisibilityFor("Player")
+            end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                addon.ApplyUnitFramePowerTextVisibilityFor("Player")
+            end
+        end)
+    end
 end
 
 function addon:PLAYER_TARGET_CHANGED()
@@ -246,6 +275,13 @@ function addon:PLAYER_TARGET_CHANGED()
             if addon.ApplyUnitFrameNameLevelTextFor then
                 addon.ApplyUnitFrameNameLevelTextFor("Target")
             end
+            -- Also apply Health/Power bar text visibility to ensure hidden settings persist
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then
+                addon.ApplyUnitFrameHealthTextVisibilityFor("Target")
+            end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                addon.ApplyUnitFramePowerTextVisibilityFor("Target")
+            end
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then
@@ -253,6 +289,12 @@ function addon:PLAYER_TARGET_CHANGED()
         end
         if addon.ApplyUnitFrameNameLevelTextFor then
             addon.ApplyUnitFrameNameLevelTextFor("Target")
+        end
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then
+            addon.ApplyUnitFrameHealthTextVisibilityFor("Target")
+        end
+        if addon.ApplyUnitFramePowerTextVisibilityFor then
+            addon.ApplyUnitFramePowerTextVisibilityFor("Target")
         end
     end
 end
@@ -268,6 +310,13 @@ function addon:PLAYER_FOCUS_CHANGED()
             if addon.ApplyUnitFrameNameLevelTextFor then
                 addon.ApplyUnitFrameNameLevelTextFor("Focus")
             end
+            -- Also apply Health/Power bar text visibility to ensure hidden settings persist
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then
+                addon.ApplyUnitFrameHealthTextVisibilityFor("Focus")
+            end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                addon.ApplyUnitFramePowerTextVisibilityFor("Focus")
+            end
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then
@@ -275,6 +324,12 @@ function addon:PLAYER_FOCUS_CHANGED()
         end
         if addon.ApplyUnitFrameNameLevelTextFor then
             addon.ApplyUnitFrameNameLevelTextFor("Focus")
+        end
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then
+            addon.ApplyUnitFrameHealthTextVisibilityFor("Focus")
+        end
+        if addon.ApplyUnitFramePowerTextVisibilityFor then
+            addon.ApplyUnitFramePowerTextVisibilityFor("Focus")
         end
     end
 end

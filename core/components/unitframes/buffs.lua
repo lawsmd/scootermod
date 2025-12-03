@@ -283,8 +283,10 @@ do
 	end
 
 	-- Hook aura updates so ScooterMod re-applies offsets/sizing after Blizzard layouts
+	-- CRITICAL: Skip during combat to avoid tainting protected unit frame elements.
 	if _G.TargetFrame and _G.TargetFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.TargetFrame, "UpdateAuras", function(self)
+			if InCombatLockdown and InCombatLockdown() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
 				addon.ApplyUnitFrameBuffsDebuffsFor("Target")
 			end
@@ -292,6 +294,7 @@ do
 	end
 	if _G.FocusFrame and _G.FocusFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.FocusFrame, "UpdateAuras", function(self)
+			if InCombatLockdown and InCombatLockdown() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
 				addon.ApplyUnitFrameBuffsDebuffsFor("Focus")
 			end

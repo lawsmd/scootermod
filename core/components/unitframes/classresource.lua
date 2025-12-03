@@ -157,6 +157,9 @@ local function clampScale(value)
 end
 
 -- Hook visibility-restoring functions on a frame to maintain hidden state
+-- CRITICAL: We use hooksecurefunc to avoid taint. Method overrides on Blizzard frames
+-- cause taint that spreads through the execution context, blocking protected functions
+-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
 local function ensureVisibilityHooks(frame, cfg)
 	if not frame or hookedFrames[frame] then return end
 	hookedFrames[frame] = true
@@ -164,9 +167,12 @@ local function ensureVisibilityHooks(frame, cfg)
 	-- Store reference to config getter for hooks
 	frame._ScooterClassResourceCfg = ensureConfig
 	
-	-- Hook Show to enforce hidden state
+	-- Hook Show to enforce hidden state (runs AFTER Blizzard's Show)
+	-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
 	if frame.Show then
 		hooksecurefunc(frame, "Show", function(self)
+			-- Skip during combat to avoid tainting nameplate operations
+			if InCombatLockdown and InCombatLockdown() then return end
 			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
 			if frameCfg and frameCfg.hide then
 				self:SetAlpha(0)
@@ -175,16 +181,25 @@ local function ensureVisibilityHooks(frame, cfg)
 		end)
 	end
 	
-	-- Hook SetAlpha to prevent override when hidden
-	local origSetAlpha = frame.SetAlpha
-	if origSetAlpha then
-		frame.SetAlpha = function(self, alpha)
+	-- Hook SetAlpha to re-enforce hidden state (runs AFTER Blizzard's SetAlpha)
+	-- Uses a guard flag to prevent infinite recursion since we call SetAlpha inside the hook
+	-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
+	if frame.SetAlpha then
+		hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+			-- Skip during combat to avoid tainting nameplate operations
+			if InCombatLockdown and InCombatLockdown() then return end
+			-- Guard against recursion
+			if self._ScooterClassResourceApplyingAlpha then return end
+			
 			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
-			if frameCfg and frameCfg.hide then
-				alpha = 0  -- Force alpha to 0 when hidden
+			if frameCfg and frameCfg.hide and alpha ~= 0 then
+				-- Frame should be hidden but Blizzard set non-zero alpha; correct it
+				self._ScooterClassResourceApplyingAlpha = true
+				self:SetAlpha(0)
+				self._ScooterClassResourceApplyingAlpha = nil
+				debugPrint("Re-enforcing hidden via SetAlpha hook on", self:GetName() or "unnamed")
 			end
-			origSetAlpha(self, alpha)
-		end
+		end)
 	end
 	
 	debugPrint("Installed visibility hooks on", frame:GetName() or "unnamed")
@@ -204,6 +219,7 @@ local function triggerLayoutUpdate()
 end
 
 -- Set up hook on the layout container to reapply scale after layout
+-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
 local function ensureLayoutHook()
 	if layoutHooked then return end
 	
@@ -211,6 +227,8 @@ local function ensureLayoutHook()
 	if container and hooksecurefunc then
 		layoutHooked = true
 		hooksecurefunc(container, "Layout", function()
+			-- Skip during combat to avoid tainting nameplate operations
+			if InCombatLockdown and InCombatLockdown() then return end
 			-- Reapply scale and visibility after layout completes
 			-- Positioning is handled via leftPadding/topPadding which the layout respects
 			local cfg = ensureConfig()

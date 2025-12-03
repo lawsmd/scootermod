@@ -1918,7 +1918,7 @@ function addon.EditMode.Initialize()
     local LEO_local2 = LibStub and LibStub("LibEditModeOverride-1.0")
     if LEO_local2 and _G and _G.Enum and _G.Enum.EditModeSystem then
         local candidates = {
-            "MainMenuBar",
+            "MainActionBar",
             "MultiBarBottomLeft",
             "MultiBarBottomRight",
             "MultiBarRight",
