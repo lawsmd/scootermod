@@ -142,8 +142,10 @@ do
 						pendingReapply[hookUnit] = true
 						C_Timer.After(0, function()
 							pendingReapply[hookUnit] = nil
-							-- Skip if in combat to avoid taint
-							if InCombatLockdown and InCombatLockdown() then return end
+							-- NOTE: Combat lockdown check removed for Target/Focus cast bars.
+							-- TargetFrameSpellBar and FocusFrameSpellBar are visual StatusBars,
+							-- not protected action frames. SetPoint on them does not taint
+							-- secure execution, so we can safely reposition during combat.
 							if addon and addon.ApplyUnitFrameCastBarFor then
 								addon.ApplyUnitFrameCastBarFor(hookUnit)
 							end
@@ -151,6 +153,25 @@ do
 					end
 				end
 			end)
+
+			-- Hook AdjustPosition (Target/Focus only) to immediately reapply custom anchoring
+			-- after Blizzard repositions the cast bar (aura updates, ToT changes, etc.).
+			-- This is the function that causes the flicker - it's called from UpdateAuras()
+			-- on every UNIT_AURA event, which happens frequently during combat.
+			if (hookUnit == "Target" or hookUnit == "Focus") and frame.AdjustPosition then
+				_G.hooksecurefunc(frame, "AdjustPosition", function(self)
+					-- Only re-apply if we have a custom anchor mode active
+					local mode = activeAnchorModes[hookUnit]
+					if mode and mode ~= "default" then
+						-- Re-apply immediately (synchronously) to eliminate flicker.
+						-- The _ScootIgnoreSetPoint flag prevents the SetPoint hook from re-triggering.
+						-- Target/Focus cast bars are purely visual and do not taint secure execution.
+						if addon and addon.ApplyUnitFrameCastBarFor then
+							addon.ApplyUnitFrameCastBarFor(hookUnit)
+						end
+					end
+				end)
+			end
 		end
 
 		-- Capture baseline anchor:

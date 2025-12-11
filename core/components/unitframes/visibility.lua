@@ -73,6 +73,407 @@ end
 
 -- (Reverted) No additional hooks for reapplying experimental sizing; rely on normal refresh
 
+-- Target/Focus Misc.: Threat Meter visibility
+-- Frame paths:
+--   Target: TargetFrame.TargetFrameContent.TargetFrameContentContextual.NumericalThreat
+--   Focus:  FocusFrame.TargetFrameContent.TargetFrameContentContextual.NumericalThreat
+do
+    local _threatMeterHooked = { Target = false, Focus = false }
+    local _originalThreatMeterAlpha = { Target = nil, Focus = nil }
+
+    local function getThreatMeterFrame(unit)
+        local parentFrame = (unit == "Target") and _G.TargetFrame or (unit == "Focus") and _G.FocusFrame or nil
+        if not parentFrame then return nil end
+        local content = parentFrame.TargetFrameContent
+        if not content then return nil end
+        local contextual = content.TargetFrameContentContextual
+        if not contextual then return nil end
+        return contextual.NumericalThreat
+    end
+
+    local function applyThreatMeterVisibility(unit)
+        local threatFrame = getThreatMeterFrame(unit)
+        if not threatFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames[unit] = db.unitFrames[unit] or {}
+        db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
+        local cfg = db.unitFrames[unit].misc
+
+        local hideThreatMeter = (cfg.hideThreatMeter == true)
+
+        -- Capture original alpha on first run
+        if _originalThreatMeterAlpha[unit] == nil then
+            _originalThreatMeterAlpha[unit] = threatFrame:GetAlpha() or 1
+        end
+
+        if hideThreatMeter then
+            -- Hide via SetAlpha(0) - safe for protected frames
+            if threatFrame.SetAlpha then
+                pcall(threatFrame.SetAlpha, threatFrame, 0)
+            end
+        else
+            -- Restore original alpha
+            if threatFrame.SetAlpha then
+                pcall(threatFrame.SetAlpha, threatFrame, _originalThreatMeterAlpha[unit])
+            end
+        end
+    end
+
+    -- Install hooks to maintain visibility state when Blizzard updates the threat meter
+    local function installThreatMeterHooks(unit)
+        if _threatMeterHooked[unit] then return end
+        _threatMeterHooked[unit] = true
+
+        local threatFrame = getThreatMeterFrame(unit)
+        if not threatFrame then return end
+
+        -- Hook Show() to re-apply visibility when Blizzard shows the frame
+        if threatFrame.Show then
+            hooksecurefunc(threatFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames[unit] = db.unitFrames[unit] or {}
+                db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
+                local cfg = db.unitFrames[unit].misc
+                if cfg.hideThreatMeter == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to change it
+        if threatFrame.SetAlpha then
+            hooksecurefunc(threatFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames[unit] = db.unitFrames[unit] or {}
+                db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
+                local cfg = db.unitFrames[unit].misc
+                if cfg.hideThreatMeter == true and alpha and alpha > 0 then
+                    -- Defer to avoid recursion
+                    if not self._ScootThreatAlphaDeferred then
+                        self._ScootThreatAlphaDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScootThreatAlphaDeferred = nil
+                            if cfg.hideThreatMeter == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyTargetThreatMeterVisibility()
+        installThreatMeterHooks("Target")
+        applyThreatMeterVisibility("Target")
+    end
+
+    function addon.ApplyFocusThreatMeterVisibility()
+        installThreatMeterHooks("Focus")
+        applyThreatMeterVisibility("Focus")
+    end
+
+    function addon.ApplyAllThreatMeterVisibility()
+        addon.ApplyTargetThreatMeterVisibility()
+        addon.ApplyFocusThreatMeterVisibility()
+    end
+end
+
+-- Player Misc.: Role Icon visibility
+-- Frame path: PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.RoleIcon
+do
+    local _roleIconHooked = false
+    local _originalRoleIconAlpha = nil
+
+    local function getRoleIconFrame()
+        local pf = _G.PlayerFrame
+        if not pf then return nil end
+        local content = pf.PlayerFrameContent
+        if not content then return nil end
+        local contextual = content.PlayerFrameContentContextual
+        if not contextual then return nil end
+        return contextual.RoleIcon
+    end
+
+    local function applyRoleIconVisibility()
+        local roleIconFrame = getRoleIconFrame()
+        if not roleIconFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames.Player = db.unitFrames.Player or {}
+        db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+        local cfg = db.unitFrames.Player.misc
+
+        local hideRoleIcon = (cfg.hideRoleIcon == true)
+
+        -- Capture original alpha on first run
+        if _originalRoleIconAlpha == nil then
+            _originalRoleIconAlpha = roleIconFrame:GetAlpha() or 1
+        end
+
+        if hideRoleIcon then
+            -- Hide via SetAlpha(0) - safe for protected frames
+            if roleIconFrame.SetAlpha then
+                pcall(roleIconFrame.SetAlpha, roleIconFrame, 0)
+            end
+        else
+            -- Restore original alpha
+            if roleIconFrame.SetAlpha then
+                pcall(roleIconFrame.SetAlpha, roleIconFrame, _originalRoleIconAlpha)
+            end
+        end
+    end
+
+    -- Install hooks to maintain visibility state when Blizzard updates the role icon
+    local function installRoleIconHooks()
+        if _roleIconHooked then return end
+        _roleIconHooked = true
+
+        local roleIconFrame = getRoleIconFrame()
+        if not roleIconFrame then return end
+
+        -- Hook Show() to re-apply visibility when Blizzard shows the frame
+        if roleIconFrame.Show then
+            hooksecurefunc(roleIconFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames.Player = db.unitFrames.Player or {}
+                db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                local cfg = db.unitFrames.Player.misc
+                if cfg.hideRoleIcon == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to change it
+        if roleIconFrame.SetAlpha then
+            hooksecurefunc(roleIconFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames.Player = db.unitFrames.Player or {}
+                db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                local cfg = db.unitFrames.Player.misc
+                if cfg.hideRoleIcon == true and alpha and alpha > 0 then
+                    -- Defer to avoid recursion
+                    if not self._ScootRoleIconAlphaDeferred then
+                        self._ScootRoleIconAlphaDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScootRoleIconAlphaDeferred = nil
+                            if cfg.hideRoleIcon == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyPlayerRoleIconVisibility()
+        installRoleIconHooks()
+        applyRoleIconVisibility()
+    end
+end
+
+-- Player Misc.: Group Number visibility
+-- Frame paths:
+--   PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.GroupIndicator (container with texture child)
+--   PlayerFrameGroupIndicatorText (global FontString)
+do
+    local _groupNumberHooked = false
+    local _originalGroupIndicatorAlpha = nil
+    local _originalGroupIndicatorTextAlpha = nil
+
+    local function getGroupIndicatorFrame()
+        local pf = _G.PlayerFrame
+        if not pf then return nil end
+        local content = pf.PlayerFrameContent
+        if not content then return nil end
+        local contextual = content.PlayerFrameContentContextual
+        if not contextual then return nil end
+        return contextual.GroupIndicator
+    end
+
+    local function getGroupIndicatorTextFrame()
+        return _G.PlayerFrameGroupIndicatorText
+    end
+
+    local function applyGroupNumberVisibility()
+        local groupIndicatorFrame = getGroupIndicatorFrame()
+        local groupIndicatorText = getGroupIndicatorTextFrame()
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames.Player = db.unitFrames.Player or {}
+        db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+        local cfg = db.unitFrames.Player.misc
+
+        local hideGroupNumber = (cfg.hideGroupNumber == true)
+
+        -- Apply to GroupIndicator container frame
+        if groupIndicatorFrame then
+            -- Capture original alpha on first run
+            if _originalGroupIndicatorAlpha == nil then
+                _originalGroupIndicatorAlpha = groupIndicatorFrame:GetAlpha() or 1
+            end
+
+            if hideGroupNumber then
+                if groupIndicatorFrame.SetAlpha then
+                    pcall(groupIndicatorFrame.SetAlpha, groupIndicatorFrame, 0)
+                end
+            else
+                if groupIndicatorFrame.SetAlpha then
+                    pcall(groupIndicatorFrame.SetAlpha, groupIndicatorFrame, _originalGroupIndicatorAlpha)
+                end
+            end
+        end
+
+        -- Apply to GroupIndicator text (global FontString)
+        if groupIndicatorText then
+            -- Capture original alpha on first run
+            if _originalGroupIndicatorTextAlpha == nil then
+                _originalGroupIndicatorTextAlpha = groupIndicatorText:GetAlpha() or 1
+            end
+
+            if hideGroupNumber then
+                if groupIndicatorText.SetAlpha then
+                    pcall(groupIndicatorText.SetAlpha, groupIndicatorText, 0)
+                end
+            else
+                if groupIndicatorText.SetAlpha then
+                    pcall(groupIndicatorText.SetAlpha, groupIndicatorText, _originalGroupIndicatorTextAlpha)
+                end
+            end
+        end
+    end
+
+    -- Install hooks to maintain visibility state when Blizzard updates the group indicator
+    local function installGroupNumberHooks()
+        if _groupNumberHooked then return end
+        _groupNumberHooked = true
+
+        local groupIndicatorFrame = getGroupIndicatorFrame()
+        local groupIndicatorText = getGroupIndicatorTextFrame()
+
+        -- Hook GroupIndicator container
+        if groupIndicatorFrame then
+            if groupIndicatorFrame.Show then
+                hooksecurefunc(groupIndicatorFrame, "Show", function(self)
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return end
+                    db.unitFrames = db.unitFrames or {}
+                    db.unitFrames.Player = db.unitFrames.Player or {}
+                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                    local cfg = db.unitFrames.Player.misc
+                    if cfg.hideGroupNumber == true then
+                        if self.SetAlpha then
+                            pcall(self.SetAlpha, self, 0)
+                        end
+                    end
+                end)
+            end
+
+            if groupIndicatorFrame.SetAlpha then
+                hooksecurefunc(groupIndicatorFrame, "SetAlpha", function(self, alpha)
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return end
+                    db.unitFrames = db.unitFrames or {}
+                    db.unitFrames.Player = db.unitFrames.Player or {}
+                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                    local cfg = db.unitFrames.Player.misc
+                    if cfg.hideGroupNumber == true and alpha and alpha > 0 then
+                        if not self._ScootGroupIndicatorAlphaDeferred then
+                            self._ScootGroupIndicatorAlphaDeferred = true
+                            C_Timer.After(0, function()
+                                self._ScootGroupIndicatorAlphaDeferred = nil
+                                if cfg.hideGroupNumber == true and self.SetAlpha then
+                                    pcall(self.SetAlpha, self, 0)
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+        end
+
+        -- Hook GroupIndicator text
+        if groupIndicatorText then
+            if groupIndicatorText.Show then
+                hooksecurefunc(groupIndicatorText, "Show", function(self)
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return end
+                    db.unitFrames = db.unitFrames or {}
+                    db.unitFrames.Player = db.unitFrames.Player or {}
+                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                    local cfg = db.unitFrames.Player.misc
+                    if cfg.hideGroupNumber == true then
+                        if self.SetAlpha then
+                            pcall(self.SetAlpha, self, 0)
+                        end
+                    end
+                end)
+            end
+
+            if groupIndicatorText.SetAlpha then
+                hooksecurefunc(groupIndicatorText, "SetAlpha", function(self, alpha)
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return end
+                    db.unitFrames = db.unitFrames or {}
+                    db.unitFrames.Player = db.unitFrames.Player or {}
+                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+                    local cfg = db.unitFrames.Player.misc
+                    if cfg.hideGroupNumber == true and alpha and alpha > 0 then
+                        if not self._ScootGroupIndicatorTextAlphaDeferred then
+                            self._ScootGroupIndicatorTextAlphaDeferred = true
+                            C_Timer.After(0, function()
+                                self._ScootGroupIndicatorTextAlphaDeferred = nil
+                                if cfg.hideGroupNumber == true and self.SetAlpha then
+                                    pcall(self.SetAlpha, self, 0)
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+        end
+    end
+
+    function addon.ApplyPlayerGroupNumberVisibility()
+        installGroupNumberHooks()
+        applyGroupNumberVisibility()
+    end
+end
+
+-- Apply all Player Misc. visibility settings
+function addon.ApplyAllPlayerMiscVisibility()
+    if addon.ApplyPlayerRoleIconVisibility then
+        addon.ApplyPlayerRoleIconVisibility()
+    end
+    if addon.ApplyPlayerGroupNumberVisibility then
+        addon.ApplyPlayerGroupNumberVisibility()
+    end
+end
+
 function addon:SyncAllEditModeSettings()
     local anyChanged = false
     for id, component in pairs(self.Components) do

@@ -32,7 +32,8 @@ do
 		return nil
 	end
 
-	local function applyBuffsDebuffsForUnit(unit)
+	-- Internal implementation that accepts a visualOnly flag for combat-safe styling
+	local function applyBuffsDebuffsForUnitInternal(unit, visualOnly)
 		if unit ~= "Target" and unit ~= "Focus" then return end
 
 		local db = addon and addon.db and addon.db.profile
@@ -56,6 +57,7 @@ do
 		local hideBuffsDebuffs = cfg.hideBuffsDebuffs == true
 
 		-- Helper: hide or show all aura frames in a pool
+		-- SAFE during combat: SetAlpha and EnableMouse are cosmetic operations
 		local function setPoolVisibility(pool, hidden)
 			if not pool or not pool.EnumerateActive then return end
 			for auraFrame in pool:EnumerateActive() do
@@ -72,6 +74,7 @@ do
 		end
 
 		-- Apply visibility to all active aura frames in the pools
+		-- SAFE during combat
 		local auraPools = frame.auraPools
 		if auraPools and auraPools.GetPool then
 			local buffPool = auraPools:GetPool("TargetBuffFrameTemplate")
@@ -85,6 +88,8 @@ do
 			return
 		end
 
+		-- Apply visual styling to all auras in a pool
+		-- SAFE during combat: SetSize, SetScale, SetAllPoints, border styling are all cosmetic
 		local function applyToPool(pool)
 			if not pool or not pool.EnumerateActive then return end
 
@@ -215,62 +220,79 @@ do
 			end
 		end
 
-		if InCombatLockdown() then
-			if _G.C_Timer and _G.C_Timer.After then
-				local u = unit
-				_G.C_Timer.After(0.1, function()
-					if not InCombatLockdown() then
-						applyBuffsDebuffsForUnit(u)
-					end
-				end)
-			end
-			return
-		end
-
 		-- Use Blizzard's aura pools to get the active Buff/Debuff frames.
 		-- Target/Focus both inherit TargetFrameTemplate, which creates pools
 		-- for "TargetBuffFrameTemplate" and "TargetDebuffFrameTemplate".
-		local auraPools = frame.auraPools
-		if auraPools and auraPools.GetPool then
-			local buffPool = auraPools:GetPool("TargetBuffFrameTemplate")
-			local debuffPool = auraPools:GetPool("TargetDebuffFrameTemplate")
+		-- SAFE during combat: all operations in applyToPool are cosmetic
+		local auraPools2 = frame.auraPools
+		if auraPools2 and auraPools2.GetPool then
+			local buffPool = auraPools2:GetPool("TargetBuffFrameTemplate")
+			local debuffPool = auraPools2:GetPool("TargetDebuffFrameTemplate")
 			applyToPool(buffPool)
 			applyToPool(debuffPool)
 		end
 
 		-- Positioning: nudge the shared Buffs/Debuffs containers so rows stay intact
 		-- and all auras move together, regardless of row/column indexing.
-		local contextual = frame.TargetFrameContent and frame.TargetFrameContent.TargetFrameContentContextual
-		if contextual then
-			local containers = { contextual.buffs, contextual.debuffs }
-			for _, holder in ipairs(containers) do
-				if holder and holder.GetPoint then
-					if not originalAuraPositions[holder] then
-						local p, relTo, relPoint, xOfs, yOfs = holder:GetPoint(1)
-						if p then
-							originalAuraPositions[holder] = {
-								point = p,
-								relativeTo = relTo,
-								relativePoint = relPoint,
-								xOfs = xOfs or 0,
-								yOfs = yOfs or 0,
-							}
+		-- UNSAFE during combat: ClearAllPoints/SetPoint on containers may cause issues
+		-- Skip positioning when visualOnly is true (combat + hook path)
+		if not visualOnly then
+			local inCombat = InCombatLockdown and InCombatLockdown()
+			if inCombat then
+				-- Defer positioning to after combat ends
+				if _G.C_Timer and _G.C_Timer.After then
+					local u = unit
+					_G.C_Timer.After(0.1, function()
+						if not (InCombatLockdown and InCombatLockdown()) then
+							-- Re-run with visualOnly=false to apply positioning
+							applyBuffsDebuffsForUnitInternal(u, false)
 						end
-					end
-					local orig = originalAuraPositions[holder]
-					if orig then
-						holder:ClearAllPoints()
-						holder:SetPoint(
-							orig.point or "CENTER",
-							orig.relativeTo,
-							orig.relativePoint or orig.point or "CENTER",
-							(orig.xOfs or 0) + offsetX,
-							(orig.yOfs or 0) + offsetY
-						)
+					end)
+				end
+			else
+				-- Out of combat: apply positioning
+				local contextual = frame.TargetFrameContent and frame.TargetFrameContent.TargetFrameContentContextual
+				if contextual then
+					local containers = { contextual.buffs, contextual.debuffs }
+					for _, holder in ipairs(containers) do
+						if holder and holder.GetPoint then
+							if not originalAuraPositions[holder] then
+								local p, relTo, relPoint, xOfs, yOfs = holder:GetPoint(1)
+								if p then
+									originalAuraPositions[holder] = {
+										point = p,
+										relativeTo = relTo,
+										relativePoint = relPoint,
+										xOfs = xOfs or 0,
+										yOfs = yOfs or 0,
+									}
+								end
+							end
+							local orig = originalAuraPositions[holder]
+							if orig then
+								holder:ClearAllPoints()
+								holder:SetPoint(
+									orig.point or "CENTER",
+									orig.relativeTo,
+									orig.relativePoint or orig.point or "CENTER",
+									(orig.xOfs or 0) + offsetX,
+									(orig.yOfs or 0) + offsetY
+								)
+							end
+						end
 					end
 				end
 			end
 		end
+	end
+
+	-- Public wrapper: called from settings changes and ApplyStyles
+	-- When not in combat, runs full styling. When in combat from a hook, uses visualOnly.
+	local function applyBuffsDebuffsForUnit(unit)
+		-- Check if this call is from a combat hook (visual-only path)
+		local frame = resolveUnitFrame(unit)
+		local visualOnly = frame and frame._ScootBDVisualOnly
+		applyBuffsDebuffsForUnitInternal(unit, visualOnly)
 	end
 
 	function addon.ApplyUnitFrameBuffsDebuffsFor(unit)
@@ -282,23 +304,29 @@ do
 		applyBuffsDebuffsForUnit("Focus")
 	end
 
-	-- Hook aura updates so ScooterMod re-applies offsets/sizing after Blizzard layouts
-	-- CRITICAL: Skip during combat to avoid tainting protected unit frame elements.
+	-- Hook aura updates so ScooterMod re-applies styling after Blizzard layouts.
+	-- During combat, we use visualOnly mode to apply cosmetic styling (borders, sizing)
+	-- while deferring layout operations (container positioning) until combat ends.
 	if _G.TargetFrame and _G.TargetFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.TargetFrame, "UpdateAuras", function(self)
-			if InCombatLockdown and InCombatLockdown() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+				local inCombat = InCombatLockdown and InCombatLockdown()
+				-- Set visual-only flag when in combat so styling skips layout operations
+				self._ScootBDVisualOnly = inCombat
 				addon.ApplyUnitFrameBuffsDebuffsFor("Target")
+				self._ScootBDVisualOnly = nil
 			end
 		end)
 	end
 	if _G.FocusFrame and _G.FocusFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.FocusFrame, "UpdateAuras", function(self)
-			if InCombatLockdown and InCombatLockdown() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+				local inCombat = InCombatLockdown and InCombatLockdown()
+				-- Set visual-only flag when in combat so styling skips layout operations
+				self._ScootBDVisualOnly = inCombat
 				addon.ApplyUnitFrameBuffsDebuffsFor("Focus")
+				self._ScootBDVisualOnly = nil
 			end
 		end)
 	end
 end
-

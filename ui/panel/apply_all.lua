@@ -7,7 +7,6 @@ local format = string.format
 local CreateFrame = _G and _G.CreateFrame
 local ReloadUI = _G and _G.ReloadUI
 local CloseDropDownMenus = _G and _G.CloseDropDownMenus
-local StaticPopup_Show = _G and _G.StaticPopup_Show
 local dateHelper = _G and _G.date
 local POPUP_YES_LABEL = (_G and (_G.YES or _G.OKAY)) or "Yes"
 local POPUP_NO_LABEL = (_G and (_G.NO or _G.CANCEL)) or "No"
@@ -40,61 +39,26 @@ local function formatFailureMessage(kind, reason)
     return format("Apply All (%s) aborted: %s", kind, detail)
 end
 
-local function ensureFontPopup()
-    _G.StaticPopupDialogs = _G.StaticPopupDialogs or {}
-    local dialogs = _G.StaticPopupDialogs
-    if dialogs["SCOOTERMOD_APPLYALL_FONTS"] then
-        return
-    end
-    dialogs["SCOOTERMOD_APPLYALL_FONTS"] = {
+-- Register Apply All dialogs using ScooterMod's custom dialog system
+-- (Avoids tainting StaticPopupDialogs which can block protected functions like EndBoundTradeable)
+local function registerApplyAllDialogs()
+    if not addon.Dialogs or not addon.Dialogs.Register then return end
+    
+    addon.Dialogs:Register("SCOOTERMOD_APPLYALL_FONTS", {
         text = "This will overwrite every ScooterMod font with |cFF00FF00%s|r and immediately reload your UI.\n\nThis cannot be undone automatically. Continue?",
-        button1 = POPUP_YES_LABEL,
-        button2 = POPUP_NO_LABEL,
-        OnAccept = function(self, data)
-            if not data or not data.fontKey then return end
-            if not addon.ApplyAll or not addon.ApplyAll.ApplyFonts then return end
-            local result = addon.ApplyAll:ApplyFonts(data.fontKey, { updatePending = true })
-            if result and result.ok and result.changed and result.changed > 0 then
-                ReloadUI()
-            else
-                local reason = result and result.reason or "Unknown"
-                addon:Print(formatFailureMessage("Fonts", reason))
-            end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        hideOnEscape = 1,
-        preferredIndex = 3,
-    }
+        acceptText = POPUP_YES_LABEL,
+        cancelText = POPUP_NO_LABEL,
+    })
+    
+    addon.Dialogs:Register("SCOOTERMOD_APPLYALL_TEXTURES", {
+        text = "This will overwrite every ScooterMod bar texture with |cFF00FF00%s|r (foreground and background) and immediately reload your UI.\n\nThis cannot be undone automatically. Continue?",
+        acceptText = POPUP_YES_LABEL,
+        cancelText = POPUP_NO_LABEL,
+    })
 end
 
-local function ensureTexturePopup()
-    _G.StaticPopupDialogs = _G.StaticPopupDialogs or {}
-    local dialogs = _G.StaticPopupDialogs
-    if dialogs["SCOOTERMOD_APPLYALL_TEXTURES"] then
-        return
-    end
-    dialogs["SCOOTERMOD_APPLYALL_TEXTURES"] = {
-        text = "This will overwrite every ScooterMod bar texture with |cFF00FF00%s|r (foreground and background) and immediately reload your UI.\n\nThis cannot be undone automatically. Continue?",
-        button1 = POPUP_YES_LABEL,
-        button2 = POPUP_NO_LABEL,
-        OnAccept = function(self, data)
-            if not data or not data.textureKey then return end
-            if not addon.ApplyAll or not addon.ApplyAll.ApplyBarTextures then return end
-            local result = addon.ApplyAll:ApplyBarTextures(data.textureKey, { updatePending = true })
-            if result and result.ok and result.changed and result.changed > 0 then
-                ReloadUI()
-            else
-                local reason = result and result.reason or "Unknown"
-                addon:Print(formatFailureMessage("Bar Textures", reason))
-            end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        hideOnEscape = 1,
-        preferredIndex = 3,
-    }
-end
+-- Call registration immediately when file loads
+registerApplyAllDialogs()
 
 local function createInfoRow(message)
     local row = Settings.CreateElementInitializer("SettingsListElementTemplate")
@@ -266,7 +230,6 @@ function panel.RenderApplyAllFonts()
             end
         end,
         popup = function()
-            ensureFontPopup()
             local pending = addon.ApplyAll and addon.ApplyAll:GetPendingFont()
             if not pending or pending == "" then
                 addon:Print("Select a font before applying.")
@@ -274,7 +237,26 @@ function panel.RenderApplyAllFonts()
             end
             -- Use display name in the confirmation dialog
             local displayName = addon.FontDisplayNames and addon.FontDisplayNames[pending] or pending
-            StaticPopup_Show("SCOOTERMOD_APPLYALL_FONTS", displayName, nil, { fontKey = pending })
+            -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOTERMOD_APPLYALL_FONTS", {
+                    formatArgs = { displayName },
+                    data = { fontKey = pending },
+                    onAccept = function(data)
+                        if not data or not data.fontKey then return end
+                        if not addon.ApplyAll or not addon.ApplyAll.ApplyFonts then return end
+                        local result = addon.ApplyAll:ApplyFonts(data.fontKey, { updatePending = true })
+                        if result and result.ok and result.changed and result.changed > 0 then
+                            ReloadUI()
+                        else
+                            local reason = result and result.reason or "Unknown"
+                            addon:Print(formatFailureMessage("Fonts", reason))
+                        end
+                    end,
+                })
+            else
+                addon:Print("Dialog system unavailable.")
+            end
         end,
     })
 end
@@ -298,14 +280,32 @@ function panel.RenderApplyAllTextures()
             end
         end,
         popup = function()
-            ensureTexturePopup()
             local pending = addon.ApplyAll and addon.ApplyAll:GetPendingBarTexture()
             if not pending or pending == "" then
                 addon:Print("Select a texture before applying.")
                 return
             end
             local label = addon.Media and addon.Media.GetBarTextureDisplayName and addon.Media.GetBarTextureDisplayName(pending) or pending
-            StaticPopup_Show("SCOOTERMOD_APPLYALL_TEXTURES", label or pending, nil, { textureKey = pending })
+            -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOTERMOD_APPLYALL_TEXTURES", {
+                    formatArgs = { label or pending },
+                    data = { textureKey = pending },
+                    onAccept = function(data)
+                        if not data or not data.textureKey then return end
+                        if not addon.ApplyAll or not addon.ApplyAll.ApplyBarTextures then return end
+                        local result = addon.ApplyAll:ApplyBarTextures(data.textureKey, { updatePending = true })
+                        if result and result.ok and result.changed and result.changed > 0 then
+                            ReloadUI()
+                        else
+                            local reason = result and result.reason or "Unknown"
+                            addon:Print(formatFailureMessage("Bar Textures", reason))
+                        end
+                    end,
+                })
+            else
+                addon:Print("Dialog system unavailable.")
+            end
         end,
     })
 end

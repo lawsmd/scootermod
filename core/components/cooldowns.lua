@@ -345,11 +345,15 @@ local function ApplyCooldownViewerStyling(self)
         if hooksecurefunc then
             if frame.OnAcquireItemFrame then
                 hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
+                    -- Guard against combat to prevent taint (see DEBUG.md)
+                    if InCombatLockdown and InCombatLockdown() then return end
                     if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, itemFrame) end
                 end)
             end
             if frame.RefreshLayout then
                 hooksecurefunc(frame, "RefreshLayout", function()
+                    -- Guard against combat to prevent taint (see DEBUG.md)
+                    if InCombatLockdown and InCombatLockdown() then return end
                     if C_Timer and C_Timer.After then
                         C_Timer.After(0, function()
                             if not addon or not addon.Components or not addon.Components.trackedBars then return end
@@ -364,6 +368,59 @@ local function ApplyCooldownViewerStyling(self)
             end
         end
         frame._ScooterTBHooked = true
+    end
+
+    -- Hook OnAcquireItemFrame for non-bar viewers (Essential, Utility, Tracked Buffs)
+    -- This ensures newly learned spells that Blizzard auto-adds to CDM get ScooterMod styling
+    if self.id ~= "trackedBars" and not frame._ScooterIconHooked then
+        if hooksecurefunc and frame.OnAcquireItemFrame then
+            hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
+                -- Guard against combat to prevent taint on UtilityCooldownViewer:SetSize() etc.
+                -- When this hook fires during combat, calling SetSize/ApplyStyling taints the
+                -- viewer frame, causing Blizzard's LayoutFrame:Layout() to be blocked.
+                -- Styling will be applied after combat via PLAYER_REGEN_ENABLED. (see DEBUG.md)
+                if InCombatLockdown and InCombatLockdown() then return end
+                -- Apply sizing immediately
+                local w = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
+                local h = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
+                if w and h and itemFrame.SetSize then
+                    itemFrame:SetSize(w, h)
+                end
+                -- Apply border if enabled
+                if self.db.borderEnable then
+                    local styleKey = self.db.borderStyle or "square"
+                    if styleKey == "none" then styleKey = "square" end
+                    local thickness = tonumber(self.db.borderThickness) or 1
+                    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                    local tintEnabled = self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
+                    local tintColor
+                    if tintEnabled then
+                        tintColor = {
+                            self.db.borderTintColor[1] or 1,
+                            self.db.borderTintColor[2] or 1,
+                            self.db.borderTintColor[3] or 1,
+                            self.db.borderTintColor[4] or 1,
+                        }
+                    end
+                    addon.ApplyIconBorderStyle(itemFrame, styleKey, {
+                        thickness = thickness,
+                        color = tintColor,
+                        tintEnabled = tintEnabled,
+                        db = self.db,
+                        thicknessKey = "borderThickness",
+                        tintColorKey = "borderTintColor",
+                        defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
+                    })
+                end
+                -- Defer full re-style to pick up text settings after frame is fully set up
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        ApplyCooldownViewerStyling(self)
+                    end)
+                end
+            end)
+        end
+        frame._ScooterIconHooked = true
     end
 
     if self.id == "trackedBars" then

@@ -1009,6 +1009,10 @@ local function createComponentRenderer(componentId)
                                 options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
                                     return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
                                 end)
+                            elseif settingId == "borderThickness" or settingId == "iconBorderThickness" then
+                                options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+                                    return string.format("%.1f", v)
+                                end)
                             else
                                 options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)
                             end
@@ -2200,7 +2204,7 @@ end
         local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         closeBtn:SetSize(96, 22)
         closeBtn:SetPoint("BOTTOMRIGHT", -16, 16)
-        closeBtn.Text:SetText(SETTINGS_CLOSE)
+        closeBtn:SetText(SETTINGS_CLOSE or CLOSE or "Close")
         if panel and panel.ApplyButtonTheme then
             panel.ApplyButtonTheme(closeBtn)
         end

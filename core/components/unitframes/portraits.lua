@@ -69,13 +69,16 @@ do
 		return nil
 	end
 
-	-- Resolve damage text (HitText) frame for a given unit (Player-only)
+	-- Resolve damage text (HitText) frame for a given unit (Player and Pet)
 	local function resolveDamageTextFrame(unit)
 		if unit == "Player" then
 			local root = _G.PlayerFrame
 			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.HitIndicator and root.PlayerFrameContent.PlayerFrameContentMain.HitIndicator.HitText or nil
+		elseif unit == "Pet" then
+			-- PetHitIndicator is directly available as a global and as PetFrame.feedbackText
+			return _G.PetHitIndicator or (_G.PetFrame and _G.PetFrame.feedbackText)
 		end
-		-- Target/Focus/Pet don't have damage text
+		-- Target/Focus don't have damage text
 		return nil
 	end
 
@@ -90,6 +93,24 @@ do
 			return root and root.TargetFrameContainer and root.TargetFrameContainer.BossPortraitFrameTexture or nil
 		end
 		-- Player/Pet don't have BossPortraitFrameTexture
+		return nil
+	end
+
+	-- Resolve pet attack mode texture (Pet only)
+	-- This texture appears when the pet is in attack mode and needs to be hidden when custom borders are enabled
+	local function resolvePetAttackModeTexture(unit)
+		if unit == "Pet" then
+			return _G.PetAttackModeTexture
+		end
+		return nil
+	end
+
+	-- Resolve pet frame flash (Pet only)
+	-- This texture flashes when the pet takes damage and needs to be hidden when custom borders are enabled
+	local function resolvePetFrameFlash(unit)
+		if unit == "Pet" then
+			return _G.PetFrameFlash
+		end
 		return nil
 	end
 
@@ -125,6 +146,10 @@ do
 		local statusTextureFrame = (unit == "Player") and resolvePortraitStatusTextureFrame(unit) or nil
 		-- Boss portrait frame texture only exists for Target/Focus frames
 		local bossPortraitFrameTexture = (unit == "Target" or unit == "Focus") and resolveBossPortraitFrameTexture(unit) or nil
+		-- Pet attack mode texture only exists for Pet frame
+		local petAttackModeTexture = (unit == "Pet") and resolvePetAttackModeTexture(unit) or nil
+		-- Pet frame flash only exists for Pet frame
+		local petFrameFlash = (unit == "Pet") and resolvePetFrameFlash(unit) or nil
 
 		-- Capture original positions on first access
 		if not originalPositions[portraitFrame] then
@@ -234,6 +259,12 @@ do
 		if bossPortraitFrameTexture and not originalAlphas[bossPortraitFrameTexture] then
 			originalAlphas[bossPortraitFrameTexture] = bossPortraitFrameTexture:GetAlpha() or 1.0
 		end
+		if petAttackModeTexture and not originalAlphas[petAttackModeTexture] then
+			originalAlphas[petAttackModeTexture] = petAttackModeTexture:GetAlpha() or 1.0
+		end
+		if petFrameFlash and not originalAlphas[petFrameFlash] then
+			originalAlphas[petFrameFlash] = petFrameFlash:GetAlpha() or 1.0
+		end
 
 		local origPortraitAlpha = originalAlphas[portraitFrame] or 1.0
 		local origMaskAlpha = maskFrame and (originalAlphas[maskFrame] or 1.0) or nil
@@ -241,6 +272,8 @@ do
 		local origRestLoopAlpha = restLoopFrame and (originalAlphas[restLoopFrame] or 1.0) or nil
 		local origStatusTextureAlpha = statusTextureFrame and (originalAlphas[statusTextureFrame] or 1.0) or nil
 		local origBossPortraitFrameTextureAlpha = bossPortraitFrameTexture and (originalAlphas[bossPortraitFrameTexture] or 1.0) or nil
+		local origPetAttackModeTextureAlpha = petAttackModeTexture and (originalAlphas[petAttackModeTexture] or 1.0) or nil
+		local origPetFrameFlashAlpha = petFrameFlash and (originalAlphas[petFrameFlash] or 1.0) or nil
 
 		-- Capture original mask atlas on first access (for Player only - to support full circle mask)
 		if maskFrame and unit == "Player" and not originalMaskAtlas[maskFrame] then
@@ -647,11 +680,43 @@ do
 					bossPortraitFrameTexture:Show()
 				end
 			end
+
+			-- Pet attack mode texture: hidden if "Hide Portrait" is checked OR "Use Custom Borders" is enabled (Pet only)
+			-- This texture appears around the pet portrait when the pet is in attack mode
+			if petAttackModeTexture and unit == "Pet" then
+				local useCustomBorders = ufCfg and (ufCfg.useCustomBorders == true)
+				local petAttackHidden = hidePortrait or useCustomBorders
+				local petAttackAlpha = petAttackHidden and 0.0 or (origPetAttackModeTextureAlpha * opacityValue)
+				if petAttackModeTexture.SetAlpha then
+					petAttackModeTexture:SetAlpha(petAttackAlpha)
+				end
+				if petAttackHidden and petAttackModeTexture.Hide then
+					petAttackModeTexture:Hide()
+				elseif not petAttackHidden and petAttackModeTexture.Show then
+					petAttackModeTexture:Show()
+				end
+			end
+
+			-- Pet frame flash: hidden if "Hide Portrait" is checked OR "Use Custom Borders" is enabled (Pet only)
+			-- This texture flashes when the pet takes damage
+			if petFrameFlash and unit == "Pet" then
+				local useCustomBorders = ufCfg and (ufCfg.useCustomBorders == true)
+				local petFlashHidden = hidePortrait or useCustomBorders
+				local petFlashAlpha = petFlashHidden and 0.0 or (origPetFrameFlashAlpha * opacityValue)
+				if petFrameFlash.SetAlpha then
+					petFrameFlash:SetAlpha(petFlashAlpha)
+				end
+				if petFlashHidden and petFrameFlash.Hide then
+					petFrameFlash:Hide()
+				elseif not petFlashHidden and petFrameFlash.Show then
+					petFrameFlash:Show()
+				end
+			end
 		end
 
-		-- Apply damage text styling (Player only)
+		-- Apply damage text styling (Player and Pet)
 		local function applyDamageText()
-			if unit ~= "Player" then return end
+			if unit ~= "Player" and unit ~= "Pet" then return end
 			local damageTextFrame = resolveDamageTextFrame(unit)
 			if not damageTextFrame then return end
 
@@ -675,6 +740,8 @@ do
 			-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
 			-- cause taint that spreads through the execution context, blocking protected functions
 			-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
+			-- Store the unit key on the frame so the hook knows which config to read
+			damageTextFrame._scooterUnitKey = unit
 			if not damageTextFrame._scooterSetTextHeightHooked then
 				damageTextFrame._scooterSetTextHeightHooked = true
 				
@@ -682,10 +749,11 @@ do
 					-- Guard against recursion (though we use SetFont, not SetTextHeight, to apply)
 					if self._scooterApplyingTextHeight then return end
 					
-					-- Check if we have custom settings
+					-- Check if we have custom settings (use stored unit key)
+					local unitKey = self._scooterUnitKey or "Player"
 					local db = addon and addon.db and addon.db.profile
-					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
-						local cfg = db.unitFrames.Player.portrait
+					if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
+						local cfg = db.unitFrames[unitKey].portrait
 						local damageTextCfg = cfg.damageText or {}
 						local customSize = tonumber(damageTextCfg.size)
 						if customSize then
@@ -739,7 +807,7 @@ do
 			local c = nil
 			local colorMode = damageTextCfg.colorMode or "default"
 			if colorMode == "class" then
-				-- Class Color: use player's class color
+				-- Class Color: use player's class color (for Pet, still use player's class)
 				if addon.GetClassColorRGB then
 					local cr, cg, cb = addon.GetClassColorRGB("player")
 					c = { cr or 1, cg or 1, cb or 1, 1 }
@@ -761,7 +829,7 @@ do
 			local ox = (damageTextCfg.offset and tonumber(damageTextCfg.offset.x)) or 0
 			local oy = (damageTextCfg.offset and tonumber(damageTextCfg.offset.y)) or 0
 			if damageTextFrame.ClearAllPoints and damageTextFrame.SetPoint then
-				local b = ensureBaseline(damageTextFrame, "Player:damageText")
+				local b = ensureBaseline(damageTextFrame, unit .. ":damageText")
 				damageTextFrame:ClearAllPoints()
 				damageTextFrame:SetPoint(b.point or "CENTER", b.relTo or (damageTextFrame.GetParent and damageTextFrame:GetParent()) or nil, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
 			end
@@ -830,16 +898,24 @@ do
 
 	-- Hook Blizzard's CombatFeedback system to prevent showing damage text when disabled
 	-- We need to hook both OnCombatEvent (when damage happens) and OnUpdate (animation loop)
-	-- CombatFeedback_OnCombatEvent receives PlayerFrame as 'self', and PlayerFrame.feedbackText is the HitText
-	-- CombatFeedback_OnUpdate also receives PlayerFrame as 'self'
+	-- CombatFeedback_OnCombatEvent receives PlayerFrame/PetFrame as 'self', and frame.feedbackText is the HitText
+	-- CombatFeedback_OnUpdate also receives PlayerFrame/PetFrame as 'self'
 	if _G.CombatFeedback_OnCombatEvent then
 		_G.hooksecurefunc("CombatFeedback_OnCombatEvent", function(self, event, flags, amount, type)
-			-- Check if this is PlayerFrame
+			-- Check if this is PlayerFrame or PetFrame
 			local playerFrame = _G.PlayerFrame
-			if self and self == playerFrame and self.feedbackText then
+			local petFrame = _G.PetFrame
+			local unitKey = nil
+			if self and self == playerFrame then
+				unitKey = "Player"
+			elseif self and self == petFrame then
+				unitKey = "Pet"
+			end
+			
+			if unitKey and self.feedbackText then
 				local db = addon and addon.db and addon.db.profile
-				if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
-					local cfg = db.unitFrames.Player.portrait
+				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
+					local cfg = db.unitFrames[unitKey].portrait
 					local damageTextDisabled = cfg.damageTextDisabled == true
 					
 					if damageTextDisabled then
@@ -873,15 +949,23 @@ do
 
 	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
 	-- This is critical because OnUpdate runs every frame and will override our alpha setting
-	-- OnUpdate receives PlayerFrame as 'self'
+	-- OnUpdate receives PlayerFrame/PetFrame as 'self'
 	if _G.CombatFeedback_OnUpdate then
 		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)
-			-- Check if this is PlayerFrame
+			-- Check if this is PlayerFrame or PetFrame
 			local playerFrame = _G.PlayerFrame
-			if self and self == playerFrame and self.feedbackText then
+			local petFrame = _G.PetFrame
+			local unitKey = nil
+			if self and self == playerFrame then
+				unitKey = "Player"
+			elseif self and self == petFrame then
+				unitKey = "Pet"
+			end
+			
+			if unitKey and self.feedbackText then
 				local db = addon and addon.db and addon.db.profile
-				if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.portrait then
-					local damageTextDisabled = db.unitFrames.Player.portrait.damageTextDisabled == true
+				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
+					local damageTextDisabled = db.unitFrames[unitKey].portrait.damageTextDisabled == true
 					if damageTextDisabled then
 						-- Continuously force alpha to 0, overriding Blizzard's animation
 						-- This runs after Blizzard's SetAlpha calls, so it will override them
@@ -955,6 +1039,48 @@ do
 
 	if _G.PlayerFrame_UpdateStatus then
 		_G.hooksecurefunc("PlayerFrame_UpdateStatus", EnforcePlayerStatusTextureVisibility)
+	end
+
+	-- Keep Pet frame overlay textures hidden when ScooterMod wants them hidden.
+	local function EnforcePetFrameTexturesVisibility()
+		local db = addon and addon.db and addon.db.profile
+		if not db then
+			return
+		end
+
+		local ufCfg = db.unitFrames and db.unitFrames.Pet
+		if not ufCfg then
+			return
+		end
+
+		local portraitCfg = ufCfg.portrait or {}
+		local hidePortrait = portraitCfg.hidePortrait == true
+		local useCustomBorders = ufCfg.useCustomBorders == true
+
+		if not (hidePortrait or useCustomBorders) then
+			-- Respect Blizzard visuals when no ScooterMod rule wants them hidden.
+			return
+		end
+
+		-- Hide PetAttackModeTexture (use SetAlpha only to avoid tainting PetFrame)
+		local petAttackModeTexture = _G.PetAttackModeTexture
+		if petAttackModeTexture then
+			if petAttackModeTexture.SetAlpha then
+				petAttackModeTexture:SetAlpha(0)
+			end
+		end
+
+		-- Hide PetFrameFlash (use SetAlpha only to avoid tainting PetFrame)
+		local petFrameFlash = _G.PetFrameFlash
+		if petFrameFlash then
+			if petFrameFlash.SetAlpha then
+				petFrameFlash:SetAlpha(0)
+			end
+		end
+	end
+
+	if _G.PetFrame_Update then
+		_G.hooksecurefunc("PetFrame_Update", EnforcePetFrameTexturesVisibility)
 	end
 end
 

@@ -673,20 +673,19 @@ do
             bar.ScooterRectFill = overlay
 
             -- Drive overlay width from the health bar's own value/size changes.
-            -- CRITICAL: Skip during combat to avoid any potential taint propagation.
+            -- NOTE: No combat guard needed here because updateRectHealthOverlay() only
+            -- operates on ScooterRectFill (our own child texture), not Blizzard's
+            -- protected StatusBar. Cosmetic operations on our own textures are safe.
             if _G.hooksecurefunc and not bar._ScootRectHooksInstalled then
                 bar._ScootRectHooksInstalled = true
                 _G.hooksecurefunc(bar, "SetValue", function(self)
-                    if InCombatLockdown and InCombatLockdown() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
-                    if InCombatLockdown and InCombatLockdown() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 if bar.HookScript then
                     bar:HookScript("OnSizeChanged", function(self)
-                        if InCombatLockdown and InCombatLockdown() then return end
                         updateRectHealthOverlay(unit, self)
                     end)
                 end
@@ -919,6 +918,15 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
+            
+            -- Hide Blizzard's stock Background texture when using a custom texture.
+            -- CastingBarFrame-based bars (Player/Target/Focus cast bars) have a stock
+            -- Background texture at BACKGROUND sublevel 2. Without hiding it, the stock
+            -- background shows through since our ScooterModBG sits at sublevel 3.
+            -- Use SetAlpha(0) instead of Hide() to avoid fighting Blizzard's internal logic.
+            if bar.Background and bar.Background.SetAlpha then
+                pcall(bar.Background.SetAlpha, bar.Background, 0)
+            end
         else
             -- Default: always show our background with default black color
             -- We don't rely on Blizzard's stock Background texture since it's hidden by default
@@ -937,6 +945,12 @@ do
                 pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
             end
             bar.ScooterModBG:Show()
+            
+            -- Restore Blizzard's stock Background texture visibility when using default.
+            -- This ensures toggling back to "Default" restores the original look.
+            if bar.Background and bar.Background.SetAlpha then
+                pcall(bar.Background.SetAlpha, bar.Background, 1)
+            end
         end
     end
 
@@ -1433,6 +1447,29 @@ do
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
                             end
                         end
+
+                        -- Hook SetFontObject to reapply full text styling when Blizzard resets fonts during instance loading.
+                        local function hookAltPowerTextFontReset(fs)
+                            if not fs or fs._ScooterAltPowerTextFontResetHooked then return end
+                            fs._ScooterAltPowerTextFontResetHooked = true
+                            if _G.hooksecurefunc then
+                                _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+                                    if not self._ScooterAltPowerTextFontReapplyDeferred then
+                                        self._ScooterAltPowerTextFontReapplyDeferred = true
+                                        C_Timer.After(0, function()
+                                            self._ScooterAltPowerTextFontReapplyDeferred = nil
+                                            -- Reapply Player bar textures which includes Alternate Power styling
+                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
+                                                addon.ApplyUnitFrameBarTexturesFor("Player")
+                                            end
+                                        end)
+                                    end
+                                end)
+                            end
+                        end
+
+                        hookAltPowerTextFontReset(leftFS)
+                        hookAltPowerTextFontReset(rightFS)
 
                         -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
                         local percentHidden = (acfg.percentHidden == true)
@@ -2003,53 +2040,17 @@ do
                     if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                 end
 
-                -- Player Power Bar: Adjust the Spark when borders are enabled
-                -- This prevents the Spark's glow from extending below the border (e.g., Elemental Shaman)
-                if unit == "Player" and pb and pb.Spark then
-                    local spark = pb.Spark
-                    local shouldAdjust = cfg.useCustomBorders and styleKey and styleKey ~= "none"
-                    
-                    -- Store the adjustment state on the spark
-                    spark._ScootSparkShouldAdjust = shouldAdjust
-                    
-                    -- Helper function to apply the adjustment
-                    local function applySparkAdjustment(sparkFrame)
-                        if not sparkFrame or not sparkFrame._ScootSparkShouldAdjust then return end
-                        -- Reduce height to crop the bottom glow
-                        if sparkFrame.GetHeight and sparkFrame.SetHeight then
-                            if not sparkFrame._ScootSparkOrigHeight then
-                                sparkFrame._ScootSparkOrigHeight = sparkFrame:GetHeight()
-                            end
-                            local newHeight = (sparkFrame._ScootSparkOrigHeight or 20) * 0.85
-                            pcall(sparkFrame.SetHeight, sparkFrame, newHeight)
-                        end
-                    end
-                    
-                    -- Install hook to persistently apply adjustment after Blizzard updates
-                    if spark.UpdateSize and not spark._ScootSparkHooked then
-                        spark._ScootSparkHooked = true
-                        hooksecurefunc(spark, "UpdateSize", function(self)
-                            if self._ScootSparkShouldAdjust then
-                                C_Timer.After(0, function()
-                                    applySparkAdjustment(self)
-                                end)
-                            end
-                        end)
-                    end
-                    
-                    if shouldAdjust then
-                        applySparkAdjustment(spark)
-                    else
-                        -- Restore original height
-                        if spark._ScootSparkOrigHeight and spark.SetHeight then
-                            pcall(spark.SetHeight, spark, spark._ScootSparkOrigHeight)
-                        end
-                    end
-                end
+                -- NOTE: Spark height adjustment code was removed. The previous implementation
+                -- of shrinking the spark to prevent it from extending below custom borders
+                -- was causing worse visual artifacts than the original minor issue.
+                -- Letting Blizzard manage the spark naturally is the better approach.
             end
         end
 
         -- Nudge Blizzard to re-evaluate atlases/masks immediately after restoration
+        -- NOTE: Pet is excluded because PetFrame is a managed/protected frame. Calling
+        -- PetFrame_Update from addon code taints the frame, causing Edit Mode's
+        -- InitSystemAnchors to be blocked from calling SetPoint on PetFrame. (see DEBUG.md)
         local function refresh(unitKey)
             if unitKey == "Player" then
                 if _G.PlayerFrame_Update then pcall(_G.PlayerFrame_Update) end
@@ -2057,8 +2058,8 @@ do
                 if _G.TargetFrame_Update then pcall(_G.TargetFrame_Update, _G.TargetFrame) end
             elseif unitKey == "Focus" then
                 if _G.FocusFrame_Update then pcall(_G.FocusFrame_Update, _G.FocusFrame) end
-            elseif unitKey == "Pet" then
-                if _G.PetFrame_Update then pcall(_G.PetFrame_Update, _G.PetFrame) end
+            -- Pet intentionally excluded: PetFrame is a managed frame; calling PetFrame_Update
+            -- from addon code taints the frame and breaks Edit Mode positioning.
             end
         end
 
@@ -2080,6 +2081,19 @@ do
                 else
                     -- Restore the Alternate Power frame art when custom borders are disabled.
                     pcall(altTex.SetShown, altTex, true)
+                end
+            end
+        end
+        -- Hide the Player's Vehicle frame art when Use Custom Borders is enabled.
+        -- Framestack: PlayerFrame.PlayerFrameContainer.VehicleFrameTexture
+        if unit == "Player" and _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
+            local vehicleTex = _G.PlayerFrame.PlayerFrameContainer.VehicleFrameTexture
+            if vehicleTex and vehicleTex.SetShown then
+                if cfg.useCustomBorders then
+                    pcall(vehicleTex.SetShown, vehicleTex, false)
+                else
+                    -- Restore the Vehicle frame art when custom borders are disabled.
+                    pcall(vehicleTex.SetShown, vehicleTex, true)
                 end
             end
         end
@@ -2229,6 +2243,50 @@ do
                 end
             end
         end
+        
+        -- Hide Flash (aggro/threat glow) for Focus when Use Custom Borders is enabled
+        if unit == "Focus" then
+            if _G.FocusFrame and _G.FocusFrame.TargetFrameContainer then
+                local focusFlash = _G.FocusFrame.TargetFrameContainer.Flash
+                if focusFlash then
+                    if cfg.useCustomBorders then
+                        -- Hide and install persistent hook to keep it hidden
+                        if focusFlash.SetShown then pcall(focusFlash.SetShown, focusFlash, false) end
+                        if focusFlash.Hide then pcall(focusFlash.Hide, focusFlash) end
+                        
+                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
+                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
+                        if not focusFlash._ScootHideHookInstalled then
+                            focusFlash._ScootHideHookInstalled = true
+                            focusFlash._ScootOrigOnShow = focusFlash:GetScript("OnShow")
+                            focusFlash:SetScript("OnShow", function(self)
+                                local db = addon and addon.db and addon.db.profile
+                                if db and db.unitFrames and db.unitFrames.Focus and db.unitFrames.Focus.useCustomBorders then
+                                    -- Keep it hidden while Use Custom Borders is enabled
+                                    self:Hide()
+                                else
+                                    -- Allow it to show if custom borders are disabled
+                                    if self._ScootOrigOnShow then
+                                        self._ScootOrigOnShow(self)
+                                    end
+                                end
+                            end)
+                        end
+                    else
+                        -- Restore Flash when Use Custom Borders is disabled
+                        -- Restore original OnShow handler
+                        if focusFlash._ScootHideHookInstalled and focusFlash._ScootOrigOnShow then
+                            focusFlash:SetScript("OnShow", focusFlash._ScootOrigOnShow)
+                        else
+                            focusFlash:SetScript("OnShow", nil)
+                        end
+                        -- Show the frame
+                        if focusFlash.SetShown then pcall(focusFlash.SetShown, focusFlash, true) end
+                        if focusFlash.Show then pcall(focusFlash.Show, focusFlash) end
+                    end
+                end
+            end
+        end
         refresh(unit)
     end
 
@@ -2241,6 +2299,42 @@ do
         applyForUnit("Target")
         applyForUnit("Focus")
         applyForUnit("Pet")
+    end
+
+    -- =========================================================================
+    -- Vehicle and Alternate Power Frame Texture Visibility Enforcement
+    -- =========================================================================
+    -- When entering/exiting vehicles, Blizzard's PlayerFrame_ToVehicleArt() and
+    -- PlayerFrame_ToPlayerArt() explicitly show/hide VehicleFrameTexture and
+    -- AlternatePowerFrameTexture. These helpers re-enforce hiding when
+    -- "Use Custom Borders" is enabled.
+
+    -- Enforce VehicleFrameTexture visibility based on Use Custom Borders setting
+    local function EnforceVehicleFrameTextureVisibility()
+        local db = addon and addon.db and addon.db.profile
+        if not db or not db.unitFrames or not db.unitFrames.Player then return end
+        local cfg = db.unitFrames.Player
+        if not cfg.useCustomBorders then return end -- Only enforce when custom borders enabled
+        
+        local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
+        local vehicleTex = container and container.VehicleFrameTexture
+        if vehicleTex and vehicleTex.SetShown then
+            pcall(vehicleTex.SetShown, vehicleTex, false)
+        end
+    end
+
+    -- Enforce AlternatePowerFrameTexture visibility based on Use Custom Borders setting
+    local function EnforceAlternatePowerFrameTextureVisibility()
+        local db = addon and addon.db and addon.db.profile
+        if not db or not db.unitFrames or not db.unitFrames.Player then return end
+        local cfg = db.unitFrames.Player
+        if not cfg.useCustomBorders then return end -- Only enforce when custom borders enabled
+        
+        local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
+        local altTex = container and container.AlternatePowerFrameTexture
+        if altTex and altTex.SetShown then
+            pcall(altTex.SetShown, altTex, false)
+        end
     end
 
     -- Install stable hooks to re-assert z-order after Blizzard refreshers
@@ -2293,7 +2387,7 @@ do
                 end
             end)
         end
-        if type(_G.PetFrame_Update) == "function" then
+        if false and type(_G.PetFrame_Update) == "function" then
             _G.hooksecurefunc("PetFrame_Update", function() defer("Pet") end)
         end
     end
@@ -2302,6 +2396,68 @@ do
         addon._UFZOrderHooksInstalled = true
         -- Install hooks synchronously to ensure they're ready before ApplyStyles() runs
         installUFZOrderHooks()
+    end
+
+    -- =========================================================================
+    -- Vehicle/Alternate Power Frame Texture Visibility Hooks
+    -- =========================================================================
+    -- Hook Blizzard's vehicle art transition functions to re-enforce hiding
+    -- when "Use Custom Borders" is enabled.
+
+    if not addon._VehicleArtHooksInstalled then
+        addon._VehicleArtHooksInstalled = true
+
+        -- Hook PlayerFrame_ToVehicleArt to re-enforce VehicleFrameTexture hiding
+        -- This is called when entering a vehicle (Blizzard shows VehicleFrameTexture)
+        if _G.hooksecurefunc and type(_G.PlayerFrame_ToVehicleArt) == "function" then
+            _G.hooksecurefunc("PlayerFrame_ToVehicleArt", function()
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, EnforceVehicleFrameTextureVisibility)
+                else
+                    EnforceVehicleFrameTextureVisibility()
+                end
+            end)
+        end
+
+        -- Hook PlayerFrame_ToPlayerArt to re-enforce AlternatePowerFrameTexture hiding
+        -- This is called when exiting a vehicle (Blizzard shows AlternatePowerFrameTexture)
+        if _G.hooksecurefunc and type(_G.PlayerFrame_ToPlayerArt) == "function" then
+            _G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, EnforceAlternatePowerFrameTextureVisibility)
+                else
+                    EnforceAlternatePowerFrameTextureVisibility()
+                end
+            end)
+        end
+
+        -- Install Show() hooks directly on the textures for extra robustness.
+        -- This catches ANY Show() call, not just those from known Blizzard functions.
+        local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
+        
+        -- VehicleFrameTexture Show() hook
+        local vehicleTex = container and container.VehicleFrameTexture
+        if vehicleTex and not vehicleTex._ScootShowHooked then
+            vehicleTex._ScootShowHooked = true
+            hooksecurefunc(vehicleTex, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
+
+        -- AlternatePowerFrameTexture Show() hook
+        local altTex = container and container.AlternatePowerFrameTexture
+        if altTex and not altTex._ScootShowHooked then
+            altTex._ScootShowHooked = true
+            hooksecurefunc(altTex, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
     end
 
 end

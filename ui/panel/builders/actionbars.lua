@@ -212,19 +212,39 @@ local function createEmptySectionsRenderer(componentId, title)
                                 if id ~= currentId then
                                     local text = unitLabelFor(id)
                                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
-                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
                                         local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
-                                        if _G and _G.StaticPopup_Show then
-                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                                        if addon.Dialogs and addon.Dialogs.Show then
+                                            addon.Dialogs:Show("SCOOTERMOD_COPY_UF_CONFIRM", {
+                                                formatArgs = { text, destLabel },
+                                                data = data,
+                                                onAccept = function()
+                                                    if addon and addon.CopyUnitFrameSettings then
+                                                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                                                        local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
+                                                        if ok then
+                                                            dd._ScooterSelectedId = id
+                                                            if dd.SetText then dd:SetText(text) end
+                                                            panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                            panel._pendingComponentRefresh[currentId] = true
+                                                            local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                            if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                            if panel and panel.RefreshCurrentCategoryDeferred then
+                                                                panel.RefreshCurrentCategoryDeferred()
+                                                            end
+                                                        end
+                                                    end
+                                                end,
+                                            })
                                         else
+                                            -- Fallback: perform copy directly if dialog system is unavailable
                                             if addon and addon.CopyUnitFrameSettings then
                                                 if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    -- Mark component for invalidation + refresh
                                                     panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
                                                     panel._pendingComponentRefresh[currentId] = true
                                                     local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
@@ -342,19 +362,39 @@ local function createWIPRenderer(componentId, title)
                                     root:CreateRadio(text, function()
                                         return dd._ScooterSelectedId == id
                                     end, function()
-                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
                                         local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
-                                        if _G and _G.StaticPopup_Show then
-                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                                        if addon.Dialogs and addon.Dialogs.Show then
+                                            addon.Dialogs:Show("SCOOTERMOD_COPY_UF_CONFIRM", {
+                                                formatArgs = { text, destLabel },
+                                                data = data,
+                                                onAccept = function()
+                                                    if addon and addon.CopyUnitFrameSettings then
+                                                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                                                        local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
+                                                        if ok then
+                                                            dd._ScooterSelectedId = id
+                                                            if dd.SetText then dd:SetText(text) end
+                                                            panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                            panel._pendingComponentRefresh[currentId] = true
+                                                            local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                            if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                            if panel and panel.RefreshCurrentCategoryDeferred then
+                                                                panel.RefreshCurrentCategoryDeferred()
+                                                            end
+                                                        end
+                                                    end
+                                                end,
+                                            })
                                         else
+                                            -- Fallback: perform copy directly if dialog system is unavailable
                                             if addon and addon.CopyUnitFrameSettings then
                                                 if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    -- Mark component for invalidation + refresh
                                                     panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
                                                     panel._pendingComponentRefresh[currentId] = true
                                                     local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
@@ -437,19 +477,39 @@ local function createWIPRenderer(componentId, title)
                                 if id ~= currentId then
                                     local text = unitLabelFor(id)
                                     root:CreateRadio(text, function() return dd._ScooterSelectedId == id end, function()
-                                        local which = "SCOOTERMOD_COPY_UF_CONFIRM"
                                         local destLabel = unitLabelFor(currentId)
                                         local data = { sourceUnit = unitKeyFor(id), destUnit = unitKeyFor(currentId), sourceLabel = text, destLabel = destLabel, dropdown = dd, destId = currentId }
-                                        if _G and _G.StaticPopup_Show then
-                                            _G.StaticPopup_Show(which, text, destLabel, data)
+                                        -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
+                                        if addon.Dialogs and addon.Dialogs.Show then
+                                            addon.Dialogs:Show("SCOOTERMOD_COPY_UF_CONFIRM", {
+                                                formatArgs = { text, destLabel },
+                                                data = data,
+                                                onAccept = function()
+                                                    if addon and addon.CopyUnitFrameSettings then
+                                                        if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
+                                                        local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
+                                                        if ok then
+                                                            dd._ScooterSelectedId = id
+                                                            if dd.SetText then dd:SetText(text) end
+                                                            panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
+                                                            panel._pendingComponentRefresh[currentId] = true
+                                                            local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)
+                                                            if rp and type(rp.Invalidate) == "function" then rp:Invalidate() end
+                                                            if panel and panel.RefreshCurrentCategoryDeferred then
+                                                                panel.RefreshCurrentCategoryDeferred()
+                                                            end
+                                                        end
+                                                    end
+                                                end,
+                                            })
                                         else
+                                            -- Fallback: perform copy directly if dialog system is unavailable
                                             if addon and addon.CopyUnitFrameSettings then
                                                 if panel and panel.SuspendRefresh then panel.SuspendRefresh(0.35) end
                                                 local ok = addon.CopyUnitFrameSettings(data.sourceUnit, data.destUnit)
                                                 if ok then
                                                     dd._ScooterSelectedId = id
                                                     if dd.SetText then dd:SetText(text) end
-                                                    -- Mark component for invalidation + refresh
                                                     panel._pendingComponentRefresh = panel._pendingComponentRefresh or {}
                                                     panel._pendingComponentRefresh[currentId] = true
                                                     local rp = panel.RightPane or (panel.frame and panel.frame.RightPane)

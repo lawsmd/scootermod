@@ -1106,7 +1106,7 @@ local function createUFRenderer(componentId, title)
 							applyNow()
 						end
 						local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
 						local sf = CreateFrame("Frame", nil, borderPage, "SettingsSliderControlTemplate")
@@ -2527,7 +2527,7 @@ local function createUFRenderer(componentId, title)
                             applyNow()
                         end
                         local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+                        opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
                         local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
                         local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
                         local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
@@ -3028,7 +3028,7 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end
 							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
 							local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
@@ -4037,7 +4037,7 @@ local function createUFRenderer(componentId, title)
 					applyNow()
 				end
 				local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 				local setting = CreateLocalSetting("Border Thickness", "number", get, set, get())
 				local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
 				local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = setting, options = opts })
@@ -4392,9 +4392,9 @@ local function createUFRenderer(componentId, title)
 		table.insert(init, expInitializerPortrait)
 
 		-- Portrait tabs: Positioning / Sizing / Mask / Border / Personal Text / Visibility
-		-- Personal Text tab only exists for Player frame
+		-- Personal Text tab exists for Player and Pet frames (both have combat feedback text)
 		-- Positioning tab disabled for Pet (PetFrame is a managed frame; moving portrait causes entire frame to move)
-		local portraitTabs = { sectionTitle = "", tabAText = (componentId ~= "ufPet") and "Positioning" or nil, tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = (componentId == "ufPlayer") and "Personal Text" or nil, tabFText = "Visibility" }
+		local portraitTabs = { sectionTitle = "", tabAText = (componentId ~= "ufPet") and "Positioning" or nil, tabBText = "Sizing", tabCText = "Mask", tabDText = "Border", tabEText = (componentId == "ufPlayer" or componentId == "ufPet") and "Personal Text" or nil, tabFText = "Visibility" }
 		portraitTabs.build = function(frame)
 			-- Helper for unit key
 			local function unitKey()
@@ -4648,7 +4648,7 @@ local function createUFRenderer(componentId, title)
 						applyNow()
 					end
 					local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-					opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+					opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 					local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
 					local sf = CreateFrame("Frame", nil, frame.PageD, "SettingsSliderControlTemplate")
@@ -4707,11 +4707,12 @@ local function createUFRenderer(componentId, title)
 				end
 			end
 
-			-- PageE: Personal Text (Player only)
+			-- PageE: Personal Text (Player and Pet)
 			do
-				-- Only show this tab for Player frame
-				if unitKey() ~= "Player" then
-					-- Empty page for non-Player frames
+				-- Only show this tab for Player and Pet frames (both have combat feedback text)
+				local uk = unitKey()
+				if uk ~= "Player" and uk ~= "Pet" then
+					-- Empty page for non-Player/Pet frames
 					local y = { y = -50 }
 				else
 					local function applyNow()
@@ -4794,9 +4795,14 @@ local function createUFRenderer(componentId, title)
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
 					end
-					-- Add info icon tooltip explaining Personal Text
+					-- Add info icon tooltip explaining Personal Text (adjust text for Pet vs Player)
 					if panel and panel.CreateInfoIcon then
-						local tooltipText = "These settings control the floating combat text that appears over your portrait when your character takes damage or receives healing."
+						local tooltipText
+						if uk == "Pet" then
+							tooltipText = "These settings control the floating combat text that appears over your pet's portrait when it takes damage or receives healing."
+						else
+							tooltipText = "These settings control the floating combat text that appears over your portrait when your character takes damage or receives healing."
+						end
 						local checkbox = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if checkbox then
 							row.ScooterPersonalTextInfoIcon = panel.CreateInfoIcon(row, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
@@ -5505,7 +5511,7 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end
 							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local setting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = setting, options = opts })
 							local sf = CreateFrame("Frame", nil, borderPage, "SettingsSliderControlTemplate")
@@ -5817,7 +5823,7 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end
 							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local setting = CreateLocalSetting("Icon Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Icon Border Thickness", setting = setting, options = opts })
 							local f = CreateFrame("Frame", nil, iconPage, "SettingsSliderControlTemplate")
@@ -7469,7 +7475,7 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end
 							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
 							_thkFrame = sf
@@ -7536,6 +7542,66 @@ local function createUFRenderer(componentId, title)
 				tabBD.GetExtent = function() return 330 end
 				tabBD:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBD)
+			end
+
+			-- Misc. collapsible section (Target only) - contains miscellaneous visibility/hide options
+			if componentId == "ufTarget" then
+				local expInitializerMisc = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Misc.",
+					sectionKey = "Misc.",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Misc."),
+				})
+				expInitializerMisc.GetExtent = function() return 30 end
+				table.insert(init, expInitializerMisc)
+
+				-- Hide Threat Meter checkbox (parent-level setting, no tabbed section)
+				do
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Target = db.unitFrames.Target or {}
+						db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+						return db.unitFrames.Target.misc
+					end
+
+					local function applyNow()
+						if addon and addon.ApplyTargetThreatMeterVisibility then
+							addon.ApplyTargetThreatMeterVisibility()
+						end
+					end
+
+					local setting = CreateLocalSetting("Hide Threat Meter", "boolean",
+						function()
+							local t = ensureUFDB() or {}
+							return t.hideThreatMeter == true
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.hideThreatMeter = (v == true)
+							applyNow()
+						end,
+						false)
+					local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = "Hide Threat Meter", setting = setting, options = {} })
+					row.GetExtent = function() return 34 end
+					row:AddShownPredicate(function()
+						return panel:IsSectionExpanded(componentId, "Misc.")
+					end)
+					do
+						local base = row.InitFrame
+						row.InitFrame = function(self, frame)
+							if base then base(self, frame) end
+							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+							if panel and panel.ApplyRobotoWhite then
+								if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+								local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+						end
+					end
+					table.insert(init, row)
+				end
 			end
 
 			-- Sixth collapsible section: Buffs & Debuffs (Focus only)
@@ -7942,7 +8008,7 @@ local function createUFRenderer(componentId, title)
 								applyNow()
 							end
 							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
-							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v)) end)
+							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
 							_thkFrame = sf
@@ -8008,6 +8074,66 @@ local function createUFRenderer(componentId, title)
 				tabBDF.GetExtent = function() return 330 end
 				tabBDF:AddShownPredicate(function() return panel:IsSectionExpanded(componentId, "Buffs & Debuffs") end)
 				table.insert(init, tabBDF)
+			end
+
+			-- Misc. collapsible section (Focus only) - contains miscellaneous visibility/hide options
+			if componentId == "ufFocus" then
+				local expInitializerMiscF = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Misc.",
+					sectionKey = "Misc.",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Misc."),
+				})
+				expInitializerMiscF.GetExtent = function() return 30 end
+				table.insert(init, expInitializerMiscF)
+
+				-- Hide Threat Meter checkbox (parent-level setting, no tabbed section)
+				do
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Focus = db.unitFrames.Focus or {}
+						db.unitFrames.Focus.misc = db.unitFrames.Focus.misc or {}
+						return db.unitFrames.Focus.misc
+					end
+
+					local function applyNow()
+						if addon and addon.ApplyFocusThreatMeterVisibility then
+							addon.ApplyFocusThreatMeterVisibility()
+						end
+					end
+
+					local setting = CreateLocalSetting("Hide Threat Meter", "boolean",
+						function()
+							local t = ensureUFDB() or {}
+							return t.hideThreatMeter == true
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.hideThreatMeter = (v == true)
+							applyNow()
+						end,
+						false)
+					local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = "Hide Threat Meter", setting = setting, options = {} })
+					row.GetExtent = function() return 34 end
+					row:AddShownPredicate(function()
+						return panel:IsSectionExpanded(componentId, "Misc.")
+					end)
+					do
+						local base = row.InitFrame
+						row.InitFrame = function(self, frame)
+							if base then base(self, frame) end
+							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+							if panel and panel.ApplyRobotoWhite then
+								if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+								local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+						end
+					end
+					table.insert(init, row)
+				end
 			end
 
 			-- Final collapsible section: Visibility (overall opacity for this Unit Frame)
@@ -8117,6 +8243,114 @@ local function createUFRenderer(componentId, title)
 				addOpacitySlider("Opacity With Target", "opacityWithTarget", 1, 100, 100, false)
 				-- Allow the slider to reach 0 so it's clear that 0/1 both mean "invisible" in practice.
 				addOpacitySlider("Opacity Out of Combat", "opacityOutOfCombat", 0, 100, 100, false)
+			end
+
+			-- Misc. collapsible section (Player only) - contains miscellaneous visibility/hide options
+			if componentId == "ufPlayer" then
+				local expInitializerMiscP = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+					name = "Misc.",
+					sectionKey = "Misc.",
+					componentId = componentId,
+					expanded = panel:IsSectionExpanded(componentId, "Misc."),
+				})
+				expInitializerMiscP.GetExtent = function() return 30 end
+				table.insert(init, expInitializerMiscP)
+
+				-- Hide Player Role Icon checkbox (parent-level setting, no tabbed section)
+				do
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Player = db.unitFrames.Player or {}
+						db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+						return db.unitFrames.Player.misc
+					end
+
+					local function applyNow()
+						if addon and addon.ApplyPlayerRoleIconVisibility then
+							addon.ApplyPlayerRoleIconVisibility()
+						end
+					end
+
+					local setting = CreateLocalSetting("Hide Player Role Icon", "boolean",
+						function()
+							local t = ensureUFDB() or {}
+							return t.hideRoleIcon == true
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.hideRoleIcon = (v == true)
+							applyNow()
+						end,
+						false)
+					local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = "Hide Player Role Icon", setting = setting, options = {} })
+					row.GetExtent = function() return 34 end
+					row:AddShownPredicate(function()
+						return panel:IsSectionExpanded(componentId, "Misc.")
+					end)
+					do
+						local base = row.InitFrame
+						row.InitFrame = function(self, frame)
+							if base then base(self, frame) end
+							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+							if panel and panel.ApplyRobotoWhite then
+								if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+								local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+						end
+					end
+					table.insert(init, row)
+				end
+
+				-- Hide Player Group Number checkbox (parent-level setting, no tabbed section)
+				do
+					local function ensureUFDB()
+						local db = addon and addon.db and addon.db.profile
+						if not db then return nil end
+						db.unitFrames = db.unitFrames or {}
+						db.unitFrames.Player = db.unitFrames.Player or {}
+						db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
+						return db.unitFrames.Player.misc
+					end
+
+					local function applyNow()
+						if addon and addon.ApplyPlayerGroupNumberVisibility then
+							addon.ApplyPlayerGroupNumberVisibility()
+						end
+					end
+
+					local setting = CreateLocalSetting("Hide Player Group Number", "boolean",
+						function()
+							local t = ensureUFDB() or {}
+							return t.hideGroupNumber == true
+						end,
+						function(v)
+							local t = ensureUFDB(); if not t then return end
+							t.hideGroupNumber = (v == true)
+							applyNow()
+						end,
+						false)
+					local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = "Hide Player Group Number", setting = setting, options = {} })
+					row.GetExtent = function() return 34 end
+					row:AddShownPredicate(function()
+						return panel:IsSectionExpanded(componentId, "Misc.")
+					end)
+					do
+						local base = row.InitFrame
+						row.InitFrame = function(self, frame)
+							if base then base(self, frame) end
+							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+							if panel and panel.ApplyRobotoWhite then
+								if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+								local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							end
+						end
+					end
+					table.insert(init, row)
+				end
 			end
 
             if right.SetTitle then

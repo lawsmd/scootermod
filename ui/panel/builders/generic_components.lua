@@ -1167,7 +1167,7 @@ local function createComponentRenderer(componentId)
                     )
                     local thicknessOptions = Settings.CreateSliderOptions(1, 16, 0.34)
                     thicknessOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
-                        return tostring(math.floor((tonumber(value) or 0) + 0.5))
+                        return string.format("%.1f", value)
                     end)
                     local thicknessInit = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", {
                         name = "Border Thickness",
@@ -1953,6 +1953,10 @@ local function createComponentRenderer(componentId)
                                 elseif settingId == "opacity" or settingId == "opacityOutOfCombat" or settingId == "opacityWithTarget" or settingId == "barOpacity" or settingId == "barOpacityOutOfCombat" or settingId == "barOpacityWithTarget" then
                                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
                                         return string.format("%d%%", math.floor((tonumber(v) or 0) + 0.5))
+                                    end)
+                                elseif settingId == "borderThickness" or settingId == "iconBorderThickness" then
+                                    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+                                        return string.format("%.1f", v)
                                     end)
                                 else
                                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(math.floor(v + 0.5)) end)

@@ -151,6 +151,30 @@ do
         end
     end
 
+    -- Hook SetFontObject on a FontString to reapply full text styling when Blizzard resets fonts.
+    -- This is critical for instance loading where Blizzard's UpdateTextStringWithValues or similar
+    -- resets the font to default via SetFontObject().
+    local function hookHealthTextFontReset(fs, unit, textType)
+        if not fs or fs._ScooterHealthTextFontResetHooked then return end
+        fs._ScooterHealthTextFontResetHooked = true
+        if _G.hooksecurefunc then
+            -- Hook SetFontObject - called by Blizzard when resetting fonts
+            _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+                -- Defer reapply to avoid conflicts with Blizzard's ongoing update
+                if not self._ScooterHealthTextFontReapplyDeferred then
+                    self._ScooterHealthTextFontReapplyDeferred = true
+                    C_Timer.After(0, function()
+                        self._ScooterHealthTextFontReapplyDeferred = nil
+                        -- Reapply full text styling (font + visibility) for this unit
+                        if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
+                            addon.ApplyAllUnitFrameHealthTextVisibility()
+                        end
+                    end)
+                end
+            end)
+        end
+    end
+
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -190,6 +214,10 @@ do
             leftFS = leftFS,
             rightFS = rightFS,
         }
+
+        -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
+        hookHealthTextFontReset(leftFS, unit, "left")
+        hookHealthTextFontReset(rightFS, unit, "right")
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
@@ -580,6 +608,28 @@ do
 		end
 	end
 
+	-- Hook SetFontObject on a FontString to reapply full text styling when Blizzard resets fonts.
+	-- This is critical for instance loading where Blizzard resets fonts via SetFontObject().
+	local function hookPowerTextFontReset(fs, unit, textType)
+		if not fs or fs._ScooterPowerTextFontResetHooked then return end
+		fs._ScooterPowerTextFontResetHooked = true
+		if _G.hooksecurefunc then
+			_G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+				-- Defer reapply to avoid conflicts with Blizzard's ongoing update
+				if not self._ScooterPowerTextFontReapplyDeferred then
+					self._ScooterPowerTextFontReapplyDeferred = true
+					C_Timer.After(0, function()
+						self._ScooterPowerTextFontReapplyDeferred = nil
+						-- Reapply full text styling (font + visibility) for this unit
+						if addon and addon.ApplyAllUnitFramePowerTextVisibility then
+							addon.ApplyAllUnitFramePowerTextVisibility()
+						end
+					end)
+				end
+			end)
+		end
+	end
+
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
@@ -622,6 +672,10 @@ do
             leftFS = leftFS,
             rightFS = rightFS,
         }
+
+        -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
+        hookPowerTextFontReset(leftFS, unit, "left")
+        hookPowerTextFontReset(rightFS, unit, "right")
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.

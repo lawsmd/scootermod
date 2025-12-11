@@ -116,24 +116,75 @@ function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_FOCUS_CHANGED")
     -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
     self:RegisterEvent("PLAYER_LEVEL_UP")
-    -- PLAYER_REGEN_ENABLED is registered dynamically when ApplyStyles is called during combat
+    -- Combat state changes for opacity updates (priority: With Target > In Combat > Out of Combat)
+    self:RegisterEvent("PLAYER_REGEN_DISABLED")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED")
     
     -- Apply dropdown stepper fixes
     self:ApplyDropdownStepperFixes()
 end
 
--- Handle deferred styling when combat ends
+-- Refresh opacity state for all elements affected by combat/target priority
+-- This is safe to call during combat as SetAlpha is not a protected function
+function addon:RefreshOpacityState()
+    -- Update Unit Frame visibility/opacity
+    if addon.ApplyAllUnitFrameVisibility then
+        addon.ApplyAllUnitFrameVisibility()
+    end
+    -- Update all components that have opacity settings (CDM, Action Bars, Auras, etc.)
+    for id, component in pairs(self.Components) do
+        if component.ApplyStyling and component.settings then
+            -- Check for opacity settings with various naming conventions:
+            -- - CDM uses: opacity, opacityOutOfCombat, opacityWithTarget
+            -- - Action Bars use: barOpacity, barOpacityOutOfCombat, barOpacityWithTarget
+            -- - Auras use: opacity, opacityOutOfCombat, opacityWithTarget
+            local hasOpacity = component.settings.opacity or
+                component.settings.opacityInCombat or
+                component.settings.opacityOutOfCombat or
+                component.settings.opacityWithTarget or
+                component.settings.barOpacity or
+                component.settings.barOpacityOutOfCombat or
+                component.settings.barOpacityWithTarget
+            if hasOpacity then
+                pcall(component.ApplyStyling, component)
+            end
+        end
+    end
+end
+
+-- Handle combat start - update opacity based on new combat state
+function addon:PLAYER_REGEN_DISABLED()
+    -- Defer slightly to ensure combat state is fully updated
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            self:RefreshOpacityState()
+        end)
+    else
+        self:RefreshOpacityState()
+    end
+end
+
+-- Handle combat end - update opacity based on new combat state
 function addon:PLAYER_REGEN_ENABLED()
-    if self._pendingApplyStyles then
-        self._pendingApplyStyles = nil
-        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        -- Defer slightly to ensure combat lockdown is fully cleared
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, function()
+    -- Always refresh opacity state when leaving combat
+    -- Defer slightly to ensure combat lockdown is fully cleared
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.1, function()
+            -- Handle deferred styling if ApplyStyles was called during combat
+            if self._pendingApplyStyles then
+                self._pendingApplyStyles = nil
                 self:ApplyStyles()
-            end)
-        else
+            else
+                -- Just refresh opacity state
+                self:RefreshOpacityState()
+            end
+        end)
+    else
+        if self._pendingApplyStyles then
+            self._pendingApplyStyles = nil
             self:ApplyStyles()
+        else
+            self:RefreshOpacityState()
         end
     end
 end
@@ -143,25 +194,37 @@ function addon:ApplyDropdownStepperFixes()
     -- Direct replacement of Blizzard mixin methods spreads taint to any code path that
     -- calls those methods, causing "blocked from an action" errors for protected functions
     -- like FocusUnit(), ClearFocus(), etc.
+    --
+    -- CRITICAL: All hook actions are deferred via C_Timer.After(0, ...) to break the
+    -- execution context chain. Without this deferral, taint can propagate to unrelated
+    -- Blizzard UI systems (e.g., Spell Book) causing "blocked from an action" errors
+    -- on protected functions like Frame:SetWidth(). See DEBUG.md for details.
 
     -- Ensure dropdown steppers (left/right arrows) refresh enable/disable state after selection changes
     do
         local mixin = _G.SettingsDropdownControlMixin
         if mixin and type(mixin.OnSettingValueChanged) == "function" and not addon._dropdownReinitPatched then
             hooksecurefunc(mixin, "OnSettingValueChanged", function(self, setting, value)
-                -- Reinitialize dropdown so steppers recalc based on current selection and options order
-                if self and type(self.InitDropdown) == "function" then
-                    pcall(self.InitDropdown, self)
-                end
-                -- Immediately refresh stepper enabled state and again next frame to catch async updates
-                if self and self.Control and type(self.Control.UpdateSteppers) == "function" then
-                    pcall(self.Control.UpdateSteppers, self.Control)
-                    if C_Timer and C_Timer.After then
+                -- Capture references for deferred execution
+                local dropdown = self
+                local control = self and self.Control
+                -- Defer all actions to break taint propagation chain
+                C_Timer.After(0, function()
+                    -- Reinitialize dropdown so steppers recalc based on current selection and options order
+                    if dropdown and type(dropdown.InitDropdown) == "function" then
+                        pcall(dropdown.InitDropdown, dropdown)
+                    end
+                    -- Refresh stepper enabled state
+                    if control and type(control.UpdateSteppers) == "function" then
+                        pcall(control.UpdateSteppers, control)
+                        -- Second refresh next frame to catch async updates
                         C_Timer.After(0, function()
-                            pcall(self.Control.UpdateSteppers, self.Control)
+                            if control and type(control.UpdateSteppers) == "function" then
+                                pcall(control.UpdateSteppers, control)
+                            end
                         end)
                     end
-                end
+                end)
             end)
             addon._dropdownReinitPatched = true
         end
@@ -173,22 +236,34 @@ function addon:ApplyDropdownStepperFixes()
         if mixin and not addon._dropdownStepperPatched then
             if type(mixin.Increment) == "function" then
                 hooksecurefunc(mixin, "Increment", function(self, ...)
-                    if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
-                        pcall(self.Dropdown.Update, self.Dropdown)
-                    end
-                    if type(self.UpdateSteppers) == "function" then
-                        pcall(self.UpdateSteppers, self)
-                    end
+                    -- Capture references for deferred execution
+                    local stepper = self
+                    local dropdown = self and self.Dropdown
+                    -- Defer to break taint propagation chain
+                    C_Timer.After(0, function()
+                        if dropdown and type(dropdown.Update) == "function" then
+                            pcall(dropdown.Update, dropdown)
+                        end
+                        if stepper and type(stepper.UpdateSteppers) == "function" then
+                            pcall(stepper.UpdateSteppers, stepper)
+                        end
+                    end)
                 end)
             end
             if type(mixin.Decrement) == "function" then
                 hooksecurefunc(mixin, "Decrement", function(self, ...)
-                    if self and self.Dropdown and type(self.Dropdown.Update) == "function" then
-                        pcall(self.Dropdown.Update, self.Dropdown)
-                    end
-                    if type(self.UpdateSteppers) == "function" then
-                        pcall(self.UpdateSteppers, self)
-                    end
+                    -- Capture references for deferred execution
+                    local stepper = self
+                    local dropdown = self and self.Dropdown
+                    -- Defer to break taint propagation chain
+                    C_Timer.After(0, function()
+                        if dropdown and type(dropdown.Update) == "function" then
+                            pcall(dropdown.Update, dropdown)
+                        end
+                        if stepper and type(stepper.UpdateSteppers) == "function" then
+                            pcall(stepper.UpdateSteppers, stepper)
+                        end
+                    end)
                 end)
             end
             addon._dropdownStepperPatched = true
@@ -200,10 +275,15 @@ function addon:ApplyDropdownStepperFixes()
         local mixin = _G.DropdownButtonMixin
         if mixin and type(mixin.Pick) == "function" and not addon._dropdownSignalUpdatePatched then
             hooksecurefunc(mixin, "Pick", function(self, description, ...)
-                -- After a selection is picked, explicitly signal an update so steppers recompute
-                if self and type(self.SignalUpdate) == "function" then
-                    pcall(self.SignalUpdate, self)
-                end
+                -- Capture reference for deferred execution
+                local button = self
+                -- Defer to break taint propagation chain
+                C_Timer.After(0, function()
+                    -- After a selection is picked, explicitly signal an update so steppers recompute
+                    if button and type(button.SignalUpdate) == "function" then
+                        pcall(button.SignalUpdate, button)
+                    end
+                end)
             end)
             addon._dropdownSignalUpdatePatched = true
         end
@@ -274,11 +354,28 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
                 addon.ApplyUnitFramePowerTextVisibilityFor("Player")
             end
         end)
+        -- Additional longer-delay reapply specifically for instance loading transitions.
+        -- When entering instances, Blizzard's unit frame updates can run significantly later
+        -- than the 0.1s delay, resetting fonts via SetFontObject. This secondary pass ensures
+        -- custom text styling (font face/size/color) persists through instance loading.
+        C_Timer.After(0.5, function()
+            if addon.ApplyAllUnitFrameHealthTextVisibility then
+                addon.ApplyAllUnitFrameHealthTextVisibility()
+            end
+            if addon.ApplyAllUnitFramePowerTextVisibility then
+                addon.ApplyAllUnitFramePowerTextVisibility()
+            end
+            -- Also reapply bar textures for Player to catch Alternate Power Bar text styling
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor("Player")
+            end
+        end)
     end
 end
 
 function addon:PLAYER_TARGET_CHANGED()
     -- Re-apply Target styling after Blizzard rebuilds layout
+    -- Also refresh opacity for all elements (priority: With Target > In Combat > Out of Combat)
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.ApplyUnitFrameBarTexturesFor then
@@ -295,6 +392,8 @@ function addon:PLAYER_TARGET_CHANGED()
             if addon.ApplyUnitFramePowerTextVisibilityFor then
                 addon.ApplyUnitFramePowerTextVisibilityFor("Target")
             end
+            -- Refresh opacity state for all elements affected by target changes
+            self:RefreshOpacityState()
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then
@@ -309,6 +408,7 @@ function addon:PLAYER_TARGET_CHANGED()
         if addon.ApplyUnitFramePowerTextVisibilityFor then
             addon.ApplyUnitFramePowerTextVisibilityFor("Target")
         end
+        self:RefreshOpacityState()
     end
 end
 

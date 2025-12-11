@@ -401,288 +401,9 @@ function Profiles:IsPostCopySuppressed()
     return now > 0 and now < untilTs
 end
 
-function Profiles:EnsurePopups()
-    if Profiles._popupsInitialized then return end
-
-    StaticPopupDialogs = StaticPopupDialogs or {}
-
-    StaticPopupDialogs["SCOOTERMOD_CLONE_PRESET"] = {
-        text = "Enter a name for the new layout based on %s:",
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 32,
-        enterClicksFirstButton = true,
-        OnShow = function(self, data)
-            local textWidget = self.text or self.Text
-            if textWidget and textWidget.SetFormattedText then
-                textWidget:SetFormattedText(textWidget:GetText(), data.displayText or data.presetName or "Preset")
-            end
-            local edit = self.editBox or self.EditBox
-            if edit then
-                local defaultName = data.suggestedName or ((data.presetName or "Preset") .. " Copy")
-                edit:SetText(defaultName)
-                edit:HighlightText()
-            end
-        end,
-        OnAccept = function(self, data)
-            local edit = self.editBox or self.EditBox
-            local name = edit and edit:GetText()
-            local success, err = addon.Profiles:ClonePresetLayout(data, name)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                self:Hide()
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptClonePreset(data.presetName, data.dropdown, data.displayText, data.previousKey, name)
-                end)
-            end
-        end,
-        OnCancel = function(self, data)
-            addon.Profiles:RestoreDropdownSelection(data.dropdown, data.previousKey, data.previousText)
-        end,
-        OnHide = function(self)
-            local edit = self.editBox or self.EditBox
-            if edit then edit:SetText("") end
-        end,
-        EditBoxOnEnterPressed = function(self, data)
-			-- Mirror OnAccept exactly to ensure Enter performs the rename
-			local parent = self:GetParent()
-			local edit = parent and (parent.editBox or parent.EditBox)
-			local newName = edit and edit:GetText()
-			local currentName = data and data.currentName
-			local success, err = addon.Profiles:PerformRenameLayout(currentName, newName)
-			if not success then
-				if err and addon and addon.Print then addon:Print(err) end
-				if parent and parent.Hide then parent:Hide() end
-				C_Timer.After(0, function()
-					addon.Profiles:PromptRenameLayout(currentName, data and data.dropdown, newName)
-				end)
-			else
-				if parent and parent.Hide then parent:Hide() end
-			end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["SCOOTERMOD_RENAME_LAYOUT"] = {
-        text = "Rename layout:",
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 32,
-        enterClicksFirstButton = true,
-        OnShow = function(self, data)
-            local textWidget = self.text or self.Text
-            if textWidget then
-            end
-            local edit = self.editBox or self.EditBox
-            if edit then
-                edit:SetText(data.suggested or data.currentName or "")
-                edit:HighlightText()
-				-- Robust fallback: ensure Enter triggers the rename even if StaticPopup plumbing changes
-				local parent = self
-				edit:SetScript("OnEnterPressed", function()
-					local newName = edit:GetText()
-					local currentName = data and data.currentName
-					local success, err = addon.Profiles:PerformRenameLayout(currentName, newName)
-					if not success then
-						if err and addon and addon.Print then addon:Print(err) end
-						if parent and parent.Hide then parent:Hide() end
-						C_Timer.After(0, function()
-							addon.Profiles:PromptRenameLayout(currentName, data and data.dropdown, newName)
-						end)
-					else
-						if parent and parent.Hide then parent:Hide() end
-					end
-				end)
-            end
-        end,
-        OnAccept = function(self, data)
-            local edit = self.editBox or self.EditBox
-            local newName = edit and edit:GetText()
-            local success, err = addon.Profiles:PerformRenameLayout(data.currentName, newName)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                self:Hide()
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptRenameLayout(data.currentName, data.dropdown, newName)
-                end)
-            end
-        end,
-        OnCancel = function(self, data)
-            addon.Profiles:RestoreDropdownSelection(data.dropdown, data.currentName, data.currentText)
-        end,
-        OnHide = function(self)
-            local edit = self.editBox or self.EditBox
-            if edit then edit:SetText("") end
-        end,
-        EditBoxOnEnterPressed = function(self, data)
-            local parent = self:GetParent()
-            local button = parent and (parent.button1 or parent.Button1)
-            if not button then
-                local buttons = parent and parent.Buttons
-                if buttons and buttons[1] then button = buttons[1] end
-            end
-            if button and button.Click then
-                button:Click()
-            else
-                local info = parent and parent.which and StaticPopupDialogs[parent.which]
-                if info and info.OnAccept then
-                    info.OnAccept(parent, data)
-                end
-                if parent and parent.Hide then parent:Hide() end
-            end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["SCOOTERMOD_COPY_LAYOUT"] = {
-        text = "Copy layout %s:",
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 32,
-        enterClicksFirstButton = true,
-        OnShow = function(self, data)
-            local textWidget = self.text or self.Text
-            if textWidget then
-                textWidget:SetFormattedText(textWidget:GetText(), data.sourceName or "")
-            end
-            local edit = self.editBox or self.EditBox
-            if edit then
-                edit:SetText(data.suggestedName or ((data.sourceName or "Layout") .. " Copy"))
-                edit:HighlightText()
-            end
-        end,
-        OnAccept = function(self, data)
-            local edit = self.editBox or self.EditBox
-            local newName = edit and edit:GetText()
-            local success, err = addon.Profiles:PerformCopyLayout(data.sourceName, newName)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                self:Hide()
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptCopyLayout(data.sourceName, data.dropdown, newName)
-                end)
-            end
-        end,
-        OnCancel = function(self, data)
-            addon.Profiles:RestoreDropdownSelection(data.dropdown, data.sourceName, data.sourceText)
-        end,
-        OnHide = function(self)
-            local edit = self.editBox or self.EditBox
-            if edit then edit:SetText("") end
-        end,
-        EditBoxOnEnterPressed = function(self, data)
-            -- Mirror OnAccept exactly to ensure Enter performs the copy
-            local parent = self:GetParent()
-            local edit = parent and (parent.editBox or parent.EditBox)
-            local newName = edit and edit:GetText()
-            local src = (data and data.sourceName) or (parent and parent.data and parent.data.sourceName)
-            local success, err = addon.Profiles:PerformCopyLayout(src, newName)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                if parent and parent.Hide then parent:Hide() end
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptCopyLayout(src, (data and data.dropdown) or (parent and parent.data and parent.data.dropdown), newName)
-                end)
-            else
-                if parent and parent.Hide then parent:Hide() end
-            end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["SCOOTERMOD_DELETE_LAYOUT"] = {
-        text = "Delete layout '%s'?",
-        button1 = OKAY,
-        button2 = CANCEL,
-        OnShow = function(self, data)
-            local textWidget = self.text or self.Text
-            if textWidget then
-                textWidget:SetFormattedText(textWidget:GetText(), data.layoutName or "")
-            end
-        end,
-        OnAccept = function(self, data)
-            local success, err = addon.Profiles:PerformDeleteLayout(data.layoutName)
-            if not success and err and addon and addon.Print then
-                addon:Print(err)
-            end
-        end,
-        OnCancel = function(self, data)
-            addon.Profiles:RestoreDropdownSelection(data.dropdown, data.layoutName, data.layoutText)
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["SCOOTERMOD_CREATE_LAYOUT"] = {
-        text = "Create layout:",
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 32,
-        enterClicksFirstButton = true,
-        OnShow = function(self, data)
-            local edit = self.editBox or self.EditBox
-            if edit then
-                local defaultName = (data and data.suggestedName) or "New Layout"
-                edit:SetText(defaultName)
-                edit:HighlightText()
-            end
-        end,
-        OnAccept = function(self, data)
-            local edit = self.editBox or self.EditBox
-            local newName = edit and edit:GetText()
-            local success, err = addon.Profiles:PerformCreateLayout(newName)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                self:Hide()
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptCreateLayout(data and data.dropdown, newName)
-                end)
-            end
-        end,
-        OnCancel = function(self, data)
-            if data and data.dropdown and addon and addon.Profiles and addon.Profiles.db then
-                local current = addon.Profiles.db:GetCurrentProfile()
-                addon.Profiles:RestoreDropdownSelection(data.dropdown, current, addon.Profiles:GetLayoutDisplayText(current))
-            end
-        end,
-        OnHide = function(self)
-            local edit = self.editBox or self.EditBox
-            if edit then edit:SetText("") end
-        end,
-        EditBoxOnEnterPressed = function(self, data)
-            -- Mirror OnAccept exactly to ensure Enter performs the create
-            local parent = self:GetParent()
-            local edit = parent and (parent.editBox or parent.EditBox)
-            local newName = edit and edit:GetText()
-            local success, err = addon.Profiles:PerformCreateLayout(newName)
-            if not success then
-                if err and addon and addon.Print then addon:Print(err) end
-                if parent and parent.Hide then parent:Hide() end
-                C_Timer.After(0, function()
-                    addon.Profiles:PromptCreateLayout((data and data.dropdown) or (parent and parent.data and parent.data.dropdown), newName)
-                end)
-            else
-                if parent and parent.Hide then parent:Hide() end
-            end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-
-    Profiles._popupsInitialized = true
-end
+-- NOTE: StaticPopupDialogs-based popups were removed to prevent taint.
+-- All layout management dialogs now use addon.Dialogs (ui/panel/dialogs.lua).
+-- See SCOOTERMOD_CLONE_PRESET, SCOOTERMOD_RENAME_LAYOUT, etc. in dialogs.lua.
 
 function Profiles:GetLayoutDisplayText(layoutName)
     if not layoutName then return nil end
@@ -695,55 +416,131 @@ function Profiles:GetLayoutDisplayText(layoutName)
 end
 
 function Profiles:PromptClonePreset(presetName, dropdown, displayText, previousKey, suggested)
-    self:EnsurePopups()
     self:RestoreDropdownSelection(dropdown, previousKey, self:GetLayoutDisplayText(previousKey))
-    StaticPopup_Show("SCOOTERMOD_CLONE_PRESET", presetName, nil, {
+    local data = {
         presetName = presetName,
         dropdown = dropdown,
         displayText = displayText,
         previousKey = previousKey,
         previousText = self:GetLayoutDisplayText(previousKey),
-        suggestedName = suggested,
+    }
+    local defaultName = suggested or ((presetName or "Preset") .. " Copy")
+    addon.Dialogs:Show("SCOOTERMOD_CLONE_PRESET", {
+        formatArgs = { displayText or presetName or "Preset" },
+        editBoxText = defaultName,
+        data = data,
+        onAccept = function(d, newName)
+            local success, err = addon.Profiles:ClonePresetLayout(d, newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptClonePreset(d.presetName, d.dropdown, d.displayText, d.previousKey, newName)
+                end)
+            end
+        end,
+        onCancel = function(d)
+            addon.Profiles:RestoreDropdownSelection(d.dropdown, d.previousKey, d.previousText)
+        end,
     })
 end
 
 function Profiles:PromptRenameLayout(currentName, dropdown, suggested)
     if not currentName or self:IsPreset(currentName) then return end
-    self:EnsurePopups()
-    StaticPopup_Show("SCOOTERMOD_RENAME_LAYOUT", nil, nil, {
+    local data = {
         currentName = currentName,
         currentText = self:GetLayoutDisplayText(currentName),
         dropdown = dropdown,
-        suggested = suggested,
+    }
+    addon.Dialogs:Show("SCOOTERMOD_RENAME_LAYOUT", {
+        editBoxText = suggested or currentName or "",
+        data = data,
+        onAccept = function(d, newName)
+            local success, err = addon.Profiles:PerformRenameLayout(d.currentName, newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptRenameLayout(d.currentName, d.dropdown, newName)
+                end)
+            end
+        end,
+        onCancel = function(d)
+            addon.Profiles:RestoreDropdownSelection(d.dropdown, d.currentName, d.currentText)
+        end,
     })
 end
 
 function Profiles:PromptCopyLayout(sourceName, dropdown, suggested)
     if not sourceName then return end
-    self:EnsurePopups()
-    StaticPopup_Show("SCOOTERMOD_COPY_LAYOUT", sourceName, nil, {
+    local data = {
         sourceName = sourceName,
         sourceText = self:GetLayoutDisplayText(sourceName),
         dropdown = dropdown,
-        suggestedName = suggested,
+    }
+    local defaultName = suggested or ((sourceName or "Layout") .. " Copy")
+    addon.Dialogs:Show("SCOOTERMOD_COPY_LAYOUT", {
+        formatArgs = { sourceName or "" },
+        editBoxText = defaultName,
+        data = data,
+        onAccept = function(d, newName)
+            local success, err = addon.Profiles:PerformCopyLayout(d.sourceName, newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptCopyLayout(d.sourceName, d.dropdown, newName)
+                end)
+            end
+        end,
+        onCancel = function(d)
+            addon.Profiles:RestoreDropdownSelection(d.dropdown, d.sourceName, d.sourceText)
+        end,
     })
 end
 
 function Profiles:PromptCreateLayout(dropdown, suggested)
-    self:EnsurePopups()
-    StaticPopup_Show("SCOOTERMOD_CREATE_LAYOUT", nil, nil, {
+    local data = {
         dropdown = dropdown,
-        suggestedName = suggested,
+    }
+    local defaultName = suggested or "New Layout"
+    addon.Dialogs:Show("SCOOTERMOD_CREATE_LAYOUT", {
+        editBoxText = defaultName,
+        data = data,
+        onAccept = function(d, newName)
+            local success, err = addon.Profiles:PerformCreateLayout(newName)
+            if not success then
+                if err and addon and addon.Print then addon:Print(err) end
+                C_Timer.After(0, function()
+                    addon.Profiles:PromptCreateLayout(d.dropdown, newName)
+                end)
+            end
+        end,
+        onCancel = function(d)
+            if d and d.dropdown and addon and addon.Profiles and addon.Profiles.db then
+                local current = addon.Profiles.db:GetCurrentProfile()
+                addon.Profiles:RestoreDropdownSelection(d.dropdown, current, addon.Profiles:GetLayoutDisplayText(current))
+            end
+        end,
     })
 end
 
 function Profiles:ConfirmDeleteLayout(layoutName, dropdown)
     if not layoutName or self:IsPreset(layoutName) then return end
-    self:EnsurePopups()
-    StaticPopup_Show("SCOOTERMOD_DELETE_LAYOUT", layoutName, nil, {
+    local data = {
         layoutName = layoutName,
         layoutText = self:GetLayoutDisplayText(layoutName),
         dropdown = dropdown,
+    }
+    addon.Dialogs:Show("SCOOTERMOD_DELETE_LAYOUT", {
+        formatArgs = { layoutName or "" },
+        data = data,
+        onAccept = function(d)
+            local success, err = addon.Profiles:PerformDeleteLayout(d.layoutName)
+            if not success and err and addon and addon.Print then
+                addon:Print(err)
+            end
+        end,
+        onCancel = function(d)
+            addon.Profiles:RestoreDropdownSelection(d.dropdown, d.layoutName, d.layoutText)
+        end,
     })
 end
 

@@ -145,6 +145,17 @@ local function CreateDialogFrame()
     -- Apply Roboto white styling to message text
     ApplyDialogRobotoWhite(f.Text, 13, "")
 
+    -- Edit box (for input dialogs, hidden by default)
+    local editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    editBox:SetSize(260, 24)
+    editBox:SetPoint("TOP", f.Text, "BOTTOM", 0, -10)
+    editBox:SetAutoFocus(false)
+    editBox:SetMaxLetters(32)
+    editBox:Hide()
+    f.EditBox = editBox
+    -- Apply Roboto white styling to edit box text
+    ApplyDialogRobotoWhite(editBox, 12, "")
+
     -- Accept button (primary action)
     local acceptBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     acceptBtn:SetSize(100, 24)
@@ -215,6 +226,9 @@ end
 --       data = { ruleId = 123 },
 --       formatArgs = { "arg1", "arg2" }, -- For %s placeholders in text
 --       infoOnly = true, -- If true, only show OK button (no cancel)
+--       hasEditBox = true, -- If true, show an edit box for text input
+--       editBoxText = "default text", -- Default text for edit box
+--       maxLetters = 32, -- Max characters for edit box
 --   })
 function Dialogs:Show(name, options)
     options = options or {}
@@ -235,6 +249,22 @@ function Dialogs:Show(name, options)
     f.Text:SetText(displayText)
     -- Reapply Roboto white styling after text change
     ApplyDialogRobotoWhite(f.Text, 13, "")
+
+    -- Handle edit box
+    local hasEditBox = options.hasEditBox or def.hasEditBox
+    if hasEditBox then
+        f.EditBox:Show()
+        f.EditBox:SetText(options.editBoxText or def.editBoxText or "")
+        f.EditBox:SetMaxLetters(options.maxLetters or def.maxLetters or 32)
+        f.EditBox:HighlightText()
+        f.EditBox:SetFocus()
+        -- Adjust dialog height for edit box
+        f:SetHeight(170)
+    else
+        f.EditBox:Hide()
+        f.EditBox:SetText("")
+        f:SetHeight(140)
+    end
 
     -- Determine if this is info-only (just OK, no cancel)
     local infoOnly = options.infoOnly or def.infoOnly
@@ -263,16 +293,23 @@ function Dialogs:Show(name, options)
         f.CancelButton:Show()
     end
 
-    -- Store callbacks
+    -- Store callbacks and data
     f._onAccept = options.onAccept
     f._onCancel = options.onCancel
     f._data = options.data
+    f._hasEditBox = hasEditBox
+
+    -- Helper to get edit box text for callbacks
+    local function getEditBoxText()
+        return hasEditBox and f.EditBox:GetText() or nil
+    end
 
     -- Wire up buttons
     f.AcceptButton:SetScript("OnClick", function()
+        local editText = getEditBoxText()
         f:Hide()
         if f._onAccept then
-            f._onAccept(f._data)
+            f._onAccept(f._data, editText)
         end
     end)
 
@@ -282,6 +319,23 @@ function Dialogs:Show(name, options)
             f._onCancel(f._data)
         end
     end)
+
+    -- Wire up Enter key in edit box
+    if hasEditBox then
+        f.EditBox:SetScript("OnEnterPressed", function()
+            local editText = f.EditBox:GetText()
+            f:Hide()
+            if f._onAccept then
+                f._onAccept(f._data, editText)
+            end
+        end)
+        f.EditBox:SetScript("OnEscapePressed", function()
+            f:Hide()
+            if f._onCancel then
+                f._onCancel(f._data)
+            end
+        end)
+    end
 
     -- Show the dialog
     f:Show()
@@ -360,6 +414,42 @@ Dialogs:Register("SCOOTERMOD_COMBAT_FONT_RESTART", {
 Dialogs:Register("SCOOTERMOD_DELETE_LAYOUT", {
     text = "Delete layout '%s'?",
     acceptText = OKAY or "OK",
+    cancelText = CANCEL or "Cancel",
+})
+
+--------------------------------------------------------------------------------
+-- Profile/Layout Management Dialogs (migrated from StaticPopupDialogs to avoid taint)
+--------------------------------------------------------------------------------
+
+Dialogs:Register("SCOOTERMOD_CLONE_PRESET", {
+    text = "Enter a name for the new layout based on %s:",
+    hasEditBox = true,
+    maxLetters = 32,
+    acceptText = ACCEPT or "Accept",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_RENAME_LAYOUT", {
+    text = "Rename layout:",
+    hasEditBox = true,
+    maxLetters = 32,
+    acceptText = ACCEPT or "Accept",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_COPY_LAYOUT", {
+    text = "Copy layout %s:",
+    hasEditBox = true,
+    maxLetters = 32,
+    acceptText = ACCEPT or "Accept",
+    cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_CREATE_LAYOUT", {
+    text = "Create layout:",
+    hasEditBox = true,
+    maxLetters = 32,
+    acceptText = ACCEPT or "Accept",
     cancelText = CANCEL or "Cancel",
 })
 

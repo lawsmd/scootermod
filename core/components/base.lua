@@ -499,6 +499,10 @@ Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
 -- Frame: ManaBar.Spark
 -- ownerFrame: the ManaBar frame that contains the Spark child
 -- hidden: boolean - true to hide the spark, false to restore it
+--
+-- IMPORTANT: Uses SetAlpha(0) instead of Hide() to persist through combat.
+-- SetAlpha is a purely cosmetic operation that doesn't taint, so we can
+-- safely enforce it even during combat when Blizzard's UpdateShown fires.
 local function SetPowerBarSparkHidden(ownerFrame, hidden)
     if not ownerFrame or type(ownerFrame) ~= "table" then
         return
@@ -507,32 +511,59 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
     if not sparkFrame or (sparkFrame.IsForbidden and sparkFrame:IsForbidden()) then
         return
     end
-    sparkFrame._ScootPowerBarSparkHidden = not not hidden
-    -- CRITICAL: Guard against combat. Hiding frames during combat
-    -- would taint the execution context, causing blocked actions.
-    local canModifyNow = not (InCombatLockdown and InCombatLockdown())
-    if sparkFrame._ScootPowerBarSparkHidden and canModifyNow then
-        -- Hide the spark frame
-        if sparkFrame.Hide then
-            pcall(sparkFrame.Hide, sparkFrame)
+    
+    if hidden then
+        -- Mark as hidden and set alpha to 0
+        sparkFrame._ScootPowerBarSparkHidden = true
+        if sparkFrame.SetAlpha then
+            pcall(sparkFrame.SetAlpha, sparkFrame, 0)
         end
-        -- Hook UpdateShown to keep it hidden when Blizzard tries to show it
-        if _G.hooksecurefunc and not sparkFrame._ScootSparkHooked then
-            sparkFrame._ScootSparkHooked = true
-            _G.hooksecurefunc(sparkFrame, "UpdateShown", function(self)
-                -- CRITICAL: Skip during combat to avoid taint
-                if InCombatLockdown and InCombatLockdown() then return end
-                if self._ScootPowerBarSparkHidden then
-                    if self.Hide then pcall(self.Hide, self) end
+        
+        -- Install hooks once to re-enforce alpha=0 when Blizzard tries to show the spark
+        if _G.hooksecurefunc and not sparkFrame._ScootSparkVisibilityHooked then
+            sparkFrame._ScootSparkVisibilityHooked = true
+            
+            -- Hook Show() - Blizzard may call this directly
+            _G.hooksecurefunc(sparkFrame, "Show", function(self)
+                if self._ScootPowerBarSparkHidden and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+            
+            -- Hook UpdateShown() - Called frequently by Blizzard's spark logic
+            if sparkFrame.UpdateShown then
+                _G.hooksecurefunc(sparkFrame, "UpdateShown", function(self)
+                    if self._ScootPowerBarSparkHidden and self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end)
+            end
+            
+            -- Hook SetAlpha() - Re-enforce alpha=0 when Blizzard tries to change it
+            _G.hooksecurefunc(sparkFrame, "SetAlpha", function(self, alpha)
+                if self._ScootPowerBarSparkHidden and alpha and alpha > 0 then
+                    -- Defer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
+                    if not self._ScootSparkAlphaDeferred then
+                        self._ScootSparkAlphaDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScootSparkAlphaDeferred = nil
+                            if self._ScootPowerBarSparkHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
                 end
             end)
         end
-    elseif not sparkFrame._ScootPowerBarSparkHidden and canModifyNow then
-        -- Restore visibility - let Blizzard's UpdateShown manage it
+    else
+        -- Mark as visible and restore alpha
+        sparkFrame._ScootPowerBarSparkHidden = false
+        if sparkFrame.SetAlpha then
+            pcall(sparkFrame.SetAlpha, sparkFrame, 1)
+        end
+        -- Let Blizzard's UpdateShown manage visibility from here
         if sparkFrame.UpdateShown then
             pcall(sparkFrame.UpdateShown, sparkFrame)
-        elseif sparkFrame.Show then
-            pcall(sparkFrame.Show, sparkFrame)
         end
     end
 end
@@ -966,6 +997,12 @@ function addon:ApplyStyles()
     end
     if addon.ApplyAllUnitFrameVisibility then
         addon.ApplyAllUnitFrameVisibility()
+    end
+    if addon.ApplyAllThreatMeterVisibility then
+        addon.ApplyAllThreatMeterVisibility()
+    end
+    if addon.ApplyAllPlayerMiscVisibility then
+        addon.ApplyAllPlayerMiscVisibility()
     end
     if addon.ApplyAllUnitFrameScaleMults then
         addon.ApplyAllUnitFrameScaleMults()

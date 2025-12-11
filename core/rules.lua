@@ -296,6 +296,41 @@ local function registerDefaultActions()
             return changed
         end,
     }
+
+    -- Player Unit Frame: Hide Class Resource
+    ACTIONS["ufPlayerClassResource.hide"] = {
+        id = "ufPlayerClassResource.hide",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "ufPlayerClassResource",
+        settingId = "hide",
+        defaultValue = false,
+        path = { "Player Unit Frame", "Class Resource", "Visibility", "Hide Class Resource" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local uf = profile and profile.unitFrames
+            local player = uf and uf.Player
+            local cr = player and player.classResource
+            return cr and cr.hide or false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then return false end
+            profile.unitFrames = profile.unitFrames or {}
+            profile.unitFrames.Player = profile.unitFrames.Player or {}
+            profile.unitFrames.Player.classResource = profile.unitFrames.Player.classResource or {}
+            local cr = profile.unitFrames.Player.classResource
+            local boolVal = value and true or false
+            if cr.hide == boolVal then return false end
+            cr.hide = boolVal
+            if addon.ApplyUnitFrameClassResource then
+                pcall(addon.ApplyUnitFrameClassResource, "Player")
+            elseif addon.ApplyStyles then
+                pcall(addon.ApplyStyles, addon)
+            end
+            return true
+        end,
+    }
 end
 
 local function ruleMatchesSpecialization(trigger, specID)
