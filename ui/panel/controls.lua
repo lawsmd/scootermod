@@ -532,6 +532,17 @@ function panel.DropdownWithInlineSwatch(parent, yRef, opts)
     row:SetPoint("TOPRIGHT", -16, yRef.y)
     initDrop:InitFrame(row)
     if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+    -- Theme the dropdown button/steppers to ScooterMod green + Roboto.
+    -- Most Settings dropdown rows expose the actual control as `row.Control`, but be defensive:
+    -- only theme objects that look like a DropdownWithSteppers control to avoid setting the
+    -- `_scooterDropdownThemed` flag on the wrong frame (which would block later theming).
+    if panel and panel.ThemeDropdownWithSteppers then
+        if row.Control then
+            panel.ThemeDropdownWithSteppers(row.Control)
+        elseif row.Dropdown then
+            panel.ThemeDropdownWithSteppers(row)
+        end
+    end
 
     -- Inline swatch
     local swatchParent = (opts.insideButton and row.Control) or row

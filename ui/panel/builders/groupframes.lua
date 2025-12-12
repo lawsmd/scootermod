@@ -299,6 +299,9 @@ function panel.RenderGFRaid()
                 local lbl = fTex and (fTex.Text or fTex.Label)
                 if lbl then panel.ApplyRobotoWhite(lbl) end
             end
+            if fTex.Control and panel.ThemeDropdownWithSteppers then
+                panel.ThemeDropdownWithSteppers(fTex.Control)
+            end
             if fTex.Control and addon.InitBarTextureDropdown then
                 addon.InitBarTextureDropdown(fTex.Control, texSetting)
             end
@@ -381,6 +384,9 @@ function panel.RenderGFRaid()
             if panel and panel.ApplyRobotoWhite then
                 local lbl = fBgTex and (fBgTex.Text or fBgTex.Label)
                 if lbl then panel.ApplyRobotoWhite(lbl) end
+            end
+            if fBgTex.Control and panel.ThemeDropdownWithSteppers then
+                panel.ThemeDropdownWithSteppers(fBgTex.Control)
             end
             if fBgTex.Control and addon.InitBarTextureDropdown then
                 addon.InitBarTextureDropdown(fBgTex.Control, bgTexSetting)
@@ -517,6 +523,10 @@ function panel.RenderGFRaid()
                     if lbl and panel and panel.ApplyRobotoWhite then
                         panel.ApplyRobotoWhite(lbl)
                     end
+                    -- Apply ScooterMod theming to dropdown text and arrows
+                    if row.Control and panel.ThemeDropdownWithSteppers then
+                        panel.ThemeDropdownWithSteppers(row.Control)
+                    end
                     -- Wire font picker for font dropdowns
                     if label:lower():find("font", 1, true) and not label:lower():find("style", 1, true) then
                         if row.Control and row.Control.Dropdown and addon and addon.InitFontDropdown then
@@ -608,7 +618,7 @@ function panel.RenderGFRaid()
                     local y = { y = -50 }
 
                     -- 1. Font Face
-                    addDropdown(frame.PageA, "Font", fontOptions,
+                    addDropdown(frame.PageA, "Player Name Font", fontOptions,
                         function()
                             local cfg = ensureTextDB()
                             return cfg and cfg.fontFace or "FRIZQT__"
@@ -621,7 +631,7 @@ function panel.RenderGFRaid()
                         y)
 
                     -- 2. Font Size
-                    addSlider(frame.PageA, "Size", 6, 32, 1,
+                    addSlider(frame.PageA, "Player Name Size", 6, 32, 1,
                         function()
                             local cfg = ensureTextDB()
                             return cfg and tonumber(cfg.size) or 12
@@ -634,7 +644,7 @@ function panel.RenderGFRaid()
                         y)
 
                     -- 3. Font Style
-                    addStyleDropdown(frame.PageA, "Style",
+                    addStyleDropdown(frame.PageA, "Player Name Style",
                         function()
                             local cfg = ensureTextDB()
                             return cfg and cfg.style or "OUTLINE"
@@ -647,7 +657,7 @@ function panel.RenderGFRaid()
                         y)
 
                     -- 4. Font Color
-                    addColorRow(frame.PageA, "Color",
+                    addColorRow(frame.PageA, "Player Name Color",
                         function()
                             local cfg = ensureTextDB()
                             local c = cfg and cfg.color or { 1, 1, 1, 1 }
@@ -661,7 +671,7 @@ function panel.RenderGFRaid()
                         y)
 
                     -- 5. X Offset
-                    addSlider(frame.PageA, "Offset X", -50, 50, 1,
+                    addSlider(frame.PageA, "Player Name Offset X", -50, 50, 1,
                         function()
                             local cfg = ensureTextDB()
                             return cfg and cfg.offset and tonumber(cfg.offset.x) or 0
@@ -677,7 +687,7 @@ function panel.RenderGFRaid()
                         y)
 
                     -- 6. Y Offset
-                    addSlider(frame.PageA, "Offset Y", -50, 50, 1,
+                    addSlider(frame.PageA, "Player Name Offset Y", -50, 50, 1,
                         function()
                             local cfg = ensureTextDB()
                             return cfg and cfg.offset and tonumber(cfg.offset.y) or 0

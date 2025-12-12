@@ -87,9 +87,11 @@ do
             if isFontString(obj) then
                 panel.ApplyRoboto(obj)
             elseif obj and obj.IsObjectType and obj:IsObjectType("Button") then
-                -- Skip checkbox buttons; leave Blizzard checkbox visuals un-tinted
                 local objType = obj.GetObjectType and obj:GetObjectType() or ""
-                if objType ~= "CheckButton" then
+                if objType == "CheckButton" then
+                    -- Theme checkbox checkmarks to green
+                    panel.ThemeCheckbox(obj)
+                else
                     local function tint(tex)
                         if tex and tex.SetVertexColor then tex:SetDesaturated(true); tex:SetVertexColor(brandR, brandG, brandB) end
                     end
@@ -99,8 +101,24 @@ do
                     local hl = obj.GetHighlightTexture and obj:GetHighlightTexture() or nil
                     if hl then hl:SetDesaturated(false); hl:SetVertexColor(1,1,1); hl:SetAlpha(0.25) end
                 end
+            elseif obj and obj.SliderWithSteppers then
+                -- Theme slider value text to green (for SettingsSliderControlTemplate frames)
+                panel.ThemeSliderValue(obj)
             end
         end, 3)
+
+        -- Also check the root frame itself for SliderWithSteppers
+        if root and root.SliderWithSteppers then
+            panel.ThemeSliderValue(root)
+        end
+        -- And check if root is a CheckButton
+        if root and root.IsObjectType and root:IsObjectType("CheckButton") then
+            panel.ThemeCheckbox(root)
+        end
+        -- Check for Checkbox child (common in SettingsCheckboxControlTemplate)
+        if root and root.Checkbox and root.Checkbox.IsObjectType and root.Checkbox:IsObjectType("CheckButton") then
+            panel.ThemeCheckbox(root.Checkbox)
+        end
     end
 
     function panel.StyleDropdownLabel(dropdown, scale)
@@ -289,6 +307,222 @@ do
 				end)
 			end
 		end
+    end
+
+    -- Helper: Apply Roboto font with green color to a FontString
+    local function applyRobotoGreen(fs, size)
+        if not fs or not fs.SetFont then return end
+        local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+        local _, currentSize, currentFlags = fs:GetFont()
+        fs:SetFont(face, size or currentSize or 12, currentFlags or "")
+        fs:SetTextColor(brandR, brandG, brandB, 1)
+    end
+
+    -- Helper: Style menu option buttons when a dropdown menu is opened
+    local function styleMenuOptions(menu)
+        if not menu then return end
+        -- Delay slightly to ensure menu frames are populated
+        C_Timer.After(0, function()
+            -- The menu's scroll box contains the option buttons
+            local scrollBox = menu.ScrollBox or (menu.GetScrollBox and menu:GetScrollBox())
+            if scrollBox then
+                local function styleButton(btn)
+                    if not btn then return end
+                    -- Find FontStrings in the button and style them
+                    local regions = { btn:GetRegions() }
+                    for _, region in ipairs(regions) do
+                        if region and region.IsObjectType and region:IsObjectType("FontString") then
+                            local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+                            local _, sz, fl = region:GetFont()
+                            region:SetFont(face, sz or 12, fl or "")
+                        end
+                    end
+                    -- Also check common child keys
+                    if btn.fontString then
+                        local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+                        local _, sz, fl = btn.fontString:GetFont()
+                        btn.fontString:SetFont(face, sz or 12, fl or "")
+                    end
+                    if btn.Text then
+                        local face = (fonts and (fonts.ROBOTO_MED or fonts.ROBOTO_REG)) or (select(1, GameFontNormal:GetFont()))
+                        local _, sz, fl = btn.Text:GetFont()
+                        btn.Text:SetFont(face, sz or 12, fl or "")
+                    end
+                end
+                -- Iterate through visible frames in the scroll box
+                scrollBox:ForEachFrame(styleButton)
+            end
+        end)
+    end
+
+    -- Theme a SettingsDropdownWithButtonsTemplate-based control
+    -- Applies ScooterMod green to text, Roboto font, and green arrow icons.
+    -- NOTE: Uses minimal hooks. Vertex colors on textures persist through atlas changes,
+    -- so icons only need to be set once. Text color and font require hooks since
+    -- Blizzard explicitly calls SetTextColor on state changes.
+    function panel.ThemeDropdownWithSteppers(control)
+        if not control then return end
+
+        -- Use the control itself as the flag anchor to prevent any double-processing
+        if control._scooterDropdownThemed then return end
+        control._scooterDropdownThemed = true
+
+        -- Theme the dropdown
+        local dropdown = control.Dropdown
+        if dropdown then
+            -- Apply Roboto font with green color to button text
+            if dropdown.Text then
+                applyRobotoGreen(dropdown.Text)
+            end
+            -- Tint the small dropdown arrow indicator (shown on hover)
+            if dropdown.Arrow then
+                dropdown.Arrow:SetVertexColor(brandR, brandG, brandB, 1)
+            end
+            -- Single hook for text and arrow on state changes
+            if dropdown.OnButtonStateChanged then
+                hooksecurefunc(dropdown, "OnButtonStateChanged", function(self)
+                    if self:IsEnabled() and self.Text then
+                        applyRobotoGreen(self.Text)
+                    end
+                    -- Re-tint arrow in case it gets reset
+                    if self.Arrow then
+                        self.Arrow:SetVertexColor(brandR, brandG, brandB, 1)
+                    end
+                end)
+            end
+            -- Hook menu opening to style dropdown options with Roboto
+            if dropdown.OnMenuOpened then
+                hooksecurefunc(dropdown, "OnMenuOpened", styleMenuOptions)
+            end
+        end
+
+        -- Theme the stepper buttons (no hooks needed - vertex colors persist)
+        local function themeStepper(btn)
+            if not btn then return end
+            -- Apply icon tint - persists through atlas changes
+            if btn.Icon then
+                btn.Icon:SetVertexColor(brandR, brandG, brandB, 1)
+            end
+        end
+
+        themeStepper(control.IncrementButton)
+        themeStepper(control.DecrementButton)
+    end
+
+    -- Theme a slider control's value text to ScooterMod green
+    -- The value text is displayed in SliderWithSteppers.RightText (and potentially LeftText, TopText, etc.)
+    -- Blizzard's MinimalSliderWithSteppersMixin:SetEnabled() resets these to NORMAL_FONT_COLOR (yellow),
+    -- so we need a hook to maintain our green color.
+    function panel.ThemeSliderValue(control)
+        if not control then return end
+
+        -- Find the SliderWithSteppers child - it may be at control.SliderWithSteppers or control itself
+        local sliderWithSteppers = control.SliderWithSteppers or control
+        if not sliderWithSteppers then return end
+
+        -- Apply green to all label text elements
+        local function applyGreenToLabels(slider)
+            if slider.RightText and slider.RightText.SetTextColor then
+                slider.RightText:SetTextColor(brandR, brandG, brandB, 1)
+            end
+            if slider.LeftText and slider.LeftText.SetTextColor then
+                slider.LeftText:SetTextColor(brandR, brandG, brandB, 1)
+            end
+            if slider.TopText and slider.TopText.SetTextColor then
+                slider.TopText:SetTextColor(brandR, brandG, brandB, 1)
+            end
+            if slider.MinText and slider.MinText.SetTextColor then
+                slider.MinText:SetTextColor(brandR, brandG, brandB, 1)
+            end
+            if slider.MaxText and slider.MaxText.SetTextColor then
+                slider.MaxText:SetTextColor(brandR, brandG, brandB, 1)
+            end
+        end
+
+        -- Apply immediately
+        applyGreenToLabels(sliderWithSteppers)
+
+        -- Mark that we've themed this slider so the global hook can re-apply
+        sliderWithSteppers._scooterSliderThemed = true
+    end
+
+    -- Helper: Check if a frame belongs to the ScooterMod settings panel
+    local function belongsToScooterPanel(frame)
+        local p = frame
+        local root = addon and addon.SettingsPanel and addon.SettingsPanel.frame
+        while p do
+            if p == root then return true end
+            p = (p.GetParent and p:GetParent()) or nil
+        end
+        return false
+    end
+
+    -- Global hook on MinimalSliderWithSteppersMixin.SetEnabled to maintain green color
+    -- This is necessary because Blizzard resets the color to NORMAL_FONT_COLOR when enabling
+    if not panel._sliderSetEnabledHooked then
+        panel._sliderSetEnabledHooked = true
+        if type(MinimalSliderWithSteppersMixin) == "table" and type(MinimalSliderWithSteppersMixin.SetEnabled) == "function" then
+            hooksecurefunc(MinimalSliderWithSteppersMixin, "SetEnabled", function(self, enabled)
+                -- Only re-apply green for sliders that have been themed and are in our panel
+                if self._scooterSliderThemed and enabled and belongsToScooterPanel(self) then
+                    if self.RightText and self.RightText.SetTextColor then
+                        self.RightText:SetTextColor(brandR, brandG, brandB, 1)
+                    end
+                    if self.LeftText and self.LeftText.SetTextColor then
+                        self.LeftText:SetTextColor(brandR, brandG, brandB, 1)
+                    end
+                    if self.TopText and self.TopText.SetTextColor then
+                        self.TopText:SetTextColor(brandR, brandG, brandB, 1)
+                    end
+                    if self.MinText and self.MinText.SetTextColor then
+                        self.MinText:SetTextColor(brandR, brandG, brandB, 1)
+                    end
+                    if self.MaxText and self.MaxText.SetTextColor then
+                        self.MaxText:SetTextColor(brandR, brandG, brandB, 1)
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Theme a checkbox's checkmark to ScooterMod green
+    -- The checkmark is a texture accessed via checkbox:GetCheckedTexture()
+    -- SetVertexColor persists through state changes (no hook needed, same as dropdown icons)
+    function panel.ThemeCheckbox(checkbox)
+        if not checkbox then return end
+
+        -- Prevent double-processing
+        if checkbox._scooterCheckboxThemed then return end
+        checkbox._scooterCheckboxThemed = true
+
+        -- Apply green tint to the checked texture (the checkmark)
+        local checkedTex = checkbox.GetCheckedTexture and checkbox:GetCheckedTexture()
+        if checkedTex and checkedTex.SetVertexColor then
+            checkedTex:SetVertexColor(brandR, brandG, brandB, 1)
+        end
+
+        -- Also tint the disabled checked texture so it remains green when disabled
+        local disabledCheckedTex = checkbox.GetDisabledCheckedTexture and checkbox:GetDisabledCheckedTexture()
+        if disabledCheckedTex and disabledCheckedTex.SetVertexColor then
+            disabledCheckedTex:SetVertexColor(brandR, brandG, brandB, 1)
+        end
+    end
+
+    -- Global hook on SettingsCheckboxControlMixin.Init to auto-theme all checkboxes in ScooterMod panel
+    -- This ensures every checkbox is themed green without needing to add calls at each creation site
+    if not panel._checkboxControlInitHooked then
+        panel._checkboxControlInitHooked = true
+        if type(SettingsCheckboxControlMixin) == "table" and type(SettingsCheckboxControlMixin.Init) == "function" then
+            hooksecurefunc(SettingsCheckboxControlMixin, "Init", function(self)
+                -- Only theme checkboxes inside ScooterMod's panel
+                if not belongsToScooterPanel(self) then return end
+                -- Find and theme the checkbox
+                local cb = self.Checkbox or self.CheckBox or self.Control
+                if cb and cb.IsObjectType and cb:IsObjectType("CheckButton") then
+                    panel.ThemeCheckbox(cb)
+                end
+            end)
+        end
     end
 end
 

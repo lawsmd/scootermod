@@ -50,10 +50,12 @@ function Presets:Register(data)
     entry.consolePortProfile = data.consolePortProfile
     entry.consolePortSha256 = data.consolePortSha256
     entry.notes = data.notes
+    entry.designedFor = data.designedFor or {}
+    entry.recommends = data.recommends or {}
 
     registry[id] = entry
     table.insert(order, id)
-    table.sort(order)
+    -- Preserve registration order (ScooterUI first, then ScooterDeck)
 end
 
 function Presets:GetList()
@@ -131,6 +133,8 @@ Presets:Register({
     tags = { "Desktop", "Mythic+", "Raiding" },
     previewTexture = "Interface\\AddOns\\ScooterMod\\Scooter",
     previewThumbnail = "Interface\\AddOns\\ScooterMod\\Scooter",
+    designedFor = { "Optimized for 4k 16:9 monitors", "Competitive PvE content, M+ and Raid" },
+    recommends = { "Chattynator", "Platynator" },
     comingSoon = true,
 })
 
@@ -145,6 +149,8 @@ Presets:Register({
     tags = { "Handheld", "ConsolePort", "Steam Deck" },
     previewTexture = "Interface\\AddOns\\ScooterMod\\Scooter",
     previewThumbnail = "Interface\\AddOns\\ScooterMod\\Scooter",
+    designedFor = { "Steam Deck / handheld displays", "Controller gameplay" },
+    recommends = { "ConsolePort (required)" },
     requiresConsolePort = true,
     comingSoon = true,
 })

@@ -120,6 +120,7 @@ local function createPRDStyleInitializer(component)
         if fgTextureFrame.Control and addon.InitBarTextureDropdown then
             addon.InitBarTextureDropdown(fgTextureFrame.Control, fgTextureSetting)
         end
+        if fgTextureFrame.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fgTextureFrame.Control) end
         y = y - 34
         styleState.fgTexture = fgTextureSetting
 
@@ -194,6 +195,7 @@ local function createPRDStyleInitializer(component)
         if bgTextureFrame.Control and addon.InitBarTextureDropdown then
             addon.InitBarTextureDropdown(bgTextureFrame.Control, bgTextureSetting)
         end
+        if bgTextureFrame.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(bgTextureFrame.Control) end
         y = y - 34
         styleState.bgTexture = bgTextureSetting
 
@@ -384,6 +386,7 @@ local function createComponentRenderer(componentId)
                             initDrop:InitFrame(f)
                             local lbl = f and (f.Text or f.Label)
                             if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                            if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                             if addon.Media and addon.Media.GetBarTextureMenuEntries and string.find(string.lower(label or ""), "texture", 1, true) then
                                 local dd = f.Control and f.Control.Dropdown
                                 if dd and dd.SetupMenu then
@@ -845,6 +848,8 @@ local function createComponentRenderer(componentId)
                                     if f.Text then panel.ApplyRobotoWhite(f.Text) end
                                     local cb = f.Checkbox or f.CheckBox or (f.Control and f.Control.Checkbox)
                                     if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                    -- Theme the checkbox checkmark to green
+                                    if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                                 end
                                     yC.y = yC.y - 34
                                 end
@@ -890,6 +895,8 @@ local function createComponentRenderer(componentId)
                                     if f.Text then panel.ApplyRobotoWhite(f.Text) end
                                     local cb = f.Checkbox or f.CheckBox or (f.Control and f.Control.Checkbox)
                                     if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                    -- Theme the checkbox checkmark to green
+                                    if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                                 end
                                     yD.y = yD.y - 34
                                 end
@@ -1280,6 +1287,7 @@ local function createComponentRenderer(componentId)
                                 local lbl = f and (f.Text or f.Label)
                                 if lbl then panel.ApplyRobotoWhite(lbl) end
                             end
+                            if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                             if addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, setting) end
                             yRef.y = yRef.y - 34
                             return f
@@ -2366,6 +2374,7 @@ local function createComponentRenderer(componentId)
                                         if prev then prev(self, frame) end
                                         local lbl = frame and (frame.Text or frame.Label)
                                         if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                                        if frame.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(frame.Control) end
                                         if settingId == "direction" then
                                             if panel and panel.RegisterDynamicSettingWidget then
                                                 panel:RegisterDynamicSettingWidget(component.id, "direction", frame)
@@ -2506,6 +2515,8 @@ local function createComponentRenderer(componentId)
                                         end
                                         if cb and cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
                                         if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
+                                        -- Theme the checkbox checkmark to green
+                                        if cb and panel and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                                         -- Clean up or create the PRD-specific info icon for Hide Full Bar Animations
                                         if frame.ScooterFullBarAnimInfoIcon and frame.ScooterFullBarAnimInfoIcon._ScooterIsPRDIcon and not (component.id == "prdPower" and settingId == "hideSpikeAnimations") then
                                             frame.ScooterFullBarAnimInfoIcon:Hide()
@@ -3010,6 +3021,9 @@ function panel.RenderNameplatesUnit()
                 if lbl and panel and panel.ApplyRobotoWhite then
                     panel.ApplyRobotoWhite(lbl)
                 end
+                if row.Control and panel.ThemeDropdownWithSteppers then
+                    panel.ThemeDropdownWithSteppers(row.Control)
+                end
                 if label:lower():find("font", 1, true) and row.Control and row.Control.Dropdown then
                     if addon.InitFontDropdown then
                         addon.InitFontDropdown(row.Control.Dropdown, setting, optionsProvider)
@@ -3245,6 +3259,7 @@ function panel.RenderTooltip()
                 initDrop:InitFrame(f)
                 local lbl = f and (f.Text or f.Label)
                 if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                 -- Apply custom font picker popup for font dropdowns (but not font style dropdowns)
                 if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown then
                     if addon.InitFontDropdown then

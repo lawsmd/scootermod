@@ -410,6 +410,8 @@ local function createUFRenderer(componentId, title)
 						if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
 						local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 					-- Add info icon next to the label - ONLY for Unit Frame "Use Custom Borders" checkbox
 					if frame and frame.Text then
@@ -540,6 +542,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 					if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 					end
@@ -714,6 +717,8 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 					y.y = y.y - 34
 					-- Font controls for % Text
@@ -762,6 +767,7 @@ local function createUFRenderer(componentId, title)
 							local lbl = f and (f.Text or f.Label)
 							if lbl then panel.ApplyRobotoWhite(lbl) end
 						end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						y.y = y.y - 34
 					end
 					addSlider(percentTextPage, "% Text Offset X", -100, 100, 1,
@@ -805,6 +811,8 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 					-- Match % Text layout: drop the cursor after the checkbox row
 					y.y = y.y - 34
@@ -854,6 +862,7 @@ local function createUFRenderer(componentId, title)
 							local lbl = f and (f.Text or f.Label)
 							if lbl then panel.ApplyRobotoWhite(lbl) end
 						end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						y.y = y.y - 34
 					end
 					addSlider(valueTextPage, "Value Text Offset X", -100, 100, 1,
@@ -888,6 +897,7 @@ local function createUFRenderer(componentId, title)
                         local lbl = f and (f.Text or f.Label)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
+                    if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                     if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
@@ -946,6 +956,7 @@ local function createUFRenderer(componentId, title)
                         local lbl = fbg and (fbg.Text or fbg.Label)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
+                    if fbg.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fbg.Control) end
                     if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
 					y.y = y.y - 34
 
@@ -1043,6 +1054,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 					-- Grey out when Use Custom Borders is off
 					local enabled = isEnabled()
 					if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
@@ -1190,6 +1202,8 @@ local function createUFRenderer(componentId, title)
 							if row.Text then panel.ApplyRobotoWhite(row.Text) end
 							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							-- Theme the checkbox checkmark to green
+							if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 						end
 
 						-- Add info icon to the LEFT of the checkbox label
@@ -1300,6 +1314,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 					if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 						addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 					end
@@ -1468,6 +1483,8 @@ local function createUFRenderer(componentId, title)
 							if row.Text then panel.ApplyRobotoWhite(row.Text) end
 							local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+							-- Theme the checkbox checkmark to green
+							if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 						end
 						if panel and panel.CreateInfoIconForLabel then
 							local tooltip = "Detach the Player Power Bar from the Player frame and place it using exact screen coordinates. When enabled, the X/Y Offset sliders are disabled."
@@ -1961,6 +1978,8 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 
 					y.y = y.y - 34
@@ -1988,6 +2007,8 @@ local function createUFRenderer(componentId, title)
                             if spikeRow.Text then panel.ApplyRobotoWhite(spikeRow.Text) end
                             local cb = spikeRow.Checkbox or spikeRow.CheckBox or (spikeRow.Control and spikeRow.Control.Checkbox)
                             if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                            -- Theme the checkbox checkmark to green
+                            if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                         end
 
                         if panel and panel.CreateInfoIconForLabel then
@@ -2038,6 +2059,8 @@ local function createUFRenderer(componentId, title)
                             if feedbackRow.Text then panel.ApplyRobotoWhite(feedbackRow.Text) end
                             local cb = feedbackRow.Checkbox or feedbackRow.CheckBox or (feedbackRow.Control and feedbackRow.Control.Checkbox)
                             if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                            -- Theme the checkbox checkmark to green
+                            if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                         end
 
                         if panel and panel.CreateInfoIconForLabel then
@@ -2088,6 +2111,8 @@ local function createUFRenderer(componentId, title)
                             if sparkRow.Text then panel.ApplyRobotoWhite(sparkRow.Text) end
                             local cb = sparkRow.Checkbox or sparkRow.CheckBox or (sparkRow.Control and sparkRow.Control.Checkbox)
                             if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                            -- Theme the checkbox checkmark to green
+                            if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
                         end
 
                         if panel and panel.CreateInfoIconForLabel then
@@ -2147,6 +2172,8 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 					y.y = y.y - 34
 					addDropdown(frame.PageF, "% Text Font", fontOptions,
@@ -2194,6 +2221,7 @@ local function createUFRenderer(componentId, title)
 							local lbl = f and (f.Text or f.Label)
 							if lbl then panel.ApplyRobotoWhite(lbl) end
 						end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						y.y = y.y - 34
 					end
 					addSlider(frame.PageF, "% Text Offset X", -100, 100, 1,
@@ -2236,6 +2264,8 @@ local function createUFRenderer(componentId, title)
 						if row.Text then panel.ApplyRobotoWhite(row.Text) end
 						local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
 						if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+						-- Theme the checkbox checkmark to green
+						if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 					end
 					y.y = y.y - 34
 					addDropdown(frame.PageG, "Value Text Font", fontOptions,
@@ -2283,6 +2313,7 @@ local function createUFRenderer(componentId, title)
 							local lbl = f and (f.Text or f.Label)
 							if lbl then panel.ApplyRobotoWhite(lbl) end
 						end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						y.y = y.y - 34
 					end
 					addSlider(frame.PageG, "Value Text Offset X", -100, 100, 1,
@@ -2316,6 +2347,7 @@ local function createUFRenderer(componentId, title)
                         local lbl = f and (f.Text or f.Label)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
+					if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 					if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 					y.y = y.y - 34
 
@@ -2373,6 +2405,7 @@ local function createUFRenderer(componentId, title)
                         local lbl = fbg and (fbg.Text or fbg.Label)
                         if lbl then panel.ApplyRobotoWhite(lbl) end
                     end
+					if fbg.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fbg.Control) end
                     if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgTexSetting) end
 					y.y = y.y - 34
 
@@ -2466,6 +2499,7 @@ local function createUFRenderer(componentId, title)
                     initDrop:InitFrame(f)
                     local lbl = f and (f.Text or f.Label)
                     if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                    if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                     local enabled = isEnabled()
                     if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
                     if lbl and lbl.SetTextColor then
@@ -2661,6 +2695,7 @@ local function createUFRenderer(componentId, title)
 						initDrop:InitFrame(f)
 						local lbl = f and (f.Text or f.Label)
 						if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 							addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 						end
@@ -2796,6 +2831,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = f and (f.Text or f.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 							y.y = y.y - 34
 						end
@@ -2864,6 +2900,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = fbg and (fbg.Text or fbg.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if fbg.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fbg.Control) end
 							if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgSetting) end
 							y.y = y.y - 34
 						end
@@ -2968,6 +3005,7 @@ local function createUFRenderer(componentId, title)
 							initDrop:InitFrame(f)
 							local lbl = f and (f.Text or f.Label)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							local enabled = isEnabled()
 							if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
 							if lbl and lbl.SetTextColor then
@@ -3185,6 +3223,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = f and (f.Text or f.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							y.y = y.y - 34
 						end
 						-- % Text Offset X/Y
@@ -3280,6 +3319,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = f and (f.Text or f.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							y.y = y.y - 34
 						end
 						-- Value Text Offset X/Y
@@ -3656,22 +3696,23 @@ local function createUFRenderer(componentId, title)
 			yRef.y = yRef.y - 34
 			return f
 		end
-		local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
-			local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
-			local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
-			local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
-			f.GetElementData = function() return initDrop end
-			f:SetPoint("TOPLEFT", 4, yRef.y)
-			f:SetPoint("TOPRIGHT", -16, yRef.y)
-			initDrop:InitFrame(f)
-			local lbl = f and (f.Text or f.Label)
-			if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-			if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
-				addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
-			end
-			yRef.y = yRef.y - 34
-			return f
+	local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+		local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+		local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+		local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+		f.GetElementData = function() return initDrop end
+		f:SetPoint("TOPLEFT", 4, yRef.y)
+		f:SetPoint("TOPRIGHT", -16, yRef.y)
+		initDrop:InitFrame(f)
+		local lbl = f and (f.Text or f.Label)
+		if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+		if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+		if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+			addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
 		end
+		yRef.y = yRef.y - 34
+		return f
+	end
 		local function addStyle(parent, label, getFunc, setFunc, yRef)
 			local function styleOptions()
 				local container = Settings.CreateControlTextContainer();
@@ -3973,6 +4014,7 @@ local function createUFRenderer(componentId, title)
 				initDrop:InitFrame(f)
 				local lbl = f and (f.Text or f.Label)
 				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+				if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 				local en = isEnabled()
 				if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(en) end
 				if lbl and lbl.SetTextColor then lbl:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
@@ -4432,22 +4474,23 @@ local function createUFRenderer(componentId, title)
 				yRef.y = yRef.y - 34
 				return f
 			end
-			local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
-				local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
-				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
-				local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
-				f.GetElementData = function() return initDrop end
-				f:SetPoint("TOPLEFT", 4, yRef.y)
-				f:SetPoint("TOPRIGHT", -16, yRef.y)
-				initDrop:InitFrame(f)
-				local lbl = f and (f.Text or f.Label)
-				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
-				if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
-					addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
-				end
-				yRef.y = yRef.y - 34
-				return f
-			end
+	local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+		local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+		local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+		local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+		f.GetElementData = function() return initDrop end
+		f:SetPoint("TOPLEFT", 4, yRef.y)
+		f:SetPoint("TOPRIGHT", -16, yRef.y)
+		initDrop:InitFrame(f)
+		local lbl = f and (f.Text or f.Label)
+		if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+		if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+		if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+			addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+		end
+		yRef.y = yRef.y - 34
+		return f
+	end
 			local function addStyle(parent, label, getFunc, setFunc, yRef)
 				local function styleOptions()
 					local container = Settings.CreateControlTextContainer();
@@ -4626,6 +4669,7 @@ local function createUFRenderer(componentId, title)
 					initDrop:InitFrame(f)
 					local lbl = f and (f.Text or f.Label)
 					if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+					if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 					-- Grey out when Use Custom Border is off
 					local enabled = isEnabled()
 					if f.Control and f.Control.SetEnabled then f.Control:SetEnabled(enabled) end
@@ -5071,6 +5115,7 @@ local function createUFRenderer(componentId, title)
 						initDrop:InitFrame(f)
 						local lbl = f and (f.Text or f.Label)
 						if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+						if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 						-- When the label mentions "Font" (but not "Style"), initialize the font dropdown wrapper
 						if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
 							addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
@@ -5169,6 +5214,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = f and (f.Text or f.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
 							y.y = y.y - 34
 						end
@@ -5243,6 +5289,7 @@ local function createUFRenderer(componentId, title)
 								local lbl = fbg and (fbg.Text or fbg.Label)
 								if lbl then panel.ApplyRobotoWhite(lbl) end
 							end
+							if fbg.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fbg.Control) end
 							if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgSetting) end
 							y.y = y.y - 34
 						end
@@ -5453,6 +5500,7 @@ local function createUFRenderer(componentId, title)
 							initDrop:InitFrame(f)
 							local lbl = f and (f.Text or f.Label)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							_styleFrame = f
 							y.y = y.y - 34
 						end
@@ -5805,6 +5853,7 @@ local function createUFRenderer(componentId, title)
 							initDrop:InitFrame(f)
 							local lbl = f and (f.Text or f.Label)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							_iconBorderStyleFrame = f
 							y.y = y.y - 34
 						end
@@ -7426,6 +7475,7 @@ local function createUFRenderer(componentId, title)
 							initDrop:InitFrame(f)
 							local lbl = f and (f.Text or f.Label)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							y.y = y.y - 34
 						end
 
@@ -7959,6 +8009,7 @@ local function createUFRenderer(componentId, title)
 							initDrop:InitFrame(f)
 							local lbl = f and (f.Text or f.Label)
 							if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+							if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
 							y.y = y.y - 34
 						end
 

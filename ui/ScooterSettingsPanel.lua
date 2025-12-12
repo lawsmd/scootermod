@@ -455,6 +455,7 @@ local function createComponentRenderer(componentId)
                                     addon.InitBarTextureDropdown(f.Control, setting)
                                 end
                             end
+                            if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
                             yRef.y = yRef.y - 34
                         end
                         local function addStyle(parent, label, getFunc, setFunc, yRef)

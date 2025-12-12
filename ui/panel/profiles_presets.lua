@@ -26,45 +26,29 @@ local function ensureCarouselModel()
     return panel._presetCarousel, list
 end
 
-local function setCarouselIndex(delta)
+local function formatBulletList(items)
+    if type(items) ~= "table" or #items == 0 then
+        return ""
+    end
+    local lines = {}
+    for _, item in ipairs(items) do
+        table.insert(lines, "• " .. tostring(item))
+    end
+    return table.concat(lines, "\n")
+end
+
+-- Forward declaration for updatePresetContent
+local updatePresetContent
+
+local function setPresetByIndex(newIndex)
     local model, list = ensureCarouselModel()
     local total = #list
     if total == 0 then return end
-    model.index = model.index + delta
-    if model.index < 1 then model.index = total end
-    if model.index > total then model.index = 1 end
-    if panel.RefreshCurrentCategoryDeferred then
-        panel.RefreshCurrentCategoryDeferred()
-    end
-end
-
-local function formatTags(tags)
-    if type(tags) ~= "table" or #tags == 0 then
-        return "Preset"
-    end
-    return table.concat(tags, " • ")
-end
-
-local function applyPresetStatus(frame, preset)
-    local statusParts = {}
-    if preset.version then
-        table.insert(statusParts, preset.version)
-    end
-    if preset.wowBuild and preset.wowBuild ~= "" then
-        table.insert(statusParts, "Build " .. preset.wowBuild)
-    end
-    if preset.comingSoon then
-        table.insert(statusParts, "Coming Soon")
-    end
-    frame.PresetStatus:SetText(table.concat(statusParts, " • "))
-
-    local depText
-    if preset.requiresConsolePort then
-        depText = "Requires ConsolePort"
-    else
-        depText = preset.recommendedInput or "Mouse + Keyboard"
-    end
-    frame.PresetDependencies:SetText(depText)
+    if newIndex < 1 then newIndex = 1 end
+    if newIndex > total then newIndex = total end
+    model.index = newIndex
+    -- Directly update the content instead of relying on panel refresh
+    updatePresetContent()
 end
 
 local function updateCTAState(frame, preset)
@@ -83,7 +67,7 @@ local function updateCTAState(frame, preset)
 
     frame.PrimaryButton:SetEnabled(actionable)
     frame.PrimaryButton:SetAlpha(actionable and 1 or 0.65)
-    frame.PrimaryButton:SetText(actionable and ("Create a new profile using " .. (preset.name or "Preset")) or disabledReason or "Unavailable")
+    frame.PrimaryButton:SetText("Create a new profile using this preset")
     if not frame.PrimaryButton.tooltipAnchor then
         local anchor = CreateFrame("Frame", nil, frame.PrimaryButton)
         anchor:SetAllPoints()
@@ -104,8 +88,44 @@ local function updateCTAState(frame, preset)
     end
 end
 
+-- Create a setting object for the preset selector dropdown
+local function createPresetSetting(list)
+    local setting = {}
+    function setting:GetName() return "Preset" end
+    function setting:GetVariable() return "ScooterPresetSelector" end
+    function setting:GetVariableType() return "string" end
+    function setting:GetDefaultValue() return list[1] and list[1].id or "" end
+    function setting:GetValue()
+        local model = panel._presetCarousel or { index = 1 }
+        local preset = list[model.index]
+        return preset and preset.id or ""
+    end
+    function setting:SetValue(v)
+        for i, preset in ipairs(list) do
+            if preset.id == v then
+                setPresetByIndex(i)
+                break
+            end
+        end
+    end
+    function setting:SetValueToDefault() end
+    function setting:HasCommitFlag() return false end
+    return setting
+end
+
+local function createPresetOptions(list)
+    return function()
+        local container = Settings.CreateControlTextContainer()
+        for _, preset in ipairs(list) do
+            container:Add(preset.id, preset.name or preset.id)
+        end
+        return container:GetData()
+    end
+end
+
 local function buildHeroWidgets(frame)
-    frame:SetHeight(420)
+    frame:SetHeight(480)
+    -- Hide any recycled elements from other templates
     if frame.InfoText then frame.InfoText:Hide() end
     if frame.ButtonContainer then frame.ButtonContainer:Hide() end
     if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
@@ -113,74 +133,149 @@ local function buildHeroWidgets(frame)
     if frame.CopyBtn then frame.CopyBtn:Hide() end
     if frame.DeleteBtn then frame.DeleteBtn:Hide() end
 
-    if frame.HeroTexture then return end
+    -- Disable the hover highlight effect from SettingsListElementTemplate
+    if frame.HighlightTexture then frame.HighlightTexture:Hide() end
+    if frame.Highlight then frame.Highlight:Hide() end
+    if frame.MouseoverOverlay then frame.MouseoverOverlay:Hide() end
+    -- Hide the HoverBackground from the Tooltip child frame
+    if frame.Tooltip and frame.Tooltip.HoverBackground then
+        frame.Tooltip.HoverBackground:Hide()
+        frame.Tooltip.HoverBackground:SetAlpha(0)
+    end
+    -- Prevent the row itself from showing hover states
+    frame:SetScript("OnEnter", nil)
+    frame:SetScript("OnLeave", nil)
 
+    -- Only create widgets once
+    if frame.PresetDropdownRow then return end
+
+    -- Preset selector dropdown at the top using SettingsDropdownControlTemplate
+    local dropdownRow = CreateFrame("Frame", nil, frame, "SettingsDropdownControlTemplate")
+    dropdownRow:SetPoint("TOP", frame, "TOP", 0, 0)
+    dropdownRow:SetSize(300, 40)
+    frame.PresetDropdownRow = dropdownRow
+
+    -- Hide the label portion of the dropdown template
+    if dropdownRow.Text then dropdownRow.Text:Hide() end
+
+    -- Center the control within the row
+    if dropdownRow.Control then
+        dropdownRow.Control:ClearAllPoints()
+        dropdownRow.Control:SetPoint("CENTER", dropdownRow, "CENTER", 0, 0)
+    end
+
+    -- Hero image below dropdown
     local hero = frame:CreateTexture(nil, "ARTWORK")
-    hero:SetPoint("TOP", frame, "TOP", 0, -12)
-    hero:SetSize(520, 292)
+    hero:SetPoint("TOP", dropdownRow, "BOTTOM", 0, -8)
+    hero:SetSize(480, 270)
     hero:SetColorTexture(0.07, 0.07, 0.07, 1)
     frame.HeroTexture = hero
 
-    local prev = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    prev:SetSize(32, 32)
-    prev:SetPoint("LEFT", hero, "LEFT", -40, 0)
-    prev:SetText("⟨")
-    prev:SetScript("OnClick", function() setCarouselIndex(-1) end)
-    frame.NavPrev = prev
+    -- Two-column section below image
+    local columnContainer = CreateFrame("Frame", nil, frame)
+    columnContainer:SetPoint("TOP", hero, "BOTTOM", 0, -16)
+    columnContainer:SetSize(520, 100)
+    frame.ColumnContainer = columnContainer
 
-    local nextBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    nextBtn:SetSize(32, 32)
-    nextBtn:SetPoint("RIGHT", hero, "RIGHT", 40, 0)
-    nextBtn:SetText("⟩")
-    nextBtn:SetScript("OnClick", function() setCarouselIndex(1) end)
-    frame.NavNext = nextBtn
+    -- Left column: "Designed for..."
+    local leftHeader = columnContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    leftHeader:SetPoint("TOPLEFT", columnContainer, "TOPLEFT", 20, 0)
+    leftHeader:SetText("Designed for...")
+    leftHeader:SetJustifyH("LEFT")
+    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(leftHeader, 18) end
+    frame.LeftHeader = leftHeader
 
-    local pagination = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pagination:SetPoint("TOP", hero, "BOTTOM", 0, -6)
-    panel.ApplyRobotoWhite(pagination)
-    frame.PaginationText = pagination
+    local leftList = columnContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    leftList:SetPoint("TOPLEFT", leftHeader, "BOTTOMLEFT", 0, -6)
+    leftList:SetWidth(240)
+    leftList:SetJustifyH("LEFT")
+    leftList:SetJustifyV("TOP")
+    leftList:SetSpacing(4)
+    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(leftList, 12) end
+    frame.LeftList = leftList
 
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    title:SetPoint("TOP", pagination, "BOTTOM", 0, -6)
-    title:SetText("Preset")
-    panel.ApplyRobotoWhite(title)
-    frame.PresetTitle = title
+    -- Right column: "Author also recommends..."
+    local rightHeader = columnContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    rightHeader:SetPoint("TOPLEFT", columnContainer, "TOP", 20, 0)
+    rightHeader:SetText("Author also recommends...")
+    rightHeader:SetJustifyH("LEFT")
+    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(rightHeader, 18) end
+    frame.RightHeader = rightHeader
 
-    local status = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    status:SetPoint("TOP", title, "BOTTOM", 0, -2)
-    panel.ApplyRobotoWhite(status)
-    frame.PresetStatus = status
+    local rightList = columnContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rightList:SetPoint("TOPLEFT", rightHeader, "BOTTOMLEFT", 0, -6)
+    rightList:SetWidth(240)
+    rightList:SetJustifyH("LEFT")
+    rightList:SetJustifyV("TOP")
+    rightList:SetSpacing(4)
+    if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(rightList, 12) end
+    frame.RightList = rightList
 
-    local tags = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    tags:SetPoint("TOP", status, "BOTTOM", 0, -4)
-    panel.ApplyRobotoWhite(tags)
-    frame.PresetTags = tags
-
-    local desc = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    desc:SetPoint("TOP", tags, "BOTTOM", 0, -10)
-    desc:SetWidth(520)
-    desc:SetJustifyH("CENTER")
-    desc:SetJustifyV("TOP")
-    panel.ApplyRobotoWhite(desc)
-    frame.PresetDescription = desc
-
-    local deps = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    deps:SetPoint("TOP", desc, "BOTTOM", 0, -8)
-    panel.ApplyRobotoWhite(deps)
-    frame.PresetDependencies = deps
-
+    -- CTA button at the bottom, centered
     local cta = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    cta:SetPoint("TOP", deps, "BOTTOM", 0, -16)
-    cta:SetSize(320, 28)
-    cta:SetText("Create profile")
-    panel.ApplyControlTheme(cta)
+    cta:SetPoint("BOTTOM", frame, "BOTTOM", 0, 16)
+    cta:SetSize(320, 32)
+    cta:SetText("Create a new profile using this preset")
+    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(cta) end
     frame.PrimaryButton = cta
+end
 
-    local note = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    note:SetPoint("TOP", cta, "BOTTOM", 0, -6)
-    note:SetText("Imports the preset, creates a new profile, and reloads your UI.")
-    panel.ApplyRobotoWhite(note)
-    frame.CTANote = note
+local function initPresetDropdown(row, list)
+    if not row.PresetDropdownRow then return end
+    local dropdownRow = row.PresetDropdownRow
+
+    -- Create setting and options for this render
+    local setting = createPresetSetting(list)
+    local optionsProvider = createPresetOptions(list)
+
+    -- Initialize the dropdown control
+    local data = { setting = setting, options = optionsProvider, name = "" }
+    local init = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", data)
+    dropdownRow.GetElementData = function() return init end
+    init:InitFrame(dropdownRow)
+
+    -- Hide label
+    if dropdownRow.Text then dropdownRow.Text:Hide() end
+
+    -- Center the control
+    if dropdownRow.Control then
+        dropdownRow.Control:ClearAllPoints()
+        dropdownRow.Control:SetPoint("CENTER", dropdownRow, "CENTER", 0, 0)
+    end
+
+    -- Apply ScooterMod theming to the dropdown (green text and arrows)
+    if dropdownRow.Control and panel.ThemeDropdownWithSteppers then
+        panel.ThemeDropdownWithSteppers(dropdownRow.Control)
+    end
+end
+
+-- Function to update the preset content (called when selection changes)
+updatePresetContent = function()
+    local row = panel._currentPresetRow
+    if not row then return end
+
+    local model, list = ensureCarouselModel()
+    local preset = list[model.index]
+    if not preset then return end
+
+    -- Update hero image
+    if row.HeroTexture then
+        row.HeroTexture:SetTexture(preset.previewTexture or "Interface\\AddOns\\ScooterMod\\Scooter")
+    end
+
+    -- Update two-column content
+    if row.LeftList then
+        row.LeftList:SetText(formatBulletList(preset.designedFor))
+    end
+    if row.RightList then
+        row.RightList:SetText(formatBulletList(preset.recommends))
+    end
+
+    -- Update CTA state and click handler
+    if row.PrimaryButton then
+        updateCTAState(row, preset)
+        row.PrimaryButton:SetScript("OnClick", function() panel:ApplyPresetFromUI(preset) end)
+    end
 end
 
 function panel:ApplyPresetFromUI(preset)
@@ -234,20 +329,19 @@ local function renderProfilesPresets()
         end
 
         local heroRow = Settings.CreateElementInitializer("ScooterPresetsHeroTemplate")
-        heroRow.GetExtent = function() return 430 end
+        heroRow.GetExtent = function() return 490 end
         heroRow.InitFrame = function(_, row)
+            -- Store reference to the row for direct updates
+            panel._currentPresetRow = row
+
+            -- Build widgets (only creates once)
             buildHeroWidgets(row)
-            local preset = list[model.index]
-            if preset then
-                row.HeroTexture:SetTexture(preset.previewTexture or "Interface\\AddOns\\ScooterMod\\Scooter")
-                row.PresetTitle:SetText(preset.name or "Preset")
-                row.PresetDescription:SetText(preset.description or "Hand-crafted ScooterMod preset.")
-                row.PresetTags:SetText(formatTags(preset.tags))
-                row.PaginationText:SetText(string.format("%d / %d", model.index, #list))
-                applyPresetStatus(row, preset)
-                updateCTAState(row, preset)
-                row.PrimaryButton:SetScript("OnClick", function() panel:ApplyPresetFromUI(preset) end)
-            end
+
+            -- Initialize the dropdown
+            initPresetDropdown(row, list)
+
+            -- Update content with current preset
+            updatePresetContent()
         end
         table.insert(elements, heroRow)
 
@@ -259,5 +353,4 @@ end
 function panel.RenderProfilesPresets()
     return renderProfilesPresets()
 end
-
 

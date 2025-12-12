@@ -143,6 +143,10 @@ local function createApplyRow(categoryKey, optionsProvider, getPending, setPendi
                 if panel.ApplyControlTheme then
                     panel.ApplyControlTheme(control)
                 end
+                -- Apply ScooterMod theming to dropdown text and arrows
+                if panel.ThemeDropdownWithSteppers then
+                    panel.ThemeDropdownWithSteppers(control)
+                end
             end
             if control and control.Dropdown and opts and opts.applyFontPreview and addon.InitFontDropdown then
                 addon.InitFontDropdown(control.Dropdown, setting, optionsProvider)
@@ -173,15 +177,10 @@ local function createApplyRow(categoryKey, optionsProvider, getPending, setPendi
             end
             frame.ApplyButton = btn
         else
-            frame.ApplyButton:SetSize(200, 40)
+            -- Button already exists - just reposition it, don't re-scale font
+            -- (font was already scaled 1.3x during initial creation)
             frame.ApplyButton:ClearAllPoints()
             frame.ApplyButton:SetPoint("TOP", frame.SelectionDropdown, "BOTTOM", 0, -40)
-            if frame.ApplyButton.Text and frame.ApplyButton.Text.SetFont then
-                local face, size, flags = frame.ApplyButton.Text:GetFont()
-                if size then
-            frame.ApplyButton.Text:SetFont(face, math.floor(size * 1.3 + 0.5), flags or "")
-                end
-            end
         end
     end
     return row
