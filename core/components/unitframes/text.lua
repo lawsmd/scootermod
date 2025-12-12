@@ -151,27 +151,51 @@ do
         end
     end
 
-    -- Hook SetFontObject on a FontString to reapply full text styling when Blizzard resets fonts.
-    -- This is critical for instance loading where Blizzard's UpdateTextStringWithValues or similar
-    -- resets the font to default via SetFontObject().
+    -- Hook SetFontObject AND SetFont on a FontString to reapply full text styling when Blizzard resets fonts.
+    -- This is critical for instance loading and Character Pane opening where Blizzard's code
+    -- resets the font to default via SetFontObject() or SetFont().
     local function hookHealthTextFontReset(fs, unit, textType)
         if not fs or fs._ScooterHealthTextFontResetHooked then return end
         fs._ScooterHealthTextFontResetHooked = true
         if _G.hooksecurefunc then
-            -- Hook SetFontObject - called by Blizzard when resetting fonts
-            _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
-                -- Defer reapply to avoid conflicts with Blizzard's ongoing update
+            -- Helper to trigger reapply with multiple attempts
+            local function triggerReapply(self)
                 if not self._ScooterHealthTextFontReapplyDeferred then
                     self._ScooterHealthTextFontReapplyDeferred = true
+                    -- Reapply at multiple intervals to ensure we win any race conditions
                     C_Timer.After(0, function()
+                        if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
+                            addon.ApplyAllUnitFrameHealthTextVisibility()
+                        end
+                    end)
+                    C_Timer.After(0.1, function()
                         self._ScooterHealthTextFontReapplyDeferred = nil
-                        -- Reapply full text styling (font + visibility) for this unit
                         if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
                             addon.ApplyAllUnitFrameHealthTextVisibility()
                         end
                     end)
                 end
+            end
+
+            -- Hook SetFontObject - called by Blizzard when resetting fonts
+            _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+                triggerReapply(self)
             end)
+
+            -- Hook SetFont - Blizzard may also use this directly to reset fonts
+            if fs.SetFont then
+                _G.hooksecurefunc(fs, "SetFont", function(self, fontPath, ...)
+                    -- Only trigger if the font is being reset to a Blizzard default font
+                    -- (our custom fonts typically have paths like "Interface\\AddOns\\..." or specific font names)
+                    if fontPath and type(fontPath) == "string" then
+                        local isBlizzardFont = fontPath:find("^Fonts\\") or fontPath:find("^Interface\\")
+                        -- Check if this is NOT our own SetFont call (we set a flag when applying)
+                        if not self._ScooterApplyingFont then
+                            triggerReapply(self)
+                        end
+                    end
+                end)
+            end
         end
     end
 
@@ -209,19 +233,32 @@ do
             or findFontStringByNameHint(frame, ".RightText")
             or findFontStringByNameHint(frame, "HealthBarTextRight")
 
+        -- Also resolve the center TextString (used in NUMERIC display mode)
+        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+        local textStringFS
+        if unit == "Pet" then
+            textStringFS = _G.PetFrameHealthBarText or (hb and hb.TextString)
+        end
+        textStringFS = textStringFS
+            or (hb and hb.TextString)
+            or (frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar and frame.HealthBarsContainer.HealthBar.TextString)
+            or findFontStringByNameHint(frame, "HealthBarText")
+
         -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
         addon._ufHealthTextFonts[unit] = {
             leftFS = leftFS,
             rightFS = rightFS,
+            textStringFS = textStringFS,
         }
 
         -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
         hookHealthTextFontReset(leftFS, unit, "left")
         hookHealthTextFontReset(rightFS, unit, "right")
+        hookHealthTextFontReset(textStringFS, unit, "center")
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        local function applyHealthTextVisibility(fs, hidden)
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 AND font styling when Blizzard updates.
+        local function applyHealthTextVisibility(fs, hidden, unitForHook)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
@@ -250,10 +287,25 @@ do
                                 end
                             end
                         end)
-                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                        -- Hook SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates text content.
+                        -- This is critical because Blizzard's UpdateTextStringWithValues can reset fonts without
+                        -- calling SetFontObject. By triggering a deferred styling reapply on every SetText,
+                        -- we ensure custom fonts persist even through intermittent resets.
                         _G.hooksecurefunc(fs, "SetText", function(self)
+                            -- Always enforce visibility first
                             if self._ScooterHealthTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
+                            end
+                            -- Also trigger a deferred font styling reapply (coalesced to avoid spam)
+                            if not self._ScooterHealthTextStyleReapplyDeferred then
+                                self._ScooterHealthTextStyleReapplyDeferred = true
+                                C_Timer.After(0, function()
+                                    self._ScooterHealthTextStyleReapplyDeferred = nil
+                                    -- Reapply full text styling for all units
+                                    if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
+                                        addon.ApplyAllUnitFrameHealthTextVisibility()
+                                    end
+                                end)
                             end
                         end)
                     end
@@ -262,12 +314,54 @@ do
             else
                 fs._ScooterHealthTextHidden = false
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                -- Also install the SetText hook for non-hidden text to ensure font styling persists
+                if not fs._ScooterHealthTextSetTextStyleHooked then
+                    fs._ScooterHealthTextSetTextStyleHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "SetText", function(self)
+                            -- Trigger a deferred font styling reapply (coalesced to avoid spam)
+                            if not self._ScooterHealthTextStyleReapplyDeferred then
+                                self._ScooterHealthTextStyleReapplyDeferred = true
+                                C_Timer.After(0, function()
+                                    self._ScooterHealthTextStyleReapplyDeferred = nil
+                                    if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
+                                        addon.ApplyAllUnitFrameHealthTextVisibility()
+                                    end
+                                end)
+                            end
+                        end)
+                    end
+                end
             end
         end
 
         -- Apply current visibility once as part of the styling pass.
-        applyHealthTextVisibility(leftFS, cfg.healthPercentHidden == true)
-        applyHealthTextVisibility(rightFS, cfg.healthValueHidden == true)
+        applyHealthTextVisibility(leftFS, cfg.healthPercentHidden == true, unit)
+        applyHealthTextVisibility(rightFS, cfg.healthValueHidden == true, unit)
+
+        -- Install SetText hook for center TextString to trigger reapply when Blizzard updates it
+        -- Also enforces hidden state if Value text is configured as hidden
+        if textStringFS and not textStringFS._ScooterHealthTextCenterSetTextHooked then
+            textStringFS._ScooterHealthTextCenterSetTextHooked = true
+            if _G.hooksecurefunc then
+                _G.hooksecurefunc(textStringFS, "SetText", function(self)
+                    -- Enforce hidden state immediately if configured
+                    if self._ScooterHealthTextCenterHidden and self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                    -- Trigger deferred reapply for styling
+                    if not self._ScooterHealthTextStyleReapplyDeferred then
+                        self._ScooterHealthTextStyleReapplyDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScooterHealthTextStyleReapplyDeferred = nil
+                            if addon and addon.ApplyAllUnitFrameHealthTextVisibility then
+                                addon.ApplyAllUnitFrameHealthTextVisibility()
+                            end
+                        end)
+                    end
+                end)
+            end
+        end
 
         -- Apply styling (font/size/style/color/offset) with stable baseline anchoring
         addon._ufTextBaselines = addon._ufTextBaselines or {}
@@ -305,7 +399,10 @@ do
             local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
             local size = tonumber(styleCfg.size) or 14
             local outline = tostring(styleCfg.style or "OUTLINE")
+            -- Set flag to prevent our SetFont hook from triggering a reapply loop
+            fs._ScooterApplyingFont = true
             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+            fs._ScooterApplyingFont = nil
             local c = styleCfg.color or {1,1,1,1}
             if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
@@ -348,6 +445,21 @@ do
 
         if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left") end
         if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right") end
+        -- Style center TextString using Value settings (used in NUMERIC display mode)
+        -- If Value text is hidden, also hide center text (since it displays value-oriented data)
+        if textStringFS then
+            local valueHidden = (cfg.healthValueHidden == true)
+            if valueHidden then
+                if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
+                textStringFS._ScooterHealthTextCenterHidden = true
+            else
+                if textStringFS._ScooterHealthTextCenterHidden then
+                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
+                    textStringFS._ScooterHealthTextCenterHidden = nil
+                end
+                applyTextStyle(textStringFS, cfg.textHealthValue or {}, unit .. ":health-center")
+            end
+        end
     end
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
@@ -610,23 +722,44 @@ do
 
 	-- Hook SetFontObject on a FontString to reapply full text styling when Blizzard resets fonts.
 	-- This is critical for instance loading where Blizzard resets fonts via SetFontObject().
+	-- Hook SetFontObject AND SetFont on a FontString to reapply full text styling when Blizzard resets fonts.
 	local function hookPowerTextFontReset(fs, unit, textType)
 		if not fs or fs._ScooterPowerTextFontResetHooked then return end
 		fs._ScooterPowerTextFontResetHooked = true
 		if _G.hooksecurefunc then
-			_G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
-				-- Defer reapply to avoid conflicts with Blizzard's ongoing update
+			-- Helper to trigger reapply with multiple attempts
+			local function triggerReapply(self)
 				if not self._ScooterPowerTextFontReapplyDeferred then
 					self._ScooterPowerTextFontReapplyDeferred = true
+					-- Reapply at multiple intervals to ensure we win any race conditions
 					C_Timer.After(0, function()
+						if addon and addon.ApplyAllUnitFramePowerTextVisibility then
+							addon.ApplyAllUnitFramePowerTextVisibility()
+						end
+					end)
+					C_Timer.After(0.1, function()
 						self._ScooterPowerTextFontReapplyDeferred = nil
-						-- Reapply full text styling (font + visibility) for this unit
 						if addon and addon.ApplyAllUnitFramePowerTextVisibility then
 							addon.ApplyAllUnitFramePowerTextVisibility()
 						end
 					end)
 				end
+			end
+
+			-- Hook SetFontObject - called by Blizzard when resetting fonts
+			_G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+				triggerReapply(self)
 			end)
+
+			-- Hook SetFont - Blizzard may also use this directly to reset fonts
+			if fs.SetFont then
+				_G.hooksecurefunc(fs, "SetFont", function(self, fontPath, ...)
+					-- Only trigger if NOT our own SetFont call
+					if not self._ScooterApplyingFont then
+						triggerReapply(self)
+					end
+				end)
+			end
 		end
 	end
 
@@ -667,19 +800,32 @@ do
 			or findFontStringByNameHint(frame, ".RightText")
 			or findFontStringByNameHint(frame, "ManaBarTextRight")
 
+        -- Also resolve the center TextString (used in NUMERIC display mode)
+        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+        local textStringFS
+        if unit == "Pet" then
+            textStringFS = _G.PetFrameManaBarText or (pb and pb.TextString)
+        end
+        textStringFS = textStringFS
+            or (pb and pb.TextString)
+            or (frame.ManaBar and frame.ManaBar.TextString)
+            or findFontStringByNameHint(frame, "ManaBarText")
+
         -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
         addon._ufPowerTextFonts[unit] = {
             leftFS = leftFS,
             rightFS = rightFS,
+            textStringFS = textStringFS,
         }
 
         -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
         hookPowerTextFontReset(leftFS, unit, "left")
         hookPowerTextFontReset(rightFS, unit, "right")
+        hookPowerTextFontReset(textStringFS, unit, "center")
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        local function applyPowerTextVisibility(fs, hidden)
+        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
+        local function applyPowerTextVisibility(fs, hidden, unitForHook)
             if not fs then return end
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
@@ -708,11 +854,25 @@ do
                                 end
                             end
                         end)
-                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
-                        -- This catches code paths that don't go through UpdateTextString (e.g. target changes out of combat)
+                        -- Hook SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates text content.
+                        -- This is critical because Blizzard's UpdateTextStringWithValues can reset fonts without
+                        -- calling SetFontObject. By triggering a deferred styling reapply on every SetText,
+                        -- we ensure custom fonts persist even through intermittent resets.
                         _G.hooksecurefunc(fs, "SetText", function(self)
+                            -- Always enforce visibility first
                             if self._ScooterPowerTextHidden and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
+                            end
+                            -- Also trigger a deferred font styling reapply (coalesced to avoid spam)
+                            if not self._ScooterPowerTextStyleReapplyDeferred then
+                                self._ScooterPowerTextStyleReapplyDeferred = true
+                                C_Timer.After(0, function()
+                                    self._ScooterPowerTextStyleReapplyDeferred = nil
+                                    -- Reapply full text styling for all units
+                                    if addon and addon.ApplyAllUnitFramePowerTextVisibility then
+                                        addon.ApplyAllUnitFramePowerTextVisibility()
+                                    end
+                                end)
                             end
                         end)
                     end
@@ -721,14 +881,56 @@ do
             else
                 fs._ScooterPowerTextHidden = false
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                -- Also install the SetText hook for non-hidden text to ensure font styling persists
+                if not fs._ScooterPowerTextSetTextStyleHooked then
+                    fs._ScooterPowerTextSetTextStyleHooked = true
+                    if _G.hooksecurefunc then
+                        _G.hooksecurefunc(fs, "SetText", function(self)
+                            -- Trigger a deferred font styling reapply (coalesced to avoid spam)
+                            if not self._ScooterPowerTextStyleReapplyDeferred then
+                                self._ScooterPowerTextStyleReapplyDeferred = true
+                                C_Timer.After(0, function()
+                                    self._ScooterPowerTextStyleReapplyDeferred = nil
+                                    if addon and addon.ApplyAllUnitFramePowerTextVisibility then
+                                        addon.ApplyAllUnitFramePowerTextVisibility()
+                                    end
+                                end)
+                            end
+                        end)
+                    end
+                end
             end
         end
 
 		-- Visibility: tolerate missing LeftText on some classes/specs (no-op)
 		-- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
 		local powerBarHidden = (cfg.powerBarHidden == true)
-		applyPowerTextVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true))
-		applyPowerTextVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true))
+		applyPowerTextVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true), unit)
+		applyPowerTextVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true), unit)
+
+        -- Install SetText hook for center TextString to trigger reapply when Blizzard updates it
+        -- Also enforces hidden state if Value text is configured as hidden
+        if textStringFS and not textStringFS._ScooterPowerTextCenterSetTextHooked then
+            textStringFS._ScooterPowerTextCenterSetTextHooked = true
+            if _G.hooksecurefunc then
+                _G.hooksecurefunc(textStringFS, "SetText", function(self)
+                    -- Enforce hidden state immediately if configured
+                    if self._ScooterPowerTextCenterHidden and self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                    -- Trigger deferred reapply for styling
+                    if not self._ScooterPowerTextStyleReapplyDeferred then
+                        self._ScooterPowerTextStyleReapplyDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScooterPowerTextStyleReapplyDeferred = nil
+                            if addon and addon.ApplyAllUnitFramePowerTextVisibility then
+                                addon.ApplyAllUnitFramePowerTextVisibility()
+                            end
+                        end)
+                    end
+                end)
+            end
+        end
 
 		-- Styling
 		addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
@@ -766,7 +968,10 @@ do
 			local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 			local size = tonumber(styleCfg.size) or 14
 			local outline = tostring(styleCfg.style or "OUTLINE")
+			-- Set flag to prevent our SetFont hook from triggering a reapply loop
+			fs._ScooterApplyingFont = true
 			if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+			fs._ScooterApplyingFont = nil
 			local c = styleCfg.color or {1,1,1,1}
 			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
@@ -808,6 +1013,21 @@ do
 
 		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left") end
 		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right") end
+        -- Style center TextString using Value settings (used in NUMERIC display mode)
+        -- If Value text is hidden (or entire bar is hidden), also hide center text
+        if textStringFS then
+            local valueHidden = powerBarHidden or (cfg.powerValueHidden == true)
+            if valueHidden then
+                if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
+                textStringFS._ScooterPowerTextCenterHidden = true
+            else
+                if textStringFS._ScooterPowerTextCenterHidden then
+                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
+                    textStringFS._ScooterPowerTextCenterHidden = nil
+                end
+                applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
+            end
+        end
 	end
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
@@ -1197,7 +1417,10 @@ do
 		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
+		-- Set flag to prevent our SetFont hook from triggering a reapply loop
+		fs._ScooterApplyingFont = true
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+		fs._ScooterApplyingFont = nil
 		-- Determine color based on colorMode
 		local c = nil
 		local colorMode = styleCfg.colorMode or "default"
@@ -1535,6 +1758,105 @@ do
 	addon.ApplyAllUnitFrameNameLevelText = function()
 		installNameLevelTextHooks()
 		_origApplyAll()
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Character Frame Hook: Reapply Player text styling when Character Pane opens
+--------------------------------------------------------------------------------
+-- Opening the Character Pane (default keybind: 'C') causes Blizzard to reset
+-- Player unit frame text fonts. This hook ensures our custom styling persists.
+--------------------------------------------------------------------------------
+do
+	-- Helper function to reapply all Player text styling
+	local function reapplyPlayerTextStyling()
+		if addon.ApplyAllUnitFrameHealthTextVisibility then
+			addon.ApplyAllUnitFrameHealthTextVisibility()
+		end
+		if addon.ApplyAllUnitFramePowerTextVisibility then
+			addon.ApplyAllUnitFramePowerTextVisibility()
+		end
+		-- Also reapply bar textures for Alternate Power Bar text
+		if addon.ApplyUnitFrameBarTexturesFor then
+			addon.ApplyUnitFrameBarTexturesFor("Player")
+		end
+	end
+
+	-- Hook ToggleCharacter function (called by keybind and menu clicks)
+	if _G.hooksecurefunc and _G.ToggleCharacter then
+		_G.hooksecurefunc("ToggleCharacter", function(tab)
+			-- Reapply text styling after a short delay to let Blizzard finish its updates
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0.1, reapplyPlayerTextStyling)
+				-- Do a second reapply slightly later in case the first was too early
+				_G.C_Timer.After(0.25, reapplyPlayerTextStyling)
+			end
+		end)
+	end
+
+	-- Also hook CharacterFrameTab1-4 OnClick (the tabs at the bottom of Character Frame)
+	-- These can trigger updates when switching between Character/Reputation/Currency tabs
+	local function hookCharacterTabs()
+		for i = 1, 4 do
+			local tab = _G["CharacterFrameTab" .. i]
+			if tab and tab.HookScript and not tab._ScooterTextHooked then
+				tab._ScooterTextHooked = true
+				tab:HookScript("OnClick", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0.1, reapplyPlayerTextStyling)
+					end
+				end)
+			end
+		end
+	end
+
+	-- Hook CharacterFrame OnShow as a backup
+	local function hookCharacterFrameOnShow()
+		local charFrame = _G.CharacterFrame
+		if charFrame and charFrame.HookScript and not charFrame._ScooterTextOnShowHooked then
+			charFrame._ScooterTextOnShowHooked = true
+			charFrame:HookScript("OnShow", function()
+				if _G.C_Timer and _G.C_Timer.After then
+					_G.C_Timer.After(0.1, reapplyPlayerTextStyling)
+					_G.C_Timer.After(0.25, reapplyPlayerTextStyling)
+				end
+			end)
+			-- Also hook tabs when CharacterFrame exists
+			hookCharacterTabs()
+		end
+	end
+
+	-- Try to install hooks immediately
+	hookCharacterFrameOnShow()
+
+	-- Also listen for PLAYER_ENTERING_WORLD to install hooks (CharacterFrame may load later)
+	local hookFrame = CreateFrame("Frame")
+	hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+	hookFrame:SetScript("OnEvent", function(self, event)
+		if event == "PLAYER_ENTERING_WORLD" then
+			-- Defer to ensure CharacterFrame is loaded
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(1, function()
+					hookCharacterFrameOnShow()
+				end)
+			end
+		end
+	end)
+
+	-- Hook PaperDollFrame.VisibilityUpdated event for robust reapplication
+	-- This fires when the Character Pane (PaperDollFrame) is shown or hidden
+	-- Using EventRegistry is more reliable than HookScript as it uses Blizzard's official event system
+	if _G.EventRegistry and _G.EventRegistry.RegisterCallback then
+		_G.EventRegistry:RegisterCallback("PaperDollFrame.VisibilityUpdated", function(_, shown)
+			if shown then
+				-- Use longer delays to ensure we run AFTER all of Blizzard's Character Pane updates complete
+				if _G.C_Timer and _G.C_Timer.After then
+					_G.C_Timer.After(0.15, reapplyPlayerTextStyling)
+					_G.C_Timer.After(0.3, reapplyPlayerTextStyling)
+					_G.C_Timer.After(0.5, reapplyPlayerTextStyling)
+				end
+			end
+		end, addon)
 	end
 end
 

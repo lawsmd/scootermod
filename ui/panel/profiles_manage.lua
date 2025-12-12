@@ -266,6 +266,13 @@ local function renderProfilesManage()
                 local widgets = panel._profileWidgets or {}
                 panel._profileWidgets = widgets
                 widgets.ActiveLayoutRow = frame
+                
+                -- Track ALL frames that have ever been used for Active Layout widgets.
+                -- This is critical because the SettingsList recycles frames, and the
+                -- OnHide handler needs to hide ALL frames that might have buttons, not
+                -- just the most recent one (which could be stale).
+                widgets.AllActiveLayoutFrames = widgets.AllActiveLayoutFrames or {}
+                widgets.AllActiveLayoutFrames[frame] = true
 
                 local function updateButtons()
                     local current = getActiveProfileKey()

@@ -211,7 +211,6 @@ local function createRenderer(cfg)
 end
 
 function panel.RenderApplyAllFonts()
-    ensureFontPopup()
     return createRenderer({
         key = "fonts",
         componentId = "applyAllFonts",
@@ -262,7 +261,6 @@ function panel.RenderApplyAllFonts()
 end
 
 function panel.RenderApplyAllTextures()
-    ensureTexturePopup()
     return createRenderer({
         key = "textures",
         componentId = "applyAllTextures",

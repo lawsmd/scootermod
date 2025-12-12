@@ -67,6 +67,7 @@ ui/panel/builders/common.lua
 ui/panel/builders/generic_components.lua
 ui/panel/builders/actionbars.lua
 ui/panel/builders/unitframes.lua
+ui/panel/builders/groupframes.lua
 ui/panel/builders.lua
 ui/panel/profiles_manage.lua
 ui/panel/profiles_presets.lua

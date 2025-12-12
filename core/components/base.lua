@@ -1007,6 +1007,14 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameScaleMults then
         addon.ApplyAllUnitFrameScaleMults()
     end
+    -- Group Frames: Apply raid frame health bar styling
+    if addon.ApplyRaidFrameHealthBarStyle then
+        addon.ApplyRaidFrameHealthBarStyle()
+    end
+    -- Group Frames: Apply raid frame text styling
+    if addon.ApplyRaidFrameTextStyle then
+        addon.ApplyRaidFrameTextStyle()
+    end
 end
 
 function addon:ApplyEarlyComponentStyles()

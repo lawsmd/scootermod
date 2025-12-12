@@ -639,8 +639,26 @@ do
     local function ensureRectHealthOverlay(unit, bar, cfg)
         if not bar then return end
 
-        -- Only Target/Focus use this overlay, and only when the portrait is hidden.
-        if unit ~= "Target" and unit ~= "Focus" then
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+        db.unitFrames = db.unitFrames or {}
+        local ufCfg = db.unitFrames[unit] or {}
+
+        -- Determine whether overlay should be active based on unit type:
+        -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
+        -- - Player: activate when using custom borders (fills top-right corner chip in mask)
+        -- - Pet: skip (no known chip issue)
+        local shouldActivate = false
+
+        if unit == "Target" or unit == "Focus" then
+            local portraitCfg = ufCfg.portrait or {}
+            shouldActivate = (portraitCfg.hidePortrait == true)
+            bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
+        elseif unit == "Player" then
+            shouldActivate = (ufCfg.useCustomBorders == true)
+            bar._ScootRectReverseFill = false -- Player health bar always fills left-to-right
+        else
+            -- Pet and others: skip
             if bar.ScooterRectFill then
                 bar._ScootRectActive = false
                 bar.ScooterRectFill:Hide()
@@ -648,17 +666,9 @@ do
             return
         end
 
-        local db = addon and addon.db and addon.db.profile
-        if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        local ufCfg = db.unitFrames[unit] or {}
-        local portraitCfg = ufCfg.portrait or {}
-        local hidePortrait = (portraitCfg.hidePortrait == true)
+        bar._ScootRectActive = shouldActivate
 
-        bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
-        bar._ScootRectActive = hidePortrait and true or false
-
-        if not hidePortrait then
+        if not shouldActivate then
             if bar.ScooterRectFill then
                 bar.ScooterRectFill:Hide()
             end
@@ -692,26 +702,72 @@ do
             end
         end
 
-        -- Copy the current health bar texture/tint so the overlay visually matches.
-        local tex = bar:GetStatusBarTexture()
-        if tex then
-            local okTex, pathOrTex = pcall(tex.GetTexture, tex)
-            if okTex and type(pathOrTex) == "string" and pathOrTex ~= "" then
-                bar.ScooterRectFill:SetTexture(pathOrTex)
-            else
-                if bar.ScooterRectFill.SetColorTexture then
-                    bar.ScooterRectFill:SetColorTexture(1, 1, 1, 1)
+        -- Copy the configured health bar texture/tint so the overlay visually matches.
+        -- We use the CONFIGURED texture from the DB rather than reading from the bar,
+        -- because GetTexture() can return a number (texture ID) instead of a string path
+        -- after SetStatusBarTexture(), which caused the overlay to fall back to WHITE.
+        local texKey = cfg.healthBarTexture or "default"
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+        
+        if resolvedPath then
+            -- Custom texture configured - use the resolved path
+            bar.ScooterRectFill:SetTexture(resolvedPath)
+        else
+            -- Default texture - try to copy from bar, with robust fallback
+            local tex = bar:GetStatusBarTexture()
+            if tex then
+                local okTex, pathOrTex = pcall(tex.GetTexture, tex)
+                if okTex then
+                    if type(pathOrTex) == "string" and pathOrTex ~= "" then
+                        bar.ScooterRectFill:SetTexture(pathOrTex)
+                    elseif type(pathOrTex) == "number" and pathOrTex > 0 then
+                        -- Texture ID - use it directly
+                        bar.ScooterRectFill:SetTexture(pathOrTex)
+                    else
+                        -- Fallback to stock health bar atlas for this unit
+                        local stockAtlas
+                        if unit == "Player" then
+                            stockAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health"
+                        elseif unit == "Target" then
+                            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+                        elseif unit == "Focus" then
+                            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+                        end
+                        if stockAtlas and bar.ScooterRectFill.SetAtlas then
+                            pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
+                        elseif bar.ScooterRectFill.SetColorTexture then
+                            -- Last resort: use green health color instead of white
+                            bar.ScooterRectFill:SetColorTexture(0, 0.8, 0, 1)
+                        end
+                    end
                 end
             end
+        end
 
-            if tex.GetVertexColor and bar.ScooterRectFill.SetVertexColor then
-                local ok, r, g, b, a = pcall(tex.GetVertexColor, tex)
+        -- Apply vertex color to match configured color mode
+        local colorMode = cfg.healthBarColorMode or "default"
+        local tint = cfg.healthBarTint
+        local r, g, b, a = 1, 1, 1, 1
+        if colorMode == "custom" and type(tint) == "table" then
+            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+        elseif colorMode == "class" and addon.GetClassColorRGB then
+            local cr, cg, cb = addon.GetClassColorRGB("player")
+            r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+        elseif colorMode == "texture" then
+            -- Preserve texture's original colors
+            r, g, b, a = 1, 1, 1, 1
+        elseif colorMode == "default" then
+            -- For default color, try to get the bar's current vertex color
+            local tex = bar:GetStatusBarTexture()
+            if tex and tex.GetVertexColor then
+                local ok, vr, vg, vb, va = pcall(tex.GetVertexColor, tex)
                 if ok then
-                    bar.ScooterRectFill:SetVertexColor(r or 1, g or 1, b or 1, a or 1)
-                else
-                    bar.ScooterRectFill:SetVertexColor(1, 1, 1, 1)
+                    r, g, b, a = vr or 1, vg or 1, vb or 1, va or 1
                 end
             end
+        end
+        if bar.ScooterRectFill.SetVertexColor then
+            bar.ScooterRectFill:SetVertexColor(r, g, b, a)
         end
 
         updateRectHealthOverlay(unit, bar)
@@ -1115,32 +1171,59 @@ do
 				end
             end
 
-            -- Lightweight persistence hook for Player Health Bar color:
-            -- If Blizzard later changes the bar's StatusBarColor (e.g., via class/aggro logic),
-            -- re-apply the user's configured Foreground Color without re-running full styling.
-            if unit == "Player" and not hb._ScootHealthColorHooked and _G.hooksecurefunc then
-                hb._ScootHealthColorHooked = true
-                _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
-                    -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
-                    -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
-                    if InCombatLockdown and InCombatLockdown() then return end
-                    local db = addon and addon.db and addon.db.profile
-                    if not db then return end
-                    db.unitFrames = db.unitFrames or {}
-                    local cfgP = db.unitFrames.Player or {}
-                    local texKey = cfgP.healthBarTexture or "default"
-                    local colorMode = cfgP.healthBarColorMode or "default"
-                    local tint = cfgP.healthBarTint
-                    local unitIdP = "player"
-                    -- Only do work when the user has customized either texture or color;
-                    -- default settings can safely follow Blizzard's behavior.
-                    local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
-                    local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class")
-                    if not hasCustomTexture and not hasCustomColor then
-                        return
-                    end
-                    applyToBar(self, texKey, colorMode, tint, "player", "health", unitIdP)
-                end)
+            -- Lightweight persistence hooks for Player Health Bar:
+            -- Texture: keep custom texture applied if Blizzard swaps StatusBarTexture.
+            -- Color: keep Foreground Color applied if Blizzard calls SetStatusBarColor.
+            if unit == "Player" and _G.hooksecurefunc then
+                -- Texture hook: reapply custom texture when Blizzard resets it
+                if not hb._ScootHealthTextureHooked then
+                    hb._ScootHealthTextureHooked = true
+                    _G.hooksecurefunc(hb, "SetStatusBarTexture", function(self, ...)
+                        -- Ignore ScooterMod's own writes to avoid recursion.
+                        if self._ScootUFInternalTextureWrite then
+                            return
+                        end
+                        -- Skip during combat to avoid taint on protected StatusBar.
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        local db = addon and addon.db and addon.db.profile
+                        if not db then return end
+                        db.unitFrames = db.unitFrames or {}
+                        local cfgP = db.unitFrames.Player or {}
+                        local texKey = cfgP.healthBarTexture or "default"
+                        local colorMode = cfgP.healthBarColorMode or "default"
+                        local tint = cfgP.healthBarTint
+                        -- Only re-apply if the user has configured a non-default texture.
+                        if not (type(texKey) == "string" and texKey ~= "" and texKey ~= "default") then
+                            return
+                        end
+                        applyToBar(self, texKey, colorMode, tint, "player", "health", "player")
+                    end)
+                end
+                -- Color hook: reapply custom color when Blizzard resets it
+                if not hb._ScootHealthColorHooked then
+                    hb._ScootHealthColorHooked = true
+                    _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
+                        -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
+                        -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        local db = addon and addon.db and addon.db.profile
+                        if not db then return end
+                        db.unitFrames = db.unitFrames or {}
+                        local cfgP = db.unitFrames.Player or {}
+                        local texKey = cfgP.healthBarTexture or "default"
+                        local colorMode = cfgP.healthBarColorMode or "default"
+                        local tint = cfgP.healthBarTint
+                        local unitIdP = "player"
+                        -- Only do work when the user has customized either texture or color;
+                        -- default settings can safely follow Blizzard's behavior.
+                        local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class")
+                        if not hasCustomTexture and not hasCustomColor then
+                            return
+                        end
+                        applyToBar(self, texKey, colorMode, tint, "player", "health", unitIdP)
+                    end)
+                end
             end
 		end
 
@@ -1401,9 +1484,12 @@ do
                     do
                         local leftFS = apb.LeftText
                         local rightFS = apb.RightText
+                        -- Also resolve the center TextString (used in NUMERIC display mode)
+                        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+                        local textStringFS = apb.TextString or apb.text
 
                         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-                        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
+                        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
                         local function applyAltPowerTextVisibility(fs, hidden)
                             if not fs then return end
                             if hidden then
@@ -1433,10 +1519,25 @@ do
                                                 end
                                             end
                                         end)
-                                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
+                                        -- Hook SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates text content.
+                                        -- This is critical because Blizzard's UpdateTextStringWithValues can reset fonts without
+                                        -- calling SetFontObject. By triggering a deferred styling reapply on every SetText,
+                                        -- we ensure custom fonts persist even through intermittent resets.
                                         _G.hooksecurefunc(fs, "SetText", function(self)
+                                            -- Always enforce visibility first
                                             if self._ScooterAltPowerTextHidden and self.SetAlpha then
                                                 pcall(self.SetAlpha, self, 0)
+                                            end
+                                            -- Also trigger a deferred font styling reapply (coalesced to avoid spam)
+                                            if not self._ScooterAltPowerTextStyleReapplyDeferred then
+                                                self._ScooterAltPowerTextStyleReapplyDeferred = true
+                                                C_Timer.After(0, function()
+                                                    self._ScooterAltPowerTextStyleReapplyDeferred = nil
+                                                    -- Reapply Player bar textures which includes Alternate Power styling
+                                                    if addon and addon.ApplyUnitFrameBarTexturesFor then
+                                                        addon.ApplyUnitFrameBarTexturesFor("Player")
+                                                    end
+                                                end)
                                             end
                                         end)
                                     end
@@ -1445,20 +1546,93 @@ do
                             else
                                 fs._ScooterAltPowerTextHidden = false
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                                -- Also install the SetText hook for non-hidden text to ensure font styling persists
+                                if not fs._ScooterAltPowerTextSetTextStyleHooked then
+                                    fs._ScooterAltPowerTextSetTextStyleHooked = true
+                                    if _G.hooksecurefunc then
+                                        _G.hooksecurefunc(fs, "SetText", function(self)
+                                            -- Trigger a deferred font styling reapply (coalesced to avoid spam)
+                                            if not self._ScooterAltPowerTextStyleReapplyDeferred then
+                                                self._ScooterAltPowerTextStyleReapplyDeferred = true
+                                                C_Timer.After(0, function()
+                                                    self._ScooterAltPowerTextStyleReapplyDeferred = nil
+                                                    if addon and addon.ApplyUnitFrameBarTexturesFor then
+                                                        addon.ApplyUnitFrameBarTexturesFor("Player")
+                                                    end
+                                                end)
+                                            end
+                                        end)
+                                    end
+                                end
                             end
                         end
 
-                        -- Hook SetFontObject to reapply full text styling when Blizzard resets fonts during instance loading.
+                        -- Hook SetFontObject AND SetFont to reapply full text styling when Blizzard resets fonts.
                         local function hookAltPowerTextFontReset(fs)
                             if not fs or fs._ScooterAltPowerTextFontResetHooked then return end
                             fs._ScooterAltPowerTextFontResetHooked = true
                             if _G.hooksecurefunc then
-                                _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+                                -- Helper to trigger reapply with multiple attempts
+                                local function triggerReapply(self)
                                     if not self._ScooterAltPowerTextFontReapplyDeferred then
                                         self._ScooterAltPowerTextFontReapplyDeferred = true
+                                        -- Reapply at multiple intervals to ensure we win any race conditions
                                         C_Timer.After(0, function()
+                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
+                                                addon.ApplyUnitFrameBarTexturesFor("Player")
+                                            end
+                                        end)
+                                        C_Timer.After(0.1, function()
                                             self._ScooterAltPowerTextFontReapplyDeferred = nil
-                                            -- Reapply Player bar textures which includes Alternate Power styling
+                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
+                                                addon.ApplyUnitFrameBarTexturesFor("Player")
+                                            end
+                                        end)
+                                    end
+                                end
+
+                                -- Hook SetFontObject
+                                _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
+                                    triggerReapply(self)
+                                end)
+
+                                -- Hook SetFont - Blizzard may also use this directly
+                                if fs.SetFont then
+                                    _G.hooksecurefunc(fs, "SetFont", function(self, fontPath, ...)
+                                        if not self._ScooterApplyingFont then
+                                            triggerReapply(self)
+                                        end
+                                    end)
+                                end
+                            end
+                        end
+
+                        hookAltPowerTextFontReset(leftFS)
+                        hookAltPowerTextFontReset(rightFS)
+                        hookAltPowerTextFontReset(textStringFS)
+
+                        -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
+                        local percentHidden = (acfg.percentHidden == true)
+                        local valueHidden = (acfg.valueHidden == true)
+
+                        applyAltPowerTextVisibility(leftFS, altHidden or percentHidden)
+                        applyAltPowerTextVisibility(rightFS, altHidden or valueHidden)
+
+                        -- Install SetText hook for center TextString to trigger reapply when Blizzard updates it
+                        -- Also enforces hidden state if Value text is configured as hidden
+                        if textStringFS and not textStringFS._ScooterAltPowerTextCenterSetTextHooked then
+                            textStringFS._ScooterAltPowerTextCenterSetTextHooked = true
+                            if _G.hooksecurefunc then
+                                _G.hooksecurefunc(textStringFS, "SetText", function(self)
+                                    -- Enforce hidden state immediately if configured
+                                    if self._ScooterAltPowerTextCenterHidden and self.SetAlpha then
+                                        pcall(self.SetAlpha, self, 0)
+                                    end
+                                    -- Trigger deferred reapply for styling
+                                    if not self._ScooterAltPowerTextStyleReapplyDeferred then
+                                        self._ScooterAltPowerTextStyleReapplyDeferred = true
+                                        C_Timer.After(0, function()
+                                            self._ScooterAltPowerTextStyleReapplyDeferred = nil
                                             if addon and addon.ApplyUnitFrameBarTexturesFor then
                                                 addon.ApplyUnitFrameBarTexturesFor("Player")
                                             end
@@ -1467,16 +1641,6 @@ do
                                 end)
                             end
                         end
-
-                        hookAltPowerTextFontReset(leftFS)
-                        hookAltPowerTextFontReset(rightFS)
-
-                        -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
-                        local percentHidden = (acfg.percentHidden == true)
-                        local valueHidden = (acfg.valueHidden == true)
-
-                        applyAltPowerTextVisibility(leftFS, altHidden or percentHidden)
-                        applyAltPowerTextVisibility(rightFS, altHidden or valueHidden)
 
                         -- Styling (font/size/style/color/offset) using stable baseline anchors
                         addon._ufAltPowerTextBaselines = addon._ufAltPowerTextBaselines or {}
@@ -1506,7 +1670,10 @@ do
                                 or (select(1, _G.GameFontNormal:GetFont()))
                             local size = tonumber(styleCfg.size) or 14
                             local outline = tostring(styleCfg.style or "OUTLINE")
+                            -- Set flag to prevent our SetFont hook from triggering a reapply loop
+                            fs._ScooterApplyingFont = true
                             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+                            fs._ScooterApplyingFont = nil
                             local c = styleCfg.color or { 1, 1, 1, 1 }
                             if fs.SetTextColor then
                                 pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
@@ -1554,6 +1721,21 @@ do
                         end
                         if rightFS then
                             applyAltTextStyle(rightFS, acfg.textValue or {}, "Player:altpower-right")
+                        end
+                        -- Style center TextString using Value settings (used in NUMERIC display mode)
+                        -- If Value text is hidden (or entire bar is hidden), also hide center text
+                        if textStringFS then
+                            local centerHidden = altHidden or valueHidden
+                            if centerHidden then
+                                if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
+                                textStringFS._ScooterAltPowerTextCenterHidden = true
+                            else
+                                if textStringFS._ScooterAltPowerTextCenterHidden then
+                                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
+                                    textStringFS._ScooterAltPowerTextCenterHidden = nil
+                                end
+                                applyAltTextStyle(textStringFS, acfg.textValue or {}, "Player:altpower-center")
+                            end
                         end
                     end
 
@@ -2460,5 +2642,386 @@ do
         end
     end
 
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Health Bar Styling
+--------------------------------------------------------------------------------
+-- Applies foreground/background texture and color settings to all raid frame
+-- health bars (CompactRaidGroup*Member*HealthBar and CompactRaidFrame*HealthBar).
+--------------------------------------------------------------------------------
+
+do
+    -- Cache for discovered raid frame health bars
+    local raidHealthBars = {}
+    local raidHealthBarsScanned = false
+
+    -- Iterate all raid frame health bars. Blizzard uses two naming patterns:
+    --   - Group layout: CompactRaidGroup[1-8]Member[1-5]HealthBar (up to 40)
+    --   - Combined layout: CompactRaidFrame[1-40]HealthBar
+    local function collectRaidHealthBars()
+        raidHealthBars = {}
+        -- Pattern 1: Group-based naming (CompactRaidGroup1Member1HealthBar, etc.)
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local frameName = "CompactRaidGroup" .. group .. "Member" .. member .. "HealthBar"
+                local bar = _G[frameName]
+                if bar then
+                    table.insert(raidHealthBars, bar)
+                end
+            end
+        end
+        -- Pattern 2: Combined naming (CompactRaidFrame1HealthBar, etc.)
+        for i = 1, 40 do
+            local frameName = "CompactRaidFrame" .. i .. "HealthBar"
+            local bar = _G[frameName]
+            if bar and not bar._ScootRaidBarCounted then
+                -- Avoid duplicates if both patterns exist
+                bar._ScootRaidBarCounted = true
+                table.insert(raidHealthBars, bar)
+            end
+        end
+        raidHealthBarsScanned = true
+    end
+
+    -- Apply styling to a single raid health bar
+    local function applyToRaidHealthBar(bar, cfg)
+        if not bar then return end
+
+        local texKey = cfg.healthBarTexture or "default"
+        local colorMode = cfg.healthBarColorMode or "default"
+        local tint = cfg.healthBarTint
+        local bgTexKey = cfg.healthBarBackgroundTexture or "default"
+        local bgColorMode = cfg.healthBarBackgroundColorMode or "default"
+        local bgTint = cfg.healthBarBackgroundTint
+        local bgOpacity = cfg.healthBarBackgroundOpacity or 50
+
+        -- Apply foreground texture and color
+        if addon._ApplyToStatusBar then
+            addon._ApplyToStatusBar(bar, texKey, colorMode, tint, nil, "health", nil)
+        end
+
+        -- Apply background texture and color
+        if addon._ApplyBackgroundToStatusBar then
+            addon._ApplyBackgroundToStatusBar(bar, bgTexKey, bgColorMode, bgTint, bgOpacity, "Raid", "health")
+        end
+    end
+
+    -- Main entry point: Apply raid frame health bar styling from DB settings
+    function addon.ApplyRaidFrameHealthBarStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.groupFrames = db.groupFrames or {}
+        db.groupFrames.raid = db.groupFrames.raid or {}
+        local cfg = db.groupFrames.raid
+
+        -- Rescan bars each time to catch frames created/destroyed by Blizzard
+        collectRaidHealthBars()
+
+        for _, bar in ipairs(raidHealthBars) do
+            applyToRaidHealthBar(bar, cfg)
+        end
+
+        -- Clear the counted flag for next scan
+        for _, bar in ipairs(raidHealthBars) do
+            bar._ScootRaidBarCounted = nil
+        end
+    end
+
+    -- Helper: Check if a CompactUnitFrame is actually a raid frame (not nameplate/party)
+    -- Raid frames have names like "CompactRaidFrame1" or "CompactRaidGroup1Member1"
+    local function isRaidFrame(frame)
+        if not frame then return false end
+        -- Use pcall to safely get name - some frames (nameplates) error on GetName
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        -- Match raid frame naming patterns
+        if name:match("^CompactRaidFrame%d+$") then return true end
+        if name:match("^CompactRaidGroup%d+Member%d+$") then return true end
+        return false
+    end
+
+    -- Install hooks to reapply styling when raid frames update
+    local function installRaidFrameHooks()
+        if addon._RaidFrameHooksInstalled then return end
+        addon._RaidFrameHooksInstalled = true
+
+        -- Hook CompactUnitFrame_UpdateAll to catch frame updates
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                -- Only apply to actual raid frames (not nameplates or party frames)
+                if frame and frame.healthBar and isRaidFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    if db and db.groupFrames and db.groupFrames.raid then
+                        local cfg = db.groupFrames.raid
+                        -- Only apply if user has customized settings
+                        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+                        if hasCustom then
+                            applyToRaidHealthBar(frame.healthBar, cfg)
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_SetUnit for when frames get assigned new units
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                -- Only apply to actual raid frames (not nameplates or party frames)
+                if frame and frame.healthBar and unit and isRaidFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    if db and db.groupFrames and db.groupFrames.raid then
+                        local cfg = db.groupFrames.raid
+                        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+                        if hasCustom then
+                            -- Defer slightly to let Blizzard finish its setup
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    applyToRaidHealthBar(frame.healthBar, cfg)
+                                end)
+                            else
+                                applyToRaidHealthBar(frame.healthBar, cfg)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Install hooks when this module loads
+    installRaidFrameHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Text Styling (Player Name)
+--------------------------------------------------------------------------------
+-- Applies font settings (Baseline 6) to raid frame name text elements.
+-- Target: CompactRaidGroup*Member*Name (the name FontString on each raid unit frame)
+--------------------------------------------------------------------------------
+do
+    -- Helper: Check if a CompactUnitFrame is actually a raid frame (not nameplate/party)
+    -- Raid frames have names like "CompactRaidFrame1" or "CompactRaidGroup1Member1"
+    local function isRaidFrame(frame)
+        if not frame then return false end
+        -- Use pcall to safely get name - some frames (nameplates) error on GetName
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        -- Match raid frame naming patterns
+        if name:match("^CompactRaidFrame%d+$") then return true end
+        if name:match("^CompactRaidGroup%d+Member%d+$") then return true end
+        return false
+    end
+
+    -- Apply text settings to a raid frame's name FontString
+    local function applyTextToRaidFrame(frame, cfg)
+        if not frame or not cfg then return end
+
+        -- Get the name FontString (frame.name is the standard CompactUnitFrame name element)
+        local nameFS = frame.name
+        if not nameFS then return end
+
+        -- Resolve font face
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            -- Fallback to GameFontNormal's font
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        -- Get settings with defaults
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        -- Apply font (SetFont must be called before SetText)
+        local success = pcall(nameFS.SetFont, nameFS, resolvedFace, fontSize, fontStyle)
+        if not success then
+            -- Fallback to default font on failure
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(nameFS.SetFont, nameFS, fallback, fontSize, fontStyle)
+            end
+        end
+
+        -- Apply color
+        if nameFS.SetTextColor then
+            pcall(nameFS.SetTextColor, nameFS, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+
+        -- Apply offsets if non-zero (adjust position relative to default anchor)
+        -- Store original position on first application so we can restore/adjust
+        if not nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+            local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
+            if point then
+                nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            end
+        end
+
+        if nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+            local orig = nameFS._ScootOriginalPoint
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4] + offsetX, orig[5] + offsetY)
+        elseif nameFS._ScootOriginalPoint and offsetX == 0 and offsetY == 0 then
+            -- Restore original position when offsets are reset to 0
+            local orig = nameFS._ScootOriginalPoint
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+        end
+    end
+
+    -- Collect all raid frame name FontStrings
+    local raidNameTexts = {}
+
+    local function collectRaidNameTexts()
+        if wipe then
+            wipe(raidNameTexts)
+        else
+            raidNameTexts = {}
+        end
+
+        -- Scan CompactRaidFrame1 through CompactRaidFrame40 (combined layout)
+        for i = 1, 40 do
+            local frame = _G["CompactRaidFrame" .. i]
+            if frame and frame.name and not frame.name._ScootRaidTextCounted then
+                frame.name._ScootRaidTextCounted = true
+                table.insert(raidNameTexts, frame)
+            end
+        end
+
+        -- Scan CompactRaidGroup1Member1 through CompactRaidGroup8Member5 (group layout)
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+                if frame and frame.name and not frame.name._ScootRaidTextCounted then
+                    frame.name._ScootRaidTextCounted = true
+                    table.insert(raidNameTexts, frame)
+                end
+            end
+        end
+    end
+
+    -- Main entry point: Apply raid frame text styling from DB settings
+    function addon.ApplyRaidFrameTextStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.groupFrames = db.groupFrames or {}
+        db.groupFrames.raid = db.groupFrames.raid or {}
+        db.groupFrames.raid.textPlayerName = db.groupFrames.raid.textPlayerName or {
+            fontFace = "FRIZQT__",
+            size = 12,
+            style = "OUTLINE",
+            color = { 1, 1, 1, 1 },
+            offset = { x = 0, y = 0 },
+        }
+        local cfg = db.groupFrames.raid.textPlayerName
+
+        -- Rescan frames each time to catch frames created/destroyed by Blizzard
+        collectRaidNameTexts()
+
+        for _, frame in ipairs(raidNameTexts) do
+            applyTextToRaidFrame(frame, cfg)
+        end
+
+        -- Clear the counted flag for next scan
+        for _, frame in ipairs(raidNameTexts) do
+            if frame.name then
+                frame.name._ScootRaidTextCounted = nil
+            end
+        end
+    end
+
+    -- Check if user has customized text settings (non-default values)
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    -- Install hooks to reapply text styling when raid frames update
+    local function installRaidFrameTextHooks()
+        if addon._RaidFrameTextHooksInstalled then return end
+        addon._RaidFrameTextHooksInstalled = true
+
+        -- Hook CompactUnitFrame_UpdateAll to catch frame updates
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                -- Only apply to actual raid frames (not nameplates or party frames)
+                if frame and frame.name and isRaidFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
+                        local cfg = db.groupFrames.raid.textPlayerName
+                        if hasCustomTextSettings(cfg) then
+                            applyTextToRaidFrame(frame, cfg)
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_SetUnit for when frames get assigned new units
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                -- Only apply to actual raid frames (not nameplates or party frames)
+                if frame and frame.name and unit and isRaidFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
+                        local cfg = db.groupFrames.raid.textPlayerName
+                        if hasCustomTextSettings(cfg) then
+                            -- Defer slightly to let Blizzard finish its setup
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    applyTextToRaidFrame(frame, cfg)
+                                end)
+                            else
+                                applyTextToRaidFrame(frame, cfg)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_UpdateName specifically for name text updates
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+                -- Only apply to actual raid frames (not nameplates or party frames)
+                if frame and frame.name and isRaidFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
+                        local cfg = db.groupFrames.raid.textPlayerName
+                        if hasCustomTextSettings(cfg) then
+                            applyTextToRaidFrame(frame, cfg)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Install hooks when this module loads
+    installRaidFrameTextHooks()
 end
 

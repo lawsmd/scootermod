@@ -82,6 +82,17 @@ function addon:GetDefaults()
                 baselines = {},
                 nextId = 1,
             },
+            groupFrames = {
+                raid = {
+                    healthBarTexture = "default",
+                    healthBarColorMode = "default",
+                    healthBarTint = {1, 1, 1, 1},
+                    healthBarBackgroundTexture = "default",
+                    healthBarBackgroundColorMode = "default",
+                    healthBarBackgroundTint = {0, 0, 0, 1},
+                    healthBarBackgroundOpacity = 50,
+                },
+            },
         },
         char = {
             specProfiles = {
@@ -378,6 +389,11 @@ function addon:PLAYER_TARGET_CHANGED()
     -- Also refresh opacity for all elements (priority: With Target > In Combat > Out of Combat)
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
+            -- Refresh Player textures: acquiring a target can trigger PlayerFrame updates
+            -- (aggro/threat display) which reset health bar texture to default
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor("Player")
+            end
             if addon.ApplyUnitFrameBarTexturesFor then
                 addon.ApplyUnitFrameBarTexturesFor("Target")
             end
@@ -394,8 +410,20 @@ function addon:PLAYER_TARGET_CHANGED()
             end
             -- Refresh opacity state for all elements affected by target changes
             self:RefreshOpacityState()
+            
+            -- Secondary pass: reapply Player textures after a short delay to catch
+            -- any late Blizzard updates that might overwrite our initial styling
+            C_Timer.After(0.1, function()
+                if addon.ApplyUnitFrameBarTexturesFor then
+                    addon.ApplyUnitFrameBarTexturesFor("Player")
+                end
+            end)
         end)
     else
+        -- Refresh Player textures (same reason as above)
+        if addon.ApplyUnitFrameBarTexturesFor then
+            addon.ApplyUnitFrameBarTexturesFor("Player")
+        end
         if addon.ApplyUnitFrameBarTexturesFor then
             addon.ApplyUnitFrameBarTexturesFor("Target")
         end

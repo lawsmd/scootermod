@@ -67,6 +67,15 @@ function panel.UpdateProfilesSectionVisibility()
     local isProfilesManageActive = f and f.CurrentCategory == "profilesManage"
 
     if not isProfilesManageActive then
+        -- Hide ALL frames that have ever been used for Active Layout widgets,
+        -- not just the current reference (which may be stale due to recycling)
+        if widgets.AllActiveLayoutFrames then
+            for frameRef in pairs(widgets.AllActiveLayoutFrames) do
+                if frameRef and type(frameRef.Hide) == "function" then
+                    pcall(frameRef.Hide, frameRef)
+                end
+            end
+        end
         if widgets.ActiveLayoutRow and widgets.ActiveLayoutRow:IsShown() then
             widgets.ActiveLayoutRow:Hide()
         end
@@ -279,9 +288,22 @@ function panel.RefreshCurrentCategoryDeferred()
         panel._queuedRefresh = true
         return
     end
+    -- Check if panel is hidden BEFORE scheduling the deferred call
+    -- to avoid any race conditions where the panel hides between
+    -- scheduling and execution.
+    if panel._panelClosing or (panel.frame and not panel.frame:IsShown()) then
+        return
+    end
     C_Timer.After(0, function()
+        -- Double-check panel state when the deferred callback actually runs.
+        -- This prevents orphaned UI elements when panel closes right after
+        -- scheduling the callback.
+        if panel._panelClosing then return end
         if panel and not panel._suspendRefresh and panel.RefreshCurrentCategory then
-            panel.RefreshCurrentCategory()
+            -- RefreshCurrentCategory also checks IsShown() but we check again for safety
+            if panel.frame and panel.frame:IsShown() then
+                panel.RefreshCurrentCategory()
+            end
         end
     end)
 end
@@ -1532,6 +1554,9 @@ local function BuildCategories()
 	addEntry("ufTarget", addon.SettingsPanel.RenderUFTarget())
 	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
 	addEntry("ufPet",    addon.SettingsPanel.RenderUFPet())
+	-- Group Frames children
+	addEntry("gfParty", addon.SettingsPanel.RenderGFParty())
+	addEntry("gfRaid",  addon.SettingsPanel.RenderGFRaid())
     -- Buffs/Debuffs children (scaffolded)
     addEntry("buffs",   addon.SettingsPanel.RenderBuffs())
     addEntry("debuffs", addon.SettingsPanel.RenderDebuffs())
@@ -1584,6 +1609,10 @@ local function BuildCategories()
 			{ type = "child", key = "ufTarget", label = "Target" },
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
 			{ type = "child", key = "ufPet",    label = "Pet"    },
+		}},
+		{ type = "parent", key = "Group Frames", label = "Group Frames", collapsible = true, children = {
+			{ type = "child", key = "gfParty", label = "Party Frames" },
+			{ type = "child", key = "gfRaid",  label = "Raid Frames"  },
 		}},
 		{ type = "parent", key = "Nameplates", label = "Nameplates", collapsible = true, children = {
 			{ type = "child", key = "nameplatesUnit", label = "Unit Nameplates" },
@@ -2074,6 +2103,9 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
 end
 
 		local function ShowPanel()
+	    -- Clear the closing flag immediately when panel opens to allow deferred operations
+	    panel._panelClosing = false
+	    
 	    -- When the ScooterMod panel opens, ensure Edit Mode–driven state (notably Aura
 	    -- Frame Icon Size for Buffs) is reconciled back into AceDB before or shortly
 	    -- after we render categories. This mirrors the up-to-date behavior users see
@@ -2437,8 +2469,14 @@ end
         if not f._ScooterProtectHooked then
             f:HookScript("OnHide", function(frame)
                 local pnl = addon and addon.SettingsPanel
+                -- Set flag immediately to block any deferred callbacks from running
+                -- during the hide transition. This prevents race conditions where
+                -- RefreshCurrentCategoryDeferred runs after panel starts hiding.
+                if pnl then pnl._panelClosing = true end
+                
                 if pnl and pnl._protectVisibility then
                     pnl._protectVisibility = false
+                    if pnl then pnl._panelClosing = false end -- Panel is reopening
                     if pnl and pnl.frame and not pnl.frame:IsShown() then pnl.frame:Show() end
                 end
                 -- Stop any running title reveal animations when panel closes
@@ -2451,15 +2489,61 @@ end
                     pcall(CloseDropDownMenus)
                 end
                 -- Explicitly hide profile widgets to prevent them lingering on screen
-                -- after deferred callbacks from profile switching or action bar copy
+                -- after deferred callbacks from profile switching or action bar copy.
+                -- CRITICAL: We must hide ALL frames that have ever had profile widgets
+                -- created on them, not just the current ActiveLayoutRow reference.
+                -- The SettingsList recycles frames, so the reference can become stale
+                -- while the actual frame with visible buttons is a different one.
                 local widgets = pnl and pnl._profileWidgets
                 if widgets then
+                    -- Hide all frames that have ever been used for Active Layout widgets
+                    if widgets.AllActiveLayoutFrames then
+                        for frameRef in pairs(widgets.AllActiveLayoutFrames) do
+                            if frameRef and type(frameRef.Hide) == "function" then
+                                pcall(frameRef.Hide, frameRef)
+                            end
+                            -- Also explicitly hide the child widgets in case the frame
+                            -- itself is somehow not responding to Hide
+                            if frameRef then
+                                if frameRef.ActiveDropdown then pcall(function() frameRef.ActiveDropdown:Hide() end) end
+                                if frameRef.CreateBtn then pcall(function() frameRef.CreateBtn:Hide() end) end
+                                if frameRef.RenameBtn then pcall(function() frameRef.RenameBtn:Hide() end) end
+                                if frameRef.CopyBtn then pcall(function() frameRef.CopyBtn:Hide() end) end
+                                if frameRef.DeleteBtn then pcall(function() frameRef.DeleteBtn:Hide() end) end
+                            end
+                        end
+                    end
+                    -- Also try the direct reference as a fallback
                     if widgets.ActiveLayoutRow then
-                        widgets.ActiveLayoutRow:Hide()
+                        pcall(function() widgets.ActiveLayoutRow:Hide() end)
                     end
                     if widgets.SpecEnabledRow then
-                        widgets.SpecEnabledRow:Hide()
+                        pcall(function() widgets.SpecEnabledRow:Hide() end)
                     end
+                end
+                
+                -- Schedule a delayed cleanup to catch any widgets that might be shown
+                -- by deferred callbacks that run after this OnHide handler completes.
+                -- This is a belt-and-suspenders safeguard for timing edge cases.
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0.1, function()
+                        -- Only clean up if the panel is still closed
+                        if pnl and pnl._panelClosing and pnl._profileWidgets then
+                            local w = pnl._profileWidgets
+                            if w.AllActiveLayoutFrames then
+                                for frameRef in pairs(w.AllActiveLayoutFrames) do
+                                    if frameRef then
+                                        pcall(function() frameRef:Hide() end)
+                                        if frameRef.ActiveDropdown then pcall(function() frameRef.ActiveDropdown:Hide() end) end
+                                        if frameRef.CreateBtn then pcall(function() frameRef.CreateBtn:Hide() end) end
+                                        if frameRef.RenameBtn then pcall(function() frameRef.RenameBtn:Hide() end) end
+                                        if frameRef.CopyBtn then pcall(function() frameRef.CopyBtn:Hide() end) end
+                                        if frameRef.DeleteBtn then pcall(function() frameRef.DeleteBtn:Hide() end) end
+                                    end
+                                end
+                            end
+                        end
+                    end)
                 end
             end)
             f._ScooterProtectHooked = true
