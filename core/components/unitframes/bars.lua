@@ -1519,25 +1519,10 @@ do
                                                 end
                                             end
                                         end)
-                                        -- Hook SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates text content.
-                                        -- This is critical because Blizzard's UpdateTextStringWithValues can reset fonts without
-                                        -- calling SetFontObject. By triggering a deferred styling reapply on every SetText,
-                                        -- we ensure custom fonts persist even through intermittent resets.
+                                        -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                                         _G.hooksecurefunc(fs, "SetText", function(self)
-                                            -- Always enforce visibility first
                                             if self._ScooterAltPowerTextHidden and self.SetAlpha then
                                                 pcall(self.SetAlpha, self, 0)
-                                            end
-                                            -- Also trigger a deferred font styling reapply (coalesced to avoid spam)
-                                            if not self._ScooterAltPowerTextStyleReapplyDeferred then
-                                                self._ScooterAltPowerTextStyleReapplyDeferred = true
-                                                C_Timer.After(0, function()
-                                                    self._ScooterAltPowerTextStyleReapplyDeferred = nil
-                                                    -- Reapply Player bar textures which includes Alternate Power styling
-                                                    if addon and addon.ApplyUnitFrameBarTexturesFor then
-                                                        addon.ApplyUnitFrameBarTexturesFor("Player")
-                                                    end
-                                                end)
                                             end
                                         end)
                                     end
@@ -1546,70 +1531,11 @@ do
                             else
                                 fs._ScooterAltPowerTextHidden = false
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
-                                -- Also install the SetText hook for non-hidden text to ensure font styling persists
-                                if not fs._ScooterAltPowerTextSetTextStyleHooked then
-                                    fs._ScooterAltPowerTextSetTextStyleHooked = true
-                                    if _G.hooksecurefunc then
-                                        _G.hooksecurefunc(fs, "SetText", function(self)
-                                            -- Trigger a deferred font styling reapply (coalesced to avoid spam)
-                                            if not self._ScooterAltPowerTextStyleReapplyDeferred then
-                                                self._ScooterAltPowerTextStyleReapplyDeferred = true
-                                                C_Timer.After(0, function()
-                                                    self._ScooterAltPowerTextStyleReapplyDeferred = nil
-                                                    if addon and addon.ApplyUnitFrameBarTexturesFor then
-                                                        addon.ApplyUnitFrameBarTexturesFor("Player")
-                                                    end
-                                                end)
-                                            end
-                                        end)
-                                    end
-                                end
                             end
                         end
 
-                        -- Hook SetFontObject AND SetFont to reapply full text styling when Blizzard resets fonts.
-                        local function hookAltPowerTextFontReset(fs)
-                            if not fs or fs._ScooterAltPowerTextFontResetHooked then return end
-                            fs._ScooterAltPowerTextFontResetHooked = true
-                            if _G.hooksecurefunc then
-                                -- Helper to trigger reapply with multiple attempts
-                                local function triggerReapply(self)
-                                    if not self._ScooterAltPowerTextFontReapplyDeferred then
-                                        self._ScooterAltPowerTextFontReapplyDeferred = true
-                                        -- Reapply at multiple intervals to ensure we win any race conditions
-                                        C_Timer.After(0, function()
-                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
-                                                addon.ApplyUnitFrameBarTexturesFor("Player")
-                                            end
-                                        end)
-                                        C_Timer.After(0.1, function()
-                                            self._ScooterAltPowerTextFontReapplyDeferred = nil
-                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
-                                                addon.ApplyUnitFrameBarTexturesFor("Player")
-                                            end
-                                        end)
-                                    end
-                                end
-
-                                -- Hook SetFontObject
-                                _G.hooksecurefunc(fs, "SetFontObject", function(self, ...)
-                                    triggerReapply(self)
-                                end)
-
-                                -- Hook SetFont - Blizzard may also use this directly
-                                if fs.SetFont then
-                                    _G.hooksecurefunc(fs, "SetFont", function(self, fontPath, ...)
-                                        if not self._ScooterApplyingFont then
-                                            triggerReapply(self)
-                                        end
-                                    end)
-                                end
-                            end
-                        end
-
-                        hookAltPowerTextFontReset(leftFS)
-                        hookAltPowerTextFontReset(rightFS)
-                        hookAltPowerTextFontReset(textStringFS)
+                        -- NOTE: SetFont/SetFontObject hooks removed for performance reasons.
+                        -- Font persistence is handled by the Character Frame hook in text.lua.
 
                         -- Visibility: respect both the bar-wide hidden flag and the per-text toggles.
                         local percentHidden = (acfg.percentHidden == true)
@@ -1618,8 +1544,7 @@ do
                         applyAltPowerTextVisibility(leftFS, altHidden or percentHidden)
                         applyAltPowerTextVisibility(rightFS, altHidden or valueHidden)
 
-                        -- Install SetText hook for center TextString to trigger reapply when Blizzard updates it
-                        -- Also enforces hidden state if Value text is configured as hidden
+                        -- Install SetText hook for center TextString to enforce hidden state only
                         if textStringFS and not textStringFS._ScooterAltPowerTextCenterSetTextHooked then
                             textStringFS._ScooterAltPowerTextCenterSetTextHooked = true
                             if _G.hooksecurefunc then
@@ -1627,16 +1552,6 @@ do
                                     -- Enforce hidden state immediately if configured
                                     if self._ScooterAltPowerTextCenterHidden and self.SetAlpha then
                                         pcall(self.SetAlpha, self, 0)
-                                    end
-                                    -- Trigger deferred reapply for styling
-                                    if not self._ScooterAltPowerTextStyleReapplyDeferred then
-                                        self._ScooterAltPowerTextStyleReapplyDeferred = true
-                                        C_Timer.After(0, function()
-                                            self._ScooterAltPowerTextStyleReapplyDeferred = nil
-                                            if addon and addon.ApplyUnitFrameBarTexturesFor then
-                                                addon.ApplyUnitFrameBarTexturesFor("Player")
-                                            end
-                                        end)
                                     end
                                 end)
                             end
