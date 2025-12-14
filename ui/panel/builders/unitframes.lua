@@ -529,6 +529,7 @@ local function createUFRenderer(componentId, title)
 					f:SetPoint("TOPRIGHT", -16, yRef.y)
 					initSlider:InitFrame(f)
 					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 					yRef.y = yRef.y - 34
 					return f
 				end
@@ -609,6 +610,7 @@ local function createUFRenderer(componentId, title)
 					row:SetPoint("TOPRIGHT", -16, yRef.y)
 					initSlider:InitFrame(row)
 					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
 					yRef.y = yRef.y - 34
 					return row
 				end
@@ -1113,11 +1115,11 @@ local function createUFRenderer(componentId, title)
 						local function setThk(v)
 							local t = ensureUFDB(); if not t then return end
 							local nv = tonumber(v) or 1
-							if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+							if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 							t.healthBarBorderThickness = nv
 							applyNow()
 						end
-						local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+						local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 						opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 						local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -1127,6 +1129,7 @@ local function createUFRenderer(componentId, title)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
 						initSlider:InitFrame(sf)
 						if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 						-- Grey out when Use Custom Borders is off
 						local enabled = isEnabled()
 						if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
@@ -1158,6 +1161,7 @@ local function createUFRenderer(componentId, title)
 						sf:SetPoint("TOPRIGHT", -16, y.y)
 						initSlider:InitFrame(sf)
 						if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 						local enabled = isEnabled()
 						if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
 						if sf.Text and sf.Text.SetTextColor then
@@ -1301,6 +1305,7 @@ local function createUFRenderer(componentId, title)
 					f:SetPoint("TOPRIGHT", -16, yRef.y)
 					initSlider:InitFrame(f)
 					if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 					yRef.y = yRef.y - 34
 					return f
 				end
@@ -1387,6 +1392,7 @@ local function createUFRenderer(componentId, title)
 					row:SetPoint("TOPRIGHT", -16, yRef.y)
 					initSlider:InitFrame(row)
 					if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
 					yRef.y = yRef.y - 34
 					return row
 				end
@@ -1639,6 +1645,7 @@ local function createUFRenderer(componentId, title)
 					widthSlider:SetPoint("TOPRIGHT", -16, y.y)
 					initSlider:InitFrame(widthSlider)
 					if widthSlider.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(widthSlider.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(widthSlider) end
 
 					-- Store reference for later updates
 					widthSlider._scooterSetting = setting
@@ -2556,11 +2563,11 @@ local function createUFRenderer(componentId, title)
                         local function setThk(v)
                             local t = ensureUFDB(); if not t then return end
                             local nv = tonumber(v) or 1
-                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+                            if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
                             t.powerBarBorderThickness = nv
                             applyNow()
                         end
-                        local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+                        local opts = Settings.CreateSliderOptions(1, 8, 0.2)
                         opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
                         local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
                         local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -2570,6 +2577,7 @@ local function createUFRenderer(componentId, title)
                         sf:SetPoint("TOPRIGHT", -16, y.y)
                         initSlider:InitFrame(sf)
                         if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
                         local enabled3 = isEnabled()
                         if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled3) end
                         if sf.Text and sf.Text.SetTextColor then
@@ -2600,6 +2608,7 @@ local function createUFRenderer(componentId, title)
                         sf:SetPoint("TOPRIGHT", -16, y.y)
                         initSlider:InitFrame(sf)
                         if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+                        if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
                         local enabled4 = isEnabled()
                         if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled4) end
                         if sf.Text and sf.Text.SetTextColor then
@@ -2682,6 +2691,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, yRef.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						yRef.y = yRef.y - 34
 						return f
 					end
@@ -3061,11 +3071,11 @@ local function createUFRenderer(componentId, title)
 							local function setThk(v)
 								local t = ensureUFDB(); if not t then return end
 								local nv = tonumber(v) or 1
-								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 								t.borderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = thkSetting, options = opts })
@@ -3075,6 +3085,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							local enabled = isEnabled()
 							if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
 							if sf.Text and sf.Text.SetTextColor then
@@ -3104,6 +3115,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							local enabled = isEnabled()
 							if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
 							if sf.Text and sf.Text.SetTextColor then
@@ -3407,6 +3419,7 @@ local function createUFRenderer(componentId, title)
 						row:SetPoint("TOPRIGHT", -16, yRef.y)
 						initSlider:InitFrame(row)
 						if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
 						yRef.y = yRef.y - 34
 						return row
 					end
@@ -3438,6 +3451,7 @@ local function createUFRenderer(componentId, title)
 							row:SetPoint("TOPRIGHT", -16, yRef.y)
 							initSlider:InitFrame(row)
 							if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
 							yRef.y = yRef.y - 34
 							return row
 						end
@@ -3693,6 +3707,7 @@ local function createUFRenderer(componentId, title)
 			f:SetPoint("TOPRIGHT", -16, yRef.y)
 			initSlider:InitFrame(f)
 			if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 			yRef.y = yRef.y - 34
 			return f
 		end
@@ -4074,11 +4089,11 @@ local function createUFRenderer(componentId, title)
 				local function set(v)
 					local t = ensureUFDB(); if not t then return end
 					local nv = tonumber(v) or 1
-					if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+					if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 					t.nameBackdropBorderThickness = nv
 					applyNow()
 				end
-				local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+				local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 				opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 				local setting = CreateLocalSetting("Border Thickness", "number", get, set, get())
 				local sf = CreateFrame("Frame", nil, frame.PageB, "SettingsSliderControlTemplate")
@@ -4088,6 +4103,7 @@ local function createUFRenderer(componentId, title)
 				sf:SetPoint("TOPRIGHT", -16, y.y)
 				initSlider:InitFrame(sf)
 				if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+				if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 				local en = isEnabled()
 				if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
 				if sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
@@ -4117,6 +4133,7 @@ local function createUFRenderer(componentId, title)
 				sf:SetPoint("TOPRIGHT", -16, y.y)
 				initSlider:InitFrame(sf)
 				if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+				if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 				local en = isEnabled()
 				if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(en) end
 				if sf.Text and sf.Text.SetTextColor then sf.Text:SetTextColor(en and 1 or 0.6, en and 1 or 0.6, en and 1 or 0.6, 1) end
@@ -4471,6 +4488,7 @@ local function createUFRenderer(componentId, title)
 				f:SetPoint("TOPRIGHT", -16, yRef.y)
 				initSlider:InitFrame(f)
 				if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+				if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 				yRef.y = yRef.y - 34
 				return f
 			end
@@ -4687,11 +4705,11 @@ local function createUFRenderer(componentId, title)
 					local function setInset(v)
 						local t = ensureUFDB(); if not t then return end
 						local nv = tonumber(v) or 1
-						if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+						if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 						t.portraitBorderThickness = nv
 						applyNow()
 					end
-					local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+					local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 					opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 					local insetSetting = CreateLocalSetting("Border Inset", "number", getInset, setInset, getInset())
 					local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Inset", setting = insetSetting, options = opts })
@@ -4701,6 +4719,7 @@ local function createUFRenderer(componentId, title)
 					sf:SetPoint("TOPRIGHT", -16, y.y)
 					initSlider:InitFrame(sf)
 					if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 					-- Grey out when Use Custom Border is off
 					local enabled = isEnabled()
 					if sf.Control and sf.Control.SetEnabled then sf.Control:SetEnabled(enabled) end
@@ -5100,6 +5119,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, yRef.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						yRef.y = yRef.y - 34
 						return f
 					end
@@ -5358,6 +5378,7 @@ local function createUFRenderer(componentId, title)
 							f:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(f)
 							if panel and panel.ApplyRobotoWhite and f.Text then panel.ApplyRobotoWhite(f.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						end
 					end
 
@@ -5554,11 +5575,11 @@ local function createUFRenderer(componentId, title)
 							local function setThk(v)
 								local t = ensureCastBarDB(); if not t then return end
 								local nv = tonumber(v) or 1
-								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 								t.castBarBorderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local setting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Border Thickness", setting = setting, options = opts })
@@ -5568,6 +5589,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							_thickFrame = sf
 							y.y = y.y - 34
 						end
@@ -5595,6 +5617,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							_insetFrame = sf
 							y.y = y.y - 34
 						end
@@ -5735,6 +5758,7 @@ local function createUFRenderer(componentId, title)
 							f:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(f)
 							if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 							_iconHeightFrame = f
 							y.y = y.y - 34
 						end
@@ -5764,6 +5788,7 @@ local function createUFRenderer(componentId, title)
 							f:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(f)
 							if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 							_iconWidthFrame = f
 							y.y = y.y - 34
 						end
@@ -5793,6 +5818,7 @@ local function createUFRenderer(componentId, title)
 							f:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(f)
 							if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 							_iconPadFrame = f
 							y.y = y.y - 34
 						end
@@ -5867,11 +5893,11 @@ local function createUFRenderer(componentId, title)
 							local function setThk(v)
 								local t = ensureCastBarDB(); if not t then return end
 								local nv = tonumber(v) or 1
-								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 								t.iconBorderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local setting = CreateLocalSetting("Icon Border Thickness", "number", getThk, setThk, getThk())
 							local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = "Icon Border Thickness", setting = setting, options = opts })
@@ -5881,6 +5907,7 @@ local function createUFRenderer(componentId, title)
 							f:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(f)
 							if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 							_iconBorderThickFrame = f
 							y.y = y.y - 34
 						end
@@ -6419,6 +6446,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, y.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						y.y = y.y - 34
 					end
 
@@ -6461,6 +6489,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, y.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 					end
 
 					-- Spell Name Text tab (PageF): styling controls
@@ -6995,6 +7024,7 @@ local function createUFRenderer(componentId, title)
 									f:SetPoint("TOPRIGHT", -16, y.y)
 									initSlider:InitFrame(f)
 									if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+									if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 									y.y = y.y - 34
 								end
 
@@ -7024,6 +7054,7 @@ local function createUFRenderer(componentId, title)
 									f:SetPoint("TOPRIGHT", -16, y.y)
 									initSlider:InitFrame(f)
 									if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+									if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 								end
 							end
 
@@ -7228,6 +7259,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, yRef.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						yRef.y = yRef.y - 34
 						return f
 					end
@@ -7520,11 +7552,11 @@ local function createUFRenderer(componentId, title)
 							local function setThk(v)
 								local t = ensureUFDB(); if not t then return end
 								local nv = tonumber(v) or 1
-								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 								t.borderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
@@ -7535,6 +7567,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							y.y = y.y - 34
 						end
 
@@ -7705,6 +7738,7 @@ local function createUFRenderer(componentId, title)
 						f:SetPoint("TOPRIGHT", -16, yRef.y)
 						initSlider:InitFrame(f)
 						if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
 						yRef.y = yRef.y - 34
 						return f
 					end
@@ -8054,11 +8088,11 @@ local function createUFRenderer(componentId, title)
 							local function setThk(v)
 								local t = ensureUFDB(); if not t then return end
 								local nv = tonumber(v) or 1
-								if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+								if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
 								t.borderThickness = nv
 								applyNow()
 							end
-							local opts = Settings.CreateSliderOptions(1, 16, 0.34)
+							local opts = Settings.CreateSliderOptions(1, 8, 0.2)
 							opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return string.format("%.1f", v) end)
 							local thkSetting = CreateLocalSetting("Border Thickness", "number", getThk, setThk, getThk())
 							local sf = CreateFrame("Frame", nil, frame.PageC, "SettingsSliderControlTemplate")
@@ -8069,6 +8103,7 @@ local function createUFRenderer(componentId, title)
 							sf:SetPoint("TOPRIGHT", -16, y.y)
 							initSlider:InitFrame(sf)
 							if sf.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(sf.Text) end
+							if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(sf) end
 							y.y = y.y - 34
 						end
 

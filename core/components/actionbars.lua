@@ -561,7 +561,7 @@ addon:RegisterComponentInitializer(function(self)
                     end
                 }},
                 borderThickness = { type = "addon", default = 1, ui = {
-                    label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 6
+                    label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 6
                 }},
                 backdropDisable = { type = "addon", default = false, ui = {
                     label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
@@ -703,7 +703,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 6
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 6
             }},
             backdropDisable = { type = "addon", default = false, ui = {
                 label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1

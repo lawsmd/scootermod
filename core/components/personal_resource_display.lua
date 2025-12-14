@@ -1188,7 +1188,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {
@@ -1232,7 +1232,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 16, step = 0.34, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {

@@ -374,6 +374,7 @@ local function createComponentRenderer(componentId)
                             f:SetPoint("TOPRIGHT", -16, yRef.y)
                             initSlider:InitFrame(f)
                             if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+                            if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
                             yRef.y = yRef.y - 34
                         end
                         local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
@@ -1166,13 +1167,13 @@ local function createComponentRenderer(componentId)
                         function() return readValue("borderThickness", 1) or 1 end,
                         function(v)
                             local nv = tonumber(v) or 1
-                            if nv < 1 then nv = 1 elseif nv > 16 then nv = 16 end
+                            if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
                             writeValue("borderThickness", nv, 1)
                             if addon and addon.ApplyStyles then addon:ApplyStyles() end
                         end,
                         readValue("borderThickness", 1) or 1
                     )
-                    local thicknessOptions = Settings.CreateSliderOptions(1, 16, 0.34)
+                    local thicknessOptions = Settings.CreateSliderOptions(1, 8, 0.2)
                     thicknessOptions:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
                         return string.format("%.1f", value)
                     end)
@@ -3245,6 +3246,7 @@ function panel.RenderTooltip()
                 f:SetPoint("TOPRIGHT", -16, yRef.y)
                 initSlider:InitFrame(f)
                 if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+                if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
                 yRef.y = yRef.y - 34
             end
 

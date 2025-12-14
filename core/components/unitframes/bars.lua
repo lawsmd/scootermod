@@ -627,11 +627,15 @@ do
         overlay:ClearAllPoints()
 
         local reverse = not not bar._ScootRectReverseFill
+        -- Overlay matches the bar frame bounds exactly.
+        -- Any bleeding above the frame is covered by extending the border's expandY.
+        local topOffset = 0
+
         if reverse then
-            overlay:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+            overlay:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, topOffset)
             overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
         else
-            overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, topOffset)
             overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
         end
     end
@@ -1134,7 +1138,8 @@ do
 								if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                 if addon.Borders and addon.Borders.ApplySquare then
 									local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
-                                    local baseY = (thickness <= 1) and 0 or 1
+                                    -- Always extend border by 1 pixel to cover any texture bleeding above the frame
+                                    local baseY = 1
                                     local baseX = 1
                                     local expandY = baseY - inset
                                     local expandX = baseX - inset
