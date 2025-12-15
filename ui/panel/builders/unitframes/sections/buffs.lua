@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - it has its own debuff system (future section)
+	if componentId == "ufToT" then return end
+
 				-- Fifth collapsible section: Buffs & Debuffs (Target only)
 				if componentId == "ufTarget" then
 					local expInitializerBD = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

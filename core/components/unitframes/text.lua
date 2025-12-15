@@ -1693,3 +1693,157 @@ do
 	end
 end
 
+--------------------------------------------------------------------------------
+-- Target of Target: Name Text Styling
+-- The ToT frame only has a Name FontString, no health/power/level text.
+--------------------------------------------------------------------------------
+do
+	-- Resolve ToT Name FontString
+	local function resolveToTNameFS()
+		local tot = _G.TargetFrameToT
+		return tot and tot.Name or nil
+	end
+
+	-- Baseline storage for ToT Name text
+	addon._ufToTNameTextBaseline = addon._ufToTNameTextBaseline or {}
+
+	-- Apply ToT Name Text styling
+	local function applyToTNameText()
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames.TargetOfTarget = db.unitFrames.TargetOfTarget or {}
+		local cfg = db.unitFrames.TargetOfTarget
+		cfg.textName = cfg.textName or {}
+		local styleCfg = cfg.textName
+
+		local nameFS = resolveToTNameFS()
+		if not nameFS then return end
+
+		-- Apply visibility: hidden via SetAlpha (combat-safe)
+		local hidden = (cfg.nameTextHidden == true)
+		if hidden then
+			if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 0) end
+			nameFS._ScooterToTNameHidden = true
+			-- Install hook to re-enforce hidden state
+			if not nameFS._ScooterToTNameVisibilityHooked then
+				nameFS._ScooterToTNameVisibilityHooked = true
+				if _G.hooksecurefunc then
+					_G.hooksecurefunc(nameFS, "SetText", function(self)
+						if self._ScooterToTNameHidden and self.SetAlpha then
+							pcall(self.SetAlpha, self, 0)
+						end
+					end)
+					_G.hooksecurefunc(nameFS, "Show", function(self)
+						if self._ScooterToTNameHidden and self.SetAlpha then
+							pcall(self.SetAlpha, self, 0)
+						end
+					end)
+				end
+			end
+		else
+			nameFS._ScooterToTNameHidden = false
+			if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 1) end
+		end
+
+		-- Skip styling if hidden
+		if hidden then return end
+
+		-- Capture baseline position once
+		local function ensureBaseline()
+			if not addon._ufToTNameTextBaseline.point then
+				if nameFS and nameFS.GetPoint then
+					local p, relTo, rp, x, y = nameFS:GetPoint(1)
+					addon._ufToTNameTextBaseline.point = p or "TOPLEFT"
+					addon._ufToTNameTextBaseline.relTo = relTo or (nameFS.GetParent and nameFS:GetParent())
+					addon._ufToTNameTextBaseline.relPoint = rp or addon._ufToTNameTextBaseline.point
+					addon._ufToTNameTextBaseline.x = tonumber(x) or 0
+					addon._ufToTNameTextBaseline.y = tonumber(y) or 0
+				else
+					addon._ufToTNameTextBaseline.point = "TOPLEFT"
+					addon._ufToTNameTextBaseline.relTo = nameFS and nameFS.GetParent and nameFS:GetParent()
+					addon._ufToTNameTextBaseline.relPoint = "TOPLEFT"
+					addon._ufToTNameTextBaseline.x = 0
+					addon._ufToTNameTextBaseline.y = 0
+				end
+			end
+			return addon._ufToTNameTextBaseline
+		end
+
+		-- Apply font styling
+		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+		local size = tonumber(styleCfg.size) or 10
+		local outline = tostring(styleCfg.style or "OUTLINE")
+		if addon.ApplyFontStyle then
+			addon.ApplyFontStyle(nameFS, face, size, outline)
+		elseif nameFS.SetFont then
+			pcall(nameFS.SetFont, nameFS, face, size, outline)
+		end
+
+		-- Apply color based on colorMode
+		local colorMode = styleCfg.colorMode or "default"
+		local r, g, b, a = 1, 1, 1, 1
+		if colorMode == "class" then
+			-- Class color: use target-of-target's class color
+			if addon.GetClassColorRGB then
+				local cr, cg, cb = addon.GetClassColorRGB("targettarget")
+				r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+			end
+		elseif colorMode == "custom" then
+			local c = styleCfg.color or {1, 1, 1, 1}
+			r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+		else
+			-- Default: use Blizzard default (white for ToT name)
+			r, g, b, a = 1, 1, 1, 1
+		end
+		if nameFS.SetTextColor then pcall(nameFS.SetTextColor, nameFS, r, g, b, a) end
+
+		-- Apply alignment
+		local alignment = styleCfg.alignment or "LEFT"
+		if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, alignment) end
+
+		-- Apply offset relative to baseline
+		local ox = tonumber(styleCfg.offset and styleCfg.offset.x) or 0
+		local oy = tonumber(styleCfg.offset and styleCfg.offset.y) or 0
+		if nameFS.ClearAllPoints and nameFS.SetPoint then
+			local b = ensureBaseline()
+			nameFS:ClearAllPoints()
+			nameFS:SetPoint(b.point, b.relTo, b.relPoint, (b.x or 0) + ox, (b.y or 0) + oy)
+		end
+	end
+
+	-- Expose for UI and Copy From
+	addon.ApplyToTNameText = applyToTNameText
+
+	-- Hook TargetofTarget frame updates to reapply styling
+	-- ToT frame is re-shown when target changes, so hook the ToT OnShow
+	local function installToTHooks()
+		local tot = _G.TargetFrameToT
+		if tot and not tot._ScooterNameTextHooked then
+			tot._ScooterNameTextHooked = true
+			if tot.HookScript then
+				tot:HookScript("OnShow", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, applyToTNameText)
+					end
+				end)
+			end
+		end
+	end
+
+	-- Install hooks after PLAYER_ENTERING_WORLD
+	local totHookFrame = CreateFrame("Frame")
+	totHookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+	totHookFrame:SetScript("OnEvent", function(self, event)
+		if event == "PLAYER_ENTERING_WORLD" then
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0.5, function()
+					installToTHooks()
+					-- Apply initial styling
+					applyToTNameText()
+				end)
+			end
+		end
+	end)
+end
+

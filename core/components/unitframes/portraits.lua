@@ -17,6 +17,9 @@ do
 			return root and root.TargetFrameContainer and root.TargetFrameContainer.Portrait or nil
 		elseif unit == "Pet" then
 			return _G.PetPortrait
+		elseif unit == "TargetOfTarget" then
+			local tot = _G.TargetFrameToT
+			return tot and tot.Portrait or nil
 		end
 		return nil
 	end
@@ -35,6 +38,9 @@ do
 		elseif unit == "Pet" then
 			local root = _G.PetFrame
 			return root and root.PortraitMask or nil
+		elseif unit == "TargetOfTarget" then
+			local tot = _G.TargetFrameToT
+			return tot and tot.PortraitMask or nil
 		end
 		return nil
 	end
@@ -870,6 +876,7 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+		applyForUnit("TargetOfTarget")
 	end
 
 	-- Hook portrait updates to reapply zoom when Blizzard updates portraits
@@ -883,6 +890,7 @@ do
 				elseif unit == "target" then unitKey = "Target"
 				elseif unit == "focus" then unitKey = "Focus"
 				elseif unit == "pet" then unitKey = "Pet"
+				elseif unit == "targettarget" then unitKey = "TargetOfTarget"
 				end
 				if unitKey then
 					-- Defer zoom reapplication to next frame to ensure texture is ready
@@ -981,12 +989,13 @@ do
 	-- Also hook SetPortraitTexture as a fallback
 	if _G.SetPortraitTexture then
 		_G.hooksecurefunc("SetPortraitTexture", function(texture, unit)
-			if unit and (unit == "player" or unit == "target" or unit == "focus" or unit == "pet") then
+			if unit and (unit == "player" or unit == "target" or unit == "focus" or unit == "pet" or unit == "targettarget") then
 				local unitKey = nil
 				if unit == "player" then unitKey = "Player"
 				elseif unit == "target" then unitKey = "Target"
 				elseif unit == "focus" then unitKey = "Focus"
 				elseif unit == "pet" then unitKey = "Pet"
+				elseif unit == "targettarget" then unitKey = "TargetOfTarget"
 				end
 				if unitKey then
 					-- Defer zoom reapplication to next frame to ensure texture is ready

@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - Focus-only section
+	if componentId == "ufToT" then return end
+
 				-- Misc. collapsible section (Focus only) - contains miscellaneous visibility/hide options
 				if componentId == "ufFocus" then
 					local expInitializerMiscF = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

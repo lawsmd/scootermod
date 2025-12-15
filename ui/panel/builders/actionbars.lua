@@ -38,7 +38,7 @@ local function createEmptySectionsRenderer(componentId, title)
 
             -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus/Pet)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet") or (componentId == "ufToT")
                 local header = settingsList and settingsList.Header
                 local collapseBtn = header and (header.DefaultsButton or header.CollapseAllButton or header.CollapseButton)
                 if header then
@@ -114,6 +114,7 @@ local function createEmptySectionsRenderer(componentId, title)
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
                             if id == "ufPet"    then return "Pet" end
+                            if id == "ufToT"    then return "Target of Target" end
                             return id
                         end
                         local function unitKeyFor(id)
@@ -121,10 +122,11 @@ local function createEmptySectionsRenderer(componentId, title)
                             if id == "ufTarget" then return "Target" end
                             if id == "ufFocus"  then return "Focus" end
                             if id == "ufPet"    then return "Pet" end
+                            if id == "ufToT"    then return "TargetOfTarget" end
                             return nil
                         end
                         dd:SetupMenu(function(menu, root)
-                            -- Pet can be a destination but not a source (too different from other frames)
+                            -- Pet and ToT can be destinations but not sources (too different from other frames)
                             local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
                             for _, id in ipairs(candidates) do
                                 if id ~= currentId then
@@ -164,7 +166,7 @@ local function createEmptySectionsRenderer(componentId, title)
             settingsList:Display(init)
             -- Ensure header "Copy from" is present AFTER Display as well (some templates rebuild header)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet") or (componentId == "ufToT")
                 local header = settingsList and settingsList.Header
                 if header then
                     local lbl = header.ScooterCopyFromLabel
@@ -306,7 +308,7 @@ local function createWIPRenderer(componentId, title)
 
             -- Ensure header "Copy from" control for Unit Frames (Player/Target/Focus/Pet)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet") or (componentId == "ufToT")
                 local header = settingsList and settingsList.Header
                 if header then
                     -- Create once
@@ -424,7 +426,7 @@ local function createWIPRenderer(componentId, title)
 
             -- Post-Display: ensure header controls still exist (some templates rebuild header)
             do
-                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet")
+                local isUF = (componentId == "ufPlayer") or (componentId == "ufTarget") or (componentId == "ufFocus") or (componentId == "ufPet") or (componentId == "ufToT")
                 local header = settingsList and settingsList.Header
                 if header then
                     local lbl = header.ScooterCopyFromLabel

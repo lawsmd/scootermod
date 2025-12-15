@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - Player/Pet only section
+	if componentId == "ufToT" then return end
+
 				-- Final collapsible section: Visibility (overall opacity for this Unit Frame)
 				-- Only meaningful for Player and Pet; Target/Focus visibility is owned by Cooldown Manager layouts.
 				if componentId == "ufPlayer" or componentId == "ufPet" then

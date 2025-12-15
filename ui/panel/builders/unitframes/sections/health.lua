@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - it has its own section builder (tot_health)
+	if componentId == "ufToT" then return end
+
 				-- Second collapsible section: Health Bar (blank for now)
 				local expInitializerHB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 					name = "Health Bar",

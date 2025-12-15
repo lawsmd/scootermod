@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - Player-only section
+	if componentId == "ufToT" then return end
+
 				-- Misc. collapsible section (Player only) - contains miscellaneous visibility/hide options
 				if componentId == "ufPlayer" then
 					local expInitializerMiscP = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

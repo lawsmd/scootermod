@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - it has no cast bar
+	if componentId == "ufToT" then return end
+
 			-- Sixth collapsible section: Cast Bar (Player/Target/Focus)
 				if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" then
 					local expInitializerCB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

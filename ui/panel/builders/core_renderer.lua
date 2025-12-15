@@ -2490,7 +2490,7 @@ local function createComponentRenderer(componentId)
                                         -- Only destroy icons marked as Unit Frame icons, allowing other components to have their own icons
                                         if frame.ScooterInfoIcon and frame.ScooterInfoIcon._isUnitFrameIcon then
                                             local labelText = frame.Text and frame.Text:GetText() or ""
-                                            local isUnitFrameComponent = (component.id == "ufPlayer" or component.id == "ufTarget" or component.id == "ufFocus" or component.id == "ufPet")
+                                            local isUnitFrameComponent = (component.id == "ufPlayer" or component.id == "ufTarget" or component.id == "ufFocus" or component.id == "ufPet" or component.id == "ufToT")
                                             local isUnitFrameCheckbox = (labelText == "Use Custom Borders")
                                             if not (isUnitFrameComponent and isUnitFrameCheckbox) then
                                                 -- This is NOT a Unit Frame checkbox - destroy the Unit Frame icon

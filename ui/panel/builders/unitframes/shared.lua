@@ -11,6 +11,7 @@ local componentToUnit = {
     ufTarget = "Target",
     ufFocus  = "Focus",
     ufPet    = "Pet",
+    ufToT    = "TargetOfTarget",
 }
 
 function shared.unitKeyFor(componentId)
@@ -43,6 +44,12 @@ shared.sectionOrder = shared.sectionOrder or {
     "misc_focus",
     "visibility",
     "misc_player",
+    -- ToT-specific sections (only render for ufToT)
+    "tot_root",
+    "tot_health",
+    "tot_power",
+    "tot_portrait",
+    "tot_nametext",
 }
 
 function shared.createContext(componentId, title)

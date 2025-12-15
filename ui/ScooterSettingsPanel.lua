@@ -27,6 +27,7 @@ panel.UnitFrameCategoryToUnit = panel.UnitFrameCategoryToUnit or {
     ufTarget = "Target",
     ufFocus  = "Focus",
     ufPet    = "Pet",
+    ufToT    = "TargetOfTarget",
 }
 
 -- Optional refresh suspension to avoid flicker when visibility-related settings write to Edit Mode
@@ -1555,6 +1556,7 @@ local function BuildCategories()
 	addEntry("ufTarget", addon.SettingsPanel.RenderUFTarget())
 	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
 	addEntry("ufPet",    addon.SettingsPanel.RenderUFPet())
+	addEntry("ufToT",    addon.SettingsPanel.RenderUFToT())
 	-- Group Frames children
 	addEntry("gfParty", addon.SettingsPanel.RenderGFParty())
 	addEntry("gfRaid",  addon.SettingsPanel.RenderGFRaid())
@@ -1610,6 +1612,7 @@ local function BuildCategories()
 			{ type = "child", key = "ufTarget", label = "Target" },
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
 			{ type = "child", key = "ufPet",    label = "Pet"    },
+			{ type = "child", key = "ufToT",    label = "Target of Target" },
 		}},
 		{ type = "parent", key = "Group Frames", label = "Group Frames", collapsible = true, children = {
 			{ type = "child", key = "gfParty", label = "Party Frames" },
@@ -1998,7 +2001,7 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
     lbl:ClearAllPoints(); lbl:SetPoint("RIGHT", dd, "LEFT", -8, 0)
 
     local isAB = type(key) == "string" and (key:match("^actionBar%d$") or key == "petBar")
-    local isUF = (key == "ufPlayer") or (key == "ufTarget") or (key == "ufFocus") or (key == "ufPet")
+    local isUF = (key == "ufPlayer") or (key == "ufTarget") or (key == "ufFocus") or (key == "ufPet") or (key == "ufToT")
 
     -- Reset any previous selection text to avoid stale prompts between categories
     dd._ScooterSelectedId = nil
@@ -2048,6 +2051,7 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
             if id == "ufTarget" then return "Target" end
             if id == "ufFocus"  then return "Focus" end
             if id == "ufPet"    then return "Pet" end
+            if id == "ufToT"    then return "Target of Target" end
             return id
         end
         local function unitKeyFor(id)
@@ -2055,11 +2059,12 @@ panel.ConfigureHeaderCopyFromForKey = function(key)
             if id == "ufTarget" then return "Target" end
             if id == "ufFocus"  then return "Focus" end
             if id == "ufPet"    then return "Pet" end
+            if id == "ufToT"    then return "TargetOfTarget" end
             return nil
         end
         local currentId = key
         dd:SetupMenu(function(menu, root)
-            -- Pet can be a destination but not a source (too different from other frames)
+            -- Pet and ToT can be destinations but not sources (too different from other frames)
             local candidates = { "ufPlayer", "ufTarget", "ufFocus" }
             for _, id in ipairs(candidates) do
                 if id ~= currentId then

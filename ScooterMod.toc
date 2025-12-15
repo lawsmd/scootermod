@@ -82,6 +82,7 @@ ui/panel/builders/unitframes/sections/buffs.lua
 ui/panel/builders/unitframes/sections/misc_focus.lua
 ui/panel/builders/unitframes/sections/visibility.lua
 ui/panel/builders/unitframes/sections/misc_player.lua
+ui/panel/builders/unitframes/sections/tot.lua
 ui/panel/builders/unitframes/init.lua
 ui/panel/builders/unitframes.lua
 ui/panel/builders/groupframes.lua

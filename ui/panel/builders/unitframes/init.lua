@@ -17,6 +17,12 @@ local sectionOrder = shared.sectionOrder or {
     "misc_focus",
     "visibility",
     "misc_player",
+    -- ToT-specific sections (only render for ufToT)
+    "tot_root",
+    "tot_health",
+    "tot_power",
+    "tot_portrait",
+    "tot_nametext",
 }
 
 local function createContext(componentId, title)
@@ -57,6 +63,7 @@ function panel.RenderUFPlayer() return createUFRenderer("ufPlayer", "Player") en
 function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target") end
 function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")  end
 function panel.RenderUFPet()    return createUFRenderer("ufPet",    "Pet")    end
+function panel.RenderUFToT()    return createUFRenderer("ufToT",    "Target of Target") end
 
 panel.UnitFramesInit = panel.UnitFramesInit or function() end
 panel.UnitFramesInit()

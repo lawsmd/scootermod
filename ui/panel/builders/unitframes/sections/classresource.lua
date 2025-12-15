@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - it has no class resource
+	if componentId == "ufToT" then return end
+
 	if componentId == "ufPlayer" then
 		local function getClassResourceTitle()
 			if addon and addon.UnitFrames_GetPlayerClassResourceTitle then

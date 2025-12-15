@@ -218,6 +218,10 @@ end
 -- Unit Frames: Apply custom bar textures (Health/Power) with optional tint per unit
 do
     local function getUnitFrameFor(unit)
+        -- ToT is not an Edit Mode frame - resolve directly from TargetFrame
+        if unit == "TargetOfTarget" then
+            return _G.TargetFrameToT
+        end
         local mgr = _G.EditModeManagerFrame
         local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
         local EMSys = _G.Enum and _G.Enum.EditModeSystem
@@ -293,6 +297,10 @@ do
     local function resolveHealthBar(frame, unit)
         -- Deterministic paths from Framestack findings; fallback to conservative search only if missing
         if unit == "Pet" then return _G.PetFrameHealthBar end
+        if unit == "TargetOfTarget" then
+            local tot = _G.TargetFrameToT
+            return tot and tot.HealthBar or nil
+        end
         if unit == "Player" then
             local root = _G.PlayerFrame
             local hb = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar")
@@ -390,6 +398,8 @@ do
 			return root and root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain or nil
 		elseif unit == "Pet" then
 			return _G.PetFrame
+		elseif unit == "TargetOfTarget" then
+			return _G.TargetFrameToT
 		end
 		return nil
 	end
@@ -414,6 +424,10 @@ do
 
     local function resolvePowerBar(frame, unit)
         if unit == "Pet" then return _G.PetFrameManaBar end
+        if unit == "TargetOfTarget" then
+            local tot = _G.TargetFrameToT
+            return tot and tot.ManaBar or nil
+        end
         if unit == "Player" then
             local root = _G.PlayerFrame
             local mb = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "ManaBarArea", "ManaBar")
@@ -570,6 +584,9 @@ do
             return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
         elseif unit == "Pet" then
             return _G.PetFrameTexture
+        elseif unit == "TargetOfTarget" then
+            local tot = _G.TargetFrameToT
+            return tot and tot.FrameTexture or nil
         end
         return nil
     end
@@ -650,7 +667,7 @@ do
 
         -- Determine whether overlay should be active based on unit type:
         -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
-        -- - Player: activate when using custom borders (fills top-right corner chip in mask)
+        -- - Player/TargetOfTarget: activate when using custom borders (fills top-right corner chip in mask)
         -- - Pet: skip (no known chip issue)
         local shouldActivate = false
 
@@ -661,6 +678,9 @@ do
         elseif unit == "Player" then
             shouldActivate = (ufCfg.useCustomBorders == true)
             bar._ScootRectReverseFill = false -- Player health bar always fills left-to-right
+        elseif unit == "TargetOfTarget" then
+            shouldActivate = (ufCfg.useCustomBorders == true)
+            bar._ScootRectReverseFill = false -- ToT health bar always fills left-to-right
         else
             -- Pet and others: skip
             if bar.ScooterRectFill then
@@ -736,6 +756,8 @@ do
                             stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
                         elseif unit == "Focus" then
                             stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+                        elseif unit == "TargetOfTarget" then
+                            stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- ToT shares party atlas
                         end
                         if stockAtlas and bar.ScooterRectFill.SetAtlas then
                             pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
@@ -1027,9 +1049,9 @@ do
         if hb then
             local colorModeHB = cfg.healthBarColorMode or "default"
             local texKeyHB = cfg.healthBarTexture or "default"
-            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
-			-- Avoid applying styling to Target/Focus before they exist; Blizzard will reset sizes on first Update
-			if (unit == "Target" or unit == "Focus") and _G.UnitExists and not _G.UnitExists(unitId) then
+            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
+			-- Avoid applying styling to Target/Focus/ToT before they exist; Blizzard will reset sizes on first Update
+			if (unit == "Target" or unit == "Focus" or unit == "TargetOfTarget") and _G.UnitExists and not _G.UnitExists(unitId) then
 				return
 			end
             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
@@ -1054,6 +1076,8 @@ do
 					stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health" -- Focus reuses Target visuals
 				elseif unit == "Pet" then
 					stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- Pet frame shares party atlas
+				elseif unit == "TargetOfTarget" then
+					stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- ToT shares party atlas
 				end
                 if stockAtlas then
                     local hbTex = hb.GetStatusBarTexture and hb:GetStatusBarTexture()
@@ -1068,6 +1092,8 @@ do
 							maskAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health-Mask"
 						elseif unit == "Pet" then
 							maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask"
+						elseif unit == "TargetOfTarget" then
+							maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask" -- ToT shares party mask
 						end
 						if maskAtlas then pcall(mask.SetAtlas, mask, maskAtlas) end
 					end
@@ -1270,7 +1296,7 @@ do
 			end
             local colorModePB = cfg.powerBarColorMode or "default"
             local texKeyPB = cfg.powerBarTexture or "default"
-            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
+            local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
             applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
             
             -- Apply background texture and color for Power Bar
@@ -2401,6 +2427,7 @@ do
         applyForUnit("Target")
         applyForUnit("Focus")
         applyForUnit("Pet")
+        applyForUnit("TargetOfTarget")
     end
 
     -- =========================================================================

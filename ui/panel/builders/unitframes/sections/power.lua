@@ -10,6 +10,9 @@ local function build(ctx, init)
 	local panel = ctx.panel or panel
 	local addon = ctx.addon or addon
 
+	-- Skip for ToT - it has its own section builder (tot_power)
+	if componentId == "ufToT" then return end
+
 				-- Third collapsible section: Power Bar (blank for now)
 				local expInitializerPB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
 					name = "Power Bar",

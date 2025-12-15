@@ -62,6 +62,7 @@ local function canonicalUnit(unit)
     if lower == "target" then return "Target" end
     if lower == "focus"  then return "Focus"  end
     if lower == "pet"    then return "Pet"    end
+    if lower == "targetoftarget" then return "TargetOfTarget" end
     return nil
 end
 
@@ -121,6 +122,23 @@ local unitCaps = {
         supportsFullCircleMask = false,
         supportsDamageText = false,
         supportsIconPadding = false,
+    },
+    -- ToT is destination-only (cannot be a source for Copy From)
+    TargetOfTarget = {
+        orientation = "right",
+        hasCastBar = false,
+        supportsSpellNameText = false,
+        supportsCastTimeText = false,
+        supportsShowCastTime = false,
+        supportsPortraitOffset = true,
+        supportsPortraitRestLoop = false,
+        supportsPortraitStatusTexture = false,
+        supportsPortraitCornerIcon = false,
+        supportsFullCircleMask = false,
+        supportsDamageText = false,
+        supportsIconPadding = false,
+        -- ToT has limited settings: only bar style/border and name text
+        isToT = true,
     },
 }
 
@@ -202,6 +220,36 @@ local preserveSizeKeys = {
 -- Cast Bar settings are intentionally excluded from Copy From functionality.
 -- Each unit frame's cast bar must be configured independently.
 
+-- Keys that ToT supports for copy (subset of full unit frames)
+local totCopyKeysRoot = {
+    -- Health Bar style/border only (no text)
+    "healthBarTexture",
+    "healthBarColorMode",
+    "healthBarTint",
+    "healthBarBackgroundTexture",
+    "healthBarBackgroundColorMode",
+    "healthBarBackgroundTint",
+    "healthBarBackgroundOpacity",
+    "healthBarBorderStyle",
+    "healthBarBorderTintEnable",
+    "healthBarBorderTintColor",
+    "healthBarBorderThickness",
+    "healthBarBorderInset",
+    -- Power Bar style/border only (no text)
+    "powerBarTexture",
+    "powerBarColorMode",
+    "powerBarTint",
+    "powerBarBackgroundTexture",
+    "powerBarBackgroundColorMode",
+    "powerBarBackgroundTint",
+    "powerBarBackgroundOpacity",
+    "powerBarBorderStyle",
+    "powerBarBorderTintEnable",
+    "powerBarBorderTintColor",
+    "powerBarBorderThickness",
+    "powerBarBorderInset",
+}
+
 function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
     local src = canonicalUnit(sourceUnit)
     local dst = canonicalUnit(destUnit)
@@ -218,6 +266,11 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
         return false, "invalid_unit"
     end
 
+    -- ToT cannot be a source for Copy From
+    if srcCap.isToT then
+        return false, "invalid_unit"
+    end
+
     local db = addon and addon.db and addon.db.profile
     if not db then
         return false, "db_unavailable"
@@ -229,6 +282,61 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
     if not dstCfg then
         dstCfg = {}
         db.unitFrames[dst] = dstCfg
+    end
+
+    -- Handle ToT destination specially (limited settings)
+    if dstCap.isToT then
+        -- Copy only bar style/border settings
+        for _, key in ipairs(totCopyKeysRoot) do
+            dstCfg[key] = deepCopy(srcCfg[key])
+        end
+
+        -- Copy Name Text settings (font, style, size, color, Y offset only)
+        -- X offset is preserved per policy
+        local srcTextName = type(srcCfg.textName) == "table" and srcCfg.textName or {}
+        dstCfg.textName = dstCfg.textName or {}
+        local dstTextName = dstCfg.textName
+        local prevOffsetX = dstTextName.offset and dstTextName.offset.x or 0
+        dstTextName.fontFace = deepCopy(srcTextName.fontFace)
+        dstTextName.style = deepCopy(srcTextName.style)
+        dstTextName.size = deepCopy(srcTextName.size)
+        dstTextName.colorMode = deepCopy(srcTextName.colorMode)
+        dstTextName.color = deepCopy(srcTextName.color)
+        dstTextName.offset = dstTextName.offset or {}
+        dstTextName.offset.y = srcTextName.offset and srcTextName.offset.y or 0
+        dstTextName.offset.x = prevOffsetX
+
+        -- Copy Portrait settings
+        local srcPortrait = type(srcCfg.portrait) == "table" and srcCfg.portrait or {}
+        dstCfg.portrait = dstCfg.portrait or {}
+        local dstPortrait = dstCfg.portrait
+        dstPortrait.scale = deepCopy(srcPortrait.scale)
+        dstPortrait.zoom = deepCopy(srcPortrait.zoom)
+        dstPortrait.hidePortrait = deepCopy(srcPortrait.hidePortrait)
+        dstPortrait.opacity = deepCopy(srcPortrait.opacity)
+        dstPortrait.portraitBorderEnable = deepCopy(srcPortrait.portraitBorderEnable)
+        dstPortrait.portraitBorderStyle = deepCopy(srcPortrait.portraitBorderStyle)
+        dstPortrait.portraitBorderThickness = deepCopy(srcPortrait.portraitBorderThickness)
+        dstPortrait.portraitBorderColorMode = deepCopy(srcPortrait.portraitBorderColorMode)
+        dstPortrait.portraitBorderTintColor = deepCopy(srcPortrait.portraitBorderTintColor)
+        -- Preserve ToT-specific offsets (separate from source)
+        -- dstPortrait.offsetX and dstPortrait.offsetY are NOT copied
+
+        -- Apply ToT styling
+        if addon.ApplyUnitFrameBarTexturesFor then
+            addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+        end
+        if addon.ApplyUnitFramePortraitFor then
+            addon.ApplyUnitFramePortraitFor("TargetOfTarget")
+        end
+        if addon.ApplyToTNameText then
+            addon.ApplyToTNameText()
+        end
+        if addon.ApplyStyles then
+            addon:ApplyStyles()
+        end
+
+        return true, nil
     end
 
     local skipFrameSize = opts and opts.skipFrameSize
