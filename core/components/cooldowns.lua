@@ -409,6 +409,7 @@ local function ApplyCooldownViewerStyling(self)
                         db = self.db,
                         thicknessKey = "borderThickness",
                         tintColorKey = "borderTintColor",
+                        inset = self.db.borderInset or 0,
                         defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
                     })
                 end
@@ -463,6 +464,7 @@ local function ApplyCooldownViewerStyling(self)
                     db = self.db,
                     thicknessKey = "borderThickness",
                     tintColorKey = "borderTintColor",
+                    inset = self.db.borderInset or 0,
                     defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
                 })
             else
@@ -807,6 +809,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
             }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
+            }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},
@@ -884,6 +889,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
             }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
+            }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},
@@ -960,6 +968,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
+            }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1

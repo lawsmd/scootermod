@@ -738,34 +738,62 @@ do
             bar.ScooterRectFill:SetTexture(resolvedPath)
         else
             -- Default texture - try to copy from bar, with robust fallback
+            -- CRITICAL: GetTexture() can return an atlas token STRING. Passing an atlas token
+            -- to SetTexture() causes the entire spritesheet to render (see UNITFRAMES.md).
+            -- We must check if the string is an atlas and use SetAtlas() instead.
             local tex = bar:GetStatusBarTexture()
+            local applied = false
             if tex then
-                local okTex, pathOrTex = pcall(tex.GetTexture, tex)
-                if okTex then
-                    if type(pathOrTex) == "string" and pathOrTex ~= "" then
-                        bar.ScooterRectFill:SetTexture(pathOrTex)
-                    elseif type(pathOrTex) == "number" and pathOrTex > 0 then
-                        -- Texture ID - use it directly
-                        bar.ScooterRectFill:SetTexture(pathOrTex)
-                    else
-                        -- Fallback to stock health bar atlas for this unit
-                        local stockAtlas
-                        if unit == "Player" then
-                            stockAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health"
-                        elseif unit == "Target" then
-                            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
-                        elseif unit == "Focus" then
-                            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
-                        elseif unit == "TargetOfTarget" then
-                            stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- ToT shares party atlas
-                        end
-                        if stockAtlas and bar.ScooterRectFill.SetAtlas then
-                            pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
-                        elseif bar.ScooterRectFill.SetColorTexture then
-                            -- Last resort: use green health color instead of white
-                            bar.ScooterRectFill:SetColorTexture(0, 0.8, 0, 1)
+                -- First, try GetAtlas() which is the most reliable for atlas-backed textures
+                local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
+                if okAtlas and atlasName and atlasName ~= "" then
+                    if bar.ScooterRectFill.SetAtlas then
+                        pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, atlasName, true)
+                        applied = true
+                    end
+                end
+                
+                if not applied then
+                    local okTex, pathOrTex = pcall(tex.GetTexture, tex)
+                    if okTex then
+                        if type(pathOrTex) == "string" and pathOrTex ~= "" then
+                            -- Check if this string is actually an atlas token
+                            local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
+                            if isAtlas and bar.ScooterRectFill.SetAtlas then
+                                -- Use SetAtlas to avoid spritesheet rendering
+                                pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, pathOrTex, true)
+                                applied = true
+                            else
+                                -- It's a file path, safe to use SetTexture
+                                bar.ScooterRectFill:SetTexture(pathOrTex)
+                                applied = true
+                            end
+                        elseif type(pathOrTex) == "number" and pathOrTex > 0 then
+                            -- Texture ID - use it directly
+                            bar.ScooterRectFill:SetTexture(pathOrTex)
+                            applied = true
                         end
                     end
+                end
+            end
+            
+            -- Fallback to stock health bar atlas for this unit
+            if not applied then
+                local stockAtlas
+                if unit == "Player" then
+                    stockAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health"
+                elseif unit == "Target" then
+                    stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+                elseif unit == "Focus" then
+                    stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
+                elseif unit == "TargetOfTarget" then
+                    stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- ToT shares party atlas
+                end
+                if stockAtlas and bar.ScooterRectFill.SetAtlas then
+                    pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
+                elseif bar.ScooterRectFill.SetColorTexture then
+                    -- Last resort: use green health color instead of white
+                    bar.ScooterRectFill:SetColorTexture(0, 0.8, 0, 1)
                 end
             end
         end

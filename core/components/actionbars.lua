@@ -3,17 +3,41 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
--- Store action bar state in a separate table to avoid writing addon data to Blizzard frames.
--- Writing addon data directly to frames (e.g., bar._ScooterMouseoverComponent = self) can
--- taint the frames, causing protected functions like SetShownBase() to be blocked.
-local actionBarState = {}  -- { [frame] = { component, baseOpacity, isMousedOver } }
-local actionBarHooked = {} -- { [frame] = true } - tracks which frames have had HookScript called
+-- Alpha driver: hooks SetAlpha to enforce our opacity settings over Blizzard's visibility transitions
+local actionBarState = {}  -- per-frame state (component, baseOpacity, isMousedOver, desiredAlpha)
+local actionBarHooked = {} -- frames with OnEnter/OnLeave hooks
+local alphaHooked = {}     -- frames with SetAlpha hooks
+local settingAlpha = {}    -- recursion guard for SetAlpha calls
 
 local function getBarState(bar)
     if not actionBarState[bar] then
         actionBarState[bar] = {}
     end
     return actionBarState[bar]
+end
+
+local function setBarDesiredAlpha(bar, alpha)
+    if not bar or not bar.SetAlpha then return end
+    local state = getBarState(bar)
+    state.desiredAlpha = alpha
+    settingAlpha[bar] = true
+    pcall(bar.SetAlpha, bar, alpha)
+    settingAlpha[bar] = nil
+end
+
+local function hookBarAlpha(bar)
+    if not bar or alphaHooked[bar] then return end
+    alphaHooked[bar] = true
+    hooksecurefunc(bar, "SetAlpha", function(self, alpha)
+        if settingAlpha[self] then return end
+        local state = actionBarState[self]
+        if not state or state.desiredAlpha == nil then return end
+        if math.abs(alpha - state.desiredAlpha) > 0.001 then
+            settingAlpha[self] = true
+            pcall(self.SetAlpha, self, state.desiredAlpha)
+            settingAlpha[self] = nil
+        end
+    end)
 end
 
 local function ApplyActionBarStyling(self)
@@ -35,65 +59,76 @@ local function ApplyActionBarStyling(self)
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
 
-    -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
+    hookBarAlpha(bar)
+    
     local mouseoverEnabled = self.db and self.db.mouseoverMode
     local state = getBarState(bar)
     
+    local function enumerateButtonsForBar()
+        local buttons = {}
+        local prefix
+        if self.frameName == "MainActionBar" then
+            prefix = "ActionButton"
+        elseif self.frameName == "PetActionBar" then
+            prefix = "PetActionButton"
+        elseif self.frameName == "StanceBar" then
+            prefix = "StanceButton"
+        else
+            prefix = tostring(self.frameName) .. "Button"
+        end
+        local maxButtons = self.maxButtons or 12
+        for i = 1, maxButtons do
+            local btn = _G[prefix .. i]
+            if btn then buttons[#buttons + 1] = btn end
+        end
+        return buttons
+    end
+    
+    local function isMouseCurrentlyOverBar()
+        if bar.IsMouseOver and bar:IsMouseOver() then return true end
+        for _, btn in ipairs(enumerateButtonsForBar()) do
+            if btn.IsMouseOver and btn:IsMouseOver() then return true end
+        end
+        return false
+    end
+    
+    state.component = self
+    state.baseOpacity = appliedOp / 100
+    
     if mouseoverEnabled then
-        -- Store the component reference and opacity values in our separate table (NOT on the bar frame)
-        state.component = self
-        state.baseOpacity = appliedOp / 100
-
-        -- Helper functions for mouseover handling (use closure to capture bar reference)
         local function onMouseEnter()
             local s = actionBarState[bar]
             if s and s.component and s.component.db and s.component.db.mouseoverMode then
                 s.isMousedOver = true
-                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+                setBarDesiredAlpha(bar, 1)
             end
         end
         local function onMouseLeave()
             local s = actionBarState[bar]
             if s and s.component and s.component.db and s.component.db.mouseoverMode then
-                -- Only restore opacity if mouse is not over the bar or any of its buttons
                 local isOverBar = bar:IsMouseOver()
                 if not isOverBar then
+                    for _, btn in ipairs(enumerateButtonsForBar()) do
+                        if btn.IsMouseOver and btn:IsMouseOver() then
+                            isOverBar = true
+                            break
+                        end
+                    end
+                end
+                if not isOverBar then
                     s.isMousedOver = false
-                    local restoreOp = s.baseOpacity or 1
-                    if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
+                    setBarDesiredAlpha(bar, s.baseOpacity or 1)
                 end
             end
         end
 
-        -- Hook the bar frame itself (for gaps between buttons)
         if not actionBarHooked[bar] then
             bar:HookScript("OnEnter", onMouseEnter)
             bar:HookScript("OnLeave", onMouseLeave)
             actionBarHooked[bar] = true
         end
 
-        -- Hook each button on the bar for mouseover
-        local function enumerateButtonsForMouseover()
-            local buttons = {}
-            local prefix
-            if self.frameName == "MainActionBar" then
-                prefix = "ActionButton"
-            elseif self.frameName == "PetActionBar" then
-                prefix = "PetActionButton"
-            elseif self.frameName == "StanceBar" then
-                prefix = "StanceButton"
-            else
-                prefix = tostring(self.frameName) .. "Button"
-            end
-            local maxButtons = self.maxButtons or 12
-            for i = 1, maxButtons do
-                local btn = _G[prefix .. i]
-                if btn then buttons[#buttons + 1] = btn end
-            end
-            return buttons
-        end
-
-        for _, btn in ipairs(enumerateButtonsForMouseover()) do
+        for _, btn in ipairs(enumerateButtonsForBar()) do
             if not actionBarHooked[btn] then
                 btn:HookScript("OnEnter", onMouseEnter)
                 btn:HookScript("OnLeave", onMouseLeave)
@@ -101,16 +136,16 @@ local function ApplyActionBarStyling(self)
             end
         end
 
-        -- If currently moused over, keep at 100%; otherwise use calculated opacity
-        if state.isMousedOver then
-            if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+        if isMouseCurrentlyOverBar() then
+            state.isMousedOver = true
+            setBarDesiredAlpha(bar, 1)
         else
-            if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+            state.isMousedOver = false
+            setBarDesiredAlpha(bar, appliedOp / 100)
         end
     else
-        -- Mouseover mode disabled - just apply the calculated opacity
         state.isMousedOver = false
-        if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+        setBarDesiredAlpha(bar, appliedOp / 100)
     end
 
     local function enumerateButtons()
@@ -164,6 +199,7 @@ local function ApplyActionBarStyling(self)
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
     local thickness = tonumber(self.db and self.db.borderThickness) or 1
     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+    local borderInset = tonumber(self.db and self.db.borderInset) or 0
     local tintEnabled = self.db and self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
     local tintColor
     if tintEnabled then
@@ -179,30 +215,34 @@ local function ApplyActionBarStyling(self)
             if styleKey == "square" and addon.Borders and addon.Borders.ApplySquare then
                 if addon.Borders.HideAll then addon.Borders.HideAll(btn) end
                 local col = tintEnabled and tintColor or {0, 0, 0, 1}
+                -- Base offsets: expandTop = 1, expandBottom = -1, right edge at -1
+                -- borderInset adjusts these additively (negative = expand, positive = shrink)
                 addon.Borders.ApplySquare(btn, {
                     size = thickness,
                     color = col,
                     layer = "OVERLAY",
                     layerSublevel = 7,
-                    expandX = -1,
-                    expandY = 0,
+                    expandX = 0 - borderInset,
+                    expandY = 0 - borderInset,
+                    expandTop = 1 - borderInset,
+                    expandBottom = -1 - borderInset,
                 })
                 local container = btn.ScootSquareBorderContainer or btn
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
                 if edges and edges.Right then
                     edges.Right:ClearAllPoints()
-                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, 0)
-                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 0)
+                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -1 + borderInset, 0)
+                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -1 + borderInset, 0)
                 end
                 if edges and edges.Top then
                     edges.Top:ClearAllPoints()
-                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 1, 0)
-                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -2, 0)
+                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInset, 1 - borderInset)
+                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -1 + borderInset, 1 - borderInset)
                 end
                 if edges and edges.Bottom then
                     edges.Bottom:ClearAllPoints()
-                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 1, 0)
-                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -2, 0)
+                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInset, 1 - borderInset)
+                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -1 + borderInset, 1 - borderInset)
                 end
             else
                 addon.ApplyIconBorderStyle(btn, styleKey, {
@@ -212,6 +252,7 @@ local function ApplyActionBarStyling(self)
                     db = self.db,
                     thicknessKey = "borderThickness",
                     tintColorKey = "borderTintColor",
+                    inset = borderInset,
                     defaultThickness = (self.settings and self.settings.borderThickness and self.settings.borderThickness.default) or 1,
                 })
             end
@@ -323,7 +364,9 @@ local function ApplyMicroBarStyling(self)
     local bar = _G[self.frameName]
     if not bar then return end
 
-    -- Read opacity settings with fallbacks to defaults
+    -- Hook SetAlpha on this bar to intercept and correct external changes
+    hookBarAlpha(bar)
+
     local baseOp = tonumber(self.db and self.db.barOpacity)
     if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
     baseOp = tonumber(baseOp) or 100
@@ -339,32 +382,21 @@ local function ApplyMicroBarStyling(self)
     tgtOp = tonumber(tgtOp) or baseOp
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
 
-    -- Determine which opacity to apply based on priority: target > combat > out of combat
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
 
-    -- Helper to enumerate micro buttons
     local function enumerateMicroButtons()
         local buttons = {}
-        -- Standard micro button names in the retail client
         local microButtonNames = {
-            "CharacterMicroButton",
-            "SpellbookMicroButton",
-            "TalentMicroButton",
-            "AchievementMicroButton",
-            "QuestLogMicroButton",
-            "GuildMicroButton",
-            "LFDMicroButton",
-            "CollectionsMicroButton",
-            "EJMicroButton",
-            "StoreMicroButton",
-            "MainMenuMicroButton",
+            "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton",
+            "AchievementMicroButton", "QuestLogMicroButton", "GuildMicroButton",
+            "LFDMicroButton", "CollectionsMicroButton", "EJMicroButton",
+            "StoreMicroButton", "MainMenuMicroButton",
         }
         for _, name in ipairs(microButtonNames) do
             local btn = _G[name]
             if btn then buttons[#buttons + 1] = btn end
         end
-        -- Fallback: enumerate children if standard buttons not found
         if #buttons == 0 and bar.GetChildren then
             for _, child in ipairs({ bar:GetChildren() }) do
                 local t = child.GetObjectType and child:GetObjectType()
@@ -375,45 +407,54 @@ local function ApplyMicroBarStyling(self)
         end
         return buttons
     end
+    
+    local function isMouseCurrentlyOverBar()
+        if bar.IsMouseOver and bar:IsMouseOver() then return true end
+        for _, btn in ipairs(enumerateMicroButtons()) do
+            if btn.IsMouseOver and btn:IsMouseOver() then return true end
+        end
+        return false
+    end
 
-    -- Mouseover Mode: when enabled, hovering the bar or any of its buttons sets opacity to 100%
-    local mouseoverEnabled = self.db and self.db.mouseoverMode
     local state = getBarState(bar)
+    state.component = self
+    state.baseOpacity = appliedOp / 100
+    
+    local mouseoverEnabled = self.db and self.db.mouseoverMode
     
     if mouseoverEnabled then
-        -- Store the component reference and opacity values in our separate table (NOT on the bar frame)
-        state.component = self
-        state.baseOpacity = appliedOp / 100
-
-        -- Helper functions for mouseover handling (use closure to capture bar reference)
         local function onMouseEnter()
             local s = actionBarState[bar]
             if s and s.component and s.component.db and s.component.db.mouseoverMode then
                 s.isMousedOver = true
-                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+                setBarDesiredAlpha(bar, 1)
             end
         end
         local function onMouseLeave()
             local s = actionBarState[bar]
             if s and s.component and s.component.db and s.component.db.mouseoverMode then
-                -- Only restore opacity if mouse is not over the bar or any of its buttons
                 local isOverBar = bar:IsMouseOver()
                 if not isOverBar then
+                    for _, btn in ipairs(enumerateMicroButtons()) do
+                        if btn.IsMouseOver and btn:IsMouseOver() then
+                            isOverBar = true
+                            break
+                        end
+                    end
+                end
+                if not isOverBar then
                     s.isMousedOver = false
-                    local restoreOp = s.baseOpacity or 1
-                    if bar.SetAlpha then pcall(bar.SetAlpha, bar, restoreOp) end
+                    setBarDesiredAlpha(bar, s.baseOpacity or 1)
                 end
             end
         end
 
-        -- Hook the bar frame itself (for gaps between buttons)
         if not actionBarHooked[bar] then
             bar:HookScript("OnEnter", onMouseEnter)
             bar:HookScript("OnLeave", onMouseLeave)
             actionBarHooked[bar] = true
         end
 
-        -- Hook each micro button for mouseover
         for _, btn in ipairs(enumerateMicroButtons()) do
             if not actionBarHooked[btn] then
                 btn:HookScript("OnEnter", onMouseEnter)
@@ -422,16 +463,16 @@ local function ApplyMicroBarStyling(self)
             end
         end
 
-        -- If currently moused over, keep at 100%; otherwise use calculated opacity
-        if state.isMousedOver then
-            if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+        if isMouseCurrentlyOverBar() then
+            state.isMousedOver = true
+            setBarDesiredAlpha(bar, 1)
         else
-            if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+            state.isMousedOver = false
+            setBarDesiredAlpha(bar, appliedOp / 100)
         end
     else
-        -- Mouseover mode disabled - just apply the calculated opacity
         state.isMousedOver = false
-        if bar.SetAlpha then pcall(bar.SetAlpha, bar, appliedOp / 100) end
+        setBarDesiredAlpha(bar, appliedOp / 100)
     end
 end
 
@@ -562,6 +603,9 @@ addon:RegisterComponentInitializer(function(self)
                 }},
                 borderThickness = { type = "addon", default = 1, ui = {
                     label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 6
+                }},
+                borderInset = { type = "addon", default = 0, ui = {
+                    label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 7
                 }},
                 backdropDisable = { type = "addon", default = false, ui = {
                     label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
@@ -704,6 +748,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 6
+            }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 7
             }},
             backdropDisable = { type = "addon", default = false, ui = {
                 label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1

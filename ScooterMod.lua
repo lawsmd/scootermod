@@ -134,16 +134,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
     end
 end
 
-function addon:OnEnable()
-    self:RegisterEvent("PLAYER_TARGET_CHANGED", "HandleTargetChanged")
-end
-
-function addon:OnDisable()
-    self:UnregisterEvent("PLAYER_TARGET_CHANGED")
-end
-
-function addon:HandleTargetChanged()
-    if self.ApplyStyles then
-        self:ApplyStyles()
-    end
-end
+-- NOTE: PLAYER_TARGET_CHANGED is handled in core/init.lua via PLAYER_TARGET_CHANGED()
+-- which calls RefreshOpacityState() - this is combat-safe and properly updates opacity
+-- for all components (Action Bars, CDM, Auras, etc.) without blocking during combat.
+-- Do NOT register a duplicate handler here as it would overwrite the init.lua handler.

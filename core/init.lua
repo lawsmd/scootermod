@@ -163,9 +163,7 @@ function addon:RefreshOpacityState()
     end
 end
 
--- Handle combat start - update opacity based on new combat state
 function addon:PLAYER_REGEN_DISABLED()
-    -- Defer slightly to ensure combat state is fully updated
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             self:RefreshOpacityState()
@@ -175,10 +173,7 @@ function addon:PLAYER_REGEN_DISABLED()
     end
 end
 
--- Handle combat end - update opacity based on new combat state
 function addon:PLAYER_REGEN_ENABLED()
-    -- Always refresh opacity state when leaving combat
-    -- Defer slightly to ensure combat lockdown is fully cleared
     if C_Timer and C_Timer.After then
         C_Timer.After(0.1, function()
             -- Handle deferred styling if ApplyStyles was called during combat
@@ -385,34 +380,23 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
 end
 
 function addon:PLAYER_TARGET_CHANGED()
-    -- Re-apply Target styling after Blizzard rebuilds layout
-    -- Also refresh opacity for all elements (priority: With Target > In Combat > Out of Combat)
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
-            -- Refresh Player textures: acquiring a target can trigger PlayerFrame updates
-            -- (aggro/threat display) which reset health bar texture to default
             if addon.ApplyUnitFrameBarTexturesFor then
                 addon.ApplyUnitFrameBarTexturesFor("Player")
-            end
-            if addon.ApplyUnitFrameBarTexturesFor then
                 addon.ApplyUnitFrameBarTexturesFor("Target")
             end
-            -- Also apply Name & Level Text visibility to ensure hidden settings persist
             if addon.ApplyUnitFrameNameLevelTextFor then
                 addon.ApplyUnitFrameNameLevelTextFor("Target")
             end
-            -- Also apply Health/Power bar text visibility to ensure hidden settings persist
             if addon.ApplyUnitFrameHealthTextVisibilityFor then
                 addon.ApplyUnitFrameHealthTextVisibilityFor("Target")
             end
             if addon.ApplyUnitFramePowerTextVisibilityFor then
                 addon.ApplyUnitFramePowerTextVisibilityFor("Target")
             end
-            -- Refresh opacity state for all elements affected by target changes
             self:RefreshOpacityState()
             
-            -- Secondary pass: reapply Player textures after a short delay to catch
-            -- any late Blizzard updates that might overwrite our initial styling
             C_Timer.After(0.1, function()
                 if addon.ApplyUnitFrameBarTexturesFor then
                     addon.ApplyUnitFrameBarTexturesFor("Player")
@@ -420,11 +404,8 @@ function addon:PLAYER_TARGET_CHANGED()
             end)
         end)
     else
-        -- Refresh Player textures (same reason as above)
         if addon.ApplyUnitFrameBarTexturesFor then
             addon.ApplyUnitFrameBarTexturesFor("Player")
-        end
-        if addon.ApplyUnitFrameBarTexturesFor then
             addon.ApplyUnitFrameBarTexturesFor("Target")
         end
         if addon.ApplyUnitFrameNameLevelTextFor then

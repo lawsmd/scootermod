@@ -716,14 +716,16 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
     local baseExpandX = styleDef.expandX or 0
     local baseExpandY = styleDef.expandY or baseExpandX
+    -- Get the borderInset from opts (negative = expand outward, positive = shrink inward)
+    local insetValue = tonumber(opts and opts.inset) or 0
     local insetAdjust = 0
     if styleDef.allowThicknessInset then
-        local step = styleDef.insetStep or 0.2
-        local centre = styleDef.insetCenter or (styleDef.defaultThickness or 1)
-        local defaultThickness = styleDef.defaultThickness or 1
-        insetAdjust = (thickness - centre) * step
-        local defaultAdjust = (defaultThickness - centre) * step
-        insetAdjust = insetAdjust - defaultAdjust
+        -- For custom art borders: use borderInset directly (thickness no longer affects expand)
+        -- Positive inset = shrink border inward (reduce expand), negative = expand outward
+        insetAdjust = -insetValue
+    else
+        -- For square borders: inset also applies
+        insetAdjust = -insetValue
     end
     local expandX = clamp(baseExpandX + insetAdjust, -8, 8)
     local expandY = clamp(baseExpandY + insetAdjust, -8, 8)
@@ -758,6 +760,8 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             color = baseApplyColor or {0, 0, 0, 1},
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
+            expandX = expandX,
+            expandY = expandY,
         })
         local container = targetFrame.ScootSquareBorderContainer or targetFrame
         local edges = (container and container.ScootSquareBorderEdges) or targetFrame.ScootSquareBorderEdges
