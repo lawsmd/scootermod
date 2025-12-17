@@ -70,6 +70,32 @@ local function queuePowerBarReapply(unit)
     pendingPowerBarUnits[unit] = true
 end
 
+-- Unit frame texture re-apply deferral (combat-safe):
+-- If we detect a stock refresh during combat, queue a re-apply for after combat.
+local pendingUnitFrameTextureUnits = {}
+local unitFrameTextureCombatWatcher = nil
+
+local function ensureUnitFrameTextureCombatWatcher()
+    if unitFrameTextureCombatWatcher then
+        return
+    end
+    unitFrameTextureCombatWatcher = CreateFrame("Frame")
+    unitFrameTextureCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    unitFrameTextureCombatWatcher:SetScript("OnEvent", function()
+        for unit in pairs(pendingUnitFrameTextureUnits) do
+            pendingUnitFrameTextureUnits[unit] = nil
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor(unit)
+            end
+        end
+    end)
+end
+
+local function queueUnitFrameTextureReapply(unit)
+    ensureUnitFrameTextureCombatWatcher()
+    pendingUnitFrameTextureUnits[unit] = true
+end
+
 local function capturePowerBarBaseline(pb)
     if not pb then
         return
@@ -474,6 +500,9 @@ do
                 and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarMask
         elseif unit == "Pet" then
             return _G.PetFrameHealthBarMask
+        elseif unit == "TargetOfTarget" then
+            local tot = _G.TargetFrameToT
+            return tot and tot.HealthBar and tot.HealthBar.HealthBarMask or nil
         end
         return nil
     end
@@ -497,6 +526,9 @@ do
                 and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarMask
         elseif unit == "Pet" then
             return _G.PetFrameManaBarMask
+        elseif unit == "TargetOfTarget" then
+            local tot = _G.TargetFrameToT
+            return tot and tot.ManaBar and tot.ManaBar.ManaBarMask or nil
         end
         return nil
     end
@@ -1073,6 +1105,53 @@ do
         local cfg = db.unitFrames[unit] or {}
         local frame = getUnitFrameFor(unit)
         if not frame then return end
+
+        -- Target-of-Target can get refreshed frequently by Blizzard (even out of combat),
+        -- which can reset its bar textures. Install a lightweight, throttled hook on the
+        -- ToT frame's Update() to re-assert our styling shortly after Blizzard updates it.
+        if unit == "TargetOfTarget" and _G.hooksecurefunc then
+            local tot = _G.TargetFrameToT
+            if tot and not tot._ScootToTUpdateHooked and type(tot.Update) == "function" then
+                tot._ScootToTUpdateHooked = true
+                _G.hooksecurefunc(tot, "Update", function()
+                    local db2 = addon and addon.db and addon.db.profile
+                    if not db2 then return end
+                    db2.unitFrames = db2.unitFrames or {}
+                    local cfgT = db2.unitFrames.TargetOfTarget or {}
+
+                    local texKey = cfgT.healthBarTexture or "default"
+                    local colorMode = cfgT.healthBarColorMode or "default"
+                    local tint = cfgT.healthBarTint
+
+                    local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                    local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "texture")
+                    if not hasCustomTexture and not hasCustomColor then
+                        return
+                    end
+
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueUnitFrameTextureReapply("TargetOfTarget")
+                        return
+                    end
+
+                    if tot._ScootToTReapplyPending then
+                        return
+                    end
+                    tot._ScootToTReapplyPending = true
+
+                    if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+                        _G.C_Timer.After(0, function()
+                            tot._ScootToTReapplyPending = nil
+                            addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                        end)
+                    elseif addon.ApplyUnitFrameBarTexturesFor then
+                        tot._ScootToTReapplyPending = nil
+                        addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                    end
+                end)
+            end
+        end
+
         local hb = resolveHealthBar(frame, unit)
         if hb then
             local colorModeHB = cfg.healthBarColorMode or "default"
@@ -1281,6 +1360,97 @@ do
                             return
                         end
                         applyToBar(self, texKey, colorMode, tint, "player", "health", unitIdP)
+                    end)
+                end
+            end
+
+            -- Lightweight persistence hooks for Target-of-Target Health Bar:
+            -- Blizzard can reset the ToT StatusBar's fill texture during rapid updates (often in combat).
+            -- We re-assert the configured texture/color by writing to the underlying Texture region
+            -- (avoids calling SetStatusBarTexture again inside a secure callstack).
+            if unit == "TargetOfTarget" and _G.hooksecurefunc then
+                if not hb._ScootToTHealthTextureHooked then
+                    hb._ScootToTHealthTextureHooked = true
+                    _G.hooksecurefunc(hb, "SetStatusBarTexture", function(self, ...)
+                        -- Ignore ScooterMod's own writes to avoid feedback loops.
+                        if self._ScootUFInternalTextureWrite then
+                            return
+                        end
+
+                        local db = addon and addon.db and addon.db.profile
+                        if not db then return end
+                        db.unitFrames = db.unitFrames or {}
+                        local cfgT = db.unitFrames.TargetOfTarget or {}
+
+                        local texKey = cfgT.healthBarTexture or "default"
+                        local colorMode = cfgT.healthBarColorMode or "default"
+                        local tint = cfgT.healthBarTint
+
+                        local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "texture")
+                        if not hasCustomTexture and not hasCustomColor then
+                            return
+                        end
+
+                        -- Avoid any writes during combat; defer until after combat.
+                        if InCombatLockdown and InCombatLockdown() then
+                            queueUnitFrameTextureReapply("TargetOfTarget")
+                            return
+                        end
+
+                        -- Throttle: coalesce rapid refreshes into a single 0s re-apply.
+                        if self._ScootToTReapplyPending then
+                            return
+                        end
+                        self._ScootToTReapplyPending = true
+                        if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+                            _G.C_Timer.After(0, function()
+                                self._ScootToTReapplyPending = nil
+                                addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                            end)
+                        elseif addon.ApplyUnitFrameBarTexturesFor then
+                            self._ScootToTReapplyPending = nil
+                            addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                        end
+                    end)
+                end
+
+                if not hb._ScootToTHealthColorHooked then
+                    hb._ScootToTHealthColorHooked = true
+                    _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
+                        local db = addon and addon.db and addon.db.profile
+                        if not db then return end
+                        db.unitFrames = db.unitFrames or {}
+                        local cfgT = db.unitFrames.TargetOfTarget or {}
+
+                        local texKey = cfgT.healthBarTexture or "default"
+                        local colorMode = cfgT.healthBarColorMode or "default"
+                        local tint = cfgT.healthBarTint
+
+                        local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "texture")
+                        if not hasCustomTexture and not hasCustomColor then
+                            return
+                        end
+
+                        if InCombatLockdown and InCombatLockdown() then
+                            queueUnitFrameTextureReapply("TargetOfTarget")
+                            return
+                        end
+
+                        if self._ScootToTReapplyPending then
+                            return
+                        end
+                        self._ScootToTReapplyPending = true
+                        if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
+                            _G.C_Timer.After(0, function()
+                                self._ScootToTReapplyPending = nil
+                                addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                            end)
+                        elseif addon.ApplyUnitFrameBarTexturesFor then
+                            self._ScootToTReapplyPending = nil
+                            addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+                        end
                     end)
                 end
             end

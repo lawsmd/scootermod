@@ -597,6 +597,65 @@ do
 			borderTexture:Show()
 		end
 
+		-- Pet overlay textures (PetAttackModeTexture, PetFrameFlash) are driven by Blizzard combat events
+		-- and can be re-shown during combat. To avoid taint and keep the element reliably invisible,
+		-- we use a "sticky alpha" approach:
+		-- - Only use SetAlpha(0) (no Hide/Show)
+		-- - Install hooksecurefunc handlers on Show() and SetAlpha() to re-enforce alpha=0 if Blizzard tries
+		--   to make it visible again (e.g., PET_ATTACK_START).
+		local function applyStickyOverlayAlpha(texture, hidden, visibleAlpha)
+			if not texture then return end
+			if visibleAlpha == nil then visibleAlpha = 1.0 end
+
+			-- Install hooks once per texture.
+			if not texture._ScooterPetOverlayHooked and _G.hooksecurefunc then
+				texture._ScooterPetOverlayHooked = true
+
+				-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
+				_G.hooksecurefunc(texture, "Show", function(self)
+					if self._ScooterPetOverlayHidden and self.SetAlpha then
+						pcall(self.SetAlpha, self, 0)
+					end
+				end)
+
+				-- If Blizzard sets alpha > 0, schedule a correction to avoid recursion loops.
+				_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
+					if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
+						if not self._ScooterPetOverlayAlphaDeferred then
+							self._ScooterPetOverlayAlphaDeferred = true
+							if _G.C_Timer and _G.C_Timer.After then
+								_G.C_Timer.After(0, function()
+									self._ScooterPetOverlayAlphaDeferred = nil
+									if self._ScooterPetOverlayHidden and self.SetAlpha then
+										pcall(self.SetAlpha, self, 0)
+									end
+								end)
+							else
+								-- Fallback: immediate is safe because alpha=0 won't re-trigger the correction path.
+								self._ScooterPetOverlayAlphaDeferred = nil
+								if self.SetAlpha then
+									pcall(self.SetAlpha, self, 0)
+								end
+							end
+						end
+					end
+				end)
+			end
+
+			-- Apply current desired state immediately (and set the sticky flag).
+			if hidden then
+				texture._ScooterPetOverlayHidden = true
+				if texture.SetAlpha then
+					pcall(texture.SetAlpha, texture, 0)
+				end
+			else
+				texture._ScooterPetOverlayHidden = false
+				if texture.SetAlpha then
+					pcall(texture.SetAlpha, texture, visibleAlpha)
+				end
+			end
+		end
+
 		local function applyVisibility()
 			-- If "Hide Portrait" is checked, hide everything (ignore individual flags)
 			-- Otherwise, check individual flags for each element
@@ -692,15 +751,8 @@ do
 			if petAttackModeTexture and unit == "Pet" then
 				local useCustomBorders = ufCfg and (ufCfg.useCustomBorders == true)
 				local petAttackHidden = hidePortrait or useCustomBorders
-				local petAttackAlpha = petAttackHidden and 0.0 or (origPetAttackModeTextureAlpha * opacityValue)
-				if petAttackModeTexture.SetAlpha then
-					petAttackModeTexture:SetAlpha(petAttackAlpha)
-				end
-				if petAttackHidden and petAttackModeTexture.Hide then
-					petAttackModeTexture:Hide()
-				elseif not petAttackHidden and petAttackModeTexture.Show then
-					petAttackModeTexture:Show()
-				end
+				local petAttackVisibleAlpha = (origPetAttackModeTextureAlpha * opacityValue)
+				applyStickyOverlayAlpha(petAttackModeTexture, petAttackHidden, petAttackVisibleAlpha)
 			end
 
 			-- Pet frame flash: hidden if "Hide Portrait" is checked OR "Use Custom Borders" is enabled (Pet only)
@@ -708,15 +760,8 @@ do
 			if petFrameFlash and unit == "Pet" then
 				local useCustomBorders = ufCfg and (ufCfg.useCustomBorders == true)
 				local petFlashHidden = hidePortrait or useCustomBorders
-				local petFlashAlpha = petFlashHidden and 0.0 or (origPetFrameFlashAlpha * opacityValue)
-				if petFrameFlash.SetAlpha then
-					petFrameFlash:SetAlpha(petFlashAlpha)
-				end
-				if petFlashHidden and petFrameFlash.Hide then
-					petFrameFlash:Hide()
-				elseif not petFlashHidden and petFrameFlash.Show then
-					petFrameFlash:Show()
-				end
+				local petFlashVisibleAlpha = (origPetFrameFlashAlpha * opacityValue)
+				applyStickyOverlayAlpha(petFrameFlash, petFlashHidden, petFlashVisibleAlpha)
 			end
 		end
 
@@ -1048,48 +1093,6 @@ do
 
 	if _G.PlayerFrame_UpdateStatus then
 		_G.hooksecurefunc("PlayerFrame_UpdateStatus", EnforcePlayerStatusTextureVisibility)
-	end
-
-	-- Keep Pet frame overlay textures hidden when ScooterMod wants them hidden.
-	local function EnforcePetFrameTexturesVisibility()
-		local db = addon and addon.db and addon.db.profile
-		if not db then
-			return
-		end
-
-		local ufCfg = db.unitFrames and db.unitFrames.Pet
-		if not ufCfg then
-			return
-		end
-
-		local portraitCfg = ufCfg.portrait or {}
-		local hidePortrait = portraitCfg.hidePortrait == true
-		local useCustomBorders = ufCfg.useCustomBorders == true
-
-		if not (hidePortrait or useCustomBorders) then
-			-- Respect Blizzard visuals when no ScooterMod rule wants them hidden.
-			return
-		end
-
-		-- Hide PetAttackModeTexture (use SetAlpha only to avoid tainting PetFrame)
-		local petAttackModeTexture = _G.PetAttackModeTexture
-		if petAttackModeTexture then
-			if petAttackModeTexture.SetAlpha then
-				petAttackModeTexture:SetAlpha(0)
-			end
-		end
-
-		-- Hide PetFrameFlash (use SetAlpha only to avoid tainting PetFrame)
-		local petFrameFlash = _G.PetFrameFlash
-		if petFrameFlash then
-			if petFrameFlash.SetAlpha then
-				petFrameFlash:SetAlpha(0)
-			end
-		end
-	end
-
-	if _G.PetFrame_Update then
-		_G.hooksecurefunc("PetFrame_Update", EnforcePetFrameTexturesVisibility)
 	end
 end
 
