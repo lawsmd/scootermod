@@ -1510,6 +1510,66 @@ function panel.RenderHome()
     }
 end
 
+--------------------------------------------------------------------------------
+-- Interface Placeholder Renderers
+--------------------------------------------------------------------------------
+local function createInterfaceInfoRow(message)
+    local row = Settings.CreateElementInitializer("SettingsListElementTemplate")
+    row.GetExtent = function() return 96 end
+    row.InitFrame = function(self, frame)
+        EnsureCallbackContainer(frame)
+        if frame.Text then frame.Text:Hide() end
+        if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
+        if frame.InfoText then frame.InfoText:Hide() end
+
+        if not frame.ScooterInterfaceInfoText then
+            local info = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            info:SetPoint("TOPLEFT", frame, "TOPLEFT", 24, -6)
+            info:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
+            info:SetJustifyH("LEFT")
+            info:SetJustifyV("TOP")
+            info:SetWordWrap(true)
+            if panel.ApplyRobotoWhite then
+                panel.ApplyRobotoWhite(info, 16, "")
+            end
+            frame.ScooterInterfaceInfoText = info
+        end
+
+        frame.ScooterInterfaceInfoText:SetText(message or "")
+        frame.ScooterInterfaceInfoText:Show()
+        local textHeight = frame.ScooterInterfaceInfoText:GetStringHeight() or 0
+        frame:SetHeight(math.max(70, textHeight + 32))
+    end
+    return row
+end
+
+local function createComingSoonRenderer(componentId, title)
+    local function render()
+        local f = panel.frame
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then
+            return
+        end
+        if right.SetTitle then
+            right:SetTitle(title or componentId)
+        end
+
+        local init = {}
+        table.insert(init, createInterfaceInfoRow("Coming soon..."))
+        right:Display(init)
+    end
+
+    return { mode = "list", render = render, componentId = componentId }
+end
+
+function panel.RenderMinimap()
+    return createComingSoonRenderer("minimap", "Minimap")
+end
+
+function panel.RenderQuestLog()
+    return createComingSoonRenderer("questLog", "Quest Log")
+end
+
 local function BuildCategories()
 	local f = panel.frame
 	if f.CategoriesBuilt then return end
@@ -1574,8 +1634,10 @@ local function BuildCategories()
 	addEntry("stanceBar", addon.SettingsPanel.RenderStanceBar())
 	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
 
-	-- Tooltip children
+	-- Interface children
 	addEntry("tooltip", addon.SettingsPanel.RenderTooltip())
+    addEntry("minimap", addon.SettingsPanel.RenderMinimap())
+    addEntry("questLog", addon.SettingsPanel.RenderQuestLog())
 
 	-- Build nav model (parents + children). Parents: Profiles, CDM, Action Bars, Unit Frames
 	local navModel = {
@@ -1588,6 +1650,11 @@ local function BuildCategories()
 			{ type = "child", key = "applyAllFonts", label = "Fonts" },
 			{ type = "child", key = "applyAllTextures", label = "Bar Textures" },
 		}},
+        { type = "parent", key = "Interface", label = "Interface", collapsible = true, children = {
+            { type = "child", key = "tooltip", label = "Tooltip" },
+            { type = "child", key = "minimap", label = "Minimap" },
+            { type = "child", key = "questLog", label = "Quest Log" },
+        }},
 		{ type = "parent", key = "Cooldown Manager", label = "Cooldown Manager", collapsible = true, children = {
 			{ type = "child", key = "essentialCooldowns", label = "Essential Cooldowns" },
 			{ type = "child", key = "utilityCooldowns", label = "Utility Cooldowns" },
@@ -1648,15 +1715,6 @@ local function BuildCategories()
         children = {
             { type = "child", key = "sctDamage", label = "Damage Numbers" },
         },
-    })
-	table.insert(navModel, {
-        type = "parent",
-        key = "Tooltip",
-        label = "Tooltip",
-        collapsible = true,
-        children = {
-			{ type = "child", key = "tooltip", label = "Tooltip" },
-		},
     })
 
 	-- Initialize expand state defaults (all collapsible sections start collapsed)

@@ -15,6 +15,13 @@ local addonName, addon = ...
 -- - Font size
 -- - Font style (OUTLINE, THICKOUTLINE, etc.)
 
+local COMPARISON_TOOLTIP_NAMES = {
+    ShoppingTooltip1 = true,
+    ShoppingTooltip2 = true,
+    ItemRefShoppingTooltip1 = true,
+    ItemRefShoppingTooltip2 = true,
+}
+
 -- Helper: Apply font face/size/style to a FontString
 local function ApplyFontSettings(fontString, config, defaultSize)
     if not fontString or not fontString.SetFont then return end
@@ -36,6 +43,80 @@ local function ApplyFontSettings(fontString, config, defaultSize)
     pcall(fontString.SetFont, fontString, face, size, style)
 end
 
+local function CleanupTextConfig(cfg)
+    if not cfg then return end
+    cfg.color = nil
+    cfg.offset = nil
+    cfg.alignment = nil -- Removed feature - see TOOLTIPGAME.md
+end
+
+local function ShallowCopyFontConfig(src)
+    src = src or {}
+    return {
+        fontFace = src.fontFace,
+        size = src.size,
+        style = src.style,
+    }
+end
+
+local function EnsureNewTooltipTextConfigs(db)
+    if not db then return end
+
+    -- Migration: use old Line 2 settings as the initial value for Everything Else.
+    if db.textEverythingElse == nil then
+        db.textEverythingElse = ShallowCopyFontConfig(db.textLine2 or {
+            fontFace = "FRIZQT__",
+            size = 12,
+            style = "OUTLINE",
+        })
+    end
+
+    if db.textComparison == nil then
+        db.textComparison = {
+            fontFace = "FRIZQT__",
+            size = 12,
+            style = "OUTLINE",
+        }
+    end
+
+    CleanupTextConfig(db.textTitle)
+    CleanupTextConfig(db.textEverythingElse)
+    CleanupTextConfig(db.textComparison)
+end
+
+local function ApplyGameTooltipText(db)
+    -- Title / name line
+    local titleFS = _G["GameTooltipTextLeft1"]
+    if titleFS then
+        ApplyFontSettings(titleFS, db.textTitle or {}, 14)
+    end
+
+    -- Everything else: lines 2..N
+    local cfg = db.textEverythingElse or {}
+    local i = 2
+    while true do
+        local fs = _G["GameTooltipTextLeft" .. i]
+        if not fs then break end
+        ApplyFontSettings(fs, cfg, 12)
+        i = i + 1
+    end
+end
+
+local function ApplyComparisonTooltipText(tooltip, db)
+    if not tooltip or not tooltip.GetName then return end
+    local prefix = tooltip:GetName()
+    if not prefix or prefix == "" then return end
+
+    local cfg = db.textComparison or {}
+    local i = 1
+    while true do
+        local fs = _G[prefix .. "TextLeft" .. i]
+        if not fs then break end
+        ApplyFontSettings(fs, cfg, 12)
+        i = i + 1
+    end
+end
+
 -- Track whether we've registered the TooltipDataProcessor hook
 local tooltipProcessorHooked = false
 
@@ -51,30 +132,24 @@ local function RegisterTooltipPostProcessor()
 
     -- Register for ALL tooltip types so we catch every tooltip update
     TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, tooltipData)
-        -- Only process GameTooltip
-        if tooltip ~= GameTooltip then return end
-
         local comp = addon.Components and addon.Components.tooltip
         if not comp or not comp.db then return end
 
         local db = comp.db
+        EnsureNewTooltipTextConfigs(db)
 
-        -- Apply settings for lines 1 through 7
-        for i = 1, 7 do
-            local fontString = _G["GameTooltipTextLeft"..i]
-            if fontString then
-                -- DB keys: textTitle (line 1), textLine2 (line 2), etc.
-                local key = (i == 1) and "textTitle" or ("textLine"..i)
-                local cfg = db[key] or {}
-                
-                -- Apply font settings synchronously
-                -- Line 1 defaults to 14pt, others default to 12pt (standard body size)
-                ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
-            end
+        local tooltipName = tooltip and tooltip.GetName and tooltip:GetName()
+
+        if tooltip == GameTooltip then
+            ApplyGameTooltipText(db)
+        elseif tooltipName and COMPARISON_TOOLTIP_NAMES[tooltipName] then
+            ApplyComparisonTooltipText(tooltip, db)
+        else
+            return
         end
 
         -- Hide health bar if setting is enabled (must be done on every tooltip show)
-        if db.hideHealthBar then
+        if tooltip == GameTooltip and db.hideHealthBar then
             local statusBar = _G["GameTooltipStatusBar"]
             if statusBar then statusBar:Hide() end
             local statusBarTexture = _G["GameTooltipStatusBarTexture"]
@@ -91,25 +166,17 @@ local function ApplyTooltipStyling(self)
 
     local db = self.db or {}
 
-    -- Clean up deprecated settings
-    if db.textTitle then
-        db.textTitle.color = nil
-        db.textTitle.offset = nil
-        db.textTitle.alignment = nil -- Removed feature - see TOOLTIPGAME.md
-    end
+    EnsureNewTooltipTextConfigs(db)
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()
 
-    -- Apply styling to existing lines (GameTooltipTextLeft1..7)
-    for i = 1, 7 do
-        local fontString = _G["GameTooltipTextLeft"..i]
-        if fontString then
-            local key = (i == 1) and "textTitle" or ("textLine"..i)
-            local cfg = db[key] or {}
-            ApplyFontSettings(fontString, cfg, (i == 1) and 14 or 12)
-        end
-    end
+    -- Apply styling to any already-built tooltip lines
+    ApplyGameTooltipText(db)
+    ApplyComparisonTooltipText(_G["ShoppingTooltip1"], db)
+    ApplyComparisonTooltipText(_G["ShoppingTooltip2"], db)
+    ApplyComparisonTooltipText(_G["ItemRefShoppingTooltip1"], db)
+    ApplyComparisonTooltipText(_G["ItemRefShoppingTooltip2"], db)
 
     -- Apply visibility settings: Hide/Show GameTooltipStatusBar (health bar)
     local statusBar = _G["GameTooltipStatusBar"]
@@ -139,50 +206,22 @@ addon:RegisterComponentInitializer(function(self)
         name = "Tooltip",
         frameName = "GameTooltip",
         settings = {
-            -- Line 1 (Title) settings
+            -- Name & Title settings (line 1 on GameTooltip)
             textTitle = { type = "addon", default = {
                 fontFace = "FRIZQT__",
                 size = 14,
                 style = "OUTLINE",
             }, ui = { hidden = true }},
 
-            -- Line 2 settings
-            textLine2 = { type = "addon", default = {
+            -- Everything Else settings (lines 2..N on GameTooltip)
+            textEverythingElse = { type = "addon", default = {
                 fontFace = "FRIZQT__",
                 size = 12,
                 style = "OUTLINE",
             }, ui = { hidden = true }},
 
-            -- Line 3 settings
-            textLine3 = { type = "addon", default = {
-                fontFace = "FRIZQT__",
-                size = 12,
-                style = "OUTLINE",
-            }, ui = { hidden = true }},
-
-            -- Line 4 settings
-            textLine4 = { type = "addon", default = {
-                fontFace = "FRIZQT__",
-                size = 12,
-                style = "OUTLINE",
-            }, ui = { hidden = true }},
-
-            -- Line 5 settings
-            textLine5 = { type = "addon", default = {
-                fontFace = "FRIZQT__",
-                size = 12,
-                style = "OUTLINE",
-            }, ui = { hidden = true }},
-
-            -- Line 6 settings
-            textLine6 = { type = "addon", default = {
-                fontFace = "FRIZQT__",
-                size = 12,
-                style = "OUTLINE",
-            }, ui = { hidden = true }},
-
-            -- Line 7 settings
-            textLine7 = { type = "addon", default = {
+            -- Comparison Tooltips settings (ShoppingTooltip1/2 + ItemRefShoppingTooltip1/2)
+            textComparison = { type = "addon", default = {
                 fontFace = "FRIZQT__",
                 size = 12,
                 style = "OUTLINE",

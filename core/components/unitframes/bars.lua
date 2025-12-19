@@ -2518,6 +2518,9 @@ do
                         else
                             frameFlash:SetScript("OnShow", nil)
                         end
+                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
+                        frameFlash._ScootHideHookInstalled = nil
+                        frameFlash._ScootOrigOnShow = nil
                         -- Show the frame
                         if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, true) end
                         if frameFlash.Show then pcall(frameFlash.Show, frameFlash) end
@@ -2562,6 +2565,9 @@ do
                         else
                             targetFlash:SetScript("OnShow", nil)
                         end
+                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
+                        targetFlash._ScootHideHookInstalled = nil
+                        targetFlash._ScootOrigOnShow = nil
                         -- Show the frame
                         if targetFlash.SetShown then pcall(targetFlash.SetShown, targetFlash, true) end
                         if targetFlash.Show then pcall(targetFlash.Show, targetFlash) end
@@ -2606,6 +2612,9 @@ do
                         else
                             focusFlash:SetScript("OnShow", nil)
                         end
+                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
+                        focusFlash._ScootHideHookInstalled = nil
+                        focusFlash._ScootOrigOnShow = nil
                         -- Show the frame
                         if focusFlash.SetShown then pcall(focusFlash.SetShown, focusFlash, true) end
                         if focusFlash.Show then pcall(focusFlash.Show, focusFlash) end

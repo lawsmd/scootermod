@@ -29,21 +29,44 @@ function panel.RenderTooltip()
         local data = {
             sectionTitle = "",
             tabAText = "Name & Title",
-            tabBText = "Line 2",
-            tabCText = "Line 3",
-            tabDText = "Line 4",
-            tabEText = "Line 5",
-            tabFText = "Line 6",
-            tabGText = "Line 7",
+            tabBText = "Everything Else",
+            tabCText = "Comparison Tooltips",
         }
 
         data.build = function(frame)
             local db = component.db or {}
 
+            -- Migration: use old Line 2 settings as the initial value for Everything Else.
+            if db.textEverythingElse == nil then
+                local src = db.textLine2 or {}
+                db.textEverythingElse = {
+                    fontFace = src.fontFace or "FRIZQT__",
+                    size = src.size or 12,
+                    style = src.style or "OUTLINE",
+                }
+            end
+            if db.textComparison == nil then
+                db.textComparison = {
+                    fontFace = "FRIZQT__",
+                    size = 12,
+                    style = "OUTLINE",
+                }
+            end
             -- Clean up deprecated settings from DB (color and offsets removed)
             if db.textTitle then
                 db.textTitle.color = nil
                 db.textTitle.offset = nil
+                db.textTitle.alignment = nil
+            end
+            if db.textEverythingElse then
+                db.textEverythingElse.color = nil
+                db.textEverythingElse.offset = nil
+                db.textEverythingElse.alignment = nil
+            end
+            if db.textComparison then
+                db.textComparison.color = nil
+                db.textComparison.offset = nil
+                db.textComparison.alignment = nil
             end
 
             local function applyText()
@@ -147,22 +170,17 @@ function panel.RenderTooltip()
                     yRef)
             end
 
-            -- Build all 7 tabs
+            -- Build all 3 tabs
             buildPage(frame.PageA, "textTitle", "Title", 14)
-            buildPage(frame.PageB, "textLine2", "Line 2", 12)
-            buildPage(frame.PageC, "textLine3", "Line 3", 12)
-            buildPage(frame.PageD, "textLine4", "Line 4", 12)
-            buildPage(frame.PageE, "textLine5", "Line 5", 12)
-            buildPage(frame.PageF, "textLine6", "Line 6", 12)
-            buildPage(frame.PageG, "textLine7", "Line 7", 12)
+            buildPage(frame.PageB, "textEverythingElse", "Everything Else", 12)
+            buildPage(frame.PageC, "textComparison", "Comparison", 12)
         end
 
         local tabbedInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", data)
         -- Height:
-        -- Multi-row tabs (6+ tabs) require more height because the border is pushed down ~21px.
-        -- Formula: 30 (top) + (3 settings * 34) + 20 (bottom) + 21 (multi-row drop) = 173 + 21 = ~194px
-        -- Using 200px to be safe and provide comfortable bottom padding.
-        tabbedInit.GetExtent = function() return 200 end
+        -- Single-row tabs (<=5 tabs). Formula: 30 (top) + (3 settings * 34) + 20 (bottom) = ~152px
+        -- Using 170px to provide comfortable bottom padding.
+        tabbedInit.GetExtent = function() return 170 end
         tabbedInit:AddShownPredicate(function()
             return panel:IsSectionExpanded("tooltip", "Text")
         end)

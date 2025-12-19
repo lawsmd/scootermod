@@ -131,6 +131,183 @@ do
 	-- Store original mask atlas (per frame, not per unit, to handle frame recreation)
 	local originalMaskAtlas = {}
 
+	-- Pet portrait overlays are driven by Blizzard and may re-show/recreate in combat.
+	-- Keep them hidden safely via SetAlpha(0) + hooksecurefunc re-enforcement (no Hide/Show).
+	local function applyStickyOverlayAlpha(texture, hidden, visibleAlpha)
+		if not texture then return end
+		if visibleAlpha == nil then visibleAlpha = 1.0 end
+
+		-- Install hooks once per texture instance.
+		if not texture._ScooterPetOverlayHooked and _G.hooksecurefunc then
+			texture._ScooterPetOverlayHooked = true
+
+			-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
+			_G.hooksecurefunc(texture, "Show", function(self)
+				if not self._ScooterPetOverlayHidden then return end
+
+				-- Enforce both frame alpha and vertex alpha, since Blizzard may drive visibility via SetVertexColor.
+				if self.SetAlpha then
+					pcall(self.SetAlpha, self, 0)
+				end
+				if self.SetVertexColor then
+					-- Preserve current RGB if available; just zero vertex alpha.
+					if self.GetVertexColor then
+						local ok, r, g, b = pcall(self.GetVertexColor, self)
+						if ok then
+							pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
+							return
+						end
+					end
+					pcall(self.SetVertexColor, self, 1, 1, 1, 0)
+				end
+			end)
+
+			-- If Blizzard uses SetShown(true), treat it like Show().
+			if texture.SetShown then
+				_G.hooksecurefunc(texture, "SetShown", function(self, shown)
+					if not shown or not self._ScooterPetOverlayHidden then return end
+					if self.SetAlpha then
+						pcall(self.SetAlpha, self, 0)
+					end
+					if self.SetVertexColor then
+						if self.GetVertexColor then
+							local ok, r, g, b = pcall(self.GetVertexColor, self)
+							if ok then
+								pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
+								return
+							end
+						end
+						pcall(self.SetVertexColor, self, 1, 1, 1, 0)
+					end
+				end)
+			end
+
+			-- If Blizzard sets alpha > 0, schedule a correction to avoid recursion loops.
+			_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
+				if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
+					if not self._ScooterPetOverlayAlphaDeferred then
+						self._ScooterPetOverlayAlphaDeferred = true
+						if _G.C_Timer and _G.C_Timer.After then
+							_G.C_Timer.After(0, function()
+								self._ScooterPetOverlayAlphaDeferred = nil
+								if self._ScooterPetOverlayHidden and self.SetAlpha then
+									pcall(self.SetAlpha, self, 0)
+								end
+							end)
+						else
+							-- Fallback: immediate is safe because alpha=0 won't re-trigger the correction path.
+							self._ScooterPetOverlayAlphaDeferred = nil
+							if self.SetAlpha then
+								pcall(self.SetAlpha, self, 0)
+							end
+						end
+					end
+				end
+			end)
+
+			-- Blizzard often drives glow visibility via vertex alpha (SetVertexColor's 4th param),
+			-- not frame alpha (SetAlpha). Example: PetAttackModeTexture pulses in PetFrame:OnUpdate.
+			-- If we don't hook this, the glow can reappear despite alpha=0.
+			if texture.SetVertexColor then
+				_G.hooksecurefunc(texture, "SetVertexColor", function(self, r, g, b, a)
+					if not self._ScooterPetOverlayHidden then
+						return
+					end
+
+					-- Treat nil alpha as "visible" (Blizzard sometimes omits alpha, defaulting to 1).
+					if a == 0 then
+						return
+					end
+
+					-- Enforce immediately (hooksecurefunc runs *after* Blizzard's call), with a recursion guard.
+					-- This prevents a one-frame flash when Blizzard pulses the vertex alpha every OnUpdate tick.
+					if self._ScooterPetOverlayApplyingVertex then
+						return
+					end
+					self._ScooterPetOverlayApplyingVertex = true
+					if self.SetVertexColor then
+						-- Preserve color channels, force vertex alpha to 0.
+						pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
+					end
+					self._ScooterPetOverlayApplyingVertex = nil
+				end)
+			end
+		end
+
+		-- Apply current desired state immediately (and set the sticky flag).
+		if hidden then
+			texture._ScooterPetOverlayHidden = true
+			if texture.SetAlpha then
+				pcall(texture.SetAlpha, texture, 0)
+			end
+		else
+			texture._ScooterPetOverlayHidden = false
+			if texture.SetAlpha then
+				pcall(texture.SetAlpha, texture, visibleAlpha)
+			end
+		end
+	end
+
+	local function EnforcePetOverlays()
+		local db = addon and addon.db and addon.db.profile
+		if not db or not db.unitFrames or not db.unitFrames.Pet then
+			return
+		end
+
+		local ufCfg = db.unitFrames.Pet
+		local portraitCfg = ufCfg.portrait or {}
+
+		local hidePortrait = (portraitCfg.hidePortrait == true)
+		local useCustomBorders = (ufCfg.useCustomBorders == true)
+
+		-- Portrait opacity is stored as percent (1-100)
+		local opacityPct = tonumber(portraitCfg.opacity) or 100
+		if opacityPct < 1 then opacityPct = 1 elseif opacityPct > 100 then opacityPct = 100 end
+		local opacityValue = opacityPct / 100.0
+
+		local petAttackModeTexture = _G.PetAttackModeTexture
+		local petFrameFlash = _G.PetFrameFlash
+
+		-- Capture original alpha for newly created texture instances (frame recreation).
+		if petAttackModeTexture and not originalAlphas[petAttackModeTexture] then
+			originalAlphas[petAttackModeTexture] = petAttackModeTexture:GetAlpha() or 1.0
+		end
+		if petFrameFlash and not originalAlphas[petFrameFlash] then
+			originalAlphas[petFrameFlash] = petFrameFlash:GetAlpha() or 1.0
+		end
+
+		if petAttackModeTexture then
+			local hidden = hidePortrait or useCustomBorders
+			local visibleAlpha = (originalAlphas[petAttackModeTexture] or 1.0) * opacityValue
+			applyStickyOverlayAlpha(petAttackModeTexture, hidden, visibleAlpha)
+		end
+
+		if petFrameFlash then
+			local hidden = hidePortrait or useCustomBorders
+			local visibleAlpha = (originalAlphas[petFrameFlash] or 1.0) * opacityValue
+			applyStickyOverlayAlpha(petFrameFlash, hidden, visibleAlpha)
+
+			-- Some builds drive the red glow via sub-texture regions under PetFrameFlash.
+			-- Enforce sticky alpha on immediate texture regions too (cheap + robust).
+			if petFrameFlash.GetRegions then
+				for _, region in ipairs({ petFrameFlash:GetRegions() }) do
+					if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+						if not originalAlphas[region] and region.GetAlpha then
+							originalAlphas[region] = region:GetAlpha() or 1.0
+						end
+						local regionVisibleAlpha = (originalAlphas[region] or 1.0) * opacityValue
+						applyStickyOverlayAlpha(region, hidden, regionVisibleAlpha)
+					end
+				end
+			end
+		end
+	end
+
+	-- Expose a public helper so init.lua event handlers can re-enforce sticky pet overlays.
+	function addon.UnitFrames_EnforcePetOverlays()
+		EnforcePetOverlays()
+	end
+
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
@@ -597,65 +774,6 @@ do
 			borderTexture:Show()
 		end
 
-		-- Pet overlay textures (PetAttackModeTexture, PetFrameFlash) are driven by Blizzard combat events
-		-- and can be re-shown during combat. To avoid taint and keep the element reliably invisible,
-		-- we use a "sticky alpha" approach:
-		-- - Only use SetAlpha(0) (no Hide/Show)
-		-- - Install hooksecurefunc handlers on Show() and SetAlpha() to re-enforce alpha=0 if Blizzard tries
-		--   to make it visible again (e.g., PET_ATTACK_START).
-		local function applyStickyOverlayAlpha(texture, hidden, visibleAlpha)
-			if not texture then return end
-			if visibleAlpha == nil then visibleAlpha = 1.0 end
-
-			-- Install hooks once per texture.
-			if not texture._ScooterPetOverlayHooked and _G.hooksecurefunc then
-				texture._ScooterPetOverlayHooked = true
-
-				-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
-				_G.hooksecurefunc(texture, "Show", function(self)
-					if self._ScooterPetOverlayHidden and self.SetAlpha then
-						pcall(self.SetAlpha, self, 0)
-					end
-				end)
-
-				-- If Blizzard sets alpha > 0, schedule a correction to avoid recursion loops.
-				_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
-					if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
-						if not self._ScooterPetOverlayAlphaDeferred then
-							self._ScooterPetOverlayAlphaDeferred = true
-							if _G.C_Timer and _G.C_Timer.After then
-								_G.C_Timer.After(0, function()
-									self._ScooterPetOverlayAlphaDeferred = nil
-									if self._ScooterPetOverlayHidden and self.SetAlpha then
-										pcall(self.SetAlpha, self, 0)
-									end
-								end)
-							else
-								-- Fallback: immediate is safe because alpha=0 won't re-trigger the correction path.
-								self._ScooterPetOverlayAlphaDeferred = nil
-								if self.SetAlpha then
-									pcall(self.SetAlpha, self, 0)
-								end
-							end
-						end
-					end
-				end)
-			end
-
-			-- Apply current desired state immediately (and set the sticky flag).
-			if hidden then
-				texture._ScooterPetOverlayHidden = true
-				if texture.SetAlpha then
-					pcall(texture.SetAlpha, texture, 0)
-				end
-			else
-				texture._ScooterPetOverlayHidden = false
-				if texture.SetAlpha then
-					pcall(texture.SetAlpha, texture, visibleAlpha)
-				end
-			end
-		end
-
 		local function applyVisibility()
 			-- If "Hide Portrait" is checked, hide everything (ignore individual flags)
 			-- Otherwise, check individual flags for each element
@@ -887,6 +1005,11 @@ do
 		end
 
 		if InCombatLockdown() then
+			-- Pet overlays are combat-driven and may appear during combat; enforce sticky alpha immediately.
+			-- This path only uses SetAlpha + hooksecurefunc on the texture itself (combat-safe).
+			if unit == "Pet" then
+				EnforcePetOverlays()
+			end
 			-- Defer application until out of combat
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()

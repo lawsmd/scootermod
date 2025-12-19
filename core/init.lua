@@ -125,6 +125,13 @@ function addon:RegisterEvents()
     -- Ensure Unit Frame styling is re-applied when target/focus units change
     self:RegisterEvent("PLAYER_TARGET_CHANGED")
     self:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    -- Pet lifecycle / pet overlays
+    self:RegisterEvent("UNIT_PET")
+    self:RegisterEvent("PET_UI_UPDATE")
+    self:RegisterEvent("PET_ATTACK_START")
+    self:RegisterEvent("PET_ATTACK_STOP")
+    -- Pet threat changes drive PetFrameFlash via UnitFrame_UpdateThreatIndicator
+    self:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
     -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
     self:RegisterEvent("PLAYER_LEVEL_UP")
     -- Combat state changes for opacity updates (priority: With Target > In Combat > Out of Combat)
@@ -167,9 +174,81 @@ function addon:PLAYER_REGEN_DISABLED()
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             self:RefreshOpacityState()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
         end)
     else
         self:RefreshOpacityState()
+        if addon.UnitFrames_EnforcePetOverlays then
+            addon.UnitFrames_EnforcePetOverlays()
+        end
+    end
+end
+
+function addon:UNIT_PET(event, unit)
+    if unit ~= "player" then
+        return
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
+        end)
+    elseif addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
+    end
+end
+
+function addon:PET_UI_UPDATE()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
+        end)
+    elseif addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
+    end
+end
+
+function addon:PET_ATTACK_START()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
+        end)
+    elseif addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
+    end
+end
+
+function addon:PET_ATTACK_STOP()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
+        end)
+    elseif addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
+    end
+end
+
+function addon:UNIT_THREAT_SITUATION_UPDATE(event, unit)
+    if unit ~= "pet" then
+        return
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
+        end)
+    elseif addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
     end
 end
 

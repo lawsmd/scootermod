@@ -172,11 +172,17 @@ local function ensureComponentFontStructures(profile)
     -- change SCT fonts directly via the Scrolling Combat Text settings panel to see
     -- the restart warning. See SCROLLINGCOMBATTEXT.md for details.
     
-    -- Tooltip component (fontFace is at top level)
+    -- Tooltip component (text settings tables)
     profile.components.tooltip = profile.components.tooltip or {}
-    if profile.components.tooltip.fontFace == nil then
-        profile.components.tooltip.fontFace = "FRIZQT__"
-    end
+    local tcfg = profile.components.tooltip
+    tcfg.textTitle = tcfg.textTitle or {}
+    if tcfg.textTitle.fontFace == nil then tcfg.textTitle.fontFace = "FRIZQT__" end
+
+    tcfg.textEverythingElse = tcfg.textEverythingElse or {}
+    if tcfg.textEverythingElse.fontFace == nil then tcfg.textEverythingElse.fontFace = "FRIZQT__" end
+
+    tcfg.textComparison = tcfg.textComparison or {}
+    if tcfg.textComparison.fontFace == nil then tcfg.textComparison.fontFace = "FRIZQT__" end
 end
 
 local function ensureState()
