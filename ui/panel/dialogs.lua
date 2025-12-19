@@ -453,3 +453,11 @@ Dialogs:Register("SCOOTERMOD_CREATE_LAYOUT", {
     cancelText = CANCEL or "Cancel",
 })
 
+Dialogs:Register("SCOOTERMOD_APPLY_PRESET", {
+    text = "Enter a name for the new profile/layout based on %s:",
+    hasEditBox = true,
+    maxLetters = 32,
+    acceptText = "Create",
+    cancelText = CANCEL or "Cancel",
+})
+

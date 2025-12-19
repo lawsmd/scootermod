@@ -1005,6 +1005,9 @@ function addon:ApplyStyles()
     if addon.ApplyAllThreatMeterVisibility then
         addon.ApplyAllThreatMeterVisibility()
     end
+    if addon.ApplyTargetBossIconVisibility then
+        addon.ApplyTargetBossIconVisibility()
+    end
     if addon.ApplyAllPlayerMiscVisibility then
         addon.ApplyAllPlayerMiscVisibility()
     end

@@ -203,3 +203,267 @@ function addon.DebugDump(target)
     ShowDebugCopyWindow("Edit Mode Settings - "..tostring(name), dump)
 end
 
+--[[----------------------------------------------------------------------------
+    Profile export (AceDB -> copyable Lua table)
+
+    Purpose:
+      - Produce a deterministic, copy/paste friendly Lua table literal for a given
+        AceDB profile (usually the current profile).
+      - Intended for preset ingestion into core/presets.lua (ScooterUI/ScooterDeck).
+----------------------------------------------------------------------------]]--
+
+local function _IsIdentifierKey(s)
+    return type(s) == "string" and s:match("^[A-Za-z_][A-Za-z0-9_]*$") ~= nil
+end
+
+local function _SortKeysStable(keys)
+    local typeOrder = {
+        number = 1,
+        string = 2,
+        boolean = 3,
+        table = 4,
+        userdata = 5,
+        ["function"] = 6,
+        thread = 7,
+        ["nil"] = 8,
+    }
+    table.sort(keys, function(a, b)
+        local ta, tb = type(a), type(b)
+        local oa, ob = typeOrder[ta] or 99, typeOrder[tb] or 99
+        if oa ~= ob then return oa < ob end
+        if ta == "number" then return a < b end
+        if ta == "string" then return a < b end
+        if ta == "boolean" then return (a == false and b == true) end
+        return tostring(a) < tostring(b)
+    end)
+end
+
+local function _SerializeLuaValue(value, indent, visited, depth)
+    indent = indent or 0
+    visited = visited or {}
+    depth = depth or 0
+
+    local t = type(value)
+    if t == "nil" then return "nil" end
+    if t == "boolean" then return value and "true" or "false" end
+    if t == "number" then
+        -- Preserve numeric fidelity (avoid locale formatting); tostring is fine in WoW Lua.
+        return tostring(value)
+    end
+    if t == "string" then
+        return string.format("%q", value)
+    end
+    if t ~= "table" then
+        -- Unsupported types should not appear in AceDB profiles, but guard anyway.
+        return "nil --[[unsupported:" .. t .. "]]"
+    end
+
+    if visited[value] then
+        -- Cycles are unexpected in AceDB; keep the output valid Lua.
+        return "nil --[[cycle]]"
+    end
+    if depth > 25 then
+        return "nil --[[max_depth]]"
+    end
+    visited[value] = true
+
+    local pad = string.rep("  ", indent)
+    local padIn = string.rep("  ", indent + 1)
+
+    -- Detect simple array (1..n) with no extra keys to keep output compact.
+    local isArray = true
+    local maxIndex = 0
+    local count = 0
+    for k in pairs(value) do
+        if type(k) ~= "number" or k < 1 or k % 1 ~= 0 then
+            isArray = false
+            break
+        end
+        if k > maxIndex then maxIndex = k end
+        count = count + 1
+    end
+    if isArray and count ~= maxIndex then
+        isArray = false
+    end
+
+    local out = {}
+    table.insert(out, "{\n")
+
+    if isArray then
+        for i = 1, maxIndex do
+            local v = value[i]
+            table.insert(out, padIn)
+            table.insert(out, _SerializeLuaValue(v, indent + 1, visited, depth + 1))
+            table.insert(out, ",\n")
+        end
+    else
+        local keys = {}
+        for k in pairs(value) do
+            table.insert(keys, k)
+        end
+        _SortKeysStable(keys)
+
+        for _, k in ipairs(keys) do
+            local v = value[k]
+            local keyExpr
+            if _IsIdentifierKey(k) then
+                keyExpr = k
+            else
+                local kt = type(k)
+                if kt == "string" then
+                    keyExpr = "[" .. string.format("%q", k) .. "]"
+                elseif kt == "number" or kt == "boolean" then
+                    keyExpr = "[" .. tostring(k) .. "]"
+                else
+                    -- Fall back to stringifying the key to keep the output valid.
+                    keyExpr = "[" .. string.format("%q", tostring(k)) .. "]"
+                end
+            end
+
+            table.insert(out, padIn)
+            table.insert(out, keyExpr)
+            table.insert(out, " = ")
+            table.insert(out, _SerializeLuaValue(v, indent + 1, visited, depth + 1))
+            table.insert(out, ",\n")
+        end
+    end
+
+    table.insert(out, pad)
+    table.insert(out, "}")
+    visited[value] = nil
+    return table.concat(out, "")
+end
+
+function addon.DebugExportProfile(profileName)
+    if not addon or not addon.db then
+        ShowDebugCopyWindow("ScooterMod Profile Export", "AceDB not initialized.")
+        return
+    end
+
+    local db = addon.db
+    local key = profileName
+    if type(key) ~= "string" or key == "" then
+        if db.GetCurrentProfile then
+            key = db:GetCurrentProfile()
+        end
+    end
+    if type(key) ~= "string" or key == "" then
+        key = "<unknown>"
+    end
+
+    local profile
+    if db.profiles and db.profiles[key] then
+        profile = db.profiles[key]
+    else
+        -- Fallback to currently active profile table (includes live unsaved changes).
+        profile = db.profile
+    end
+
+    if type(profile) ~= "table" then
+        ShowDebugCopyWindow("ScooterMod Profile Export - " .. tostring(key), "Profile table not found.")
+        return
+    end
+
+    local snapshot = CopyTable(profile)
+    local header = table.concat({
+        "-- ScooterMod profile export",
+        "-- Profile: " .. tostring(key),
+        "-- Captured: " .. (date and date("%Y-%m-%d %H:%M:%S") or "unknown"),
+        "",
+    }, "\n")
+
+    local payload = _SerializeLuaValue(snapshot, 0, {}, 0)
+    ShowDebugCopyWindow("ScooterMod Profile Export - " .. tostring(key), header .. payload)
+
+    -- Persist the last export into SavedVariables so preset ingestion can be
+    -- performed without manual copy/paste (run export, then /reload or logout).
+    -- NOTE: This is stored in AceDB.global intentionally (not per-profile).
+    if db and db.global then
+        db.global.presetCaptures = db.global.presetCaptures or {}
+        db.global.presetCaptures.profile = {
+            profileKey = key,
+            capturedAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+            payload = payload,
+        }
+        if _G.C_Crypto and type(_G.C_Crypto.Hash) == "function" then
+            local ok, hash = pcall(_G.C_Crypto.Hash, "SHA256", payload)
+            if ok and type(hash) == "string" and hash ~= "" then
+                db.global.presetCaptures.profile.sha256 = string.lower(hash)
+            end
+        end
+    end
+end
+
+local function _FindLayoutInfoByName(layoutName)
+    if not _G.C_EditMode or type(_G.C_EditMode.GetLayouts) ~= "function" then
+        return nil, "C_EditMode.GetLayouts unavailable."
+    end
+    local li = _G.C_EditMode.GetLayouts()
+    if not (li and type(li.layouts) == "table") then
+        return nil, "Unable to read layouts."
+    end
+    if type(layoutName) == "string" and layoutName ~= "" then
+        for _, layout in ipairs(li.layouts) do
+            if layout and layout.layoutName == layoutName then
+                return layout
+            end
+        end
+        return nil, "Layout not found: " .. tostring(layoutName)
+    end
+    local idx = li.activeLayout
+    local active = idx and li.layouts and li.layouts[idx]
+    if not active then
+        return nil, "Active layout not found."
+    end
+    return active
+end
+
+function addon.DebugExportEditModeLayout(layoutName)
+    if not addon or not addon.db then
+        ShowDebugCopyWindow("Edit Mode Layout Export", "AceDB not initialized.")
+        return
+    end
+    if not _G.C_EditMode or type(_G.C_EditMode.ConvertLayoutInfoToString) ~= "function" then
+        ShowDebugCopyWindow("Edit Mode Layout Export", "C_EditMode.ConvertLayoutInfoToString API unavailable.")
+        return
+    end
+
+    local layoutInfo, err = _FindLayoutInfoByName(layoutName)
+    if not layoutInfo then
+        ShowDebugCopyWindow("Edit Mode Layout Export", err or "Unable to resolve layout.")
+        return
+    end
+
+    local ok, exportString = pcall(_G.C_EditMode.ConvertLayoutInfoToString, layoutInfo)
+    if not ok or type(exportString) ~= "string" or exportString == "" then
+        ShowDebugCopyWindow("Edit Mode Layout Export", "Export failed: " .. tostring(exportString))
+        return
+    end
+
+    local name = layoutInfo.layoutName or layoutName or "Active"
+    local header = table.concat({
+        "-- Edit Mode layout export (Blizzard Share string)",
+        "-- Layout: " .. tostring(name),
+        "-- Captured: " .. (date and date("%Y-%m-%d %H:%M:%S") or "unknown"),
+        "",
+    }, "\n")
+
+    ShowDebugCopyWindow("Edit Mode Layout Export - " .. tostring(name), header .. exportString)
+
+    -- Persist to SavedVariables for agent ingestion (run export, then /reload or logout).
+    local db = addon.db
+    db.global = db.global or {}
+    db.global.presetCaptures = db.global.presetCaptures or {}
+    db.global.presetCaptures.editMode = {
+        layoutName = name,
+        capturedAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+        export = exportString,
+    }
+    if _G.C_Crypto and type(_G.C_Crypto.Hash) == "function" then
+        local okHash, hash = pcall(_G.C_Crypto.Hash, "SHA256", exportString)
+        if okHash and type(hash) == "string" and hash ~= "" then
+            db.global.presetCaptures.editMode.sha256 = string.lower(hash)
+        end
+    end
+end
+

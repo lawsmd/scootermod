@@ -189,6 +189,107 @@ do
     end
 end
 
+-- Target Misc.: Boss Icon visibility
+-- Frame path:
+--   Target: TargetFrame.TargetFrameContent.TargetFrameContentContextual.BossIcon
+do
+    local _bossIconHooked = false
+    local _originalBossIconAlpha = nil
+
+    local function getBossIconFrame()
+        local tf = _G.TargetFrame
+        if not tf then return nil end
+        local content = tf.TargetFrameContent
+        if not content then return nil end
+        local contextual = content.TargetFrameContentContextual
+        if not contextual then return nil end
+        return contextual.BossIcon
+    end
+
+    local function applyBossIconVisibility()
+        local bossIconFrame = getBossIconFrame()
+        if not bossIconFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        db.unitFrames = db.unitFrames or {}
+        db.unitFrames.Target = db.unitFrames.Target or {}
+        db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+        local cfg = db.unitFrames.Target.misc
+
+        local hideBossIcon = (cfg.hideBossIcon == true)
+
+        -- Capture original alpha on first run
+        if _originalBossIconAlpha == nil then
+            _originalBossIconAlpha = bossIconFrame:GetAlpha() or 1
+        end
+
+        if hideBossIcon then
+            -- Hide via SetAlpha(0) - safe for protected frames
+            if bossIconFrame.SetAlpha then
+                pcall(bossIconFrame.SetAlpha, bossIconFrame, 0)
+            end
+        else
+            -- Restore original alpha
+            if bossIconFrame.SetAlpha then
+                pcall(bossIconFrame.SetAlpha, bossIconFrame, _originalBossIconAlpha)
+            end
+        end
+    end
+
+    local function installBossIconHooks()
+        if _bossIconHooked then return end
+        _bossIconHooked = true
+
+        local bossIconFrame = getBossIconFrame()
+        if not bossIconFrame then return end
+
+        if bossIconFrame.Show then
+            hooksecurefunc(bossIconFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames.Target = db.unitFrames.Target or {}
+                db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+                local cfg = db.unitFrames.Target.misc
+                if cfg.hideBossIcon == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        if bossIconFrame.SetAlpha then
+            hooksecurefunc(bossIconFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                db.unitFrames = db.unitFrames or {}
+                db.unitFrames.Target = db.unitFrames.Target or {}
+                db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+                local cfg = db.unitFrames.Target.misc
+                if cfg.hideBossIcon == true and alpha and alpha > 0 then
+                    if not self._ScootBossIconAlphaDeferred then
+                        self._ScootBossIconAlphaDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScootBossIconAlphaDeferred = nil
+                            if cfg.hideBossIcon == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyTargetBossIconVisibility()
+        installBossIconHooks()
+        applyBossIconVisibility()
+    end
+end
+
 -- Player Misc.: Role Icon visibility
 -- Frame path: PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.RoleIcon
 do

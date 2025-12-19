@@ -490,6 +490,54 @@ local function build(ctx, init)
 						end
 						table.insert(init, row)
 					end
+
+					-- Hide Boss Icon checkbox (parent-level setting, no tabbed section)
+					do
+						local function ensureUFDB()
+							local db = addon and addon.db and addon.db.profile
+							if not db then return nil end
+							db.unitFrames = db.unitFrames or {}
+							db.unitFrames.Target = db.unitFrames.Target or {}
+							db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+							return db.unitFrames.Target.misc
+						end
+
+						local function applyNow()
+							if addon and addon.ApplyTargetBossIconVisibility then
+								addon.ApplyTargetBossIconVisibility()
+							end
+						end
+
+						local setting = CreateLocalSetting("Hide Boss Icon", "boolean",
+							function()
+								local t = ensureUFDB() or {}
+								return t.hideBossIcon == true
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								t.hideBossIcon = (v == true)
+								applyNow()
+							end,
+							false)
+						local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = "Hide Boss Icon", setting = setting, options = {} })
+						row.GetExtent = function() return 34 end
+						row:AddShownPredicate(function()
+							return panel:IsSectionExpanded(componentId, "Misc.")
+						end)
+						do
+							local base = row.InitFrame
+							row.InitFrame = function(self, frame)
+								if base then base(self, frame) end
+								if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+								if panel and panel.ApplyRobotoWhite then
+									if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+									local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+									if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+								end
+							end
+						end
+						table.insert(init, row)
+					end
 				end
 	
 				-- Sixth collapsible section: Buffs & Debuffs (Focus only)

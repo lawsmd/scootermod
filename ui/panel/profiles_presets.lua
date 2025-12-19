@@ -284,12 +284,35 @@ function panel:ApplyPresetFromUI(preset)
         addon:Print("Preset system not initialized.")
         return
     end
-    local success, result = addon.Presets:ApplyPreset(preset.id)
-    if success then
-        addon:Print(("Preset '%s' is being applied. Your UI will reload shortly."):format(preset.name or preset.id or "Preset"))
-    else
-        addon:Print(result or "Unable to apply preset.")
+
+    if not addon.Dialogs or not addon.Dialogs.Show then
+        addon:Print("Dialogs system not initialized.")
+        return
     end
+
+    local presetName = preset.name or preset.id or "Preset"
+    local defaultName = presetName
+
+    local function prompt(nameSuggestion)
+        addon.Dialogs:Show("SCOOTERMOD_APPLY_PRESET", {
+            formatArgs = { presetName },
+            editBoxText = nameSuggestion or defaultName,
+            data = { preset = preset },
+            onAccept = function(d, newName)
+                local ok, err = addon.Presets:ApplyPreset(d.preset.id, { targetName = newName })
+                if not ok then
+                    if err and addon.Print then addon:Print(err) end
+                    C_Timer.After(0, function()
+                        prompt(newName)
+                    end)
+                    return
+                end
+                addon:Print(("Preset '%s' is being applied. Your UI will reload shortly."):format(presetName))
+            end,
+        })
+    end
+
+    prompt(defaultName)
 end
 
 local function renderProfilesPresets()

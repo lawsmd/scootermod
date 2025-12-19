@@ -45,6 +45,7 @@ function Presets:Register(data)
     entry.lastUpdated = data.lastUpdated or date("%Y-%m-%d")
     entry.editModeExport = data.editModeExport
     entry.editModeSha256 = data.editModeSha256
+    entry.sourceLayoutName = data.sourceLayoutName
     entry.scooterProfile = data.scooterProfile
     entry.profileSha256 = data.profileSha256
     entry.consolePortProfile = data.consolePortProfile
@@ -87,7 +88,12 @@ end
 
 function Presets:IsPayloadReady(preset)
     if not preset then return false end
-    if not preset.editModeExport or not preset.scooterProfile then
+    if not preset.scooterProfile then
+        return false
+    end
+    local hasEditMode = (type(preset.editModeExport) == "string" and preset.editModeExport ~= "")
+        or (type(preset.sourceLayoutName) == "string" and preset.sourceLayoutName ~= "")
+    if not hasEditMode then
         return false
     end
     return true
@@ -127,7 +133,7 @@ Presets:Register({
     name = "ScooterUI",
     description = "Author's flagship desktop layout showcasing ScooterMod styling for raiding and Mythic+.",
     wowBuild = "11.2.5",
-    version = "PENDING",
+    version = "2025.12.19",
     screenClass = "desktop",
     recommendedInput = "Mouse + Keyboard",
     tags = { "Desktop", "Mythic+", "Raiding" },
@@ -135,7 +141,1088 @@ Presets:Register({
     previewThumbnail = "Interface\\AddOns\\ScooterMod\\Scooter",
     designedFor = { "Optimized for 4k 16:9 monitors", "Competitive PvE content, M+ and Raid" },
     recommends = { "Chattynator", "Platynator" },
-    comingSoon = true,
+    lastUpdated = "2025-12-19",
+
+    -- Edit Mode layout payload (Blizzard Share string)
+    editModeExport = [[2 43 0 0 0 4 4 UIParent 0.0 -575.0 -1 ##$%%/&#'%)$+$,$ 0 1 0 4 4 UIParent 150.0 -575.0 -1 ##$%%/&#'%(#,$ 0 2 0 4 4 UIParent 300.0 -575.0 -1 ##$%%/&#'%(#,$ 0 3 0 4 4 UIParent -150.0 -575.0 -1 ##$%%/&#'%(#,$ 0 4 0 4 4 UIParent -300.0 -575.0 -1 ##$%%/&#'%(#,$ 0 5 0 1 1 UIParent 328.0 -1102.0 -1 ##$%%/&#'%(#,$ 0 6 0 4 4 UIParent 0.0 150.0 -1 ##$$%/&('%(#,$ 0 7 0 4 4 UIParent 0.0 200.0 -1 ##$$%/&('%(#,$ 0 10 0 8 6 MultiBarLeft -4.0 0.0 -1 ##$$&$'% 0 11 0 2 8 PetFrame -5.0 4.0 -1 ##$$&#'%,$ 0 12 0 6 6 UIParent 286.5 265.5 -1 ##$$&('% 1 -1 0 4 4 UIParent -0.0 -292.8 -1 #%$#%# 2 -1 0 1 1 UIParent 882.7 -2.0 -1 ##$#%. 3 0 0 1 1 UIParent -413.3 -775.5 -1 $#32 3 1 0 1 1 UIParent 417.2 -775.5 -1 %$32 3 2 0 4 4 UIParent 223.6 198.2 -1 %$&$3- 3 3 0 0 0 UIParent 829.7 -913.4 -1 '$(#)$-9.;/#1$3# 3 4 0 0 0 UIParent 832.7 -917.1 -1 ,#-).)/#0#1#2( 3 5 0 2 2 UIParent -604.1 -465.0 -1 &#*$3# 3 6 1 5 5 UIParent 0.0 0.0 -1 -#.#/#4$ 3 7 0 1 7 PlayerFrame -35.8 29.5 -1 3( 4 -1 0 4 4 UIParent 0.0 517.5 -1 # 5 -1 0 7 7 UIParent -457.0 402.0 -1 # 6 0 0 2 0 MinimapCluster -4.0 0.0 -1 ##$#%#&.(()2 6 1 0 0 6 BuffFrame 0.0 -4.0 -1 ##$#%$'-(*)2 7 -1 0 1 7 FocusFrame 223.4 26.8 -1 # 8 -1 0 6 6 UIParent 35.0 50.0 -1 #'$A%$&j 9 -1 0 6 0 EncounterBar 0.0 4.0 -1 # 10 -1 1 0 0 UIParent 16.0 -116.0 -1 # 11 -1 0 7 7 UIParent 860.6 402.0 -1 # 12 -1 0 1 1 UIParent -904.7 -2.0 -1 ##$#%# 13 -1 0 3 3 UIParent 2.0 -113.7 -1 #$$#%#&2 14 -1 0 7 7 UIParent 520.5 1.5 -1 ##$#%# 15 0 0 1 1 UIParent -455.8 -2.0 -1 # 15 1 1 7 7 StatusTrackingBarManager 0.0 17.0 -1 # 16 -1 1 5 5 UIParent 0.0 0.0 -1 #( 17 -1 1 1 1 UIParent 0.0 -100.0 -1 ## 18 -1 1 5 5 UIParent 0.0 0.0 -1 #- 19 -1 1 7 7 UIParent 0.0 0.0 -1 ## 20 0 0 4 4 UIParent 0.0 -242.2 -1 ##$/%$&&')(U)#+$,$-$ 20 1 0 4 4 UIParent 0.0 -268.6 -1 ##$*%$&&')(U)#+$,$-$ 20 2 0 7 7 UIParent 165.5 402.0 -1 #$$$%#&&'+(U)#+$,$-$ 20 3 0 4 4 UIParent 0.0 -140.0 -1 #$$$%#&('%(U)#*%+$,$-$]],
+    editModeSha256 = "d8c5fcd341f51994d20411a59fd46e555747c9445512a36060dd327ef0ab908d",
+
+    -- ScooterMod profile snapshot (captured from authoring machine).
+    profileSha256 = "2e6b9a4d9aa9cb1f4de7c523451f181235b6f1cd77fe9a22af32c32ac43d74dc",
+    scooterProfile = {
+        ["groupFrames"] = {
+            ["raid"] = {
+                ["textPlayerName"] = {
+                    ["offset"] = {
+                        ["y"] = 0,
+                        ["x"] = 0,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_REG",
+                    ["style"] = "OUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["size"] = 8,
+                },
+                ["healthBarBackgroundTexture"] = "a3",
+                ["healthBarTexture"] = "a3",
+            },
+        },
+        ["rules"] = {
+            {
+                ["enabled"] = true,
+                ["action"] = {
+                    ["value"] = true,
+                },
+                ["displayIndex"] = 1,
+                ["trigger"] = {
+                    ["specIds"] = {
+                        63,
+                    },
+                    ["type"] = "specialization",
+                },
+                ["id"] = "rule-0001",
+            },
+            {
+                ["enabled"] = true,
+                ["action"] = {
+                    ["value"] = true,
+                    ["id"] = "ufTargetFocus.levelTextHidden",
+                },
+                ["displayIndex"] = 2,
+                ["trigger"] = {
+                    ["level"] = 80,
+                    ["type"] = "playerLevel",
+                },
+                ["id"] = "rule-0003",
+            },
+            {
+                ["enabled"] = true,
+                ["action"] = {
+                    ["value"] = true,
+                    ["id"] = "ufPlayerClassResource.hide",
+                },
+                ["displayIndex"] = 3,
+                ["trigger"] = {
+                    ["specIds"] = {
+                        262,
+                        263,
+                        264,
+                    },
+                    ["type"] = "specialization",
+                },
+                ["id"] = "rule-0004",
+            },
+        },
+        ["applyAll"] = {
+            ["fontPending"] = "default",
+            ["lastFontApplied"] = {
+                ["value"] = "ROBOTO_SEMICOND_BLACK",
+                ["changed"] = 102,
+                ["timestamp"] = 1764607972,
+            },
+        },
+        ["rulesState"] = {
+            ["nextId"] = 5,
+        },
+        ["ruleBaselines"] = {
+            ["ufTargetFocus.levelTextHidden"] = true,
+            ["ufPlayerClassResource.hide"] = false,
+            ["prdPower.hideBar"] = false,
+        },
+        ["unitFrames"] = {
+            ["Player"] = {
+                ["scaleMult"] = 1,
+                ["portrait"] = {
+                    ["hidePortrait"] = true,
+                    ["damageTextDisabled"] = true,
+                    ["damageText"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    },
+                },
+                ["healthBarBorderTintEnable"] = true,
+                ["castBar"] = {
+                    ["castBarBackgroundTexture"] = "a1",
+                    ["castTimeText"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    },
+                    ["castBarBorderThickness"] = 2,
+                    ["castBarBorderEnable"] = true,
+                    ["castBarColorMode"] = "class",
+                    ["widthPct"] = 100,
+                    ["castBarSparkHidden"] = true,
+                    ["hideTextBorder"] = true,
+                    ["hideChannelingShadow"] = true,
+                    ["castBarBackgroundOpacity"] = 70,
+                    ["spellNameText"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                        ["style"] = "SHADOWTHICKOUTLINE",
+                        ["size"] = 12,
+                    },
+                    ["castBarTexture"] = "a1",
+                },
+                ["textLevel"] = {
+                    ["offset"] = {
+                        ["y"] = 1,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["colorMode"] = "custom",
+                    ["size"] = 10,
+                },
+                ["classResource"] = {
+                    ["hide"] = true,
+                    ["offsetX"] = 0,
+                    ["classResourcePosX"] = 0,
+                    ["scale"] = 50,
+                    ["offsetY"] = 0,
+                    ["classResourceCustomPositionEnabled"] = true,
+                    ["classResourcePosY"] = -145,
+                },
+                ["useCustomBorders"] = true,
+                ["powerBarHidden"] = false,
+                ["powerBarBorderThickness"] = 1,
+                ["opacityOutOfCombat"] = 25,
+                ["healthBarBorderThickness"] = 1,
+                ["altPowerBar"] = {
+                    ["textPercent"] = {
+                        ["offset"] = {
+                            ["x"] = 0,
+                        },
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                        ["alignment"] = "CENTER",
+                        ["style"] = "SHADOWOUTLINE",
+                        ["size"] = 6,
+                    },
+                    ["borderThickness"] = 1,
+                    ["widthPct"] = 50,
+                    ["offsetX"] = 32,
+                    ["valueHidden"] = true,
+                    ["textValue"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                        ["style"] = "SHADOWOUTLINE",
+                        ["size"] = 6,
+                    },
+                    ["offsetY"] = 8,
+                    ["backgroundTexture"] = "a1",
+                    ["texture"] = "a1",
+                },
+                ["healthBarBackgroundTexture"] = "a2",
+                ["healthBarTexture"] = "a2",
+                ["powerBarHideSpark"] = true,
+                ["powerBarWidthPct"] = 80,
+                ["powerBarTexture"] = "a1",
+                ["powerBarCustomPositionEnabled"] = true,
+                ["textPowerValue"] = {
+                    ["alignment"] = "CENTER",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["size"] = 8,
+                },
+                ["healthBarHideBorder"] = false,
+                ["powerBarBackgroundTexture"] = "a1",
+                ["powerBarOffsetY"] = 0,
+                ["powerBarHeightPct"] = 100,
+                ["levelTextHidden"] = true,
+                ["powerBarHideFullSpikes"] = true,
+                ["textName"] = {
+                    ["offset"] = {
+                        ["y"] = 2,
+                        ["x"] = -2,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["colorMode"] = "class",
+                    ["size"] = 12,
+                },
+                ["healthBarColorMode"] = "default",
+                ["powerBarPosY"] = -65,
+                ["healthBarBorderTintColor"] = {
+                    0,
+                    0,
+                    0,
+                    1,
+                },
+                ["healthBarBorderStyle"] = "square",
+                ["textHealthValue"] = {
+                    ["offset"] = {
+                        ["x"] = 5,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "LEFT",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8116318583488464,
+                    },
+                    ["style"] = "SHADOWTHICKOUTLINE",
+                    ["size"] = 8,
+                },
+                ["healthBarHideOverAbsorbGlow"] = true,
+                ["textHealthPercent"] = {
+                    ["offset"] = {
+                        ["x"] = -3,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8203125,
+                    },
+                    ["alignment"] = "RIGHT",
+                    ["size"] = 8,
+                },
+                ["powerBarOffsetX"] = 10,
+                ["powerPercentHidden"] = true,
+                ["powerBarPosX"] = 0,
+                ["misc"] = {
+                    ["hideGroupNumber"] = true,
+                    ["hideRoleIcon"] = true,
+                },
+                ["textPowerPercent"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["Focus"] = {
+                ["scaleMult"] = 1.200000047683716,
+                ["portrait"] = {
+                    ["hidePortrait"] = true,
+                },
+                ["textPowerValue"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["castBar"] = {
+                    ["iconBorderThickness"] = 1,
+                    ["castBarBackgroundTexture"] = "a1",
+                    ["spellNameText"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                        ["style"] = "SHADOWOUTLINE",
+                        ["size"] = 6,
+                    },
+                    ["anchorMode"] = "healthBottom",
+                    ["castBarBorderEnable"] = true,
+                    ["castBarSparkHidden"] = true,
+                    ["iconBarPadding"] = 2,
+                    ["castBarBorderInset"] = 0,
+                    ["iconBorderEnable"] = true,
+                    ["iconDisabled"] = true,
+                    ["iconWidth"] = 21,
+                    ["castBarBorderThickness"] = 1,
+                    ["widthPct"] = 55,
+                    ["castTimeText"] = {
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    },
+                    ["offsetY"] = -5,
+                    ["iconHeight"] = 12,
+                    ["hideSpellNameBorder"] = true,
+                    ["castBarBackgroundOpacity"] = 60,
+                    ["castBarTexture"] = "a1",
+                    ["castBarScale"] = 125,
+                },
+                ["textLevel"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["colorMode"] = "custom",
+                    ["size"] = 10,
+                },
+                ["textHealthPercent"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8203125,
+                    },
+                    ["alignment"] = "LEFT",
+                    ["size"] = 8,
+                },
+                ["buffsDebuffs"] = {
+                    ["borderEnable"] = true,
+                    ["borderThickness"] = 2,
+                    ["iconScale"] = 50,
+                    ["iconHeight"] = 24,
+                    ["iconWidth"] = 32,
+                    ["hideBuffsDebuffs"] = true,
+                },
+                ["useCustomBorders"] = true,
+                ["textName"] = {
+                    ["offset"] = {
+                        ["y"] = 0,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "RIGHT",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["colorMode"] = "default",
+                    ["containerWidthPct"] = 100,
+                    ["size"] = 10,
+                },
+                ["misc"] = {
+                },
+                ["powerBarHidden"] = true,
+                ["healthBarBorderThickness"] = 1,
+                ["levelTextHidden"] = true,
+                ["healthBarBackgroundTexture"] = "a1",
+                ["textHealthValue"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "RIGHT",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8116318583488464,
+                    },
+                    ["style"] = "SHADOWTHICKOUTLINE",
+                    ["size"] = 8,
+                },
+                ["healthBarBorderStyle"] = "square",
+                ["healthBarTexture"] = "a1",
+                ["textPowerPercent"] = {
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["Target"] = {
+                ["scaleMult"] = 1,
+                ["portrait"] = {
+                    ["hidePortrait"] = true,
+                },
+                ["textPowerValue"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["castBar"] = {
+                    ["iconBorderThickness"] = 1,
+                    ["castBarBackgroundTexture"] = "a1",
+                    ["spellNameText"] = {
+                        ["offset"] = {
+                            ["y"] = 0,
+                        },
+                        ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                        ["style"] = "SHADOWOUTLINE",
+                        ["size"] = 8,
+                    },
+                    ["anchorMode"] = "healthBottom",
+                    ["castBarTexture"] = "a1",
+                    ["castBarSparkHidden"] = true,
+                    ["offsetX"] = 0,
+                    ["iconBarPadding"] = 2,
+                    ["castBarBorderInset"] = 1,
+                    ["iconBorderEnable"] = true,
+                    ["iconDisabled"] = true,
+                    ["iconWidth"] = 21,
+                    ["castBarBorderThickness"] = 1,
+                    ["widthPct"] = 70,
+                    ["castBarScale"] = 90,
+                    ["iconHeight"] = 12,
+                    ["castBarBackgroundOpacity"] = 60,
+                    ["hideSpellNameBorder"] = true,
+                    ["offsetY"] = -5,
+                    ["castBarBorderEnable"] = true,
+                },
+                ["textLevel"] = {
+                    ["offset"] = {
+                        ["y"] = 1,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["colorMode"] = "custom",
+                    ["size"] = 10,
+                },
+                ["textHealthPercent"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8203125,
+                    },
+                    ["alignment"] = "LEFT",
+                    ["size"] = 8,
+                },
+                ["buffsDebuffs"] = {
+                    ["borderEnable"] = true,
+                    ["borderThickness"] = 2,
+                    ["iconScale"] = 50,
+                    ["iconWidth"] = 32,
+                    ["iconHeight"] = 21.00000381469727,
+                    ["hideBuffsDebuffs"] = false,
+                },
+                ["healthBarReverseFill"] = true,
+                ["useCustomBorders"] = true,
+                ["textName"] = {
+                    ["offset"] = {
+                        ["y"] = 0,
+                        ["x"] = 3,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["alignment"] = "RIGHT",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["colorMode"] = "custom",
+                    ["containerWidthPct"] = 100,
+                    ["size"] = 10,
+                },
+                ["healthBarColorMode"] = "default",
+                ["misc"] = {
+                    ["hideThreatMeter"] = true,
+                },
+                ["powerBarHidden"] = true,
+                ["healthBarBorderThickness"] = 1,
+                ["textHealthValue"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "RIGHT",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8116318583488464,
+                    },
+                    ["style"] = "SHADOWTHICKOUTLINE",
+                    ["size"] = 8,
+                },
+                ["healthBarBackgroundTexture"] = "a2",
+                ["levelTextHidden"] = true,
+                ["healthBarBorderStyle"] = "square",
+                ["healthBarTexture"] = "a2",
+                ["textPowerPercent"] = {
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["Pet"] = {
+                ["healthValueHidden"] = true,
+                ["scaleMult"] = 1.200000047683716,
+                ["portrait"] = {
+                    ["hidePortrait"] = true,
+                    ["damageTextDisabled"] = true,
+                },
+                ["textPowerValue"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textLevel"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["levelTextHidden"] = true,
+                ["useCustomBorders"] = true,
+                ["powerBarHidden"] = true,
+                ["textHealthPercent"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8203125,
+                    },
+                    ["alignment"] = "RIGHT",
+                    ["size"] = 6,
+                },
+                ["opacityOutOfCombat"] = 25,
+                ["healthBarBorderThickness"] = 1,
+                ["textName"] = {
+                    ["offset"] = {
+                        ["y"] = 0,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["colorMode"] = "default",
+                    ["size"] = 8,
+                },
+                ["healthBarBackgroundTexture"] = "a1",
+                ["textHealthValue"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "LEFT",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        0.8116318583488464,
+                    },
+                    ["style"] = "SHADOWTHICKOUTLINE",
+                },
+                ["healthBarBorderStyle"] = "square",
+                ["healthBarTexture"] = "a1",
+                ["textPowerPercent"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["size"] = 8,
+                },
+            },
+            ["TargetOfTarget"] = {
+                ["powerBarHidden"] = true,
+                ["portrait"] = {
+                    ["hidePortrait"] = true,
+                },
+                ["scale"] = 0.6000000238418579,
+                ["textName"] = {
+                    ["style"] = "SHADOWOUTLINE",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["alignment"] = "CENTER",
+                    ["size"] = 10,
+                },
+                ["healthBarBorderThickness"] = 1,
+                ["offsetX"] = -35,
+                ["healthBarBackgroundTexture"] = "a2",
+                ["healthBarBorderStyle"] = "default",
+                ["offsetY"] = 50,
+                ["healthBarTexture"] = "a2",
+                ["useCustomBorders"] = true,
+            },
+        },
+        ["components"] = {
+            ["nameplatesUnit"] = {
+                ["_nameplatesColorMigrated"] = true,
+                ["textName"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "THICKOUTLINE",
+                    ["size"] = 8,
+                },
+                ["_nameplatesTextMigrated"] = true,
+            },
+            ["actionBar7"] = {
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["positionY"] = 150,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["actionBar1"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -575,
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["barOpacityOutOfCombat"] = 10,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["hideBarArt"] = true,
+                ["iconSize"] = 50,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["hideBarScrolling"] = true,
+                ["barOpacity"] = 10,
+                ["mouseoverMode"] = true,
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["actionBar4"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -575,
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["positionX"] = -150,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconSize"] = 50,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["barOpacity"] = 10,
+                ["mouseoverMode"] = true,
+                ["orientation"] = "H",
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["actionBar6"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -525,
+                ["mouseoverMode"] = true,
+                ["positionX"] = 328,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconSize"] = 50,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["borderEnable"] = true,
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["actionBar5"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -575,
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["positionX"] = -300,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconSize"] = 50,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["barOpacity"] = 10,
+                ["mouseoverMode"] = true,
+                ["orientation"] = "H",
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["trackedBars"] = {
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["positionY"] = -140,
+                ["iconBarPadding"] = 5,
+                ["borderEnable"] = true,
+                ["iconWidth"] = 32,
+                ["iconPadding"] = 2,
+                ["textDuration"] = {
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconHeight"] = 20,
+                ["styleBackgroundTexture"] = "a1",
+                ["textStacks"] = {
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["displayMode"] = "name",
+                ["iconBorderEnable"] = true,
+                ["textName"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["size"] = 12,
+                },
+                ["textCharges"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconBorderThickness"] = 2,
+                ["borderThickness"] = 2,
+                ["styleForegroundTexture"] = "a1",
+                ["hideWhenInactive"] = true,
+                ["barWidth"] = 170,
+            },
+            ["petBar"] = {
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["borderThickness"] = 3,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -398,
+                ["iconSize"] = 50,
+                ["mouseoverMode"] = true,
+                ["columns"] = 2,
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["positionX"] = -444,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["essentialCooldowns"] = {
+                ["borderThickness"] = 3,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["size"] = 24,
+                },
+                ["positionY"] = -242,
+                ["iconSize"] = 80,
+                ["borderEnable"] = true,
+                ["textName"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconWidth"] = 48,
+                ["iconPadding"] = 6,
+                ["textCharges"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["opacityOutOfCombat"] = 25,
+                ["iconHeight"] = 32,
+                ["textStacks"] = {
+                    ["offset"] = {
+                        ["y"] = 28,
+                        ["x"] = 12,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        0,
+                        0,
+                        1,
+                    },
+                    ["size"] = 20,
+                },
+                ["textDuration"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["tooltip"] = {
+                ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                ["textLine2"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textLine6"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textLine3"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textTitle"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "THICKOUTLINE",
+                    ["size"] = 20,
+                },
+                ["textEverythingElse"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textLine7"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textComparison"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["hideHealthBar"] = true,
+                ["textLine4"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textLine5"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["debuffs"] = {
+                ["direction"] = "right",
+                ["positionY"] = 363,
+                ["iconSize"] = 120,
+                ["textCount"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconWidth"] = 35,
+                ["iconPadding"] = 15,
+                ["textDuration"] = {
+                    ["color"] = {
+                        1,
+                        0.8235294818878174,
+                        0,
+                        1,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["offset"] = {
+                    },
+                },
+                ["positionX"] = 457,
+                ["iconHeight"] = 24,
+                ["textStacks"] = {
+                    ["offset"] = {
+                    },
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                },
+            },
+            ["actionBar2"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -575,
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["positionX"] = 150,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconSize"] = 50,
+                ["mouseoverMode"] = true,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["barOpacity"] = 10,
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["trackedBuffs"] = {
+                ["direction"] = "down",
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["size"] = 18,
+                },
+                ["positionY"] = -121,
+                ["iconSize"] = 80,
+                ["textStacks"] = {
+                    ["color"] = {
+                        1,
+                        0,
+                        0,
+                        1,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["offset"] = {
+                        ["x"] = -35,
+                    },
+                },
+                ["borderEnable"] = true,
+                ["textName"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconWidth"] = 48,
+                ["iconPadding"] = 8,
+                ["textCharges"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["opacityOutOfCombat"] = 50,
+                ["positionX"] = 165,
+                ["iconHeight"] = 32,
+                ["orientation"] = "V",
+                ["borderThickness"] = 3,
+                ["hideWhenInactive"] = true,
+                ["textDuration"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["buffs"] = {
+                ["borderThickness"] = 2,
+                ["positionY"] = 516,
+                ["textCount"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["borderEnable"] = true,
+                ["iconWidth"] = 36,
+                ["iconPadding"] = 15,
+                ["textDuration"] = {
+                    ["offset"] = {
+                        ["y"] = -2,
+                        ["x"] = 2,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "SHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        0.8235294818878174,
+                        0,
+                        1,
+                    },
+                    ["size"] = 12,
+                },
+                ["hideCollapseButton"] = true,
+                ["positionX"] = 442,
+                ["iconHeight"] = 24,
+                ["textStacks"] = {
+                    ["offset"] = {
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        1,
+                        1,
+                        1,
+                    },
+                    ["size"] = 14,
+                },
+            },
+            ["sctDamage"] = {
+                ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                ["fontScale"] = 60,
+            },
+            ["utilityCooldowns"] = {
+                ["textStacks"] = {
+                    ["offset"] = {
+                        ["y"] = 4,
+                        ["x"] = 10,
+                    },
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                    ["color"] = {
+                        1,
+                        0,
+                        0,
+                        1,
+                    },
+                    ["size"] = 14,
+                },
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["positionY"] = -269,
+                ["iconSize"] = 80,
+                ["borderThickness"] = 2,
+                ["borderEnable"] = true,
+                ["textName"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["columns"] = 7,
+                ["iconWidth"] = 36,
+                ["iconPadding"] = 6,
+                ["textCharges"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["opacityOutOfCombat"] = 25,
+                ["iconHeight"] = 24,
+                ["hideWhenInactive"] = true,
+                ["textDuration"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["microBar"] = {
+                ["mouseoverMode"] = true,
+                ["direction"] = "up",
+                ["barOpacity"] = 1,
+                ["positionY"] = -114,
+                ["positionX"] = -1037,
+                ["barOpacityWithTarget"] = 1,
+                ["orientation"] = "V",
+                ["menuSize"] = 70,
+                ["barOpacityOutOfCombat"] = 20,
+                ["eyeSize"] = 125,
+            },
+            ["stanceBar"] = {
+                ["mouseoverMode"] = true,
+                ["barOpacity"] = 20,
+                ["barOpacityWithTarget"] = 20,
+                ["positionX"] = -469,
+                ["iconSize"] = 60,
+                ["positionY"] = -589,
+                ["barOpacityOutOfCombat"] = 10,
+            },
+            ["actionBar8"] = {
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["positionY"] = 200,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+            },
+            ["actionBar3"] = {
+                ["borderThickness"] = 2,
+                ["textCooldown"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["positionY"] = -575,
+                ["borderEnable"] = true,
+                ["barOpacityWithTarget"] = 10,
+                ["positionX"] = 300,
+                ["textMacro"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["iconSize"] = 50,
+                ["mouseoverMode"] = true,
+                ["columns"] = 2,
+                ["textStacks"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                    ["style"] = "HEAVYSHADOWTHICKOUTLINE",
+                },
+                ["barOpacity"] = 10,
+                ["textHotkey"] = {
+                    ["fontFace"] = "ROBOTO_SEMICOND_BLACK",
+                },
+                ["barOpacityOutOfCombat"] = 10,
+            },
+        },
+        ["minimap"] = {
+            ["minimapPos"] = 162.4444425305019,
+        },
+    },
 })
 
 Presets:Register({

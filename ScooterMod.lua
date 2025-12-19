@@ -76,10 +76,57 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
     end
 
     -- /scoot debug <target>
+    -- /scoot debug profiles export ["Profile Name"]
     if cmd == "debug" then
+        local sub1 = string.lower(args[2] or "")
+        local sub2 = string.lower(args[3] or "")
+
+        if sub1 == "" then
+            addon:Print("Usage:")
+            addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|<FrameName>>")
+            addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
+            return
+        end
+
+        if sub1 == "profiles" then
+            if sub2 == "export" then
+                local name = args[4]
+                if addon.DebugExportProfile then
+                    addon.DebugExportProfile(name)
+                else
+                    addon:Print("Profile export not available (debug module missing).")
+                end
+                return
+            end
+            addon:Print("Usage: /scoot debug profiles export [\"Profile Name\"]")
+            return
+        end
+
+        -- /scoot debug editmode export ["Layout Name"]
+        if sub1 == "editmode" then
+            if sub2 == "export" then
+                local name = args[4]
+                if addon.DebugExportEditModeLayout then
+                    addon.DebugExportEditModeLayout(name)
+                else
+                    addon:Print("Edit Mode export helper not available (debug module missing).")
+                end
+                return
+            end
+            addon:Print("Usage: /scoot debug editmode export [\"Layout Name\"]")
+            return
+        end
+
         local target = args[2]
-        if not target or target == "" then addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|<FrameName>>") return end
-        if addon.DebugDump then addon.DebugDump(target) else addon:Print("Debug module not loaded.") end
+        if not target or target == "" then
+            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|<FrameName>>")
+            return
+        end
+        if addon.DebugDump then
+            addon.DebugDump(target)
+        else
+            addon:Print("Debug module not loaded.")
+        end
         return
     end
 

@@ -6,6 +6,10 @@ local BAR_MEDIA_PREFIX = "Interface\\AddOns\\ScooterMod\\media\\bar\\"
 
 -- Registry of bar textures bundled with ScooterMod. Keys are stable identifiers.
 local BAR_TEXTURES = {
+	-- Flat series (legacy "A1-A3", renamed for clarity)
+	a1                     = BAR_MEDIA_PREFIX .. "a1.tga",
+	a2                     = BAR_MEDIA_PREFIX .. "a2.tga",
+	a3                     = BAR_MEDIA_PREFIX .. "a3.tga",
 	bevelled               = BAR_MEDIA_PREFIX .. "bevelled.png",
 	bevelledGrey           = BAR_MEDIA_PREFIX .. "bevelled-grey.png",
 	fadeTop                = BAR_MEDIA_PREFIX .. "fade-top.png",
@@ -38,19 +42,13 @@ local BAR_TEXTURES = {
 	-- Blizzard labs textures
 	blizzardLabs1          = BAR_MEDIA_PREFIX .. "BlizzardLabs1.tga",
 	blizzardLabs2          = BAR_MEDIA_PREFIX .. "BlizzardLabs2.tga",
-	-- Numbered series
-	a1                     = BAR_MEDIA_PREFIX .. "a1.tga",
-	a2                     = BAR_MEDIA_PREFIX .. "a2.tga",
-	a3                     = BAR_MEDIA_PREFIX .. "a3.tga",
-	a4                     = BAR_MEDIA_PREFIX .. "a4.tga",
-	a5                     = BAR_MEDIA_PREFIX .. "a5.tga",
-	a8                     = BAR_MEDIA_PREFIX .. "a8.tga",
-	a9                     = BAR_MEDIA_PREFIX .. "a9.tga",
-	a12                    = BAR_MEDIA_PREFIX .. "a12.tga",
-	a13                    = BAR_MEDIA_PREFIX .. "a13.tga",
 }
 
 local BAR_DISPLAY_NAMES = {
+	-- Flat series (legacy "A1-A3", renamed for clarity)
+	a1 = "Flat 1",
+	a2 = "Flat 2",
+	a3 = "Flat 3",
 	bevelled = "Bevelled",
 	bevelledGrey = "Bevelled Grey",
 	fadeTop = "Fade Top",
@@ -83,19 +81,13 @@ local BAR_DISPLAY_NAMES = {
 	-- Blizzard labs textures
 	blizzardLabs1 = "Blizzard Labs 1",
 	blizzardLabs2 = "Blizzard Labs 2",
-	-- Numbered series
-	a1 = "A1",
-	a2 = "A2",
-	a3 = "A3",
-	a4 = "A4",
-	a5 = "A5",
-	a8 = "A8",
-	a9 = "A9",
-	a12 = "A12",
-	a13 = "A13",
 }
 
 local BAR_TEXTURE_ORDER = {
+	-- Keep the most commonly used "flat" textures immediately after "Default" in dropdowns
+	"a1",
+	"a2",
+	"a3",
 	"bevelled",
 	"bevelledGrey",
 	"fadeTop",
@@ -125,16 +117,6 @@ local BAR_TEXTURE_ORDER = {
 	"blizzardExperience3",
 	"blizzardLabs1",
 	"blizzardLabs2",
-	-- Numbered series
-	"a1",
-	"a2",
-	"a3",
-	"a4",
-	"a5",
-	"a8",
-	"a9",
-	"a12",
-	"a13",
 }
 
 -- Public: build a Settings container for dropdowns listing bar textures
@@ -177,6 +159,8 @@ end
 -- Build menu entries suitable for WowStyle dropdowns with inline preview in the menu items
 function addon.Media.GetBarTextureMenuEntries()
 	local entries = {}
+	-- Include Default in menus that bypass Settings' built-in "Default" option.
+	table.insert(entries, { text = "Default", key = "default" })
 	for _, key in ipairs(BAR_TEXTURE_ORDER) do
 		local path = BAR_TEXTURES[key]
 		if path then
