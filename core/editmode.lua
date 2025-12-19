@@ -1734,6 +1734,20 @@ local function verifyHash(expected, blob, label)
     return true
 end
 
+local function verifyLayoutHash(expected, layoutInfo, label)
+    if not expected or expected == "" then
+        return true
+    end
+    if not C_EditMode or type(C_EditMode.ConvertLayoutInfoToString) ~= "function" then
+        return false, string.format("%s hash could not be computed on this client (ConvertLayoutInfoToString unavailable).", label)
+    end
+    local ok, exportString = pcall(C_EditMode.ConvertLayoutInfoToString, layoutInfo)
+    if not ok or type(exportString) ~= "string" or exportString == "" then
+        return false, string.format("%s hash could not be computed on this client (export conversion failed).", label)
+    end
+    return verifyHash(expected, exportString, label)
+end
+
 local function buildPresetInstanceName(preset)
     local base = (preset and preset.name) or "Preset"
     base = base:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1833,22 +1847,20 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     if type(preset) ~= "table" then
         return false, "Preset metadata missing."
     end
-    local hasExport = type(preset.editModeExport) == "string" and preset.editModeExport ~= ""
+    local hasLayoutTable = type(preset.editModeLayout) == "table"
+    local hasLegacyExport = type(preset.editModeExport) == "string" and preset.editModeExport ~= ""
     local hasSourceLayoutName = type(preset.sourceLayoutName) == "string" and preset.sourceLayoutName ~= ""
-    if not hasExport and not hasSourceLayoutName then
-        return false, "Preset Edit Mode payload missing."
+    if hasLegacyExport and not hasLayoutTable then
+        return false, "Preset uses legacy Edit Mode export string format. Re-capture the preset with a raw layout table via /scoot debug editmode export and update core/presets.lua."
+    end
+    if not hasLayoutTable and not hasSourceLayoutName then
+        return false, "Preset Edit Mode payload missing (requires editModeLayout or sourceLayoutName)."
     end
     if InCombatLockdown and InCombatLockdown() then
         return false, "Cannot import presets during combat."
     end
-    if hasExport then
-        if not C_EditMode or type(C_EditMode.ImportLayout) ~= "function" then
-            return false, "C_EditMode.ImportLayout API unavailable."
-        end
-    else
-        if not C_EditMode or type(C_EditMode.GetLayouts) ~= "function" or type(C_EditMode.SaveLayouts) ~= "function" then
-            return false, "C_EditMode GetLayouts/SaveLayouts API unavailable."
-        end
+    if not C_EditMode or type(C_EditMode.GetLayouts) ~= "function" or type(C_EditMode.SaveLayouts) ~= "function" then
+        return false, "C_EditMode GetLayouts/SaveLayouts API unavailable."
     end
     if not LEO or not (LEO.IsReady and LEO:IsReady()) then
         return false, "Edit Mode library is not ready."
@@ -1856,11 +1868,9 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
 
     self.LoadLayouts()
 
-    if hasExport then
-        local okHash, hashErr = verifyHash(preset.editModeSha256, preset.editModeExport, "Edit Mode export")
-        if not okHash then
-            return false, hashErr
-        end
+    if hasLayoutTable then
+        local okHash, hashErr = verifyLayoutHash(preset.editModeSha256, preset.editModeLayout, "Edit Mode layout")
+        if not okHash then return false, hashErr end
     end
 
     -- Determine target layout/profile name (user-specified or auto-generated)
@@ -1890,7 +1900,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     if opts and opts.dryRun then
         -- Validate that the Edit Mode payload source is available without mutating
         -- layouts or AceDB state. Useful for authoring and CI-style checks.
-        if not hasExport and hasSourceLayoutName then
+        if not hasLayoutTable and hasSourceLayoutName then
             local li = C_EditMode.GetLayouts()
             local found = false
             if li and type(li.layouts) == "table" then
@@ -1907,20 +1917,21 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         end
         return true, newLayoutName
     end
-    if hasExport then
-        local okImport, result = pcall(C_EditMode.ImportLayout, preset.editModeExport, newLayoutName)
-        if not okImport then
-            return false, "Import failed: " .. tostring(result)
+    if hasLayoutTable then
+        local li = C_EditMode.GetLayouts()
+        if not (li and type(li.layouts) == "table") then
+            return false, "Unable to read layouts."
         end
-        if type(result) == "string" and result ~= "" then
-            newLayoutName = result
-        end
+        local newLayout = CopyTable(preset.editModeLayout)
+        newLayout.layoutName = newLayoutName
+        newLayout.layoutType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Character or newLayout.layoutType
+        newLayout.isPreset = nil
+        newLayout.isModified = nil
+        table.insert(li.layouts, newLayout)
+        C_EditMode.SaveLayouts(li)
     else
         -- Development / authoring fallback:
-        -- If the preset doesn't ship an export string yet, we can clone an existing
-        -- layout by name using C_EditMode.GetLayouts() + SaveLayouts(). This is
-        -- useful for initial ingestion testing on accounts where the author layout
-        -- already exists (e.g., same Blizzard account across machines).
+        -- Clone an existing layout by name using C_EditMode.GetLayouts() + SaveLayouts().
         local li = C_EditMode.GetLayouts()
         if not (li and type(li.layouts) == "table") then
             return false, "Unable to read layouts."

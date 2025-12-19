@@ -1164,10 +1164,35 @@ do
             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
             
             -- Apply background texture and color for Health Bar
-            local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
-            local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
-            local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
-            applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+            do
+                -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
+                -- Only apply our background overlay if the user actually customized background settings.
+                local function hasBackgroundCustomization()
+                    local texKey = cfg.healthBarBackgroundTexture
+                    if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
+                        return true
+                    end
+                    local mode = cfg.healthBarBackgroundColorMode
+                    if type(mode) == "string" and mode ~= "" and mode ~= "default" then
+                        return true
+                    end
+                    local op = cfg.healthBarBackgroundOpacity
+                    local opNum = tonumber(op)
+                    if op ~= nil and opNum ~= nil and opNum ~= 50 then
+                        return true
+                    end
+                    if mode == "custom" and type(cfg.healthBarBackgroundTint) == "table" then
+                        return true
+                    end
+                    return false
+                end
+                if hasBackgroundCustomization() then
+                    local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
+                    local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
+                    local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                end
+            end
 			-- When Target/Focus portraits are hidden, draw a rectangular overlay that fills the
 			-- right-side "chip" area using the same texture/tint as the health bar.
 			ensureRectHealthOverlay(unit, hb, cfg)
@@ -1498,10 +1523,35 @@ do
             applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
             
             -- Apply background texture and color for Power Bar
-            local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
-            local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
-            local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
-            applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+            do
+                -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
+                -- Only apply our background overlay if the user actually customized background settings.
+                local function hasBackgroundCustomization()
+                    local texKey = cfg.powerBarBackgroundTexture
+                    if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
+                        return true
+                    end
+                    local mode = cfg.powerBarBackgroundColorMode
+                    if type(mode) == "string" and mode ~= "" and mode ~= "default" then
+                        return true
+                    end
+                    local op = cfg.powerBarBackgroundOpacity
+                    local opNum = tonumber(op)
+                    if op ~= nil and opNum ~= nil and opNum ~= 50 then
+                        return true
+                    end
+                    if mode == "custom" and type(cfg.powerBarBackgroundTint) == "table" then
+                        return true
+                    end
+                    return false
+                end
+                if hasBackgroundCustomization() then
+                    local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
+                    local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
+                    local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
+                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+                end
+            end
             
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
 
@@ -1809,6 +1859,30 @@ do
 
                         local function applyAltTextStyle(fs, styleCfg, baselineKey)
                             if not fs or not styleCfg then return end
+                            -- Default/clean profiles should not modify Blizzard text.
+                            -- Only apply styling if the user has configured any text settings.
+                            local function hasTextCustomization(cfgT)
+                                if not cfgT then return false end
+                                -- Font face may be present as a structural default; treat the stock face as non-customization
+                                -- unless other settings are set.
+                                if cfgT.fontFace ~= nil and cfgT.fontFace ~= "" and cfgT.fontFace ~= "FRIZQT__" then
+                                    return true
+                                end
+                                if cfgT.size ~= nil or cfgT.style ~= nil or cfgT.color ~= nil or cfgT.alignment ~= nil then
+                                    return true
+                                end
+                                if cfgT.offset and (cfgT.offset.x ~= nil or cfgT.offset.y ~= nil) then
+                                    local ox = tonumber(cfgT.offset.x) or 0
+                                    local oy = tonumber(cfgT.offset.y) or 0
+                                    if ox ~= 0 or oy ~= 0 then
+                                        return true
+                                    end
+                                end
+                                return false
+                            end
+                            if not hasTextCustomization(styleCfg) then
+                                return
+                            end
                             local face = addon.ResolveFontFace
                                 and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
                                 or (select(1, _G.GameFontNormal:GetFont()))
@@ -1824,7 +1898,12 @@ do
                             end
 
                             -- Apply text alignment (requires explicit width on the FontString)
-                            local alignment = styleCfg.alignment or "LEFT"
+                            local defaultAlign = "LEFT"
+                            -- For the Value (right) text, default to RIGHT align unless explicitly overridden.
+                            if baselineKey and baselineKey:find("%-right") then
+                                defaultAlign = "RIGHT"
+                            end
+                            local alignment = styleCfg.alignment or defaultAlign
                             local parentBar = fs:GetParent()
                             if parentBar and parentBar.GetWidth then
                                 local barWidth = parentBar:GetWidth()
@@ -2404,9 +2483,6 @@ do
             if altTex and altTex.SetShown then
                 if cfg.useCustomBorders then
                     pcall(altTex.SetShown, altTex, false)
-                else
-                    -- Restore the Alternate Power frame art when custom borders are disabled.
-                    pcall(altTex.SetShown, altTex, true)
                 end
             end
         end
@@ -2417,9 +2493,6 @@ do
             if vehicleTex and vehicleTex.SetShown then
                 if cfg.useCustomBorders then
                     pcall(vehicleTex.SetShown, vehicleTex, false)
-                else
-                    -- Restore the Vehicle frame art when custom borders are disabled.
-                    pcall(vehicleTex.SetShown, vehicleTex, true)
                 end
             end
         end

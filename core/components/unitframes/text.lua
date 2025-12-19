@@ -310,8 +310,31 @@ do
             end
         end
 
+        -- Default/clean profiles should not modify Blizzard text.
+        -- Only treat settings as "customized" if they differ from structural defaults.
+        local function hasTextCustomization(styleCfg)
+            if not styleCfg then return false end
+            if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
+                return true
+            end
+            if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+                return true
+            end
+            if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
+                local ox = tonumber(styleCfg.offset.x) or 0
+                local oy = tonumber(styleCfg.offset.y) or 0
+                if ox ~= 0 or oy ~= 0 then
+                    return true
+                end
+            end
+            return false
+        end
+
         local function applyTextStyle(fs, styleCfg, baselineKey)
             if not fs or not styleCfg then return end
+            if not hasTextCustomization(styleCfg) then
+                return
+            end
             local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
             local size = tonumber(styleCfg.size) or 14
             local outline = tostring(styleCfg.style or "OUTLINE")
@@ -800,8 +823,31 @@ do
 			end
 		end
 
+		-- Default/clean profiles should not modify Blizzard text.
+		-- Only treat settings as "customized" if they differ from structural defaults.
+		local function hasTextCustomization(styleCfg)
+			if not styleCfg then return false end
+			if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
+				return true
+			end
+			if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+				return true
+			end
+			if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
+				local ox = tonumber(styleCfg.offset.x) or 0
+				local oy = tonumber(styleCfg.offset.y) or 0
+				if ox ~= 0 or oy ~= 0 then
+					return true
+				end
+			end
+			return false
+		end
+
 		local function applyTextStyle(fs, styleCfg, baselineKey)
 			if not fs or not styleCfg then return end
+			if not hasTextCustomization(styleCfg) then
+				return
+			end
 			local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 			local size = tonumber(styleCfg.size) or 14
 			local outline = tostring(styleCfg.style or "OUTLINE")
@@ -1251,6 +1297,35 @@ do
 
 	local function applyTextStyle(fs, styleCfg, baselineKey)
 		if not fs or not styleCfg then return end
+		-- Default/clean profiles should not modify Blizzard text.
+		-- Only treat settings as "customized" if they differ from structural defaults.
+		local function hasTextCustomization(cfgT)
+			if not cfgT then return false end
+			if cfgT.fontFace ~= nil and cfgT.fontFace ~= "" and cfgT.fontFace ~= "FRIZQT__" then
+				return true
+			end
+			if cfgT.size ~= nil or cfgT.style ~= nil then
+				return true
+			end
+			-- Name/Level uses colorMode; only treat as customized if not default.
+			if cfgT.colorMode ~= nil and cfgT.colorMode ~= "" and cfgT.colorMode ~= "default" then
+				return true
+			end
+			if cfgT.color ~= nil then
+				return true
+			end
+			if cfgT.offset and (cfgT.offset.x ~= nil or cfgT.offset.y ~= nil) then
+				local ox = tonumber(cfgT.offset.x) or 0
+				local oy = tonumber(cfgT.offset.y) or 0
+				if ox ~= 0 or oy ~= 0 then
+					return true
+				end
+			end
+			return false
+		end
+		if not hasTextCustomization(styleCfg) then
+			return
+		end
 		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")

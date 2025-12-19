@@ -91,7 +91,7 @@ function Presets:IsPayloadReady(preset)
     if not preset.scooterProfile then
         return false
     end
-    local hasEditMode = (type(preset.editModeExport) == "string" and preset.editModeExport ~= "")
+    local hasEditMode = (type(preset.editModeLayout) == "table")
         or (type(preset.sourceLayoutName) == "string" and preset.sourceLayoutName ~= "")
     if not hasEditMode then
         return false
@@ -143,9 +143,11 @@ Presets:Register({
     recommends = { "Chattynator", "Platynator" },
     lastUpdated = "2025-12-19",
 
-    -- Edit Mode layout payload (Blizzard Share string)
-    editModeExport = [[2 43 0 0 0 4 4 UIParent 0.0 -575.0 -1 ##$%%/&#'%)$+$,$ 0 1 0 4 4 UIParent 150.0 -575.0 -1 ##$%%/&#'%(#,$ 0 2 0 4 4 UIParent 300.0 -575.0 -1 ##$%%/&#'%(#,$ 0 3 0 4 4 UIParent -150.0 -575.0 -1 ##$%%/&#'%(#,$ 0 4 0 4 4 UIParent -300.0 -575.0 -1 ##$%%/&#'%(#,$ 0 5 0 1 1 UIParent 328.0 -1102.0 -1 ##$%%/&#'%(#,$ 0 6 0 4 4 UIParent 0.0 150.0 -1 ##$$%/&('%(#,$ 0 7 0 4 4 UIParent 0.0 200.0 -1 ##$$%/&('%(#,$ 0 10 0 8 6 MultiBarLeft -4.0 0.0 -1 ##$$&$'% 0 11 0 2 8 PetFrame -5.0 4.0 -1 ##$$&#'%,$ 0 12 0 6 6 UIParent 286.5 265.5 -1 ##$$&('% 1 -1 0 4 4 UIParent -0.0 -292.8 -1 #%$#%# 2 -1 0 1 1 UIParent 882.7 -2.0 -1 ##$#%. 3 0 0 1 1 UIParent -413.3 -775.5 -1 $#32 3 1 0 1 1 UIParent 417.2 -775.5 -1 %$32 3 2 0 4 4 UIParent 223.6 198.2 -1 %$&$3- 3 3 0 0 0 UIParent 829.7 -913.4 -1 '$(#)$-9.;/#1$3# 3 4 0 0 0 UIParent 832.7 -917.1 -1 ,#-).)/#0#1#2( 3 5 0 2 2 UIParent -604.1 -465.0 -1 &#*$3# 3 6 1 5 5 UIParent 0.0 0.0 -1 -#.#/#4$ 3 7 0 1 7 PlayerFrame -35.8 29.5 -1 3( 4 -1 0 4 4 UIParent 0.0 517.5 -1 # 5 -1 0 7 7 UIParent -457.0 402.0 -1 # 6 0 0 2 0 MinimapCluster -4.0 0.0 -1 ##$#%#&.(()2 6 1 0 0 6 BuffFrame 0.0 -4.0 -1 ##$#%$'-(*)2 7 -1 0 1 7 FocusFrame 223.4 26.8 -1 # 8 -1 0 6 6 UIParent 35.0 50.0 -1 #'$A%$&j 9 -1 0 6 0 EncounterBar 0.0 4.0 -1 # 10 -1 1 0 0 UIParent 16.0 -116.0 -1 # 11 -1 0 7 7 UIParent 860.6 402.0 -1 # 12 -1 0 1 1 UIParent -904.7 -2.0 -1 ##$#%# 13 -1 0 3 3 UIParent 2.0 -113.7 -1 #$$#%#&2 14 -1 0 7 7 UIParent 520.5 1.5 -1 ##$#%# 15 0 0 1 1 UIParent -455.8 -2.0 -1 # 15 1 1 7 7 StatusTrackingBarManager 0.0 17.0 -1 # 16 -1 1 5 5 UIParent 0.0 0.0 -1 #( 17 -1 1 1 1 UIParent 0.0 -100.0 -1 ## 18 -1 1 5 5 UIParent 0.0 0.0 -1 #- 19 -1 1 7 7 UIParent 0.0 0.0 -1 ## 20 0 0 4 4 UIParent 0.0 -242.2 -1 ##$/%$&&')(U)#+$,$-$ 20 1 0 4 4 UIParent 0.0 -268.6 -1 ##$*%$&&')(U)#+$,$-$ 20 2 0 7 7 UIParent 165.5 402.0 -1 #$$$%#&&'+(U)#+$,$-$ 20 3 0 4 4 UIParent 0.0 -140.0 -1 #$$$%#&('%(U)#*%+$,$-$]],
-    editModeSha256 = "d8c5fcd341f51994d20411a59fd46e555747c9445512a36060dd327ef0ab908d",
+    -- Edit Mode layout payload (raw layoutInfo table).
+    -- Capture/update via: /scoot debug editmode export "ScooterUI"
+    -- NOTE: We intentionally do NOT ship the Blizzard Share string because there is no import API.
+    editModeLayout = nil,
+    editModeSha256 = "",
 
     -- ScooterMod profile snapshot (captured from authoring machine).
     profileSha256 = "2e6b9a4d9aa9cb1f4de7c523451f181235b6f1cd77fe9a22af32c32ac43d74dc",

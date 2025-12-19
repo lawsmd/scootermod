@@ -102,9 +102,19 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             return
         end
 
-        -- /scoot debug editmode export ["Layout Name"]
+        -- /scoot debug editmode export ["Layout Name"]  (raw table)
+        -- /scoot debug editmode exportstring ["Layout Name"] (Blizzard Share string)
         if sub1 == "editmode" then
             if sub2 == "export" then
+                local name = args[4]
+                if addon.DebugExportEditModeLayoutTable then
+                    addon.DebugExportEditModeLayoutTable(name)
+                else
+                    addon:Print("Edit Mode export helper not available (debug module missing).")
+                end
+                return
+            end
+            if sub2 == "exportstring" then
                 local name = args[4]
                 if addon.DebugExportEditModeLayout then
                     addon.DebugExportEditModeLayout(name)
@@ -114,6 +124,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
                 return
             end
             addon:Print("Usage: /scoot debug editmode export [\"Layout Name\"]")
+            addon:Print("       /scoot debug editmode exportstring [\"Layout Name\"]")
             return
         end
 

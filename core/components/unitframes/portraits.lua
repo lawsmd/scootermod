@@ -787,8 +787,6 @@ do
 			end
 			if portraitHidden and portraitFrame.Hide then
 				portraitFrame:Hide()
-			elseif not portraitHidden and portraitFrame.Show then
-				portraitFrame:Show()
 			end
 
 			-- Mask frame: hidden if "Hide Portrait" is checked
@@ -800,8 +798,6 @@ do
 				end
 				if maskHidden and maskFrame.Hide then
 					maskFrame:Hide()
-				elseif not maskHidden and maskFrame.Show then
-					maskFrame:Show()
 				end
 			end
 
@@ -814,8 +810,6 @@ do
 				end
 				if iconHidden and cornerIconFrame.Hide then
 					cornerIconFrame:Hide()
-				elseif not iconHidden and cornerIconFrame.Show then
-					cornerIconFrame:Show()
 				end
 			end
 
@@ -828,8 +822,6 @@ do
 				end
 				if restHidden and restLoopFrame.Hide then
 					restLoopFrame:Hide()
-				elseif not restHidden and restLoopFrame.Show then
-					restLoopFrame:Show()
 				end
 			end
 
@@ -844,8 +836,6 @@ do
 				end
 				if statusHidden and statusTextureFrame.Hide then
 					statusTextureFrame:Hide()
-				elseif not statusHidden and statusTextureFrame.Show then
-					statusTextureFrame:Show()
 				end
 			end
 

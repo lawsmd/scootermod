@@ -263,6 +263,10 @@ local function renderProfilesManage()
                 if UIDropDownMenu_SetAnchor then UIDropDownMenu_SetAnchor(frame.ActiveDropdown, 0, 0, "TOPRIGHT", frame.ActiveDropdown, "BOTTOMRIGHT") end
                 if panel and panel.StyleDropdownLabel then panel.StyleDropdownLabel(frame.ActiveDropdown, 1.25) end
                 if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame.ActiveDropdown) end
+                -- Center the dropdown text
+                if frame.ActiveDropdown and frame.ActiveDropdown.Text then
+                    frame.ActiveDropdown.Text:SetJustifyH("CENTER")
+                end
                 local widgets = panel._profileWidgets or {}
                 panel._profileWidgets = widgets
                 widgets.ActiveLayoutRow = frame
@@ -430,6 +434,8 @@ local function renderProfilesManage()
                             addon.SettingsPanel.RefreshCurrentCategory()
                         end
                     end)
+                    -- Apply ScooterMod theming to the checkbox
+                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(cb) end
                     frame.SpecEnableCheck = cb
                 end
                 if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled then
@@ -506,6 +512,9 @@ local function renderProfilesManage()
                     dropdown.align = "LEFT"
                     dropdown:SetScale(DROPDOWN_SCALE)
                     frame.SpecDropdown = dropdown
+                    -- Apply ScooterMod theming to the dropdown
+                    if panel and panel.StyleDropdownLabel then panel.StyleDropdownLabel(dropdown, 1.25) end
+                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(dropdown) end
                 end
                 if frame.SpecIcon then
                     if spec.icon then

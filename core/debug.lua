@@ -467,3 +467,60 @@ function addon.DebugExportEditModeLayout(layoutName)
     end
 end
 
+function addon.DebugExportEditModeLayoutTable(layoutName)
+    if not addon or not addon.db then
+        ShowDebugCopyWindow("Edit Mode Layout Export (Table)", "AceDB not initialized.")
+        return
+    end
+    if not _G.C_EditMode or type(_G.C_EditMode.GetLayouts) ~= "function" then
+        ShowDebugCopyWindow("Edit Mode Layout Export (Table)", "C_EditMode.GetLayouts API unavailable.")
+        return
+    end
+
+    local layoutInfo, err = _FindLayoutInfoByName(layoutName)
+    if not layoutInfo then
+        ShowDebugCopyWindow("Edit Mode Layout Export (Table)", err or "Unable to resolve layout.")
+        return
+    end
+
+    local snapshot = CopyTable(layoutInfo)
+    local name = snapshot.layoutName or layoutName or "Active"
+
+    local shaLine = nil
+    if _G.C_EditMode and type(_G.C_EditMode.ConvertLayoutInfoToString) == "function" and _G.C_Crypto and type(_G.C_Crypto.Hash) == "function" then
+        local okExport, exportString = pcall(_G.C_EditMode.ConvertLayoutInfoToString, snapshot)
+        if okExport and type(exportString) == "string" and exportString ~= "" then
+            local okHash, hash = pcall(_G.C_Crypto.Hash, "SHA256", exportString)
+            if okHash and type(hash) == "string" and hash ~= "" then
+                shaLine = "-- SHA256: " .. string.lower(hash)
+            end
+        end
+    end
+
+    local headerParts = {
+        "-- Edit Mode layout export (raw layout table)",
+        "-- Layout: " .. tostring(name),
+        "-- Captured: " .. (date and date("%Y-%m-%d %H:%M:%S") or "unknown"),
+    }
+    if shaLine then table.insert(headerParts, shaLine) end
+    table.insert(headerParts, "")
+    local header = table.concat(headerParts, "\n")
+
+    local payload = _SerializeLuaValue(snapshot, 0, {}, 0)
+    ShowDebugCopyWindow("Edit Mode Layout Export (Table) - " .. tostring(name), header .. payload)
+
+    -- Persist to SavedVariables for agent ingestion (run export, then /reload or logout).
+    local db = addon.db
+    db.global = db.global or {}
+    db.global.presetCaptures = db.global.presetCaptures or {}
+    db.global.presetCaptures.editModeLayout = {
+        layoutName = name,
+        capturedAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+        payload = payload,
+    }
+
+    if shaLine then
+        db.global.presetCaptures.editModeLayout.sha256 = shaLine:gsub("^%-%- SHA256:%s*", "")
+    end
+end
+
