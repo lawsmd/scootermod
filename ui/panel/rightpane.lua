@@ -19,6 +19,60 @@ Goals:
 panel.RightPane = panel.RightPane or {}
 local RightPane = panel.RightPane
 
+-- Create (if needed) a fixed footer area anchored to the bottom of the right pane.
+-- The scroll area is clamped above this footer so scrolling content never overlaps it.
+local function EnsureFooter(self)
+    if not self or not self.frame then return nil end
+    if self.Footer then return self.Footer end
+
+    local footer = CreateFrame("Frame", nil, self.frame)
+    footer:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 0, 0)
+    footer:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -24, 0) -- align with scrollframe's right inset
+    footer:SetHeight(0)
+    footer:Hide()
+    self.Footer = footer
+
+    return footer
+end
+
+-- Create a Rules-style divider (green line segments + small diamond) inside the given parent.
+local function EnsureRulesStyleDivider(parent)
+    if not parent then return end
+    if parent.ScooterDivider then return parent.ScooterDivider end
+
+    local divider = CreateFrame("Frame", nil, parent)
+    divider:SetHeight(12)
+    divider:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    divider:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+
+    local colorR, colorG, colorB, colorA = 0.20, 0.90, 0.30, 0.30
+
+    local lineLeft = divider:CreateTexture(nil, "ARTWORK")
+    lineLeft:SetColorTexture(colorR, colorG, colorB, colorA)
+    lineLeft:SetHeight(1)
+    lineLeft:SetPoint("LEFT", divider, "LEFT", 16, 0)
+    lineLeft:SetPoint("RIGHT", divider, "CENTER", -10, 0)
+
+    local lineRight = divider:CreateTexture(nil, "ARTWORK")
+    lineRight:SetColorTexture(colorR, colorG, colorB, colorA)
+    lineRight:SetHeight(1)
+    lineRight:SetPoint("LEFT", divider, "CENTER", 10, 0)
+    lineRight:SetPoint("RIGHT", divider, "RIGHT", -16, 0)
+
+    local ornament = divider:CreateTexture(nil, "OVERLAY")
+    ornament:SetColorTexture(0.20, 0.90, 0.30, 0.55)
+    ornament:SetSize(6, 6)
+    ornament:SetPoint("CENTER", divider, "CENTER", 0, 0)
+    ornament:SetRotation(math.rad(45))
+
+    divider._lineLeft = lineLeft
+    divider._lineRight = lineRight
+    divider._ornament = ornament
+
+    parent.ScooterDivider = divider
+    return divider
+end
+
 -- Initialize the right pane inside the container created by
 -- ui/ScooterSettingsPanel.lua. Safe to call multiple times; subsequent
 -- calls are ignored once initialized.
@@ -120,6 +174,10 @@ function RightPane:Init(ownerFrame, container)
     end)
 
     self.rows = self.rows or {}
+
+    -- Fixed footer area (hidden by default). When shown, the scrollFrame's bottom
+    -- anchor is adjusted to sit above it so scrolled content never overlaps.
+    EnsureFooter(self)
 
     self.initialized = true
 end
@@ -241,6 +299,25 @@ function RightPane:Display(initializers)
     if not self.initialized or not self.frame or not self.Content then return end
     if type(initializers) ~= "table" then return end
 
+    -- Footer is opt-in per page. Default to hidden on each render so it cannot
+    -- "stick" when switching categories.
+    if self.Footer and self.Footer:IsShown() then
+        self:SetFooter({ height = 0 })
+    end
+
+    -- Determine the active category/component context so we can scope row reuse.
+    -- Some pages use simple element initializers without a `.data` payload; without
+    -- a component-scoped fallback reuse key those rows can be incorrectly recycled
+    -- across categories, causing "stuck" UI (e.g., Rules' Add Rule button or Apply All
+    -- disclaimer text appearing on Manage Profiles).
+    local activeComponentId
+    do
+        local owner = self.owner
+        local currentKey = owner and owner.CurrentCategory
+        local entry = (currentKey and owner and owner.CatRenderers) and owner.CatRenderers[currentKey] or nil
+        activeComponentId = (entry and entry.componentId) or currentKey or "unknown"
+    end
+
     local content = self.Content
     local y = -8
     -- Base vertical gap between consecutive rows (non-tabbed sections).
@@ -283,6 +360,7 @@ function RightPane:Display(initializers)
                     template = "SettingsListElementTemplate"
                 end
                 local reuseKey
+                local slotIndex = index
                 do
                     local data = init.data
                     if type(data) == "table" then
@@ -302,8 +380,14 @@ function RightPane:Display(initializers)
                         end
                     end
                 end
-                local row = AcquireRow(self, index, template, reuseKey)
-                index = index + 1
+                -- Fallback: if the initializer doesn't carry identity data, still
+                -- scope reuse to the active component/category so rows cannot leak
+                -- across pages when switching tabs.
+                if not reuseKey then
+                    reuseKey = string.format("%s::row::%d::tpl::%s", tostring(activeComponentId), tonumber(slotIndex) or 0, tostring(template))
+                end
+                local row = AcquireRow(self, slotIndex, template, reuseKey)
+                index = slotIndex + 1
 
                 -- Force-hide the row so that Show() at the end of the loop triggers OnShow scripts.
                 -- This ensures that recycled frames (e.g. sliders) fully refresh their state/layout.
@@ -406,6 +490,207 @@ function RightPane:Display(initializers)
     if self.ScrollFrame and self.ScrollFrame.UpdateScrollChildRect then
         self.ScrollFrame:UpdateScrollChildRect()
     end
+end
+
+-- Show a fixed footer message at the bottom of the right pane.
+-- The footer is non-scrolling and reserves space by clamping the scroll area above it.
+-- opts:
+--   - height (number): footer height in px (required)
+--   - onInit(footerFrame): callback to (re)build footer widgets
+function RightPane:SetFooter(opts)
+    if not self or not self.initialized or not self.frame or not self.ScrollFrame then return end
+    opts = opts or {}
+    local footer = EnsureFooter(self)
+    if not footer then return end
+
+    local height = tonumber(opts.height) or 0
+    if height <= 0 then
+        -- Disable footer
+        footer:Hide()
+        footer:SetHeight(0)
+        self.ScrollFrame:ClearAllPoints()
+        if self.Header then
+            self.ScrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", 0, -4)
+        else
+            self.ScrollFrame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -4)
+        end
+        self.ScrollFrame:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -24, 0)
+        if self.ScrollFrame.UpdateScrollChildRect then self.ScrollFrame:UpdateScrollChildRect() end
+        return
+    end
+
+    footer:SetHeight(height)
+    footer:Show()
+
+    -- Clamp scroll area above footer
+    self.ScrollFrame:ClearAllPoints()
+    if self.Header then
+        self.ScrollFrame:SetPoint("TOPLEFT", self.Header, "BOTTOMLEFT", 0, -4)
+    else
+        self.ScrollFrame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -4)
+    end
+    self.ScrollFrame:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, 0)
+
+    if type(opts.onInit) == "function" then
+        pcall(opts.onInit, footer)
+    end
+
+    if self.ScrollFrame.UpdateScrollChildRect then self.ScrollFrame:UpdateScrollChildRect() end
+end
+
+-- Convenience helper: show/hide a centered bottom notice with a Rules-style divider.
+-- This is used by the Profiles → Manage page to display a reload requirement.
+function RightPane:SetBottomNotice(opts)
+    if not self then return end
+    opts = opts or {}
+    local messageTop = tostring(opts.messageTop or "")
+    local messageSuffix = tostring(opts.messageSuffix or "")
+    local emphasisWord = tostring(opts.emphasisWord or "")
+    local messageBottom = tostring(opts.messageBottom or "")
+    local color = opts.color or { 1.0, 0.82, 0.0, 1.0 }
+    local height = tonumber(opts.height) or 120
+
+    -- Empty => hide
+    if (messageTop == "" and emphasisWord == "" and messageBottom == "") then
+        self:SetFooter({ height = 0 })
+        return
+    end
+
+    self:SetFooter({
+        height = height,
+        onInit = function(footer)
+            -- Divider
+            local divider = EnsureRulesStyleDivider(footer)
+            divider:ClearAllPoints()
+            divider:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, -2)
+            divider:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, -2)
+
+            -- Container for text, centered in the footer area
+            if not footer.ScooterNoticeContainer then
+                local c = CreateFrame("Frame", nil, footer)
+                footer.ScooterNoticeContainer = c
+            end
+            local c = footer.ScooterNoticeContainer
+            c:ClearAllPoints()
+            c:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -6)
+            c:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, 6)
+
+            local function applyFont(fs, size, flags, forceBold)
+                if not fs then return end
+                if panel and panel.ApplyRobotoWhite then
+                    panel.ApplyRobotoWhite(fs, size, flags)
+                end
+                if forceBold then
+                    local fonts = addon and addon.Fonts or nil
+                    if fonts and fonts.ROBOTO_BLD then
+                        fs:SetFont(fonts.ROBOTO_BLD, size or 16, flags or "")
+                    end
+                end
+                if fs.SetTextColor then
+                    fs:SetTextColor(color[1], color[2], color[3], color[4])
+                end
+            end
+
+            -- === LINE 1: prefix + bold-underlined word + suffix (inline) ===
+            if not footer.ScooterNoticeLine1 then
+                footer.ScooterNoticeLine1 = CreateFrame("Frame", nil, c)
+            end
+            local line1 = footer.ScooterNoticeLine1
+            line1:ClearAllPoints()
+            line1:SetPoint("TOP", c, "TOP", 0, 0)
+            line1:SetHeight(22)
+
+            if not footer.ScooterNoticePrefix then
+                footer.ScooterNoticePrefix = line1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                footer.ScooterNoticePrefix:SetJustifyH("LEFT")
+                footer.ScooterNoticePrefix:SetJustifyV("TOP")
+                footer.ScooterNoticePrefix:SetWordWrap(false)
+            end
+            if not footer.ScooterNoticeWord then
+                footer.ScooterNoticeWord = line1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                footer.ScooterNoticeWord:SetJustifyH("LEFT")
+                footer.ScooterNoticeWord:SetJustifyV("TOP")
+                footer.ScooterNoticeWord:SetWordWrap(false)
+            end
+            if not footer.ScooterNoticeSuffix then
+                footer.ScooterNoticeSuffix = line1:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                footer.ScooterNoticeSuffix:SetJustifyH("LEFT")
+                footer.ScooterNoticeSuffix:SetJustifyV("TOP")
+                footer.ScooterNoticeSuffix:SetWordWrap(false)
+            end
+
+            local topSize = opts.topSize or 16
+            local wordSize = opts.wordSize or topSize
+            local prefixFS = footer.ScooterNoticePrefix
+            local wordFS = footer.ScooterNoticeWord
+            local suffixFS = footer.ScooterNoticeSuffix
+
+            applyFont(prefixFS, topSize, "", false)
+            applyFont(wordFS, wordSize, "OUTLINE", true)
+            applyFont(suffixFS, topSize, "", false)
+
+            prefixFS:SetText(messageTop)
+            wordFS:SetText(emphasisWord)
+            suffixFS:SetText(messageSuffix)
+
+            prefixFS:ClearAllPoints()
+            wordFS:ClearAllPoints()
+            suffixFS:ClearAllPoints()
+
+            prefixFS:SetPoint("LEFT", line1, "LEFT", 0, 0)
+            wordFS:SetPoint("LEFT", prefixFS, "RIGHT", 0, 0)
+            suffixFS:SetPoint("LEFT", wordFS, "RIGHT", 0, 0)
+
+            local showLine1 = (messageTop ~= "" or emphasisWord ~= "" or messageSuffix ~= "")
+            line1:SetShown(showLine1)
+            prefixFS:SetShown(messageTop ~= "")
+            wordFS:SetShown(emphasisWord ~= "")
+            suffixFS:SetShown(messageSuffix ~= "")
+
+            -- Center the whole line by sizing the container to the sum of the three widths.
+            C_Timer.After(0, function()
+                if not line1 or not line1:IsShown() then return end
+                local w1 = (prefixFS.GetStringWidth and prefixFS:GetStringWidth()) or 0
+                local w2 = (wordFS.GetStringWidth and wordFS:GetStringWidth()) or 0
+                local w3 = (suffixFS.GetStringWidth and suffixFS:GetStringWidth()) or 0
+                local total = math.max(1, w1 + w2 + w3)
+                line1:SetWidth(total)
+            end)
+
+            -- Underline for the emphasis word (FontStrings don't support underline flags)
+            if not footer.ScooterNoticeUnderline then
+                local ul = line1:CreateTexture(nil, "OVERLAY")
+                ul:SetColorTexture(color[1], color[2], color[3], math.min(1, (color[4] or 1) * 0.95))
+                ul:SetHeight(2)
+                footer.ScooterNoticeUnderline = ul
+            end
+            local ul = footer.ScooterNoticeUnderline
+            ul:ClearAllPoints()
+            ul:SetPoint("TOP", wordFS, "BOTTOM", 0, -1)
+            ul:SetShown(emphasisWord ~= "")
+            C_Timer.After(0, function()
+                if not ul or not wordFS or not wordFS:IsShown() then return end
+                local w = (wordFS.GetStringWidth and wordFS:GetStringWidth()) or 0
+                ul:SetWidth(math.max(24, w + 6))
+            end)
+
+            -- === PARAGRAPH: wrapped message below ===
+            if not footer.ScooterNoticeBottom then
+                footer.ScooterNoticeBottom = c:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                footer.ScooterNoticeBottom:SetJustifyH("CENTER")
+                footer.ScooterNoticeBottom:SetJustifyV("TOP")
+                footer.ScooterNoticeBottom:SetWordWrap(true)
+            end
+            local bottomFS = footer.ScooterNoticeBottom
+            applyFont(bottomFS, opts.bottomSize or 16, "", false)
+            bottomFS:ClearAllPoints()
+            bottomFS:SetPoint("TOP", line1, "BOTTOM", 0, -10)
+            bottomFS:SetPoint("LEFT", c, "LEFT", 16, 0)
+            bottomFS:SetPoint("RIGHT", c, "RIGHT", -16, 0)
+            bottomFS:SetText(messageBottom)
+            bottomFS:SetShown(messageBottom ~= "")
+        end,
+    })
 end
 
 

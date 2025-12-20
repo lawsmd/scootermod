@@ -162,9 +162,12 @@ do
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames[unit] = db.unitFrames[unit] or {}
-        local cfg = db.unitFrames[unit]
+        -- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not cfg then
+            return
+        end
         local frame = getUnitFrameFor(unit)
         if not frame then return end
         
@@ -218,8 +221,13 @@ do
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 AND font styling when Blizzard updates.
-        local function applyHealthTextVisibility(fs, hidden, unitForHook)
+        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        local function applyHealthTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
+            if hiddenSetting == nil then
+                return
+            end
+            local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
@@ -263,8 +271,8 @@ do
         end
 
         -- Apply current visibility once as part of the styling pass.
-        applyHealthTextVisibility(leftFS, cfg.healthPercentHidden == true, unit)
-        applyHealthTextVisibility(rightFS, cfg.healthValueHidden == true, unit)
+        applyHealthTextVisibility(leftFS, cfg.healthPercentHidden, unit)
+        applyHealthTextVisibility(rightFS, cfg.healthValueHidden, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
         if textStringFS and not textStringFS._ScooterHealthTextCenterSetTextHooked then
@@ -386,7 +394,7 @@ do
         if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right") end
         -- Style center TextString using Value settings (used in NUMERIC display mode)
         -- If Value text is hidden, also hide center text (since it displays value-oriented data)
-        if textStringFS then
+        if textStringFS and cfg.healthValueHidden ~= nil then
             local valueHidden = (cfg.healthValueHidden == true)
             if valueHidden then
                 if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
@@ -406,9 +414,11 @@ do
     function addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames[unit] = db.unitFrames[unit] or {}
-        local cfg = db.unitFrames[unit]
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not cfg then
+            return
+        end
 
         local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unit]
         if not cache then
@@ -422,8 +432,13 @@ do
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        local function applyVisibility(fs, hidden)
+        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
+            if hiddenSetting == nil then
+                return
+            end
+            local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
@@ -466,8 +481,8 @@ do
             end
         end
 
-        applyVisibility(leftFS, cfg.healthPercentHidden == true)
-        applyVisibility(rightFS, cfg.healthValueHidden == true)
+        applyVisibility(leftFS, cfg.healthPercentHidden)
+        applyVisibility(rightFS, cfg.healthValueHidden)
     end
 
 	function addon.ApplyAllUnitFrameHealthTextVisibility()
@@ -670,9 +685,12 @@ do
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames[unit] = db.unitFrames[unit] or {}
-		local cfg = db.unitFrames[unit]
+		-- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
+		local unitFrames = rawget(db, "unitFrames")
+		local cfg = unitFrames and rawget(unitFrames, unit) or nil
+		if not cfg then
+			return
+		end
 		local frame = getUnitFrameFor(unit)
 		if not frame then return end
 
@@ -729,8 +747,13 @@ do
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
-        local function applyPowerTextVisibility(fs, hidden, unitForHook)
+        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        local function applyPowerTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
+            if hiddenSetting == nil then
+                return
+            end
+            local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
@@ -775,9 +798,18 @@ do
 
 		-- Visibility: tolerate missing LeftText on some classes/specs (no-op)
 		-- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
-		local powerBarHidden = (cfg.powerBarHidden == true)
-		applyPowerTextVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true), unit)
-		applyPowerTextVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true), unit)
+		local powerBarHiddenSetting = cfg.powerBarHidden -- tri-state
+		local leftHiddenSetting
+		local rightHiddenSetting
+		if powerBarHiddenSetting == true then
+			leftHiddenSetting = true
+			rightHiddenSetting = true
+		else
+			leftHiddenSetting = cfg.powerPercentHidden
+			rightHiddenSetting = cfg.powerValueHidden
+		end
+		applyPowerTextVisibility(leftFS, leftHiddenSetting, unit)
+		applyPowerTextVisibility(rightFS, rightHiddenSetting, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
         if textStringFS and not textStringFS._ScooterPowerTextCenterSetTextHooked then
@@ -899,16 +931,25 @@ do
         -- Style center TextString using Value settings (used in NUMERIC display mode)
         -- If Value text is hidden (or entire bar is hidden), also hide center text
         if textStringFS then
-            local valueHidden = powerBarHidden or (cfg.powerValueHidden == true)
-            if valueHidden then
-                if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
-                textStringFS._ScooterPowerTextCenterHidden = true
-            else
-                if textStringFS._ScooterPowerTextCenterHidden then
-                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
-                    textStringFS._ScooterPowerTextCenterHidden = nil
+            local centerHiddenSetting = nil
+            if powerBarHiddenSetting == true then
+                centerHiddenSetting = true
+            elseif cfg.powerValueHidden ~= nil then
+                centerHiddenSetting = cfg.powerValueHidden
+            end
+
+            if centerHiddenSetting ~= nil then
+                local valueHidden = (centerHiddenSetting == true)
+                if valueHidden then
+                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
+                    textStringFS._ScooterPowerTextCenterHidden = true
+                else
+                    if textStringFS._ScooterPowerTextCenterHidden then
+                        if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
+                        textStringFS._ScooterPowerTextCenterHidden = nil
+                    end
+                    applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
                 end
-                applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
             end
         end
 	end
@@ -918,9 +959,11 @@ do
 	function addon.ApplyUnitFramePowerTextVisibilityFor(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames[unit] = db.unitFrames[unit] or {}
-        local cfg = db.unitFrames[unit]
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not cfg then
+            return
+        end
 
         local cache = addon._ufPowerTextFonts and addon._ufPowerTextFonts[unit]
         if not cache then
@@ -934,8 +977,13 @@ do
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        local function applyVisibility(fs, hidden)
+        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
+            if hiddenSetting == nil then
+                return
+            end
+            local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
@@ -980,9 +1028,18 @@ do
 
         -- Visibility: tolerate missing LeftText on some classes/specs (no-op)
         -- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
-		local powerBarHidden = (cfg.powerBarHidden == true)
-        applyVisibility(leftFS, powerBarHidden or (cfg.powerPercentHidden == true))
-        applyVisibility(rightFS, powerBarHidden or (cfg.powerValueHidden == true))
+		local powerBarHiddenSetting = cfg.powerBarHidden -- tri-state
+		local leftHiddenSetting
+		local rightHiddenSetting
+		if powerBarHiddenSetting == true then
+			leftHiddenSetting = true
+			rightHiddenSetting = true
+		else
+			leftHiddenSetting = cfg.powerPercentHidden
+			rightHiddenSetting = cfg.powerValueHidden
+		end
+        applyVisibility(leftFS, leftHiddenSetting)
+        applyVisibility(rightFS, rightHiddenSetting)
 	end
 
 	function addon.ApplyAllUnitFramePowerTextVisibility()
@@ -1117,9 +1174,56 @@ do
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames[unit] = db.unitFrames[unit] or {}
-		local cfg = db.unitFrames[unit]
+		-- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
+		local unitFrames = rawget(db, "unitFrames")
+		local cfg = unitFrames and rawget(unitFrames, unit) or nil
+		if not cfg then
+			return
+		end
+
+		-- Zero‑Touch: only touch Name/Level/Backdrop when at least one relevant setting is explicitly set.
+		local function hasAnyOffset(tbl)
+			local off = tbl and tbl.offset
+			return off and (off.x ~= nil or off.y ~= nil) or false
+		end
+		local textNameCfg = rawget(cfg, "textName")
+		local textLevelCfg = rawget(cfg, "textLevel")
+		local hasNameTextSettings = textNameCfg and (
+			textNameCfg.fontFace ~= nil
+			or textNameCfg.size ~= nil
+			or textNameCfg.style ~= nil
+			or textNameCfg.colorMode ~= nil
+			or textNameCfg.color ~= nil
+			or textNameCfg.alignment ~= nil
+			or textNameCfg.containerWidthPct ~= nil
+			or hasAnyOffset(textNameCfg)
+		) or false
+		local hasLevelTextSettings = textLevelCfg and (
+			textLevelCfg.fontFace ~= nil
+			or textLevelCfg.size ~= nil
+			or textLevelCfg.style ~= nil
+			or textLevelCfg.colorMode ~= nil
+			or textLevelCfg.color ~= nil
+			or hasAnyOffset(textLevelCfg)
+		) or false
+		local hasVisibilitySettings = (cfg.nameTextHidden ~= nil) or (cfg.levelTextHidden ~= nil)
+		local hasBackdropSettings = (
+			cfg.nameBackdropEnabled ~= nil
+			or cfg.nameBackdropTexture ~= nil
+			or cfg.nameBackdropColorMode ~= nil
+			or cfg.nameBackdropTint ~= nil
+			or cfg.nameBackdropOpacity ~= nil
+			or cfg.nameBackdropWidthPct ~= nil
+			or cfg.nameBackdropBorderEnabled ~= nil
+			or cfg.nameBackdropBorderStyle ~= nil
+			or cfg.nameBackdropBorderThickness ~= nil
+			or cfg.nameBackdropBorderInset ~= nil
+			or cfg.nameBackdropBorderTintEnable ~= nil
+			or cfg.nameBackdropBorderTintColor ~= nil
+		)
+		if not (hasVisibilitySettings or hasNameTextSettings or hasLevelTextSettings or hasBackdropSettings) then
+			return
+		end
 		local frame = getUnitFrameFor(unit)
 		if not frame then return end
 
@@ -1155,10 +1259,14 @@ do
 		if not nameFS then nameFS = findFontStringByNameHint(frame, "Name") end
 		if not levelFS then levelFS = findFontStringByNameHint(frame, "LevelText") end
 
-		-- Apply visibility using SetShown (Name/Level text are NOT StatusBar children,
-		-- so they don't have the taint issue that Health/Power bar text has)
-		if nameFS and nameFS.SetShown then pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden) end
-		if levelFS and levelFS.SetShown then pcall(levelFS.SetShown, levelFS, not cfg.levelTextHidden) end
+		-- Apply visibility only when explicitly configured.
+		-- Name/Level text are NOT StatusBar children, so SetShown is safe here.
+		if nameFS and nameFS.SetShown and cfg.nameTextHidden ~= nil then
+			pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden)
+		end
+		if levelFS and levelFS.SetShown and cfg.levelTextHidden ~= nil then
+			pcall(levelFS.SetShown, levelFS, not cfg.levelTextHidden)
+		end
 
 		-- Apply styling
 		addon._ufNameLevelTextBaselines = addon._ufNameLevelTextBaselines or {}
@@ -1191,8 +1299,15 @@ do
 			-- Only Target/Focus currently support this control; Player/Pet keep stock behavior.
 			if unitKey ~= "Target" and unitKey ~= "Focus" then return end
 
-			local unitCfg = db.unitFrames[unitKey] or {}
-			local styleCfg = unitCfg.textName or {}
+			local unitCfg = unitFrames and rawget(unitFrames, unitKey) or nil
+			local styleCfg = unitCfg and rawget(unitCfg, "textName") or nil
+			if not styleCfg then
+				return
+			end
+			-- Zero‑Touch: only touch width/anchors if the user explicitly configured this slider.
+			if styleCfg.containerWidthPct == nil then
+				return
+			end
 			local pct = tonumber(styleCfg.containerWidthPct) or 100
 
 			-- Clamp slider semantics to [80,150] (matches UI slider).
@@ -1410,7 +1525,22 @@ do
 		do
 			local main = resolveUFContentMain_NLT(unit)
 			local hb = resolveHealthBar_NLT(unit)
-			local cfg = db.unitFrames[unit] or {}
+			local holderKey = "ScooterNameBackdrop_" .. tostring(unit)
+			local existingTex = main and main[holderKey] or nil
+
+			-- Zero‑Touch: only create/manage the backdrop texture when this feature has been configured.
+			local configured = (
+				cfg.nameBackdropEnabled ~= nil
+				or cfg.nameBackdropTexture ~= nil
+				or cfg.nameBackdropColorMode ~= nil
+				or cfg.nameBackdropTint ~= nil
+				or cfg.nameBackdropOpacity ~= nil
+				or cfg.nameBackdropWidthPct ~= nil
+			)
+			if not configured then
+				-- If the texture exists from earlier in this session/profile, hide it.
+				if existingTex then existingTex:Hide() end
+			else
 			local texKey = cfg.nameBackdropTexture or ""
 			-- Default to disabled backdrop unless explicitly enabled in the profile.
 			local enabledBackdrop = not not cfg.nameBackdropEnabled
@@ -1420,22 +1550,20 @@ do
 			if opacity < 0 then opacity = 0 elseif opacity > 100 then opacity = 100 end
 			local opacityAlpha = opacity / 100
 			local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
-			local holderKey = "ScooterNameBackdrop_" .. tostring(unit)
-			local tex = main and main[holderKey] or nil
+			local tex = existingTex
 			if main and not tex then
 				tex = main:CreateTexture(nil, "BACKGROUND", nil, -8)
 				main[holderKey] = tex
 			end
 			if tex then
 				if hb and resolvedPath and enabledBackdrop then
-					-- Compute a baseline width and apply user width percentage independently of Health Bar width
-					local base = tonumber(cfg.nameBackdropBaseWidth)
-				if not base or base <= 0 then
-					local hbw = (hb.GetWidth and hb:GetWidth()) or 0
-					base = hbw
-					-- Persist baseline for stability across live changes
-					cfg.nameBackdropBaseWidth = base
-				end
+					-- Compute a baseline width per-session (do NOT persist baselines into SavedVariables).
+					addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
+					local base = tonumber(addon._ufNameBackdropBaseWidth[unit])
+					if not base or base <= 0 then
+						base = (hb.GetWidth and hb:GetWidth()) or 0
+						addon._ufNameBackdropBaseWidth[unit] = base
+					end
 					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
 					local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
@@ -1474,12 +1602,36 @@ do
 					tex:Hide()
 				end
 			end
+			end -- configured
 		end
 		-- Name Backdrop Border: draw a border around the same region
 		do
 			local main = resolveUFContentMain_NLT(unit)
 			local hb = resolveHealthBar_NLT(unit)
-			local cfg = db.unitFrames[unit] or {}
+			local borderKey = "ScooterNameBackdropBorder_" .. tostring(unit)
+			local existingBorderFrame = main and main[borderKey] or nil
+
+			-- Zero‑Touch: only create/manage the border when this feature has been configured.
+			local configured = (
+				cfg.nameBackdropBorderEnabled ~= nil
+				or cfg.nameBackdropBorderStyle ~= nil
+				or cfg.nameBackdropBorderThickness ~= nil
+				or cfg.nameBackdropBorderInset ~= nil
+				or cfg.nameBackdropBorderTintEnable ~= nil
+				or cfg.nameBackdropBorderTintColor ~= nil
+				or cfg.useCustomBorders ~= nil
+				or cfg.nameBackdropEnabled ~= nil
+				or cfg.nameBackdropTexture ~= nil
+				or cfg.nameBackdropWidthPct ~= nil
+			)
+			if not configured then
+				-- If the border frame exists from earlier in this session/profile, hide and clear it.
+				if existingBorderFrame then
+					if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(existingBorderFrame) end
+					if existingBorderFrame.SetBackdrop then pcall(existingBorderFrame.SetBackdrop, existingBorderFrame, nil) end
+					existingBorderFrame:Hide()
+				end
+			else
 			local styleKey = cfg.nameBackdropBorderStyle or "square"
 			-- Align border gating with UI defaults: disabled until explicitly enabled.
 			local localEnabled = not not cfg.nameBackdropBorderEnabled
@@ -1492,8 +1644,7 @@ do
 			local tintEnabled = not not cfg.nameBackdropBorderTintEnable
 			local tintColor = cfg.nameBackdropBorderTintColor or {1,1,1,1}
 
-			local borderKey = "ScooterNameBackdropBorder_" .. tostring(unit)
-			local borderFrame = main and main[borderKey] or nil
+			local borderFrame = existingBorderFrame
 			if main and not borderFrame then
 				local template = BackdropTemplateMixin and "BackdropTemplate" or nil
 				borderFrame = CreateFrame("Frame", nil, main, template)
@@ -1501,11 +1652,11 @@ do
 			end
 			if borderFrame and hb and useBorders then
 				-- Match border width to the same baseline-derived width as backdrop
-				local base = tonumber(cfg.nameBackdropBaseWidth)
+				addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
+				local base = tonumber(addon._ufNameBackdropBaseWidth[unit])
 				if not base or base <= 0 then
-					local hbw = (hb.GetWidth and hb:GetWidth()) or 0
-					base = hbw
-					cfg.nameBackdropBaseWidth = base
+					base = (hb.GetWidth and hb:GetWidth()) or 0
+					addon._ufNameBackdropBaseWidth[unit] = base
 				end
 				local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 				if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
@@ -1573,6 +1724,7 @@ do
 				if borderFrame.SetBackdrop then pcall(borderFrame.SetBackdrop, borderFrame, nil) end
 				borderFrame:Hide()
 			end
+			end -- configured
 		end
 	end
 
@@ -1668,7 +1820,46 @@ do
 	-- Install hooks on first style application
 	local _origApplyAll = addon.ApplyAllUnitFrameNameLevelText
 	addon.ApplyAllUnitFrameNameLevelText = function()
-		installNameLevelTextHooks()
+		-- Zero‑Touch: only install persistence hooks when Name/Level/Backdrop is actually configured.
+		local db = addon and addon.db and addon.db.profile
+		local unitFrames = db and rawget(db, "unitFrames") or nil
+		local function hasAnyOffset(tbl)
+			local off = tbl and tbl.offset
+			return off and (off.x ~= nil or off.y ~= nil) or false
+		end
+		local function unitHasNameLevelConfig(unit)
+			local cfg = unitFrames and rawget(unitFrames, unit) or nil
+			if not cfg then return false end
+			if cfg.nameTextHidden ~= nil or cfg.levelTextHidden ~= nil then return true end
+			if cfg.nameBackdropEnabled ~= nil
+				or cfg.nameBackdropTexture ~= nil
+				or cfg.nameBackdropColorMode ~= nil
+				or cfg.nameBackdropTint ~= nil
+				or cfg.nameBackdropOpacity ~= nil
+				or cfg.nameBackdropWidthPct ~= nil
+				or cfg.nameBackdropBorderEnabled ~= nil
+				or cfg.nameBackdropBorderStyle ~= nil
+				or cfg.nameBackdropBorderThickness ~= nil
+				or cfg.nameBackdropBorderInset ~= nil
+				or cfg.nameBackdropBorderTintEnable ~= nil
+				or cfg.nameBackdropBorderTintColor ~= nil
+				or cfg.useCustomBorders ~= nil
+			then
+				return true
+			end
+			local tn = rawget(cfg, "textName")
+			if tn and (tn.fontFace ~= nil or tn.size ~= nil or tn.style ~= nil or tn.colorMode ~= nil or tn.color ~= nil or tn.alignment ~= nil or tn.containerWidthPct ~= nil or hasAnyOffset(tn)) then
+				return true
+			end
+			local tl = rawget(cfg, "textLevel")
+			if tl and (tl.fontFace ~= nil or tl.size ~= nil or tl.style ~= nil or tl.colorMode ~= nil or tl.color ~= nil or hasAnyOffset(tl)) then
+				return true
+			end
+			return false
+		end
+		if unitHasNameLevelConfig("Player") or unitHasNameLevelConfig("Target") or unitHasNameLevelConfig("Focus") or unitHasNameLevelConfig("Pet") then
+			installNameLevelTextHooks()
+		end
 		_origApplyAll()
 	end
 end
@@ -1786,43 +1977,67 @@ do
 	local function applyToTNameText()
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames.TargetOfTarget = db.unitFrames.TargetOfTarget or {}
-		local cfg = db.unitFrames.TargetOfTarget
-		cfg.textName = cfg.textName or {}
-		local styleCfg = cfg.textName
+		-- Zero‑Touch: do not create config tables. If ToT has no config, do nothing.
+		local unitFrames = rawget(db, "unitFrames")
+		local cfg = unitFrames and rawget(unitFrames, "TargetOfTarget") or nil
+		if not cfg then return end
+		local styleCfg = rawget(cfg, "textName")
 
 		local nameFS = resolveToTNameFS()
 		if not nameFS then return end
 
-		-- Apply visibility: hidden via SetAlpha (combat-safe)
-		local hidden = (cfg.nameTextHidden == true)
-		if hidden then
-			if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 0) end
-			nameFS._ScooterToTNameHidden = true
-			-- Install hook to re-enforce hidden state
-			if not nameFS._ScooterToTNameVisibilityHooked then
-				nameFS._ScooterToTNameVisibilityHooked = true
-				if _G.hooksecurefunc then
-					_G.hooksecurefunc(nameFS, "SetText", function(self)
-						if self._ScooterToTNameHidden and self.SetAlpha then
-							pcall(self.SetAlpha, self, 0)
-						end
-					end)
-					_G.hooksecurefunc(nameFS, "Show", function(self)
-						if self._ScooterToTNameHidden and self.SetAlpha then
-							pcall(self.SetAlpha, self, 0)
-						end
-					end)
+		-- Zero‑Touch: if neither visibility nor style is configured, do nothing.
+		local function hasAnyOffset(tbl)
+			local off = tbl and tbl.offset
+			return off and (off.x ~= nil or off.y ~= nil) or false
+		end
+		local function hasTextCustomization(tbl)
+			if not tbl then return false end
+			if tbl.fontFace ~= nil and tbl.fontFace ~= "" and tbl.fontFace ~= "FRIZQT__" then return true end
+			if tbl.size ~= nil or tbl.style ~= nil or tbl.colorMode ~= nil or tbl.color ~= nil or tbl.alignment ~= nil then return true end
+			if hasAnyOffset(tbl) then return true end
+			return false
+		end
+		local hasVisibilitySetting = (cfg.nameTextHidden ~= nil)
+		local hasStyleSetting = hasTextCustomization(styleCfg)
+		if not hasVisibilitySetting and not hasStyleSetting then
+			return
+		end
+
+		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
+		if cfg.nameTextHidden ~= nil then
+			local hidden = (cfg.nameTextHidden == true)
+			if hidden then
+				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 0) end
+				nameFS._ScooterToTNameHidden = true
+				-- Install hook to re-enforce hidden state
+				if not nameFS._ScooterToTNameVisibilityHooked then
+					nameFS._ScooterToTNameVisibilityHooked = true
+					if _G.hooksecurefunc then
+						_G.hooksecurefunc(nameFS, "SetText", function(self)
+							if self._ScooterToTNameHidden and self.SetAlpha then
+								pcall(self.SetAlpha, self, 0)
+							end
+						end)
+						_G.hooksecurefunc(nameFS, "Show", function(self)
+							if self._ScooterToTNameHidden and self.SetAlpha then
+								pcall(self.SetAlpha, self, 0)
+							end
+						end)
+					end
 				end
+			else
+				nameFS._ScooterToTNameHidden = false
+				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 1) end
 			end
-		else
-			nameFS._ScooterToTNameHidden = false
-			if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 1) end
 		end
 
 		-- Skip styling if hidden
-		if hidden then return end
+		if cfg.nameTextHidden == true then return end
+		-- Zero‑Touch: only apply font/position/style if explicitly customized.
+		if not hasStyleSetting then
+			return
+		end
 
 		-- Capture baseline position once
 		local function ensureBaseline()
@@ -1846,9 +2061,9 @@ do
 		end
 
 		-- Apply font styling
-		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
-		local size = tonumber(styleCfg.size) or 10
-		local outline = tostring(styleCfg.style or "OUTLINE")
+		local face = addon.ResolveFontFace and addon.ResolveFontFace((styleCfg and styleCfg.fontFace) or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+		local size = tonumber(styleCfg and styleCfg.size) or 10
+		local outline = tostring((styleCfg and styleCfg.style) or "OUTLINE")
 		if addon.ApplyFontStyle then
 			addon.ApplyFontStyle(nameFS, face, size, outline)
 		elseif nameFS.SetFont then
@@ -1856,7 +2071,7 @@ do
 		end
 
 		-- Apply color based on colorMode
-		local colorMode = styleCfg.colorMode or "default"
+		local colorMode = (styleCfg and styleCfg.colorMode) or "default"
 		local r, g, b, a = 1, 1, 1, 1
 		if colorMode == "class" then
 			-- Class color: use target-of-target's class color
@@ -1865,7 +2080,7 @@ do
 				r, g, b, a = cr or 1, cg or 1, cb or 1, 1
 			end
 		elseif colorMode == "custom" then
-			local c = styleCfg.color or {1, 1, 1, 1}
+			local c = (styleCfg and styleCfg.color) or {1, 1, 1, 1}
 			r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
 		else
 			-- Default: use Blizzard default (white for ToT name)
@@ -1874,12 +2089,12 @@ do
 		if nameFS.SetTextColor then pcall(nameFS.SetTextColor, nameFS, r, g, b, a) end
 
 		-- Apply alignment
-		local alignment = styleCfg.alignment or "LEFT"
+		local alignment = (styleCfg and styleCfg.alignment) or "LEFT"
 		if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, alignment) end
 
 		-- Apply offset relative to baseline
-		local ox = tonumber(styleCfg.offset and styleCfg.offset.x) or 0
-		local oy = tonumber(styleCfg.offset and styleCfg.offset.y) or 0
+		local ox = tonumber(styleCfg and styleCfg.offset and styleCfg.offset.x) or 0
+		local oy = tonumber(styleCfg and styleCfg.offset and styleCfg.offset.y) or 0
 		if nameFS.ClearAllPoints and nameFS.SetPoint then
 			local b = ensureBaseline()
 			nameFS:ClearAllPoints()

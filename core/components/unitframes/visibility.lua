@@ -36,9 +36,18 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames[unit] = db.unitFrames[unit] or {}
-        local cfg = db.unitFrames[unit]
+        -- Zero‑Touch: if this unit has no config table, do not touch the Blizzard frame.
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: only apply opacity if the user explicitly configured any opacity key.
+        local hasAnyOpacitySetting = (cfg.opacity ~= nil) or (cfg.opacityOutOfCombat ~= nil) or (cfg.opacityWithTarget ~= nil)
+        if not hasAnyOpacitySetting then
+            return
+        end
 
         -- Base opacity (combat) uses the same 50–100 semantics as Cooldown Manager groups
         local baseRaw = cfg.opacity
@@ -98,12 +107,19 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames[unit] = db.unitFrames[unit] or {}
-        db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
-        local cfg = db.unitFrames[unit].misc
+        -- Zero‑Touch: only operate if the user has a misc config table for this unit.
+        local unitFrames = rawget(db, "unitFrames")
+        local unitCfg = unitFrames and rawget(unitFrames, unit) or nil
+        local miscCfg = unitCfg and rawget(unitCfg, "misc") or nil
+        if not miscCfg then
+            return
+        end
 
-        local hideThreatMeter = (cfg.hideThreatMeter == true)
+        -- Zero‑Touch: nil means "don't touch"; only apply if explicitly set.
+        if miscCfg.hideThreatMeter == nil then
+            return
+        end
+        local hideThreatMeter = (miscCfg.hideThreatMeter == true)
 
         -- Capture original alpha on first run
         if _originalThreatMeterAlpha[unit] == nil then
@@ -136,11 +152,11 @@ do
             hooksecurefunc(threatFrame, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames[unit] = db.unitFrames[unit] or {}
-                db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
-                local cfg = db.unitFrames[unit].misc
-                if cfg.hideThreatMeter == true then
+
+                local unitFrames = rawget(db, "unitFrames")
+                local unitCfg = unitFrames and rawget(unitFrames, unit) or nil
+                local miscCfg = unitCfg and rawget(unitCfg, "misc") or nil
+                if miscCfg and miscCfg.hideThreatMeter == true then
                     if self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
@@ -153,17 +169,17 @@ do
             hooksecurefunc(threatFrame, "SetAlpha", function(self, alpha)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames[unit] = db.unitFrames[unit] or {}
-                db.unitFrames[unit].misc = db.unitFrames[unit].misc or {}
-                local cfg = db.unitFrames[unit].misc
-                if cfg.hideThreatMeter == true and alpha and alpha > 0 then
+
+                local unitFrames = rawget(db, "unitFrames")
+                local unitCfg = unitFrames and rawget(unitFrames, unit) or nil
+                local miscCfg = unitCfg and rawget(unitCfg, "misc") or nil
+                if miscCfg and miscCfg.hideThreatMeter == true and alpha and alpha > 0 then
                     -- Defer to avoid recursion
                     if not self._ScootThreatAlphaDeferred then
                         self._ScootThreatAlphaDeferred = true
                         C_Timer.After(0, function()
                             self._ScootThreatAlphaDeferred = nil
-                            if cfg.hideThreatMeter == true and self.SetAlpha then
+                            if miscCfg and miscCfg.hideThreatMeter == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
@@ -213,12 +229,16 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames.Target = db.unitFrames.Target or {}
-        db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
-        local cfg = db.unitFrames.Target.misc
-
-        local hideBossIcon = (cfg.hideBossIcon == true)
+        local unitFrames = rawget(db, "unitFrames")
+        local targetCfg = unitFrames and rawget(unitFrames, "Target") or nil
+        local miscCfg = targetCfg and rawget(targetCfg, "misc") or nil
+        if not miscCfg then
+            return
+        end
+        if miscCfg.hideBossIcon == nil then
+            return
+        end
+        local hideBossIcon = (miscCfg.hideBossIcon == true)
 
         -- Capture original alpha on first run
         if _originalBossIconAlpha == nil then
@@ -249,11 +269,10 @@ do
             hooksecurefunc(bossIconFrame, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames.Target = db.unitFrames.Target or {}
-                db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
-                local cfg = db.unitFrames.Target.misc
-                if cfg.hideBossIcon == true then
+                local unitFrames = rawget(db, "unitFrames")
+                local targetCfg = unitFrames and rawget(unitFrames, "Target") or nil
+                local miscCfg = targetCfg and rawget(targetCfg, "misc") or nil
+                if miscCfg and miscCfg.hideBossIcon == true then
                     if self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
@@ -265,16 +284,15 @@ do
             hooksecurefunc(bossIconFrame, "SetAlpha", function(self, alpha)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames.Target = db.unitFrames.Target or {}
-                db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
-                local cfg = db.unitFrames.Target.misc
-                if cfg.hideBossIcon == true and alpha and alpha > 0 then
+                local unitFrames = rawget(db, "unitFrames")
+                local targetCfg = unitFrames and rawget(unitFrames, "Target") or nil
+                local miscCfg = targetCfg and rawget(targetCfg, "misc") or nil
+                if miscCfg and miscCfg.hideBossIcon == true and alpha and alpha > 0 then
                     if not self._ScootBossIconAlphaDeferred then
                         self._ScootBossIconAlphaDeferred = true
                         C_Timer.After(0, function()
                             self._ScootBossIconAlphaDeferred = nil
-                            if cfg.hideBossIcon == true and self.SetAlpha then
+                            if miscCfg and miscCfg.hideBossIcon == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
@@ -313,12 +331,16 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames.Player = db.unitFrames.Player or {}
-        db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-        local cfg = db.unitFrames.Player.misc
-
-        local hideRoleIcon = (cfg.hideRoleIcon == true)
+        local unitFrames = rawget(db, "unitFrames")
+        local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+        local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+        if not miscCfg then
+            return
+        end
+        if miscCfg.hideRoleIcon == nil then
+            return
+        end
+        local hideRoleIcon = (miscCfg.hideRoleIcon == true)
 
         -- Capture original alpha on first run
         if _originalRoleIconAlpha == nil then
@@ -351,11 +373,10 @@ do
             hooksecurefunc(roleIconFrame, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames.Player = db.unitFrames.Player or {}
-                db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                local cfg = db.unitFrames.Player.misc
-                if cfg.hideRoleIcon == true then
+                local unitFrames = rawget(db, "unitFrames")
+                local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                if miscCfg and miscCfg.hideRoleIcon == true then
                     if self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
@@ -368,17 +389,16 @@ do
             hooksecurefunc(roleIconFrame, "SetAlpha", function(self, alpha)
                 local db = addon and addon.db and addon.db.profile
                 if not db then return end
-                db.unitFrames = db.unitFrames or {}
-                db.unitFrames.Player = db.unitFrames.Player or {}
-                db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                local cfg = db.unitFrames.Player.misc
-                if cfg.hideRoleIcon == true and alpha and alpha > 0 then
+                local unitFrames = rawget(db, "unitFrames")
+                local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                if miscCfg and miscCfg.hideRoleIcon == true and alpha and alpha > 0 then
                     -- Defer to avoid recursion
                     if not self._ScootRoleIconAlphaDeferred then
                         self._ScootRoleIconAlphaDeferred = true
                         C_Timer.After(0, function()
                             self._ScootRoleIconAlphaDeferred = nil
-                            if cfg.hideRoleIcon == true and self.SetAlpha then
+                            if miscCfg and miscCfg.hideRoleIcon == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
@@ -424,12 +444,16 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.unitFrames = db.unitFrames or {}
-        db.unitFrames.Player = db.unitFrames.Player or {}
-        db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-        local cfg = db.unitFrames.Player.misc
-
-        local hideGroupNumber = (cfg.hideGroupNumber == true)
+        local unitFrames = rawget(db, "unitFrames")
+        local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+        local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+        if not miscCfg then
+            return
+        end
+        if miscCfg.hideGroupNumber == nil then
+            return
+        end
+        local hideGroupNumber = (miscCfg.hideGroupNumber == true)
 
         -- Apply to GroupIndicator container frame
         if groupIndicatorFrame then
@@ -482,11 +506,10 @@ do
                 hooksecurefunc(groupIndicatorFrame, "Show", function(self)
                     local db = addon and addon.db and addon.db.profile
                     if not db then return end
-                    db.unitFrames = db.unitFrames or {}
-                    db.unitFrames.Player = db.unitFrames.Player or {}
-                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                    local cfg = db.unitFrames.Player.misc
-                    if cfg.hideGroupNumber == true then
+                    local unitFrames = rawget(db, "unitFrames")
+                    local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                    local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                    if miscCfg and miscCfg.hideGroupNumber == true then
                         if self.SetAlpha then
                             pcall(self.SetAlpha, self, 0)
                         end
@@ -498,16 +521,15 @@ do
                 hooksecurefunc(groupIndicatorFrame, "SetAlpha", function(self, alpha)
                     local db = addon and addon.db and addon.db.profile
                     if not db then return end
-                    db.unitFrames = db.unitFrames or {}
-                    db.unitFrames.Player = db.unitFrames.Player or {}
-                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                    local cfg = db.unitFrames.Player.misc
-                    if cfg.hideGroupNumber == true and alpha and alpha > 0 then
+                    local unitFrames = rawget(db, "unitFrames")
+                    local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                    local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                    if miscCfg and miscCfg.hideGroupNumber == true and alpha and alpha > 0 then
                         if not self._ScootGroupIndicatorAlphaDeferred then
                             self._ScootGroupIndicatorAlphaDeferred = true
                             C_Timer.After(0, function()
                                 self._ScootGroupIndicatorAlphaDeferred = nil
-                                if cfg.hideGroupNumber == true and self.SetAlpha then
+                                if miscCfg and miscCfg.hideGroupNumber == true and self.SetAlpha then
                                     pcall(self.SetAlpha, self, 0)
                                 end
                             end)
@@ -523,11 +545,10 @@ do
                 hooksecurefunc(groupIndicatorText, "Show", function(self)
                     local db = addon and addon.db and addon.db.profile
                     if not db then return end
-                    db.unitFrames = db.unitFrames or {}
-                    db.unitFrames.Player = db.unitFrames.Player or {}
-                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                    local cfg = db.unitFrames.Player.misc
-                    if cfg.hideGroupNumber == true then
+                    local unitFrames = rawget(db, "unitFrames")
+                    local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                    local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                    if miscCfg and miscCfg.hideGroupNumber == true then
                         if self.SetAlpha then
                             pcall(self.SetAlpha, self, 0)
                         end
@@ -539,16 +560,15 @@ do
                 hooksecurefunc(groupIndicatorText, "SetAlpha", function(self, alpha)
                     local db = addon and addon.db and addon.db.profile
                     if not db then return end
-                    db.unitFrames = db.unitFrames or {}
-                    db.unitFrames.Player = db.unitFrames.Player or {}
-                    db.unitFrames.Player.misc = db.unitFrames.Player.misc or {}
-                    local cfg = db.unitFrames.Player.misc
-                    if cfg.hideGroupNumber == true and alpha and alpha > 0 then
+                    local unitFrames = rawget(db, "unitFrames")
+                    local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+                    local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
+                    if miscCfg and miscCfg.hideGroupNumber == true and alpha and alpha > 0 then
                         if not self._ScootGroupIndicatorTextAlphaDeferred then
                             self._ScootGroupIndicatorTextAlphaDeferred = true
                             C_Timer.After(0, function()
                                 self._ScootGroupIndicatorTextAlphaDeferred = nil
-                                if cfg.hideGroupNumber == true and self.SetAlpha then
+                                if miscCfg and miscCfg.hideGroupNumber == true and self.SetAlpha then
                                     pcall(self.SetAlpha, self, 0)
                                 end
                             end)

@@ -74,6 +74,12 @@ local function createPRDStyleInitializer(component)
         end
 
         local function setValue(key, value, fallback)
+            -- Zero‑Touch: do not create component SavedVariables until the user actually changes a setting.
+            if not component.db then
+                if addon and addon.EnsureComponentDB then
+                    addon:EnsureComponentDB(component)
+                end
+            end
             if not component.db then
                 return
             end

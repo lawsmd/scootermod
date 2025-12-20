@@ -950,12 +950,129 @@ function addon:InitializeComponents()
 end
 
 function addon:LinkComponentsToDB()
+    -- Zero‑Touch: do not create per-component SavedVariables tables just by linking.
+    -- Only assign existing persisted tables; otherwise leave component.db nil.
+    local profile = self.db and self.db.profile
+    local components = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
-        if not self.db.profile.components[id] then
-            self.db.profile.components[id] = {}
+        local persisted = components and rawget(components, id) or nil
+        if persisted then
+            component.db = persisted
+        else
+            -- Provide a lightweight proxy so UI code can read/write without nil checks.
+            -- Reads return nil (so UI falls back to defaults). First write creates the real table.
+            if not component._ScootDBProxy then
+                local proxy = {}
+                setmetatable(proxy, {
+                    __index = function(_, key)
+                        local real = component.db
+                        if real and real ~= proxy then
+                            return real[key]
+                        end
+                        return nil
+                    end,
+                    __newindex = function(_, key, value)
+                        local realDb = addon:EnsureComponentDB(component)
+                        if realDb then
+                            rawset(realDb, key, value)
+                        end
+                    end,
+                    __pairs = function()
+                        local real = component.db
+                        if real and real ~= proxy then
+                            return pairs(real)
+                        end
+                        return function() return nil end
+                    end,
+                })
+                component._ScootDBProxy = proxy
+            end
+            component.db = component._ScootDBProxy
         end
-        component.db = self.db.profile.components[id]
     end
+end
+
+function addon:EnsureComponentDB(componentOrId)
+    local component = componentOrId
+    if type(componentOrId) == "string" then
+        component = self.Components and self.Components[componentOrId]
+    end
+    if not component or not component.id then
+        return nil
+    end
+    local profile = self.db and self.db.profile
+    if not profile then
+        return nil
+    end
+    local components = rawget(profile, "components")
+    if type(components) ~= "table" then
+        components = {}
+        profile.components = components
+    end
+    local db = rawget(components, component.id)
+    if type(db) ~= "table" then
+        db = {}
+        components[component.id] = db
+    end
+    component.db = db
+    return db
+end
+
+function addon:ClearFrameLevelState()
+    -- Best-effort hot cleanup when switching into a Zero‑Touch/empty profile without reload.
+    -- This cannot fully restore Blizzard baselines (only a reload can), but it prevents
+    -- our persistent hook flags from continuing to enforce hidden states.
+    local function safeAlpha(fs)
+        if fs and fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+    end
+    local function clearTextFlags(fs)
+        if not fs then return end
+        fs._ScooterHealthTextHidden = nil
+        fs._ScooterPowerTextHidden = nil
+        fs._ScooterHealthTextCenterHidden = nil
+        fs._ScooterPowerTextCenterHidden = nil
+        fs._ScooterToTNameHidden = nil
+        fs._ScooterAltPowerTextHidden = nil
+        safeAlpha(fs)
+    end
+
+    -- Clear cached fontstring references and their flags (if available this session).
+    if self._ufHealthTextFonts then
+        for _, cache in pairs(self._ufHealthTextFonts) do
+            clearTextFlags(cache and cache.leftFS)
+            clearTextFlags(cache and cache.rightFS)
+            clearTextFlags(cache and cache.textStringFS)
+        end
+    end
+    if self._ufPowerTextFonts then
+        for _, cache in pairs(self._ufPowerTextFonts) do
+            clearTextFlags(cache and cache.leftFS)
+            clearTextFlags(cache and cache.rightFS)
+            clearTextFlags(cache and cache.textStringFS)
+        end
+    end
+
+    -- Clear some well-known globals defensively (covers cases where caches weren't built).
+    clearTextFlags(_G.PlayerFrameHealthBarTextLeft)
+    clearTextFlags(_G.PlayerFrameHealthBarTextRight)
+    clearTextFlags(_G.PlayerFrameManaBarTextLeft)
+    clearTextFlags(_G.PlayerFrameManaBarTextRight)
+    clearTextFlags(_G.PetFrameHealthBarTextLeft)
+    clearTextFlags(_G.PetFrameHealthBarTextRight)
+    clearTextFlags(_G.PetFrameManaBarTextLeft)
+    clearTextFlags(_G.PetFrameManaBarTextRight)
+
+    -- Clear baseline caches so future applies recapture from the current Blizzard state.
+    self._ufTextBaselines = nil
+    self._ufPowerTextBaselines = nil
+    self._ufNameLevelTextBaselines = nil
+    self._ufNameContainerBaselines = nil
+    self._ufNameBackdropBaseWidth = nil
+    self._ufToTNameTextBaseline = nil
+
+    -- Drop caches so visibility-only hooks won't run expensive work and will re-resolve later.
+    self._ufHealthTextFonts = nil
+    self._ufPowerTextFonts = nil
 end
 
 function addon:ApplyStyles()
@@ -970,8 +1087,13 @@ function addon:ApplyStyles()
         end
         return
     end
+    local profile = self.db and self.db.profile
+    local componentsCfg = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
-        if component.ApplyStyling then
+        -- Zero‑Touch: only apply component styling when the component has an explicit
+        -- SavedVariables table (i.e., the user has configured it).
+        local hasConfig = componentsCfg and rawget(componentsCfg, id) ~= nil
+        if hasConfig and component.ApplyStyling then
             component:ApplyStyling()
         end
     end
@@ -1025,8 +1147,11 @@ function addon:ApplyStyles()
 end
 
 function addon:ApplyEarlyComponentStyles()
+    local profile = self.db and self.db.profile
+    local componentsCfg = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
-        if component.ApplyStyling and component.applyDuringInit then
+        local hasConfig = componentsCfg and rawget(componentsCfg, id) ~= nil
+        if hasConfig and component.ApplyStyling and component.applyDuringInit then
             component:ApplyStyling()
         end
     end
@@ -1043,8 +1168,8 @@ function addon:ResetComponentToDefaults(componentOrId)
     end
 
     if not component.db then
-        if type(self.LinkComponentsToDB) == "function" then
-            self:LinkComponentsToDB()
+        if type(self.EnsureComponentDB) == "function" then
+            self:EnsureComponentDB(component)
         end
     end
 

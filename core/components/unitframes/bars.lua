@@ -694,8 +694,12 @@ do
 
         local db = addon and addon.db and addon.db.profile
         if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        local ufCfg = db.unitFrames[unit] or {}
+        -- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
+        local unitFrames = rawget(db, "unitFrames")
+        local ufCfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not ufCfg then
+            return
+        end
 
         -- Determine whether overlay should be active based on unit type:
         -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
@@ -704,9 +708,11 @@ do
         local shouldActivate = false
 
         if unit == "Target" or unit == "Focus" then
-            local portraitCfg = ufCfg.portrait or {}
-            shouldActivate = (portraitCfg.hidePortrait == true)
-            bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
+            local portraitCfg = rawget(ufCfg, "portrait")
+            shouldActivate = (portraitCfg and portraitCfg.hidePortrait == true) or false
+            if cfg and cfg.healthBarReverseFill ~= nil then
+                bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
+            end
         elseif unit == "Player" then
             shouldActivate = (ufCfg.useCustomBorders == true)
             bar._ScootRectReverseFill = false -- Player health bar always fills left-to-right
@@ -1101,8 +1107,35 @@ do
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
-        db.unitFrames = db.unitFrames or {}
-        local cfg = db.unitFrames[unit] or {}
+        -- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, unit) or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: only apply when at least one bar-related setting is explicitly configured.
+        local function hasAnyKey(tbl, keys)
+            if not tbl then return false end
+            for i = 1, #keys do
+                if tbl[keys[i]] ~= nil then return true end
+            end
+            return false
+        end
+        local hasAnyBarSetting =
+            hasAnyKey(cfg, {
+                "useCustomBorders",
+                "healthBarTexture", "healthBarColorMode", "healthBarTint",
+                "healthBarBackgroundTexture", "healthBarBackgroundColorMode", "healthBarBackgroundTint", "healthBarBackgroundOpacity",
+                "powerBarTexture", "powerBarColorMode", "powerBarTint",
+                "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
+                "borderStyle", "borderThickness", "borderInset", "borderTintEnable", "borderTintColor",
+                "healthBarReverseFill",
+            })
+        local altCfg = rawget(cfg, "altPowerBar")
+        if not hasAnyBarSetting and not hasAnyKey(altCfg, { "enabled", "width", "height", "x", "y", "fontFace", "size", "style", "color", "alignment" }) then
+            return
+        end
         local frame = getUnitFrameFor(unit)
         if not frame then return end
 
@@ -1116,8 +1149,11 @@ do
                 _G.hooksecurefunc(tot, "Update", function()
                     local db2 = addon and addon.db and addon.db.profile
                     if not db2 then return end
-                    db2.unitFrames = db2.unitFrames or {}
-                    local cfgT = db2.unitFrames.TargetOfTarget or {}
+                    local unitFrames2 = rawget(db2, "unitFrames")
+                    local cfgT = unitFrames2 and rawget(unitFrames2, "TargetOfTarget") or nil
+                    if not cfgT then
+                        return
+                    end
 
                     local texKey = cfgT.healthBarTexture or "default"
                     local colorMode = cfgT.healthBarColorMode or "default"
@@ -1350,8 +1386,9 @@ do
                         if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgP = db.unitFrames.Player or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                        if not cfgP then return end
                         local texKey = cfgP.healthBarTexture or "default"
                         local colorMode = cfgP.healthBarColorMode or "default"
                         local tint = cfgP.healthBarTint
@@ -1371,8 +1408,9 @@ do
                         if InCombatLockdown and InCombatLockdown() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgP = db.unitFrames.Player or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                        if not cfgP then return end
                         local texKey = cfgP.healthBarTexture or "default"
                         local colorMode = cfgP.healthBarColorMode or "default"
                         local tint = cfgP.healthBarTint
@@ -1404,8 +1442,9 @@ do
 
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgT = db.unitFrames.TargetOfTarget or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgT = unitFrames and rawget(unitFrames, "TargetOfTarget") or nil
+                        if not cfgT then return end
 
                         local texKey = cfgT.healthBarTexture or "default"
                         local colorMode = cfgT.healthBarColorMode or "default"
@@ -1445,8 +1484,9 @@ do
                     _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgT = db.unitFrames.TargetOfTarget or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgT = unitFrames and rawget(unitFrames, "TargetOfTarget") or nil
+                        if not cfgT then return end
 
                         local texKey = cfgT.healthBarTexture or "default"
                         local colorMode = cfgT.healthBarColorMode or "default"
@@ -1590,8 +1630,9 @@ do
                         end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgP = db.unitFrames.Player or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                        if not cfgP then return end
                         local texKey = cfgP.powerBarTexture or "default"
                         local colorMode = cfgP.powerBarColorMode or "default"
                         local tint = cfgP.powerBarTint
@@ -1607,8 +1648,9 @@ do
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
-                        db.unitFrames = db.unitFrames or {}
-                        local cfgP = db.unitFrames.Player or {}
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                        if not cfgP then return end
                         local texKey = cfgP.powerBarTexture or "default"
                         local colorMode = cfgP.powerBarColorMode or "default"
                         local tint = cfgP.powerBarTint
@@ -1626,9 +1668,9 @@ do
             if unit == "Player" and addon.UnitFrames_PlayerHasAlternatePowerBar and addon.UnitFrames_PlayerHasAlternatePowerBar() then
                 local apb = resolveAlternatePowerBar()
                 if apb then
-                    -- DB namespace for Alternate Power Bar
-                    cfg.altPowerBar = cfg.altPowerBar or {}
-                    local acfg = cfg.altPowerBar
+                    -- Zero‑Touch: only style Alternate Power Bar when explicitly configured.
+                    local acfg = rawget(cfg, "altPowerBar")
+                    if acfg then
 
                     -- Optional hide toggle
                     local altHidden = (acfg.hidden == true)
@@ -2029,6 +2071,7 @@ do
                             end
                         end
                     end
+                    end -- acfg
                 end
             end
 
@@ -2572,7 +2615,9 @@ do
                             frameFlash._ScootOrigOnShow = frameFlash:GetScript("OnShow")
                             frameFlash:SetScript("OnShow", function(self)
                                 local db = addon and addon.db and addon.db.profile
-                                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                                local unitFrames = db and rawget(db, "unitFrames") or nil
+                                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                                if cfgP and cfgP.useCustomBorders == true then
                                     -- Keep it hidden while Use Custom Borders is enabled
                                     self:Hide()
                                 else
@@ -2619,7 +2664,9 @@ do
                             targetFlash._ScootOrigOnShow = targetFlash:GetScript("OnShow")
                             targetFlash:SetScript("OnShow", function(self)
                                 local db = addon and addon.db and addon.db.profile
-                                if db and db.unitFrames and db.unitFrames.Target and db.unitFrames.Target.useCustomBorders then
+                                local unitFrames = db and rawget(db, "unitFrames") or nil
+                                local cfgT = unitFrames and rawget(unitFrames, "Target") or nil
+                                if cfgT and cfgT.useCustomBorders == true then
                                     -- Keep it hidden while Use Custom Borders is enabled
                                     self:Hide()
                                 else
@@ -2666,7 +2713,9 @@ do
                             focusFlash._ScootOrigOnShow = focusFlash:GetScript("OnShow")
                             focusFlash:SetScript("OnShow", function(self)
                                 local db = addon and addon.db and addon.db.profile
-                                if db and db.unitFrames and db.unitFrames.Focus and db.unitFrames.Focus.useCustomBorders then
+                                local unitFrames = db and rawget(db, "unitFrames") or nil
+                                local cfgF = unitFrames and rawget(unitFrames, "Focus") or nil
+                                if cfgF and cfgF.useCustomBorders == true then
                                     -- Keep it hidden while Use Custom Borders is enabled
                                     self:Hide()
                                 else
@@ -2721,9 +2770,10 @@ do
     -- Enforce VehicleFrameTexture visibility based on Use Custom Borders setting
     local function EnforceVehicleFrameTextureVisibility()
         local db = addon and addon.db and addon.db.profile
-        if not db or not db.unitFrames or not db.unitFrames.Player then return end
-        local cfg = db.unitFrames.Player
-        if not cfg.useCustomBorders then return end -- Only enforce when custom borders enabled
+        local unitFrames = db and rawget(db, "unitFrames") or nil
+        local cfg = unitFrames and rawget(unitFrames, "Player") or nil
+        if not cfg then return end
+        if cfg.useCustomBorders ~= true then return end -- Only enforce when custom borders enabled
         
         local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
         local vehicleTex = container and container.VehicleFrameTexture
@@ -2735,9 +2785,10 @@ do
     -- Enforce AlternatePowerFrameTexture visibility based on Use Custom Borders setting
     local function EnforceAlternatePowerFrameTextureVisibility()
         local db = addon and addon.db and addon.db.profile
-        if not db or not db.unitFrames or not db.unitFrames.Player then return end
-        local cfg = db.unitFrames.Player
-        if not cfg.useCustomBorders then return end -- Only enforce when custom borders enabled
+        local unitFrames = db and rawget(db, "unitFrames") or nil
+        local cfg = unitFrames and rawget(unitFrames, "Player") or nil
+        if not cfg then return end
+        if cfg.useCustomBorders ~= true then return end -- Only enforce when custom borders enabled
         
         local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
         local altTex = container and container.AlternatePowerFrameTexture
@@ -2850,7 +2901,9 @@ do
             vehicleTex._ScootShowHooked = true
             hooksecurefunc(vehicleTex, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
-                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                local unitFrames = db and rawget(db, "unitFrames") or nil
+                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                if cfgP and cfgP.useCustomBorders == true then
                     if self.Hide then pcall(self.Hide, self) end
                 end
             end)
@@ -2862,7 +2915,9 @@ do
             altTex._ScootShowHooked = true
             hooksecurefunc(altTex, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
-                if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.useCustomBorders then
+                local unitFrames = db and rawget(db, "unitFrames") or nil
+                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                if cfgP and cfgP.useCustomBorders == true then
                     if self.Hide then pcall(self.Hide, self) end
                 end
             end)

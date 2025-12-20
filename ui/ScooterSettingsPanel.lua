@@ -87,13 +87,32 @@ function panel.UpdateProfilesSectionVisibility()
     end
 
     local showActive = panel:IsSectionExpanded("profilesManage", "ActiveLayout")
-    if widgets.ActiveLayoutRow and widgets.ActiveLayoutRow:IsShown() ~= showActive then
-        widgets.ActiveLayoutRow:SetShown(showActive)
+    if widgets.ActiveLayoutRow then
+        local row = widgets.ActiveLayoutRow
+        if row:IsShown() ~= showActive then
+            row:SetShown(showActive)
+        end
+        -- When showing the row, also ensure child widgets are visible.
+        -- These may have been hidden by the OnHide handler when the panel closed.
+        if showActive then
+            if row.ActiveDropdown then row.ActiveDropdown:Show() end
+            if row.CreateBtn then row.CreateBtn:Show() end
+            if row.RenameBtn then row.RenameBtn:Show() end
+            if row.CopyBtn then row.CopyBtn:Show() end
+            if row.DeleteBtn then row.DeleteBtn:Show() end
+        end
     end
 
     local showSpec = panel:IsSectionExpanded("profilesManage", "SpecProfiles")
-    if widgets.SpecEnabledRow and widgets.SpecEnabledRow:IsShown() ~= showSpec then
-        widgets.SpecEnabledRow:SetShown(showSpec)
+    if widgets.SpecEnabledRow then
+        local row = widgets.SpecEnabledRow
+        if row:IsShown() ~= showSpec then
+            row:SetShown(showSpec)
+        end
+        -- Ensure the checkbox is visible when the section is shown
+        if showSpec and row.SpecEnableCheck then
+            row.SpecEnableCheck:Show()
+        end
     end
 end
 

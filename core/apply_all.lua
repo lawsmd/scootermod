@@ -191,13 +191,22 @@ local function ensureState()
     if not profile then
         return nil
     end
-    profile.applyAll = profile.applyAll or {}
-    local state = profile.applyAll
-    if state.fontPending == nil then
-        state.fontPending = "FRIZQT__"
+    -- Zero‑Touch: never force defaults into SavedVariables just by opening the UI.
+    -- Only create/write `profile.applyAll` when the user explicitly changes Apply All settings.
+    local state = rawget(profile, "applyAll")
+    return state, profile
+end
+
+local function ensureStateWritable()
+    local db = addon.db
+    local profile = db and db.profile
+    if not profile then
+        return nil
     end
-    if state.barTexturePending == nil then
-        state.barTexturePending = "default"
+    local state = rawget(profile, "applyAll")
+    if not state then
+        state = {}
+        profile.applyAll = state
     end
     return state, profile
 end
@@ -250,11 +259,11 @@ end
 
 function ApplyAll:GetPendingFont()
     local state = ensureState()
-    return state and state.fontPending or nil
+    return (state and state.fontPending) or "FRIZQT__"
 end
 
 function ApplyAll:SetPendingFont(fontKey)
-    local state = ensureState()
+    local state = ensureStateWritable()
     if state then
         state.fontPending = fontKey or "FRIZQT__"
     end
@@ -262,11 +271,11 @@ end
 
 function ApplyAll:GetPendingBarTexture()
     local state = ensureState()
-    return state and state.barTexturePending or nil
+    return (state and state.barTexturePending) or "default"
 end
 
 function ApplyAll:SetPendingBarTexture(textureKey)
-    local state = ensureState()
+    local state = ensureStateWritable()
     if state then
         state.barTexturePending = textureKey or "default"
     end
@@ -296,7 +305,7 @@ local function recordSummary(target, key, changed)
 end
 
 function ApplyAll:ApplyFonts(fontKey, opts)
-    local state, profile = ensureState()
+    local state, profile = ensureStateWritable()
     if not state or not profile then
         return buildResult(false, 0, "noProfile")
     end
@@ -329,7 +338,7 @@ function ApplyAll:ApplyFonts(fontKey, opts)
 end
 
 function ApplyAll:ApplyBarTextures(textureKey, opts)
-    local state, profile = ensureState()
+    local state, profile = ensureStateWritable()
     if not state or not profile then
         return buildResult(false, 0, "noProfile")
     end

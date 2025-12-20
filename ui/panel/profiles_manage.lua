@@ -29,6 +29,15 @@ local function renderProfilesManage()
         end
     end
 
+    local function bumpFontByPercent(fs, percent)
+        if not fs or type(fs.GetFont) ~= "function" then return end
+        local face, size, flags = fs:GetFont()
+        size = tonumber(size)
+        if not face or not size then return end
+        local mult = 1.0 + (tonumber(percent) or 0)
+        fs:SetFont(face, math.floor(size * mult + 0.5), flags)
+    end
+
     local function render()
         local f = panel.frame
         local right = f and f.RightPane
@@ -106,34 +115,6 @@ local function renderProfilesManage()
             local assigned = addon.Profiles and addon.Profiles.GetSpecAssignment and addon.Profiles:GetSpecAssignment(specID) or nil
             local entries = buildLayoutEntries()
             UIDropDownMenu_Initialize(dropdown, function(self)
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = "Use active layout"
-                info.value = ""
-                info.func = function()
-                    if panel and panel.SuspendRefresh then
-                        local currentSpecID
-                        if type(GetSpecialization) == "function" and type(GetSpecializationInfo) == "function" then
-                            local idx = GetSpecialization()
-                            if idx then currentSpecID = select(1, GetSpecializationInfo(idx)) end
-                        end
-                        local dur = (currentSpecID and currentSpecID == specID) and 0.4 or 0.15
-                        panel.SuspendRefresh(dur)
-                    end
-                    if addon.Profiles and addon.Profiles.SetSpecAssignment then
-                        addon.Profiles:SetSpecAssignment(specID, nil)
-                    end
-                    UIDropDownMenu_SetSelectedValue(dropdown, "")
-                    if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled() then
-                        if addon.Profiles.OnPlayerSpecChanged then
-                            addon.Profiles:OnPlayerSpecChanged()
-                        end
-                    end
-                end
-                info.checked = assigned == nil
-                info.notCheckable = false
-                info.isNotRadio = false
-                UIDropDownMenu_AddButton(info)
-
                 for _, entry in ipairs(entries) do
                     local dropdownInfo = UIDropDownMenu_CreateInfo()
                     dropdownInfo.text = entry.text
@@ -167,20 +148,23 @@ local function renderProfilesManage()
                 end
             end)
             UIDropDownMenu_SetWidth(dropdown, 220)
-            if assigned then
-                local display = nil
+            -- Spec Profiles requires explicit assignments; if none exists yet, default the UI
+            -- display to the active profile (the enable flow seeds assignments for all specs).
+            local selectedKey = assigned
+            if not selectedKey and addon.Profiles and addon.Profiles.GetActiveProfile then
+                selectedKey = addon.Profiles:GetActiveProfile()
+            end
+            local display = nil
+            if selectedKey then
                 for _, entry in ipairs(entries) do
-                    if entry.key == assigned then
+                    if entry.key == selectedKey then
                         display = entry.text
                         break
                     end
                 end
-                UIDropDownMenu_SetSelectedValue(dropdown, assigned)
-                UIDropDownMenu_SetText(dropdown, display or assigned)
-            else
-                UIDropDownMenu_SetSelectedValue(dropdown, "")
-                UIDropDownMenu_SetText(dropdown, "Use active layout")
             end
+            UIDropDownMenu_SetSelectedValue(dropdown, selectedKey)
+            UIDropDownMenu_SetText(dropdown, display or selectedKey or "Select a layout")
         end
 
         do
@@ -214,6 +198,8 @@ local function renderProfilesManage()
                     else
                         scaleFont(text, GameFontHighlight, 1.2)
                     end
+                    -- Increase readability: bump disclaimer font size by +20%
+                    bumpFontByPercent(text, 0.20)
                     frame.InfoText = text
                 else
                     frame.InfoText:Show()
@@ -221,6 +207,9 @@ local function renderProfilesManage()
             end
             table.insert(init, infoRow)
         end
+
+        -- Reload warning is now a fixed footer message (non-scrolling) so it doesn't
+        -- feel "in the flow" and can't be overlapped by right-pane scrolling content.
 
         do
             local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -371,6 +360,15 @@ local function renderProfilesManage()
                 addon.SettingsPanel.UpdateProfileActionButtons = function()
                     if frame and frame.UpdateButtons then frame:UpdateButtons() end
                 end
+
+                -- Explicitly show child widgets. They may have been hidden by the
+                -- OnHide handler when the panel closed, and won't be recreated since
+                -- they already exist on the reused frame.
+                if frame.ActiveDropdown then frame.ActiveDropdown:Show() end
+                if frame.CreateBtn then frame.CreateBtn:Show() end
+                if frame.RenameBtn then frame.RenameBtn:Show() end
+                if frame.CopyBtn then frame.CopyBtn:Show() end
+                if frame.DeleteBtn then frame.DeleteBtn:Show() end
             end
             sectionRow:AddShownPredicate(function()
                 return panel:IsSectionExpanded("profilesManage", "ActiveLayout")
@@ -410,10 +408,24 @@ local function renderProfilesManage()
                 if frame.CreateBtn then frame.CreateBtn:Hide() end
                 if frame.MessageText then frame.MessageText:Hide() end
                 if not frame.SpecEnableCheck then
-                    local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+                    -- Centered holder so the checkbox + label can be truly centered as a group.
+                    local holder = frame.SpecEnableHolder
+                    if not holder then
+                        holder = CreateFrame("Frame", nil, frame)
+                        holder:SetPoint("CENTER", frame, "CENTER", 0, 0)
+                        holder:SetHeight(32)
+                        frame.SpecEnableHolder = holder
+                    end
+
+                    local cb = CreateFrame("CheckButton", nil, holder, "UICheckButtonTemplate")
                     cb.Text:SetText("Enable Spec Profiles")
-                    if cb.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(cb.Text) end
-                    cb:SetPoint("LEFT", frame, "LEFT", 16, 0)
+                    if cb.Text and panel and panel.ApplyRobotoWhite then
+                        panel.ApplyRobotoWhite(cb.Text)
+                        -- Increase checkbox label readability by +25%
+                        bumpFontByPercent(cb.Text, 0.25)
+                    end
+                    cb:ClearAllPoints()
+                    cb:SetPoint("LEFT", holder, "LEFT", 0, 0)
                     cb:SetScale(1.25)
                     cb:EnableMouse(true)
                     local lvl = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
@@ -422,8 +434,22 @@ local function renderProfilesManage()
                     if cb.SetHitRectInsets then cb:SetHitRectInsets(0, -160, 0, 0) end
                     cb:SetScript("OnClick", function(btn)
                         local enabled = btn:GetChecked()
+                        local wasEnabled = addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled()
                         if addon.Profiles and addon.Profiles.SetSpecProfilesEnabled then
                             addon.Profiles:SetSpecProfilesEnabled(enabled)
+                        end
+                        -- First-time enable: seed all specs to the currently active profile so
+                        -- users don't accidentally leave a spec effectively "unassigned".
+                        if enabled and (not wasEnabled) then
+                            local current = getActiveProfileKey()
+                            if current and addon.Profiles and addon.Profiles.SetSpecAssignment then
+                                local specs = (addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions()) or {}
+                                for _, s in ipairs(specs) do
+                                    if s and s.specID then
+                                        addon.Profiles:SetSpecAssignment(s.specID, current)
+                                    end
+                                end
+                            end
                         end
                         if enabled and addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
                             addon.Profiles:OnPlayerSpecChanged()
@@ -437,6 +463,17 @@ local function renderProfilesManage()
                     -- Apply ScooterMod theming to the checkbox
                     if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(cb) end
                     frame.SpecEnableCheck = cb
+
+                    -- Resize the holder to the combined width of checkbox + label so the group stays centered.
+                    C_Timer.After(0, function()
+                        if not frame or not frame.SpecEnableHolder or not frame.SpecEnableCheck then return end
+                        local chk = frame.SpecEnableCheck
+                        local textW = (chk.Text and chk.Text.GetStringWidth and chk.Text:GetStringWidth()) or 0
+                        local boxW = (chk.GetWidth and chk:GetWidth()) or 24
+                        -- UICheckButtonTemplate uses a fixed text offset; approximate a small gap.
+                        local totalW = math.max(1, boxW + 6 + textW)
+                        frame.SpecEnableHolder:SetWidth(totalW)
+                    end)
                 end
                 if addon.Profiles and addon.Profiles.IsSpecProfilesEnabled then
                     frame.SpecEnableCheck:SetChecked(addon.Profiles:IsSpecProfilesEnabled())
@@ -536,6 +573,34 @@ local function renderProfilesManage()
         end
 
         right:Display(init)
+
+        -- Bottom-center warning: fixed footer + Rules-style divider above it.
+        do
+            -- Derive sizes from GameFontHighlight so this adapts across clients.
+            local _, baseSize = GameFontHighlight:GetFont()
+            baseSize = tonumber(baseSize) or 14
+
+            -- Previous warning used ~1.15 scale, then we increased by +20%.
+            -- User feedback: reduce overall warning size by 15% from current.
+            local warnScale = 1.15 * 1.20 * 0.85
+            local warnSize = math.floor(baseSize * warnScale + 0.5)
+            -- Keep RELOAD inline (same size), but bold + underline provides emphasis.
+            local reloadSize = warnSize
+
+            if right.SetBottomNotice then
+                right:SetBottomNotice({
+                    height = 132,
+                    messageTop = "Creating, deleting, or switching between profiles will require a ",
+                    emphasisWord = "RELOAD",
+                    messageSuffix = ".",
+                    messageBottom = "ScooterMod only layers customizations on top of the Blizzard UI and a reload is needed to obtain current defaults for fields which you have customized in one profile but not another.",
+                    color = { 1.0, 0.82, 0.0, 1.0 },
+                    topSize = warnSize,
+                    wordSize = reloadSize,
+                    bottomSize = warnSize,
+                })
+            end
+        end
 
         if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfilesSectionVisibility then
             addon.SettingsPanel:UpdateProfilesSectionVisibility()

@@ -138,9 +138,10 @@ local function getCurrentSpecID()
 end
 
 local function buildDefaultProfile()
-    local defaults = addon and addon.GetDefaults and addon:GetDefaults()
-    local profileDefaults = defaults and defaults.profile
-    return deepCopy(profileDefaults or {})
+    -- Zero‑Touch policy: new profiles should start empty so ScooterMod does not
+    -- implicitly "force defaults" into SavedVariables. AceDB defaults still exist
+    -- via metatable fallback when reading unset keys.
+    return {}
 end
 
 local function isCombatLocked()
@@ -488,6 +489,12 @@ function Profiles:PromptCopyLayout(sourceName, dropdown, suggested)
                 C_Timer.After(0, function()
                     addon.Profiles:PromptCopyLayout(d.sourceName, d.dropdown, newName)
                 end)
+            else
+                -- Copy no longer switches profiles (no reload needed). Keep the current selection.
+                if d and d.dropdown and addon and addon.Profiles and addon.Profiles.db then
+                    local current = addon.Profiles.db:GetCurrentProfile()
+                    addon.Profiles:RestoreDropdownSelection(d.dropdown, current, addon.Profiles:GetLayoutDisplayText(current))
+                end
             end
         end,
         onCancel = function(d)
@@ -891,28 +898,102 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
     -- Update our internal caches
     addLayoutToCache(self, newName)
     
-    -- Defer the profile switch to avoid taint from happening in the same call stack as the copy
-    -- This is the key: the copy operation itself is clean, but switching immediately causes the warning
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.1, function()
-            -- Now switch to the new profile normally (including Edit Mode activation)
-            self:SwitchToProfile(newName, { reason = "DeferredCopySwitch", force = true })
-            
-            -- Update UI after the switch
-            if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-                addon.SettingsPanel.UpdateProfileActionButtons()
-            end
-            if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-                local current = self.db:GetCurrentProfile()
-                self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-            end
-            notifyUI()
-        end)
-    else
-        -- Fallback if C_Timer is unavailable (shouldn't happen, but be safe)
-        self:SwitchToProfile(newName, { reason = "CopyLayout", force = true })
+    -- Copy does NOT switch profiles (no reload needed). Just refresh UI/state.
+    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
+        addon.SettingsPanel.UpdateProfileActionButtons()
     end
+    notifyUI()
     
+    return true
+end
+
+local function buildPendingActivation(layoutName, meta)
+    local p = { layoutName = layoutName }
+    if type(meta) == "table" then
+        for k, v in pairs(meta) do
+            if k ~= "layoutName" then
+                p[k] = v
+            end
+        end
+    end
+    return p
+end
+
+local function persistAceProfileKeyForChar(db, layoutName)
+    if not (db and layoutName) then return end
+    local sv = rawget(db, "sv")
+    local charKey = db.keys and db.keys.char
+    if sv and sv.profileKeys and charKey then
+        sv.profileKeys[charKey] = layoutName
+    end
+end
+
+local function persistEditModeActiveLayoutByName(layoutName)
+    if not layoutName then return end
+    if not (C_EditMode and C_EditMode.GetLayouts and C_EditMode.SaveLayouts) then return end
+    local li = C_EditMode.GetLayouts()
+    if not (li and li.layouts) then return end
+    for idx, layout in ipairs(li.layouts) do
+        if layout and layout.layoutName == layoutName then
+            li.activeLayout = idx
+            break
+        end
+    end
+    pcall(C_EditMode.SaveLayouts, li)
+end
+
+function Profiles:RequestReloadToProfile(layoutName, meta)
+    if not (self.db and self.db.global) then
+        return false
+    end
+    if type(ReloadUI) ~= "function" then
+        return false
+    end
+    -- Persist the pending activation token for the next load.
+    self.db.global.pendingProfileActivation = buildPendingActivation(layoutName, meta)
+
+    -- IMPORTANT: Persist the intended profile selection for this character immediately.
+    -- We intentionally do NOT call db:SetProfile() here: it fires AceDB callbacks, and other
+    -- systems may react and overwrite selection state before the reload snapshot occurs.
+    -- Keeping this path minimal makes the reload deterministic.
+    persistAceProfileKeyForChar(self.db, layoutName)
+
+    -- Persist the intended Edit Mode active layout so post-reload sync doesn't snap back.
+    persistEditModeActiveLayoutByName(layoutName)
+
+    ReloadUI()
+    return true
+end
+
+function Profiles:PromptReloadToProfile(layoutName, meta)
+    if not (self.db and self.db.global) then
+        return false
+    end
+    if not addon or not addon.Dialogs or not addon.Dialogs.Show then
+        return false
+    end
+    -- Stash pending activation now; the actual ReloadUI() must come from a hardware event.
+    self.db.global.pendingProfileActivation = buildPendingActivation(layoutName, meta)
+    addon.Dialogs:Show("SCOOTERMOD_SPEC_PROFILE_RELOAD", {
+        data = { layoutName = layoutName },
+        onAccept = function()
+            -- Persist selection right before reloading (hardware-event-safe click).
+            -- Do this here so Cancel doesn't accidentally make the choice "stick" for next reload.
+            if addon and addon.db then
+                persistAceProfileKeyForChar(addon.db, layoutName)
+            end
+            persistEditModeActiveLayoutByName(layoutName)
+            if type(ReloadUI) == "function" then
+                ReloadUI()
+            end
+        end,
+        onCancel = function()
+            -- Abandon: clear pending activation so we don't surprise-reload on next load.
+            if addon and addon.db and addon.db.global then
+                addon.db.global.pendingProfileActivation = nil
+            end
+        end,
+    })
     return true
 end
 
@@ -930,9 +1011,29 @@ function Profiles:PerformCreateLayout(rawNewName)
     if not C_EditMode or not C_EditMode.GetLayouts or not C_EditMode.SaveLayouts then
         return false, "C_EditMode API unavailable." end
 
+    -- IMPORTANT: Creating a brand-new profile must be Zero‑Touch (stock Blizzard UI).
+    -- We cannot reliably "undo" every frame mutation from a previous profile without
+    -- tracking Blizzard baselines, so we require a /reload and let Blizzard initialize.
+
+    local name = newName
+
+    -- Re-validate (race-safe)
+    if isCombatLocked() then
+        return false, "Cannot create layouts during combat."
+    end
+    if not ensureLayoutsLoaded() then
+        return false, "Edit Mode layouts are not ready yet."
+    end
+
     local layoutInfo = C_EditMode.GetLayouts()
     if not layoutInfo or not layoutInfo.layouts then
-        return false, "Unable to read layouts." end
+        return false, "Unable to read layouts."
+    end
+    for _, l in ipairs(layoutInfo.layouts) do
+        if l and l.layoutName == name then
+            return false, "A layout with that name already exists."
+        end
+    end
 
     -- Choose a base: prefer Modern preset; fallback to active; fallback to any preset
     local base
@@ -946,10 +1047,12 @@ function Profiles:PerformCreateLayout(rawNewName)
         local presets = EditModePresetLayoutManager:GetCopyOfPresetLayouts() or {}
         base = presets[1]
     end
-    if not base then return false, "Unable to locate a base layout for creation." end
+    if not base then
+        return false, "Unable to locate a base layout for creation."
+    end
 
     local newLayout = CopyTable(base)
-    newLayout.layoutName = newName
+    newLayout.layoutName = name
     newLayout.layoutType = Enum.EditModeLayoutType.Character
     newLayout.isPreset = nil
     newLayout.isModified = nil
@@ -957,27 +1060,42 @@ function Profiles:PerformCreateLayout(rawNewName)
     table.insert(layoutInfo.layouts, newLayout)
     C_EditMode.SaveLayouts(layoutInfo)
 
-    if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
-    postMutationSync(self, "CreateLayout")
+    -- Create AceDB profile using template defaults (Zero‑Touch template is empty)
+    addLayoutToCache(self, name)
+    self.db.profiles[name] = deepCopy(self._profileTemplate)
 
-    -- Create AceDB profile using template defaults
-    addLayoutToCache(self, newName)
-    self.db.profiles[newName] = deepCopy(self._profileTemplate)
+    -- Persist AceDB current profile without firing our ProfileChanged apply path.
+    self._suppressProfileCallback = true
+    pcall(self.db.SetProfile, self.db, name)
+    self._suppressProfileCallback = false
 
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.1, function()
-            self:SwitchToProfile(newName, { reason = "DeferredCreateSwitch", force = true })
-            if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-                addon.SettingsPanel.UpdateProfileActionButtons()
+    -- EXTRA SAFETY: explicitly persist the profileKeys entry AceDB uses for this character.
+    -- This ensures the newly-created profile is the one selected when the reload snapshot is written.
+    do
+        local sv = rawget(self.db, "sv")
+        local charKey = self.db.keys and self.db.keys.char
+        if sv and sv.profileKeys and charKey then
+            sv.profileKeys[charKey] = name
+        end
+        if self.db.global then
+            self.db.global.pendingProfileActivation = { layoutName = name }
+        end
+    end
+
+    -- Ensure the destination is marked active in Edit Mode before reload.
+    local li = C_EditMode.GetLayouts()
+    if li and li.layouts then
+        for idx, layout in ipairs(li.layouts) do
+            if layout and layout.layoutName == name then
+                li.activeLayout = idx
+                break
             end
-            if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-                local current = self.db:GetCurrentProfile()
-                self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-            end
-            notifyUI()
-        end)
-    else
-        self:SwitchToProfile(newName, { reason = "CreateLayout", force = true })
+        end
+        pcall(C_EditMode.SaveLayouts, li)
+    end
+
+    if type(ReloadUI) == "function" then
+        ReloadUI()
     end
 
     return true
@@ -1135,6 +1253,7 @@ function Profiles:Initialize()
     self._pendingRefreshReason = "Initialize"
     self._lastPendingApply = 0
     self._lastRequestedLayout = nil
+    self._pendingSpecReload = nil
     self._initialized = true
     Debug("Initialize")
 
@@ -1144,6 +1263,22 @@ function Profiles:Initialize()
         self.db.RegisterCallback(self, "OnProfileReset", "OnProfileReset")
         self.db.RegisterCallback(self, "OnProfileDeleted", "OnProfileDeleted")
         self.db.RegisterCallback(self, "OnNewProfile", "OnNewProfile")
+    end
+
+    -- Consume pending profile activation as early as possible (immediately after DB exists).
+    -- This ensures that the very first post-reload session starts on the new profile/layout
+    -- before any styling passes run, preventing "sticky" old-profile visuals.
+    do
+        local global = self.db and self.db.global
+        local p = global and global.pendingProfileActivation
+        if p and p.layoutName then
+            local pendingCopy = p
+            -- Switch immediately; if Edit Mode layouts aren't ready yet, SwitchToProfile will
+            -- still set the AceDB profile and queue the layout apply for when layouts load.
+            self:SwitchToProfile(p.layoutName, { reason = "PendingProfileActivation", force = true })
+            global.pendingProfileActivation = nil
+            -- Note: we intentionally do not print a chat message for spec-triggered reloads.
+        end
     end
 
     self:RequestSync("Initialize")
@@ -1353,12 +1488,24 @@ function Profiles:_setActiveProfile(profileKey, opts)
         self._suppressProfileCallback = true
         self.db:SetProfile(profileKey)
         self._suppressProfileCallback = false
-        addon:LinkComponentsToDB()
-        addon:ApplyStyles()
     else
-        addon:LinkComponentsToDB()
-        addon:ApplyStyles()
     end
+
+    -- If switching to a truly empty/Zero‑Touch profile without reloading, clear
+    -- frame-level enforcement flags so old-profile hooks stop forcing hidden states.
+    do
+        local profile = addon and addon.db and addon.db.profile
+        local unitFrames = profile and rawget(profile, "unitFrames") or nil
+        local components = profile and rawget(profile, "components") or nil
+        local hasUF = type(unitFrames) == "table" and next(unitFrames) ~= nil
+        local hasComponents = type(components) == "table" and next(components) ~= nil
+        if (not hasUF) and (not hasComponents) and addon and addon.ClearFrameLevelState then
+            addon:ClearFrameLevelState()
+        end
+    end
+
+    addon:LinkComponentsToDB()
+    addon:ApplyStyles()
 
     -- Clear the suppression flag after profile switch completes
     addon._profileSwitchInProgress = false
@@ -1415,6 +1562,31 @@ function Profiles:SwitchToProfile(profileKey, opts)
     end
     opts = opts or {}
     Debug("SwitchToProfile", profileKey, opts.reason and ("reason=" .. tostring(opts.reason)) or "", opts.skipLayout and "[skipLayout]" or "")
+
+    -- Avoid reload loops / unnecessary reloads:
+    -- - PendingProfileActivation is consumed on load; we must switch immediately without reloading.
+    -- - PresetActivationOnLoad similarly must not trigger another reload.
+    local skipReload = opts.skipReload
+        or opts.reason == "PendingProfileActivation"
+        or opts.reason == "PresetActivationOnLoad"
+        or opts.reason == "Initialize"
+
+    -- If this is a genuine switch (different profile) and we're not in a safe on-load path,
+    -- force a reload so Blizzard can reinitialize baselines correctly.
+    if not skipReload and self.db and self.db.GetCurrentProfile then
+        local current = self.db:GetCurrentProfile()
+        if current ~= profileKey then
+            if isCombatLocked() then
+                if addon and addon.Print then addon:Print("Cannot switch profiles during combat.") end
+                return
+            end
+            -- Carry a small amount of metadata for debugging/UX on next load
+            local pendingMeta = opts.pendingMeta or { reason = opts.reason }
+            self:RequestReloadToProfile(profileKey, pendingMeta)
+            return
+        end
+    end
+
     if not ensureLayoutsLoaded() then
         self:EnsureProfileExists(profileKey)
         self.db:SetProfile(profileKey)
@@ -1554,8 +1726,15 @@ function Profiles:IsActiveProfilePreset()
     return self:IsPreset(active)
 end
 
-function Profiles:OnPlayerSpecChanged()
+function Profiles:OnPlayerSpecChanged(opts)
+    opts = opts or {}
     if not self:IsSpecProfilesEnabled() then
+        return
+    end
+    -- Spec Profiles should ONLY react to an actual spec change mid-session.
+    -- Do NOT auto-switch on login/reload, otherwise it can override a manual
+    -- profile switch that intentionally required a reload to establish baselines.
+    if opts.fromLogin then
         return
     end
     local specID = getCurrentSpecID()
@@ -1572,7 +1751,17 @@ function Profiles:OnPlayerSpecChanged()
     if not self._layoutLookup[targetProfile] then
         return
     end
-    self:SwitchToProfile(targetProfile, { reason = "SpecChanged" })
+
+    -- Combat guard: defer reload until combat ends.
+    if InCombatLockdown and InCombatLockdown() then
+        self._pendingSpecReload = { profile = targetProfile, specID = specID }
+        return
+    end
+
+    local specName = (GetSpecializationNameByID and GetSpecializationNameByID(specID)) or "unknown"
+    -- ReloadUI() is protected unless triggered by a hardware event. Spec change events are not.
+    -- So we prompt a one-click dialog and perform ReloadUI() from the click handler.
+    self:PromptReloadToProfile(targetProfile, { reason = "SpecChanged", specID = specID, specName = specName })
 end
 
 function Profiles:GetSpecOptions()

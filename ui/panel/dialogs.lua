@@ -178,7 +178,7 @@ local function CreateDialogFrame()
         f.CloseButton:SetScript("OnClick", function()
             f:Hide()
             if f._onCancel then
-                f._onCancel()
+                f._onCancel(f._data)
             end
         end)
     end
@@ -189,7 +189,7 @@ local function CreateDialogFrame()
             self:SetPropagateKeyboardInput(false)
             self:Hide()
             if self._onCancel then
-                self._onCancel()
+                self._onCancel(self._data)
             end
         else
             self:SetPropagateKeyboardInput(true)
@@ -240,6 +240,16 @@ function Dialogs:Show(name, options)
 
     local f = CreateDialogFrame()
 
+    local locked = options.locked or def.locked
+
+    -- Persist default behaviors on first use so we can safely toggle "locked" dialogs
+    -- without breaking subsequent dialogs (the frame is reused).
+    if not f._scootDefaultsCaptured then
+        f._scootDefaultsCaptured = true
+        f._scootDefaultCloseOnClick = f.CloseButton and f.CloseButton:GetScript("OnClick") or nil
+        f._scootDefaultOnKeyDown = f:GetScript("OnKeyDown")
+    end
+
     -- Set text (with optional format arguments)
     local displayText = options.text or def.text or "Are you sure?"
     local formatArgs = options.formatArgs or def.formatArgs
@@ -248,6 +258,16 @@ function Dialogs:Show(name, options)
     end
     f.Text:SetText(displayText)
     -- Reapply Roboto white styling after text change
+    ApplyDialogRobotoWhite(f.Text, 13, "")
+
+    -- Always reset the Text anchors for each show call. The dialog frame is reused and
+    -- some dialog types (non-editbox) add a bottom anchor to prevent overlap with buttons.
+    f.Text:ClearAllPoints()
+    f.Text:SetPoint("TOP", f, "TOP", 0, -35)
+    f.Text:SetPoint("LEFT", f, "LEFT", 20, 0)
+    f.Text:SetPoint("RIGHT", f, "RIGHT", -20, 0)
+    f.Text:SetJustifyH("CENTER")
+    f.Text:SetWordWrap(true)
     ApplyDialogRobotoWhite(f.Text, 13, "")
 
     -- Handle edit box
@@ -266,8 +286,14 @@ function Dialogs:Show(name, options)
         f:SetHeight(140)
     end
 
+    -- Optional height override (used for longer informational dialogs)
+    local desiredHeight = options.height or def.height
+    if desiredHeight then
+        f:SetHeight(desiredHeight)
+    end
+
     -- Determine if this is info-only (just OK, no cancel)
-    local infoOnly = options.infoOnly or def.infoOnly
+    local infoOnly = locked and true or (options.infoOnly or def.infoOnly)
 
     -- Set button text
     local acceptText = options.acceptText or def.acceptText or (infoOnly and (OKAY or "OK")) or YES or "Yes"
@@ -291,6 +317,47 @@ function Dialogs:Show(name, options)
         f.AcceptButton:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 15)
         f.CancelButton:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 15)
         f.CancelButton:Show()
+    end
+
+    -- Layout: keep content above the button row.
+    if hasEditBox then
+        -- Edit box sits above buttons; text wraps above edit box.
+        f.EditBox:ClearAllPoints()
+        f.EditBox:SetPoint("LEFT", f, "LEFT", 40, 0)
+        f.EditBox:SetPoint("RIGHT", f, "RIGHT", -40, 0)
+        f.EditBox:SetPoint("BOTTOM", f.AcceptButton, "TOP", 0, 14)
+        f.Text:SetPoint("BOTTOM", f.EditBox, "TOP", 0, 12)
+    else
+        -- No edit box: text wraps above the button row.
+        f.Text:SetPoint("BOTTOM", f.AcceptButton, "TOP", 0, 12)
+    end
+
+    -- Lockdown behavior: prevent dismissing without choosing the primary action.
+    if locked then
+        if f.CloseButton then
+            f.CloseButton:Hide()
+            f.CloseButton:SetScript("OnClick", nil)
+        end
+        f:SetScript("OnKeyDown", function(self, key)
+            -- Ignore ESC; allow other keys to propagate.
+            if key == "ESCAPE" then
+                self:SetPropagateKeyboardInput(false)
+                return
+            end
+            self:SetPropagateKeyboardInput(true)
+        end)
+    else
+        -- Restore close/ESC behavior for normal dialogs (frame is reused).
+        if f.CloseButton then
+            f.CloseButton:Show()
+            ApplyDialogCloseButtonTheme(f.CloseButton)
+            if f._scootDefaultCloseOnClick then
+                f.CloseButton:SetScript("OnClick", f._scootDefaultCloseOnClick)
+            end
+        end
+        if f._scootDefaultOnKeyDown then
+            f:SetScript("OnKeyDown", f._scootDefaultOnKeyDown)
+        end
     end
 
     -- Store callbacks and data
@@ -451,6 +518,13 @@ Dialogs:Register("SCOOTERMOD_CREATE_LAYOUT", {
     maxLetters = 32,
     acceptText = ACCEPT or "Accept",
     cancelText = CANCEL or "Cancel",
+})
+
+Dialogs:Register("SCOOTERMOD_SPEC_PROFILE_RELOAD", {
+    text = "Switching profiles for a spec change requires a UI reload so Blizzard can rebuild a clean baseline.\n\nReload now?",
+    acceptText = "Reload",
+    cancelText = CANCEL or "Cancel",
+    height = 200,
 })
 
 Dialogs:Register("SCOOTERMOD_APPLY_PRESET", {

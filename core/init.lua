@@ -68,6 +68,9 @@ function addon:OnInitialize()
         end)
     end
 
+    -- NOTE: pendingProfileActivation is consumed in Profiles:Initialize() so the new
+    -- profile/layout is activated as early as possible (before ApplyStyles runs).
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
@@ -77,11 +80,18 @@ function addon:OnInitialize()
     end
 
     -- 5. Register for events
+    -- Login/spec-change guard: PLAYER_SPECIALIZATION_CHANGED can fire during initial login.
+    -- We must not prompt/reload in that phase; only live spec switches should prompt.
+    self._scootSpecLoginGuard = true
     self:RegisterEvents()
 end
 
 function addon:GetDefaults()
     local defaults = {
+        global = {
+            pendingPresetActivation = nil,
+            pendingProfileActivation = nil,
+        },
         profile = {
             applyAll = {
                 fontPending = "FRIZQT__",
@@ -199,6 +209,16 @@ function addon:PLAYER_REGEN_DISABLED()
         self:RefreshOpacityState()
         if addon.UnitFrames_EnforcePetOverlays then
             addon.UnitFrames_EnforcePetOverlays()
+        end
+    end
+
+    -- If a spec change occurred during combat and spec profiles are enabled, reload now.
+    if self.Profiles and self.Profiles._pendingSpecReload then
+        local pending = self.Profiles._pendingSpecReload
+        self.Profiles._pendingSpecReload = nil
+        local specName = (pending and pending.specID and GetSpecializationNameByID and GetSpecializationNameByID(pending.specID)) or "unknown"
+        if pending and pending.profile and self.Profiles.PromptReloadToProfile then
+            self.Profiles:PromptReloadToProfile(pending.profile, { reason = "SpecChanged", specID = pending.specID, specName = specName })
         end
     end
 end
@@ -424,7 +444,20 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             self.Profiles:TryPendingSync()
         end
         if self.Profiles.OnPlayerSpecChanged then
-            self.Profiles:OnPlayerSpecChanged()
+            -- On initial world entry, spec profiles may need to switch to an assigned layout.
+            -- Do this without triggering a reload ONLY on real login/reload.
+            self.Profiles:OnPlayerSpecChanged({ fromLogin = not not (isInitialLogin or isReloadingUi) })
+        end
+    end
+
+    -- Clear login guard shortly after initial login/reload.
+    if isInitialLogin or isReloadingUi then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.5, function()
+                if addon then addon._scootSpecLoginGuard = false end
+            end)
+        else
+            self._scootSpecLoginGuard = false
         end
     end
     if self.Rules and self.Rules.OnPlayerLogin then
@@ -577,7 +610,7 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
         return
     end
     if self.Profiles and self.Profiles.OnPlayerSpecChanged then
-        self.Profiles:OnPlayerSpecChanged()
+        self.Profiles:OnPlayerSpecChanged({ fromLogin = not not self._scootSpecLoginGuard })
     end
     if self.Rules and self.Rules.OnPlayerSpecChanged then
         self.Rules:OnPlayerSpecChanged()
