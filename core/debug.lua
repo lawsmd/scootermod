@@ -209,7 +209,8 @@ end
     Purpose:
       - Produce a deterministic, copy/paste friendly Lua table literal for a given
         AceDB profile (usually the current profile).
-      - Intended for preset ingestion into core/presets.lua (ScooterUI/ScooterDeck).
+      - Intended for preset ingestion into the preset payload files under core/preset_*.lua
+        (for example core/preset_scooterui.lua).
 ----------------------------------------------------------------------------]]--
 
 local function _IsIdentifierKey(s)

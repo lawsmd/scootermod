@@ -1860,7 +1860,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     local hasLegacyExport = type(preset.editModeExport) == "string" and preset.editModeExport ~= ""
     local hasSourceLayoutName = type(preset.sourceLayoutName) == "string" and preset.sourceLayoutName ~= ""
     if hasLegacyExport and not hasLayoutTable then
-        return false, "Preset uses legacy Edit Mode export string format. Re-capture the preset with a raw layout table via /scoot debug editmode export and update core/presets.lua."
+        return false, "Preset uses legacy Edit Mode export string format. Re-capture the preset with a raw layout table via /scoot debug editmode export and update the preset payload file under core/preset_*.lua (for example core/preset_scooterui.lua)."
     end
     if not hasLayoutTable and not hasSourceLayoutName then
         return false, "Preset Edit Mode payload missing (requires editModeLayout or sourceLayoutName)."

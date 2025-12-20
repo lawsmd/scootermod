@@ -27,6 +27,8 @@ core/barborders.lua
 core/iconborders.lua
 core/iconbackdrops.lua
 core/presets.lua
+core/preset_scooterui.lua
+core/preset_scooterdeck.lua
 core/borders.lua
 core/editmode.lua
 core/profiles.lua
