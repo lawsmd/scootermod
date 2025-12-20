@@ -1726,7 +1726,16 @@ local function verifyHash(expected, blob, label)
     end
     local computed = computeSha256(blob or "")
     if not computed then
-        return false, string.format("%s hash could not be computed on this client.", label)
+        -- Some clients/accounts do not expose C_Crypto.Hash. Hash validation is a
+        -- safety rail (drift/tamper detection) but should not block functionality.
+        -- We warn once per session and proceed.
+        if addon and not addon._warnedPresetHashUnavailable then
+            addon._warnedPresetHashUnavailable = true
+            if addon.Print then
+                addon:Print(string.format("%s hash check skipped: SHA256 API unavailable on this client.", label))
+            end
+        end
+        return true
     end
     if computed ~= string.lower(expected) then
         return false, string.format("%s hash mismatch (expected %s, got %s).", label, expected, computed)
@@ -1955,6 +1964,11 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         C_EditMode.SaveLayouts(li)
     end
 
+    -- Ensure LibEditModeOverride sees the new layout immediately (avoids stale caches)
+    if LEO and LEO.LoadLayouts then
+        pcall(LEO.LoadLayouts, LEO)
+    end
+
     self.SaveOnly()
 
     if addon and addon.Profiles and addon.Profiles.RequestSync then
@@ -1971,10 +1985,6 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     end
     addon.db.profiles[newLayoutName] = profileCopy
 
-    if addon.Profiles and addon.Profiles.SwitchToProfile then
-        addon.Profiles:SwitchToProfile(newLayoutName, { reason = "PresetImport", force = true })
-    end
-
     local cpOk, cpErr = importConsolePortProfile(preset, newLayoutName)
     if not cpOk then
         addon:Print(cpErr)
@@ -1982,12 +1992,16 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
 
     addon:Print(string.format("Imported preset '%s' as new layout '%s'.", preset.name or preset.id or "Preset", newLayoutName))
 
-    if not opts.skipReload and type(ReloadUI) == "function" then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.2, ReloadUI)
-        else
-            ReloadUI()
-        end
+    -- Do NOT attempt to activate the new layout/profile immediately.
+    -- Some clients block add-ons from chaining layout creation -> activation -> reload in one session,
+    -- yielding "Interface action failed because of an AddOn" and leaving the user on the old profile.
+    -- Instead, persist a pending activation token and let the next load perform the switch.
+    if addon and addon.db and addon.db.global then
+        addon.db.global.pendingPresetActivation = {
+            layoutName = newLayoutName,
+            presetId = preset.id or preset.name,
+            createdAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+        }
     end
 
     return true, newLayoutName

@@ -51,6 +51,23 @@ function addon:OnInitialize()
         self.Rules:Initialize()
     end
 
+    -- Apply pending preset activation (set during preset import).
+    -- This runs on the next load to avoid "Interface action failed because of an AddOn"
+    -- when trying to activate immediately after creating/saving layouts.
+    if self.db and self.db.global and self.db.global.pendingPresetActivation and C_Timer and C_Timer.After then
+        local pending = self.db.global.pendingPresetActivation
+        C_Timer.After(0.6, function()
+            if not addon or not addon.db or not addon.db.global then return end
+            local p = addon.db.global.pendingPresetActivation
+            if not p or not p.layoutName then return end
+            if InCombatLockdown and InCombatLockdown() then return end
+            if addon.Profiles and addon.Profiles.SwitchToProfile then
+                addon.Profiles:SwitchToProfile(p.layoutName, { reason = "PresetActivationOnLoad", force = true })
+            end
+            addon.db.global.pendingPresetActivation = nil
+        end)
+    end
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 

@@ -146,8 +146,1307 @@ Presets:Register({
     -- Edit Mode layout payload (raw layoutInfo table).
     -- Capture/update via: /scoot debug editmode export "ScooterUI"
     -- NOTE: We intentionally do NOT ship the Blizzard Share string because there is no import API.
-    editModeLayout = nil,
-    editModeSha256 = "",
+    editModeLayout = {
+      layoutName = "ScooterUI",
+      layoutType = 1,
+      systems = {
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -575,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 6,
+              value = 1,
+            },
+            {
+              setting = 8,
+              value = 1,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 150,
+            offsetY = -575,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = 300,
+            offsetY = -575,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 3,
+        },
+        {
+          anchorInfo = {
+            offsetX = -150,
+            offsetY = -575,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 4,
+        },
+        {
+          anchorInfo = {
+            offsetX = -300,
+            offsetY = -575,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 5,
+        },
+        {
+          anchorInfo = {
+            offsetX = 328,
+            offsetY = -1102,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 2,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 6,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 150,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 5,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 7,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 200,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 2,
+              value = 12,
+            },
+            {
+              setting = 3,
+              value = 5,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 8,
+        },
+        {
+          anchorInfo = {
+            offsetX = -4,
+            offsetY = 0,
+            point = "BOTTOMRIGHT",
+            relativePoint = "BOTTOMLEFT",
+            relativeTo = "MultiBarLeft",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 1,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+          },
+          system = 0,
+          systemIndex = 11,
+        },
+        {
+          anchorInfo = {
+            offsetX = -5,
+            offsetY = 4,
+            point = "TOPRIGHT",
+            relativePoint = "BOTTOMRIGHT",
+            relativeTo = "PetFrame",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+          },
+          system = 0,
+          systemIndex = 12,
+        },
+        {
+          anchorInfo = {
+            offsetX = 286.5,
+            offsetY = 265.5,
+            point = "BOTTOMLEFT",
+            relativePoint = "BOTTOMLEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 5,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+          },
+          system = 0,
+          systemIndex = 13,
+        },
+        {
+          anchorInfo = {
+            offsetX = -0,
+            offsetY = -292.79998779297,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 2,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+          },
+          system = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 882.70001220703,
+            offsetY = -2,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 11,
+            },
+          },
+          system = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = -413.29998779297,
+            offsetY = -775.5,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 16,
+              value = 15,
+            },
+          },
+          system = 3,
+          systemIndex = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 417.20001220703,
+            offsetY = -775.5,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 16,
+              value = 15,
+            },
+          },
+          system = 3,
+          systemIndex = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = 223.60000610352,
+            offsetY = 198.19999694824,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 1,
+            },
+            {
+              setting = 16,
+              value = 10,
+            },
+          },
+          system = 3,
+          systemIndex = 3,
+        },
+        {
+          anchorInfo = {
+            offsetX = 829.70001220703,
+            offsetY = -913.40002441406,
+            point = "TOPLEFT",
+            relativePoint = "TOPLEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 4,
+              value = 1,
+            },
+            {
+              setting = 5,
+              value = 0,
+            },
+            {
+              setting = 6,
+              value = 1,
+            },
+            {
+              setting = 10,
+              value = 22,
+            },
+            {
+              setting = 11,
+              value = 24,
+            },
+            {
+              setting = 12,
+              value = 0,
+            },
+            {
+              setting = 14,
+              value = 1,
+            },
+            {
+              setting = 16,
+              value = 0,
+            },
+          },
+          system = 3,
+          systemIndex = 4,
+        },
+        {
+          anchorInfo = {
+            offsetX = 832.70001220703,
+            offsetY = -917.09997558594,
+            point = "TOPLEFT",
+            relativePoint = "TOPLEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 9,
+              value = 0,
+            },
+            {
+              setting = 10,
+              value = 6,
+            },
+            {
+              setting = 11,
+              value = 6,
+            },
+            {
+              setting = 12,
+              value = 0,
+            },
+            {
+              setting = 13,
+              value = 0,
+            },
+            {
+              setting = 14,
+              value = 0,
+            },
+            {
+              setting = 15,
+              value = 5,
+            },
+          },
+          system = 3,
+          systemIndex = 5,
+        },
+        {
+          anchorInfo = {
+            offsetX = -604.09997558594,
+            offsetY = -465,
+            point = "TOPRIGHT",
+            relativePoint = "TOPRIGHT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 3,
+              value = 0,
+            },
+            {
+              setting = 7,
+              value = 1,
+            },
+            {
+              setting = 16,
+              value = 0,
+            },
+          },
+          system = 3,
+          systemIndex = 6,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 0,
+            point = "RIGHT",
+            relativePoint = "RIGHT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+            {
+              setting = 10,
+              value = 0,
+            },
+            {
+              setting = 11,
+              value = 0,
+            },
+            {
+              setting = 12,
+              value = 0,
+            },
+            {
+              setting = 17,
+              value = 1,
+            },
+          },
+          system = 3,
+          systemIndex = 7,
+        },
+        {
+          anchorInfo = {
+            offsetX = -35.799999237061,
+            offsetY = 29.5,
+            point = "TOP",
+            relativePoint = "BOTTOM",
+            relativeTo = "PlayerFrame",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 16,
+              value = 5,
+            },
+          },
+          system = 3,
+          systemIndex = 8,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 517.5,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 4,
+        },
+        {
+          anchorInfo = {
+            offsetX = -457,
+            offsetY = 402,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 5,
+        },
+        {
+          anchorInfo = {
+            offsetX = -4,
+            offsetY = 0,
+            point = "TOPRIGHT",
+            relativePoint = "TOPLEFT",
+            relativeTo = "MinimapCluster",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+            {
+              setting = 3,
+              value = 11,
+            },
+            {
+              setting = 5,
+              value = 5,
+            },
+            {
+              setting = 6,
+              value = 15,
+            },
+          },
+          system = 6,
+          systemIndex = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -4,
+            point = "TOPLEFT",
+            relativePoint = "BOTTOMLEFT",
+            relativeTo = "BuffFrame",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 4,
+              value = 10,
+            },
+            {
+              setting = 5,
+              value = 7,
+            },
+            {
+              setting = 6,
+              value = 15,
+            },
+          },
+          system = 6,
+          systemIndex = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = 223.39999389648,
+            offsetY = 26.799999237061,
+            point = "TOP",
+            relativePoint = "BOTTOM",
+            relativeTo = "FocusFrame",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 7,
+        },
+        {
+          anchorInfo = {
+            offsetX = 35,
+            offsetY = 50,
+            point = "BOTTOMLEFT",
+            relativePoint = "BOTTOMLEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 4,
+            },
+            {
+              setting = 1,
+              value = 30,
+            },
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 71,
+            },
+          },
+          system = 8,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 4,
+            point = "BOTTOMLEFT",
+            relativePoint = "TOPLEFT",
+            relativeTo = "EncounterBar",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 9,
+        },
+        {
+          anchorInfo = {
+            offsetX = 16,
+            offsetY = -116,
+            point = "TOPLEFT",
+            relativePoint = "TOPLEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+          },
+          system = 10,
+        },
+        {
+          anchorInfo = {
+            offsetX = 860.59997558594,
+            offsetY = 402,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 11,
+        },
+        {
+          anchorInfo = {
+            offsetX = -904.70001220703,
+            offsetY = -2,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+          },
+          system = 12,
+        },
+        {
+          anchorInfo = {
+            offsetX = 2,
+            offsetY = -113.69999694824,
+            point = "LEFT",
+            relativePoint = "LEFT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 1,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+            {
+              setting = 3,
+              value = 15,
+            },
+          },
+          system = 13,
+        },
+        {
+          anchorInfo = {
+            offsetX = 520.5,
+            offsetY = 1.5,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 0,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+          },
+          system = 14,
+        },
+        {
+          anchorInfo = {
+            offsetX = -455.79998779297,
+            offsetY = -2,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+          },
+          system = 15,
+          systemIndex = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 17,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "StatusTrackingBarManager",
+          },
+          isInDefaultPosition = true,
+          settings = {
+          },
+          system = 15,
+          systemIndex = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 0,
+            point = "RIGHT",
+            relativePoint = "RIGHT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+            {
+              setting = 0,
+              value = 5,
+            },
+          },
+          system = 16,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -100,
+            point = "TOP",
+            relativePoint = "TOP",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+          },
+          system = 17,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 0,
+            point = "RIGHT",
+            relativePoint = "RIGHT",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+            {
+              setting = 0,
+              value = 10,
+            },
+          },
+          system = 18,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = 0,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = true,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+          },
+          system = 19,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -242.19999694824,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 12,
+            },
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 3,
+            },
+            {
+              setting = 4,
+              value = 6,
+            },
+            {
+              setting = 5,
+              value = 50,
+            },
+            {
+              setting = 6,
+              value = 0,
+            },
+            {
+              setting = 8,
+              value = 1,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+            {
+              setting = 10,
+              value = 1,
+            },
+          },
+          system = 20,
+          systemIndex = 1,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -268.60000610352,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 0,
+            },
+            {
+              setting = 1,
+              value = 7,
+            },
+            {
+              setting = 2,
+              value = 1,
+            },
+            {
+              setting = 3,
+              value = 3,
+            },
+            {
+              setting = 4,
+              value = 6,
+            },
+            {
+              setting = 5,
+              value = 50,
+            },
+            {
+              setting = 6,
+              value = 0,
+            },
+            {
+              setting = 8,
+              value = 1,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+            {
+              setting = 10,
+              value = 1,
+            },
+          },
+          system = 20,
+          systemIndex = 2,
+        },
+        {
+          anchorInfo = {
+            offsetX = 165.5,
+            offsetY = 402,
+            point = "BOTTOM",
+            relativePoint = "BOTTOM",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 1,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+            {
+              setting = 3,
+              value = 3,
+            },
+            {
+              setting = 4,
+              value = 8,
+            },
+            {
+              setting = 5,
+              value = 50,
+            },
+            {
+              setting = 6,
+              value = 0,
+            },
+            {
+              setting = 8,
+              value = 1,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+            {
+              setting = 10,
+              value = 1,
+            },
+          },
+          system = 20,
+          systemIndex = 3,
+        },
+        {
+          anchorInfo = {
+            offsetX = 0,
+            offsetY = -140,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            relativeTo = "UIParent",
+          },
+          isInDefaultPosition = false,
+          settings = {
+            {
+              setting = 0,
+              value = 1,
+            },
+            {
+              setting = 1,
+              value = 1,
+            },
+            {
+              setting = 2,
+              value = 0,
+            },
+            {
+              setting = 3,
+              value = 5,
+            },
+            {
+              setting = 4,
+              value = 2,
+            },
+            {
+              setting = 5,
+              value = 50,
+            },
+            {
+              setting = 6,
+              value = 0,
+            },
+            {
+              setting = 7,
+              value = 2,
+            },
+            {
+              setting = 8,
+              value = 1,
+            },
+            {
+              setting = 9,
+              value = 1,
+            },
+            {
+              setting = 10,
+              value = 1,
+            },
+          },
+          system = 20,
+          systemIndex = 4,
+        },
+      },
+    },
+    editModeSha256 = "d8c5fcd341f51994d20411a59fd46e555747c9445512a36060dd327ef0ab908d",
 
     -- ScooterMod profile snapshot (captured from authoring machine).
     profileSha256 = "2e6b9a4d9aa9cb1f4de7c523451f181235b6f1cd77fe9a22af32c32ac43d74dc",
