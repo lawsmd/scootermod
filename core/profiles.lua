@@ -137,6 +137,16 @@ local function getCurrentSpecID()
     return specID
 end
 
+-- Records the player's current spec so we can distinguish true mid-session spec changes
+-- from incidental events (like PLAYER_ENTERING_WORLD during loading screens).
+function Profiles:RecordCurrentSpec()
+    local specID = getCurrentSpecID()
+    if not specID then
+        return
+    end
+    self._lastKnownSpecID = specID
+end
+
 local function buildDefaultProfile()
     -- Zero‑Touch policy: new profiles should start empty so ScooterMod does not
     -- implicitly "force defaults" into SavedVariables. AceDB defaults still exist
@@ -1254,6 +1264,7 @@ function Profiles:Initialize()
     self._lastPendingApply = 0
     self._lastRequestedLayout = nil
     self._pendingSpecReload = nil
+    self._lastKnownSpecID = nil
     self._initialized = true
     Debug("Initialize")
 
@@ -1743,6 +1754,16 @@ function Profiles:OnPlayerSpecChanged(opts)
     if not specID then
         return
     end
+
+    -- Only react to an actual spec change mid-session. Loading screens and other
+    -- incidental triggers can run this path without a spec change; those must not
+    -- prompt/reload simply due to a spec/profile mismatch.
+    if self._lastKnownSpecID and specID == self._lastKnownSpecID then
+        return
+    end
+    -- Genuine spec change detected - record it immediately even if no assignment exists.
+    self._lastKnownSpecID = specID
+
     local targetProfile = self:GetSpecAssignment(specID)
     if not targetProfile then
         return

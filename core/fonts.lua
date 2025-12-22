@@ -280,12 +280,13 @@ local function CreateFontPicker()
     frame.Buttons = {}
 
     -- Escape key to close
+    --
+    -- IMPORTANT (taint): Frame:SetPropagateKeyboardInput() is a protected API and can
+    -- trigger ADDON_ACTION_BLOCKED (most commonly during combat lockdown). We avoid
+    -- calling it entirely; it's not required for our font picker behavior.
     frame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             CloseFontPicker()
-            self:SetPropagateKeyboardInput(false)
-        else
-            self:SetPropagateKeyboardInput(true)
         end
     end)
 

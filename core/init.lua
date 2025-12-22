@@ -454,10 +454,20 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     if isInitialLogin or isReloadingUi then
         if C_Timer and C_Timer.After then
             C_Timer.After(0.5, function()
-                if addon then addon._scootSpecLoginGuard = false end
+                if addon then
+                    addon._scootSpecLoginGuard = false
+                    -- Record a stable baseline spec after login/reload so we can ignore
+                    -- non-spec-change triggers (like loading screens) later in the session.
+                    if addon.Profiles and addon.Profiles.RecordCurrentSpec then
+                        addon.Profiles:RecordCurrentSpec()
+                    end
+                end
             end)
         else
             self._scootSpecLoginGuard = false
+            if addon.Profiles and addon.Profiles.RecordCurrentSpec then
+                addon.Profiles:RecordCurrentSpec()
+            end
         end
     end
     if self.Rules and self.Rules.OnPlayerLogin then

@@ -184,15 +184,17 @@ local function CreateDialogFrame()
     end
 
     -- Escape to close
+    --
+    -- IMPORTANT (taint): Frame:SetPropagateKeyboardInput() is a protected API and can
+    -- trigger ADDON_ACTION_BLOCKED (most commonly during combat lockdown). We avoid
+    -- calling it entirely; it's not required for our dialog behavior.
     f:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:SetPropagateKeyboardInput(false)
-            self:Hide()
-            if self._onCancel then
-                self._onCancel(self._data)
-            end
-        else
-            self:SetPropagateKeyboardInput(true)
+        if key ~= "ESCAPE" then
+            return
+        end
+        self:Hide()
+        if self._onCancel then
+            self._onCancel(self._data)
         end
     end)
 
@@ -339,12 +341,11 @@ function Dialogs:Show(name, options)
             f.CloseButton:SetScript("OnClick", nil)
         end
         f:SetScript("OnKeyDown", function(self, key)
-            -- Ignore ESC; allow other keys to propagate.
+            -- Ignore ESC; locked dialogs must not be dismissible via keyboard.
+            -- Do not call SetPropagateKeyboardInput() here; it can be protected/taint.
             if key == "ESCAPE" then
-                self:SetPropagateKeyboardInput(false)
                 return
             end
-            self:SetPropagateKeyboardInput(true)
         end)
     else
         -- Restore close/ESC behavior for normal dialogs (frame is reused).
