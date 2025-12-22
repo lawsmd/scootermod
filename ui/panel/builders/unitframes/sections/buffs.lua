@@ -538,6 +538,81 @@ local function build(ctx, init)
 						end
 						table.insert(init, row)
 					end
+
+					-- Allow Off-Screen Dragging (Target only)
+					do
+						local label = "Allow Off-Screen Dragging"
+						local tooltipText = "We've added this checkbox so that we may move the Unit Frame closer to the edge of the screen than is normally allowed in Edit Mode for the purpose of our Steam Deck UI. On a normally-sized screen, you probably shouldn't use this setting."
+
+						local function ensureUFDB()
+							local db = addon and addon.db and addon.db.profile
+							if not db then return nil end
+							db.unitFrames = db.unitFrames or {}
+							db.unitFrames.Target = db.unitFrames.Target or {}
+							db.unitFrames.Target.misc = db.unitFrames.Target.misc or {}
+							return db.unitFrames.Target.misc
+						end
+
+						local function applyNow()
+							if addon and addon.ApplyUnitFrameOffscreenUnlockFor then
+								addon.ApplyUnitFrameOffscreenUnlockFor("Target")
+							end
+						end
+
+						local setting = CreateLocalSetting(label, "boolean",
+							function()
+								local t = ensureUFDB() or {}
+								-- New checkbox key, with legacy fallback to the old slider value.
+								if t.allowOffscreenDrag == true then return true end
+								local legacy = tonumber(t.containerOffsetX) or 0
+								return legacy ~= 0
+							end,
+							function(v)
+								local t = ensureUFDB(); if not t then return end
+								t.allowOffscreenDrag = (v == true)
+								-- Clear legacy slider value to avoid drift on reload.
+								t.containerOffsetX = nil
+								applyNow()
+							end,
+							false)
+
+						local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
+						row.GetExtent = function() return 34 end
+						row:AddShownPredicate(function()
+							return panel:IsSectionExpanded(componentId, "Misc.")
+						end)
+						do
+							local base = row.InitFrame
+							row.InitFrame = function(self, frame)
+								if base then base(self, frame) end
+								if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+								if panel and panel.ApplyRobotoWhite then
+									if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+									local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+									if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+								end
+
+								-- ScooterMod info tooltip icon (see TOOLTIPSCOOT.md)
+								-- Place icon to the LEFT of the checkbox label to avoid crowding long text.
+								local cb = frame and (frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox))
+								local labelFS = (cb and cb.Text) or (frame and frame.Text)
+								if labelFS and panel and panel.CreateInfoIcon then
+									if not frame.ScooterOffscreenUnlockInfoIcon then
+										frame.ScooterOffscreenUnlockInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "RIGHT", "LEFT", -6, 0, 32)
+									else
+										frame.ScooterOffscreenUnlockInfoIcon.TooltipText = tooltipText
+										frame.ScooterOffscreenUnlockInfoIcon:Show()
+									end
+									local icon = frame.ScooterOffscreenUnlockInfoIcon
+									if icon and icon.ClearAllPoints and icon.SetPoint then
+										icon:ClearAllPoints()
+										icon:SetPoint("RIGHT", labelFS, "LEFT", -6, 0)
+									end
+								end
+							end
+						end
+						table.insert(init, row)
+					end
 				end
 	
 				-- Sixth collapsible section: Buffs & Debuffs (Focus only)

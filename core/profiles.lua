@@ -1582,7 +1582,9 @@ function Profiles:SwitchToProfile(profileKey, opts)
             end
             -- Carry a small amount of metadata for debugging/UX on next load
             local pendingMeta = opts.pendingMeta or { reason = opts.reason }
-            self:RequestReloadToProfile(profileKey, pendingMeta)
+            -- ReloadUI() is protected unless triggered by a hardware event (e.g. a click).
+            -- SwitchToProfile can be reached from non-hardware events, so we must prompt.
+            self:PromptReloadToProfile(profileKey, pendingMeta)
             return
         end
     end

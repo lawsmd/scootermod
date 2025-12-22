@@ -602,6 +602,10 @@ function addon:EDIT_MODE_LAYOUTS_UPDATED()
     if addon.OnUnitFrameScaleMultLayoutsUpdated then
         addon.OnUnitFrameScaleMultLayoutsUpdated()
     end
+	-- Reapply container X-offset after Edit Mode has finished its repositioning
+	if addon.OnUnitFrameOffscreenUnlockLayoutsUpdated then
+		addon.OnUnitFrameOffscreenUnlockLayoutsUpdated()
+	end
     self:ApplyStyles()
 end
 

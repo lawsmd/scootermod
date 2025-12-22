@@ -1133,6 +1133,10 @@ function addon:ApplyStyles()
     if addon.ApplyAllPlayerMiscVisibility then
         addon.ApplyAllPlayerMiscVisibility()
     end
+	-- Unit Frames: Off-screen drag unlock (Player + Target)
+	if addon.ApplyAllUnitFrameOffscreenUnlocks then
+		addon.ApplyAllUnitFrameOffscreenUnlocks()
+	end
     if addon.ApplyAllUnitFrameScaleMults then
         addon.ApplyAllUnitFrameScaleMults()
     end
