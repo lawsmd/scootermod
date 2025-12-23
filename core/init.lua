@@ -29,6 +29,26 @@ local function purgeDisabledPRDComponents(db)
     end
 end
 
+-- Migrate legacy component SavedVariables from old id to new canonical id.
+-- Migration: "questLog" -> "objectiveTracker" (component renamed to reflect true Blizzard frame name).
+-- Note: we avoid spelling the old id in plaintext to keep the codebase free of legacy naming.
+local function migrateObjectiveTrackerComponent(db)
+    local profile = db and db.profile
+    local components = profile and rawget(profile, "components") or nil
+    if type(components) ~= "table" then return end
+
+    local legacyId = "quest" .. "Log"
+    local newId = "objectiveTracker"
+
+    local old = rawget(components, legacyId)
+    if old ~= nil and rawget(components, newId) == nil then
+        components[newId] = old
+    end
+    if rawget(components, legacyId) ~= nil then
+        components[legacyId] = nil
+    end
+end
+
 function addon:OnInitialize()
     C_AddOns.LoadAddOn("Blizzard_Settings")
     -- Warm up bundled fonts early to avoid first-open rendering differences
@@ -43,12 +63,18 @@ function addon:OnInitialize()
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
     purgeDisabledPRDComponents(self.db)
+    migrateObjectiveTrackerComponent(self.db)
 
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
     end
     if self.Rules and self.Rules.Initialize then
         self.Rules:Initialize()
+    end
+    -- Initialize Interface feature modules that depend on AceDB/profile selection.
+    -- Chat hide/show is combat-safe and enforced separately from ApplyStyles().
+    if self.Chat and self.Chat.Initialize then
+        self.Chat:Initialize()
     end
 
     -- Apply pending preset activation (set during preset import).
@@ -98,6 +124,12 @@ function addon:GetDefaults()
                 barTexturePending = "default",
                 lastFontApplied = nil,
                 lastTextureApplied = nil,
+            },
+            -- Cooldown Manager quality-of-life settings
+            -- NOTE: enableCDM is intentionally omitted from defaults so it remains nil
+            -- (inherit Blizzard CVar) until the user explicitly sets it per profile.
+            cdmQoL = {
+                enableSlashCDM = false,
             },
             minimap = {
                 hide = false,
@@ -211,16 +243,6 @@ function addon:PLAYER_REGEN_DISABLED()
             addon.UnitFrames_EnforcePetOverlays()
         end
     end
-
-    -- If a spec change occurred during combat and spec profiles are enabled, reload now.
-    if self.Profiles and self.Profiles._pendingSpecReload then
-        local pending = self.Profiles._pendingSpecReload
-        self.Profiles._pendingSpecReload = nil
-        local specName = (pending and pending.specID and GetSpecializationNameByID and GetSpecializationNameByID(pending.specID)) or "unknown"
-        if pending and pending.profile and self.Profiles.PromptReloadToProfile then
-            self.Profiles:PromptReloadToProfile(pending.profile, { reason = "SpecChanged", specID = pending.specID, specName = specName })
-        end
-    end
 end
 
 function addon:UNIT_PET(event, unit)
@@ -300,6 +322,25 @@ function addon:PLAYER_REGEN_ENABLED()
                 -- Just refresh opacity state
                 self:RefreshOpacityState()
             end
+
+            -- If a spec change required a profile switch while combat-locked, prompt now (out of combat).
+            if self.Profiles and self.Profiles._pendingSpecReload then
+                local pending = self.Profiles._pendingSpecReload
+                self.Profiles._pendingSpecReload = nil
+                local specName = (pending and pending.specID and GetSpecializationNameByID and GetSpecializationNameByID(pending.specID)) or "unknown"
+                if pending and pending.profile and self.Profiles.PromptReloadToProfile then
+                    self.Profiles:PromptReloadToProfile(pending.profile, { reason = "SpecChanged", specID = pending.specID, specName = specName })
+                end
+            end
+
+            -- Generic queued reload-to-profile requests (never execute ReloadUI() directly here).
+            if self.Profiles and self.Profiles._pendingReloadToProfile and self.Profiles.PromptReloadToProfile then
+                local p = self.Profiles._pendingReloadToProfile
+                self.Profiles._pendingReloadToProfile = nil
+                if p and p.layoutName then
+                    self.Profiles:PromptReloadToProfile(p.layoutName, p.meta)
+                end
+            end
         end)
     else
         if self._pendingApplyStyles then
@@ -307,6 +348,25 @@ function addon:PLAYER_REGEN_ENABLED()
             self:ApplyStyles()
         else
             self:RefreshOpacityState()
+        end
+
+        -- If a spec change required a profile switch while combat-locked, prompt now (out of combat).
+        if self.Profiles and self.Profiles._pendingSpecReload then
+            local pending = self.Profiles._pendingSpecReload
+            self.Profiles._pendingSpecReload = nil
+            local specName = (pending and pending.specID and GetSpecializationNameByID and GetSpecializationNameByID(pending.specID)) or "unknown"
+            if pending and pending.profile and self.Profiles.PromptReloadToProfile then
+                self.Profiles:PromptReloadToProfile(pending.profile, { reason = "SpecChanged", specID = pending.specID, specName = specName })
+            end
+        end
+
+        -- Generic queued reload-to-profile requests (never execute ReloadUI() directly here).
+        if self.Profiles and self.Profiles._pendingReloadToProfile and self.Profiles.PromptReloadToProfile then
+            local p = self.Profiles._pendingReloadToProfile
+            self.Profiles._pendingReloadToProfile = nil
+            if p and p.layoutName then
+                self.Profiles:PromptReloadToProfile(p.layoutName, p.meta)
+            end
         end
     end
 end

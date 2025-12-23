@@ -81,6 +81,68 @@ local function prepareManager()
     return manager
 end
 
+-- Apply the profile's CDM override (if explicitly set) to the Blizzard CVar.
+-- This is character-scoped in Blizzard, so we enforce per-profile by setting it
+-- when the active ScooterMod profile changes.
+local function ApplyCooldownViewerEnabledForActiveProfile(reason)
+    local profile = addon and addon.db and addon.db.profile
+    local q = profile and profile.cdmQoL
+    local desired = q and q.enableCDM
+    if desired == nil then
+        return
+    end
+    local value = (desired and "1") or "0"
+    if C_CVar and C_CVar.SetCVar then
+        pcall(C_CVar.SetCVar, "cooldownViewerEnabled", value)
+    elseif SetCVar then
+        pcall(SetCVar, "cooldownViewerEnabled", value)
+    end
+
+    -- Important: setting the CVar does not reliably hide already-visible CDM frames
+    -- until the user toggles Blizzard's checkbox UI. If the profile explicitly disables
+    -- CDM, we must proactively hide the viewer frames so the UI matches the setting
+    -- immediately (including right after /reload).
+    --
+    -- We intentionally do NOT force-show when enabling; Edit Mode + viewer visibility
+    -- settings (and Blizzard state) should remain the source of truth for whether a
+    -- particular viewer is currently visible.
+    if desired == false then
+        local function hideViewers()
+            local viewers = {
+                "EssentialCooldownViewer",
+                "UtilityCooldownViewer",
+                "BuffIconCooldownViewer",
+                "BuffBarCooldownViewer",
+            }
+            for _, viewerName in ipairs(viewers) do
+                local frame = _G and _G[viewerName]
+                if frame then
+                    if frame.SetShown then
+                        pcall(frame.SetShown, frame, false)
+                    elseif frame.Hide then
+                        pcall(frame.Hide, frame)
+                    end
+                end
+            end
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            -- Avoid touching potentially protected UI during combat; retry once we leave combat.
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, function()
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        hideViewers()
+                    end
+                end)
+            end
+        else
+            hideViewers()
+        end
+    end
+
+    Debug("Applied cooldownViewerEnabled from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
+end
+
 local function getLayouts()
     if not C_EditMode or not C_EditMode.GetLayouts then return nil end
     return C_EditMode.GetLayouts()
@@ -953,26 +1015,22 @@ local function persistEditModeActiveLayoutByName(layoutName)
 end
 
 function Profiles:RequestReloadToProfile(layoutName, meta)
+    -- IMPORTANT:
+    -- ReloadUI() is a protected action and is not safe from arbitrary event handlers
+    -- (e.g. spec-change, edit mode callbacks). Calling it directly can produce:
+    --   [ADDON_ACTION_BLOCKED] AddOn 'ScooterMod' tried to call the protected function 'Reload()'.
+    --
+    -- All reloads MUST be initiated from a hardware event (typically a click).
+    -- Therefore this API now delegates to PromptReloadToProfile().
     if not (self.db and self.db.global) then
         return false
     end
-    if type(ReloadUI) ~= "function" then
-        return false
+    if InCombatLockdown and InCombatLockdown() then
+        -- Queue a safe prompt for when combat ends (handled by init.lua regen handler or callers).
+        self._pendingReloadToProfile = { layoutName = layoutName, meta = meta }
+        return true
     end
-    -- Persist the pending activation token for the next load.
-    self.db.global.pendingProfileActivation = buildPendingActivation(layoutName, meta)
-
-    -- IMPORTANT: Persist the intended profile selection for this character immediately.
-    -- We intentionally do NOT call db:SetProfile() here: it fires AceDB callbacks, and other
-    -- systems may react and overwrite selection state before the reload snapshot occurs.
-    -- Keeping this path minimal makes the reload deterministic.
-    persistAceProfileKeyForChar(self.db, layoutName)
-
-    -- Persist the intended Edit Mode active layout so post-reload sync doesn't snap back.
-    persistEditModeActiveLayoutByName(layoutName)
-
-    ReloadUI()
-    return true
+    return self:PromptReloadToProfile(layoutName, meta)
 end
 
 function Profiles:PromptReloadToProfile(layoutName, meta)
@@ -1292,6 +1350,12 @@ function Profiles:Initialize()
         end
     end
 
+    -- Ensure CDM enable/disable is applied for the active profile on load.
+    ApplyCooldownViewerEnabledForActiveProfile("Initialize")
+    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+        addon.Chat:ApplyFromProfile("Profiles:Initialize")
+    end
+
     self:RequestSync("Initialize")
 end
 
@@ -1308,6 +1372,10 @@ function Profiles:OnProfileChanged(_, _, newProfileKey)
     end
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
+    ApplyCooldownViewerEnabledForActiveProfile("OnProfileChanged")
+    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+        addon.Chat:ApplyFromProfile("Profiles:OnProfileChanged")
+    end
     self._lastActiveLayout = newProfileKey
     self:RequestSync("ProfileChanged")
 end
@@ -1315,12 +1383,20 @@ end
 function Profiles:OnProfileCopied(_, _, sourceKey)
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
+    ApplyCooldownViewerEnabledForActiveProfile("OnProfileCopied")
+    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+        addon.Chat:ApplyFromProfile("Profiles:OnProfileCopied")
+    end
     self:RequestSync("ProfileCopied")
 end
 
 function Profiles:OnProfileReset()
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
+    ApplyCooldownViewerEnabledForActiveProfile("OnProfileReset")
+    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+        addon.Chat:ApplyFromProfile("Profiles:OnProfileReset")
+    end
     self:RequestSync("ProfileReset")
 end
 
@@ -1517,6 +1593,10 @@ function Profiles:_setActiveProfile(profileKey, opts)
 
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
+    ApplyCooldownViewerEnabledForActiveProfile("_setActiveProfile")
+    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+        addon.Chat:ApplyFromProfile("Profiles:_setActiveProfile")
+    end
 
     -- Clear the suppression flag after profile switch completes
     addon._profileSwitchInProgress = false

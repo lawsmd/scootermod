@@ -69,6 +69,9 @@ local function ResolveFrameByKey(key)
         -- Aura Frame
         buffs  = "BuffFrame",
         debuffs = "DebuffFrame",
+        -- Objective Tracker
+        tracker = "ObjectiveTrackerFrame",
+        objectivetracker = "ObjectiveTrackerFrame",
         -- Unit Frames
         player = "PlayerFrame",
         target = "TargetFrame",

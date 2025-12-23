@@ -337,6 +337,29 @@ local function ApplyCooldownViewerStyling(self)
     local frame = _G[self.frameName]
     if not frame then return end
 
+    -- Respect Blizzard's Cooldown Manager enable/disable state.
+    -- When cooldownViewerEnabled is off, we must not force-show or restyle CDM frames.
+    -- This fixes the "CDM appears after reload even though disabled" bug by ensuring
+    -- our visibility logic never overrides the disabled state.
+    do
+        local enabled
+        if C_CVar and C_CVar.GetCVarBool then
+            enabled = C_CVar.GetCVarBool("cooldownViewerEnabled")
+        else
+            local v = (C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("cooldownViewerEnabled")) or (GetCVar and GetCVar("cooldownViewerEnabled")) or "0"
+            enabled = tostring(v) == "1"
+        end
+
+        if not enabled then
+            if frame.SetShown then
+                pcall(frame.SetShown, frame, false)
+            elseif frame.Hide then
+                pcall(frame.Hide, frame)
+            end
+            return
+        end
+    end
+
     local width = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
     local height = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
     local spacing = self.db.iconPadding or (self.settings.iconPadding and self.settings.iconPadding.default)

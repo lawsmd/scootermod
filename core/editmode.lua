@@ -157,6 +157,16 @@ local function ResolveSettingId(frame, logicalKey)
     local sys = frame.system
     if not sys then return nil end
 
+    -- Objective Tracker: stable numeric IDs (observed in-game via framestack and preset exports).
+    -- Keep these as a fast path, but still allow the dynamic scanner to serve as fallback.
+    -- System id: 12
+    if sys == 12 then
+        local lk = _lower(logicalKey)
+        if lk == "height" then return 0 end
+        if lk == "opacity" then return 1 end
+        if lk == "text_size" or lk == "textsize" then return 2 end
+    end
+
     local auraSystem = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.AuraFrame
     local cacheKey = logicalKey
     if sys == auraSystem then
@@ -225,6 +235,18 @@ local function ResolveSettingId(frame, logicalKey)
                 local minV = tonumber(setup.minValue)
                 local maxV = tonumber(setup.maxValue)
                 if (minV == 50 and maxV == 100) or nm:find("opacity", 1, true) then
+                    pick = pick or setup
+                end
+            end
+        elseif lk == "height" then
+            if tp == Enum.EditModeSettingDisplayType.Slider then
+                if nm:find("height", 1, true) then
+                    pick = pick or setup
+                end
+            end
+        elseif lk == "text_size" or lk == "textsize" then
+            if tp == Enum.EditModeSettingDisplayType.Slider then
+                if (nm:find("text", 1, true) and nm:find("size", 1, true)) or nm:find("font", 1, true) then
                     pick = pick or setup
                 end
             end
@@ -475,6 +497,44 @@ local function roundPositionValue(v)
 end
 
 --[[----------------------------------------------------------------------------
+    Objective Tracker: relayout helper for Text Size changes
+----------------------------------------------------------------------------]]--
+local function _ForceObjectiveTrackerRelayout(frame, origin)
+    if not frame then return end
+
+    -- Avoid re-entrancy and avoid calling into module layout code while Blizzard is mid-update
+    -- (this can trip internal invariants like AnchorBlock entry counts).
+    frame._ScooterObjectiveTrackerRelayoutOrigin = origin or frame._ScooterObjectiveTrackerRelayoutOrigin
+    if frame._ScooterObjectiveTrackerRelayoutQueued then return end
+    frame._ScooterObjectiveTrackerRelayoutQueued = true
+
+    local timer = _G.C_Timer
+    if not (timer and type(timer.After) == "function") then
+        frame._ScooterObjectiveTrackerRelayoutQueued = nil
+        return
+    end
+
+    timer.After(0, function()
+        if not frame then return end
+        frame._ScooterObjectiveTrackerRelayoutQueued = nil
+        frame._ScooterObjectiveTrackerRelayoutOrigin = nil
+
+        -- Mark modules dirty so the next Update pass recomputes block heights/anchors safely.
+        if type(frame.ForEachModule) == "function" then
+            pcall(frame.ForEachModule, frame, function(module)
+                if type(module) ~= "table" then return end
+                if type(module.MarkDirty) == "function" then pcall(module.MarkDirty, module) end
+            end)
+        end
+
+        -- Nudge the system through its standard update path (Blizzard owns actual anchoring).
+        if type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
+        if type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+        if type(frame.Update) == "function" then pcall(frame.Update, frame) end
+    end)
+end
+
+--[[----------------------------------------------------------------------------
     Full Sync Functions (Addon DB -> Edit Mode)
 ----------------------------------------------------------------------------]]--
 
@@ -514,6 +574,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         editModeValue = (dbValue == "H") and 0 or 1
     elseif settingId == "columns" then
         editModeValue = tonumber(dbValue) or 12
+    elseif settingId == "height" then
+        -- Objective Tracker: Height slider
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "height") or setting.settingId
+        editModeValue = tonumber(dbValue)
+    elseif settingId == "textSize" then
+        -- Objective Tracker: Text Size slider
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "text_size") or setting.settingId
+        editModeValue = tonumber(dbValue)
     elseif component and component.id == "microBar" and settingId == "direction" then
         -- Micro Bar: 'Order' uses 0 = default (Right/Up), 1 = reverse (Left/Down)
         local orientation = component.db.orientation or "H"
@@ -598,15 +666,16 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
     elseif settingId == "opacity" then
-        -- Write RAW percent (50..100). Library will normalize to index internally if needed.
+        -- Write RAW percent. Cooldown Viewer uses 50..100; Objective Tracker uses 0..100.
         local v = tonumber(dbValue) or 100
-        if v < 50 then v = 50 elseif v > 100 then v = 100 end
-        local emSetting = ResolveSettingId(frame, "opacity")
-        if emSetting then setting.settingId = emSetting end
-        editModeValue = v
-        -- Always resolve the EM setting id for opacity to avoid stale hardcodes
+        if frame and frame.system == 12 then
+            if v < 0 then v = 0 elseif v > 100 then v = 100 end
+        else
+            if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        end
         local resolved = ResolveSettingId(frame, "opacity")
         if resolved then setting.settingId = resolved end
+        editModeValue = v
     elseif component and component.id == "microBar" and (settingId == "menuSize" or settingId == "eyeSize") then
         -- Micro Bar sliders: library expects RAW values (min..max, step 5)
         local minV = (settingId == "menuSize") and 70 or 50
@@ -670,6 +739,27 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
                 pcall(frame.UpdateSystemSettingOpacity, frame)
             end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "height" then
+            markBackSyncSkip()
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingHeight) == "function" then
+                pcall(frame.UpdateSystemSettingHeight, frame)
+            end
+            wrote = true
+            persist()
+            return true
+        elseif settingId == "textSize" then
+            markBackSyncSkip()
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            if frame and type(frame.UpdateSystemSettingTextSize) == "function" then
+                pcall(frame.UpdateSystemSettingTextSize, frame)
+            end
+            -- Some clients do not fully recalculate block padding/spacing after text size changes
+            -- unless the tracker modules are explicitly re-laid out.
+            _ForceObjectiveTrackerRelayout(frame, "ScooterWrite:textSize")
             wrote = true
             persist()
             return true
@@ -1229,8 +1319,13 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_tooltip") or setting.settingId
     elseif settingId == "hideWhenInactive" then
         setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_when_inactive") or setting.settingId
+    elseif settingId == "height" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "height") or setting.settingId
+    elseif settingId == "textSize" then
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "text_size") or setting.settingId
     elseif settingId == "opacity" then
-        -- Use stable enum if present; fallback unnecessary for opacity since it is fixed index 5
+        -- Prefer dynamic resolver (system-specific); only fall back to the stable Cooldown Viewer enum/index.
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "opacity") or setting.settingId
         if not setting.settingId then
             local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
             if EM and EM.Opacity then setting.settingId = EM.Opacity else setting.settingId = 5 end
@@ -1388,13 +1483,17 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             end
         end
     elseif settingId == "opacity" then
-        -- Read RAW percent (50..100). Library returns raw even if internally stored as index.
+        -- Read RAW percent. Cooldown Viewer uses 50..100; Objective Tracker uses 0..100.
         local resolved = ResolveSettingId(frame, "opacity")
         if resolved then setting.settingId = resolved end
         local v = tonumber(editModeValue)
         if v == nil then return false end
         v = math.floor(v + 0.5)
-        if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        if frame and frame.system == 12 then
+            if v < 0 then v = 0 elseif v > 100 then v = 100 end
+        else
+            if v < 50 then v = 50 elseif v > 100 then v = 100 end
+        end
         dbValue = v
     elseif component and component.id == "microBar" and (settingId == "menuSize" or settingId == "eyeSize") then
         -- Library returns RAW values when index-based mode is enabled
@@ -2018,6 +2117,51 @@ function addon.EditMode.Initialize()
         LEO_local._forceIndexBased[sys] = LEO_local._forceIndexBased[sys] or {}
         LEO_local._forceIndexBased[sys][setting] = true
     end
+
+    -- Compatibility: Objective Tracker Height (system 12) appears to be stored as an index internally
+    -- (0..N) even though the UI presents raw values (400..1000). Force index-based translation in LEO
+    -- so ScooterMod always reads/writes raw values without bespoke conversions elsewhere.
+    do
+        local LEO_ot = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO_ot then
+            local sys = 12 -- Objective Tracker (confirmed via framestack and preset exports)
+            local displayType = _G.Enum and _G.Enum.EditModeSettingDisplayType
+            local mgr = _G.EditModeSettingDisplayInfoManager
+            local entries = mgr and mgr.systemSettingDisplayInfo and mgr.systemSettingDisplayInfo[sys]
+
+            local function force(settingId)
+                if settingId == nil then return end
+                LEO_ot._forceIndexBased = LEO_ot._forceIndexBased or {}
+                LEO_ot._forceIndexBased[sys] = LEO_ot._forceIndexBased[sys] or {}
+                LEO_ot._forceIndexBased[sys][settingId] = true
+            end
+
+            if type(entries) == "table" and displayType and displayType.Slider ~= nil then
+                for _, setup in ipairs(entries) do
+                    if setup and setup.type == displayType.Slider then
+                        local minV = tonumber(setup.minValue)
+                        local maxV = tonumber(setup.maxValue)
+                        local step = tonumber(setup.stepSize)
+                        -- Height slider is observed as 400..1000, step 10 in retail.
+                        if minV == 400 and maxV == 1000 and step == 10 then
+                            force(setup.setting)
+                        end
+                        -- Text Size slider is observed as 12..20, step 1 in retail.
+                        -- Some clients persist this slider as an index (0..8) internally. Force
+                        -- index-based translation so ScooterMod always reads/writes RAW values.
+                        if minV == 12 and maxV == 20 and step == 1 then
+                            force(setup.setting)
+                        end
+                    end
+                end
+            else
+                -- Fallback: expected stable setting id for Height is 0.
+                force(0)
+                -- Fallback: expected stable setting id for Text Size is 2.
+                force(2)
+            end
+        end
+    end
     if not addon._hookedSave and type(_G.C_EditMode) == "table" and type(_G.C_EditMode.SaveLayouts) == "function" then
         hooksecurefunc(_G.C_EditMode, "SaveLayouts", function()
             C_Timer.After(0.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("SaveLayouts:pass1") end end)
@@ -2037,6 +2181,21 @@ function addon.EditMode.Initialize()
                 C_Timer.After(0.1, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass1") end end)
                 C_Timer.After(0.5, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass2") end end)
                 C_Timer.After(1.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass3") end end)
+
+                -- After Save/Exit, some clients apply the new text size but leave stale block spacing
+                -- until another tracker rebuild. Force one relayout pass shortly after exit.
+                C_Timer.After(0.15, function()
+                    if InCombatLockdown and InCombatLockdown() then return end
+                    local frame = _G.ObjectiveTrackerFrame
+                    if not frame then return end
+                    _ForceObjectiveTrackerRelayout(frame, "EditModeExit")
+                    local comp = addon.Components and addon.Components.objectiveTracker
+                    if comp and type(comp.ApplyStyling) == "function" then
+                        pcall(comp.ApplyStyling, comp)
+                    elseif addon and type(addon.ApplyStyles) == "function" then
+                        pcall(addon.ApplyStyles, addon)
+                    end
+                end)
             end, addon)
             addon._editModeCBRegistered = true
         end

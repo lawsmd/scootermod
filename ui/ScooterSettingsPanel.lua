@@ -160,20 +160,8 @@ function panel.UpdateCollapseButtonVisibility()
         -- Profiles pages and home page do not have collapsible component sections
         local compId = entry and entry.componentId
         local isApplyAll = compId and compId:match("^applyAll")
-        if entry and (compId == "profilesManage" or compId == "profilesPresets" or compId == "profilesRules" or compId == "home" or isApplyAll) then
+        if entry and (compId == "profilesManage" or compId == "profilesPresets" or compId == "profilesRules" or compId == "home" or compId == "cdmQoL" or compId == "chat" or isApplyAll) then
             hide = true
-        end
-        -- Manage visibility of the Cooldown Manager settings button (only on CDM component tabs)
-        local cdmBtn = header.ScooterCDMButton
-        if cdmBtn then
-            local onCDMTab = false
-            if entry and entry.componentId then
-                local id = tostring(entry.componentId)
-                if id == "essentialCooldowns" or id == "utilityCooldowns" or id == "trackedBuffs" or id == "trackedBars" then
-                    onCDMTab = true
-                end
-            end
-            cdmBtn:SetShown(onCDMTab and not hide)
         end
     end
     btn:SetShown(not hide)
@@ -1585,8 +1573,351 @@ function panel.RenderMinimap()
     return createComingSoonRenderer("minimap", "Minimap")
 end
 
-function panel.RenderQuestLog()
-    return createComingSoonRenderer("questLog", "Quest Log")
+function panel.RenderObjectiveTracker()
+    -- Implemented in `ui/panel/builders/objectivetracker.lua` (loaded later via TOC).
+    -- Keep a lightweight fallback here for safety in case the builder file fails to load.
+    return createComingSoonRenderer("objectiveTracker", "Objective Tracker")
+end
+
+-- Interface -> Chat
+function panel.RenderChat()
+    local function render()
+        local f = panel.frame
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then
+            return
+        end
+
+        if right.SetTitle then
+            right:SetTitle("Chat")
+        end
+
+        -- Flat (no sections) parent-level checkbox page, mirroring CDM → Quality of Life.
+        local function ApplyFlatCheckboxRowTheme(frame, opts)
+            if not frame then return end
+            opts = opts or {}
+
+            local cb = frame.Checkbox or frame.CheckBox or frame.Control
+            local label = frame.Text or frame.Label
+
+            local function layout()
+                if not label or not cb then return end
+                if cb.ClearAllPoints and cb.SetPoint then
+                    cb:ClearAllPoints()
+                    cb:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                end
+                label:ClearAllPoints()
+                label:SetPoint("LEFT", frame, "LEFT", 36.5, 0)
+                label:SetPoint("RIGHT", cb, "LEFT", -10, 0)
+                label:SetJustifyH("LEFT")
+                label:SetJustifyV("MIDDLE")
+                label:SetWordWrap(true)
+                if label.SetMaxLines then
+                    label:SetMaxLines(3)
+                end
+            end
+
+            if panel and panel.ApplyRobotoWhite and label then
+                panel.ApplyRobotoWhite(label, 17, "")
+            end
+
+            layout()
+
+            if not frame._ScooterChatLayoutHooked then
+                frame._ScooterChatLayoutHooked = true
+                frame:HookScript("OnSizeChanged", function()
+                    layout()
+                end)
+            end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    layout()
+                end)
+            end
+
+            -- Info icon (left of label)
+            if opts.tooltipText and opts.tooltipText ~= "" and panel and panel.CreateInfoIcon then
+                local icon = frame.ScooterChatInfoIcon
+                if not icon then
+                    icon = panel.CreateInfoIcon(frame, opts.tooltipText, "RIGHT", "LEFT", -6, 0, 32)
+                    frame.ScooterChatInfoIcon = icon
+                else
+                    icon.TooltipText = opts.tooltipText
+                    icon:Show()
+                end
+                if icon and icon.ClearAllPoints and icon.SetPoint and label then
+                    icon:ClearAllPoints()
+                    icon:SetPoint("RIGHT", label, "LEFT", -8, 0)
+                end
+            else
+                if frame.ScooterChatInfoIcon then
+                    frame.ScooterChatInfoIcon:Hide()
+                end
+            end
+        end
+
+        local function getProfileChat()
+            local profile = addon and addon.db and addon.db.profile
+            return profile and rawget(profile, "chat") or nil
+        end
+        local function ensureProfileChat()
+            if not (addon and addon.db and addon.db.profile) then return nil end
+            addon.db.profile.chat = addon.db.profile.chat or {}
+            return addon.db.profile.chat
+        end
+
+        local init = {}
+        do
+            local tooltipText = "Hides chat windows/tabs and related controls, but keeps the chat input box so you can see slash commands you run. Added for use with the ScooterDeck preset. If you want to customize your Chat frame, I recommend Chattynator. :)"
+            local setting = CreateLocalSetting("Hide In-Game Chat", "boolean",
+                function()
+                    local c = getProfileChat()
+                    return (c and c.hideInGameChat) and true or false
+                end,
+                function(v)
+                    local c = ensureProfileChat()
+                    if not c then return end
+                    c.hideInGameChat = (v and true) or false
+                    if addon and addon.Chat and addon.Chat.ApplyFromProfile then
+                        addon.Chat:ApplyFromProfile("SettingsToggle")
+                    end
+                end,
+                false
+            )
+            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+                name = "Hide In-Game Chat",
+                setting = setting,
+                options = {},
+                componentId = "chat",
+                settingId = "hideInGameChat",
+            })
+            row.GetExtent = function() return 62 end
+            do
+                local baseInit = row.InitFrame
+                row.InitFrame = function(self, frame)
+                    if baseInit then baseInit(self, frame) end
+                    ApplyFlatCheckboxRowTheme(frame, { tooltipText = tooltipText })
+                end
+            end
+            table.insert(init, row)
+        end
+
+        right:Display(init)
+    end
+
+    return { mode = "list", render = render, componentId = "chat" }
+end
+
+-- Cooldown Manager -> Quality of Life
+function panel.RenderCdmQoL()
+    local function render()
+        local f = panel.frame
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then
+            return
+        end
+
+        if right.SetTitle then
+            right:SetTitle("Quality of Life")
+        end
+
+        -- NOTE: This page intentionally has NO collapsible section headers.
+        -- It is two top-level checkboxes only.
+        --
+        -- Because these checkboxes are not nested inside our usual ExpandableSection/TabbedSection
+        -- wrappers, we must explicitly apply:
+        -- - ScooterMod typography (Roboto + white)
+        -- - Label anchoring so long strings don't truncate prematurely
+
+        local function ApplyQoLCheckboxRowTheme(frame, opts)
+            if not frame then return end
+            opts = opts or {}
+
+            local cb = frame.Checkbox or frame.CheckBox or frame.Control
+            local label = frame.Text or frame.Label
+
+            local function layout()
+                if not label or not cb then return end
+                -- For this QoL page, we want the checkbox control to sit further to the right
+                -- so long labels have more room before wrapping/truncation.
+                if cb.ClearAllPoints and cb.SetPoint then
+                    cb:ClearAllPoints()
+                    cb:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                end
+                label:ClearAllPoints()
+                -- Use horizontal anchors with y=0 so the label centers vertically in the row,
+                -- matching the checkbox which is also centered at y=0. This ensures proper
+                -- vertical alignment without complex padding calculations.
+                label:SetPoint("LEFT", frame, "LEFT", 36.5, 0)
+                label:SetPoint("RIGHT", cb, "LEFT", -10, 0)
+                label:SetJustifyH("LEFT")
+                label:SetJustifyV("MIDDLE")
+                label:SetWordWrap(true)
+                if label.SetMaxLines then
+                    label:SetMaxLines(3)
+                end
+            end
+
+            -- Theme the label font/color to match ScooterMod (Roboto + white).
+            if panel and panel.ApplyRobotoWhite and label then
+                -- +20% larger than previous 14px => 17px (fills out the page better)
+                panel.ApplyRobotoWhite(label, 17, "")
+            end
+
+            layout()
+
+            -- CRITICAL: RightPane sets row height *after* InitFrame. That means frame:GetHeight()
+            -- can be 0 during our first layout() call, which would neutralize padding.
+            -- Re-run layout once the row has a real height.
+            if not frame._ScooterQoLLayoutHooked then
+                frame._ScooterQoLLayoutHooked = true
+                frame:HookScript("OnSizeChanged", function()
+                    layout()
+                end)
+            end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if frame and frame.IsShown and frame:IsShown() then
+                        layout()
+                    else
+                        layout()
+                    end
+                end)
+            end
+
+            -- Optional info icon (left of label)
+            if opts.tooltipText and opts.tooltipText ~= "" and panel and panel.CreateInfoIcon then
+                local icon = frame.ScooterQoLInfoIcon
+                if not icon then
+                    icon = panel.CreateInfoIcon(frame, opts.tooltipText, "RIGHT", "LEFT", -6, 0, 24)
+                    frame.ScooterQoLInfoIcon = icon
+                else
+                    icon.TooltipText = opts.tooltipText
+                    icon:Show()
+                end
+                -- Position precisely relative to the label's left edge
+                if icon and icon.ClearAllPoints and icon.SetPoint and label then
+                    icon:ClearAllPoints()
+                    icon:SetPoint("RIGHT", label, "LEFT", -8, 0)
+                end
+            else
+                if frame.ScooterQoLInfoIcon then
+                    frame.ScooterQoLInfoIcon:Hide()
+                end
+            end
+        end
+
+        -- /!\ IMPORTANT (Zero-Touch + UX):
+        -- - We DO NOT force-create profile data for enableCDM on render.
+        -- - If the profile has no explicit enable/disable, we mirror the current
+        --   Blizzard CVar value for the checkbox state (inherit).
+        local function getProfileQoL()
+            local profile = addon and addon.db and addon.db.profile
+            return profile and profile.cdmQoL
+        end
+        local function ensureProfileQoL()
+            if not (addon and addon.db and addon.db.profile) then return nil end
+            addon.db.profile.cdmQoL = addon.db.profile.cdmQoL or {}
+            return addon.db.profile.cdmQoL
+        end
+
+        local function getCooldownViewerEnabledFromCVar()
+            local v
+            if C_CVar and C_CVar.GetCVar then
+                v = C_CVar.GetCVar("cooldownViewerEnabled")
+            elseif GetCVar then
+                v = GetCVar("cooldownViewerEnabled")
+            end
+            return tostring(v or "0") == "1"
+        end
+
+        local function setCooldownViewerEnabledCVar(enabled)
+            local value = (enabled and "1") or "0"
+            if C_CVar and C_CVar.SetCVar then
+                pcall(C_CVar.SetCVar, "cooldownViewerEnabled", value)
+            elseif SetCVar then
+                pcall(SetCVar, "cooldownViewerEnabled", value)
+            end
+        end
+
+        local init = {}
+
+        -- Checkbox 1: Enable CDM on this profile (explicit override)
+        do
+            local setting = CreateLocalSetting("Enable Cooldown Manager", "boolean",
+                function()
+                    local q = getProfileQoL()
+                    if q and q.enableCDM ~= nil then
+                        return (q.enableCDM and true) or false
+                    end
+                    return getCooldownViewerEnabledFromCVar()
+                end,
+                function(v)
+                    local q = ensureProfileQoL()
+                    if not q then return end
+                    q.enableCDM = (v and true) or false
+                    setCooldownViewerEnabledCVar(q.enableCDM)
+                end,
+                getCooldownViewerEnabledFromCVar()
+            )
+            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+                name = "Enable the Cooldown Manager on this profile",
+                setting = setting,
+                options = {},
+                componentId = "cdmQoL",
+                settingId = "enableCDM",
+            })
+            -- Fixed height: allow up to 3 wrapped lines without overlapping next row.
+            row.GetExtent = function() return 62 end
+            do
+                local baseInit = row.InitFrame
+                row.InitFrame = function(self, frame)
+                    if baseInit then baseInit(self, frame) end
+                    ApplyQoLCheckboxRowTheme(frame, {
+                        tooltipText = "Blizzard's Cooldown Manager enable/disable setting is character-wide. This setting exists so ScooterMod can enforce Cooldown Manager enablement per-profile by toggling the 'cooldownViewerEnabled' CVar when you switch profiles.",
+                    })
+                end
+            end
+            table.insert(init, row)
+        end
+
+        -- Checkbox 2: Enable /cdm chat command
+        do
+            local setting = CreateLocalSetting("Enable /cdm", "boolean",
+                function()
+                    local q = getProfileQoL()
+                    return (q and q.enableSlashCDM) and true or false
+                end,
+                function(v)
+                    local q = ensureProfileQoL()
+                    if not q then return end
+                    q.enableSlashCDM = (v and true) or false
+                end,
+                false
+            )
+            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+                name = "Enable typing /cdm to open the Cooldown Manager menu",
+                setting = setting,
+                options = {},
+                componentId = "cdmQoL",
+                settingId = "enableSlashCDM",
+            })
+            -- Fixed height: allow up to 3 wrapped lines without overlapping next row.
+            row.GetExtent = function() return 62 end
+            do
+                local baseInit = row.InitFrame
+                row.InitFrame = function(self, frame)
+                    if baseInit then baseInit(self, frame) end
+                    ApplyQoLCheckboxRowTheme(frame)
+                end
+            end
+            table.insert(init, row)
+        end
+
+        right:Display(init)
+    end
+
+    return { mode = "list", render = render, componentId = "cdmQoL" }
 end
 
 local function BuildCategories()
@@ -1614,6 +1945,7 @@ local function BuildCategories()
 	addEntry("applyAllTextures", addon.SettingsPanel.RenderApplyAllTextures())
 
 	-- Cooldown Manager children
+	addEntry("cdmQoL", addon.SettingsPanel.RenderCdmQoL())
 	addEntry("essentialCooldowns", addon.SettingsPanel.RenderEssentialCooldowns())
 	addEntry("utilityCooldowns", addon.SettingsPanel.RenderUtilityCooldowns())
 	addEntry("trackedBuffs", addon.SettingsPanel.RenderTrackedBuffs())
@@ -1656,7 +1988,8 @@ local function BuildCategories()
 	-- Interface children
 	addEntry("tooltip", addon.SettingsPanel.RenderTooltip())
     addEntry("minimap", addon.SettingsPanel.RenderMinimap())
-    addEntry("questLog", addon.SettingsPanel.RenderQuestLog())
+    addEntry("objectiveTracker", addon.SettingsPanel.RenderObjectiveTracker())
+    addEntry("chat", addon.SettingsPanel.RenderChat())
 
 	-- Build nav model (parents + children). Parents: Profiles, CDM, Action Bars, Unit Frames
 	local navModel = {
@@ -1671,10 +2004,12 @@ local function BuildCategories()
 		}},
         { type = "parent", key = "Interface", label = "Interface", collapsible = true, children = {
             { type = "child", key = "tooltip", label = "Tooltip" },
+            { type = "child", key = "objectiveTracker", label = "Objective Tracker" },
             { type = "child", key = "minimap", label = "Minimap" },
-            { type = "child", key = "questLog", label = "Quest Log" },
+            { type = "child", key = "chat", label = "Chat" },
         }},
 		{ type = "parent", key = "Cooldown Manager", label = "Cooldown Manager", collapsible = true, children = {
+			{ type = "child", key = "cdmQoL", label = "Quality of Life" },
 			{ type = "child", key = "essentialCooldowns", label = "Essential Cooldowns" },
 			{ type = "child", key = "utilityCooldowns", label = "Utility Cooldowns" },
 			{ type = "child", key = "trackedBuffs", label = "Tracked Buffs" },
@@ -2324,20 +2659,30 @@ end
             panel.ApplyButtonTheme(closeBtn)
         end
         closeBtn:SetScript("OnClick", function() f:Hide() end)
-        -- Header Edit Mode button placed ~10% from right edge
+        -- Header buttons (top bar): Edit Mode + Cooldown Manager
         local headerEditBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate")
-        headerEditBtn:SetSize(140, 22)
-        headerEditBtn.Text:SetText("Open Edit Mode")
-        local function PositionHeaderEditBtn()
+        headerEditBtn:SetSize(110, 22)
+        headerEditBtn.Text:SetText("Edit Mode")
+
+        local headerCdmBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate")
+        headerCdmBtn:SetSize(150, 22)
+        headerCdmBtn.Text:SetText("Cooldown Manager")
+
+        local function PositionHeaderTopButtons()
             local inset = math.floor((f:GetWidth() or 0) * 0.10)
+            headerCdmBtn:ClearAllPoints()
+            headerCdmBtn:SetPoint("RIGHT", headerDrag, "RIGHT", -inset, 0)
             headerEditBtn:ClearAllPoints()
-            headerEditBtn:SetPoint("RIGHT", headerDrag, "RIGHT", -inset, 0)
+            headerEditBtn:SetPoint("RIGHT", headerCdmBtn, "LEFT", -8, 0)
         end
-        PositionHeaderEditBtn()
+        PositionHeaderTopButtons()
         if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(headerEditBtn) end
-        f:HookScript("OnSizeChanged", function() PositionHeaderEditBtn() end)
+        if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(headerCdmBtn) end
+        f:HookScript("OnSizeChanged", function() PositionHeaderTopButtons() end)
         headerEditBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
+        headerCdmBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
         headerEditBtn:EnableMouse(true)
+        headerCdmBtn:EnableMouse(true)
         headerEditBtn:SetScript("OnClick", function()
             -- Note: Blizzard allows opening Edit Mode during combat, and ScooterMod's
             -- edit mode sync system properly handles combat by using SaveOnly() instead
@@ -2348,6 +2693,15 @@ end
                 RunBinding("TOGGLE_EDIT_MODE")
             else
                 addon:Print("Use /editmode to open the layout manager.")
+            end
+        end)
+
+        headerCdmBtn:SetScript("OnClick", function()
+            if addon and addon.OpenCooldownManagerSettings then
+                addon:OpenCooldownManagerSettings()
+            end
+            if panel and panel.frame and panel.frame:IsShown() then
+                panel.frame:Hide()
             end
         end)
 				-- Enable resizing via a bottom-right handle
@@ -2493,59 +2847,6 @@ end
             f.RightPane = panel.RightPane
         end
 
-        -- Insert a button in the header to open Blizzard's Advanced Cooldown
-        -- Manager settings, anchored to the left of the Collapse All button.
-        do
-            local header = panel.RightPane and panel.RightPane.Header
-            local collapseBtn = header and header.CollapseAllButton
-            if header and collapseBtn then
-                local cdmBtn = header.ScooterCDMButton
-                if not cdmBtn then
-                    cdmBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
-                    cdmBtn:SetSize(200, 22)
-                    cdmBtn.Text:SetText("Cooldown Manager Settings")
-                    cdmBtn:ClearAllPoints()
-                    cdmBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -8, 0)
-                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(cdmBtn) end
-                    cdmBtn:SetScript("OnClick", function()
-                        if InCombatLockdown and InCombatLockdown() then
-                            if addon and addon.Print then addon:Print("Cannot open Settings during combat.") end
-                            return
-                        end
-                        local opened = false
-                        -- Prefer opening the dedicated Cooldown Viewer Settings frame directly
-                        do
-                            if _G and _G.CooldownViewerSettings == nil then
-                                if C_AddOns and C_AddOns.LoadAddOn then
-                                    pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
-                                    pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
-                                end
-                            end
-                            local frame = _G and _G.CooldownViewerSettings
-                            if frame then
-                                if frame.TogglePanel then
-                                    opened = pcall(frame.TogglePanel, frame) or opened
-                                end
-                                if not opened and type(ShowUIPanel) == "function" then
-                                    opened = pcall(ShowUIPanel, frame) or opened
-                                end
-                                if not opened and frame.Show then
-                                    opened = pcall(frame.Show, frame) or opened
-                                end
-                            end
-                        end
-                        if not opened then
-                            -- Final fallback: open Blizzard Settings to a broad search for "Cooldown"
-                            local S = _G and _G.Settings
-                            if _G.SettingsPanel and _G.SettingsPanel.Open then pcall(_G.SettingsPanel.Open, _G.SettingsPanel) end
-                            if S and S.OpenToSearch then pcall(S.OpenToSearch, S, "Cooldown") end
-                        end
-                        if panel and panel.frame and panel.frame:IsShown() then panel.frame:Hide() end
-                    end)
-                    header.ScooterCDMButton = cdmBtn
-                end
-            end
-        end
         panel.frame = f
 
         -- Prevent unintended closure during Edit Mode ApplyChanges by restoring visibility when protected

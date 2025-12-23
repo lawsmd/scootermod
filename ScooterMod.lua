@@ -16,6 +16,48 @@ function addon:Print(message)
     PrintScootMessage(message)
 end
 
+-- Open Blizzard's Cooldown Manager / Cooldown Viewer settings UI.
+-- Returns true if we successfully opened a target frame, false otherwise.
+function addon:OpenCooldownManagerSettings()
+    if InCombatLockdown and InCombatLockdown() then
+        if addon and addon.Print then addon:Print("Cannot open Settings during combat.") end
+        return false
+    end
+
+    local opened = false
+
+    -- Prefer opening the dedicated Cooldown Viewer Settings frame directly
+    do
+        if _G and _G.CooldownViewerSettings == nil then
+            if C_AddOns and C_AddOns.LoadAddOn then
+                pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownManager")
+                pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
+            end
+        end
+        local frame = _G and _G.CooldownViewerSettings
+        if frame then
+            if frame.TogglePanel then
+                opened = pcall(frame.TogglePanel, frame) or opened
+            end
+            if not opened and type(ShowUIPanel) == "function" then
+                opened = pcall(ShowUIPanel, frame) or opened
+            end
+            if not opened and frame.Show then
+                opened = pcall(frame.Show, frame) or opened
+            end
+        end
+    end
+
+    -- Fallback: open Settings and search "Cooldown"
+    if not opened then
+        local S = _G and _G.Settings
+        if _G.SettingsPanel and _G.SettingsPanel.Open then pcall(_G.SettingsPanel.Open, _G.SettingsPanel) end
+        if S and S.OpenToSearch then pcall(S.OpenToSearch, S, "Cooldown") end
+    end
+
+    return opened and true or false
+end
+
 SLASH_SCOOTERMOD1 = "/scoot"
 function SlashCmdList.SCOOTERMOD(msg, editBox)
     local function trim(s)
@@ -200,6 +242,20 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
     if addon.SettingsPanel and addon.SettingsPanel.Toggle then
         addon.SettingsPanel:Toggle()
     end
+end
+
+-- /cdm (optional, gated by profile setting)
+SLASH_SCOOTERCDM1 = "/cdm"
+function SlashCmdList.SCOOTERCDM(msg, editBox)
+    local profile = addon and addon.db and addon.db.profile
+    local enabled = profile and profile.cdmQoL and profile.cdmQoL.enableSlashCDM
+    if not enabled then
+        if addon and addon.Print then
+            addon:Print("Enable /cdm in ScooterMod → Cooldown Manager → Quality of Life.")
+        end
+        return
+    end
+    addon:OpenCooldownManagerSettings()
 end
 
 -- NOTE: PLAYER_TARGET_CHANGED is handled in core/init.lua via PLAYER_TARGET_CHANGED()
