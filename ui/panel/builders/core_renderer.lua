@@ -2024,16 +2024,50 @@ local function createComponentRenderer(componentId)
                                     local baseInit = initSlider.InitFrame
                                     initSlider.InitFrame = function(self, frame)
                                         if baseInit then baseInit(self, frame) end
+                                        -- Recycler safety: refresh references every init; this frame is reused.
+                                        frame._ScooterOpacityComponent = component
+                                        frame._ScooterOpacitySettingId = settingId
                                         if not frame.ScooterOpacityHooked then
-                                            local original = frame.OnSettingValueChanged
-                                            frame.OnSettingValueChanged = function(ctrl, setting, val)
-                                                if original then pcall(original, ctrl, setting, val) end
-                                                local cv = component.db.opacity or component.db.barOpacity or (component.settings.opacity and component.settings.opacity.default) or (component.settings.barOpacity and component.settings.barOpacity.default) or 100
-                                                local c = ctrl:GetSetting()
-                                                if c and c.SetValue and type(cv) == 'number' then
-                                                    c:SetValue(cv)
+                                            -- IMPORTANT: Never override Blizzard methods (persistent taint).
+                                            -- Use hooksecurefunc + deferral to break execution-context taint propagation.
+                                            hooksecurefunc(frame, "OnSettingValueChanged", function(ctrl, setting, val)
+                                                if not ctrl or ctrl._ScooterOpacityApplying then return end
+
+                                                local run = function()
+                                                    local comp = ctrl._ScooterOpacityComponent
+                                                    local which = ctrl._ScooterOpacitySettingId
+                                                    local db = comp and comp.db
+                                                    local cv
+
+                                                    if which == "barOpacity" then
+                                                        cv = db and db.barOpacity
+                                                        if type(cv) ~= "number" then
+                                                            cv = (comp and comp.settings and comp.settings.barOpacity and comp.settings.barOpacity.default) or nil
+                                                        end
+                                                    else
+                                                        -- Default to "opacity"
+                                                        cv = db and db.opacity
+                                                        if type(cv) ~= "number" then
+                                                            cv = (comp and comp.settings and comp.settings.opacity and comp.settings.opacity.default) or nil
+                                                        end
+                                                    end
+
+                                                    if type(cv) ~= "number" then return end
+
+                                                    local c = ctrl.GetSetting and ctrl:GetSetting() or nil
+                                                    if c and c.SetValue then
+                                                        ctrl._ScooterOpacityApplying = true
+                                                        pcall(c.SetValue, c, cv)
+                                                        ctrl._ScooterOpacityApplying = nil
+                                                    end
                                                 end
-                                            end
+
+                                                if C_Timer and C_Timer.After then
+                                                    C_Timer.After(0, run)
+                                                else
+                                                    run()
+                                                end
+                                            end)
                                             frame.ScooterOpacityHooked = true
                                         end
                                         -- Boundary hook only applies to Cooldown Manager opacity (50-100), not Action Bar opacity (1-100)

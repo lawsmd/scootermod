@@ -7,7 +7,7 @@ local panel = addon.SettingsPanel
 -- Sections:
 --  - Sizing: Height (Edit Mode), Text Size (Edit Mode)
 --  - Text: Tabbed (Header, Quest Name, Quest Objective) with Font, Font Style, Font Color (Default/Custom)
---  - Visibility: Opacity (Edit Mode)
+--  - Visibility: Opacity (Edit Mode), Opacity In-Combat (Addon)
 
 local function _lower(s)
 	if type(s) ~= "string" then return "" end
@@ -95,6 +95,13 @@ function panel.RenderObjectiveTracker()
 		local function applyNow()
 			if addon and addon.ApplyStyles then addon:ApplyStyles() end
 		end
+		local function refreshOpacityNow()
+			if addon and addon.RefreshOpacityState then
+				addon:RefreshOpacityState()
+			else
+				applyNow()
+			end
+		end
 
 		local function addEditModeSlider(sectionKey, label, settingKey, settingIdFallback)
 			local emSettingId = (component.settings and component.settings[settingKey] and component.settings[settingKey].settingId) or settingIdFallback
@@ -162,6 +169,47 @@ function panel.RenderObjectiveTracker()
 					end
 				end,
 				nil
+			)
+
+			local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = "objectiveTracker" })
+			row.GetExtent = function() return 34 end
+			row:AddShownPredicate(function()
+				return panel:IsSectionExpanded("objectiveTracker", sectionKey)
+			end)
+			do
+				local base = row.InitFrame
+				row.InitFrame = function(selfInit, frame)
+					if base then base(selfInit, frame) end
+					if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+					if frame and frame.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(frame.Text) end
+					if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(frame) end
+				end
+			end
+			table.insert(init, row)
+		end
+
+		local function addAddonSlider(sectionKey, label, dbKey, minV, maxV, step, defaultValue, onApply)
+			local options = Settings.CreateSliderOptions(minV, maxV, step)
+			options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, fmtInt)
+
+			local setting = CreateLocalSetting(label, "number",
+				function()
+					local v = component.db and component.db[dbKey]
+					v = tonumber(v)
+					if v == nil then
+						return tonumber(defaultValue)
+					end
+					return v
+				end,
+				function(v)
+					component.db[dbKey] = tonumber(v)
+					if type(onApply) == "function" then
+						onApply()
+					else
+						applyNow()
+					end
+				end,
+				defaultValue
 			)
 
 			local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = "objectiveTracker" })
@@ -438,6 +486,7 @@ function panel.RenderObjectiveTracker()
 		-- Visibility: Opacity (Edit Mode)
 		addHeader("Visibility", "Visibility")
 		addEditModeSlider("Visibility", "Background Opacity", "opacity", 1)
+		addAddonSlider("Visibility", "Opacity In-Combat", "opacityInCombat", 0, 100, 1, 100, refreshOpacityNow)
 
 		if right.SetTitle then
 			right:SetTitle("Objective Tracker")

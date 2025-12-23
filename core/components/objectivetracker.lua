@@ -549,6 +549,79 @@ local function ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     end
 end
 
+local function ClampPercent0To100(value)
+    local v = tonumber(value)
+    if v == nil then return nil end
+    if v < 0 then v = 0 elseif v > 100 then v = 100 end
+    return v
+end
+
+local function PlayerInCombat()
+    if addon and addon.ComponentsUtil and type(addon.ComponentsUtil.PlayerInCombat) == "function" then
+        return addon.ComponentsUtil.PlayerInCombat()
+    end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        return true
+    end
+    if type(UnitAffectingCombat) == "function" then
+        return UnitAffectingCombat("player") and true or false
+    end
+    return false
+end
+
+local function ApplyObjectiveTrackerCombatOpacity(self)
+    local tracker = _G.ObjectiveTrackerFrame
+    if not tracker then return end
+
+    -- Zero‑Touch: if still on proxy DB, do nothing.
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then
+        return
+    end
+
+    local db = self.db
+    if type(db) ~= "table" then return end
+
+    local inCombat = PlayerInCombat()
+    local configured = ClampPercent0To100(db.opacityInCombat)
+
+    if inCombat then
+        if configured == nil then
+            -- If the user cleared the setting mid-combat, restore baseline immediately.
+            if tracker._ScooterObjectiveTrackerCombatOpacityApplied then
+                if tracker.SetAlpha and tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
+                    pcall(tracker.SetAlpha, tracker, tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
+                end
+                tracker._ScooterObjectiveTrackerCombatOpacityApplied = nil
+                tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
+            end
+            return
+        end
+
+        -- Capture pre-combat alpha once (so we can restore on leaving combat).
+        if tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha == nil and tracker.GetAlpha then
+            local ok, a = pcall(tracker.GetAlpha, tracker)
+            if ok and a ~= nil then
+                tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = a
+            end
+        end
+
+        if tracker.SetAlpha then
+            pcall(tracker.SetAlpha, tracker, configured / 100)
+            tracker._ScooterObjectiveTrackerCombatOpacityApplied = true
+        end
+        return
+    end
+
+    -- Out of combat: restore baseline if we applied an override during combat.
+    if tracker._ScooterObjectiveTrackerCombatOpacityApplied then
+        if tracker.SetAlpha and tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
+            pcall(tracker.SetAlpha, tracker, tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
+        end
+        tracker._ScooterObjectiveTrackerCombatOpacityApplied = nil
+        tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
+    end
+end
+
 local function ApplyObjectiveTrackerStylingAll(self)
     ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     ApplyObjectiveTrackerTextStyling(self)
@@ -625,6 +698,9 @@ addon:RegisterComponentInitializer(function(self)
             opacity = { type = "editmode", settingId = 1, default = 100, ui = { hidden = true } },
             textSize = { type = "editmode", settingId = 2, default = 12, ui = { hidden = true } },
 
+            -- Addon-only: combat override for the entire tracker alpha (0..100). Nil means "disabled".
+            opacityInCombat = { type = "addon", ui = { hidden = true } },
+
             -- Addon-only text styling. UI is custom (tabbed section), so hide in generic renderer.
             textHeader = { type = "addon", default = {
                 fontFace = "FRIZQT__",
@@ -647,6 +723,13 @@ addon:RegisterComponentInitializer(function(self)
         },
         ApplyStyling = function(componentSelf)
             InstallObjectiveTrackerHooks(componentSelf)
+            -- Combat-safe: RefreshOpacityState calls ApplyStyling during combat.
+            -- Only enforce in-combat opacity during combat; avoid applying full styling.
+            ApplyObjectiveTrackerCombatOpacity(componentSelf)
+            if PlayerInCombat() then
+                return
+            end
+
             ApplyObjectiveTrackerStylingAll(componentSelf)
         end,
     })

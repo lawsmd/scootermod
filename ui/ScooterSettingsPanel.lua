@@ -1085,17 +1085,39 @@ local function createComponentRenderer(componentId)
                                 local baseInit = initSlider.InitFrame
                                 initSlider.InitFrame = function(self, frame)
                                     if baseInit then baseInit(self, frame) end
+                                    -- Recycler safety: this SettingsSliderControlTemplate frame can be reused for other settings.
+                                    -- Always refresh the component reference on every InitFrame call.
+                                    frame._ScooterOpacityComponent = component
                                     if not frame.ScooterOpacityHooked then
-                                        local original = frame.OnSettingValueChanged
-                                        frame.OnSettingValueChanged = function(ctrl, setting, val)
-                                            if original then pcall(original, ctrl, setting, val) end
-                                            -- Pull latest from DB after EM write (raw percent expected)
-                                            local cv = component.db.opacity or (component.settings.opacity and component.settings.opacity.default) or 100
-                                            local c = ctrl:GetSetting()
-                                            if c and c.SetValue and type(cv) == 'number' then
-                                                c:SetValue(cv)
+                                        -- IMPORTANT: Never override Blizzard methods (persistent taint).
+                                        -- Use hooksecurefunc + deferral to break execution-context taint propagation.
+                                        hooksecurefunc(frame, "OnSettingValueChanged", function(ctrl, setting, val)
+                                            if not ctrl or ctrl._ScooterOpacityApplying then return end
+
+                                            local run = function()
+                                                local comp = ctrl._ScooterOpacityComponent
+                                                local db = comp and comp.db
+                                                local cv = db and db.opacity
+                                                if type(cv) ~= "number" then
+                                                    -- Fallback: use component setting default if available
+                                                    cv = (comp and comp.settings and comp.settings.opacity and comp.settings.opacity.default) or nil
+                                                end
+                                                if type(cv) ~= "number" then return end
+
+                                                local c = ctrl.GetSetting and ctrl:GetSetting() or nil
+                                                if c and c.SetValue then
+                                                    ctrl._ScooterOpacityApplying = true
+                                                    pcall(c.SetValue, c, cv)
+                                                    ctrl._ScooterOpacityApplying = nil
+                                                end
                                             end
-                                        end
+
+                                            if C_Timer and C_Timer.After then
+                                                C_Timer.After(0, run)
+                                            else
+                                                run()
+                                            end
+                                        end)
                                         frame.ScooterOpacityHooked = true
                                     end
                                     -- Also guard the underlying slider display to snap to multiples of 1 within 50..100

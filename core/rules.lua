@@ -331,6 +331,40 @@ local function registerDefaultActions()
             return true
         end,
     }
+
+    -- Player Unit Frame: Hide Power Bar
+    ACTIONS["ufPlayerPower.hideBar"] = {
+        id = "ufPlayerPower.hideBar",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "ufPlayer",
+        settingId = "powerBarHidden",
+        defaultValue = false,
+        path = { "Player Unit Frame", "Power Bar", "Visibility", "Hide Power Bar" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local uf = profile and profile.unitFrames
+            local player = uf and uf.Player
+            return player and player.powerBarHidden or false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then return false end
+            profile.unitFrames = profile.unitFrames or {}
+            profile.unitFrames.Player = profile.unitFrames.Player or {}
+            local player = profile.unitFrames.Player
+            local boolVal = value and true or false
+            if player.powerBarHidden == boolVal then return false end
+            player.powerBarHidden = boolVal
+            if addon.ApplyUnitFrameBarTexturesFor then
+                pcall(addon.ApplyUnitFrameBarTexturesFor, "Player")
+            end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                pcall(addon.ApplyUnitFramePowerTextVisibilityFor, "Player")
+            end
+            return true
+        end,
+    }
 end
 
 local function ruleMatchesSpecialization(trigger, specID)

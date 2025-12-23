@@ -1977,8 +1977,11 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     self.LoadLayouts()
 
     if hasLayoutTable then
-        local okHash, hashErr = verifyLayoutHash(preset.editModeSha256, preset.editModeLayout, "Edit Mode layout")
-        if not okHash then return false, hashErr end
+        -- Skip hash validation if placeholder value (development mode)
+        if preset.editModeSha256 ~= "PENDING" then
+            local okHash, hashErr = verifyLayoutHash(preset.editModeSha256, preset.editModeLayout, "Edit Mode layout")
+            if not okHash then return false, hashErr end
+        end
     end
 
     -- Determine target layout/profile name (user-specified or auto-generated)

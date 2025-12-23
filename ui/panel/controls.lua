@@ -171,14 +171,24 @@ function ConvertSliderInitializerToTextInput(initializer)
                 end
             end)
         end
-        if not frame.ScooterOriginalOnSettingValueChanged then
-            frame.ScooterOriginalOnSettingValueChanged = frame.OnSettingValueChanged
-            frame.OnSettingValueChanged = function(ctrl, setting, val)
-                if ctrl.ScooterOriginalOnSettingValueChanged then ctrl.ScooterOriginalOnSettingValueChanged(ctrl, setting, val) end
-                if ctrl.ScooterTextInput then
-                    local current = (setting and setting.GetValue) and setting:GetValue() or nil
-                    ctrl.ScooterTextInput:SetText(current == nil and "" or string.format("%.0f", current))
-                end
+        -- IMPORTANT: Never override Blizzard methods (persistent taint). Use hooksecurefunc instead.
+        if not frame.ScooterOnSettingValueChangedHooked then
+            frame.ScooterOnSettingValueChangedHooked = true
+            if hooksecurefunc and type(frame.OnSettingValueChanged) == "function" then
+                hooksecurefunc(frame, "OnSettingValueChanged", function(ctrl, setting, val)
+                    if not (ctrl and ctrl.ScooterTextInput) then return end
+                    local s = setting
+                    local function update()
+                        if not (ctrl and ctrl.ScooterTextInput) then return end
+                        local current = (s and s.GetValue) and s:GetValue() or nil
+                        ctrl.ScooterTextInput:SetText(current == nil and "" or string.format("%.0f", current))
+                    end
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0, update)
+                    else
+                        update()
+                    end
+                end)
             end
         end
         if frame.ScooterTextInput and SettingsControlMixin and SettingsControlMixin.IsEnabled then frame.ScooterTextInput:SetEnabled(SettingsControlMixin.IsEnabled(frame)) end
