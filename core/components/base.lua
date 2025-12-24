@@ -439,6 +439,9 @@ Util.SetFullPowerSpikeHidden = SetFullPowerSpikeHidden
 -- This frame shows a quick flash representing the amount of energy/mana/etc. spent or gained.
 -- ownerFrame: the ManaBar or ClassNameplateManaBarFrame that contains the FeedbackFrame child
 -- hidden: boolean - true to hide the feedback animation, false to restore it
+--
+-- APPROACH: Set alpha=0 on the FeedbackFrame parent container.
+-- Parent frame alpha multiplies with child alpha values, making all child textures invisible.
 local function SetPowerFeedbackHidden(ownerFrame, hidden)
     if not ownerFrame or type(ownerFrame) ~= "table" then
         return
@@ -447,50 +450,11 @@ local function SetPowerFeedbackHidden(ownerFrame, hidden)
     if not feedbackFrame or (feedbackFrame.IsForbidden and feedbackFrame:IsForbidden()) then
         return
     end
+
     feedbackFrame._ScootPowerFeedbackHidden = not not hidden
-    -- CRITICAL: Guard against combat. Stopping animations and calling Hide() during combat
-    -- would taint the execution context, causing SetTargetClampingInsets() to be blocked.
-    -- The hook installation below is still safe (hooksecurefunc doesn't cause taint),
-    -- but the actual hiding must be deferred.
-    local canModifyNow = not (InCombatLockdown and InCombatLockdown())
-    if feedbackFrame._ScootPowerFeedbackHidden and canModifyNow then
-        -- Stop any running animations and hide the frame
-        if feedbackFrame.StopFeedbackAnim then
-            pcall(feedbackFrame.StopFeedbackAnim, feedbackFrame)
-        end
-        -- Hide the textures that make up the feedback animation
-        if feedbackFrame.BarTexture then
-            pcall(feedbackFrame.BarTexture.Hide, feedbackFrame.BarTexture)
-        end
-        if feedbackFrame.LossGlowTexture then
-            pcall(feedbackFrame.LossGlowTexture.Hide, feedbackFrame.LossGlowTexture)
-        end
-        if feedbackFrame.GainGlowTexture then
-            pcall(feedbackFrame.GainGlowTexture.Hide, feedbackFrame.GainGlowTexture)
-        end
-        -- NOTE: Do NOT override StartFeedbackAnim - method overrides cause persistent taint
-        -- that propagates to the parent StatusBar and causes "blocked from an action" errors.
-        -- The animation textures are already hidden above; if they flash briefly, use a
-        -- hooksecurefunc to re-hide them after the animation starts:
-        -- CRITICAL: This hook MUST have a combat guard because it can fire during form changes
-        -- (e.g., druid cat->human) which triggers nameplate updates. Calling Hide()/StopFeedbackAnim()
-        -- during combat taints the execution context, blocking SetTargetClampingInsets().
-        if _G.hooksecurefunc and not feedbackFrame._ScootFeedbackHooked then
-            feedbackFrame._ScootFeedbackHooked = true
-            _G.hooksecurefunc(feedbackFrame, "StartFeedbackAnim", function(self, ...)
-                -- CRITICAL: Skip during combat to avoid tainting nameplate operations
-                if InCombatLockdown and InCombatLockdown() then return end
-                if self._ScootPowerFeedbackHidden then
-                    -- Re-hide the textures after the animation shows them
-                    if self.BarTexture and self.BarTexture.Hide then pcall(self.BarTexture.Hide, self.BarTexture) end
-                    if self.LossGlowTexture and self.LossGlowTexture.Hide then pcall(self.LossGlowTexture.Hide, self.LossGlowTexture) end
-                    if self.GainGlowTexture and self.GainGlowTexture.Hide then pcall(self.GainGlowTexture.Hide, self.GainGlowTexture) end
-                    if self.StopFeedbackAnim then pcall(self.StopFeedbackAnim, self) end
-                end
-            end)
-        end
-    else
-        -- Restore visibility - the frame will show naturally when StartFeedbackAnim is called
+
+    if feedbackFrame.SetAlpha then
+        feedbackFrame:SetAlpha(hidden and 0 or 1)
     end
 end
 Util.SetPowerFeedbackHidden = SetPowerFeedbackHidden
@@ -540,17 +504,14 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
             end
             
             -- Hook SetAlpha() - Re-enforce alpha=0 when Blizzard tries to change it
+            -- CRITICAL: Use immediate re-enforcement with recursion guard, NOT C_Timer.After(0)
+            -- Deferring causes visible flickering (texture visible for one frame before hiding)
             _G.hooksecurefunc(sparkFrame, "SetAlpha", function(self, alpha)
                 if self._ScootPowerBarSparkHidden and alpha and alpha > 0 then
-                    -- Defer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                    if not self._ScootSparkAlphaDeferred then
-                        self._ScootSparkAlphaDeferred = true
-                        C_Timer.After(0, function()
-                            self._ScootSparkAlphaDeferred = nil
-                            if self._ScootPowerBarSparkHidden and self.SetAlpha then
-                                pcall(self.SetAlpha, self, 0)
-                            end
-                        end)
+                    if not self._ScootSettingAlpha then
+                        self._ScootSettingAlpha = true
+                        pcall(self.SetAlpha, self, 0)
+                        self._ScootSettingAlpha = nil
                     end
                 end
             end)
@@ -568,6 +529,98 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
     end
 end
 Util.SetPowerBarSparkHidden = SetPowerBarSparkHidden
+
+-- Hide/show only the Power Bar textures (fill + background) while keeping text visible
+-- This enables a "number-only" display mode like WeakAuras used to provide.
+-- ownerFrame: the ManaBar/PowerBar frame
+-- hidden: boolean - true to hide textures only, false to restore them
+--
+-- IMPORTANT: Uses SetAlpha(0) with persistent hooks to survive combat and Blizzard updates.
+-- SetAlpha is cosmetic and doesn't taint, so we can enforce it during combat.
+local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    
+    -- Resolve the fill texture: prefer .texture named child, fall back to GetStatusBarTexture()
+    local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
+    -- Resolve background texture
+    local bgTex = ownerFrame.Background
+    
+    -- Helper to install alpha enforcement hooks on a texture
+    local function installAlphaHook(tex, flagName)
+        if not tex or tex[flagName .. "Hooked"] then return end
+        tex[flagName .. "Hooked"] = true
+        
+        -- Hook SetAlpha with immediate re-enforcement using a recursion guard
+        -- CRITICAL: Do NOT use C_Timer.After(0, ...) here - that defers to the next frame,
+        -- causing visible flickering. Immediate enforcement with a guard flag ensures
+        -- the texture stays hidden within the same Lua execution tick.
+        if _G.hooksecurefunc and tex.SetAlpha then
+            _G.hooksecurefunc(tex, "SetAlpha", function(self, alpha)
+                if self[flagName] and alpha and alpha > 0 then
+                    if not self._ScootSettingAlpha then
+                        self._ScootSettingAlpha = true
+                        pcall(self.SetAlpha, self, 0)
+                        self._ScootSettingAlpha = nil
+                    end
+                end
+            end)
+        end
+        
+        -- Also hook Show() in case Blizzard calls it
+        if _G.hooksecurefunc and tex.Show then
+            _G.hooksecurefunc(tex, "Show", function(self)
+                if self[flagName] and self.SetAlpha then
+                    if not self._ScootSettingAlpha then
+                        self._ScootSettingAlpha = true
+                        pcall(self.SetAlpha, self, 0)
+                        self._ScootSettingAlpha = nil
+                    end
+                end
+            end)
+        end
+    end
+    
+    if hidden then
+        -- Mark textures as hidden and set alpha to 0
+        if fillTex then
+            fillTex._ScootPowerBarFillHidden = true
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
+            installAlphaHook(fillTex, "_ScootPowerBarFillHidden")
+        end
+        
+        if bgTex then
+            bgTex._ScootPowerBarBGHidden = true
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
+            installAlphaHook(bgTex, "_ScootPowerBarBGHidden")
+        end
+        
+        -- Also hide ScooterMod's custom background if present
+        if ownerFrame.ScooterModBG then
+            ownerFrame.ScooterModBG._ScootPowerBarScootBGHidden = true
+            if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
+            installAlphaHook(ownerFrame.ScooterModBG, "_ScootPowerBarScootBGHidden")
+        end
+    else
+        -- Mark textures as visible and restore alpha
+        if fillTex then
+            fillTex._ScootPowerBarFillHidden = false
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
+        end
+        
+        if bgTex then
+            bgTex._ScootPowerBarBGHidden = false
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
+        end
+        
+        if ownerFrame.ScooterModBG then
+            ownerFrame.ScooterModBG._ScootPowerBarScootBGHidden = false
+            -- Don't restore alpha here - let the background styling code handle it
+        end
+    end
+end
+Util.SetPowerBarTextureOnlyHidden = SetPowerBarTextureOnlyHidden
 
 -- Hide/show the Over Absorb Glow on the Player Health Bar
 -- This glow appears on the edge of the health bar when absorb shields exceed max health.

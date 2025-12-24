@@ -2035,7 +2035,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         end
         local newLayout = CopyTable(preset.editModeLayout)
         newLayout.layoutName = newLayoutName
-        newLayout.layoutType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Character or newLayout.layoutType
+        newLayout.layoutType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Account or newLayout.layoutType
         newLayout.isPreset = nil
         newLayout.isModified = nil
         table.insert(li.layouts, newLayout)
@@ -2059,7 +2059,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         end
         local newLayout = CopyTable(source)
         newLayout.layoutName = newLayoutName
-        newLayout.layoutType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Character or newLayout.layoutType
+        newLayout.layoutType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Account or newLayout.layoutType
         newLayout.isPreset = nil
         newLayout.isModified = nil
         table.insert(li.layouts, newLayout)

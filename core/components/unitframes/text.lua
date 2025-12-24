@@ -865,6 +865,10 @@ do
 			if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
 				return true
 			end
+			-- colorMode is used for Power Bar text to support "classPower" color
+			if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
+				return true
+			end
 			if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
 				local ox = tonumber(styleCfg.offset.x) or 0
 				local oy = tonumber(styleCfg.offset.y) or 0
@@ -887,7 +891,20 @@ do
 			fs._ScooterApplyingFont = true
 			if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 			fs._ScooterApplyingFont = nil
+			-- Determine effective color based on colorMode (for Power Bar text)
 			local c = styleCfg.color or {1,1,1,1}
+			local colorMode = styleCfg.colorMode or "default"
+			if colorMode == "classPower" then
+				-- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
+				if addon.GetPowerColorRGB then
+					local pr, pg, pb = addon.GetPowerColorRGB("player")
+					c = {pr or 1, pg or 1, pb or 1, 1}
+				end
+			elseif colorMode == "default" then
+				-- Default white for Blizzard's standard bar text color
+				c = {1, 1, 1, 1}
+			end
+			-- colorMode == "custom" uses styleCfg.color as-is
 			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
 			-- Determine default alignment based on whether this is left (%) or right (value) text

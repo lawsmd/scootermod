@@ -1528,6 +1528,7 @@ do
             -- taint on protected unit frames (see taint.log: TargetFrameToT:Show()).
             local inCombat = InCombatLockdown and InCombatLockdown()
 			local powerBarHidden = (cfg.powerBarHidden == true)
+			local powerBarHideTextureOnly = (cfg.powerBarHideTextureOnly == true)
 
 			-- Capture original alpha once so we can restore when the bar is un-hidden.
 			if pb.GetAlpha and pb._ScootUFOrigPBAlpha == nil then
@@ -1551,10 +1552,38 @@ do
 				if addon.Borders and addon.Borders.HideAll then
 					addon.Borders.HideAll(pb)
 				end
+				-- Ensure texture-only mode is disabled when full bar is hidden
+				if Util and Util.SetPowerBarTextureOnlyHidden then
+					Util.SetPowerBarTextureOnlyHidden(pb, false)
+				end
+			elseif powerBarHideTextureOnly then
+				-- Number-only display: Hide the bar texture/fill while keeping text visible.
+				-- Use the utility function which installs persistent hooks to survive combat.
+				-- Restore bar frame alpha first (in case user toggled from full-hide to texture-only).
+				if pb._ScootUFOrigPBAlpha and pb.SetAlpha then
+					pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha)
+				end
+				
+				-- Use persistent utility to hide textures (installs hooks that survive combat)
+				if Util and Util.SetPowerBarTextureOnlyHidden then
+					Util.SetPowerBarTextureOnlyHidden(pb, true)
+				end
+				
+				-- Clear any custom borders so only text remains
+				if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+					addon.BarBorders.ClearBarFrame(pb)
+				end
+				if addon.Borders and addon.Borders.HideAll then
+					addon.Borders.HideAll(pb)
+				end
 			else
 				-- Restore alpha when coming back from a hidden state so the bar is visible again.
 				if pb._ScootUFOrigPBAlpha and pb.SetAlpha then
 					pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha)
+				end
+				-- Disable texture-only hiding (restores texture visibility)
+				if Util and Util.SetPowerBarTextureOnlyHidden then
+					Util.SetPowerBarTextureOnlyHidden(pb, false)
 				end
 			end
             local colorModePB = cfg.powerBarColorMode or "default"
@@ -1593,20 +1622,30 @@ do
                 end
             end
             
+            -- Re-apply texture-only hide after styling (ensures newly created ScooterModBG is also hidden)
+            if powerBarHideTextureOnly and not powerBarHidden then
+                if Util and Util.SetPowerBarTextureOnlyHidden then
+                    Util.SetPowerBarTextureOnlyHidden(pb, true)
+                end
+            end
+            
             ensureMaskOnBarTexture(pb, resolvePowerMask(unit))
 
+            -- When texture-only hide is enabled, also hide animations/feedback/spark (they'd look weird floating)
+            local hideAllVisuals = powerBarHidden or powerBarHideTextureOnly
+            
             if unit == "Player" and Util and Util.SetFullPowerSpikeHidden then
-                Util.SetFullPowerSpikeHidden(pb, cfg.powerBarHideFullSpikes == true or powerBarHidden)
+                Util.SetFullPowerSpikeHidden(pb, cfg.powerBarHideFullSpikes == true or hideAllVisuals)
             end
 
             -- Hide power feedback animation (Builder/Spender flash when power is spent/gained)
             if unit == "Player" and Util and Util.SetPowerFeedbackHidden then
-                Util.SetPowerFeedbackHidden(pb, cfg.powerBarHideFeedback == true or powerBarHidden)
+                Util.SetPowerFeedbackHidden(pb, cfg.powerBarHideFeedback == true or hideAllVisuals)
             end
 
             -- Hide power bar spark (e.g., Elemental Shaman Maelstrom indicator)
             if unit == "Player" and Util and Util.SetPowerBarSparkHidden then
-                Util.SetPowerBarSparkHidden(pb, cfg.powerBarHideSpark == true or powerBarHidden)
+                Util.SetPowerBarSparkHidden(pb, cfg.powerBarHideSpark == true or hideAllVisuals)
             end
 
             -- Apply reverse fill for Target/Focus if configured

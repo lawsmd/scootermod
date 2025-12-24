@@ -685,9 +685,9 @@ function Profiles:ClonePresetLayout(data, rawName)
         return false, "Unable to locate preset layout data."
     end
     
-    -- Create a deep copy and convert to Character layout type
+    -- Create a deep copy and convert to Account layout type
     local newLayout = CopyTable(presetLayout)
-    newLayout.layoutType = Enum.EditModeLayoutType.Character
+    newLayout.layoutType = Enum.EditModeLayoutType.Account
     newLayout.layoutName = newName
     newLayout.isPreset = nil
     newLayout.isModified = nil
@@ -930,8 +930,8 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
     -- Create a deep copy of the source layout
     local newLayout = CopyTable(sourceLayout)
     newLayout.layoutName = newName
-    newLayout.layoutType = sourceLayout.layoutType == Enum.EditModeLayoutType.Preset 
-        and Enum.EditModeLayoutType.Character 
+    newLayout.layoutType = sourceLayout.layoutType == Enum.EditModeLayoutType.Preset
+        and Enum.EditModeLayoutType.Account
         or sourceLayout.layoutType
     newLayout.isPreset = nil
     newLayout.isModified = nil
@@ -1121,7 +1121,7 @@ function Profiles:PerformCreateLayout(rawNewName)
 
     local newLayout = CopyTable(base)
     newLayout.layoutName = name
-    newLayout.layoutType = Enum.EditModeLayoutType.Character
+    newLayout.layoutType = Enum.EditModeLayoutType.Account
     newLayout.isPreset = nil
     newLayout.isModified = nil
 

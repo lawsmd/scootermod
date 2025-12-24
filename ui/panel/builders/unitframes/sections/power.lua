@@ -723,6 +723,44 @@ local function build(ctx, init)
 								addon.ApplyUnitFramePowerTextVisibilityFor(uk)
 							end
 						end
+
+						-- Helper to check if either main hide option is enabled (used to disable sub-checkboxes)
+						local function isBarOrTextureHidden()
+							local t = ensureUFDB()
+							return t and (t.powerBarHidden == true or t.powerBarHideTextureOnly == true)
+						end
+
+						-- References to sub-checkboxes that should be disabled when bar/texture is hidden
+						local visualCheckboxRows = {}
+
+						-- Function to update disabled state of visual sub-checkboxes
+						local function updateVisualCheckboxState()
+							local shouldDisable = isBarOrTextureHidden()
+							for _, rowInfo in ipairs(visualCheckboxRows) do
+								local rowFrame = rowInfo.row
+								local cb = rowFrame.Checkbox or rowFrame.CheckBox or (rowFrame.Control and rowFrame.Control.Checkbox)
+								if cb then
+									if cb.SetEnabled then
+										cb:SetEnabled(not shouldDisable)
+									end
+									-- Gray out the label when disabled
+									if rowFrame.Text and rowFrame.Text.SetTextColor then
+										if shouldDisable then
+											rowFrame.Text:SetTextColor(0.5, 0.5, 0.5, 1)
+										else
+											rowFrame.Text:SetTextColor(1, 1, 1, 1)
+										end
+									end
+									if cb.Text and cb.Text.SetTextColor then
+										if shouldDisable then
+											cb.Text:SetTextColor(0.5, 0.5, 0.5, 1)
+										else
+											cb.Text:SetTextColor(1, 1, 1, 1)
+										end
+									end
+								end
+							end
+						end
 	
 						local y = { y = -50 }
 						local label = "Hide Power Bar"
@@ -734,6 +772,7 @@ local function build(ctx, init)
 							local t = ensureUFDB(); if not t then return end
 							t.powerBarHidden = (v and true) or false
 							applyNow()
+							updateVisualCheckboxState()
 						end
 	
 						local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
@@ -751,6 +790,60 @@ local function build(ctx, init)
 							if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
 						end
 	
+						y.y = y.y - 34
+
+						-- Hide only the Bar Texture checkbox (number-only display)
+						local texOnlyLabel = "Hide only the Bar Texture"
+						local function texOnlyGetter()
+							local t = ensureUFDB()
+							return t and not not t.powerBarHideTextureOnly or false
+						end
+						local function texOnlySetter(v)
+							local t = ensureUFDB(); if not t then return end
+							t.powerBarHideTextureOnly = (v and true) or false
+							applyNow()
+							updateVisualCheckboxState()
+						end
+
+						local texOnlySetting = CreateLocalSetting(texOnlyLabel, "boolean", texOnlyGetter, texOnlySetter, texOnlyGetter())
+						local texOnlyInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = texOnlyLabel, setting = texOnlySetting, options = {} })
+						local texOnlyRow = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+						texOnlyRow.GetElementData = function() return texOnlyInit end
+						texOnlyRow:SetPoint("TOPLEFT", 4, y.y)
+						texOnlyRow:SetPoint("TOPRIGHT", -16, y.y)
+						texOnlyInit:InitFrame(texOnlyRow)
+						if panel and panel.ApplyRobotoWhite then
+							if texOnlyRow.Text then panel.ApplyRobotoWhite(texOnlyRow.Text) end
+							local texCb = texOnlyRow.Checkbox or texOnlyRow.CheckBox or (texOnlyRow.Control and texOnlyRow.Control.Checkbox)
+							if texCb and texCb.Text then panel.ApplyRobotoWhite(texCb.Text) end
+							-- Theme the checkbox checkmark to green
+							if texCb and panel.ThemeCheckbox then panel.ThemeCheckbox(texCb) end
+						end
+
+						-- Add info icon tooltip to the left of the label
+						if panel and panel.CreateInfoIconForLabel then
+							local texOnlyTooltip = "Used for having a number-only display of your Power Bar resource, just like the good old WeakAuras days."
+							local texOnlyTargetLabel = texOnlyRow.Text or (texOnlyRow.Checkbox and texOnlyRow.Checkbox.Text)
+							if texOnlyTargetLabel and not texOnlyRow.ScooterTexOnlyInfoIcon then
+								texOnlyRow.ScooterTexOnlyInfoIcon = panel.CreateInfoIconForLabel(texOnlyTargetLabel, texOnlyTooltip, 5, 0, 32)
+								if texOnlyRow.ScooterTexOnlyInfoIcon then
+									local function repositionTexOnly()
+										local icon = texOnlyRow.ScooterTexOnlyInfoIcon
+										local lbl = texOnlyRow.Text or (texOnlyRow.Checkbox and texOnlyRow.Checkbox.Text)
+										if icon and lbl then
+											icon:ClearAllPoints()
+											icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+										end
+									end
+									if C_Timer and C_Timer.After then
+										C_Timer.After(0, repositionTexOnly)
+									else
+										repositionTexOnly()
+									end
+								end
+							end
+						end
+
 						y.y = y.y - 34
 	
 	                    if componentId == "ufPlayer" then
@@ -802,7 +895,10 @@ local function build(ctx, init)
 	                                end
 	                            end
 	                        end
-	
+
+							-- Register for disable state management
+							table.insert(visualCheckboxRows, { row = spikeRow })
+
 							y.y = y.y - 34
 	
 	                        -- Hide Power Feedback checkbox (Player only)
@@ -854,6 +950,9 @@ local function build(ctx, init)
 	                                end
 	                            end
 	                        end
+
+							-- Register for disable state management
+							table.insert(visualCheckboxRows, { row = feedbackRow })
 	
 	                        y.y = y.y - 34
 	
@@ -906,6 +1005,12 @@ local function build(ctx, init)
 	                                end
 	                            end
 	                        end
+
+							-- Register for disable state management
+							table.insert(visualCheckboxRows, { row = sparkRow })
+
+							-- Apply initial disabled state for all 3 visual checkboxes
+							updateVisualCheckboxState()
 	
 	                        y.y = y.y - 34
 						end
@@ -957,10 +1062,45 @@ local function build(ctx, init)
 							function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
 							function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
 							y)
-						addColor(frame.PageF, "% Text Color", true,
-							function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
-							function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
-							y)
+						-- % Text Color: DropdownWithInlineSwatch with Default/Class Power Color/Custom options
+						do
+							local function colorOpts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("default", "Default")
+								c:Add("classPower", "Class Power Color")
+								c:Add("custom", "Custom")
+								return c:GetData()
+							end
+							local function getMode()
+								local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}
+								return s.colorMode or "default"
+							end
+							local function setMode(v)
+								local t = ensureUFDB(); if not t then return end
+								t.textPowerPercent = t.textPowerPercent or {}
+								t.textPowerPercent.colorMode = v or "default"
+								applyNow()
+							end
+							local function getColorTbl()
+								local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}
+								return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+							end
+							local function setColorTbl(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.textPowerPercent = t.textPowerPercent or {}
+								t.textPowerPercent.color = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							panel.DropdownWithInlineSwatch(frame.PageF, y, {
+								label = "% Text Color",
+								getMode = getMode,
+								setMode = setMode,
+								getColor = getColorTbl,
+								setColor = setColorTbl,
+								options = colorOpts,
+								insideButton = true,
+							})
+						end
 						-- % Text Alignment dropdown
 						do
 							local function alignOpts()
@@ -1049,10 +1189,45 @@ local function build(ctx, init)
 							function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return tonumber(s.size) or 14 end,
 							function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyNow() end,
 							y)
-						addColor(frame.PageG, "Value Text Color", true,
-							function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
-							function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
-							y)
+						-- Value Text Color: DropdownWithInlineSwatch with Default/Class Power Color/Custom options
+						do
+							local function colorOpts()
+								local c = Settings.CreateControlTextContainer()
+								c:Add("default", "Default")
+								c:Add("classPower", "Class Power Color")
+								c:Add("custom", "Custom")
+								return c:GetData()
+							end
+							local function getMode()
+								local t = ensureUFDB() or {}; local s = t.textPowerValue or {}
+								return s.colorMode or "default"
+							end
+							local function setMode(v)
+								local t = ensureUFDB(); if not t then return end
+								t.textPowerValue = t.textPowerValue or {}
+								t.textPowerValue.colorMode = v or "default"
+								applyNow()
+							end
+							local function getColorTbl()
+								local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}
+								return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+							end
+							local function setColorTbl(r,g,b,a)
+								local t = ensureUFDB(); if not t then return end
+								t.textPowerValue = t.textPowerValue or {}
+								t.textPowerValue.color = { r or 1, g or 1, b or 1, a or 1 }
+								applyNow()
+							end
+							panel.DropdownWithInlineSwatch(frame.PageG, y, {
+								label = "Value Text Color",
+								getMode = getMode,
+								setMode = setMode,
+								getColor = getColorTbl,
+								setColor = setColorTbl,
+								options = colorOpts,
+								insideButton = true,
+							})
+						end
 						-- Value Text Alignment dropdown
 						do
 							local function alignOpts()
