@@ -536,3 +536,10 @@ Dialogs:Register("SCOOTERMOD_APPLY_PRESET", {
     cancelText = CANCEL or "Cancel",
 })
 
+Dialogs:Register("SCOOTERMOD_IMPORT_CONSOLEPORT", {
+    text = "This preset includes a ConsolePort profile.\n\nImport it too?\n\n(If you select Yes, your current ConsolePort profile/settings may be overwritten.)",
+    acceptText = YES or "Yes",
+    cancelText = NO or "No",
+    height = 210,
+})
+

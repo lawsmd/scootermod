@@ -672,3 +672,90 @@ function addon.DebugExportEditModeLayoutTable(layoutName)
     end
 end
 
+--[[----------------------------------------------------------------------------
+    ConsolePort export (SavedVariables -> copyable Lua table)
+
+    Purpose:
+      - Capture a deterministic snapshot of ConsolePort-related SavedVariables
+        for ingestion into ScooterDeck preset payloads.
+      - We intentionally avoid exporting keybindings and action loadouts since
+        they are often character-specific and can be disruptive when imported.
+
+    Usage:
+      /scoot debug consoleport export
+----------------------------------------------------------------------------]]--
+
+local function _SafeCopyGlobal(name)
+    local v = _G[name]
+    if type(v) == "table" then
+        return CopyTable(v)
+    end
+    if v ~= nil then
+        -- Preserve non-table values, but keep the payload valid.
+        return v
+    end
+    return nil
+end
+
+function addon.DebugExportConsolePortProfile()
+    if not addon or not addon.db then
+        ShowDebugCopyWindow("ConsolePort Export", "AceDB not initialized.")
+        return
+    end
+
+    -- ConsolePort base addon must be loaded for these globals to exist.
+    if not _G.ConsolePort and not _G.ConsolePortSettings then
+        ShowDebugCopyWindow("ConsolePort Export", "ConsolePort does not appear to be loaded on this client.")
+        return
+    end
+
+    local payloadTable = {
+        -- ConsolePort.toc: SavedVariables
+        ConsolePortSettings = _SafeCopyGlobal("ConsolePortSettings"),
+        ConsolePortDevices = _SafeCopyGlobal("ConsolePortDevices"),
+        ConsolePortShared = _SafeCopyGlobal("ConsolePortShared"),
+        ConsolePortBindingIcons = _SafeCopyGlobal("ConsolePortBindingIcons"),
+
+        -- ConsolePort.toc: SavedVariablesPerCharacter (exported for completeness; may be used by rings)
+        ConsolePortUtility = _SafeCopyGlobal("ConsolePortUtility"),
+        ConsolePortUtilityDeprecated = _SafeCopyGlobal("ConsolePortUtilityDeprecated"),
+
+        -- ConsolePort_Bar addon SavedVariables (if installed/loaded)
+        ConsolePort_BarLayout = _SafeCopyGlobal("ConsolePort_BarLayout"),
+        ConsolePort_BarPresets = _SafeCopyGlobal("ConsolePort_BarPresets"),
+        -- Intentionally omitted: ConsolePort_BarLoadout (action placement / macros)
+    }
+
+    -- Trim nil keys so the output stays small and deterministic.
+    for k, v in pairs(CopyTable(payloadTable)) do
+        if v == nil then
+            payloadTable[k] = nil
+        end
+    end
+
+    local header = table.concat({
+        "-- ConsolePort export (SavedVariables snapshot)",
+        "-- Captured: " .. (date and date("%Y-%m-%d %H:%M:%S") or "unknown"),
+        "-- Note: bindings and action loadouts are intentionally omitted.",
+        "",
+    }, "\n")
+
+    local payload = _SerializeLuaValue(payloadTable, 0, {}, 0)
+    ShowDebugCopyWindow("ConsolePort Export", header .. payload)
+
+    -- Persist to SavedVariables for ingestion (run export, then /reload or logout).
+    local db = addon.db
+    db.global = db.global or {}
+    db.global.presetCaptures = db.global.presetCaptures or {}
+    db.global.presetCaptures.consolePort = {
+        capturedAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+        payload = payload,
+    }
+    if _G.C_Crypto and type(_G.C_Crypto.Hash) == "function" then
+        local okHash, hash = pcall(_G.C_Crypto.Hash, "SHA256", payload)
+        if okHash and type(hash) == "string" and hash ~= "" then
+            db.global.presetCaptures.consolePort.sha256 = string.lower(hash)
+        end
+    end
+end
+

@@ -1916,37 +1916,34 @@ local function _LayoutNameExists(name)
 end
 
 local function importConsolePortProfile(preset, profileName)
-    if not preset or not preset.consolePortProfile then
+    if not preset or preset.consolePortProfile == nil then
         return true
     end
-    local cp = _G.ConsolePort
-    if not cp then
-        return false, "ConsolePort is required for this preset."
+
+    -- ConsolePort is an external addon suite. If it's not loaded, we do not fail
+    -- the preset import (ScooterMod profile + Edit Mode layout are still valid).
+    if not _G.ConsolePort and not _G.ConsolePortSettings then
+        return false, "ConsolePort is not loaded. Enable ConsolePort and reload, then try importing the preset again."
     end
 
-    -- Attempt commonly-used import paths; future updates can refine this once the API is finalized.
-    local importers = {
-        cp.ImportProfile,
-        cp.ImportBindingProfile,
-        cp.ImportCustomProfile,
-        cp.Profiles and cp.Profiles.Import,
-    }
-    for _, importer in ipairs(importers) do
-        if type(importer) == "function" then
-            local ok, err = pcall(importer, cp.Profiles or cp, preset.consolePortProfile, profileName)
-            if ok then
-                return true
+    local data = preset.consolePortProfile
+    if type(data) ~= "table" then
+        return false, "ConsolePort payload is invalid (expected a table)."
+    end
+
+    -- Import strategy:
+    -- Write ConsolePort's SavedVariables globals directly, then rely on the UI reload
+    -- (prompted by the preset flow) to persist these values to disk.
+    for k, v in pairs(data) do
+        if type(k) == "string" and k:match("^ConsolePort") then
+            if type(v) == "table" then
+                _G[k] = CopyTable(v)
+            else
+                _G[k] = v
             end
-            return false, "ConsolePort import failed: " .. tostring(err)
         end
     end
 
-    -- Fallback: stash payload for manual import; do not fail the preset.
-    addon.ConsolePortPendingProfile = {
-        target = profileName,
-        payload = preset.consolePortProfile,
-    }
-    addon:Print("ConsolePort import API not detected; stored preset payload for manual import.")
     return true
 end
 
@@ -2087,9 +2084,11 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     end
     addon.db.profiles[newLayoutName] = profileCopy
 
-    local cpOk, cpErr = importConsolePortProfile(preset, newLayoutName)
-    if not cpOk then
-        addon:Print(cpErr)
+    if opts and opts.importConsolePort then
+        local cpOk, cpErr = importConsolePortProfile(preset, newLayoutName)
+        if not cpOk then
+            addon:Print(cpErr)
+        end
     end
 
     addon:Print(string.format("Imported preset '%s' as new layout '%s'.", preset.name or preset.id or "Preset", newLayoutName))
