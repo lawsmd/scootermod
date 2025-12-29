@@ -1488,6 +1488,66 @@ function Profiles:PruneSpecAssignments()
     end
 end
 
+-- Auto-heal: remove AceDB profiles that no longer have a corresponding Edit Mode layout.
+-- This can happen when layouts are deleted outside ScooterMod, or when SavedVariables are
+-- moved between machines but Blizzard's Edit Mode layout list does not match.
+function Profiles:CleanupOrphanedProfiles()
+    if not self.db or not self.db.profiles or not self._layoutLookup then
+        return
+    end
+
+    local protected = {
+        ["Default"] = true, -- AceDB shared default (we use AceDB:New(..., true))
+        ["Modern"] = true,  -- Blizzard preset layout name (may have a profile mirror)
+        ["Classic"] = true, -- Blizzard preset layout name (may have a profile mirror)
+    }
+
+    local currentProfile = self.db.GetCurrentProfile and self.db:GetCurrentProfile() or nil
+    local orphaned = {}
+
+    for profileName in pairs(self.db.profiles) do
+        if type(profileName) == "string"
+            and not protected[profileName]
+            and profileName ~= currentProfile
+            and not self._layoutLookup[profileName]
+        then
+            orphaned[#orphaned + 1] = profileName
+        end
+    end
+
+    if #orphaned == 0 then
+        return
+    end
+
+    table.sort(orphaned, function(a, b) return tostring(a) < tostring(b) end)
+
+    -- Clean up AceDB cross-character bindings (profileKeys) and Spec Profiles assignments.
+    local sv = rawget(self.db, "sv")
+    local cfg = self:GetSpecConfig()
+
+    for _, name in ipairs(orphaned) do
+        self.db.profiles[name] = nil
+
+        if sv and sv.profileKeys then
+            for key, value in pairs(sv.profileKeys) do
+                if value == name then
+                    sv.profileKeys[key] = nil
+                end
+            end
+        end
+
+        if cfg and cfg.assignments then
+            for specID, profileKey in pairs(cfg.assignments) do
+                if profileKey == name then
+                    cfg.assignments[specID] = nil
+                end
+            end
+        end
+
+        Debug("CleanupOrphanedProfiles removed", name)
+    end
+end
+
 function Profiles:GetAvailableLayouts()
     local editable = {}
     local presets = {}
@@ -1735,6 +1795,10 @@ function Profiles:RefreshFromEditMode(origin)
         table.insert(self._sortedPresetLayouts, name)
         self:EnsureProfileExists(name, { preset = true })
     end
+
+    -- Auto-heal: if AceDB contains profiles that don't exist as layouts, remove them
+    -- so they can't block preset creation or cause cross-machine desync confusion.
+    self:CleanupOrphanedProfiles()
 
     self:PruneSpecAssignments()
     if addon and addon._dbgProfiles then

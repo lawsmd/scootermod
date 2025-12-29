@@ -42,6 +42,7 @@ end
 
 local pendingClassResourceReapply = false
 local classResourceCombatWatcher = nil
+local classResourceZoneWatcher = nil
 
 local function ensureClassResourceCombatWatcher()
 	if classResourceCombatWatcher then
@@ -62,6 +63,22 @@ end
 local function queueClassResourceReapply()
 	ensureClassResourceCombatWatcher()
 	pendingClassResourceReapply = true
+end
+
+local function ensureClassResourceZoneWatcher()
+	if classResourceZoneWatcher then
+		return
+	end
+	classResourceZoneWatcher = CreateFrame("Frame")
+	classResourceZoneWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+	classResourceZoneWatcher:SetScript("OnEvent", function()
+		-- Defer to allow Blizzard to finish any post-load layout passes first.
+		C_Timer.After(0.1, function()
+			if addon and addon.ApplyUnitFrameClassResource then
+				addon.ApplyUnitFrameClassResource("Player")
+			end
+		end)
+	end)
 end
 
 -- Baseline storage for managed frame offsets
@@ -210,6 +227,7 @@ local function captureAnchorState(frame)
 		points = {},
 		leftPadding = frame.leftPadding,
 		topPadding = frame.topPadding,
+		ignoreInLayout = frame.ignoreInLayout,
 		ignoreManager = frame.IsIgnoringFramePositionManager and frame:IsIgnoringFramePositionManager() or false,
 	}
 	if frame.GetNumPoints then
@@ -228,10 +246,11 @@ local function restoreAnchorState(frame)
 		return
 	end
 	-- Note: We do NOT re-parent. The frame stays with its original parent at all times.
-	-- We only restore the layout manager state and original anchor points.
+	-- We only restore the layout manager state, layout participation, and original anchor points.
 	if frame.SetIgnoreFramePositionManager then
 		pcall(frame.SetIgnoreFramePositionManager, frame, info.ignoreManager or false)
 	end
+	frame.ignoreInLayout = info.ignoreInLayout
 	if info.points and frame.ClearAllPoints and frame.SetPoint then
 		pcall(frame.ClearAllPoints, frame)
 		for _, pt in ipairs(info.points) do
@@ -271,6 +290,12 @@ local function applyCustomClassResourcePosition(frame, cfg)
 	end
 	captureAnchorState(frame)
 	ensureCustomClassResourceSeed(cfg, frame)
+
+	-- IMPORTANT: Class resources are managed children of a LayoutFrame container (VerticalLayoutFrame).
+	-- LayoutFrame will ClearAllPoints/SetPoint on children each Layout() pass. The supported way to
+	-- opt out is ignoreInLayout (see Blizzard_SharedXML/LayoutFrame.lua).
+	frame.ignoreInLayout = true
+
 	-- POLICY COMPLIANT: Do NOT re-parent the frame. Instead:
 	-- 1. Keep the frame parented where Blizzard placed it
 	-- 2. Use SetIgnoreFramePositionManager to prevent layout manager from overriding
@@ -386,25 +411,42 @@ local function ensureLayoutHook()
 	if container and hooksecurefunc then
 		layoutHooked = true
 		hooksecurefunc(container, "Layout", function()
-			-- Skip during combat to avoid tainting nameplate operations
-			if InCombatLockdown and InCombatLockdown() then return end
-			-- Reapply scale and visibility after layout completes
-			-- Positioning is handled via leftPadding/topPadding which the layout respects
+			local inCombat = InCombatLockdown and InCombatLockdown()
+
+			-- Reapply styling after layout completes.
+			-- IMPORTANT: In custom positioning mode we must also keep the frame excluded from
+			-- LayoutFrame child positioning (ignoreInLayout) or it will be re-anchored.
 			local cfg = ensureConfig()
 			if not cfg then return end
 			
 			local frames, _ = resolveClassResourceFrames()
+			local customPositionActive = cfg.classResourceCustomPositionEnabled == true
 			for _, frame in ipairs(frames) do
-				-- Reapply scale (layout doesn't override this)
-				-- Baseline is always 1.0 for class resources (no Edit Mode scale)
-				local multiplier = clampScale(cfg.scale or 100) / 100
-				if frame.SetScale then
-					pcall(frame.SetScale, frame, multiplier)
+				if customPositionActive then
+					-- Defensive: ensure LayoutFrame won't reposition this child.
+					frame.ignoreInLayout = true
+					if inCombat then
+						-- Anchors may not be safe to change in combat; defer.
+						queueClassResourceReapply()
+					else
+						applyCustomClassResourcePosition(frame, cfg)
+					end
 				end
-				
-				-- Reapply visibility
-				if cfg.hide then
-					pcall(frame.SetAlpha, frame, 0)
+
+				-- Skip in-combat scale/visibility enforcement to avoid touching secure-ish paths
+				-- during sensitive transitions; deferred reapply covers this when needed.
+				if not inCombat then
+					-- Reapply scale (layout doesn't override this)
+					-- Baseline is always 1.0 for class resources (no Edit Mode scale)
+					local multiplier = clampScale(cfg.scale or 100) / 100
+					if frame.SetScale then
+						pcall(frame.SetScale, frame, multiplier)
+					end
+					
+					-- Reapply visibility
+					if cfg.hide then
+						pcall(frame.SetAlpha, frame, 0)
+					end
 				end
 			end
 			debugPrint("Layout hook fired, reapplied scale and visibility")
@@ -440,6 +482,7 @@ local function applyClassResourceForUnit(unit)
 
 	-- Set up layout hook first
 	ensureLayoutHook()
+	ensureClassResourceZoneWatcher()
 
 	-- Skip layout-affecting changes during combat
 	local inCombat = InCombatLockdown and InCombatLockdown()

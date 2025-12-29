@@ -306,6 +306,12 @@ function Dialogs:Show(name, options)
     ApplyDialogButtonTheme(f.AcceptButton)
     ApplyDialogButtonTheme(f.CancelButton)
 
+    -- Apply custom button widths if specified
+    local acceptWidth = options.acceptWidth or def.acceptWidth or 100
+    local cancelWidth = options.cancelWidth or def.cancelWidth or 100
+    f.AcceptButton:SetSize(acceptWidth, 24)
+    f.CancelButton:SetSize(cancelWidth, 24)
+
     -- Position buttons based on dialog type
     f.AcceptButton:ClearAllPoints()
     f.CancelButton:ClearAllPoints()
@@ -316,8 +322,10 @@ function Dialogs:Show(name, options)
         f.CancelButton:Hide()
     else
         -- Two buttons side by side
-        f.AcceptButton:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -5, 15)
-        f.CancelButton:SetPoint("BOTTOMLEFT", f, "BOTTOM", 5, 15)
+        local buttonGap = 10
+        local totalWidth = acceptWidth + cancelWidth + buttonGap
+        f.AcceptButton:SetPoint("BOTTOMLEFT", f, "BOTTOM", -totalWidth/2, 15)
+        f.CancelButton:SetPoint("BOTTOMLEFT", f.AcceptButton, "BOTTOMRIGHT", buttonGap, 0)
         f.CancelButton:Show()
     end
 
@@ -534,5 +542,25 @@ Dialogs:Register("SCOOTERMOD_APPLY_PRESET", {
     maxLetters = 32,
     acceptText = "Create",
     cancelText = CANCEL or "Cancel",
+})
+
+--------------------------------------------------------------------------------
+-- Preset Target Selection Dialogs (Cross-Machine Sync)
+--------------------------------------------------------------------------------
+
+Dialogs:Register("SCOOTERMOD_PRESET_TARGET_CHOICE", {
+    text = "How would you like to apply the %s preset?",
+    acceptText = "Create New Profile",
+    cancelText = "Apply to Existing",
+    acceptWidth = 140,
+    cancelWidth = 140,
+    height = 160,
+})
+
+Dialogs:Register("SCOOTERMOD_PRESET_OVERWRITE_CONFIRM", {
+    text = "This will overwrite both the Edit Mode layout settings AND the ScooterMod profile for '%s'.\n\nAll existing customizations will be replaced with %s preset data.\n\nContinue?",
+    acceptText = "Overwrite",
+    cancelText = CANCEL or "Cancel",
+    height = 200,
 })
 

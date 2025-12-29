@@ -196,16 +196,31 @@ do
             or findFontStringByNameHint(frame, ".RightText")
             or findFontStringByNameHint(frame, "HealthBarTextRight")
 
-        -- Also resolve the center TextString (used in NUMERIC display mode)
+        -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
         -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+        -- Character Pane shows HealthBarText instead of LeftText/RightText
         local textStringFS
         if unit == "Pet" then
-            textStringFS = _G.PetFrameHealthBarText or (hb and hb.TextString)
+            textStringFS = _G.PetFrameHealthBarText
+        elseif unit == "Player" then
+            local root = _G.PlayerFrame
+            textStringFS = root and root.PlayerFrameContent 
+                and root.PlayerFrameContent.PlayerFrameContentMain 
+                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer 
+                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarText
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            textStringFS = root and root.TargetFrameContent 
+                and root.TargetFrameContent.TargetFrameContentMain 
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer 
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            textStringFS = root and root.TargetFrameContent 
+                and root.TargetFrameContent.TargetFrameContentMain 
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer 
+                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
         end
-        textStringFS = textStringFS
-            or (hb and hb.TextString)
-            or (frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar and frame.HealthBarsContainer.HealthBar.TextString)
-            or findFontStringByNameHint(frame, "HealthBarText")
 
         -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
         addon._ufHealthTextFonts[unit] = {
@@ -392,18 +407,24 @@ do
 
         if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left") end
         if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right") end
-        -- Style center TextString using Value settings (used in NUMERIC display mode)
-        -- If Value text is hidden, also hide center text (since it displays value-oriented data)
-        if textStringFS and cfg.healthValueHidden ~= nil then
-            local valueHidden = (cfg.healthValueHidden == true)
-            if valueHidden then
-                if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
-                textStringFS._ScooterHealthTextCenterHidden = true
-            else
-                if textStringFS._ScooterHealthTextCenterHidden then
-                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
-                    textStringFS._ScooterHealthTextCenterHidden = nil
+        -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
+        -- Always apply styling if we have text customizations; handle visibility separately
+        if textStringFS then
+            -- Handle visibility only when explicitly configured
+            if cfg.healthValueHidden ~= nil then
+                local valueHidden = (cfg.healthValueHidden == true)
+                if valueHidden then
+                    if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
+                    textStringFS._ScooterHealthTextCenterHidden = true
+                else
+                    if textStringFS._ScooterHealthTextCenterHidden then
+                        if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
+                        textStringFS._ScooterHealthTextCenterHidden = nil
+                    end
                 end
+            end
+            -- Always apply styling (applyTextStyle returns early if no customizations)
+            if not textStringFS._ScooterHealthTextCenterHidden then
                 applyTextStyle(textStringFS, cfg.textHealthValue or {}, unit .. ":health-center")
             end
         end
@@ -722,16 +743,32 @@ do
 			or findFontStringByNameHint(frame, ".RightText")
 			or findFontStringByNameHint(frame, "ManaBarTextRight")
 
-        -- Also resolve the center TextString (used in NUMERIC display mode)
+        -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
         -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+        -- Character Pane shows ManaBarText instead of LeftText/RightText
         local textStringFS
         if unit == "Pet" then
-            textStringFS = _G.PetFrameManaBarText or (pb and pb.TextString)
+            textStringFS = _G.PetFrameManaBarText
+        elseif unit == "Player" then
+            local root = _G.PlayerFrame
+            textStringFS = root and root.PlayerFrameContent 
+                and root.PlayerFrameContent.PlayerFrameContentMain 
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea 
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar 
+                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaBarText
+        elseif unit == "Target" then
+            local root = _G.TargetFrame
+            textStringFS = root and root.TargetFrameContent 
+                and root.TargetFrameContent.TargetFrameContentMain 
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar 
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
+        elseif unit == "Focus" then
+            local root = _G.FocusFrame
+            textStringFS = root and root.TargetFrameContent 
+                and root.TargetFrameContent.TargetFrameContentMain 
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar 
+                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
         end
-        textStringFS = textStringFS
-            or (pb and pb.TextString)
-            or (frame.ManaBar and frame.ManaBar.TextString)
-            or findFontStringByNameHint(frame, "ManaBarText")
 
         -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
         addon._ufPowerTextFonts[unit] = {
@@ -945,9 +982,10 @@ do
 
 		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left") end
 		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right") end
-        -- Style center TextString using Value settings (used in NUMERIC display mode)
-        -- If Value text is hidden (or entire bar is hidden), also hide center text
+        -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
+        -- Always apply styling if we have text customizations; handle visibility separately
         if textStringFS then
+            -- Handle visibility only when explicitly configured
             local centerHiddenSetting = nil
             if powerBarHiddenSetting == true then
                 centerHiddenSetting = true
@@ -965,8 +1003,11 @@ do
                         if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
                         textStringFS._ScooterPowerTextCenterHidden = nil
                     end
-                    applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
                 end
+            end
+            -- Always apply styling (applyTextStyle returns early if no customizations)
+            if not textStringFS._ScooterPowerTextCenterHidden then
+                applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
             end
         end
 	end

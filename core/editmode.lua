@@ -1984,6 +1984,148 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         end
     end
 
+    ---------------------------------------------------------------------------
+    -- APPLY TO EXISTING LAYOUT PATH (Cross-machine sync feature)
+    -- When targetExisting is specified, overwrite the existing layout + profile
+    -- instead of creating new ones.
+    ---------------------------------------------------------------------------
+    if opts and opts.targetExisting then
+        local targetName = opts.targetExisting
+        
+        -- Validate the target exists and is editable (not a Blizzard preset)
+        local li = C_EditMode.GetLayouts()
+        if not (li and type(li.layouts) == "table") then
+            return false, "Unable to read layouts."
+        end
+        
+        local targetLayout, targetIndex
+        for idx, layout in ipairs(li.layouts) do
+            if layout and layout.layoutName == targetName then
+                targetLayout = layout
+                targetIndex = idx
+                break
+            end
+        end
+        
+        if not targetLayout then
+            return false, string.format("Target layout '%s' not found.", targetName)
+        end
+        
+        -- Block overwriting Blizzard presets
+        if targetLayout.layoutType == (Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Preset) then
+            return false, "Cannot overwrite Blizzard preset layouts (Modern/Classic). Please select an editable layout."
+        end
+        
+        -- Clone the profile payload
+        local profileCopy, profileErr = cloneProfilePayload(preset, targetName)
+        if not profileCopy then
+            return false, profileErr
+        end
+        
+        -- Dry run check
+        if opts.dryRun then
+            return true, targetName
+        end
+        
+        -- OVERWRITE Edit Mode layout systems/settings
+        if hasLayoutTable then
+            -- Copy systems and settings from preset's editModeLayout to target layout
+            local presetLayout = preset.editModeLayout
+            if presetLayout.systems and targetLayout.systems then
+                -- Build a map of preset systems by key
+                local function indexSystems(layout)
+                    local map = {}
+                    for _, sys in ipairs(layout.systems) do
+                        map[(sys.system or 0) .. ":" .. (sys.systemIndex or 0)] = sys
+                    end
+                    return map
+                end
+                local presetMap = indexSystems(presetLayout)
+                
+                -- Copy settings from preset to target
+                for _, dsys in ipairs(targetLayout.systems) do
+                    local key = (dsys.system or 0) .. ":" .. (dsys.systemIndex or 0)
+                    local ssys = presetMap[key]
+                    if ssys then
+                        -- Copy anchor and default-position flags
+                        if ssys.anchorInfo and dsys.anchorInfo then
+                            dsys.isInDefaultPosition = not not ssys.isInDefaultPosition
+                            local sa, da = ssys.anchorInfo, dsys.anchorInfo
+                            da.point = sa.point
+                            da.relativePoint = sa.relativePoint
+                            da.offsetX = sa.offsetX
+                            da.offsetY = sa.offsetY
+                            da.relativeTo = sa.relativeTo
+                        end
+                        -- Copy individual setting values by numeric id
+                        local svalById = {}
+                        if ssys.settings then
+                            for _, it in ipairs(ssys.settings) do
+                                svalById[it.setting] = it.value
+                            end
+                        end
+                        if dsys.settings then
+                            for _, it in ipairs(dsys.settings) do
+                                local v = svalById[it.setting]
+                                if v ~= nil then it.value = v end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        -- Note: sourceLayoutName fallback for "apply to existing" is intentionally not supported
+        -- since the preset should always have a captured editModeLayout table.
+        
+        -- Save the modified layouts
+        C_EditMode.SaveLayouts(li)
+        
+        -- Ensure LibEditModeOverride sees the changes immediately
+        if LEO and LEO.LoadLayouts then
+            pcall(LEO.LoadLayouts, LEO)
+        end
+        
+        self.SaveOnly()
+        
+        if addon and addon.Profiles and addon.Profiles.RequestSync then
+            addon.Profiles:RequestSync("PresetOverwrite")
+        end
+        
+        if not addon or not addon.db or not addon.db.profiles then
+            return false, "AceDB not initialized."
+        end
+        
+        -- OVERWRITE the ScooterMod profile data
+        if type(profileCopy) == "table" then
+            profileCopy.__presetLayout = targetName
+        end
+        addon.db.profiles[targetName] = profileCopy
+        
+        -- Import ConsolePort profile if present (ScooterDeck)
+        local cpOk, cpErr = importConsolePortProfile(preset, targetName)
+        if not cpOk then
+            addon:Print(cpErr)
+        end
+        
+        addon:Print(string.format("Applied preset '%s' to existing layout '%s'.", preset.name or preset.id or "Preset", targetName))
+        
+        -- Queue activation for next reload
+        if addon and addon.db and addon.db.global then
+            addon.db.global.pendingPresetActivation = {
+                layoutName = targetName,
+                presetId = preset.id or preset.name,
+                createdAt = date and date("%Y-%m-%d %H:%M:%S") or nil,
+                appliedToExisting = true,
+            }
+        end
+        
+        return true, targetName
+    end
+
+    ---------------------------------------------------------------------------
+    -- CREATE NEW LAYOUT PATH (Original behavior)
+    ---------------------------------------------------------------------------
+
     -- Determine target layout/profile name (user-specified or auto-generated)
     local newLayoutName
     if opts and opts.targetName then
