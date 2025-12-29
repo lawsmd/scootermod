@@ -127,6 +127,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             addon:Print("Usage:")
             addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|<FrameName>>")
             addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
+            addon:Print("  /scoot debug consoleport export")
             return
         end
 
@@ -141,6 +142,19 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
                 return
             end
             addon:Print("Usage: /scoot debug profiles export [\"Profile Name\"]")
+            return
+        end
+
+        if sub1 == "consoleport" then
+            if sub2 == "export" then
+                if addon.DebugExportConsolePortProfile then
+                    addon.DebugExportConsolePortProfile()
+                else
+                    addon:Print("ConsolePort export helper not available (debug module missing).")
+                end
+                return
+            end
+            addon:Print("Usage: /scoot debug consoleport export")
             return
         end
 

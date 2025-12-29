@@ -428,23 +428,41 @@ function panel:ApplyPresetFromUI(preset)
             editBoxText = nameSuggestion or defaultName,
             data = { preset = preset },
             onAccept = function(d, newName)
-                local ok, err = addon.Presets:ApplyPreset(d.preset.id, { targetName = newName })
-                if not ok then
-                    if err and addon.Print then addon:Print(err) end
-                    C_Timer.After(0, function()
-                        promptCreateNew(newName)
-                    end)
+                local function apply(importConsolePort)
+                    local ok, err = addon.Presets:ApplyPreset(d.preset.id, {
+                        targetName = newName,
+                        importConsolePort = importConsolePort and true or false,
+                    })
+                    if not ok then
+                        if err and addon.Print then addon:Print(err) end
+                        C_Timer.After(0, function()
+                            promptCreateNew(newName)
+                        end)
+                        return
+                    end
+                    addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
+                    if type(ReloadUI) == "function" then
+                        -- If ReloadUI is blocked on this client, the user will see Blizzard's yellow warning.
+                        -- The preset activation is still queued and will apply on the next successful reload/login.
+                        ReloadUI()
+                        C_Timer.After(1.0, function()
+                            addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
+                        end)
+                    else
+                        addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
+                    end
+                end
+
+                local wantsConsolePortPrompt = (d.preset and d.preset.consolePortProfile ~= nil) or (d.preset and d.preset.requiresConsolePort)
+                if wantsConsolePortPrompt then
+                    addon.Dialogs:Show("SCOOTERMOD_IMPORT_CONSOLEPORT", {
+                        onAccept = function() apply(true) end,
+                        onCancel = function() apply(false) end,
+                    })
                     return
                 end
-                addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
-                if type(ReloadUI) == "function" then
-                    ReloadUI()
-                    C_Timer.After(1.0, function()
-                        addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
-                    end)
-                else
-                    addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
-                end
+
+                apply(false)
             end,
         })
     end
