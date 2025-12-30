@@ -541,6 +541,21 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             addon.ApplyUnitFrameBarTexturesFor("Player")
         end)
     end
+    -- Deferred reapply of Cast Bars to catch any Blizzard resets after initial apply.
+    -- Guard with Zero‑Touch: only reapply if the profile has explicit cast bar config.
+    if C_Timer and C_Timer.After and addon.ApplyAllUnitFrameCastBars and addon.db and addon.db.profile then
+        local profile = addon.db.profile
+        local unitFrames = rawget(profile, "unitFrames")
+        local playerCfg = unitFrames and rawget(unitFrames, "Player")
+        local hasPlayerCastCfg = playerCfg and rawget(playerCfg, "castBar") ~= nil
+        if hasPlayerCastCfg then
+            C_Timer.After(0.1, function()
+                if not (InCombatLockdown and InCombatLockdown()) then
+                    addon.ApplyAllUnitFrameCastBars()
+                end
+            end)
+        end
+    end
     -- Deferred reapply of Player name/level text visibility to catch Blizzard resets
     -- (e.g., PlayerFrame_Update, PlayerFrame_UpdateRolesAssigned) that run after initial styling
     if C_Timer and C_Timer.After and addon.ApplyUnitFrameNameLevelTextFor then

@@ -546,6 +546,9 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
     local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
     -- Resolve background texture
     local bgTex = ownerFrame.Background
+    -- Player-only overlay: Mana cost prediction bar (new Blizzard visual that sits on top of the power bar)
+    -- Frame path (player): PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaCostPredictionBar
+    local manaCostPredictionBar = ownerFrame.ManaCostPredictionBar
     
     -- Helper to install alpha enforcement hooks on a texture
     local function installAlphaHook(tex, flagName)
@@ -596,6 +599,16 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             installAlphaHook(bgTex, "_ScootPowerBarBGHidden")
         end
         
+        -- Also hide Blizzard's mana cost prediction overlay bar (player only).
+        -- We hide the whole overlay frame via alpha=0; parent alpha multiplication keeps all child textures hidden.
+        if manaCostPredictionBar then
+            manaCostPredictionBar._ScootPowerBarManaCostPredHidden = true
+            if manaCostPredictionBar.SetAlpha then
+                pcall(manaCostPredictionBar.SetAlpha, manaCostPredictionBar, 0)
+            end
+            installAlphaHook(manaCostPredictionBar, "_ScootPowerBarManaCostPredHidden")
+        end
+        
         -- Also hide ScooterMod's custom background if present
         if ownerFrame.ScooterModBG then
             ownerFrame.ScooterModBG._ScootPowerBarScootBGHidden = true
@@ -612,6 +625,13 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
         if bgTex then
             bgTex._ScootPowerBarBGHidden = false
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
+        end
+        
+        if manaCostPredictionBar then
+            manaCostPredictionBar._ScootPowerBarManaCostPredHidden = false
+            if manaCostPredictionBar.SetAlpha then
+                pcall(manaCostPredictionBar.SetAlpha, manaCostPredictionBar, 1)
+            end
         end
         
         if ownerFrame.ScooterModBG then
@@ -1133,6 +1153,11 @@ function addon:ApplyStyles()
     -- SetStatusBarTexture, SetVertexColor, SetShown, etc. on protected Blizzard frames,
     -- which taints them and causes "blocked from an action" errors.
     if InCombatLockdown and InCombatLockdown() then
+        -- Ensure cast bar persistence hooks are installed even if we defer full styling.
+        -- This is a visual-only hook path and is safe to install during combat.
+        if addon.EnsureAllUnitFrameCastBarHooks then
+            addon.EnsureAllUnitFrameCastBarHooks()
+        end
         -- Defer styling until combat ends
         if not self._pendingApplyStyles then
             self._pendingApplyStyles = true

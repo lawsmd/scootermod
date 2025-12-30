@@ -96,6 +96,37 @@ local function queueUnitFrameTextureReapply(unit)
     pendingUnitFrameTextureUnits[unit] = true
 end
 
+-- Raid/GroupFrames styling deferral (combat-safe):
+-- We must NEVER apply CompactUnitFrame (raid/party) cosmetic changes during combat, and we must
+-- avoid doing synchronous work inside Blizzard's CompactUnitFrame update chains. See DEBUG.md.
+local pendingRaidFrameReapply = false
+local raidFrameCombatWatcher = nil
+
+local function ensureRaidFrameCombatWatcher()
+    if raidFrameCombatWatcher then
+        return
+    end
+    raidFrameCombatWatcher = CreateFrame("Frame")
+    raidFrameCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    raidFrameCombatWatcher:SetScript("OnEvent", function()
+        if not pendingRaidFrameReapply then
+            return
+        end
+        pendingRaidFrameReapply = false
+        if addon.ApplyRaidFrameHealthBarStyle then
+            addon.ApplyRaidFrameHealthBarStyle()
+        end
+        if addon.ApplyRaidFrameTextStyle then
+            addon.ApplyRaidFrameTextStyle()
+        end
+    end)
+end
+
+local function queueRaidFrameReapply()
+    ensureRaidFrameCombatWatcher()
+    pendingRaidFrameReapply = true
+end
+
 local function capturePowerBarBaseline(pb)
     if not pb then
         return
@@ -865,8 +896,19 @@ do
         updateRectHealthOverlay(unit, bar)
     end
 
-    local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower)
+    local function applyToBar(bar, textureKey, colorMode, tint, unitForClass, barKind, unitForPower, combatSafe)
         if not bar or type(bar.GetStatusBarTexture) ~= "function" then return end
+
+        -- Combat safety: touching protected StatusBars (SetStatusBarTexture / SetVertexColor / CreateTexture)
+        -- during combat can taint the execution context and later cause unrelated protected calls to be blocked.
+        -- Callers should queue a post-combat reapply instead.
+        --
+        -- Exception: some callers (e.g., Cast Bar visual-only refresh) intentionally re-apply ONLY
+        -- cosmetic texture/color changes during combat to keep styling persistent while avoiding
+        -- combat-unsafe layout operations. Those callers may pass combatSafe=true.
+        if not combatSafe and InCombatLockdown and InCombatLockdown() then
+            return
+        end
         
         -- Power bars with default texture + default color: be completely hands-off.
         -- Blizzard dynamically updates power bar texture AND vertex color when power type changes
@@ -1002,6 +1044,11 @@ do
     -- Apply background texture and color to a bar
     local function applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind)
         if not bar then return end
+
+        -- Combat safety: creating/modifying textures on protected frames during combat can taint.
+        if InCombatLockdown and InCombatLockdown() then
+            return
+        end
         
         -- Ensure we have a background texture frame at an appropriate sublevel so it appears
         -- behind the status bar fill but remains visible for cast bars.
@@ -1138,6 +1185,12 @@ do
         end
         local frame = getUnitFrameFor(unit)
         if not frame then return end
+
+        -- Combat safety: do not touch protected unit frame bars during combat. Queue a post-combat reapply.
+        if InCombatLockdown and InCombatLockdown() then
+            queueUnitFrameTextureReapply(unit)
+            return
+        end
 
         -- Target-of-Target can get refreshed frequently by Blizzard (even out of combat),
         -- which can reset its bar textures. Install a lightweight, throttled hook on the
@@ -2550,32 +2603,69 @@ do
             end
         end
 
-        -- Experimental: optionally hide the stock frame art (which includes the health bar border)
+        -- Hide stock art/overlays when custom borders are enabled.
+        --
+        -- IMPORTANT (taint): Avoid SetShown/Show/Hide and avoid SetScript overrides on Blizzard frames.
+        -- We enforce "hidden" visuals via SetAlpha(0/1) + a deferred Show hook. See DEBUG.md.
+        local function applyAlpha(frameOrTexture, alpha)
+            if not frameOrTexture or not frameOrTexture.SetAlpha then return end
+            pcall(frameOrTexture.SetAlpha, frameOrTexture, alpha)
+        end
+
+        local function hookAlphaEnforcer(frameOrTexture, computeAlpha)
+            if not frameOrTexture or not _G.hooksecurefunc or type(computeAlpha) ~= "function" then return end
+            if frameOrTexture._ScootAlphaEnforcerHooked then return end
+            frameOrTexture._ScootAlphaEnforcerHooked = true
+            _G.hooksecurefunc(frameOrTexture, "Show", function(self)
+                local obj = self
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        applyAlpha(obj, computeAlpha())
+                    end)
+                else
+                    if InCombatLockdown and InCombatLockdown() then return end
+                    applyAlpha(obj, computeAlpha())
+                end
+            end)
+        end
+
+        -- Stock frame art (includes the health bar border)
         do
             local ft = resolveUnitFrameFrameTexture(unit)
-            if ft and ft.SetShown then
-                local hide = not not (cfg.useCustomBorders or cfg.healthBarHideBorder)
-                pcall(ft.SetShown, ft, not hide)
+            if ft then
+                local function compute()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+                    return hide and 0 or 1
+                end
+                applyAlpha(ft, compute())
+                hookAlphaEnforcer(ft, compute)
             end
         end
-        -- Hide the Player's Alternate Power frame art when Use Custom Borders is enabled.
-        -- Framestack: PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture
+
+        -- Player-specific frame art
         if unit == "Player" and _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
-            local altTex = _G.PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture
-            if altTex and altTex.SetShown then
-                if cfg.useCustomBorders then
-                    pcall(altTex.SetShown, altTex, false)
-                end
+            local container = _G.PlayerFrame.PlayerFrameContainer
+            local altTex = container.AlternatePowerFrameTexture
+            local vehicleTex = container.VehicleFrameTexture
+
+            local function compute()
+                local db2 = addon and addon.db and addon.db.profile
+                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                local cfg2 = unitFrames2 and rawget(unitFrames2, "Player") or nil
+                return (cfg2 and cfg2.useCustomBorders) and 0 or 1
             end
-        end
-        -- Hide the Player's Vehicle frame art when Use Custom Borders is enabled.
-        -- Framestack: PlayerFrame.PlayerFrameContainer.VehicleFrameTexture
-        if unit == "Player" and _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
-            local vehicleTex = _G.PlayerFrame.PlayerFrameContainer.VehicleFrameTexture
-            if vehicleTex and vehicleTex.SetShown then
-                if cfg.useCustomBorders then
-                    pcall(vehicleTex.SetShown, vehicleTex, false)
-                end
+
+            if altTex then
+                applyAlpha(altTex, compute())
+                hookAlphaEnforcer(altTex, compute)
+            end
+            if vehicleTex then
+                applyAlpha(vehicleTex, compute())
+                hookAlphaEnforcer(vehicleTex, compute)
             end
         end
         
@@ -2600,8 +2690,15 @@ do
                         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
                         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 end
-                if reputationColor and reputationColor.SetShown then
-                    pcall(reputationColor.SetShown, reputationColor, false)
+                if reputationColor then
+                    local function computeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+                    end
+                    applyAlpha(reputationColor, 0)
+                    hookAlphaEnforcer(reputationColor, computeAlpha)
                 end
             end
         elseif (unit == "Target" or unit == "Focus") then
@@ -2618,8 +2715,15 @@ do
                         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
                         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
                 end
-                if reputationColor and reputationColor.SetShown then
-                    pcall(reputationColor.SetShown, reputationColor, true)
+                if reputationColor then
+                    local function computeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+                    end
+                    applyAlpha(reputationColor, 1)
+                    hookAlphaEnforcer(reputationColor, computeAlpha)
                 end
             end
 
@@ -2642,46 +2746,14 @@ do
             if _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
                 local frameFlash = _G.PlayerFrame.PlayerFrameContainer.FrameFlash
                 if frameFlash then
-                    if cfg.useCustomBorders then
-                        -- Hide and install persistent hook to keep it hidden
-                        if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, false) end
-                        if frameFlash.Hide then pcall(frameFlash.Hide, frameFlash) end
-                        
-                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
-                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
-                        if not frameFlash._ScootHideHookInstalled then
-                            frameFlash._ScootHideHookInstalled = true
-                            frameFlash._ScootOrigOnShow = frameFlash:GetScript("OnShow")
-                            frameFlash:SetScript("OnShow", function(self)
-                                local db = addon and addon.db and addon.db.profile
-                                local unitFrames = db and rawget(db, "unitFrames") or nil
-                                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
-                                if cfgP and cfgP.useCustomBorders == true then
-                                    -- Keep it hidden while Use Custom Borders is enabled
-                                    self:Hide()
-                                else
-                                    -- Allow it to show if custom borders are disabled
-                                    if self._ScootOrigOnShow then
-                                        self._ScootOrigOnShow(self)
-                                    end
-                                end
-                            end)
-                        end
-                    else
-                        -- Restore FrameFlash when Use Custom Borders is disabled
-                        -- Restore original OnShow handler
-                        if frameFlash._ScootHideHookInstalled and frameFlash._ScootOrigOnShow then
-                            frameFlash:SetScript("OnShow", frameFlash._ScootOrigOnShow)
-                        else
-                            frameFlash:SetScript("OnShow", nil)
-                        end
-                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
-                        frameFlash._ScootHideHookInstalled = nil
-                        frameFlash._ScootOrigOnShow = nil
-                        -- Show the frame
-                        if frameFlash.SetShown then pcall(frameFlash.SetShown, frameFlash, true) end
-                        if frameFlash.Show then pcall(frameFlash.Show, frameFlash) end
+                    local function computeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfgP = unitFrames2 and rawget(unitFrames2, "Player") or nil
+                        return (cfgP and cfgP.useCustomBorders) and 0 or 1
                     end
+                    applyAlpha(frameFlash, computeAlpha())
+                    hookAlphaEnforcer(frameFlash, computeAlpha)
                 end
             end
         end
@@ -2691,46 +2763,14 @@ do
             if _G.TargetFrame and _G.TargetFrame.TargetFrameContainer then
                 local targetFlash = _G.TargetFrame.TargetFrameContainer.Flash
                 if targetFlash then
-                    if cfg.useCustomBorders then
-                        -- Hide and install persistent hook to keep it hidden
-                        if targetFlash.SetShown then pcall(targetFlash.SetShown, targetFlash, false) end
-                        if targetFlash.Hide then pcall(targetFlash.Hide, targetFlash) end
-                        
-                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
-                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
-                        if not targetFlash._ScootHideHookInstalled then
-                            targetFlash._ScootHideHookInstalled = true
-                            targetFlash._ScootOrigOnShow = targetFlash:GetScript("OnShow")
-                            targetFlash:SetScript("OnShow", function(self)
-                                local db = addon and addon.db and addon.db.profile
-                                local unitFrames = db and rawget(db, "unitFrames") or nil
-                                local cfgT = unitFrames and rawget(unitFrames, "Target") or nil
-                                if cfgT and cfgT.useCustomBorders == true then
-                                    -- Keep it hidden while Use Custom Borders is enabled
-                                    self:Hide()
-                                else
-                                    -- Allow it to show if custom borders are disabled
-                                    if self._ScootOrigOnShow then
-                                        self._ScootOrigOnShow(self)
-                                    end
-                                end
-                            end)
-                        end
-                    else
-                        -- Restore Flash when Use Custom Borders is disabled
-                        -- Restore original OnShow handler
-                        if targetFlash._ScootHideHookInstalled and targetFlash._ScootOrigOnShow then
-                            targetFlash:SetScript("OnShow", targetFlash._ScootOrigOnShow)
-                        else
-                            targetFlash:SetScript("OnShow", nil)
-                        end
-                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
-                        targetFlash._ScootHideHookInstalled = nil
-                        targetFlash._ScootOrigOnShow = nil
-                        -- Show the frame
-                        if targetFlash.SetShown then pcall(targetFlash.SetShown, targetFlash, true) end
-                        if targetFlash.Show then pcall(targetFlash.Show, targetFlash) end
+                    local function computeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfgT = unitFrames2 and rawget(unitFrames2, "Target") or nil
+                        return (cfgT and cfgT.useCustomBorders) and 0 or 1
                     end
+                    applyAlpha(targetFlash, computeAlpha())
+                    hookAlphaEnforcer(targetFlash, computeAlpha)
                 end
             end
         end
@@ -2740,46 +2780,14 @@ do
             if _G.FocusFrame and _G.FocusFrame.TargetFrameContainer then
                 local focusFlash = _G.FocusFrame.TargetFrameContainer.Flash
                 if focusFlash then
-                    if cfg.useCustomBorders then
-                        -- Hide and install persistent hook to keep it hidden
-                        if focusFlash.SetShown then pcall(focusFlash.SetShown, focusFlash, false) end
-                        if focusFlash.Hide then pcall(focusFlash.Hide, focusFlash) end
-                        
-                        -- Install OnShow hook to prevent Blizzard's code from showing it during combat
-                        -- CRITICAL: SetScript must be inside the guard to avoid creating new closures every style pass
-                        if not focusFlash._ScootHideHookInstalled then
-                            focusFlash._ScootHideHookInstalled = true
-                            focusFlash._ScootOrigOnShow = focusFlash:GetScript("OnShow")
-                            focusFlash:SetScript("OnShow", function(self)
-                                local db = addon and addon.db and addon.db.profile
-                                local unitFrames = db and rawget(db, "unitFrames") or nil
-                                local cfgF = unitFrames and rawget(unitFrames, "Focus") or nil
-                                if cfgF and cfgF.useCustomBorders == true then
-                                    -- Keep it hidden while Use Custom Borders is enabled
-                                    self:Hide()
-                                else
-                                    -- Allow it to show if custom borders are disabled
-                                    if self._ScootOrigOnShow then
-                                        self._ScootOrigOnShow(self)
-                                    end
-                                end
-                            end)
-                        end
-                    else
-                        -- Restore Flash when Use Custom Borders is disabled
-                        -- Restore original OnShow handler
-                        if focusFlash._ScootHideHookInstalled and focusFlash._ScootOrigOnShow then
-                            focusFlash:SetScript("OnShow", focusFlash._ScootOrigOnShow)
-                        else
-                            focusFlash:SetScript("OnShow", nil)
-                        end
-                        -- Clear hook bookkeeping so re-enabling mid-session reinstalls our OnShow enforcement
-                        focusFlash._ScootHideHookInstalled = nil
-                        focusFlash._ScootOrigOnShow = nil
-                        -- Show the frame
-                        if focusFlash.SetShown then pcall(focusFlash.SetShown, focusFlash, true) end
-                        if focusFlash.Show then pcall(focusFlash.Show, focusFlash) end
+                    local function computeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfgF = unitFrames2 and rawget(unitFrames2, "Focus") or nil
+                        return (cfgF and cfgF.useCustomBorders) and 0 or 1
                     end
+                    applyAlpha(focusFlash, computeAlpha())
+                    hookAlphaEnforcer(focusFlash, computeAlpha)
                 end
             end
         end
@@ -3033,9 +3041,27 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.groupFrames = db.groupFrames or {}
-        db.groupFrames.raid = db.groupFrames.raid or {}
-        local cfg = db.groupFrames.raid
+        -- Zero‑Touch: if the user has never configured groupFrames.raid, do nothing.
+        local groupFrames = rawget(db, "groupFrames")
+        local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: if nothing is actually customized (all defaults), do not touch.
+        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+        if not hasCustom then
+            return
+        end
+
+        -- Combat safety: never style CompactUnitFrame raid bars during combat.
+        if InCombatLockdown and InCombatLockdown() then
+            queueRaidFrameReapply()
+            return
+        end
 
         -- Rescan bars each time to catch frames created/destroyed by Blizzard
         collectRaidHealthBars()
@@ -3082,7 +3108,24 @@ do
                                           (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
                                           (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
                         if hasCustom then
-                            applyToRaidHealthBar(frame.healthBar, cfg)
+                            local bar = frame.healthBar
+                            local cfgRef = cfg
+                            -- IMPORTANT: Always defer to break the CompactUnitFrame execution context chain.
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queueRaidFrameReapply()
+                                        return
+                                    end
+                                    applyToRaidHealthBar(bar, cfgRef)
+                                end)
+                            else
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                                applyToRaidHealthBar(bar, cfgRef)
+                            end
                         end
                     end
                 end
@@ -3102,13 +3145,23 @@ do
                                           (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
                                           (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
                         if hasCustom then
-                            -- Defer slightly to let Blizzard finish its setup
+                            local bar = frame.healthBar
+                            local cfgRef = cfg
+                            -- Defer to let Blizzard finish setup AND to break taint propagation.
                             if _G.C_Timer and _G.C_Timer.After then
                                 _G.C_Timer.After(0, function()
-                                    applyToRaidHealthBar(frame.healthBar, cfg)
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queueRaidFrameReapply()
+                                        return
+                                    end
+                                    applyToRaidHealthBar(bar, cfgRef)
                                 end)
                             else
-                                applyToRaidHealthBar(frame.healthBar, cfg)
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                                applyToRaidHealthBar(bar, cfgRef)
                             end
                         end
                     end
@@ -3206,6 +3259,23 @@ do
     -- Collect all raid frame name FontStrings
     local raidNameTexts = {}
 
+    -- Shared helper: used both by ApplyRaidFrameTextStyle() and by CompactUnitFrame hook callbacks.
+    -- Must be in outer scope so hooks can call it (Edit Mode will hit hooks before any manual apply).
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
     local function collectRaidNameTexts()
         if wipe then
             wipe(raidNameTexts)
@@ -3239,16 +3309,23 @@ do
         local db = addon and addon.db and addon.db.profile
         if not db then return end
 
-        db.groupFrames = db.groupFrames or {}
-        db.groupFrames.raid = db.groupFrames.raid or {}
-        db.groupFrames.raid.textPlayerName = db.groupFrames.raid.textPlayerName or {
-            fontFace = "FRIZQT__",
-            size = 12,
-            style = "OUTLINE",
-            color = { 1, 1, 1, 1 },
-            offset = { x = 0, y = 0 },
-        }
-        local cfg = db.groupFrames.raid.textPlayerName
+        -- Zero‑Touch: only apply if user has configured raid text styling.
+        local groupFrames = rawget(db, "groupFrames")
+        local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+        local cfg = raidCfg and rawget(raidCfg, "textPlayerName") or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: if user hasn't actually changed anything from the defaults, do nothing.
+        if not hasCustomTextSettings(cfg) then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queueRaidFrameReapply()
+            return
+        end
 
         -- Rescan frames each time to catch frames created/destroyed by Blizzard
         collectRaidNameTexts()
@@ -3265,22 +3342,6 @@ do
         end
     end
 
-    -- Check if user has customized text settings (non-default values)
-    local function hasCustomTextSettings(cfg)
-        if not cfg then return false end
-        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
-        if cfg.size and cfg.size ~= 12 then return true end
-        if cfg.style and cfg.style ~= "OUTLINE" then return true end
-        if cfg.color then
-            local c = cfg.color
-            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
-        end
-        if cfg.offset then
-            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
-        end
-        return false
-    end
-
     -- Install hooks to reapply text styling when raid frames update
     local function installRaidFrameTextHooks()
         if addon._RaidFrameTextHooksInstalled then return end
@@ -3295,7 +3356,23 @@ do
                     if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
                         local cfg = db.groupFrames.raid.textPlayerName
                         if hasCustomTextSettings(cfg) then
-                            applyTextToRaidFrame(frame, cfg)
+                            local frameRef = frame
+                            local cfgRef = cfg
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queueRaidFrameReapply()
+                                        return
+                                    end
+                                    applyTextToRaidFrame(frameRef, cfgRef)
+                                end)
+                            else
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                                applyTextToRaidFrame(frameRef, cfgRef)
+                            end
                         end
                     end
                 end
@@ -3311,13 +3388,22 @@ do
                     if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
                         local cfg = db.groupFrames.raid.textPlayerName
                         if hasCustomTextSettings(cfg) then
-                            -- Defer slightly to let Blizzard finish its setup
+                            local frameRef = frame
+                            local cfgRef = cfg
                             if _G.C_Timer and _G.C_Timer.After then
                                 _G.C_Timer.After(0, function()
-                                    applyTextToRaidFrame(frame, cfg)
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queueRaidFrameReapply()
+                                        return
+                                    end
+                                    applyTextToRaidFrame(frameRef, cfgRef)
                                 end)
                             else
-                                applyTextToRaidFrame(frame, cfg)
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                                applyTextToRaidFrame(frameRef, cfgRef)
                             end
                         end
                     end
@@ -3334,7 +3420,23 @@ do
                     if db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textPlayerName then
                         local cfg = db.groupFrames.raid.textPlayerName
                         if hasCustomTextSettings(cfg) then
-                            applyTextToRaidFrame(frame, cfg)
+                            local frameRef = frame
+                            local cfgRef = cfg
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queueRaidFrameReapply()
+                                        return
+                                    end
+                                    applyTextToRaidFrame(frameRef, cfgRef)
+                                end)
+                            else
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                                applyTextToRaidFrame(frameRef, cfgRef)
+                            end
                         end
                     end
                 end

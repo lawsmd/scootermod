@@ -484,7 +484,9 @@ do
 					local tint = cfgStyle.castBarTint
 					-- For class color, follow Health/Power bars and always use player's class
 					local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
-					addon._ApplyToStatusBar(frame, texKey, colorMode, tint, "player", "cast", unitId)
+					-- Pass combatSafe=true only for visual-only refreshes triggered by cast bar hooks.
+					-- This allows texture/color re-application in combat while layout operations remain skipped.
+					addon._ApplyToStatusBar(frame, texKey, colorMode, tint, "player", "cast", unitId, visualOnly)
 				end
 
 				-- Background: texture + color + opacity
@@ -917,6 +919,78 @@ do
 		applyCastBarForUnit("Player")
 		applyCastBarForUnit("Target")
 		applyCastBarForUnit("Focus")
+	end
+
+	-- Zero‑Touch hook installation: install cast bar persistence hooks ONLY when the profile
+	-- has explicit cast bar config. This is used to ensure hooks exist even if ApplyStyles()
+	-- is deferred due to combat at login/reload.
+	local function hasCastBarConfig(unit)
+		local profile = addon and addon.db and addon.db.profile
+		if not profile then return false end
+		local unitFrames = rawget(profile, "unitFrames")
+		local unitCfg = unitFrames and rawget(unitFrames, unit)
+		return unitCfg and rawget(unitCfg, "castBar") ~= nil
+	end
+
+	local function ensureHooksForUnit(unit)
+		if unit ~= "Player" and unit ~= "Target" and unit ~= "Focus" then return end
+		if not hasCastBarConfig(unit) then return end
+		local frame = resolveCastBarFrame(unit)
+		if not frame then return end
+
+		-- Reuse the same hook installation block used by applyCastBarForUnit().
+		-- It is guarded by frame._ScootCastHooksInstalled so it is safe to call repeatedly.
+		if not frame._ScootCastHooksInstalled and _G.hooksecurefunc then
+			frame._ScootCastHooksInstalled = true
+			local hookUnit = unit
+			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
+				-- Ignore ScooterMod's own internal texture writes
+				if self._ScootUFInternalTextureWrite then return end
+				if addon and addon.ApplyUnitFrameCastBarFor then
+					self._ScootCastVisualOnly = true
+					addon.ApplyUnitFrameCastBarFor(hookUnit)
+					self._ScootCastVisualOnly = nil
+				end
+			end)
+			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
+				if addon and addon.ApplyUnitFrameCastBarFor then
+					self._ScootCastVisualOnly = true
+					addon.ApplyUnitFrameCastBarFor(hookUnit)
+					self._ScootCastVisualOnly = nil
+				end
+			end)
+			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
+				if self._ScootIgnoreSetPoint then return end
+				local mode = activeAnchorModes[hookUnit]
+				if mode and mode ~= "default" then
+					if not pendingReapply[hookUnit] then
+						pendingReapply[hookUnit] = true
+						C_Timer.After(0, function()
+							pendingReapply[hookUnit] = nil
+							if addon and addon.ApplyUnitFrameCastBarFor then
+								addon.ApplyUnitFrameCastBarFor(hookUnit)
+							end
+						end)
+					end
+				end
+			end)
+			if (hookUnit == "Target" or hookUnit == "Focus") and frame.AdjustPosition then
+				_G.hooksecurefunc(frame, "AdjustPosition", function(self)
+					local mode = activeAnchorModes[hookUnit]
+					if mode and mode ~= "default" then
+						if addon and addon.ApplyUnitFrameCastBarFor then
+							addon.ApplyUnitFrameCastBarFor(hookUnit)
+						end
+					end
+				end)
+			end
+		end
+	end
+
+	function addon.EnsureAllUnitFrameCastBarHooks()
+		ensureHooksForUnit("Player")
+		ensureHooksForUnit("Target")
+		ensureHooksForUnit("Focus")
 	end
 end
 

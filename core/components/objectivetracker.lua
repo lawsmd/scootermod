@@ -584,42 +584,81 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     local inCombat = PlayerInCombat()
     local configured = ClampPercent0To100(db.opacityInCombat)
 
-    if inCombat then
-        if configured == nil then
-            -- If the user cleared the setting mid-combat, restore baseline immediately.
-            if tracker._ScooterObjectiveTrackerCombatOpacityApplied then
-                if tracker.SetAlpha and tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
-                    pcall(tracker.SetAlpha, tracker, tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
-                end
-                tracker._ScooterObjectiveTrackerCombatOpacityApplied = nil
-                tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
-            end
+    -- NOTE: We intentionally do NOT set alpha on ObjectiveTrackerFrame itself.
+    -- Alpha is multiplicative through the frame tree; if we faded the parent, children like
+    -- ScenarioObjectiveTracker (Mythic+ progress / scenario UI) could not remain at full opacity.
+    --
+    -- Instead we fade each module (Header + ContentsFrame) except ScenarioObjectiveTracker.
+    local function ForEachCombatOpacityTargetFrame(fn)
+        -- Root header (the "Objectives" header bar) should fade along with modules.
+        if tracker.Header and tracker.Header.SetAlpha then
+            fn(tracker.Header)
+        end
+
+        local modules = tracker.modules
+        if type(modules) ~= "table" then
             return
         end
 
-        -- Capture pre-combat alpha once (so we can restore on leaving combat).
-        if tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha == nil and tracker.GetAlpha then
-            local ok, a = pcall(tracker.GetAlpha, tracker)
+        local scenarioModule = _G.ScenarioObjectiveTracker
+        for _, module in pairs(modules) do
+            if type(module) == "table" and module ~= scenarioModule then
+                local header = module.Header
+                if header and header.SetAlpha then
+                    fn(header)
+                end
+
+                local contents = module.ContentsFrame
+                if contents and contents.SetAlpha then
+                    fn(contents)
+                end
+            end
+        end
+    end
+
+    local function RestoreFrameBaseline(frame)
+        if not frame or not frame._ScooterObjectiveTrackerCombatOpacityApplied then
+            return
+        end
+        if frame.SetAlpha and frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
+            pcall(frame.SetAlpha, frame, frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
+        end
+        frame._ScooterObjectiveTrackerCombatOpacityApplied = nil
+        frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
+    end
+
+    local function ApplyFrameOverride(frame, alpha)
+        if not frame or not frame.SetAlpha then
+            return
+        end
+
+        -- Capture baseline alpha once so we can restore it after combat.
+        if frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha == nil and frame.GetAlpha then
+            local ok, a = pcall(frame.GetAlpha, frame)
             if ok and a ~= nil then
-                tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = a
+                frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha = a
             end
         end
 
-        if tracker.SetAlpha then
-            pcall(tracker.SetAlpha, tracker, configured / 100)
-            tracker._ScooterObjectiveTrackerCombatOpacityApplied = true
+        pcall(frame.SetAlpha, frame, alpha)
+        frame._ScooterObjectiveTrackerCombatOpacityApplied = true
+    end
+
+    if inCombat then
+        if configured == nil then
+            -- If the user cleared the setting mid-combat, restore baseline immediately.
+            ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
+            return
         end
+
+        ForEachCombatOpacityTargetFrame(function(frame)
+            ApplyFrameOverride(frame, configured / 100)
+        end)
         return
     end
 
     -- Out of combat: restore baseline if we applied an override during combat.
-    if tracker._ScooterObjectiveTrackerCombatOpacityApplied then
-        if tracker.SetAlpha and tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
-            pcall(tracker.SetAlpha, tracker, tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
-        end
-        tracker._ScooterObjectiveTrackerCombatOpacityApplied = nil
-        tracker._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
-    end
+    ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
 end
 
 local function ApplyObjectiveTrackerStylingAll(self)
@@ -698,7 +737,8 @@ addon:RegisterComponentInitializer(function(self)
             opacity = { type = "editmode", settingId = 1, default = 100, ui = { hidden = true } },
             textSize = { type = "editmode", settingId = 2, default = 12, ui = { hidden = true } },
 
-            -- Addon-only: combat override for the entire tracker alpha (0..100). Nil means "disabled".
+            -- Addon-only: combat override for Objective Tracker module alpha (0..100). Nil means "disabled".
+            -- ScenarioObjectiveTracker is intentionally excluded so Mythic+/Scenario progress remains readable.
             opacityInCombat = { type = "addon", ui = { hidden = true } },
 
             -- Addon-only text styling. UI is custom (tabbed section), so hide in generic renderer.
@@ -736,5 +776,6 @@ addon:RegisterComponentInitializer(function(self)
 
     self:RegisterComponent(objectiveTracker)
 end)
+
 
 

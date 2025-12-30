@@ -570,5 +570,4 @@ Dialogs:Register("SCOOTERMOD_IMPORT_CONSOLEPORT", {
     cancelText = NO or "No",
     height = 210,
 })
-})
 
