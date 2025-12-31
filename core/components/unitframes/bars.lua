@@ -169,6 +169,12 @@ local function restorePowerBarBaseline(pb)
             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
         end
     end
+
+    -- Clear custom-position flags when restoring to baseline.
+    pb._ScootPowerBarCustomPosEnabled = nil
+    pb._ScootPowerBarCustomPosX = nil
+    pb._ScootPowerBarCustomPosY = nil
+    pb._ScootPowerBarCustomPosUnit = nil
 end
 
 local function ensurePowerBarCustomSeed(cfg, pb)
@@ -186,22 +192,62 @@ local function ensurePowerBarCustomSeed(cfg, pb)
     end
 end
 
+-- Persistent custom-position enforcement:
+-- Blizzard can reposition the Player ManaBar (e.g., via PlayerFrame_ToPlayerArt calling manaBar:SetPoint).
+-- We install a hook on SetPoint to detect those resets and re-apply the custom position when allowed.
+local function installPowerBarCustomPositionHook(pb)
+    if not pb or pb._ScootPowerBarCustomPosHooked then
+        return
+    end
+    pb._ScootPowerBarCustomPosHooked = true
+
+    if not (_G.hooksecurefunc and pb.SetPoint) then
+        return
+    end
+
+    _G.hooksecurefunc(pb, "SetPoint", function(self)
+        if not self or not self._ScootPowerBarCustomPosEnabled then
+            return
+        end
+        if self._ScootPowerBarSettingPoint then
+            return
+        end
+
+        -- If we're in combat lockdown, do not attempt to move protected frames.
+        -- Instead, queue a re-apply for when combat ends.
+        if InCombatLockdown and InCombatLockdown() then
+            queuePowerBarReapply(self._ScootPowerBarCustomPosUnit or "Player")
+            return
+        end
+
+        local x = clampScreenCoordinate(self._ScootPowerBarCustomPosX or 0)
+        local y = clampScreenCoordinate(self._ScootPowerBarCustomPosY or 0)
+
+        self._ScootPowerBarSettingPoint = true
+        if self.SetIgnoreFramePositionManager then
+            pcall(self.SetIgnoreFramePositionManager, self, true)
+        end
+        if self.ClearAllPoints and self.SetPoint then
+            pcall(self.ClearAllPoints, self)
+            pcall(self.SetPoint, self, "CENTER", UIParent, "CENTER", pixelsToUiUnits(x), pixelsToUiUnits(y))
+        end
+        self._ScootPowerBarSettingPoint = nil
+    end)
+end
+
 local function applyCustomPowerBarPosition(unit, pb, cfg)
     if unit ~= "Player" or not cfg or not pb then
         return false
     end
     if not cfg.powerBarCustomPositionEnabled then
-        -- Restore original state when custom positioning is disabled
-        if pb._ScootPowerBarCustomActive then
+        -- Restore original state when custom positioning is disabled.
+        -- Important: clear custom-position flags even if we never successfully applied the move
+        -- (e.g., custom enabled while in combat, then disabled before we could apply).
+        if pb._ScootPowerBarCustomActive or pb._ScootPowerBarCustomPosEnabled then
             restorePowerBarBaseline(pb)
-            pb._ScootPowerBarCustomActive = nil
         end
+        pb._ScootPowerBarCustomActive = nil
         return false
-    end
-
-    if PlayerInCombat() then
-        queuePowerBarReapply(unit)
-        return true
     end
 
     capturePowerBarBaseline(pb)
@@ -210,11 +256,24 @@ local function applyCustomPowerBarPosition(unit, pb, cfg)
     local posX = clampScreenCoordinate(cfg.powerBarPosX or 0)
     local posY = clampScreenCoordinate(cfg.powerBarPosY or 0)
 
+    -- Store custom-position state on the frame so the SetPoint hook can re-enforce it.
+    pb._ScootPowerBarCustomPosEnabled = true
+    pb._ScootPowerBarCustomPosX = posX
+    pb._ScootPowerBarCustomPosY = posY
+    pb._ScootPowerBarCustomPosUnit = unit
+    installPowerBarCustomPositionHook(pb)
+
+    if PlayerInCombat() then
+        queuePowerBarReapply(unit)
+        return true
+    end
+
     -- POLICY COMPLIANT: Do NOT re-parent the frame. Instead:
     -- 1. Keep the frame parented where Blizzard placed it
     -- 2. Use SetIgnoreFramePositionManager to prevent layout manager from overriding
     -- 3. Anchor to UIParent for absolute screen positioning (frames CAN anchor to non-parents)
     -- This preserves scale, text styling, and all other customizations.
+    pb._ScootPowerBarSettingPoint = true
     if pb.SetIgnoreFramePositionManager then
         pcall(pb.SetIgnoreFramePositionManager, pb, true)
     end
@@ -222,8 +281,105 @@ local function applyCustomPowerBarPosition(unit, pb, cfg)
         pcall(pb.ClearAllPoints, pb)
         pcall(pb.SetPoint, pb, "CENTER", UIParent, "CENTER", pixelsToUiUnits(posX), pixelsToUiUnits(posY))
     end
+    pb._ScootPowerBarSettingPoint = nil
     pb._ScootPowerBarCustomActive = true
     return true
+end
+
+-- Debug helper:
+-- /scoot debug powerbarpos [simulate]
+-- Shows current Player ManaBar points + ScooterMod custom-position state.
+function addon.DebugPowerBarPosition(simulateReset)
+    if not (addon and addon.DebugShowWindow) then
+        return
+    end
+
+    local pb =
+        _G.PlayerFrame
+        and _G.PlayerFrame.PlayerFrameContent
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+
+    local lines = {}
+    local function push(s) table.insert(lines, tostring(s)) end
+
+    push("InCombatLockdown=" .. tostring((InCombatLockdown and InCombatLockdown()) and true or false))
+    push("PlayerInCombat=" .. tostring((PlayerInCombat and PlayerInCombat()) and true or false))
+    push("PowerBarFound=" .. tostring(pb ~= nil))
+
+    if not pb then
+        addon.DebugShowWindow("Player Power Bar Position", table.concat(lines, "\n"))
+        return
+    end
+
+    local okIgnore, ignoring = false, nil
+    if pb.IsIgnoringFramePositionManager then
+        okIgnore, ignoring = pcall(pb.IsIgnoringFramePositionManager, pb)
+    end
+    push("IsIgnoringFramePositionManager=" .. tostring(okIgnore and ignoring or "<n/a>"))
+
+    push("_ScootPowerBarCustomActive=" .. tostring(pb._ScootPowerBarCustomActive and true or false))
+    push("_ScootPowerBarCustomPosEnabled=" .. tostring(pb._ScootPowerBarCustomPosEnabled and true or false))
+    push("_ScootPowerBarCustomPosX=" .. tostring(pb._ScootPowerBarCustomPosX))
+    push("_ScootPowerBarCustomPosY=" .. tostring(pb._ScootPowerBarCustomPosY))
+    push("_ScootPowerBarCustomPosUnit=" .. tostring(pb._ScootPowerBarCustomPosUnit))
+
+    local sx, sy = getFrameScreenOffsets(pb)
+    push(string.format("ScreenOffsetFromCenter(px)=%s,%s", tostring(sx), tostring(sy)))
+
+    local function dumpPoints(header)
+        push("")
+        push(header)
+        if not (pb.GetNumPoints and pb.GetPoint) then
+            push("<no GetPoint API>")
+            return
+        end
+        local okN, n = pcall(pb.GetNumPoints, pb)
+        n = (okN and n) or 0
+        push("NumPoints=" .. tostring(n))
+        for i = 1, n do
+            local ok, point, relTo, relPoint, xOfs, yOfs = pcall(pb.GetPoint, pb, i)
+            if ok and point then
+                local relName = "<nil>"
+                if relTo and relTo.GetName then
+                    local okName, nm = pcall(relTo.GetName, relTo)
+                    if okName and nm and nm ~= "" then
+                        relName = nm
+                    else
+                        relName = tostring(relTo)
+                    end
+                else
+                    relName = tostring(relTo)
+                end
+                push(string.format("[%d] %s -> %s (%s) x=%s y=%s", i, tostring(point), tostring(relName), tostring(relPoint), tostring(xOfs), tostring(yOfs)))
+            else
+                push(string.format("[%d] <error>", i))
+            end
+        end
+    end
+
+    dumpPoints("Points (before)")
+
+    if simulateReset then
+        push("")
+        push("SimulateReset=true")
+        if InCombatLockdown and InCombatLockdown() then
+            push("SimulateResetSkipped=InCombatLockdown")
+        else
+            -- Simulate Blizzard's default reset from PlayerFrame_ToPlayerArt / ToVehicleArt.
+            if pb.ClearAllPoints and pb.SetPoint then
+                pcall(pb.ClearAllPoints, pb)
+                pcall(pb.SetPoint, pb, "TOPLEFT", 85, -61)
+            else
+                push("SimulateResetSkipped=<no ClearAllPoints/SetPoint>")
+            end
+        end
+
+        dumpPoints("Points (after simulate)")
+    end
+
+    addon.DebugShowWindow("Player Power Bar Position", table.concat(lines, "\n"))
 end
 
 -- Unit Frames: Copy Health/Power Bar Style settings (texture, color mode, tint)

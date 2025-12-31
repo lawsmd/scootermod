@@ -125,7 +125,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
 
         if sub1 == "" then
             addon:Print("Usage:")
-            addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|<FrameName>>")
+            addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|<FrameName>>")
             addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
             addon:Print("  /scoot debug consoleport export")
             return
@@ -194,9 +194,20 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             return
         end
 
+        -- /scoot debug powerbarpos [simulate]
+        if sub1 == "powerbarpos" then
+            local simulate = (sub2 == "simulate" or sub2 == "reset")
+            if addon.DebugPowerBarPosition then
+                addon.DebugPowerBarPosition(simulate)
+            else
+                addon:Print("Power Bar position debug not available (bars module missing).")
+            end
+            return
+        end
+
         local target = args[2]
         if not target or target == "" then
-            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|<FrameName>>")
+            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|<FrameName>>")
             return
         end
         if addon.DebugDump then

@@ -364,6 +364,24 @@ local function ApplyMicroBarStyling(self)
     local bar = _G[self.frameName]
     if not bar then return end
 
+    -- Keep the QueueStatusButton ("LFG eye") fully visible even when the Micro Bar opacity is reduced.
+    -- This button is effectively "part of" the Micro Bar area and can inherit parent alpha.
+    local function ensureQueueStatusButtonFullAlpha()
+        local qsb = _G.QueueStatusButton
+        if not qsb then return end
+        if qsb.SetIgnoreParentAlpha then
+            pcall(qsb.SetIgnoreParentAlpha, qsb, true)
+        end
+        if qsb.SetAlpha then
+            pcall(qsb.SetAlpha, qsb, 1)
+        end
+    end
+    ensureQueueStatusButtonFullAlpha()
+    if (not _G.QueueStatusButton) and C_Timer and C_Timer.After then
+        -- QueueStatusButton can be created after initial UI load; retry once next tick.
+        C_Timer.After(0, ensureQueueStatusButtonFullAlpha)
+    end
+
     -- Hook SetAlpha on this bar to intercept and correct external changes
     hookBarAlpha(bar)
 
