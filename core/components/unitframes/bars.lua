@@ -1328,6 +1328,68 @@ do
 
     addon._ApplyBackgroundToStatusBar = applyBackgroundToBar
 
+    -- =========================================================================
+    -- Shared Alpha Enforcement Helpers
+    -- =========================================================================
+    -- These functions are used by both applyForUnit() and InstallEarlyUnitFrameAlphaHooks()
+    -- to hide stock art/overlays when custom borders are enabled.
+    --
+    -- IMPORTANT (taint): Avoid SetShown/Show/Hide and avoid SetScript overrides on Blizzard frames.
+    -- We enforce "hidden" visuals via SetAlpha(0/1) + a deferred Show hook. See DEBUG.md.
+
+    local function applyAlpha(frameOrTexture, alpha)
+        if not frameOrTexture or not frameOrTexture.SetAlpha then return end
+        pcall(frameOrTexture.SetAlpha, frameOrTexture, alpha)
+    end
+
+    local function hookAlphaEnforcer(frameOrTexture, computeAlpha)
+        if not frameOrTexture or not _G.hooksecurefunc or type(computeAlpha) ~= "function" then return end
+        if frameOrTexture._ScootAlphaEnforcerHooked then return end
+        frameOrTexture._ScootAlphaEnforcerHooked = true
+
+        -- IMPORTANT (taint/combat): These enforcers only call SetAlpha, which is safe for visual-only
+        -- regions/textures even in combat. Do NOT gate on InCombatLockdown(), otherwise Blizzard can
+        -- Show()/SetAlpha() during combat and the element may remain visible after combat.
+        local function enforce(obj)
+            local desired = computeAlpha()
+            if obj and obj.GetAlpha and type(obj.GetAlpha) == "function" then
+                local ok, current = pcall(obj.GetAlpha, obj)
+                if ok and current == desired then
+                    return
+                end
+            end
+            applyAlpha(obj, desired)
+        end
+
+        local function enforceNowAndDefer(obj)
+            -- Immediate enforcement prevents visible pop-in.
+            enforce(obj)
+            -- One-tick backup in case a later same-frame update adjusts alpha again.
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function() enforce(obj) end)
+            end
+        end
+
+        -- Re-assert when Blizzard shows the object.
+        _G.hooksecurefunc(frameOrTexture, "Show", function(self)
+            enforceNowAndDefer(self)
+        end)
+
+        -- Re-assert when Blizzard toggles visibility via SetShown (some UI paths never call Show directly).
+        if frameOrTexture.SetShown then
+            _G.hooksecurefunc(frameOrTexture, "SetShown", function(self)
+                enforceNowAndDefer(self)
+            end)
+        end
+
+        -- Re-assert when Blizzard adjusts alpha (e.g., fades, state transitions).
+        if frameOrTexture.SetAlpha then
+            _G.hooksecurefunc(frameOrTexture, "SetAlpha", function(self)
+                enforce(self)
+            end)
+        end
+    end
+
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -2780,33 +2842,6 @@ do
             end
         end
 
-        -- Hide stock art/overlays when custom borders are enabled.
-        --
-        -- IMPORTANT (taint): Avoid SetShown/Show/Hide and avoid SetScript overrides on Blizzard frames.
-        -- We enforce "hidden" visuals via SetAlpha(0/1) + a deferred Show hook. See DEBUG.md.
-        local function applyAlpha(frameOrTexture, alpha)
-            if not frameOrTexture or not frameOrTexture.SetAlpha then return end
-            pcall(frameOrTexture.SetAlpha, frameOrTexture, alpha)
-        end
-
-        local function hookAlphaEnforcer(frameOrTexture, computeAlpha)
-            if not frameOrTexture or not _G.hooksecurefunc or type(computeAlpha) ~= "function" then return end
-            if frameOrTexture._ScootAlphaEnforcerHooked then return end
-            frameOrTexture._ScootAlphaEnforcerHooked = true
-            _G.hooksecurefunc(frameOrTexture, "Show", function(self)
-                local obj = self
-                if _G.C_Timer and _G.C_Timer.After then
-                    _G.C_Timer.After(0, function()
-                        if InCombatLockdown and InCombatLockdown() then return end
-                        applyAlpha(obj, computeAlpha())
-                    end)
-                else
-                    if InCombatLockdown and InCombatLockdown() then return end
-                    applyAlpha(obj, computeAlpha())
-                end
-            end)
-        end
-
         -- Stock frame art (includes the health bar border)
         do
             local ft = resolveUnitFrameFrameTexture(unit)
@@ -3147,6 +3182,187 @@ do
             end)
         end
     end
+
+    -- =========================================================================
+    -- Pre-emptive Hiding Functions for Target/Focus Frame Elements
+    -- =========================================================================
+    -- These functions are called SYNCHRONOUSLY (not deferred) from event handlers
+    -- like PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED. They hide elements
+    -- BEFORE Blizzard's TargetFrame_Update/FocusFrame_Update runs, preventing
+    -- the brief visual "flash" that occurs when relying solely on post-update hooks.
+    --
+    -- The key insight is that PLAYER_TARGET_CHANGED fires BEFORE Blizzard's
+    -- internal handler calls TargetFrame_Update. By hiding elements immediately
+    -- in our event handler, they're already hidden when Blizzard tries to show them.
+
+    -- Pre-emptive hide for Target frame elements (ReputationColor, FrameTexture, Flash)
+    local function preemptiveHideTargetElements()
+        local db = addon and addon.db and addon.db.profile
+        local unitFrames = db and rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Target")
+        if not cfg then return end
+
+        -- Only hide if useCustomBorders is enabled
+        if cfg.useCustomBorders then
+            -- Hide ReputationColor immediately
+            local repColor = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            if repColor and repColor.SetAlpha then
+                pcall(repColor.SetAlpha, repColor, 0)
+            end
+
+            -- Hide frame texture immediately
+            local ft = resolveUnitFrameFrameTexture("Target")
+            if ft and ft.SetAlpha then
+                pcall(ft.SetAlpha, ft, 0)
+            end
+
+            -- Hide Flash (aggro/threat glow) immediately
+            local targetFlash = _G.TargetFrame and _G.TargetFrame.TargetFrameContainer
+                and _G.TargetFrame.TargetFrameContainer.Flash
+            if targetFlash and targetFlash.SetAlpha then
+                pcall(targetFlash.SetAlpha, targetFlash, 0)
+            end
+        end
+
+        -- Hide frame texture if healthBarHideBorder is enabled (separate from useCustomBorders)
+        if cfg.healthBarHideBorder then
+            local ft = resolveUnitFrameFrameTexture("Target")
+            if ft and ft.SetAlpha then
+                pcall(ft.SetAlpha, ft, 0)
+            end
+        end
+    end
+    addon.PreemptiveHideTargetElements = preemptiveHideTargetElements
+
+    -- Pre-emptive hide for Focus frame elements (ReputationColor, FrameTexture, Flash)
+    local function preemptiveHideFocusElements()
+        local db = addon and addon.db and addon.db.profile
+        local unitFrames = db and rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Focus")
+        if not cfg then return end
+
+        -- Only hide if useCustomBorders is enabled
+        if cfg.useCustomBorders then
+            -- Hide ReputationColor immediately
+            local repColor = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            if repColor and repColor.SetAlpha then
+                pcall(repColor.SetAlpha, repColor, 0)
+            end
+
+            -- Hide frame texture immediately
+            local ft = resolveUnitFrameFrameTexture("Focus")
+            if ft and ft.SetAlpha then
+                pcall(ft.SetAlpha, ft, 0)
+            end
+
+            -- Hide Flash (aggro/threat glow) immediately
+            local focusFlash = _G.FocusFrame and _G.FocusFrame.TargetFrameContainer
+                and _G.FocusFrame.TargetFrameContainer.Flash
+            if focusFlash and focusFlash.SetAlpha then
+                pcall(focusFlash.SetAlpha, focusFlash, 0)
+            end
+        end
+
+        -- Hide frame texture if healthBarHideBorder is enabled (separate from useCustomBorders)
+        if cfg.healthBarHideBorder then
+            local ft = resolveUnitFrameFrameTexture("Focus")
+            if ft and ft.SetAlpha then
+                pcall(ft.SetAlpha, ft, 0)
+            end
+        end
+    end
+    addon.PreemptiveHideFocusElements = preemptiveHideFocusElements
+
+    -- =========================================================================
+    -- Early Alpha Hook Installation
+    -- =========================================================================
+    -- Install alpha enforcement hooks on Target/Focus frame elements during
+    -- PLAYER_ENTERING_WORLD, BEFORE the first target is acquired. This ensures
+    -- hooks are in place from the start, preventing the "first target flash"
+    -- that occurs when hooks are only installed during applyForUnit().
+
+    local function installEarlyAlphaHooks()
+        -- Helper to compute alpha based on useCustomBorders setting
+        local function makeComputeAlpha(unit)
+            return function()
+                local db2 = addon and addon.db and addon.db.profile
+                local unitFrames2 = db2 and rawget(db2, "unitFrames")
+                local cfg2 = unitFrames2 and rawget(unitFrames2, unit)
+                return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+            end
+        end
+
+        local function makeComputeAlphaWithBorder(unit)
+            return function()
+                local db2 = addon and addon.db and addon.db.profile
+                local unitFrames2 = db2 and rawget(db2, "unitFrames")
+                local cfg2 = unitFrames2 and rawget(unitFrames2, unit)
+                local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+                return hide and 0 or 1
+            end
+        end
+
+        -- Target frame elements
+        do
+            -- ReputationColor
+            local targetRepColor = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            if targetRepColor and not targetRepColor._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(targetRepColor, makeComputeAlpha("Target"))
+            end
+
+            -- FrameTexture
+            local targetFT = resolveUnitFrameFrameTexture("Target")
+            if targetFT and not targetFT._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(targetFT, makeComputeAlphaWithBorder("Target"))
+            end
+
+            -- Flash (aggro/threat glow)
+            local targetFlash = _G.TargetFrame and _G.TargetFrame.TargetFrameContainer
+                and _G.TargetFrame.TargetFrameContainer.Flash
+            if targetFlash and not targetFlash._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(targetFlash, makeComputeAlpha("Target"))
+            end
+        end
+
+        -- Focus frame elements
+        do
+            -- ReputationColor
+            local focusRepColor = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            if focusRepColor and not focusRepColor._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(focusRepColor, makeComputeAlpha("Focus"))
+            end
+
+            -- FrameTexture
+            local focusFT = resolveUnitFrameFrameTexture("Focus")
+            if focusFT and not focusFT._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(focusFT, makeComputeAlphaWithBorder("Focus"))
+            end
+
+            -- Flash (aggro/threat glow)
+            local focusFlash = _G.FocusFrame and _G.FocusFrame.TargetFrameContainer
+                and _G.FocusFrame.TargetFrameContainer.Flash
+            if focusFlash and not focusFlash._ScootAlphaEnforcerHooked then
+                hookAlphaEnforcer(focusFlash, makeComputeAlpha("Focus"))
+            end
+        end
+
+        -- Also do initial hide pass for currently configured settings
+        if addon.PreemptiveHideTargetElements then
+            addon.PreemptiveHideTargetElements()
+        end
+        if addon.PreemptiveHideFocusElements then
+            addon.PreemptiveHideFocusElements()
+        end
+    end
+    addon.InstallEarlyUnitFrameAlphaHooks = installEarlyAlphaHooks
 
 end
 
@@ -4057,4 +4273,3 @@ do
 
     installPartyFrameTextHooks()
 end
-

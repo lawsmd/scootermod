@@ -539,6 +539,14 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     if self.Rules and self.Rules.OnPlayerLogin then
         self.Rules:OnPlayerLogin()
     end
+    
+    -- Install early alpha enforcement hooks for Target/Focus frame elements.
+    -- This must happen BEFORE first target acquisition to prevent "first target flash".
+    -- The hooks ensure elements stay hidden even before applyForUnit() has run.
+    if addon.InstallEarlyUnitFrameAlphaHooks then
+        addon.InstallEarlyUnitFrameAlphaHooks()
+    end
+    
     self:ApplyStyles()
     -- Deferred reapply of Player textures to catch any Blizzard resets after initial apply
     -- This ensures textures persist even if Blizzard updates the frame after our initial styling
@@ -600,6 +608,26 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
 end
 
 function addon:PLAYER_TARGET_CHANGED()
+    -- =========================================================================
+    -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's TargetFrame_Update)
+    -- =========================================================================
+    -- This is the key to preventing visual "flash" of hidden elements.
+    -- PLAYER_TARGET_CHANGED fires BEFORE Blizzard's internal handler calls
+    -- TargetFrame_Update. By hiding elements synchronously here (not deferred),
+    -- they're already hidden when Blizzard tries to show them.
+    if addon.PreemptiveHideTargetElements then
+        addon.PreemptiveHideTargetElements()
+    end
+    if addon.PreemptiveHideLevelText then
+        addon.PreemptiveHideLevelText("Target")
+    end
+    if addon.PreemptiveHideNameText then
+        addon.PreemptiveHideNameText("Target")
+    end
+
+    -- =========================================================================
+    -- DEFERRED FULL STYLING PASS (runs AFTER Blizzard's TargetFrame_Update)
+    -- =========================================================================
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.ApplyUnitFrameBarTexturesFor then
@@ -642,7 +670,26 @@ function addon:PLAYER_TARGET_CHANGED()
 end
 
 function addon:PLAYER_FOCUS_CHANGED()
-    -- Re-apply Focus styling after Blizzard rebuilds layout
+    -- =========================================================================
+    -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's FocusFrame_Update)
+    -- =========================================================================
+    -- This is the key to preventing visual "flash" of hidden elements.
+    -- PLAYER_FOCUS_CHANGED fires BEFORE Blizzard's internal handler calls
+    -- FocusFrame_Update. By hiding elements synchronously here (not deferred),
+    -- they're already hidden when Blizzard tries to show them.
+    if addon.PreemptiveHideFocusElements then
+        addon.PreemptiveHideFocusElements()
+    end
+    if addon.PreemptiveHideLevelText then
+        addon.PreemptiveHideLevelText("Focus")
+    end
+    if addon.PreemptiveHideNameText then
+        addon.PreemptiveHideNameText("Focus")
+    end
+
+    -- =========================================================================
+    -- DEFERRED FULL STYLING PASS (runs AFTER Blizzard's FocusFrame_Update)
+    -- =========================================================================
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.ApplyUnitFrameBarTexturesFor then

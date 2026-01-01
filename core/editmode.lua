@@ -457,11 +457,80 @@ end
 --   applyDelay      = number | nil   -- delay used for RequestApplyChanges (default 0.2)
 --   skipSave        = boolean | nil  -- when true, do not call SaveOnly()
 --   skipApply       = boolean | nil  -- when true, do not call RequestApplyChanges()
+-- IMPORTANT (taint/combat lockdown):
+-- UnitFrames/ActionBars/etc are protected systems. Writing Edit Mode settings during combat can
+-- trigger Blizzard layout code that calls protected functions (e.g. PartyFrame:SetSize()) and
+-- surface as ADDON_ACTION_BLOCKED blaming ScooterMod.
+--
+-- Policy: If we are in combat, queue the write and apply it immediately after combat ends.
+local function _EnsureEditModeCombatWriteWatcher()
+    if not addon or not addon.EditMode then return end
+    if addon.EditMode._combatWriteWatcher then return end
+    if not _G.CreateFrame then return end
+
+    local f = _G.CreateFrame("Frame")
+    addon.EditMode._combatWriteWatcher = f
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function()
+        -- Defer a tick to let Blizzard finish post-combat churn.
+        if _G.C_Timer and _G.C_Timer.After then
+            _G.C_Timer.After(0, function()
+                if addon and addon.EditMode and addon.EditMode.FlushPendingWrites then
+                    addon.EditMode.FlushPendingWrites("PLAYER_REGEN_ENABLED")
+                end
+            end)
+        else
+            if addon and addon.EditMode and addon.EditMode.FlushPendingWrites then
+                addon.EditMode.FlushPendingWrites("PLAYER_REGEN_ENABLED")
+            end
+        end
+    end)
+end
+
+function addon.EditMode.FlushPendingWrites(origin)
+    if not addon or not addon.EditMode then return end
+    if _G.InCombatLockdown and _G.InCombatLockdown() then return end
+
+    local pending = addon.EditMode._pendingWrites
+    if type(pending) ~= "table" then return end
+    addon.EditMode._pendingWrites = nil
+
+    -- Re-apply queued writes. These will now run out of combat.
+    for _, item in pairs(pending) do
+        if type(item) == "table" and item.frame and item.settingId ~= nil then
+            addon.EditMode.WriteSetting(item.frame, item.settingId, item.value, item.opts)
+        end
+    end
+end
+
 function addon.EditMode.WriteSetting(frame, settingId, value, opts)
     if not frame or settingId == nil then return end
     if not addon.EditMode or not addon.EditMode.SetSetting then return end
 
     opts = opts or {}
+
+    -- Never attempt Edit Mode writes during combat.
+    if _G.InCombatLockdown and _G.InCombatLockdown() then
+        addon.EditMode._pendingWrites = addon.EditMode._pendingWrites or {}
+
+        -- Coalesce by (frame, settingId) so sliders/steppers don't spam queued writes.
+        local frameKey = (frame.GetName and frame:GetName()) or tostring(frame)
+        local key = tostring(frameKey) .. ":" .. tostring(settingId)
+        addon.EditMode._pendingWrites[key] = {
+            frame = frame,
+            settingId = settingId,
+            value = value,
+            opts = opts,
+        }
+
+        _EnsureEditModeCombatWriteWatcher()
+        return
+    end
+
+    -- Avoid touching forbidden frames (can happen if Blizzard tears down the system mid-session).
+    if frame.IsForbidden and frame:IsForbidden() then
+        return
+    end
 
     -- Perform the low-level write
     addon.EditMode.SetSetting(frame, settingId, value)

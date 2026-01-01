@@ -1800,12 +1800,29 @@ do
 	-- Hook TargetFrame_Update, FocusFrame_Update, and Player frame update functions
 	-- to reapply name/level text styling (including visibility and alignment) after
 	-- Blizzard's updates reset properties.
-	-- Use hooksecurefunc to avoid taint; defer reapply by one frame to ensure
-	-- Blizzard's update has fully completed.
+	--
+	-- IMPORTANT (pop-in): We must reapply immediately (same frame) to avoid visible
+	-- "flash" when acquiring a target. hooksecurefunc already runs AFTER Blizzard's
+	-- update completes, so an additional one-frame defer is not required for correctness.
+	-- We still optionally schedule a second reapply on the next tick as a safety net.
 	local _nameLevelTextHooksInstalled = false
 	local function installNameLevelTextHooks()
 		if _nameLevelTextHooksInstalled then return end
 		_nameLevelTextHooksInstalled = true
+
+		local function reapply(unit)
+			if not addon.ApplyUnitFrameNameLevelTextFor then return end
+			-- Immediate enforcement (prevents pop-in)
+			addon.ApplyUnitFrameNameLevelTextFor(unit)
+			-- One-tick backup in case a later same-frame Blizzard update path overrides us
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0, function()
+					if addon.ApplyUnitFrameNameLevelTextFor then
+						addon.ApplyUnitFrameNameLevelTextFor(unit)
+					end
+				end)
+			end
+		end
 
 		-- Player frame hooks: PlayerFrame_Update and PlayerFrame_UpdateRolesAssigned
 		-- can reset level text visibility. Hook both to ensure our settings persist.
@@ -1813,64 +1830,34 @@ do
 			-- PlayerFrame_Update calls PlayerFrame_UpdateLevel which sets the level text
 			if type(_G.PlayerFrame_Update) == "function" then
 				_G.hooksecurefunc("PlayerFrame_Update", function()
-					if _G.C_Timer and _G.C_Timer.After then
-						_G.C_Timer.After(0, function()
-							if addon.ApplyUnitFrameNameLevelTextFor then
-								addon.ApplyUnitFrameNameLevelTextFor("Player")
-							end
-						end)
-					end
+					reapply("Player")
 				end)
 			end
 			
 			-- PlayerFrame_UpdateRolesAssigned directly sets PlayerLevelText:SetShown()
 			if type(_G.PlayerFrame_UpdateRolesAssigned) == "function" then
 				_G.hooksecurefunc("PlayerFrame_UpdateRolesAssigned", function()
-					if _G.C_Timer and _G.C_Timer.After then
-						_G.C_Timer.After(0, function()
-							if addon.ApplyUnitFrameNameLevelTextFor then
-								addon.ApplyUnitFrameNameLevelTextFor("Player")
-							end
-						end)
-					end
+					reapply("Player")
 				end)
 			end
 			
 			-- PlayerFrame_ToPlayerArt is called when switching from vehicle to player
 			if type(_G.PlayerFrame_ToPlayerArt) == "function" then
 				_G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
-					if _G.C_Timer and _G.C_Timer.After then
-						_G.C_Timer.After(0, function()
-							if addon.ApplyUnitFrameNameLevelTextFor then
-								addon.ApplyUnitFrameNameLevelTextFor("Player")
-							end
-						end)
-					end
+					reapply("Player")
 				end)
 			end
 		end
 
 		if _G.hooksecurefunc and type(_G.TargetFrame_Update) == "function" then
 			_G.hooksecurefunc("TargetFrame_Update", function()
-				if _G.C_Timer and _G.C_Timer.After then
-					_G.C_Timer.After(0, function()
-						if addon.ApplyUnitFrameNameLevelTextFor then
-							addon.ApplyUnitFrameNameLevelTextFor("Target")
-						end
-					end)
-				end
+				reapply("Target")
 			end)
 		end
 
 		if _G.hooksecurefunc and type(_G.FocusFrame_Update) == "function" then
 			_G.hooksecurefunc("FocusFrame_Update", function()
-				if _G.C_Timer and _G.C_Timer.After then
-					_G.C_Timer.After(0, function()
-						if addon.ApplyUnitFrameNameLevelTextFor then
-							addon.ApplyUnitFrameNameLevelTextFor("Focus")
-						end
-					end)
-				end
+				reapply("Focus")
 			end)
 		end
 	end
@@ -1919,6 +1906,71 @@ do
 			installNameLevelTextHooks()
 		end
 		_origApplyAll()
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Pre-emptive Hiding Functions for Name/Level Text
+--------------------------------------------------------------------------------
+-- These functions are called SYNCHRONOUSLY (not deferred) from event handlers
+-- like PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED. They hide text elements
+-- BEFORE Blizzard's TargetFrame_Update/FocusFrame_Update runs, preventing
+-- the brief visual "flash" that occurs when relying solely on post-update hooks.
+--------------------------------------------------------------------------------
+
+-- Pre-emptive hide for Level text on Target/Focus frames
+-- Called synchronously from PLAYER_TARGET_CHANGED/PLAYER_FOCUS_CHANGED events
+function addon.PreemptiveHideLevelText(unit)
+	local db = addon and addon.db and addon.db.profile
+	local unitFrames = db and rawget(db, "unitFrames")
+	local cfg = unitFrames and rawget(unitFrames, unit)
+	if not cfg then return end
+	-- Only hide if levelTextHidden is explicitly true
+	if cfg.levelTextHidden ~= true then return end
+
+	local levelFS = nil
+	if unit == "Target" then
+		levelFS = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
+			and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+			and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+	elseif unit == "Focus" then
+		levelFS = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
+			and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+			and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+	elseif unit == "Player" then
+		levelFS = _G.PlayerLevelText
+	end
+
+	if levelFS and levelFS.SetShown then
+		pcall(levelFS.SetShown, levelFS, false)
+	end
+end
+
+-- Pre-emptive hide for Name text on Target/Focus frames
+-- Called synchronously from PLAYER_TARGET_CHANGED/PLAYER_FOCUS_CHANGED events
+function addon.PreemptiveHideNameText(unit)
+	local db = addon and addon.db and addon.db.profile
+	local unitFrames = db and rawget(db, "unitFrames")
+	local cfg = unitFrames and rawget(unitFrames, unit)
+	if not cfg then return end
+	-- Only hide if nameTextHidden is explicitly true
+	if cfg.nameTextHidden ~= true then return end
+
+	local nameFS = nil
+	if unit == "Target" then
+		nameFS = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
+			and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+			and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.Name
+	elseif unit == "Focus" then
+		nameFS = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
+			and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+			and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.Name
+	elseif unit == "Player" then
+		nameFS = _G.PlayerName
+	end
+
+	if nameFS and nameFS.SetShown then
+		pcall(nameFS.SetShown, nameFS, false)
 	end
 end
 
