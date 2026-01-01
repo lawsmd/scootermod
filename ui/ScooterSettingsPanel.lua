@@ -2775,20 +2775,29 @@ end
 		nav:SetPoint("TOPLEFT", 18, -76)
 		nav:SetPoint("BOTTOMLEFT", 18, 46)
 		f.Nav = nav
-		local navScroll = CreateFrame("ScrollFrame", nil, nav, "UIPanelScrollFrameTemplate")
-		navScroll:SetAllPoints(nav)
+
+		-- Plain ScrollFrame + modern MinimalScrollBar (same scrollbar as Blizzard Options)
+		local navScroll = CreateFrame("ScrollFrame", nil, nav)
+		navScroll:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, 0)
+		navScroll:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -14, 0)  -- Leave room for MinimalScrollBar
 		f.NavScroll = navScroll
-		-- Add a visible ScooterMod-branded scrollbar track so the rail is obvious at a glance.
-		if panel and panel.StyleScrollBarTrack then
-			panel.StyleScrollBarTrack(navScroll)
-		end
+
+		-- Modern MinimalScrollBar for the left nav
+		local navScrollBar = CreateFrame("EventFrame", nil, nav, "MinimalScrollBar")
+		navScrollBar:SetPoint("TOPLEFT", navScroll, "TOPRIGHT", 4, 0)
+		navScrollBar:SetPoint("BOTTOMLEFT", navScroll, "BOTTOMRIGHT", 4, 0)
+		f.NavScrollBar = navScrollBar
+
+		-- Wire ScrollFrame and ScrollBar together using Blizzard's official bridge API
+		ScrollUtil.InitScrollFrameWithScrollBar(navScroll, navScrollBar)
+
 		local navContent = CreateFrame("Frame", nil, navScroll)
 		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)
 		navContent:SetHeight(10)
 		navScroll:SetScrollChild(navContent)
 		f.NavContent = navContent
 		local function UpdateNavContentWidth()
-			local w = (nav:GetWidth() or navWidth) - 24
+			local w = (nav:GetWidth() or navWidth) - 18  -- Adjusted for MinimalScrollBar (8px + padding)
 			if w < 80 then w = 80 end
 			navContent:SetWidth(w)
 			if navScroll and navScroll.UpdateScrollChildRect then navScroll:UpdateScrollChildRect() end

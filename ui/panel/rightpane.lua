@@ -27,7 +27,7 @@ local function EnsureFooter(self)
 
     local footer = CreateFrame("Frame", nil, self.frame)
     footer:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 0, 0)
-    footer:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -24, 0) -- align with scrollframe's right inset
+    footer:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -14, 0) -- align with scrollframe's right inset
     footer:SetHeight(0)
     footer:Hide()
     self.Footer = footer
@@ -139,16 +139,21 @@ function RightPane:Init(ownerFrame, container)
     header.ScooterCDMButton = header.ScooterCDMButton or nil
 
     ------------------------------------------------------------------------
-    -- Scroll area
+    -- Scroll area (plain ScrollFrame + modern MinimalScrollBar)
     ------------------------------------------------------------------------
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
     scrollFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
-    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 0)  -- Leave room for MinimalScrollBar (8px + padding)
     self.ScrollFrame = scrollFrame
-    -- Add a visible ScooterMod-branded scrollbar track so the rail is obvious at a glance.
-    if panel and panel.StyleScrollBarTrack then
-        panel.StyleScrollBarTrack(scrollFrame)
-    end
+
+    -- Modern MinimalScrollBar (the same scrollbar used in Blizzard's Options menu)
+    local scrollBar = CreateFrame("EventFrame", nil, frame, "MinimalScrollBar")
+    scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 4, 0)
+    scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 4, 0)
+    self.ScrollBar = scrollBar
+
+    -- Wire ScrollFrame and ScrollBar together using Blizzard's official bridge API
+    ScrollUtil.InitScrollFrameWithScrollBar(scrollFrame, scrollBar)
 
     -- Scroll child that actually hosts all rows. IMPORTANT: give this frame an
     -- explicit width that tracks the scroll frame's width; if we leave width at
@@ -518,7 +523,7 @@ function RightPane:SetFooter(opts)
         else
             self.ScrollFrame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -4)
         end
-        self.ScrollFrame:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -24, 0)
+        self.ScrollFrame:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -14, 0)
         if self.ScrollFrame.UpdateScrollChildRect then self.ScrollFrame:UpdateScrollChildRect() end
         return
     end
