@@ -60,6 +60,17 @@ end
 -- Allow callers to force index-based handling for specific (system, setting) pairs.
 lib._forceIndexBased = lib._forceIndexBased or {}
 
+-- Optional per-setting compatibility override (ScooterMod local):
+-- Some sliders use Edit Mode's ConvertValueDiffFromMin conversion:
+--   stored = raw - minValue
+-- rather than raw storage or index-based storage.
+-- Unit Frame FrameWidth/FrameHeight are the canonical examples.
+-- When enabled for (system, setting):
+--   - SetFrameSetting accepts raw values within [min,max] and stores (raw - min)
+--   - GetFrameSetting converts stored back to raw via (min + stored)
+-- This keeps ScooterMod and other callers working purely in UI-facing raw values.
+lib._forceDiffFromMin = lib._forceDiffFromMin or {}
+
 -- SliderIsIndexBased(frame, setting, restrictions)
 -- Determines whether a slider should be treated as index-based for both Set/Get operations.
 -- This function is the SINGLE source of truth for the index-mode decision so callers do not
@@ -90,6 +101,17 @@ local function SliderIsIndexBased(frame, setting, restrictions)
   if frame and frame.system == Enum.EditModeSystem.AuraFrame
      and restrictions.type == Enum.EditModeSettingDisplayType.Slider
      and restrictions.minValue == 50 and restrictions.maxValue == 200 and restrictions.stepSize == 10 then
+    return true
+  end
+  return false
+end
+
+local function SliderIsDiffFromMin(frame, setting, restrictions)
+  if not restrictions or restrictions.type ~= Enum.EditModeSettingDisplayType.Slider then
+    return false
+  end
+  local sys = frame and frame.system
+  if sys and lib._forceDiffFromMin and lib._forceDiffFromMin[sys] and lib._forceDiffFromMin[sys][setting] then
     return true
   end
   return false
@@ -171,6 +193,16 @@ function lib:SetFrameSetting(frame, setting, value)
           value = idx
         end
         assert(0 <= value and value <= maxIndex, string.format("Value %s invalid for this setting: min %s, max %s", value, 0, maxIndex))
+      elseif SliderIsDiffFromMin(frame, setting, restrictions) then
+        -- DiffFromMin sliders store (raw - min) internally.
+        local rawMin = restrictions.minValue
+        local rawMax = restrictions.maxValue
+        local maxStored = rawMax - rawMin
+        -- If caller passed raw in [min,max], convert to stored. Otherwise, accept stored 0..(max-min).
+        if value >= rawMin and value <= rawMax then
+          value = value - rawMin
+        end
+        assert(0 <= value and value <= maxStored, string.format("Value %s invalid for this setting: min %s, max %s", value, 0, maxStored))
       else
         -- No step size: treat as raw numeric within min/max
         local min = restrictions.minValue
@@ -230,6 +262,12 @@ function lib:GetFrameSetting(frame, setting)
         local step = restrictions.stepSize
         local idx = item.value or 0
         return rawMin + (idx * step)
+      end
+      if restrictions and SliderIsDiffFromMin(frame, setting, restrictions) then
+        -- Convert stored diff-from-min back to raw for callers
+        local rawMin = restrictions.minValue
+        local stored = item.value or 0
+        return rawMin + stored
       end
       -- IMPORTANT: Some edit-mode UIs internally store Opacity as an index but present raw percent.
       -- We normalize here to raw when we can infer the typical 50..100 range with step 1.

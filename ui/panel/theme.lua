@@ -65,6 +65,49 @@ do
         end
     end
 
+    -- Add a visible "track" between the up/down arrows for legacy scrollbars
+    -- created via UIPanelScrollFrameTemplate (UIPanelScrollBarTemplate).
+    --
+    -- Why: The default UIPanelScrollBar has a thumb but no persistent track,
+    -- making it hard to see the scrollable rail at a glance (especially in our
+    -- dark panel). Blizzard's Settings panel uses MinimalScrollBar which has a
+    -- built-in track; this helper gives our legacy scrollbars a ScooterMod-
+    -- branded equivalent (subtle dark rail + thin green accent line).
+    --
+    -- Idempotent: safe to call multiple times on the same scroll frame.
+    function panel.StyleScrollBarTrack(scrollFrame)
+        if not scrollFrame then return end
+        local sb = scrollFrame.ScrollBar
+        if not sb or sb._scooterTrackStyled then return end
+
+        -- UIPanelScrollBarTemplate provides these keys; keep defensive fallbacks.
+        local upBtn = sb.ScrollUpButton or (sb.GetChildren and select(1, sb:GetChildren())) or nil
+        local downBtn = sb.ScrollDownButton or nil
+        if not upBtn or not downBtn then
+            -- If we can't locate steppers reliably, bail safely.
+            return
+        end
+
+        -- Track background: a slim dark rail so the scrollbar area is visible.
+        local bg = sb:CreateTexture(nil, "BACKGROUND", nil, -2)
+        bg:SetColorTexture(0, 0, 0, 0.38)
+        bg:SetPoint("TOPLEFT", upBtn, "BOTTOMLEFT", 4, -2)
+        bg:SetPoint("BOTTOMRIGHT", downBtn, "TOPRIGHT", -4, 2)
+
+        -- Accent line: thin ScooterMod green line centered on the rail.
+        local line = sb:CreateTexture(nil, "BACKGROUND", nil, -1)
+        line:SetColorTexture(brandR, brandG, brandB, 0.55)
+        line:SetPoint("TOP", bg, "TOP", 0, -2)
+        line:SetPoint("BOTTOM", bg, "BOTTOM", 0, 2)
+        line:SetWidth(2)
+
+        -- Keep references (helps debugging and makes it easy to tweak later).
+        sb.ScooterTrackBG = bg
+        sb.ScooterTrackLine = line
+
+        sb._scooterTrackStyled = true
+    end
+
     local function forEachDescendant(frame, fn, depth)
         if not frame or (depth and depth <= 0) then return end
         if frame.GetRegions then

@@ -2706,6 +2706,17 @@ end
         headerEditBtn:EnableMouse(true)
         headerCdmBtn:EnableMouse(true)
         headerEditBtn:SetScript("OnClick", function()
+            -- Invariant: never keep ScooterMod's panel open while Edit Mode is open.
+            -- Close first so we don't overlap UIs during Edit Mode initialization.
+            if panel and panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
+                panel.frame:Hide()
+            end
+            -- If we recently changed any Edit Mode-backed setting, there may be a pending
+            -- coalesced ApplyChanges timer. Cancel it so it can't immediately close the
+            -- user's Edit Mode session via LEO's ShowUIPanel/HideUIPanel bounce.
+            if addon and addon.EditMode and addon.EditMode.CancelPendingApplyChanges then
+                addon.EditMode.CancelPendingApplyChanges()
+            end
             -- Note: Blizzard allows opening Edit Mode during combat, and ScooterMod's
             -- edit mode sync system properly handles combat by using SaveOnly() instead
             -- of ApplyChanges() during combat, then applying changes when combat ends.
@@ -2767,6 +2778,10 @@ end
 		local navScroll = CreateFrame("ScrollFrame", nil, nav, "UIPanelScrollFrameTemplate")
 		navScroll:SetAllPoints(nav)
 		f.NavScroll = navScroll
+		-- Add a visible ScooterMod-branded scrollbar track so the rail is obvious at a glance.
+		if panel and panel.StyleScrollBarTrack then
+			panel.StyleScrollBarTrack(navScroll)
+		end
 		local navContent = CreateFrame("Frame", nil, navScroll)
 		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)
 		navContent:SetHeight(10)
@@ -2990,6 +3005,13 @@ end
         -- For Buffs/Debuffs tabs, skip the immediate render and let the delayed SelectCategory handle it below
     end
     panel.frame:Show()
+
+    -- CRITICAL: Force a fresh row acquisition on every open.
+    -- Some builder modules cache Edit Mode-backed values on row frames to keep
+    -- steppers responsive. If we reopen without invalidating, recycled rows can
+    -- preserve those cached values and the UI will appear stale until the user
+    -- switches categories (which triggers a rebuild).
+    InvalidatePanelRightPane(panel)
     
     -- Buffs/Debuffs: schedule a targeted Aura Frame Icon Size backfill based on the live
     -- AuraContainer.iconScale BEFORE we render the category, so the UI reflects
@@ -3029,6 +3051,14 @@ function panel:Toggle()
         return
     end
 
+    -- If Edit Mode is open, do not open ScooterMod's settings panel (they conflict).
+    if _G.EditModeManagerFrame and _G.EditModeManagerFrame.IsShown and _G.EditModeManagerFrame:IsShown() then
+        if addon and addon.Print then
+            addon:Print("Close Edit Mode before opening ScooterMod.")
+        end
+        return
+    end
+
     -- Combat guard: prevent opening during combat
     if InCombatLockdown and InCombatLockdown() then
         panel._closedByCombat = true
@@ -3047,6 +3077,14 @@ function panel:Open()
         panel._closedByCombat = true
         if addon and addon.Print then
             addon:Print("ScooterMod will open once combat ends.")
+        end
+        return
+    end
+
+    -- If Edit Mode is open, do not open ScooterMod's settings panel (they conflict).
+    if _G.EditModeManagerFrame and _G.EditModeManagerFrame.IsShown and _G.EditModeManagerFrame:IsShown() then
+        if addon and addon.Print then
+            addon:Print("Close Edit Mode before opening ScooterMod.")
         end
         return
     end

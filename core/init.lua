@@ -109,6 +109,12 @@ function addon:OnInitialize()
     -- Login/spec-change guard: PLAYER_SPECIALIZATION_CHANGED can fire during initial login.
     -- We must not prompt/reload in that phase; only live spec switches should prompt.
     self._scootSpecLoginGuard = true
+
+    -- Initialize Edit Mode integration (hooks + compatibility flags).
+    if self.EditMode and self.EditMode.Initialize then
+        pcall(self.EditMode.Initialize)
+    end
+
     self:RegisterEvents()
 end
 

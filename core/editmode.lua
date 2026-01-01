@@ -367,12 +367,28 @@ end
 function addon.EditMode.ApplyChanges()
     if not LEO or not LEO.ApplyChanges then return end
     if _ShouldSuppressWrites() then return end
+    -- If the user is currently in Edit Mode, never call LEO:ApplyChanges().
+    -- LibEditModeOverride's ApplyChanges bounces the EditModeManagerFrame
+    -- (ShowUIPanel/HideUIPanel) which would immediately close the user's Edit Mode session.
+    if _G.EditModeManagerFrame and _G.EditModeManagerFrame.IsShown and _G.EditModeManagerFrame:IsShown() then
+        addon.EditMode._deferApplyUntilEditModeExit = true
+        return
+    end
     if not InCombatLockdown() then
         if addon and addon.SettingsPanel then
             addon.SettingsPanel._protectVisibility = true
             if addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
         end
-        LEO:ApplyChanges()
+        -- Mark that this Edit Mode "entry" (if any) is ScooterMod-internal. Some clients
+        -- call EditModeManagerFrame:EnterEditMode as part of showing the frame; LEO's
+        -- ApplyChanges deliberately bounces the Edit Mode UI, which would otherwise trigger
+        -- our EnterEditMode hook and close ScooterMod while simply changing a setting.
+        addon.EditMode._inScooterApplyChanges = true
+        local ok = pcall(LEO.ApplyChanges, LEO)
+        addon.EditMode._inScooterApplyChanges = nil
+        if not ok then
+            -- Ignore failures silently; LEO already asserts for combat/ready cases.
+        end
     else
         LEO:SaveOnly()
     end
@@ -380,14 +396,27 @@ end
 
 -- Coalesced ApplyChanges helper: collapse multiple writes into a single apply
 local _pendingApplyTimer
-function addon.EditMode.RequestApplyChanges(delay)
-    local d = tonumber(delay) or 0.2
-    -- Cancel any previously scheduled apply
+addon.EditMode._deferApplyUntilEditModeExit = addon.EditMode._deferApplyUntilEditModeExit or false
+
+function addon.EditMode.CancelPendingApplyChanges()
     if _pendingApplyTimer and _pendingApplyTimer.Cancel then
         _pendingApplyTimer:Cancel()
     end
+    _pendingApplyTimer = nil
+end
+
+function addon.EditMode.RequestApplyChanges(delay)
+    local d = tonumber(delay) or 0.2
+    -- Cancel any previously scheduled apply
+    addon.EditMode.CancelPendingApplyChanges()
     -- Do not attempt to apply during combat; SaveOnly is handled at write time
     if InCombatLockdown and InCombatLockdown() then return end
+    -- If Edit Mode is currently open, defer ApplyChanges until the user exits.
+    -- This prevents LEO:ApplyChanges from closing Edit Mode via its UI bounce.
+    if _G.EditModeManagerFrame and _G.EditModeManagerFrame.IsShown and _G.EditModeManagerFrame:IsShown() then
+        addon.EditMode._deferApplyUntilEditModeExit = true
+        return
+    end
     if C_Timer and C_Timer.NewTimer then
         _pendingApplyTimer = C_Timer.NewTimer(d, function()
             if addon and addon.EditMode and addon.EditMode.ApplyChanges then
@@ -2252,6 +2281,22 @@ end
 
 -- Initialize Edit Mode integration
 function addon.EditMode.Initialize()
+    local function CloseScooterSettingsPanelForEditMode()
+        -- Invariant: ScooterMod's settings panel must not remain open while Edit Mode is open.
+        -- Keeping both UIs visible creates sync churn (recycled Settings rows, back-sync passes, etc.).
+        -- However: LibEditModeOverride:ApplyChanges() may transiently trigger Edit Mode entry as an
+        -- internal "bounce" when applying settings. Never close the panel for that path.
+        if addon and addon.EditMode and addon.EditMode._inScooterApplyChanges then
+            return
+        end
+        local panel = addon and addon.SettingsPanel
+        if not panel then return end
+        panel._closedByEditMode = true
+        if panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
+            pcall(panel.frame.Hide, panel.frame)
+        end
+    end
+
     -- Enable compatibility mode for opacity: treat as index-based in LEO to match client persistence
     local LEO_local = LibStub and LibStub("LibEditModeOverride-1.0")
     if LEO_local and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeCooldownViewerSetting then
@@ -2320,8 +2365,38 @@ function addon.EditMode.Initialize()
         if type(ER.RegisterCallback) == "function" then
             ER:RegisterCallback("EditMode.Enter", function()
                 -- Do not push on enter; it can cause recursion and frame churn as Blizzard initializes widgets.
+                --
+                -- IMPORTANT:
+                -- Do NOT close ScooterMod's panel here. LibEditModeOverride:ApplyChanges() briefly
+                -- shows/hides EditModeManagerFrame as an internal "UI bounce", and that can fire
+                -- EditMode.Enter even when the user is not actually entering Edit Mode. Closing
+                -- the panel here would make any Edit Mode-backed setting change close ScooterMod.
+                --
+                -- Panel closing is enforced via the EditModeManagerFrame:EnterEditMode hook below,
+                -- which represents the real user Edit Mode entry path.
             end, addon)
             ER:RegisterCallback("EditMode.Exit", function()
+                -- If we deferred an ApplyChanges while Edit Mode was open, schedule it now that the user exited.
+                -- (Applying during Edit Mode would immediately close the panel due to the LEO UI bounce.)
+                if addon and addon.EditMode and addon.EditMode._deferApplyUntilEditModeExit then
+                    addon.EditMode._deferApplyUntilEditModeExit = false
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0.05, function()
+                            if InCombatLockdown and InCombatLockdown() then
+                                -- Combat-safe path: we only persist with SaveOnly. Full ApplyChanges will be
+                                -- requested later by the normal coalescer once combat ends.
+                                if addon.EditMode and addon.EditMode.SaveOnly then pcall(addon.EditMode.SaveOnly) end
+                                return
+                            end
+                            if addon.EditMode and addon.EditMode.RequestApplyChanges then
+                                addon.EditMode.RequestApplyChanges(0.05)
+                            end
+                        end)
+                    elseif addon.EditMode and addon.EditMode.RequestApplyChanges then
+                        addon.EditMode.RequestApplyChanges(0.05)
+                    end
+                end
+
                 C_Timer.After(0.1, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass1") end end)
                 C_Timer.After(0.5, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass2") end end)
                 C_Timer.After(1.0, function() if addon.EditMode then addon.EditMode.RefreshSyncAndNotify("EditModeExit:pass3") end end)
@@ -2342,6 +2417,19 @@ function addon.EditMode.Initialize()
                 end)
             end, addon)
             addon._editModeCBRegistered = true
+        end
+    end
+
+    -- Fallback hook for clients/builds that don't fire EventRegistry callbacks reliably.
+    -- IMPORTANT: Hook EnterEditMode (not OnShow) so we don't accidentally close the panel
+    -- during our own "bounce EditModeManagerFrame" taint-clearing work.
+    if not addon._editModeClosePanelHooked and type(_G.hooksecurefunc) == "function" then
+        local mgr = _G.EditModeManagerFrame
+        if mgr and type(mgr.EnterEditMode) == "function" then
+            addon._editModeClosePanelHooked = true
+            _G.hooksecurefunc(mgr, "EnterEditMode", function()
+                CloseScooterSettingsPanelForEditMode()
+            end)
         end
     end
 
@@ -2403,6 +2491,21 @@ function addon.EditMode.Initialize()
             LEO_flag._forceIndexBased = LEO_flag._forceIndexBased or {}
             LEO_flag._forceIndexBased[sysUF] = LEO_flag._forceIndexBased[sysUF] or {}
             LEO_flag._forceIndexBased[sysUF][settingFS] = true
+        end
+    end
+
+    -- Unit Frame Frame Width/Height use ConvertValueDiffFromMin (stored = raw - min).
+    -- Force DiffFromMin handling in embedded LEO so callers always read/write RAW (72..144, 36..72).
+    do
+        local LEO_flag = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO_flag and _G and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeUnitFrameSetting then
+            local sysUF = _G.Enum.EditModeSystem.UnitFrame
+            local settingW = _G.Enum.EditModeUnitFrameSetting.FrameWidth
+            local settingH = _G.Enum.EditModeUnitFrameSetting.FrameHeight
+            LEO_flag._forceDiffFromMin = LEO_flag._forceDiffFromMin or {}
+            LEO_flag._forceDiffFromMin[sysUF] = LEO_flag._forceDiffFromMin[sysUF] or {}
+            LEO_flag._forceDiffFromMin[sysUF][settingW] = true
+            LEO_flag._forceDiffFromMin[sysUF][settingH] = true
         end
     end
 

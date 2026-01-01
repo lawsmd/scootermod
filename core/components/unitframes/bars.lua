@@ -100,6 +100,7 @@ end
 -- We must NEVER apply CompactUnitFrame (raid/party) cosmetic changes during combat, and we must
 -- avoid doing synchronous work inside Blizzard's CompactUnitFrame update chains. See DEBUG.md.
 local pendingRaidFrameReapply = false
+local pendingPartyFrameReapply = false
 local raidFrameCombatWatcher = nil
 
 local function ensureRaidFrameCombatWatcher()
@@ -109,15 +110,30 @@ local function ensureRaidFrameCombatWatcher()
     raidFrameCombatWatcher = CreateFrame("Frame")
     raidFrameCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
     raidFrameCombatWatcher:SetScript("OnEvent", function()
-        if not pendingRaidFrameReapply then
+        if not pendingRaidFrameReapply and not pendingPartyFrameReapply then
             return
         end
+        local doRaid = pendingRaidFrameReapply
+        local doParty = pendingPartyFrameReapply
         pendingRaidFrameReapply = false
-        if addon.ApplyRaidFrameHealthBarStyle then
-            addon.ApplyRaidFrameHealthBarStyle()
+        pendingPartyFrameReapply = false
+
+        if doRaid then
+            if addon.ApplyRaidFrameHealthBarStyle then
+                addon.ApplyRaidFrameHealthBarStyle()
+            end
+            if addon.ApplyRaidFrameTextStyle then
+                addon.ApplyRaidFrameTextStyle()
+            end
         end
-        if addon.ApplyRaidFrameTextStyle then
-            addon.ApplyRaidFrameTextStyle()
+
+        if doParty then
+            if addon.ApplyPartyFrameHealthBarStyle then
+                addon.ApplyPartyFrameHealthBarStyle()
+            end
+            if addon.ApplyPartyFrameTextStyle then
+                addon.ApplyPartyFrameTextStyle()
+            end
         end
     end)
 end
@@ -125,6 +141,11 @@ end
 local function queueRaidFrameReapply()
     ensureRaidFrameCombatWatcher()
     pendingRaidFrameReapply = true
+end
+
+local function queuePartyFrameReapply()
+    ensureRaidFrameCombatWatcher()
+    pendingPartyFrameReapply = true
 end
 
 local function capturePowerBarBaseline(pb)
@@ -3602,5 +3623,381 @@ do
 
     -- Install hooks when this module loads
     installRaidFrameTextHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Party Frame Health Bar Styling
+--------------------------------------------------------------------------------
+-- Applies foreground/background texture and color settings to party frame health
+-- bars (CompactPartyFrameMember[1-5]HealthBar).
+--------------------------------------------------------------------------------
+
+do
+    -- Cache for discovered party frame health bars
+    local partyHealthBars = {}
+
+    local function collectPartyHealthBars()
+        partyHealthBars = {}
+        for i = 1, 5 do
+            local bar = _G["CompactPartyFrameMember" .. i .. "HealthBar"]
+            if bar then
+                table.insert(partyHealthBars, bar)
+            end
+        end
+    end
+
+    local function applyToPartyHealthBar(bar, cfg)
+        if not bar or not cfg then return end
+
+        local texKey = cfg.healthBarTexture or "default"
+        local colorMode = cfg.healthBarColorMode or "default"
+        local tint = cfg.healthBarTint
+        local bgTexKey = cfg.healthBarBackgroundTexture or "default"
+        local bgColorMode = cfg.healthBarBackgroundColorMode or "default"
+        local bgTint = cfg.healthBarBackgroundTint
+        local bgOpacity = cfg.healthBarBackgroundOpacity or 50
+
+        if addon._ApplyToStatusBar then
+            addon._ApplyToStatusBar(bar, texKey, colorMode, tint, nil, "health", nil)
+        end
+
+        if addon._ApplyBackgroundToStatusBar then
+            addon._ApplyBackgroundToStatusBar(bar, bgTexKey, bgColorMode, bgTint, bgOpacity, "Party", "health")
+        end
+    end
+
+    function addon.ApplyPartyFrameHealthBarStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        -- Zero‑Touch: only apply if the user has configured groupFrames.party.
+        local groupFrames = rawget(db, "groupFrames")
+        local cfg = groupFrames and rawget(groupFrames, "party") or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: if nothing is actually customized (all defaults), do not touch.
+        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+        if not hasCustom then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queuePartyFrameReapply()
+            return
+        end
+
+        collectPartyHealthBars()
+        for _, bar in ipairs(partyHealthBars) do
+            applyToPartyHealthBar(bar, cfg)
+        end
+    end
+
+    local function isPartyFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        return name:match("^CompactPartyFrameMember%d+$") ~= nil
+    end
+
+    local function installPartyFrameHooks()
+        if addon._PartyFrameHooksInstalled then return end
+        addon._PartyFrameHooksInstalled = true
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if frame and frame.healthBar and isPartyFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    local cfg = db and db.groupFrames and db.groupFrames.party or nil
+                    if cfg then
+                        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+                        if hasCustom then
+                            local bar = frame.healthBar
+                            local cfgRef = cfg
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queuePartyFrameReapply()
+                                        return
+                                    end
+                                    applyToPartyHealthBar(bar, cfgRef)
+                                end)
+                            else
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                                applyToPartyHealthBar(bar, cfgRef)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if frame and frame.healthBar and unit and isPartyFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    local cfg = db and db.groupFrames and db.groupFrames.party or nil
+                    if cfg then
+                        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                                          (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default") or
+                                          (cfg.healthBarBackgroundTexture and cfg.healthBarBackgroundTexture ~= "default") or
+                                          (cfg.healthBarBackgroundColorMode and cfg.healthBarBackgroundColorMode ~= "default")
+                        if hasCustom then
+                            local bar = frame.healthBar
+                            local cfgRef = cfg
+                            if _G.C_Timer and _G.C_Timer.After then
+                                _G.C_Timer.After(0, function()
+                                    if InCombatLockdown and InCombatLockdown() then
+                                        queuePartyFrameReapply()
+                                        return
+                                    end
+                                    applyToPartyHealthBar(bar, cfgRef)
+                                end)
+                            else
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                                applyToPartyHealthBar(bar, cfgRef)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    installPartyFrameHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Party Frame Text Styling (Player Name)
+--------------------------------------------------------------------------------
+-- Applies font settings (Baseline 6) to party frame name text elements.
+-- Target: CompactPartyFrameMember[1-5].name (FontString with parentKey="name")
+--------------------------------------------------------------------------------
+
+do
+    local function isPartyFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        return name:match("^CompactPartyFrameMember%d+$") ~= nil
+    end
+
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function applyTextToPartyFrame(frame, cfg)
+        if not frame or not cfg then return end
+
+        local nameFS = frame.name
+        if not nameFS then return end
+
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        local success = pcall(nameFS.SetFont, nameFS, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(nameFS.SetFont, nameFS, fallback, fontSize, fontStyle)
+            end
+        end
+
+        if nameFS.SetTextColor then
+            pcall(nameFS.SetTextColor, nameFS, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+
+        if not nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+            local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
+            if point then
+                nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            end
+        end
+
+        if nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+            local orig = nameFS._ScootOriginalPoint
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4] + offsetX, orig[5] + offsetY)
+        elseif nameFS._ScootOriginalPoint and offsetX == 0 and offsetY == 0 then
+            local orig = nameFS._ScootOriginalPoint
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+        end
+    end
+
+    local partyFrames = {}
+    local function collectPartyFrames()
+        if wipe then
+            wipe(partyFrames)
+        else
+            partyFrames = {}
+        end
+        for i = 1, 5 do
+            local frame = _G["CompactPartyFrameMember" .. i]
+            if frame and frame.name and not frame.name._ScootPartyTextCounted then
+                frame.name._ScootPartyTextCounted = true
+                table.insert(partyFrames, frame)
+            end
+        end
+    end
+
+    function addon.ApplyPartyFrameTextStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local partyCfg = groupFrames and rawget(groupFrames, "party") or nil
+        local cfg = partyCfg and rawget(partyCfg, "textPlayerName") or nil
+        if not cfg then
+            return
+        end
+
+        if not hasCustomTextSettings(cfg) then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queuePartyFrameReapply()
+            return
+        end
+
+        collectPartyFrames()
+        for _, frame in ipairs(partyFrames) do
+            applyTextToPartyFrame(frame, cfg)
+        end
+
+        for _, frame in ipairs(partyFrames) do
+            if frame.name then
+                frame.name._ScootPartyTextCounted = nil
+            end
+        end
+    end
+
+    local function installPartyFrameTextHooks()
+        if addon._PartyFrameTextHooksInstalled then return end
+        addon._PartyFrameTextHooksInstalled = true
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if frame and frame.name and isPartyFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    local cfg = db and db.groupFrames and db.groupFrames.party and db.groupFrames.party.textPlayerName or nil
+                    if cfg and hasCustomTextSettings(cfg) then
+                        local frameRef = frame
+                        local cfgRef = cfg
+                        if _G.C_Timer and _G.C_Timer.After then
+                            _G.C_Timer.After(0, function()
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                                applyTextToPartyFrame(frameRef, cfgRef)
+                            end)
+                        else
+                            if InCombatLockdown and InCombatLockdown() then
+                                queuePartyFrameReapply()
+                                return
+                            end
+                            applyTextToPartyFrame(frameRef, cfgRef)
+                        end
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if frame and frame.name and unit and isPartyFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    local cfg = db and db.groupFrames and db.groupFrames.party and db.groupFrames.party.textPlayerName or nil
+                    if cfg and hasCustomTextSettings(cfg) then
+                        local frameRef = frame
+                        local cfgRef = cfg
+                        if _G.C_Timer and _G.C_Timer.After then
+                            _G.C_Timer.After(0, function()
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                                applyTextToPartyFrame(frameRef, cfgRef)
+                            end)
+                        else
+                            if InCombatLockdown and InCombatLockdown() then
+                                queuePartyFrameReapply()
+                                return
+                            end
+                            applyTextToPartyFrame(frameRef, cfgRef)
+                        end
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+                if frame and frame.name and isPartyFrame(frame) then
+                    local db = addon and addon.db and addon.db.profile
+                    local cfg = db and db.groupFrames and db.groupFrames.party and db.groupFrames.party.textPlayerName or nil
+                    if cfg and hasCustomTextSettings(cfg) then
+                        local frameRef = frame
+                        local cfgRef = cfg
+                        if _G.C_Timer and _G.C_Timer.After then
+                            _G.C_Timer.After(0, function()
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                                applyTextToPartyFrame(frameRef, cfgRef)
+                            end)
+                        else
+                            if InCombatLockdown and InCombatLockdown() then
+                                queuePartyFrameReapply()
+                                return
+                            end
+                            applyTextToPartyFrame(frameRef, cfgRef)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    installPartyFrameTextHooks()
 end
 

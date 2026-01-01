@@ -145,6 +145,10 @@ function RightPane:Init(ownerFrame, container)
     scrollFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
     scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -24, 0)
     self.ScrollFrame = scrollFrame
+    -- Add a visible ScooterMod-branded scrollbar track so the rail is obvious at a glance.
+    if panel and panel.StyleScrollBarTrack then
+        panel.StyleScrollBarTrack(scrollFrame)
+    end
 
     -- Scroll child that actually hosts all rows. IMPORTANT: give this frame an
     -- explicit width that tracks the scroll frame's width; if we leave width at
