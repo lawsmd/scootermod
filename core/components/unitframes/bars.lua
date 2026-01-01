@@ -912,7 +912,7 @@ do
         -- Determine whether overlay should be active based on unit type:
         -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
         -- - Player/TargetOfTarget: activate when using custom borders (fills top-right corner chip in mask)
-        -- - Pet: skip (no known chip issue)
+        -- - Pet: activate when using custom borders (fills top-right corner chip in mask)
         local shouldActivate = false
 
         if unit == "Target" or unit == "Focus" then
@@ -927,8 +927,13 @@ do
         elseif unit == "TargetOfTarget" then
             shouldActivate = (ufCfg.useCustomBorders == true)
             bar._ScootRectReverseFill = false -- ToT health bar always fills left-to-right
+        elseif unit == "Pet" then
+            -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
+            -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
+            shouldActivate = (ufCfg.useCustomBorders == true)
+            bar._ScootRectReverseFill = false -- Pet health bar always fills left-to-right
         else
-            -- Pet and others: skip
+            -- Others: skip
             if bar.ScooterRectFill then
                 bar._ScootRectActive = false
                 bar.ScooterRectFill:Hide()
@@ -1034,6 +1039,10 @@ do
                     stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health"
                 elseif unit == "TargetOfTarget" then
                     stockAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health" -- ToT shares party atlas
+                elseif unit == "Pet" then
+                    -- Best-effort fallback; if this atlas changes, the earlier "copy from bar" path should
+                    -- still handle the real default correctly.
+                    stockAtlas = "UI-HUD-UnitFrame-Pet-PortraitOn-Bar-Health"
                 end
                 if stockAtlas and bar.ScooterRectFill.SetAtlas then
                     pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
