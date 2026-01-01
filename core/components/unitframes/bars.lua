@@ -3371,6 +3371,18 @@ do
         return false
     end
 
+    -- Helper: Determine SetJustifyH based on anchor's horizontal component
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT" -- fallback
+    end
+
     -- Apply text settings to a raid frame's name FontString
     local function applyTextToRaidFrame(frame, cfg)
         if not frame or not cfg then return end
@@ -3394,6 +3406,7 @@ do
         local fontSize = tonumber(cfg.size) or 12
         local fontStyle = cfg.style or "OUTLINE"
         local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
         local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
         local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
 
@@ -3412,24 +3425,36 @@ do
             pcall(nameFS.SetTextColor, nameFS, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         end
 
-        -- Apply offsets if non-zero (adjust position relative to default anchor)
-        -- Store original position on first application so we can restore/adjust
-        if not nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+        -- Apply text alignment based on anchor's horizontal component
+        if nameFS.SetJustifyH then
+            pcall(nameFS.SetJustifyH, nameFS, getJustifyHFromAnchor(anchor))
+        end
+
+        -- Capture baseline position on first application so we can restore later
+        if not nameFS._ScootOriginalPoint then
             local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
             if point then
                 nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
             end
         end
 
-        if nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
-            local orig = nameFS._ScootOriginalPoint
-            nameFS:ClearAllPoints()
-            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4] + offsetX, orig[5] + offsetY)
-        elseif nameFS._ScootOriginalPoint and offsetX == 0 and offsetY == 0 then
-            -- Restore original position when offsets are reset to 0
+        -- Apply anchor-based positioning with offsets relative to selected anchor
+        local isDefaultAnchor = (anchor == "TOPLEFT")
+        local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+        if isDefaultAnchor and isZeroOffset and nameFS._ScootOriginalPoint then
+            -- Restore baseline (stock position) when user has reset to default
             local orig = nameFS._ScootOriginalPoint
             nameFS:ClearAllPoints()
             nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+            -- Also restore default text alignment
+            if nameFS.SetJustifyH then
+                pcall(nameFS.SetJustifyH, nameFS, "LEFT")
+            end
+        else
+            -- Position the name FontString using the user-selected anchor, relative to the frame
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(anchor, frame, anchor, offsetX, offsetY)
         end
     end
 
@@ -3447,6 +3472,8 @@ do
             local c = cfg.color
             if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
         end
+        -- Anchor customization (non-default position)
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
         if cfg.offset then
             if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
         end
@@ -3804,10 +3831,24 @@ do
             local c = cfg.color
             if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
         end
+        -- Anchor customization (non-default position)
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
         if cfg.offset then
             if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
         end
         return false
+    end
+
+    -- Helper: Determine SetJustifyH based on anchor's horizontal component (party version)
+    local function getJustifyHFromAnchorParty(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT" -- fallback
     end
 
     local function applyTextToPartyFrame(frame, cfg)
@@ -3828,6 +3869,7 @@ do
         local fontSize = tonumber(cfg.size) or 12
         local fontStyle = cfg.style or "OUTLINE"
         local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
         local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
         local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
 
@@ -3843,21 +3885,36 @@ do
             pcall(nameFS.SetTextColor, nameFS, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         end
 
-        if not nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
+        -- Apply text alignment based on anchor's horizontal component
+        if nameFS.SetJustifyH then
+            pcall(nameFS.SetJustifyH, nameFS, getJustifyHFromAnchorParty(anchor))
+        end
+
+        -- Capture baseline position on first application so we can restore later
+        if not nameFS._ScootOriginalPoint then
             local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
             if point then
                 nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
             end
         end
 
-        if nameFS._ScootOriginalPoint and (offsetX ~= 0 or offsetY ~= 0) then
-            local orig = nameFS._ScootOriginalPoint
-            nameFS:ClearAllPoints()
-            nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4] + offsetX, orig[5] + offsetY)
-        elseif nameFS._ScootOriginalPoint and offsetX == 0 and offsetY == 0 then
+        -- Apply anchor-based positioning with offsets relative to selected anchor
+        local isDefaultAnchor = (anchor == "TOPLEFT")
+        local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+        if isDefaultAnchor and isZeroOffset and nameFS._ScootOriginalPoint then
+            -- Restore baseline (stock position) when user has reset to default
             local orig = nameFS._ScootOriginalPoint
             nameFS:ClearAllPoints()
             nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+            -- Also restore default text alignment
+            if nameFS.SetJustifyH then
+                pcall(nameFS.SetJustifyH, nameFS, "LEFT")
+            end
+        else
+            -- Position the name FontString using the user-selected anchor, relative to the frame
+            nameFS:ClearAllPoints()
+            nameFS:SetPoint(anchor, frame, anchor, offsetX, offsetY)
         end
     end
 

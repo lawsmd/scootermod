@@ -504,6 +504,32 @@ function panel.RenderGFParty()
                         end,
                         y)
 
+                    -- Player Name Alignment (9-way anchor)
+                    local function alignmentOptions()
+                        local container = Settings.CreateControlTextContainer()
+                        container:Add("TOPLEFT", "Top-Left")
+                        container:Add("TOP", "Top-Center")
+                        container:Add("TOPRIGHT", "Top-Right")
+                        container:Add("LEFT", "Left")
+                        container:Add("CENTER", "Center")
+                        container:Add("RIGHT", "Right")
+                        container:Add("BOTTOMLEFT", "Bottom-Left")
+                        container:Add("BOTTOM", "Bottom-Center")
+                        container:Add("BOTTOMRIGHT", "Bottom-Right")
+                        return container:GetData()
+                    end
+                    addDropdown(frame.PageA, "Player Name Alignment", alignmentOptions,
+                        function()
+                            local cfg = getTextDB() or {}
+                            return cfg.anchor or "TOPLEFT"
+                        end,
+                        function(v)
+                            local cfg = ensureTextDB()
+                            if cfg then cfg.anchor = v or "TOPLEFT" end
+                            applyNow()
+                        end,
+                        y)
+
                     addSlider(frame.PageA, "Player Name Offset X", -50, 50, 1,
                         function()
                             local cfg = getTextDB() or {}
@@ -540,7 +566,8 @@ function panel.RenderGFParty()
         }
 
         local textInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", textTabs)
-        textInit.GetExtent = function() return 270 end
+        -- Height: 50 top + (7 controls * 34) = 288px, rounded to 304px for safety
+        textInit.GetExtent = function() return 304 end
         textInit:AddShownPredicate(function()
             return panel:IsSectionExpanded(componentId, "Text")
         end)
@@ -1307,7 +1334,15 @@ function panel.RenderGFRaid()
             sectionTitle = "",
             tabAText = "Player Name",
             build = function(frame)
-                -- Helper: ensure groupFrames.raid.textPlayerName DB exists
+                -- Helper: read groupFrames.raid.textPlayerName DB (Zero-Touch: does not create tables)
+                local function getTextDB()
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames") or nil
+                    local raid = gf and rawget(gf, "raid") or nil
+                    return raid and rawget(raid, "textPlayerName") or nil
+                end
+
+                -- Helper: ensure groupFrames.raid.textPlayerName DB exists (for setters only)
                 local function ensureTextDB()
                     local db = addon and addon.db and addon.db.profile
                     if not db then return nil end
@@ -1447,15 +1482,15 @@ function panel.RenderGFRaid()
                     return row
                 end
 
-                -- PageA: Player Name text settings (Baseline 6)
+                -- PageA: Player Name text settings (Baseline 6 + Alignment)
                 if frame.PageA then
                     local y = { y = -50 }
 
                     -- 1. Font Face
                     addDropdown(frame.PageA, "Player Name Font", fontOptions,
                         function()
-                            local cfg = ensureTextDB()
-                            return cfg and cfg.fontFace or "FRIZQT__"
+                            local cfg = getTextDB() or {}
+                            return cfg.fontFace or "FRIZQT__"
                         end,
                         function(v)
                             local cfg = ensureTextDB()
@@ -1467,8 +1502,8 @@ function panel.RenderGFRaid()
                     -- 2. Font Size
                     addSlider(frame.PageA, "Player Name Size", 6, 32, 1,
                         function()
-                            local cfg = ensureTextDB()
-                            return cfg and tonumber(cfg.size) or 12
+                            local cfg = getTextDB() or {}
+                            return tonumber(cfg.size) or 12
                         end,
                         function(v)
                             local cfg = ensureTextDB()
@@ -1480,8 +1515,8 @@ function panel.RenderGFRaid()
                     -- 3. Font Style
                     addStyleDropdown(frame.PageA, "Player Name Style",
                         function()
-                            local cfg = ensureTextDB()
-                            return cfg and cfg.style or "OUTLINE"
+                            local cfg = getTextDB() or {}
+                            return cfg.style or "OUTLINE"
                         end,
                         function(v)
                             local cfg = ensureTextDB()
@@ -1493,8 +1528,8 @@ function panel.RenderGFRaid()
                     -- 4. Font Color
                     addColorRow(frame.PageA, "Player Name Color",
                         function()
-                            local cfg = ensureTextDB()
-                            local c = cfg and cfg.color or { 1, 1, 1, 1 }
+                            local cfg = getTextDB() or {}
+                            local c = cfg.color or { 1, 1, 1, 1 }
                             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                         end,
                         function(r, g, b, a)
@@ -1504,11 +1539,38 @@ function panel.RenderGFRaid()
                         end,
                         y)
 
-                    -- 5. X Offset
+                    -- 5. Player Name Alignment (9-way anchor)
+                    local function alignmentOptions()
+                        local container = Settings.CreateControlTextContainer()
+                        container:Add("TOPLEFT", "Top-Left")
+                        container:Add("TOP", "Top-Center")
+                        container:Add("TOPRIGHT", "Top-Right")
+                        container:Add("LEFT", "Left")
+                        container:Add("CENTER", "Center")
+                        container:Add("RIGHT", "Right")
+                        container:Add("BOTTOMLEFT", "Bottom-Left")
+                        container:Add("BOTTOM", "Bottom-Center")
+                        container:Add("BOTTOMRIGHT", "Bottom-Right")
+                        return container:GetData()
+                    end
+                    addDropdown(frame.PageA, "Player Name Alignment", alignmentOptions,
+                        function()
+                            local cfg = getTextDB() or {}
+                            return cfg.anchor or "TOPLEFT"
+                        end,
+                        function(v)
+                            local cfg = ensureTextDB()
+                            if cfg then cfg.anchor = v or "TOPLEFT" end
+                            applyNow()
+                        end,
+                        y)
+
+                    -- 6. X Offset
                     addSlider(frame.PageA, "Player Name Offset X", -50, 50, 1,
                         function()
-                            local cfg = ensureTextDB()
-                            return cfg and cfg.offset and tonumber(cfg.offset.x) or 0
+                            local cfg = getTextDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.x) or 0
                         end,
                         function(v)
                             local cfg = ensureTextDB()
@@ -1520,11 +1582,12 @@ function panel.RenderGFRaid()
                         end,
                         y)
 
-                    -- 6. Y Offset
+                    -- 7. Y Offset
                     addSlider(frame.PageA, "Player Name Offset Y", -50, 50, 1,
                         function()
-                            local cfg = ensureTextDB()
-                            return cfg and cfg.offset and tonumber(cfg.offset.y) or 0
+                            local cfg = getTextDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.y) or 0
                         end,
                         function(v)
                             local cfg = ensureTextDB()
@@ -1540,8 +1603,8 @@ function panel.RenderGFRaid()
         }
 
         local textInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", textTabs)
-        -- Static height for Baseline 6 controls: 30 + (6*34) + 20 = 254px, rounded to 270px for safety
-        textInit.GetExtent = function() return 270 end
+        -- Height: 50 top + (7 controls * 34) = 288px, rounded to 304px for safety
+        textInit.GetExtent = function() return 304 end
         textInit:AddShownPredicate(function()
             return panel:IsSectionExpanded(componentId, "Text")
         end)
