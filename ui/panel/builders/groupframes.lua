@@ -51,6 +51,84 @@ function panel.RenderGFParty()
 
         local init = {}
 
+        -- Shared conditional enable/disable state for Party Frames.
+        -- IMPORTANT: Do NOT clear these references on every render. The UI recycles row frames and
+        -- CreateLocalSetting closures can keep firing; clearing would create the classic "works once" bug.
+        panel._gfPartyConditionalFrames = panel._gfPartyConditionalFrames or {}
+        local cond = panel._gfPartyConditionalFrames
+
+        local function setRowEnabled(rowFrame, enabled)
+            if not rowFrame then return end
+            rowFrame:SetAlpha(enabled and 1 or 0.5)
+
+            local control = rowFrame.Control or rowFrame
+            local dropdown = control and control.Dropdown
+            local slider = control and (control.Slider or control.slider or rowFrame.Slider)
+            local checkbox = rowFrame.Checkbox or rowFrame.CheckBox or (control and control.Checkbox)
+
+            if dropdown and dropdown.SetEnabled then
+                pcall(dropdown.SetEnabled, dropdown, enabled)
+            elseif dropdown and dropdown.EnableMouse then
+                pcall(dropdown.EnableMouse, dropdown, enabled)
+            end
+
+            if slider and slider.SetEnabled then
+                pcall(slider.SetEnabled, slider, enabled)
+            elseif slider and slider.EnableMouse then
+                pcall(slider.EnableMouse, slider, enabled)
+            end
+
+            if checkbox and checkbox.SetEnabled then
+                pcall(checkbox.SetEnabled, checkbox, enabled)
+            elseif checkbox and checkbox.EnableMouse then
+                pcall(checkbox.EnableMouse, checkbox, enabled)
+            end
+        end
+
+        local function getUseRaidStylePartyFrames()
+            local pf = getPartyFrame()
+            local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+            if not (pf and EM and addon and addon.EditMode and addon.EditMode.GetSetting) then
+                return false
+            end
+            return (addon.EditMode.GetSetting(pf, EM.UseRaidStylePartyFrames) or 0) == 1
+        end
+
+        local function isRaidStyleEnabled()
+            if cond and cond.raidStyleValue ~= nil then
+                return cond.raidStyleValue and true or false
+            end
+            local enabled = getUseRaidStylePartyFrames()
+            cond.raidStyleValue = enabled and true or false
+            return enabled
+        end
+
+        local function applyConditionalAvailability()
+            local raidStyle = isRaidStyleEnabled()
+
+            -- Traditional-only: Show Background + Frame Size
+            setRowEnabled(cond.showBackgroundRow, not raidStyle)
+            if cond.sizingRow then
+                local r = cond.sizingRow
+                setRowEnabled(r._ScooterGF_PartyFrameSizeRow, not raidStyle)
+                setRowEnabled(r._ScooterGF_PartyFrameWidthRow, raidStyle)
+                setRowEnabled(r._ScooterGF_PartyFrameHeightRow, raidStyle)
+            end
+
+            -- Raid-style only: Use Horizontal Layout + Sort By + Display Border
+            if cond.posSortRow then
+                local r = cond.posSortRow
+                setRowEnabled(r._ScooterGF_PartyHorizontalLayoutRow, raidStyle)
+                setRowEnabled(r._ScooterGF_PartySortByRow, raidStyle)
+            end
+            setRowEnabled(cond.displayBorderRow, raidStyle)
+        end
+
+        -- Refresh the cached raid-style value from Edit Mode at the start of every render.
+        -- This prevents stale checkbox state when the user changes the setting in Edit Mode
+        -- while the ScooterMod panel is closed, then immediately reopens ScooterMod.
+        cond.raidStyleValue = getUseRaidStylePartyFrames() and true or false
+
         -- Helper to add a collapsible section header
         local function addHeader(sectionKey, headerName)
             local expInitializer = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
@@ -63,14 +141,553 @@ function panel.RenderGFParty()
             table.insert(init, expInitializer)
         end
 
-        -- 1. Positioning section header (placeholder)
-        addHeader("Positioning", "Positioning")
+        --------------------------------------------------------------------------------
+        -- Parent-level Edit Mode settings (above section headers)
+        --------------------------------------------------------------------------------
+        do
+            local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+            if EM then
+                -- Use Raid-Style Party Frames
+                do
+                    local label = "Use Raid-Style Party Frames"
+                    local tooltipText = "Toggles between Raid-Style and Traditional-Style party frames.\n\nRaid-Style uses compact party frames and unlocks additional Edit Mode options."
+
+                    local function getter()
+                        return isRaidStyleEnabled()
+                    end
+
+                    local function setter(state)
+                        local enabled = (state and true or false) and true or false
+                        cond.raidStyleValue = enabled
+                        applyConditionalAvailability()
+
+                        C_Timer.After(0, function()
+                            local pf = getPartyFrame()
+                            if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                            local v = enabled and 1 or 0
+                            addon.EditMode.WriteSetting(pf, EM.UseRaidStylePartyFrames, v, {
+                                updaters = { "UpdateSystemSettingUseRaidStylePartyFrames" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end
+
+                    local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+                    local cbInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+                    cbInit.GetExtent = function() return 34 end
+
+                    do
+                        local baseInitFrame = cbInit.InitFrame
+                        cbInit.InitFrame = function(self, frame)
+                            -- Refresh cached value BEFORE base template init so the checkbox draws correctly.
+                            cond.raidStyleValue = getUseRaidStylePartyFrames() and true or false
+
+                            if baseInitFrame then baseInitFrame(self, frame) end
+
+                            if panel and panel.ApplyRobotoWhite then
+                                if frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+                                local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                                if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+                            end
+
+                            -- Info icon between checkbox and label.
+                            local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                            local labelFS = frame.Text or (cb and cb.Text)
+                            if cb and labelFS and panel and panel.CreateInfoIcon and not frame.ScooterUseRaidStyleInfoIcon then
+                                frame.ScooterUseRaidStyleInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 0, 0, 32)
+                                local icon = frame.ScooterUseRaidStyleInfoIcon
+                                if icon then
+                                    icon:ClearAllPoints()
+                                    icon:SetPoint("LEFT", cb, "RIGHT", 8, 0)
+                                    labelFS:ClearAllPoints()
+                                    labelFS:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+                                    labelFS:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                                    labelFS:SetJustifyH("LEFT")
+                                end
+                            end
+
+                            applyConditionalAvailability()
+                        end
+                    end
+
+                    table.insert(init, cbInit)
+                end
+
+                -- Show Background (Traditional-only)
+                do
+                    local label = "Show Background"
+                    local tooltipText = "Shows a background panel behind traditional-style party frames.\n\nOnly available when 'Use Raid-Style Party Frames' is disabled."
+
+                    local function getter()
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return false end
+                        return (addon.EditMode.GetSetting(pf, EM.ShowPartyFrameBackground) or 0) == 1
+                    end
+
+                    local function setter(state)
+                        C_Timer.After(0, function()
+                            local pf = getPartyFrame()
+                            if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                            local v = (state and true or false) and 1 or 0
+                            addon.EditMode.WriteSetting(pf, EM.ShowPartyFrameBackground, v, {
+                                updaters = { "UpdateSystemSettingShowPartyFrameBackground" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end
+
+                    local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+                    local cbInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+                    cbInit.GetExtent = function() return 34 end
+
+                    do
+                        local baseInitFrame = cbInit.InitFrame
+                        cbInit.InitFrame = function(self, frame)
+                            if baseInitFrame then baseInitFrame(self, frame) end
+
+                            if panel and panel.ApplyRobotoWhite then
+                                if frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+                                local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                                if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                                if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+                            end
+
+                            -- Info icon between checkbox and label.
+                            local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                            local labelFS = frame.Text or (cb and cb.Text)
+                            if cb and labelFS and panel and panel.CreateInfoIcon and not frame.ScooterShowBackgroundInfoIcon then
+                                frame.ScooterShowBackgroundInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 0, 0, 32)
+                                local icon = frame.ScooterShowBackgroundInfoIcon
+                                if icon then
+                                    icon:ClearAllPoints()
+                                    icon:SetPoint("LEFT", cb, "RIGHT", 8, 0)
+                                    labelFS:ClearAllPoints()
+                                    labelFS:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+                                    labelFS:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                                    labelFS:SetJustifyH("LEFT")
+                                end
+                            end
+
+                            cond.showBackgroundRow = frame
+                            applyConditionalAvailability()
+                        end
+                    end
+
+                    table.insert(init, cbInit)
+                end
+            end
+        end
+
+        -- 1. Positioning & Sorting section header
+        addHeader("Positioning", "Positioning & Sorting")
+
+        -- Positioning & Sorting content (raid-style only controls, shown always but greyed out when inactive)
+        do
+            local posSortInit = Settings.CreateElementInitializer("ScooterListElementTemplate")
+            -- Height: 16 top + 34 checkbox + 34 dropdown = 84; use 110 for clearance.
+            posSortInit.GetExtent = function() return 110 end
+            posSortInit:AddShownPredicate(function()
+                return panel:IsSectionExpanded(componentId, "Positioning")
+            end)
+            posSortInit.InitFrame = function(self, frame)
+                if frame._ScooterGFPartyPosSortBuilt then
+                    cond.posSortRow = frame
+                    if frame._ScooterGF_RefreshFromEditMode then
+                        pcall(frame._ScooterGF_RefreshFromEditMode)
+                    end
+                    applyConditionalAvailability()
+                    return
+                end
+                frame._ScooterGFPartyPosSortBuilt = true
+
+                if frame.Text then
+                    frame.Text:SetText("")
+                    frame.Text:Hide()
+                end
+
+                local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+                local Sort = _G.Enum and _G.Enum.SortPlayersBy
+                if not (EM and Sort) then return end
+
+                local function sortByOptions()
+                    local container = Settings.CreateControlTextContainer()
+                    container:Add(Sort.Role, "Role")
+                    container:Add(Sort.Group, "Group")
+                    container:Add(Sort.Alphabetical, "Alphabetical")
+                    return container:GetData()
+                end
+
+                local function fmtInt(v)
+                    return tostring(math.floor((tonumber(v) or 0) + 0.5))
+                end
+
+                local function addDropdown(parent, label, optionsProvider, getter, setter, yRef)
+                    local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+                    local initializer = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", {
+                        name = label,
+                        setting = setting,
+                        options = optionsProvider,
+                    })
+                    local row = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+                    row.GetElementData = function() return initializer end
+                    row:SetPoint("TOPLEFT", 4, yRef.y)
+                    row:SetPoint("TOPRIGHT", -16, yRef.y)
+                    initializer:InitFrame(row)
+                    local lbl = row and (row.Text or row.Label)
+                    if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+                    if row.Control and panel and panel.ThemeDropdownWithSteppers then
+                        panel.ThemeDropdownWithSteppers(row.Control)
+                    end
+                    yRef.y = yRef.y - 34
+                    return row
+                end
+
+                local function addCheckbox(parent, label, getter, setter, yRef)
+                    local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+                    local initializer = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+                    local row = CreateFrame("Frame", nil, parent, "SettingsCheckboxControlTemplate")
+                    row.GetElementData = function() return initializer end
+                    row:SetPoint("TOPLEFT", 4, yRef.y)
+                    row:SetPoint("TOPRIGHT", -16, yRef.y)
+                    initializer:InitFrame(row)
+                    if panel and panel.ApplyRobotoWhite then
+                        if row.Text then panel.ApplyRobotoWhite(row.Text) end
+                        local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+                        if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+                    end
+                    yRef.y = yRef.y - 34
+                    return row
+                end
+
+                local function addLeftInfoIcon(row, tooltipText)
+                    if not (row and panel and panel.CreateInfoIcon) then return end
+                    local labelFS = row.Text or row.Label
+                    if not labelFS or row.ScooterInfoIcon then return end
+
+                    row.ScooterInfoIcon = panel.CreateInfoIcon(row, tooltipText, "LEFT", "LEFT", 0, 0, 32)
+                    local icon = row.ScooterInfoIcon
+                    if not icon then return end
+
+                    icon:ClearAllPoints()
+                    icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+                    labelFS:ClearAllPoints()
+                    labelFS:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+                    labelFS:SetJustifyH("LEFT")
+
+                    local ctrl = row.Control
+                    local dropdown = ctrl and ctrl.Dropdown
+                    local slider = (ctrl and ctrl.Slider) or row.Slider
+                    local cb = row.Checkbox or row.CheckBox or (ctrl and ctrl.Checkbox)
+                    if slider then
+                        labelFS:SetPoint("RIGHT", slider, "LEFT", -8, 0)
+                    elseif dropdown then
+                        labelFS:SetPoint("RIGHT", ctrl, "LEFT", -8, 0)
+                    elseif cb then
+                        labelFS:SetPoint("RIGHT", row, "RIGHT", -16, 0)
+                    else
+                        labelFS:SetPoint("RIGHT", row, "RIGHT", -16, 0)
+                    end
+                end
+
+                local y = { y = -16 }
+
+                -- Use Horizontal Layout (raid-style only)
+                local horizTooltip = "Arranges party member frames horizontally instead of vertically.\n\nOnly available when 'Use Raid-Style Party Frames' is enabled."
+                local horizRow = addCheckbox(frame, "Use Horizontal Layout",
+                    function()
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return false end
+                        return (addon.EditMode.GetSetting(pf, EM.UseHorizontalGroups) or 0) == 1
+                    end,
+                    function(state)
+                        C_Timer.After(0, function()
+                            local pf = getPartyFrame()
+                            if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                            local v = (state and true or false) and 1 or 0
+                            addon.EditMode.WriteSetting(pf, EM.UseHorizontalGroups, v, {
+                                updaters = { "UpdateSystemSettingUseHorizontalGroups" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                    y)
+                addLeftInfoIcon(horizRow, horizTooltip)
+
+                -- Sort By (raid-style only)
+                local sortTooltip = "Controls how players are sorted within the party.\n\nOnly available when 'Use Raid-Style Party Frames' is enabled."
+                frame._ScooterGF_PartySortByValue = nil
+
+                -- Expose a refresh helper so this row can resync cached values when reused.
+                frame._ScooterGF_RefreshFromEditMode = function()
+                    local pf = getPartyFrame()
+                    if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return end
+                    frame._ScooterGF_PartySortByValue = addon.EditMode.GetSetting(pf, EM.SortPlayersBy) or Sort.Group
+                end
+
+                local sortRow = addDropdown(frame, "Sort By", sortByOptions,
+                    function()
+                        if frame._ScooterGF_PartySortByValue == nil then
+                            local pf = getPartyFrame()
+                            if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then
+                                frame._ScooterGF_PartySortByValue = Sort.Group
+                            else
+                                frame._ScooterGF_PartySortByValue = addon.EditMode.GetSetting(pf, EM.SortPlayersBy) or Sort.Group
+                            end
+                        end
+                        return frame._ScooterGF_PartySortByValue
+                    end,
+                    function(v)
+                        local val = tonumber(v) or Sort.Group
+                        frame._ScooterGF_PartySortByValue = val
+                        C_Timer.After(0, function()
+                            local pf = getPartyFrame()
+                            if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                            addon.EditMode.WriteSetting(pf, EM.SortPlayersBy, val, {
+                                updaters = { "UpdateSystemSettingSortPlayersBy" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                    y)
+                addLeftInfoIcon(sortRow, sortTooltip)
+
+                frame._ScooterGF_PartyHorizontalLayoutRow = horizRow
+                frame._ScooterGF_PartySortByRow = sortRow
+                cond.posSortRow = frame
+
+                applyConditionalAvailability()
+            end
+            table.insert(init, posSortInit)
+        end
 
         -- 2. Sizing section header (placeholder)
         addHeader("Sizing", "Sizing")
 
-        -- 3. Border section header (placeholder)
+        -- Sizing content (Width/Height for raid-style; Frame Size for traditional)
+        do
+            local sizeInit = Settings.CreateElementInitializer("ScooterListElementTemplate")
+            -- Height: 16 top + 34 + 34 + 34 = 118; use 140 for clearance.
+            sizeInit.GetExtent = function() return 140 end
+            sizeInit:AddShownPredicate(function()
+                return panel:IsSectionExpanded(componentId, "Sizing")
+            end)
+            sizeInit.InitFrame = function(self, frame)
+                if frame._ScooterGFPartySizingBuilt then
+                    cond.sizingRow = frame
+                    applyConditionalAvailability()
+                    return
+                end
+                frame._ScooterGFPartySizingBuilt = true
+
+                if frame.Text then
+                    frame.Text:SetText("")
+                    frame.Text:Hide()
+                end
+
+                local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+                if not EM then return end
+
+                local function fmtInt(v)
+                    return tostring(math.floor((tonumber(v) or 0) + 0.5))
+                end
+
+                local function addSlider(parent, label, minV, maxV, step, getter, setter, yRef)
+                    local options = Settings.CreateSliderOptions(minV, maxV, step)
+                    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
+                        return fmtInt(v)
+                    end)
+                    local setting = CreateLocalSetting(label, "number", getter, setter, getter())
+                    local initializer = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", {
+                        name = label,
+                        setting = setting,
+                        options = options,
+                    })
+                    local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+                    row.GetElementData = function() return initializer end
+                    row:SetPoint("TOPLEFT", 4, yRef.y)
+                    row:SetPoint("TOPRIGHT", -16, yRef.y)
+                    initializer:InitFrame(row)
+                    if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
+                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(row) end
+                    yRef.y = yRef.y - 34
+                    return row
+                end
+
+                local function addLeftInfoIcon(row, tooltipText)
+                    if not (row and panel and panel.CreateInfoIcon) then return end
+                    local labelFS = row.Text or row.Label
+                    if not labelFS or row.ScooterInfoIcon then return end
+
+                    row.ScooterInfoIcon = panel.CreateInfoIcon(row, tooltipText, "LEFT", "LEFT", 0, 0, 32)
+                    local icon = row.ScooterInfoIcon
+                    if not icon then return end
+
+                    icon:ClearAllPoints()
+                    icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+                    labelFS:ClearAllPoints()
+                    labelFS:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+                    labelFS:SetJustifyH("LEFT")
+
+                    local ctrl = row.Control
+                    local slider = (ctrl and ctrl.Slider) or row.Slider
+                    if slider then
+                        labelFS:SetPoint("RIGHT", slider, "LEFT", -8, 0)
+                    else
+                        labelFS:SetPoint("RIGHT", row, "RIGHT", -16, 0)
+                    end
+                end
+
+                local y = { y = -16 }
+
+                -- Frame Width (raid-style only)
+                local widthRow = addSlider(frame, "Frame Width", 72, 144, 2,
+                    function()
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return 72 end
+                        return addon.EditMode.GetSetting(pf, EM.FrameWidth) or 72
+                    end,
+                    function(v)
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                        local val = tonumber(v) or 72
+                        val = math.max(72, math.min(144, val))
+                        addon.EditMode.WriteSetting(pf, EM.FrameWidth, val, {
+                            updaters = { "UpdateSystemSettingFrameWidth" },
+                            suspendDuration = 0.25,
+                        })
+                    end,
+                    y)
+
+                -- Frame Height (raid-style only)
+                local heightRow = addSlider(frame, "Frame Height", 36, 72, 2,
+                    function()
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return 36 end
+                        return addon.EditMode.GetSetting(pf, EM.FrameHeight) or 36
+                    end,
+                    function(v)
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                        local val = tonumber(v) or 36
+                        val = math.max(36, math.min(72, val))
+                        addon.EditMode.WriteSetting(pf, EM.FrameHeight, val, {
+                            updaters = { "UpdateSystemSettingFrameHeight" },
+                            suspendDuration = 0.25,
+                        })
+                    end,
+                    y)
+
+                -- Frame Size (traditional only)
+                local sizeTooltip = "Scales the traditional-style party frames.\n\nOnly available when 'Use Raid-Style Party Frames' is disabled."
+                local frameSizeRow = addSlider(frame, "Frame Size (Scale)", 100, 200, 5,
+                    function()
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.GetSetting) then return 100 end
+                        local v = addon.EditMode.GetSetting(pf, EM.FrameSize)
+                        if v == nil then return 100 end
+                        -- Some clients can return index (0..20); normalize to 100..200.
+                        if v <= 20 then return 100 + (v * 5) end
+                        return math.max(100, math.min(200, v))
+                    end,
+                    function(raw)
+                        local pf = getPartyFrame()
+                        if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
+                        local val = tonumber(raw) or 100
+                        val = math.max(100, math.min(200, val))
+                        addon.EditMode.WriteSetting(pf, EM.FrameSize, val, {
+                            updaters = { "UpdateSystemSettingFrameSize" },
+                            suspendDuration = 0.25,
+                        })
+                    end,
+                    y)
+                addLeftInfoIcon(frameSizeRow, sizeTooltip)
+
+                frame._ScooterGF_PartyFrameWidthRow = widthRow
+                frame._ScooterGF_PartyFrameHeightRow = heightRow
+                frame._ScooterGF_PartyFrameSizeRow = frameSizeRow
+                cond.sizingRow = frame
+
+                applyConditionalAvailability()
+            end
+            table.insert(init, sizeInit)
+        end
+
+        -- 3. Border section header
         addHeader("Border", "Border")
+
+        -- Border content: Display Border (raid-style only)
+        do
+            local label = "Display Border"
+            local tooltipText = "Enables Blizzard's default border around the entire party frame cluster.\n\nOnly available when 'Use Raid-Style Party Frames' is enabled."
+
+            local function getter()
+                local pf = getPartyFrame()
+                local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+                if not (pf and EM and addon and addon.EditMode and addon.EditMode.GetSetting) then
+                    return false
+                end
+                return (addon.EditMode.GetSetting(pf, EM.DisplayBorder) or 0) == 1
+            end
+
+            local function setter(state)
+                local pf = getPartyFrame()
+                local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+                if not (pf and EM and addon and addon.EditMode and addon.EditMode.WriteSetting) then
+                    return
+                end
+                local v = (state and true or false) and 1 or 0
+                C_Timer.After(0, function()
+                    addon.EditMode.WriteSetting(pf, EM.DisplayBorder, v, {
+                        updaters = { "UpdateSystemSettingDisplayBorder" },
+                        suspendDuration = 0.25,
+                    })
+                end)
+            end
+
+            local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+            local cbInit = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+            cbInit.GetExtent = function() return 34 end
+            cbInit:AddShownPredicate(function()
+                return panel:IsSectionExpanded(componentId, "Border")
+            end)
+
+            do
+                local baseInitFrame = cbInit.InitFrame
+                cbInit.InitFrame = function(self, frame)
+                    if baseInitFrame then baseInitFrame(self, frame) end
+
+                    if panel and panel.ApplyRobotoWhite then
+                        if frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+                        local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                        if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+                    end
+
+                    -- Info icon between checkbox and label.
+                    local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+                    local labelFS = frame.Text or (cb and cb.Text)
+                    if cb and labelFS and panel and panel.CreateInfoIcon and not frame.ScooterDisplayBorderInfoIcon then
+                        frame.ScooterDisplayBorderInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "LEFT", 0, 0, 32)
+                        local icon = frame.ScooterDisplayBorderInfoIcon
+                        if icon then
+                            icon:ClearAllPoints()
+                            icon:SetPoint("LEFT", cb, "RIGHT", 8, 0)
+                            labelFS:ClearAllPoints()
+                            labelFS:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+                            labelFS:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                            labelFS:SetJustifyH("LEFT")
+                        end
+                    end
+
+                    cond.displayBorderRow = frame
+                    applyConditionalAvailability()
+                end
+            end
+
+            table.insert(init, cbInit)
+        end
 
         -- 4. Style section header with Health Bar styling controls
         addHeader("Style", "Style")
