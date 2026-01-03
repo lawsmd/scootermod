@@ -3,52 +3,6 @@ local addonName, addon = ...
 addon.FeatureToggles = addon.FeatureToggles or {}
 addon.FeatureToggles.enablePRD = addon.FeatureToggles.enablePRD or false
 
-local function purgeDisabledPRDComponents(db)
-    if addon.FeatureToggles and addon.FeatureToggles.enablePRD then
-        return
-    end
-    local profile = db and db.profile
-    local components = profile and profile.components
-    if not components then
-        return
-    end
-    local removed = {}
-    for _, key in ipairs({"prdGlobal", "prdHealth", "prdPower", "prdClassResource"}) do
-        if components[key] ~= nil then
-            components[key] = nil
-            table.insert(removed, key)
-        end
-    end
-    if #removed > 0 then
-        local message = string.format("PRD disabled – purged SavedVariables for: %s", table.concat(removed, ", "))
-        if addon.DebugPrint then
-            addon.DebugPrint("[ScooterMod]", message)
-        elseif addon.Print then
-            addon:Print(message)
-        end
-    end
-end
-
--- Migrate legacy component SavedVariables from old id to new canonical id.
--- Migration: "questLog" -> "objectiveTracker" (component renamed to reflect true Blizzard frame name).
--- Note: we avoid spelling the old id in plaintext to keep the codebase free of legacy naming.
-local function migrateObjectiveTrackerComponent(db)
-    local profile = db and db.profile
-    local components = profile and rawget(profile, "components") or nil
-    if type(components) ~= "table" then return end
-
-    local legacyId = "quest" .. "Log"
-    local newId = "objectiveTracker"
-
-    local old = rawget(components, legacyId)
-    if old ~= nil and rawget(components, newId) == nil then
-        components[newId] = old
-    end
-    if rawget(components, legacyId) ~= nil then
-        components[legacyId] = nil
-    end
-end
-
 function addon:OnInitialize()
     C_AddOns.LoadAddOn("Blizzard_Settings")
     -- Warm up bundled fonts early to avoid first-open rendering differences
@@ -62,8 +16,10 @@ function addon:OnInitialize()
 
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
-    purgeDisabledPRDComponents(self.db)
-    migrateObjectiveTrackerComponent(self.db)
+    -- Purge disabled PRD components (function lives in personal_resource_display.lua)
+    if addon.PurgeDisabledPRDComponents then
+        addon.PurgeDisabledPRDComponents(self.db)
+    end
 
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
@@ -203,8 +159,10 @@ function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_REGEN_DISABLED")
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     
-    -- Apply dropdown stepper fixes
-    self:ApplyDropdownStepperFixes()
+    -- Apply dropdown stepper fixes (function lives in ui_fixes.lua)
+    if addon.UIFixes and addon.UIFixes.ApplyDropdownStepperFixes then
+        addon.UIFixes.ApplyDropdownStepperFixes()
+    end
 end
 
 -- Refresh opacity state for all elements affected by combat/target priority
@@ -251,10 +209,8 @@ function addon:PLAYER_REGEN_DISABLED()
     end
 end
 
-function addon:UNIT_PET(event, unit)
-    if unit ~= "player" then
-        return
-    end
+-- Shared helper for pet overlay enforcement events
+local function handlePetOverlayEvent()
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.UnitFrames_EnforcePetOverlays then
@@ -264,57 +220,26 @@ function addon:UNIT_PET(event, unit)
     elseif addon.UnitFrames_EnforcePetOverlays then
         addon.UnitFrames_EnforcePetOverlays()
     end
+end
+
+function addon:UNIT_PET(event, unit)
+    if unit == "player" then handlePetOverlayEvent() end
 end
 
 function addon:PET_UI_UPDATE()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if addon.UnitFrames_EnforcePetOverlays then
-                addon.UnitFrames_EnforcePetOverlays()
-            end
-        end)
-    elseif addon.UnitFrames_EnforcePetOverlays then
-        addon.UnitFrames_EnforcePetOverlays()
-    end
+    handlePetOverlayEvent()
 end
 
 function addon:PET_ATTACK_START()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if addon.UnitFrames_EnforcePetOverlays then
-                addon.UnitFrames_EnforcePetOverlays()
-            end
-        end)
-    elseif addon.UnitFrames_EnforcePetOverlays then
-        addon.UnitFrames_EnforcePetOverlays()
-    end
+    handlePetOverlayEvent()
 end
 
 function addon:PET_ATTACK_STOP()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if addon.UnitFrames_EnforcePetOverlays then
-                addon.UnitFrames_EnforcePetOverlays()
-            end
-        end)
-    elseif addon.UnitFrames_EnforcePetOverlays then
-        addon.UnitFrames_EnforcePetOverlays()
-    end
+    handlePetOverlayEvent()
 end
 
 function addon:UNIT_THREAT_SITUATION_UPDATE(event, unit)
-    if unit ~= "pet" then
-        return
-    end
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            if addon.UnitFrames_EnforcePetOverlays then
-                addon.UnitFrames_EnforcePetOverlays()
-            end
-        end)
-    elseif addon.UnitFrames_EnforcePetOverlays then
-        addon.UnitFrames_EnforcePetOverlays()
-    end
+    if unit == "pet" then handlePetOverlayEvent() end
 end
 
 function addon:PLAYER_REGEN_ENABLED()
@@ -373,107 +298,6 @@ function addon:PLAYER_REGEN_ENABLED()
             if p and p.layoutName then
                 self.Profiles:PromptReloadToProfile(p.layoutName, p.meta)
             end
-        end
-    end
-end
-
-function addon:ApplyDropdownStepperFixes()
-    -- IMPORTANT: Use hooksecurefunc instead of direct method replacement to avoid taint.
-    -- Direct replacement of Blizzard mixin methods spreads taint to any code path that
-    -- calls those methods, causing "blocked from an action" errors for protected functions
-    -- like FocusUnit(), ClearFocus(), etc.
-    --
-    -- CRITICAL: All hook actions are deferred via C_Timer.After(0, ...) to break the
-    -- execution context chain. Without this deferral, taint can propagate to unrelated
-    -- Blizzard UI systems (e.g., Spell Book) causing "blocked from an action" errors
-    -- on protected functions like Frame:SetWidth(). See DEBUG.md for details.
-
-    -- Ensure dropdown steppers (left/right arrows) refresh enable/disable state after selection changes
-    do
-        local mixin = _G.SettingsDropdownControlMixin
-        if mixin and type(mixin.OnSettingValueChanged) == "function" and not addon._dropdownReinitPatched then
-            hooksecurefunc(mixin, "OnSettingValueChanged", function(self, setting, value)
-                -- Capture references for deferred execution
-                local dropdown = self
-                local control = self and self.Control
-                -- Defer all actions to break taint propagation chain
-                C_Timer.After(0, function()
-                    -- Reinitialize dropdown so steppers recalc based on current selection and options order
-                    if dropdown and type(dropdown.InitDropdown) == "function" then
-                        pcall(dropdown.InitDropdown, dropdown)
-                    end
-                    -- Refresh stepper enabled state
-                    if control and type(control.UpdateSteppers) == "function" then
-                        pcall(control.UpdateSteppers, control)
-                        -- Second refresh next frame to catch async updates
-                        C_Timer.After(0, function()
-                            if control and type(control.UpdateSteppers) == "function" then
-                                pcall(control.UpdateSteppers, control)
-                            end
-                        end)
-                    end
-                end)
-            end)
-            addon._dropdownReinitPatched = true
-        end
-    end
-
-    -- Also force stepper refresh immediately after arrow clicks by extending DropdownWithSteppersMixin
-    do
-        local mixin = _G.DropdownWithSteppersMixin
-        if mixin and not addon._dropdownStepperPatched then
-            if type(mixin.Increment) == "function" then
-                hooksecurefunc(mixin, "Increment", function(self, ...)
-                    -- Capture references for deferred execution
-                    local stepper = self
-                    local dropdown = self and self.Dropdown
-                    -- Defer to break taint propagation chain
-                    C_Timer.After(0, function()
-                        if dropdown and type(dropdown.Update) == "function" then
-                            pcall(dropdown.Update, dropdown)
-                        end
-                        if stepper and type(stepper.UpdateSteppers) == "function" then
-                            pcall(stepper.UpdateSteppers, stepper)
-                        end
-                    end)
-                end)
-            end
-            if type(mixin.Decrement) == "function" then
-                hooksecurefunc(mixin, "Decrement", function(self, ...)
-                    -- Capture references for deferred execution
-                    local stepper = self
-                    local dropdown = self and self.Dropdown
-                    -- Defer to break taint propagation chain
-                    C_Timer.After(0, function()
-                        if dropdown and type(dropdown.Update) == "function" then
-                            pcall(dropdown.Update, dropdown)
-                        end
-                        if stepper and type(stepper.UpdateSteppers) == "function" then
-                            pcall(stepper.UpdateSteppers, stepper)
-                        end
-                    end)
-                end)
-            end
-            addon._dropdownStepperPatched = true
-        end
-    end
-
-    -- Ensure dropdown emits an OnUpdate after selection via arrows so steppers reflect edges immediately
-    do
-        local mixin = _G.DropdownButtonMixin
-        if mixin and type(mixin.Pick) == "function" and not addon._dropdownSignalUpdatePatched then
-            hooksecurefunc(mixin, "Pick", function(self, description, ...)
-                -- Capture reference for deferred execution
-                local button = self
-                -- Defer to break taint propagation chain
-                C_Timer.After(0, function()
-                    -- After a selection is picked, explicitly signal an update so steppers recompute
-                    if button and type(button.SignalUpdate) == "function" then
-                        pcall(button.SignalUpdate, button)
-                    end
-                end)
-            end)
-            addon._dropdownSignalUpdatePatched = true
         end
     end
 end
@@ -759,178 +583,25 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
     end
 end
 
--- Debug Tools: Table Inspector copy support ----------------------------------
-
-local function Scooter_SafeCall(fn, ...)
-	local ok, a, b, c, d = pcall(fn, ...)
-	if ok then return a, b, c, d end
-	return nil
-end
-
-local function Scooter_GetDebugNameSafe(obj)
-	if not obj then return nil end
-	return Scooter_SafeCall(function() return obj.GetDebugName and obj:GetDebugName() or nil end)
-end
-
-local function Scooter_TableInspectorBuildDump(focusedTable)
-	if not focusedTable then return "[No Table Selected]" end
-	local attributes = {}
-	local childFrameDisplayed = {}
-
-	local function shouldShow(object)
-		-- Attempt to honor widget access checks if available; otherwise allow
-		local isWidget = Scooter_SafeCall(function() return C_Widget and C_Widget.IsWidget and C_Widget.IsWidget(object) end)
-		local canAccess = Scooter_SafeCall(function() return CanAccessObject and CanAccessObject(object) or true end)
-		if isWidget == nil then isWidget = false end
-		if canAccess == nil then canAccess = true end
-		return (not isWidget) or canAccess
-	end
-
-	for key, value in pairs(focusedTable) do
-		if shouldShow(key) and shouldShow(value) then
-			local vType = type(value)
-			local display
-			if vType == "number" or vType == "string" or vType == "boolean" then
-				display = tostring(value)
-			elseif vType == "table" and Scooter_GetDebugNameSafe(value) then
-				display = Scooter_GetDebugNameSafe(value)
-				vType = "childFrame"
-				childFrameDisplayed[value] = true
-			elseif vType == "nil" then
-				display = "nil"
-			else
-				display = "N/A"
-			end
-			table.insert(attributes, { key = key, type = vType, rawValue = value, displayValue = display })
-		end
-	end
-
-	if focusedTable.GetChildren then
-		local children = { focusedTable:GetChildren() }
-		for _, child in ipairs(children) do
-			if shouldShow(child) and not childFrameDisplayed[child] then
-				table.insert(attributes, { key = "N/A", type = "childFrame", rawValue = child, displayValue = Scooter_GetDebugNameSafe(child) or "<child>" })
-				childFrameDisplayed[child] = true
-			end
-		end
-	end
-
-	if focusedTable.GetRegions then
-		local regions = { focusedTable:GetRegions() }
-		for _, region in ipairs(regions) do
-			if shouldShow(region) then
-				table.insert(attributes, { key = "N/A", type = "region", rawValue = region, displayValue = Scooter_GetDebugNameSafe(region) or "<region>" })
-			end
-		end
-	end
-
-	local typeOrder = { childFrame = 10, boolean = 20, number = 30, string = 40, table = 50, region = 60, ["function"] = 70 }
-	table.sort(attributes, function(a, b)
-		local ao = typeOrder[a.type] or 500
-		local bo = typeOrder[b.type] or 500
-		if ao ~= bo then return ao < bo end
-		if a.key ~= b.key then return tostring(a.key) < tostring(b.key) end
-		return tostring(a.displayValue) < tostring(b.displayValue)
-	end)
-
-	local out = {}
-	local function push(line) table.insert(out, line) end
-	local title = Scooter_SafeCall(function() return TableAttributeDisplay and TableAttributeDisplay.TitleButton and TableAttributeDisplay.TitleButton.Text and TableAttributeDisplay.TitleButton.Text:GetText() end)
-	push(string.format("%s", title or "Table Attributes"))
-	push(string.rep("-", 60))
-	local lastType
-	for _, entry in ipairs(attributes) do
-		if entry.type ~= lastType then
-			push(string.format("%s(s)", entry.type))
-			lastType = entry.type
-		end
-		push(string.format("  %s = %s", tostring(entry.key), tostring(entry.displayValue)))
-	end
-	return table.concat(out, "\n")
-end
-
-local function Scooter_ShowCopyWindow(title, text)
-	if not addon.CopyWindow then
-		local f = CreateFrame("Frame", "ScooterCopyWindow", UIParent, "BasicFrameTemplateWithInset")
-		f:SetSize(740, 520)
-		f:SetPoint("CENTER")
-		f:SetFrameStrata("DIALOG")
-		f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-		f:SetScript("OnDragStart", function() f:StartMoving() end)
-		f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-		f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		f.title:SetPoint("LEFT", f.TitleBg, "LEFT", 6, 0)
-		local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-		scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -36)
-		scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 42)
-		local eb = CreateFrame("EditBox", nil, scroll)
-		eb:SetMultiLine(true); eb:SetFontObject(ChatFontNormal); eb:SetAutoFocus(false)
-		eb:SetWidth(680)
-		eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-		scroll:SetScrollChild(eb)
-		f.EditBox = eb
-		local copyBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-		copyBtn:SetSize(100, 22)
-		copyBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 12)
-		copyBtn:SetText("Copy All")
-		copyBtn:SetScript("OnClick", function()
-			f.EditBox:HighlightText()
-			f.EditBox:SetFocus()
-		end)
-		local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-		closeBtn:SetSize(80, 22)
-		closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
-		closeBtn:SetText(CLOSE or "Close")
-		closeBtn:SetScript("OnClick", function() f:Hide() end)
-		addon.CopyWindow = f
-	end
-	local f = addon.CopyWindow
-	if f.title then f.title:SetText(title or "Copied Output") end
-	if f.EditBox then f.EditBox:SetText(text or "") end
-	f:Show()
-	if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
-end
-
-local function Scooter_AttachAttrCopyButton()
-	local parent = _G.TableAttributeDisplay
-	if not parent or parent.ScooterCopyButton then return end
-	local btn = CreateFrame("Button", "ScooterAttrCopyButton", parent, "UIPanelButtonTemplate")
-	btn:SetSize(80, 20)
-	btn:SetText("Copy")
-	-- Place just beneath the window, slightly offset
-	btn:ClearAllPoints()
-	btn:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -6)
-	btn:SetScript("OnClick", function()
-		local focused = parent.focusedTable
-		local dump = Scooter_TableInspectorBuildDump(focused)
-		local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
-		Scooter_ShowCopyWindow(title, dump)
-	end)
-	parent.ScooterCopyButton = btn
-end
-
+-- ADDON_LOADED handler for attaching Table Inspector copy button (implementation in debug.lua)
 function addon:ADDON_LOADED(event, name)
-	if name == "Blizzard_DebugTools" then
-		C_Timer.After(0, function() Scooter_AttachAttrCopyButton() end)
-	end
+    if name == "Blizzard_DebugTools" then
+        C_Timer.After(0, function()
+            if addon.AttachTableInspectorCopyButton then
+                addon.AttachTableInspectorCopyButton()
+            end
+        end)
+    end
 end
 
--- Expose the attribute dump logic for the slash command
+-- Expose the attribute dump logic for the slash command (implementation in debug.lua)
 function addon:DumpTableAttributes()
-	local parent = _G.TableAttributeDisplay
-	if parent and parent:IsShown() and parent.focusedTable then
-		local dump = Scooter_TableInspectorBuildDump(parent.focusedTable)
-		local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
-		Scooter_ShowCopyWindow(title, dump)
-		return
-	end
-	-- Fallback: if framestack is active, try to inspect highlight and dump
-	local fs = _G.FrameStackTooltip
-	if fs and fs.highlightFrame then
-		local dump = Scooter_TableInspectorBuildDump(fs.highlightFrame)
-		local name = Scooter_GetDebugNameSafe(fs.highlightFrame) or "Frame"
-		Scooter_ShowCopyWindow("Frame Attributes - "..name, dump)
-		return
-	end
-	addon:Print("No Table Inspector window or highlight frame found to dump.")
+    if addon.DumpTableAttributes then
+        local success = addon.DumpTableAttributes()
+        if not success then
+            addon:Print("No Table Inspector window or highlight frame found to dump.")
+        end
+    else
+        addon:Print("Debug module not loaded.")
+    end
 end

@@ -759,3 +759,188 @@ function addon.DebugExportConsolePortProfile()
     end
 end
 
+--[[----------------------------------------------------------------------------
+    Table Inspector copy support
+
+    Purpose:
+      - Attach a "Copy" button to Blizzard's Table Inspector (/tinspect)
+      - Provide /scoot attr command to dump Table Inspector or Frame Stack content
+
+    Usage:
+      /scoot attr
+----------------------------------------------------------------------------]]--
+
+local function SafeCall(fn, ...)
+    local ok, a, b, c, d = pcall(fn, ...)
+    if ok then return a, b, c, d end
+    return nil
+end
+
+local function GetDebugNameSafe(obj)
+    if not obj then return nil end
+    return SafeCall(function() return obj.GetDebugName and obj:GetDebugName() or nil end)
+end
+
+local function TableInspectorBuildDump(focusedTable)
+    if not focusedTable then return "[No Table Selected]" end
+    local attributes = {}
+    local childFrameDisplayed = {}
+
+    local function shouldShow(object)
+        -- Attempt to honor widget access checks if available; otherwise allow
+        local isWidget = SafeCall(function() return C_Widget and C_Widget.IsWidget and C_Widget.IsWidget(object) end)
+        local canAccess = SafeCall(function() return CanAccessObject and CanAccessObject(object) or true end)
+        if isWidget == nil then isWidget = false end
+        if canAccess == nil then canAccess = true end
+        return (not isWidget) or canAccess
+    end
+
+    for key, value in pairs(focusedTable) do
+        if shouldShow(key) and shouldShow(value) then
+            local vType = type(value)
+            local display
+            if vType == "number" or vType == "string" or vType == "boolean" then
+                display = tostring(value)
+            elseif vType == "table" and GetDebugNameSafe(value) then
+                display = GetDebugNameSafe(value)
+                vType = "childFrame"
+                childFrameDisplayed[value] = true
+            elseif vType == "nil" then
+                display = "nil"
+            else
+                display = "N/A"
+            end
+            table.insert(attributes, { key = key, type = vType, rawValue = value, displayValue = display })
+        end
+    end
+
+    if focusedTable.GetChildren then
+        local children = { focusedTable:GetChildren() }
+        for _, child in ipairs(children) do
+            if shouldShow(child) and not childFrameDisplayed[child] then
+                table.insert(attributes, { key = "N/A", type = "childFrame", rawValue = child, displayValue = GetDebugNameSafe(child) or "<child>" })
+                childFrameDisplayed[child] = true
+            end
+        end
+    end
+
+    if focusedTable.GetRegions then
+        local regions = { focusedTable:GetRegions() }
+        for _, region in ipairs(regions) do
+            if shouldShow(region) then
+                table.insert(attributes, { key = "N/A", type = "region", rawValue = region, displayValue = GetDebugNameSafe(region) or "<region>" })
+            end
+        end
+    end
+
+    local typeOrder = { childFrame = 10, boolean = 20, number = 30, string = 40, table = 50, region = 60, ["function"] = 70 }
+    table.sort(attributes, function(a, b)
+        local ao = typeOrder[a.type] or 500
+        local bo = typeOrder[b.type] or 500
+        if ao ~= bo then return ao < bo end
+        if a.key ~= b.key then return tostring(a.key) < tostring(b.key) end
+        return tostring(a.displayValue) < tostring(b.displayValue)
+    end)
+
+    local out = {}
+    local function push(line) table.insert(out, line) end
+    local title = SafeCall(function() return TableAttributeDisplay and TableAttributeDisplay.TitleButton and TableAttributeDisplay.TitleButton.Text and TableAttributeDisplay.TitleButton.Text:GetText() end)
+    push(string.format("%s", title or "Table Attributes"))
+    push(string.rep("-", 60))
+    local lastType
+    for _, entry in ipairs(attributes) do
+        if entry.type ~= lastType then
+            push(string.format("%s(s)", entry.type))
+            lastType = entry.type
+        end
+        push(string.format("  %s = %s", tostring(entry.key), tostring(entry.displayValue)))
+    end
+    return table.concat(out, "\n")
+end
+
+-- Separate copy window for Table Inspector (reuse pattern from ShowDebugCopyWindow)
+local function ShowTableInspectorCopyWindow(title, text)
+    if not addon.TableInspectorCopyWindow then
+        local f = CreateFrame("Frame", "ScooterTableInspectorCopyWindow", UIParent, "BasicFrameTemplateWithInset")
+        f:SetSize(740, 520)
+        f:SetPoint("CENTER")
+        f:SetFrameStrata("DIALOG")
+        f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function() f:StartMoving() end)
+        f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        f.title:SetPoint("LEFT", f.TitleBg, "LEFT", 6, 0)
+        local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -36)
+        scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 42)
+        local eb = CreateFrame("EditBox", nil, scroll)
+        eb:SetMultiLine(true); eb:SetFontObject(ChatFontNormal); eb:SetAutoFocus(false)
+        eb:SetWidth(680)
+        eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        scroll:SetScrollChild(eb)
+        f.EditBox = eb
+        local copyBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        copyBtn:SetSize(100, 22)
+        copyBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 12)
+        copyBtn:SetText("Copy All")
+        copyBtn:SetScript("OnClick", function()
+            f.EditBox:HighlightText()
+            f.EditBox:SetFocus()
+        end)
+        local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        closeBtn:SetSize(80, 22)
+        closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 12)
+        closeBtn:SetText(CLOSE or "Close")
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+        addon.TableInspectorCopyWindow = f
+    end
+    local f = addon.TableInspectorCopyWindow
+    if f.title then f.title:SetText(title or "Copied Output") end
+    if f.EditBox then f.EditBox:SetText(text or "") end
+    f:Show()
+    if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
+end
+
+local function AttachTableInspectorCopyButton()
+    local parent = _G.TableAttributeDisplay
+    if not parent or parent.ScooterCopyButton then return end
+    local btn = CreateFrame("Button", "ScooterAttrCopyButton", parent, "UIPanelButtonTemplate")
+    btn:SetSize(80, 20)
+    btn:SetText("Copy")
+    -- Place just beneath the window, slightly offset
+    btn:ClearAllPoints()
+    btn:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -6)
+    btn:SetScript("OnClick", function()
+        local focused = parent.focusedTable
+        local dump = TableInspectorBuildDump(focused)
+        local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
+        ShowTableInspectorCopyWindow(title, dump)
+    end)
+    parent.ScooterCopyButton = btn
+end
+
+-- Called from init.lua ADDON_LOADED handler
+function addon.AttachTableInspectorCopyButton()
+    AttachTableInspectorCopyButton()
+end
+
+-- Expose the attribute dump logic for the slash command (/scoot attr)
+function addon.DumpTableAttributes()
+    local parent = _G.TableAttributeDisplay
+    if parent and parent:IsShown() and parent.focusedTable then
+        local dump = TableInspectorBuildDump(parent.focusedTable)
+        local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
+        ShowTableInspectorCopyWindow(title, dump)
+        return true
+    end
+    -- Fallback: if framestack is active, try to inspect highlight and dump
+    local fs = _G.FrameStackTooltip
+    if fs and fs.highlightFrame then
+        local dump = TableInspectorBuildDump(fs.highlightFrame)
+        local name = GetDebugNameSafe(fs.highlightFrame) or "Frame"
+        ShowTableInspectorCopyWindow("Frame Attributes - "..name, dump)
+        return true
+    end
+    return false
+end
+

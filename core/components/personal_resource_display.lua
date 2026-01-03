@@ -7,6 +7,34 @@ local function isPRDEnabled()
     return addon.FeatureToggles and addon.FeatureToggles.enablePRD
 end
 
+-- Purge PRD component SavedVariables when PRD feature is disabled.
+-- Called from init.lua after DB creation to keep profiles clean.
+function addon.PurgeDisabledPRDComponents(db)
+    if isPRDEnabled() then
+        return
+    end
+    local profile = db and db.profile
+    local components = profile and profile.components
+    if not components then
+        return
+    end
+    local removed = {}
+    for _, key in ipairs({"prdGlobal", "prdHealth", "prdPower", "prdClassResource"}) do
+        if components[key] ~= nil then
+            components[key] = nil
+            table.insert(removed, key)
+        end
+    end
+    if #removed > 0 then
+        local message = string.format("PRD disabled – purged SavedVariables for: %s", table.concat(removed, ", "))
+        if addon.DebugPrint then
+            addon.DebugPrint("[ScooterMod]", message)
+        elseif addon.Print then
+            addon:Print(message)
+        end
+    end
+end
+
 local pendingCombatComponents = {}
 local combatWatcherFrame
 

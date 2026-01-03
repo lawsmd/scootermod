@@ -97,6 +97,7 @@ ui/panel/profiles_presets.lua
 ui/panel/profiles_rules.lua
 ui/panel/apply_all.lua
 
+core/ui_fixes.lua
 core/init.lua
 core/minimap.lua
 core/chat.lua
