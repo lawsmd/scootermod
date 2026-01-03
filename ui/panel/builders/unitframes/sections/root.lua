@@ -96,6 +96,218 @@ local function build(ctx, init)
 					end)
 				end
 	
+			-- Hide Blizzard Frame Art & Animations (master switch; required for custom borders)
+			-- NOTE: Kept at the TOP of the parent-level settings for emphasis and discoverability.
+			if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet" then
+				local unitKey
+				if componentId == "ufPlayer" then unitKey = "Player"
+				elseif componentId == "ufTarget" then unitKey = "Target"
+				elseif componentId == "ufFocus" then unitKey = "Focus"
+				elseif componentId == "ufPet" then unitKey = "Pet"
+				end
+	
+				local label = "Hide Blizzard Frame Art & Animations"
+				local function ensureUFDB()
+					local db = addon and addon.db and addon.db.profile
+					if not db then return nil end
+					db.unitFrames = db.unitFrames or {}
+					db.unitFrames[unitKey] = db.unitFrames[unitKey] or {}
+					return db.unitFrames[unitKey]
+				end
+				local function getter()
+					local t = ensureUFDB(); if not t then return false end
+					return not not t.useCustomBorders
+				end
+				local function setter(b)
+					local t = ensureUFDB(); if not t then return end
+					local wasEnabled = not not t.useCustomBorders
+					t.useCustomBorders = not not b
+					-- Clear legacy per-health-bar hide flag when disabling custom borders so stock art restores
+					if not b then t.healthBarHideBorder = false end
+					-- Reset bar height to 100% when disabling Use Custom Borders
+					if wasEnabled and not b then
+						t.powerBarHeightPct = 100
+					end
+					if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
+					-- NOTE: Border tab controls and Bar Height sliders are updated in-place by their
+					-- own InitFrame/OnSettingValueChanged handlers; no structural re-render here.
+				end
+				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
+				-- Taller row so the longer label can wrap instead of truncating (matches CDM → Quality of Life rows).
+				row.GetExtent = function() return 62 end
+				do
+					local base = row.InitFrame
+					row.InitFrame = function(self, frame)
+						if base then base(self, frame) end
+						-- FIRST: Clean up Unit Frame info icons if this frame is being used for a different component
+						-- This must happen before any other logic to prevent icon from appearing on recycled frames
+						-- Only destroy icons that were created for Unit Frames, allowing other components to have their own icons
+						if frame.ScooterInfoIcon and frame.ScooterInfoIcon._isUnitFrameIcon then
+							local labelText = frame.Text and frame.Text:GetText() or ""
+							local isUnitFrameComponent = (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet")
+							local isUnitFrameCheckbox = (labelText == "Hide Blizzard Frame Art & Animations")
+							if not (isUnitFrameComponent and isUnitFrameCheckbox) then
+								-- This is NOT a Unit Frame checkbox - hide and destroy the Unit Frame icon
+								-- Other components can have their own icons without interference
+								frame.ScooterInfoIcon:Hide()
+								frame.ScooterInfoIcon:SetParent(nil)
+								frame.ScooterInfoIcon = nil
+							end
+						end
+						-- Hide any stray inline swatch from a previously-recycled tint row
+						if frame.ScooterInlineSwatch then
+							frame.ScooterInlineSwatch:Hide()
+						end
+						-- Aggressively restore any swatch-wrapped handlers on recycled rows
+						if frame.ScooterInlineSwatchWrapper then
+							frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase or frame.OnSettingValueChanged
+							frame.ScooterInlineSwatchWrapper = nil
+							frame.ScooterInlineSwatchBase = nil
+						end
+						-- Detach swatch-specific checkbox callbacks so this row behaves like a normal checkbox
+						local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
+						if cb and cb.UnregisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event and cb.ScooterInlineSwatchCallbackOwner then
+							cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
+							cb.ScooterInlineSwatchCallbackOwner = nil
+						end
+
+						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+						if panel and panel.ApplyRobotoWhite then
+							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+							local checkbox = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+							if checkbox and checkbox.Text then panel.ApplyRobotoWhite(checkbox.Text) end
+							-- Theme the checkbox checkmark to green
+							if checkbox and panel.ThemeCheckbox then panel.ThemeCheckbox(checkbox) end
+
+							-- Layout + typography: mirror CDM → Quality of Life checkbox rows so long labels wrap cleanly.
+							local cb = checkbox or frame.Checkbox or frame.CheckBox or frame.Control
+							local labelFS = frame.Text or frame.Label
+							local function layout()
+								if not (frame and cb and labelFS and cb.SetPoint and cb.ClearAllPoints and labelFS.SetPoint and labelFS.ClearAllPoints) then
+									return
+								end
+								cb:ClearAllPoints()
+								cb:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+								labelFS:ClearAllPoints()
+								labelFS:SetPoint("LEFT", frame, "LEFT", 36.5, 0)
+								labelFS:SetPoint("RIGHT", cb, "LEFT", -10, 0)
+								labelFS:SetJustifyH("LEFT")
+								labelFS:SetJustifyV("MIDDLE")
+								labelFS:SetWordWrap(true)
+								if labelFS.SetMaxLines then
+									labelFS:SetMaxLines(3)
+								end
+							end
+
+							-- Emphasis: +25% label font size (checkbox scaled separately below).
+							if panel and panel.ApplyRobotoWhite and labelFS then
+								local fontSize = 18 -- ~14px * 1.25
+								panel.ApplyRobotoWhite(labelFS, fontSize, "")
+							end
+
+							layout()
+							if not frame._ScooterUFMasterLayoutHooked then
+								frame._ScooterUFMasterLayoutHooked = true
+								frame:HookScript("OnSizeChanged", function()
+									layout()
+								end)
+							end
+							if C_Timer and C_Timer.After then
+								C_Timer.After(0, function()
+									layout()
+								end)
+							end
+
+							-- Emphasis: +25% checkbox size (do AFTER layout so anchors are stable).
+							if cb and cb.SetScale then
+								cb:SetScale(1.25)
+							end
+						end
+
+						-- Add info icon to the LEFT of the setting label (mirrors CDM → Quality of Life).
+						if frame and frame.Text then
+							local labelText = frame.Text:GetText()
+							if labelText == "Hide Blizzard Frame Art & Animations" and (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet") then
+								if panel and panel.CreateInfoIcon then
+									if not frame.ScooterInfoIcon then
+										local tooltipText = "Hides Blizzard's default frame borders, overlays, and flash effects (aggro glow, reputation color, etc.). Required for ScooterMod's custom bar borders to display."
+										frame.ScooterInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "RIGHT", "LEFT", -6, 0, 32)
+										frame.ScooterInfoIcon._isUnitFrameIcon = true
+										frame.ScooterInfoIcon._componentId = componentId
+									else
+										frame.ScooterInfoIcon:Show()
+									end
+									-- Always keep tooltip current and ensure positioning matches the label.
+									frame.ScooterInfoIcon.TooltipText = "Hides Blizzard's default frame borders, overlays, and flash effects (aggro glow, reputation color, etc.). Required for ScooterMod's custom bar borders to display."
+									if frame.ScooterInfoIcon and frame.ScooterInfoIcon.ClearAllPoints and frame.ScooterInfoIcon.SetPoint then
+										frame.ScooterInfoIcon:ClearAllPoints()
+										frame.ScooterInfoIcon:SetPoint("RIGHT", frame.Text, "LEFT", -8, 0)
+									end
+								end
+							end
+						end
+					end
+				end
+				table.insert(init, row)
+
+				-- ScooterMod divider directly under the master checkbox (matches Rules/Manage Profiles styling)
+				do
+					local divRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+					divRow.GetExtent = function() return 18 end
+					divRow.InitFrame = function(self, frame)
+						-- Hide typical recycled row regions so only the divider is visible/click-through.
+						local keysToHide = {
+							"Text", "InfoText", "ButtonContainer", "MessageText", "ActiveDropdown",
+							"SpecEnableCheck", "SpecIcon", "SpecName", "SpecDropdown", "RenameBtn",
+							"CopyBtn", "DeleteBtn", "CreateBtn", "RuleCard", "EmptyText", "AddRuleBtn",
+						}
+						for _, key in ipairs(keysToHide) do
+							if frame[key] then frame[key]:Hide() end
+						end
+						if frame.EnableMouse then frame:EnableMouse(false) end
+
+						local divider = frame.ScooterDivider
+						if not divider then
+							divider = CreateFrame("Frame", nil, frame)
+							frame.ScooterDivider = divider
+							divider:SetHeight(12)
+
+							local colorR, colorG, colorB, colorA = 0.20, 0.90, 0.30, 0.30
+
+							local lineLeft = divider:CreateTexture(nil, "ARTWORK")
+							lineLeft:SetColorTexture(colorR, colorG, colorB, colorA)
+							lineLeft:SetHeight(1)
+							lineLeft:SetPoint("LEFT", divider, "LEFT", 16, 0)
+							lineLeft:SetPoint("RIGHT", divider, "CENTER", -10, 0)
+
+							local lineRight = divider:CreateTexture(nil, "ARTWORK")
+							lineRight:SetColorTexture(colorR, colorG, colorB, colorA)
+							lineRight:SetHeight(1)
+							lineRight:SetPoint("LEFT", divider, "CENTER", 10, 0)
+							lineRight:SetPoint("RIGHT", divider, "RIGHT", -16, 0)
+
+							local ornament = divider:CreateTexture(nil, "OVERLAY")
+							ornament:SetColorTexture(0.20, 0.90, 0.30, 0.55)
+							ornament:SetSize(6, 6)
+							ornament:SetPoint("CENTER", divider, "CENTER", 0, 0)
+							ornament:SetRotation(math.rad(45))
+
+							divider._lineLeft = lineLeft
+							divider._lineRight = lineRight
+							divider._ornament = ornament
+						end
+
+						divider:ClearAllPoints()
+						divider:SetPoint("LEFT", frame, "LEFT", 0, 0)
+						divider:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+						divider:SetPoint("CENTER", frame, "CENTER", 0, 0)
+						divider:Show()
+					end
+					table.insert(init, divRow)
+				end
+			end
+
 				-- X Position (px)
 				do
 					local label = "X Position (px)"
@@ -332,127 +544,6 @@ local function build(ctx, init)
 					end
 					table.insert(init, row)
 				end
-	
-			-- Use Custom Borders (hide stock frame art to allow custom bar-only borders)
-			if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet" then
-				local unitKey
-				if componentId == "ufPlayer" then unitKey = "Player"
-				elseif componentId == "ufTarget" then unitKey = "Target"
-				elseif componentId == "ufFocus" then unitKey = "Focus"
-				elseif componentId == "ufPet" then unitKey = "Pet"
-				end
-	
-				local label = "Use Custom Borders"
-				local function ensureUFDB()
-					local db = addon and addon.db and addon.db.profile
-					if not db then return nil end
-					db.unitFrames = db.unitFrames or {}
-					db.unitFrames[unitKey] = db.unitFrames[unitKey] or {}
-					return db.unitFrames[unitKey]
-				end
-				local function getter()
-					local t = ensureUFDB(); if not t then return false end
-					return not not t.useCustomBorders
-				end
-				local function setter(b)
-					local t = ensureUFDB(); if not t then return end
-					local wasEnabled = not not t.useCustomBorders
-					t.useCustomBorders = not not b
-					-- Clear legacy per-health-bar hide flag when disabling custom borders so stock art restores
-					if not b then t.healthBarHideBorder = false end
-					-- Reset bar height to 100% when disabling Use Custom Borders
-					if wasEnabled and not b then
-						t.powerBarHeightPct = 100
-					end
-					if addon and addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor(unitKey) end
-					-- NOTE: Border tab controls and Bar Height sliders are updated in-place by their
-					-- own InitFrame/OnSettingValueChanged handlers; no structural re-render here.
-				end
-				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-				local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
-				row.GetExtent = function() return 34 end
-				do
-					local base = row.InitFrame
-					row.InitFrame = function(self, frame)
-						if base then base(self, frame) end
-						-- FIRST: Clean up Unit Frame info icons if this frame is being used for a different component
-						-- This must happen before any other logic to prevent icon from appearing on recycled frames
-						-- Only destroy icons that were created for Unit Frames, allowing other components to have their own icons
-						if frame.ScooterInfoIcon and frame.ScooterInfoIcon._isUnitFrameIcon then
-							local labelText = frame.Text and frame.Text:GetText() or ""
-							local isUnitFrameComponent = (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet")
-							local isUnitFrameCheckbox = (labelText == "Use Custom Borders")
-							if not (isUnitFrameComponent and isUnitFrameCheckbox) then
-								-- This is NOT a Unit Frame checkbox - hide and destroy the Unit Frame icon
-								-- Other components can have their own icons without interference
-								frame.ScooterInfoIcon:Hide()
-								frame.ScooterInfoIcon:SetParent(nil)
-								frame.ScooterInfoIcon = nil
-							end
-						end
-						-- Hide any stray inline swatch from a previously-recycled tint row
-						if frame.ScooterInlineSwatch then
-							frame.ScooterInlineSwatch:Hide()
-						end
-						-- Aggressively restore any swatch-wrapped handlers on recycled rows
-						if frame.ScooterInlineSwatchWrapper then
-							frame.OnSettingValueChanged = frame.ScooterInlineSwatchBase or frame.OnSettingValueChanged
-							frame.ScooterInlineSwatchWrapper = nil
-							frame.ScooterInlineSwatchBase = nil
-						end
-						-- Detach swatch-specific checkbox callbacks so this row behaves like a normal checkbox
-						local cb = frame.Checkbox or frame.CheckBox or frame.Control or frame
-						if cb and cb.UnregisterCallback and SettingsCheckboxMixin and SettingsCheckboxMixin.Event and cb.ScooterInlineSwatchCallbackOwner then
-							cb:UnregisterCallback(SettingsCheckboxMixin.Event.OnValueChanged, cb.ScooterInlineSwatchCallbackOwner)
-							cb.ScooterInlineSwatchCallbackOwner = nil
-						end
-						if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
-						if panel and panel.ApplyRobotoWhite then
-							if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
-							local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
-							if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-							-- Theme the checkbox checkmark to green
-							if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
-						end
-						-- Add info icon next to the label - ONLY for Unit Frame "Use Custom Borders" checkbox
-						if frame and frame.Text then
-							local labelText = frame.Text:GetText()
-							if labelText == "Use Custom Borders" and (componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" or componentId == "ufPet") then
-								-- This is the Unit Frame checkbox - create/show the icon
-								if panel and panel.CreateInfoIcon then
-									if not frame.ScooterInfoIcon then
-										local tooltipText = "Enables custom borders by disabling Blizzard's default frame art. Note: This also disables Aggro Glow and Reputation Colors—we're aiming to replace those features in a future update."
-										-- Icon size is 32 (double the original 16) for better visibility
-										-- Position icon to the right of the checkbox to ensure no overlap
-										local checkbox = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
-										if checkbox then
-											-- Position icon to the right of the checkbox with spacing
-											frame.ScooterInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
-											frame.ScooterInfoIcon:ClearAllPoints()
-											frame.ScooterInfoIcon:SetPoint("LEFT", checkbox, "RIGHT", 10, 0)
-										else
-											-- Fallback: position relative to label if checkbox not found
-											frame.ScooterInfoIcon = panel.CreateInfoIcon(frame, tooltipText, "LEFT", "RIGHT", 10, 0, 32)
-											if frame.Text then
-												frame.ScooterInfoIcon:ClearAllPoints()
-												-- Use larger offset to avoid checkbox area (checkbox is ~80px from left, 30px wide)
-												frame.ScooterInfoIcon:SetPoint("LEFT", frame.Text, "RIGHT", 40, 0)
-											end
-										end
-										-- Store metadata to identify this as a Unit Frame icon
-										frame.ScooterInfoIcon._isUnitFrameIcon = true
-										frame.ScooterInfoIcon._componentId = componentId
-									else
-										-- Icon already exists, ensure it's visible
-										frame.ScooterInfoIcon:Show()
-									end
-								end
-							end
-						end
-					end
-				end
-				table.insert(init, row)
-			end
 	
 end
 
