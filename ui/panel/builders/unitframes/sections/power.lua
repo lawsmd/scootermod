@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has its own section builder (tot_power)
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own section builder (boss_power)
+	if componentId == "ufBoss" then return end
 
 				-- Third collapsible section: Power Bar (blank for now)
 				local expInitializerPB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

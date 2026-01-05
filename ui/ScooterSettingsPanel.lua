@@ -1990,6 +1990,7 @@ local function BuildCategories()
 	addEntry("ufFocus",  addon.SettingsPanel.RenderUFFocus())
 	addEntry("ufPet",    addon.SettingsPanel.RenderUFPet())
 	addEntry("ufToT",    addon.SettingsPanel.RenderUFToT())
+	addEntry("ufBoss",   addon.SettingsPanel.RenderUFBoss())
 	-- Group Frames children
 	addEntry("gfParty", addon.SettingsPanel.RenderGFParty())
 	addEntry("gfRaid",  addon.SettingsPanel.RenderGFRaid())
@@ -2056,6 +2057,7 @@ local function BuildCategories()
 			{ type = "child", key = "ufFocus",  label = "Focus"  },
 			{ type = "child", key = "ufPet",    label = "Pet"    },
 			{ type = "child", key = "ufToT",    label = "Target of Target" },
+			{ type = "child", key = "ufBoss",   label = "Boss" },
 		}},
 		{ type = "parent", key = "Group Frames", label = "Group Frames", collapsible = true, children = {
 			{ type = "child", key = "gfParty", label = "Party Frames" },

@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has no class resource
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own scaffolded sections
+	if componentId == "ufBoss" then return end
 
 	if componentId == "ufPlayer" then
 		local function getClassResourceTitle()

@@ -159,6 +159,126 @@ do
         -- No-op: hooks removed for performance
     end
 
+    -- Shared text styling helpers (used by Player/Target/Focus/Pet AND Boss frames).
+    -- Keep these outside applyForUnit so Boss can reuse the exact same styling logic.
+    addon._ufTextBaselines = addon._ufTextBaselines or {}
+
+    local function ensureBaseline(fs, key, fallbackFrame)
+        addon._ufTextBaselines[key] = addon._ufTextBaselines[key] or {}
+        local b = addon._ufTextBaselines[key]
+        if b.point == nil then
+            if fs and fs.GetPoint then
+                local p, relTo, rp, x, y = fs:GetPoint(1)
+                b.point = p or "CENTER"
+                b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+                b.relPoint = rp or b.point
+                b.x = tonumber(x) or 0
+                b.y = tonumber(y) or 0
+            else
+                b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or fallbackFrame, "CENTER", 0, 0
+            end
+        end
+        return b
+    end
+
+    -- Helper to force FontString redraw after alignment change
+    local function forceTextRedraw(fs)
+        if fs and fs.GetText and fs.SetText then
+            local txt = fs:GetText()
+            if txt then
+                fs:SetText("")
+                fs:SetText(txt)
+            end
+        end
+    end
+
+    -- Default/clean profiles should not modify Blizzard text.
+    -- Only treat settings as "customized" if they differ from structural defaults.
+    local function hasTextCustomization(styleCfg)
+        if not styleCfg then return false end
+        if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
+            return true
+        end
+        if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+            return true
+        end
+        if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
+            local ox = tonumber(styleCfg.offset.x) or 0
+            local oy = tonumber(styleCfg.offset.y) or 0
+            if ox ~= 0 or oy ~= 0 then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function applyTextStyle(fs, styleCfg, baselineKey, fallbackFrame)
+        if not fs or not styleCfg then return end
+        if not hasTextCustomization(styleCfg) then
+            return
+        end
+
+        local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+        local size = tonumber(styleCfg.size) or 14
+        local outline = tostring(styleCfg.style or "OUTLINE")
+
+        -- Set flag to prevent our SetFont hook from triggering a reapply loop
+        fs._ScooterApplyingFont = true
+        if addon.ApplyFontStyle then
+            addon.ApplyFontStyle(fs, face, size, outline)
+        elseif fs.SetFont then
+            pcall(fs.SetFont, fs, face, size, outline)
+        end
+        fs._ScooterApplyingFont = nil
+
+        local c = styleCfg.color or { 1, 1, 1, 1 }
+        if fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        end
+
+        -- Determine default alignment based on text role
+        local defaultAlign = "LEFT"
+        if baselineKey and baselineKey:find(":right", 1, true) then
+            defaultAlign = "RIGHT"
+        elseif baselineKey and baselineKey:find(":health-center", 1, true) then
+            defaultAlign = "CENTER"
+        elseif baselineKey and baselineKey:find(":power-center", 1, true) then
+            defaultAlign = "CENTER"
+        end
+        local alignment = styleCfg.alignment or defaultAlign
+
+        -- Set explicit width on FontString to enable alignment (use full parent bar width)
+        local parentBar = fs:GetParent()
+        if parentBar and parentBar.GetWidth then
+            local barWidth = parentBar:GetWidth()
+            if barWidth and barWidth > 0 and fs.SetWidth then
+                pcall(fs.SetWidth, fs, barWidth)
+            end
+        end
+
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, alignment)
+        end
+
+        -- Offset relative to a stable baseline anchor captured at first apply this session
+        local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+        local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+        if fs.ClearAllPoints and fs.SetPoint then
+            local b = ensureBaseline(fs, baselineKey, fallbackFrame or (fs.GetParent and fs:GetParent()))
+            fs:ClearAllPoints()
+            fs:SetPoint(
+                b.point or "CENTER",
+                b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame,
+                b.relPoint or b.point or "CENTER",
+                (b.x or 0) + ox,
+                (b.y or 0) + oy
+            )
+        end
+
+        -- Force redraw to apply alignment visually
+        forceTextRedraw(fs)
+    end
+
     local function applyForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -302,111 +422,8 @@ do
             end
         end
 
-        -- Apply styling (font/size/style/color/offset) with stable baseline anchoring
-        addon._ufTextBaselines = addon._ufTextBaselines or {}
-        local function ensureBaseline(fs, key)
-            addon._ufTextBaselines[key] = addon._ufTextBaselines[key] or {}
-            local b = addon._ufTextBaselines[key]
-            if b.point == nil then
-                if fs and fs.GetPoint then
-                    local p, relTo, rp, x, y = fs:GetPoint(1)
-                    b.point = p or "CENTER"
-                    b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
-                    b.relPoint = rp or b.point
-                    b.x = tonumber(x) or 0
-                    b.y = tonumber(y) or 0
-                else
-                    b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
-                end
-            end
-            return b
-        end
-
-        -- Helper to force FontString redraw after alignment change
-        local function forceTextRedraw(fs)
-            if fs and fs.GetText and fs.SetText then
-                local txt = fs:GetText()
-                if txt then
-                    fs:SetText("")
-                    fs:SetText(txt)
-                end
-            end
-        end
-
-        -- Default/clean profiles should not modify Blizzard text.
-        -- Only treat settings as "customized" if they differ from structural defaults.
-        local function hasTextCustomization(styleCfg)
-            if not styleCfg then return false end
-            if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
-                return true
-            end
-            if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
-                return true
-            end
-            if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
-                local ox = tonumber(styleCfg.offset.x) or 0
-                local oy = tonumber(styleCfg.offset.y) or 0
-                if ox ~= 0 or oy ~= 0 then
-                    return true
-                end
-            end
-            return false
-        end
-
-        local function applyTextStyle(fs, styleCfg, baselineKey)
-            if not fs or not styleCfg then return end
-            if not hasTextCustomization(styleCfg) then
-                return
-            end
-            local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
-            local size = tonumber(styleCfg.size) or 14
-            local outline = tostring(styleCfg.style or "OUTLINE")
-            -- Set flag to prevent our SetFont hook from triggering a reapply loop
-            fs._ScooterApplyingFont = true
-            if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-            fs._ScooterApplyingFont = nil
-            local c = styleCfg.color or {1,1,1,1}
-            if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-
-            -- Determine default alignment based on whether this is left (%) or right (value) text
-            local defaultAlign = "LEFT"
-            if baselineKey and baselineKey:find(":right") then
-                defaultAlign = "RIGHT"
-            end
-            local alignment = styleCfg.alignment or defaultAlign
-
-            -- Set explicit width on FontString to enable alignment (use full parent bar width)
-            local parentBar = fs:GetParent()
-            if parentBar and parentBar.GetWidth then
-                local barWidth = parentBar:GetWidth()
-                if barWidth and barWidth > 0 then
-                    -- Use full bar width so alignment spans the entire bar
-                    if fs.SetWidth then
-                        pcall(fs.SetWidth, fs, barWidth)
-                    end
-                end
-            end
-
-            -- Apply text alignment
-            if fs.SetJustifyH then
-                pcall(fs.SetJustifyH, fs, alignment)
-            end
-
-            -- Offset relative to a stable baseline anchor captured at first apply this session
-            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-            if fs.ClearAllPoints and fs.SetPoint then
-                local b = ensureBaseline(fs, baselineKey)
-                fs:ClearAllPoints()
-                fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
-            end
-
-            -- Force redraw to apply alignment visually
-            forceTextRedraw(fs)
-        end
-
-        if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left") end
-        if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right") end
+        if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left", frame) end
+        if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right", frame) end
         -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
         -- Always apply styling if we have text customizations; handle visibility separately
         if textStringFS then
@@ -425,8 +442,57 @@ do
             end
             -- Always apply styling (applyTextStyle returns early if no customizations)
             if not textStringFS._ScooterHealthTextCenterHidden then
-                applyTextStyle(textStringFS, cfg.textHealthValue or {}, unit .. ":health-center")
+                applyTextStyle(textStringFS, cfg.textHealthValue or {}, unit .. ":health-center", frame)
             end
+        end
+    end
+
+    -- Boss frames: Apply Health % (LeftText) and Value (RightText/Center) styling.
+    -- Boss frames are not returned by EditModeManagerFrame's UnitFrame system indices like Player/Target/Focus/Pet,
+    -- so we resolve Boss1..Boss5 deterministically using their global names.
+    function addon.ApplyBossHealthTextStyling()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Boss") or nil
+        if not cfg then
+            return
+        end
+
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            local hbContainer = bossFrame
+                and bossFrame.TargetFrameContent
+                and bossFrame.TargetFrameContent.TargetFrameContentMain
+                and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+
+            if hbContainer then
+                local hb = hbContainer.HealthBar
+                if hb then
+                    -- Ensure combat-time visibility enforcement exists for Boss health texts
+                    hookHealthBarUpdateTextString(hb, "Boss")
+                end
+
+                local leftFS = hbContainer.LeftText
+                local rightFS = hbContainer.RightText
+                local centerFS = hbContainer.HealthBarText
+
+                if leftFS then
+                    applyTextStyle(leftFS, cfg.textHealthPercent or {}, "Boss" .. tostring(i) .. ":health-left", hbContainer)
+                end
+                if rightFS then
+                    applyTextStyle(rightFS, cfg.textHealthValue or {}, "Boss" .. tostring(i) .. ":health-right", hbContainer)
+                end
+                if centerFS then
+                    applyTextStyle(centerFS, cfg.textHealthValue or {}, "Boss" .. tostring(i) .. ":health-center", hbContainer)
+                end
+            end
+        end
+
+        -- Apply visibility once as part of the styling pass.
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then
+            addon.ApplyUnitFrameHealthTextVisibilityFor("Boss")
         end
     end
 
@@ -440,16 +506,6 @@ do
         if not cfg then
             return
         end
-
-        local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unit]
-        if not cache then
-            -- If we haven't resolved fonts yet this session, skip work here.
-            -- They will be resolved during the next ApplyStyles() pass.
-            return
-        end
-
-        local leftFS = cache.leftFS
-        local rightFS = cache.rightFS
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
@@ -502,6 +558,35 @@ do
             end
         end
 
+        -- Boss frames: apply to Boss1..Boss5 deterministically (no cache dependency).
+        if unit == "Boss" then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                local hbContainer = bossFrame
+                    and bossFrame.TargetFrameContent
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                local leftFS = hbContainer and hbContainer.LeftText or nil
+                local rightFS = hbContainer and hbContainer.RightText or nil
+                local centerFS = hbContainer and hbContainer.HealthBarText or nil
+                applyVisibility(leftFS, cfg.healthPercentHidden)
+                applyVisibility(rightFS, cfg.healthValueHidden)
+                -- Center TextString is used in NUMERIC mode; treat it as Value Text for parity with Player/Target.
+                applyVisibility(centerFS, cfg.healthValueHidden)
+            end
+            return
+        end
+
+        local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unit]
+        if not cache then
+            -- If we haven't resolved fonts yet this session, skip work here.
+            -- They will be resolved during the next ApplyStyles() pass.
+            return
+        end
+
+        local leftFS = cache.leftFS
+        local rightFS = cache.rightFS
+
         applyVisibility(leftFS, cfg.healthPercentHidden)
         applyVisibility(rightFS, cfg.healthValueHidden)
     end
@@ -511,6 +596,9 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+        if addon.ApplyBossHealthTextStyling then
+            addon.ApplyBossHealthTextStyling()
+        end
 	end
 
     -- Copy addon-only Unit Frame text settings from source unit to destination unit
@@ -1023,16 +1111,6 @@ do
             return
         end
 
-        local cache = addon._ufPowerTextFonts and addon._ufPowerTextFonts[unit]
-        if not cache then
-            -- If we haven't resolved fonts yet this session, skip work here.
-            -- They will be resolved during the next ApplyStyles() pass.
-            return
-        end
-
-        local leftFS = cache.leftFS
-        local rightFS = cache.rightFS
-
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
@@ -1083,6 +1161,42 @@ do
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
             end
         end
+
+        -- Boss frames: apply to Boss1..Boss5 deterministically (no cache dependency).
+        if unit == "Boss" then
+            local powerBarHiddenSetting = cfg.powerBarHidden -- tri-state
+            local leftHiddenSetting
+            local rightHiddenSetting
+            if powerBarHiddenSetting == true then
+                leftHiddenSetting = true
+                rightHiddenSetting = true
+            else
+                leftHiddenSetting = cfg.powerPercentHidden
+                rightHiddenSetting = cfg.powerValueHidden
+            end
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                local mana = bossFrame
+                    and bossFrame.TargetFrameContent
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain.ManaBar
+                local leftFS = mana and mana.LeftText or nil
+                local rightFS = mana and mana.RightText or nil
+                applyVisibility(leftFS, leftHiddenSetting)
+                applyVisibility(rightFS, rightHiddenSetting)
+            end
+            return
+        end
+
+        local cache = addon._ufPowerTextFonts and addon._ufPowerTextFonts[unit]
+        if not cache then
+            -- If we haven't resolved fonts yet this session, skip work here.
+            -- They will be resolved during the next ApplyStyles() pass.
+            return
+        end
+
+        local leftFS = cache.leftFS
+        local rightFS = cache.rightFS
 
         -- Visibility: tolerate missing LeftText on some classes/specs (no-op)
         -- When the entire Power Bar is hidden, force all power texts hidden regardless of individual toggles.
@@ -1282,6 +1396,368 @@ do
 		if not (hasVisibilitySettings or hasNameTextSettings or hasLevelTextSettings or hasBackdropSettings) then
 			return
 		end
+
+		-- Boss frames are a multi-frame system (Boss1..Boss5). They do not map cleanly
+		-- to a single "unit frame" for baseline/child resolution. Handle as a special case.
+		if unit == "Boss" then
+			-- Ensure we get a first application pass when the boss system becomes visible.
+			-- Boss frames often become relevant only after the container shows (e.g., in instances),
+			-- so we hook the container once to trigger a reapply and install per-frame hooks.
+			if _G and _G.hooksecurefunc then
+				local container = _G.BossTargetFrameContainer
+				if container and not container._ScootBossNameTextContainerHooked then
+					container._ScootBossNameTextContainerHooked = true
+					if type(container.OnShow) == "function" then
+						_G.hooksecurefunc(container, "OnShow", function()
+							if addon and addon.ApplyUnitFrameNameLevelTextFor then
+								addon.ApplyUnitFrameNameLevelTextFor("Boss")
+							end
+						end)
+					end
+				end
+			end
+
+			-- Apply to all five boss frames when any Boss name/backdrop setting is configured.
+			-- Zero‑Touch remains intact because we only reach this block when cfg exists AND
+			-- at least one relevant setting was explicitly set above.
+			local function resolveBossFrame(i)
+				return _G and _G["Boss" .. i .. "TargetFrame"] or nil
+			end
+
+			local function resolveBossNameFS(bossFrame)
+				-- Framestack exposes bossFrame.name, but fall back to the canonical nested path.
+				return (bossFrame and (bossFrame.name
+					or (bossFrame.TargetFrameContent
+						and bossFrame.TargetFrameContent.TargetFrameContentMain
+						and bossFrame.TargetFrameContent.TargetFrameContentMain.Name)))
+					or nil
+			end
+
+			local function resolveBossContentMain(bossFrame)
+				return bossFrame
+					and bossFrame.TargetFrameContent
+					and bossFrame.TargetFrameContent.TargetFrameContentMain
+					or nil
+			end
+
+			local function resolveBossHealthBar(bossFrame)
+				-- Framestack exposes bossFrame.healthbar (preferred).
+				return bossFrame and bossFrame.healthbar
+					or (bossFrame and bossFrame.TargetFrameContent
+						and bossFrame.TargetFrameContent.TargetFrameContentMain
+						and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+						and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar)
+					or nil
+			end
+
+			-- Baselines for Boss name text are stored per-boss-index.
+			addon._ufNameLevelTextBaselines = addon._ufNameLevelTextBaselines or {}
+			local function ensureBossBaseline(fs, key, fallbackFrame)
+				addon._ufNameLevelTextBaselines[key] = addon._ufNameLevelTextBaselines[key] or {}
+				local b = addon._ufNameLevelTextBaselines[key]
+				if b.point == nil then
+					if fs and fs.GetPoint then
+						local p, relTo, rp, x, y = fs:GetPoint(1)
+						b.point = p or "CENTER"
+						b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+						b.relPoint = rp or b.point
+						b.x = tonumber(x) or 0
+						b.y = tonumber(y) or 0
+					else
+						b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fallbackFrame or (fs and fs.GetParent and fs:GetParent())), "CENTER", 0, 0
+					end
+				end
+				return b
+			end
+
+			local function applyBossTextStyle(fs, styleCfg, baselineKey, fallbackFrame)
+				if not fs or not styleCfg then return end
+
+				local function hasTextCustomization(cfgT)
+					if not cfgT then return false end
+					if cfgT.fontFace ~= nil and cfgT.fontFace ~= "" and cfgT.fontFace ~= "FRIZQT__" then return true end
+					if cfgT.size ~= nil or cfgT.style ~= nil then return true end
+					if cfgT.colorMode ~= nil and cfgT.colorMode ~= "" and cfgT.colorMode ~= "default" then return true end
+					if cfgT.color ~= nil then return true end
+					if cfgT.offset and (cfgT.offset.x ~= nil or cfgT.offset.y ~= nil) then
+						local ox = tonumber(cfgT.offset.x) or 0
+						local oy = tonumber(cfgT.offset.y) or 0
+						if ox ~= 0 or oy ~= 0 then return true end
+					end
+					return false
+				end
+				if not hasTextCustomization(styleCfg) then return end
+
+				local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+				local size = tonumber(styleCfg.size) or 14
+				local outline = tostring(styleCfg.style or "OUTLINE")
+				fs._ScooterApplyingFont = true
+				if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+				fs._ScooterApplyingFont = nil
+
+				-- Boss frames: no class color option. Treat "class" as "default".
+				local colorMode = styleCfg.colorMode or "default"
+				if colorMode == "class" then colorMode = "default" end
+
+				local c
+				if colorMode == "custom" then
+					c = styleCfg.color or { 1.0, 0.82, 0.0, 1 }
+				else
+					-- Default: match the Name/Level Text default behavior (yellow).
+					c = styleCfg.color or { 1.0, 0.82, 0.0, 1 }
+				end
+				if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+
+				local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+				local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+				if fs.ClearAllPoints and fs.SetPoint then
+					local b = ensureBossBaseline(fs, baselineKey, fallbackFrame)
+					fs:ClearAllPoints()
+					fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+				end
+			end
+
+			local function applyBossBackdrop(main, hb, index)
+				-- Reuse the same DB keys as other unit frames (nameBackdrop*).
+				local holderKey = "ScooterNameBackdrop_Boss" .. tostring(index)
+				local existingTex = main and main[holderKey] or nil
+
+				local configured = (
+					cfg.nameBackdropEnabled ~= nil
+					or cfg.nameBackdropTexture ~= nil
+					or cfg.nameBackdropColorMode ~= nil
+					or cfg.nameBackdropTint ~= nil
+					or cfg.nameBackdropOpacity ~= nil
+					or cfg.nameBackdropWidthPct ~= nil
+				)
+				if not configured then
+					if existingTex then existingTex:Hide() end
+					return
+				end
+
+				local texKey = cfg.nameBackdropTexture or ""
+				local enabledBackdrop = not not cfg.nameBackdropEnabled
+				local colorMode = cfg.nameBackdropColorMode or "default" -- default | texture | custom
+				local tint = cfg.nameBackdropTint or { 1, 1, 1, 1 }
+				local opacity = tonumber(cfg.nameBackdropOpacity) or 50
+				if opacity < 0 then opacity = 0 elseif opacity > 100 then opacity = 100 end
+				local opacityAlpha = opacity / 100
+				local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+
+				local tex = existingTex
+				if main and not tex then
+					tex = main:CreateTexture(nil, "BACKGROUND", nil, -8)
+					main[holderKey] = tex
+				end
+				if not tex then return end
+
+				if hb and resolvedPath and enabledBackdrop then
+					addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
+					local baseKey = "Boss" .. tostring(index)
+					local base = tonumber(addon._ufNameBackdropBaseWidth[baseKey])
+					if not base or base <= 0 then
+						base = (hb.GetWidth and hb:GetWidth()) or 0
+						addon._ufNameBackdropBaseWidth[baseKey] = base
+					end
+					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
+					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
+					local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
+
+					tex:ClearAllPoints()
+					-- Boss frames align right; grow left from the portrait side (match Target/Focus behavior).
+					tex:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
+					tex:SetSize(desiredWidth, 16)
+					tex:SetTexture(resolvedPath)
+					if tex.SetDrawLayer then tex:SetDrawLayer("BACKGROUND", -8) end
+					if tex.SetHorizTile then tex:SetHorizTile(false) end
+					if tex.SetVertTile then tex:SetVertTile(false) end
+					if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
+
+					local r, g, b = 1, 1, 1
+					if colorMode == "texture" then
+						r, g, b = 1, 1, 1
+					elseif colorMode == "default" then
+						r, g, b = 0, 0, 0
+					elseif colorMode == "custom" and type(tint) == "table" then
+						r, g, b = tint[1] or 1, tint[2] or 1, tint[3] or 1
+					end
+					if tex.SetVertexColor then tex:SetVertexColor(r, g, b, 1) end
+					if tex.SetAlpha then tex:SetAlpha(opacityAlpha) end
+					tex:Show()
+				else
+					tex:Hide()
+				end
+			end
+
+			local function applyBossBackdropBorder(main, hb, index)
+				local borderKey = "ScooterNameBackdropBorder_Boss" .. tostring(index)
+				local existingBorderFrame = main and main[borderKey] or nil
+
+				local configured = (
+					cfg.nameBackdropBorderEnabled ~= nil
+					or cfg.nameBackdropBorderStyle ~= nil
+					or cfg.nameBackdropBorderThickness ~= nil
+					or cfg.nameBackdropBorderInset ~= nil
+					or cfg.nameBackdropBorderTintEnable ~= nil
+					or cfg.nameBackdropBorderTintColor ~= nil
+					or cfg.useCustomBorders ~= nil
+					or cfg.nameBackdropEnabled ~= nil
+					or cfg.nameBackdropTexture ~= nil
+					or cfg.nameBackdropWidthPct ~= nil
+				)
+				if not configured then
+					if existingBorderFrame then
+						if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(existingBorderFrame) end
+						if existingBorderFrame.SetBackdrop then pcall(existingBorderFrame.SetBackdrop, existingBorderFrame, nil) end
+						existingBorderFrame:Hide()
+					end
+					return
+				end
+
+				local styleKey = cfg.nameBackdropBorderStyle or "square"
+				local localEnabled = not not cfg.nameBackdropBorderEnabled
+				local globalEnabled = not not cfg.useCustomBorders
+				local useBorders = localEnabled and globalEnabled
+				local thickness = tonumber(cfg.nameBackdropBorderThickness) or 1
+				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+				local inset = tonumber(cfg.nameBackdropBorderInset) or 0
+				if inset < -8 then inset = -8 elseif inset > 8 then inset = 8 end
+				local tintEnabled = not not cfg.nameBackdropBorderTintEnable
+				local tintColor = cfg.nameBackdropBorderTintColor or { 1, 1, 1, 1 }
+
+				local borderFrame = existingBorderFrame
+				if main and not borderFrame then
+					local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+					borderFrame = CreateFrame("Frame", nil, main, template)
+					main[borderKey] = borderFrame
+				end
+				if not borderFrame then return end
+
+				if hb and useBorders then
+					addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
+					local baseKey = "Boss" .. tostring(index)
+					local base = tonumber(addon._ufNameBackdropBaseWidth[baseKey])
+					if not base or base <= 0 then
+						base = (hb.GetWidth and hb:GetWidth()) or 0
+						addon._ufNameBackdropBaseWidth[baseKey] = base
+					end
+					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
+					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
+					local desiredWidth = math.max(1, math.floor((base * wPct / 100) + 0.5))
+
+					borderFrame:ClearAllPoints()
+					borderFrame:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 0)
+					borderFrame:SetSize(desiredWidth, 16)
+
+					local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey) or nil
+					local styleTexture = styleDef and styleDef.texture or nil
+					local thicknessScale = (styleDef and styleDef.thicknessScale) or 1.0
+					local DEFAULT_REF = 18
+					local DEFAULT_MULT = 1.35
+					local h = (borderFrame.GetHeight and borderFrame:GetHeight()) or 16
+					if h < 1 then h = DEFAULT_REF end
+					local edgeSize = math.floor((thickness * DEFAULT_MULT * thicknessScale * (h / DEFAULT_REF)) + 0.5)
+					if edgeSize < 1 then edgeSize = 1 elseif edgeSize > 48 then edgeSize = 48 end
+
+					if styleKey == "square" or not styleTexture then
+						if borderFrame.SetBackdrop then pcall(borderFrame.SetBackdrop, borderFrame, nil) end
+						if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(borderFrame) end
+						if addon.Borders and addon.Borders.ApplySquare then
+							addon.Borders.ApplySquare(borderFrame, {
+								size = edgeSize,
+								color = tintEnabled and (tintColor or { 1, 1, 1, 1 }) or { 1, 1, 1, 1 },
+								layer = "OVERLAY",
+								layerSublevel = 7,
+								expand = -(inset),
+							})
+						end
+						borderFrame:Show()
+					else
+						if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(borderFrame) end
+						local ok = false
+						if borderFrame.SetBackdrop then
+							local insetPx = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + (tonumber(inset) or 0))
+							local bd = {
+								bgFile = nil,
+								edgeFile = styleTexture,
+								tile = false,
+								edgeSize = edgeSize,
+								insets = { left = insetPx, right = insetPx, top = insetPx, bottom = insetPx },
+							}
+							ok = pcall(borderFrame.SetBackdrop, borderFrame, bd)
+						end
+						if ok and borderFrame.SetBackdropBorderColor then
+							local c = tintEnabled and tintColor or { 1, 1, 1, 1 }
+							borderFrame:SetBackdropBorderColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+						end
+						if not ok then
+							borderFrame:Hide()
+						else
+							borderFrame:Show()
+						end
+					end
+				else
+					if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(borderFrame) end
+					if borderFrame.SetBackdrop then pcall(borderFrame.SetBackdrop, borderFrame, nil) end
+					borderFrame:Hide()
+				end
+			end
+
+			local function applyBossIndex(i)
+				local bossFrame = resolveBossFrame(i)
+				if not bossFrame then return end
+
+				local nameFS = resolveBossNameFS(bossFrame)
+				local main = resolveBossContentMain(bossFrame)
+				local hb = resolveBossHealthBar(bossFrame)
+
+				-- Visibility: name text is not a StatusBar child, so SetShown is safe.
+				if nameFS and nameFS.SetShown and cfg.nameTextHidden ~= nil then
+					pcall(nameFS.SetShown, nameFS, not cfg.nameTextHidden)
+				end
+
+				if nameFS then
+					applyBossTextStyle(nameFS, cfg.textName or {}, "Boss" .. tostring(i) .. ":name", bossFrame)
+				end
+
+				-- Backdrop + Border: attach to the same content main frame as Target/Focus.
+				if main then
+					applyBossBackdrop(main, hb, i)
+					applyBossBackdropBorder(main, hb, i)
+				end
+
+				-- Persistence hooks (Boss frames can refresh/overwrite text props).
+				if _G.hooksecurefunc and not bossFrame._ScootBossNameTextHooked then
+					bossFrame._ScootBossNameTextHooked = true
+					local function safeReapply()
+						-- Throttle per-frame to avoid rapid spam from Update/OnShow.
+						if bossFrame._ScootBossNameTextReapplyPending then return end
+						bossFrame._ScootBossNameTextReapplyPending = true
+						if _G.C_Timer and _G.C_Timer.After then
+							_G.C_Timer.After(0, function()
+								bossFrame._ScootBossNameTextReapplyPending = nil
+								applyBossIndex(i)
+							end)
+						else
+							bossFrame._ScootBossNameTextReapplyPending = nil
+							applyBossIndex(i)
+						end
+					end
+					if type(bossFrame.Update) == "function" then
+						_G.hooksecurefunc(bossFrame, "Update", safeReapply)
+					end
+					if type(bossFrame.OnShow) == "function" then
+						_G.hooksecurefunc(bossFrame, "OnShow", safeReapply)
+					end
+				end
+			end
+
+			for i = 1, 5 do
+				applyBossIndex(i)
+			end
+			return
+		end
+
 		local frame = getUnitFrameFor(unit)
 		if not frame then return end
 
@@ -1795,6 +2271,7 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+		applyForUnit("Boss")
 	end
 
 	-- Hook TargetFrame_Update, FocusFrame_Update, and Player frame update functions
@@ -1902,7 +2379,7 @@ do
 			end
 			return false
 		end
-		if unitHasNameLevelConfig("Player") or unitHasNameLevelConfig("Target") or unitHasNameLevelConfig("Focus") or unitHasNameLevelConfig("Pet") then
+		if unitHasNameLevelConfig("Player") or unitHasNameLevelConfig("Target") or unitHasNameLevelConfig("Focus") or unitHasNameLevelConfig("Pet") or unitHasNameLevelConfig("Boss") then
 			installNameLevelTextHooks()
 		end
 		_origApplyAll()

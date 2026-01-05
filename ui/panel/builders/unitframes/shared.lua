@@ -12,6 +12,7 @@ local componentToUnit = {
     ufFocus  = "Focus",
     ufPet    = "Pet",
     ufToT    = "TargetOfTarget",
+    ufBoss   = "Boss",
 }
 
 function shared.unitKeyFor(componentId)
@@ -34,6 +35,15 @@ function shared.uiUnitsToPixels(u)
 end
 
 shared.sectionOrder = shared.sectionOrder or {
+    -- Boss-specific sections (only render for ufBoss)
+    "boss_root",
+    "boss_health",
+    "boss_power",
+    "boss_nametext",
+    "boss_cast",
+    "boss_visibility",
+    "boss_misc",
+
     "root",
     "health",
     "power",

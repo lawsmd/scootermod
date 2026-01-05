@@ -469,11 +469,14 @@ do
                 or (unit == "Target" and EM.Target)
                 or (unit == "Focus" and EM.Focus)
                 or (unit == "Pet" and EM.Pet)
+                or (unit == "Boss" and EM.Boss)
         end
         if idx then
             return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
         end
         if unit == "Pet" then return _G.PetFrame end
+        -- Fallback for Boss if EM.Boss is unavailable
+        if unit == "Boss" then return _G.Boss1TargetFrame end
         return nil
     end
 
@@ -547,6 +550,10 @@ do
             local root = _G.FocusFrame
             local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
             if hb then return hb end
+        elseif unit == "Boss" then
+            -- Boss frames expose healthbar as a direct property (Boss1TargetFrame.healthbar).
+            -- This is reliable and doesn't require traversing the nested frame hierarchy.
+            if frame and frame.healthbar then return frame.healthbar end
         end
         -- Fallbacks
         if frame and frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar then return frame.HealthBarsContainer.HealthBar end
@@ -585,6 +592,37 @@ do
             local base = (hb and hb.GetFrameLevel and hb:GetFrameLevel()) or 0
             safeRaiseFrameLevel(hb, base, 12)
             safeRaiseFrameLevel(mb, base, 12)
+            return
+        end
+        if unit == "Boss" then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame then
+                    local hbContainer = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                    if hbContainer then
+                        safeSetDrawLayer(hbContainer.HealthBarText, "OVERLAY", 6)
+                        safeSetDrawLayer(hbContainer.LeftText, "OVERLAY", 6)
+                        safeSetDrawLayer(hbContainer.RightText, "OVERLAY", 6)
+                        local base = (hbContainer.GetFrameLevel and hbContainer:GetFrameLevel())
+                            or (bossFrame.GetFrameLevel and bossFrame:GetFrameLevel()) or 0
+                        safeRaiseFrameLevel(hbContainer, base, 12)
+                    end
+
+                    local mana = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ManaBar
+                    if mana then
+                        safeSetDrawLayer(mana.ManaBarText, "OVERLAY", 6)
+                        safeSetDrawLayer(mana.LeftText, "OVERLAY", 6)
+                        safeSetDrawLayer(mana.RightText, "OVERLAY", 6)
+                        local base = (mana.GetFrameLevel and mana:GetFrameLevel())
+                            or (bossFrame.GetFrameLevel and bossFrame:GetFrameLevel()) or 0
+                        safeRaiseFrameLevel(mana, base, 12)
+                    end
+                end
+            end
             return
         end
         local root = (unit == "Player" and _G.PlayerFrame)
@@ -674,6 +712,10 @@ do
             local root = _G.FocusFrame
             local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
             if mb then return mb end
+        elseif unit == "Boss" then
+            -- Boss frames expose manabar as a direct property (Boss1TargetFrame.manabar).
+            -- This is reliable and doesn't require traversing the nested frame hierarchy.
+            if frame and frame.manabar then return frame.manabar end
         end
         if frame and frame.ManaBar then return frame.ManaBar end
         return findStatusBarByHints(frame, {"ManaBar", ".ManaBar", "PowerBar"}, {"Prediction"})
@@ -821,6 +863,9 @@ do
             return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
         elseif unit == "Focus" then
             local root = _G.FocusFrame
+            return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
+        elseif unit == "Boss" then
+            local root = _G.Boss1TargetFrame
             return root and root.TargetFrameContainer and root.TargetFrameContainer.FrameTexture or nil
         elseif unit == "Pet" then
             return _G.PetFrameTexture
@@ -1434,6 +1479,59 @@ do
         local frame = getUnitFrameFor(unit)
         if not frame then return end
 
+        -- Boss unit frames commonly appear/update during combat (e.g., INSTANCE_ENCOUNTER_ENGAGE_UNIT / UPDATE_BOSS_FRAMES).
+        -- We must NEVER touch protected StatusBars/layout during combat, but we CAN safely hide purely-visual overlays
+        -- via SetAlpha + alpha enforcers. Do this BEFORE the combat early-return so "Hide Blizzard Frame Art & Animations"
+        -- works immediately and persistently for Boss frames.
+        if unit == "Boss" then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame then
+                    -- FrameTexture (hide for useCustomBorders OR healthBarHideBorder)
+                    local bossFT = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.FrameTexture
+                    if bossFT then
+                        local function computeBossFTAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            local hide = cfgBoss and (cfgBoss.useCustomBorders or cfgBoss.healthBarHideBorder)
+                            return hide and 0 or 1
+                        end
+                        applyAlpha(bossFT, computeBossFTAlpha())
+                        hookAlphaEnforcer(bossFT, computeBossFTAlpha)
+                    end
+
+                    -- Flash (aggro/threat glow) (hide for useCustomBorders)
+                    local bossFlash = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.Flash
+                    if bossFlash then
+                        local function computeBossFlashAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        end
+                        applyAlpha(bossFlash, computeBossFlashAlpha())
+                        hookAlphaEnforcer(bossFlash, computeBossFlashAlpha)
+                    end
+
+                    -- ReputationColor strip (hide for useCustomBorders)
+                    local bossReputationColor = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                    if bossReputationColor then
+                        local function computeBossRepAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        end
+                        applyAlpha(bossReputationColor, computeBossRepAlpha())
+                        hookAlphaEnforcer(bossReputationColor, computeBossRepAlpha)
+                    end
+                end
+            end
+        end
+
         -- Combat safety: do not touch protected unit frame bars during combat. Queue a post-combat reapply.
         if InCombatLockdown and InCombatLockdown() then
             queueUnitFrameTextureReapply(unit)
@@ -1487,6 +1585,433 @@ do
                     end
                 end)
             end
+        end
+
+        -- Boss frames: apply to Boss1..Boss5 frames (shared config: db.unitFrames.Boss), then return.
+        -- Boss frames are individual TargetFrame variants and are NOT the same as the EditMode system frame.
+        if unit == "Boss" then
+            local function resolveBossHealthMask(bossFrame)
+                -- Get mask from the health bar's parent container (HealthBarsContainer)
+                local hb = bossFrame and bossFrame.healthbar
+                if hb then
+                    local parent = hb:GetParent()
+                    if parent and parent.HealthBarMask then return parent.HealthBarMask end
+                end
+                return nil
+            end
+            local function resolveBossPowerMask(bossFrame)
+                -- Get mask from the mana bar directly
+                local mb = bossFrame and bossFrame.manabar
+                if mb and mb.ManaBarMask then return mb.ManaBarMask end
+                return nil
+            end
+
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                local unitId = "boss" .. i
+                -- Apply styling whenever the frame exists. Let resolveHealthBar/resolvePowerBar
+                -- handle finding the actual bars within the frame structure.
+                if bossFrame then
+                    local hb = resolveHealthBar(bossFrame, unit)
+                        if hb then
+                            local colorModeHB = cfg.healthBarColorMode or "default"
+                            local texKeyHB = cfg.healthBarTexture or "default"
+                            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
+
+                            -- Background overlay (only when explicitly customized)
+                            do
+                                local function hasBackgroundCustomization()
+                                    local texKey = cfg.healthBarBackgroundTexture
+                                    if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
+                                        return true
+                                    end
+                                    local mode = cfg.healthBarBackgroundColorMode
+                                    if type(mode) == "string" and mode ~= "" and mode ~= "default" then
+                                        return true
+                                    end
+                                    local op = cfg.healthBarBackgroundOpacity
+                                    local opNum = tonumber(op)
+                                    if op ~= nil and opNum ~= nil and opNum ~= 50 then
+                                        return true
+                                    end
+                                    if mode == "custom" and type(cfg.healthBarBackgroundTint) == "table" then
+                                        return true
+                                    end
+                                    return false
+                                end
+                                if hasBackgroundCustomization() then
+                                    local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
+                                    local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
+                                    local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
+                                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                                end
+                            end
+
+                            ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
+
+                            -- Health Bar custom border (same settings as other unit frames)
+                            do
+                                local styleKey = cfg.healthBarBorderStyle
+                                local tintEnabled = not not cfg.healthBarBorderTintEnable
+                                local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
+                                    cfg.healthBarBorderTintColor[1] or 1,
+                                    cfg.healthBarBorderTintColor[2] or 1,
+                                    cfg.healthBarBorderTintColor[3] or 1,
+                                    cfg.healthBarBorderTintColor[4] or 1,
+                                } or {1, 1, 1, 1}
+                                local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+                                if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                                local inset = tonumber(cfg.healthBarBorderInset) or 0
+                                if cfg.useCustomBorders then
+                                    if styleKey == "none" or styleKey == nil then
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+                                    else
+                                        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+                                        local color
+                                        if tintEnabled then
+                                            color = tintColor
+                                        else
+                                            if styleDef then
+                                                color = {1, 1, 1, 1}
+                                            else
+                                                color = {0, 0, 0, 1}
+                                            end
+                                        end
+                                        local handled = false
+                                        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+                                            if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                            handled = addon.BarBorders.ApplyToBarFrame(hb, styleKey, {
+                                                color = color,
+                                                thickness = thickness,
+                                                levelOffset = 1,
+                                                containerParent = (hb and hb:GetParent()) or nil,
+                                                inset = inset,
+                                            })
+                                        end
+                                        if not handled then
+                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                            if addon.Borders and addon.Borders.ApplySquare then
+                                                local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                                local baseY = 1
+                                                local baseX = 1
+                                                local expandY = baseY - inset
+                                                local expandX = baseX - inset
+                                                if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                                if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                                addon.Borders.ApplySquare(hb, {
+                                                    size = thickness,
+                                                    color = sqColor,
+                                                    layer = "OVERLAY",
+                                                    layerSublevel = 3,
+                                                    expandX = expandX,
+                                                    expandY = expandY,
+                                                })
+                                            end
+                                        end
+                                        ensureTextAndBorderOrdering(unit)
+                                    end
+                                else
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+                                end
+                            end
+
+                            -- Boss frames can get refreshed by Blizzard (HealthUpdate, Update) which resets textures.
+                            -- Install a hook to re-assert our styling after Blizzard updates.
+                            if _G.hooksecurefunc and not bossFrame._ScootBossHealthUpdateHooked then
+                                local function installBossHealthHook(hookTarget, hookName)
+                                    if hookTarget and type(hookTarget[hookName]) == "function" then
+                                        bossFrame._ScootBossHealthUpdateHooked = true
+                                        _G.hooksecurefunc(hookTarget, hookName, function()
+                                            local db2 = addon and addon.db and addon.db.profile
+                                            if not db2 then return end
+                                            local unitFrames2 = rawget(db2, "unitFrames")
+                                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                                            if not cfgBoss then return end
+
+                                            local texKey = cfgBoss.healthBarTexture or "default"
+                                            local colorMode = cfgBoss.healthBarColorMode or "default"
+                                            local tint = cfgBoss.healthBarTint
+
+                                            local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                                            local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "texture")
+                                            if not hasCustomTexture and not hasCustomColor then return end
+
+                                            -- Throttle: skip if a reapply is already pending for this frame
+                                            if bossFrame._ScootBossReapplyPending then return end
+                                            bossFrame._ScootBossReapplyPending = true
+
+                                            -- Defer to next frame to let Blizzard finish its updates
+                                            if _G.C_Timer and _G.C_Timer.After then
+                                                _G.C_Timer.After(0, function()
+                                                    bossFrame._ScootBossReapplyPending = nil
+                                                    -- Use direct property (most reliable)
+                                                    local hbReapply = bossFrame.healthbar
+                                                    if hbReapply then
+                                                        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+                                                        if resolvedPath and hbReapply.SetStatusBarTexture then
+                                                            pcall(hbReapply.SetStatusBarTexture, hbReapply, resolvedPath)
+                                                        end
+                                                        -- Reapply color
+                                                        local tex = hbReapply:GetStatusBarTexture()
+                                                        if tex and tex.SetVertexColor then
+                                                            local r, g, b, a = 1, 1, 1, 1
+                                                            if colorMode == "custom" and type(tint) == "table" then
+                                                                r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+                                                            elseif colorMode == "class" and addon.GetClassColorRGB then
+                                                                local cr, cg, cb = addon.GetClassColorRGB("player")
+                                                                r, g, b = cr or 1, cg or 1, cb or 1
+                                                            elseif colorMode == "texture" then
+                                                                r, g, b, a = 1, 1, 1, 1
+                                                            elseif colorMode == "default" and addon.GetDefaultHealthColorRGB then
+                                                                local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+                                                                r, g, b = hr or 0, hg or 1, hb or 0
+                                                            end
+                                                            pcall(tex.SetVertexColor, tex, r, g, b, a)
+                                                        end
+                                                    end
+                                                end)
+                                            end
+                                        end)
+                                        return true
+                                    end
+                                    return false
+                                end
+                                -- Try HealthUpdate first (more targeted), fall back to Update
+                                if not installBossHealthHook(bossFrame, "HealthUpdate") then
+                                    installBossHealthHook(bossFrame, "Update")
+                                end
+                            end
+                        end
+
+                        local pb = resolvePowerBar(bossFrame, unit)
+                        if pb then
+                            local powerBarHidden = (cfg.powerBarHidden == true)
+                            local powerBarHideTextureOnly = (cfg.powerBarHideTextureOnly == true)
+
+                            if pb.GetAlpha and pb._ScootUFOrigPBAlpha == nil then
+                                local ok, a = pcall(pb.GetAlpha, pb)
+                                pb._ScootUFOrigPBAlpha = ok and (a or 1) or 1
+                            end
+
+                            if powerBarHidden then
+                                if pb.SetAlpha then pcall(pb.SetAlpha, pb, 0) end
+                                if pb.ScooterModBG and pb.ScooterModBG.SetAlpha then pcall(pb.ScooterModBG.SetAlpha, pb.ScooterModBG, 0) end
+                                if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, false) end
+                            elseif powerBarHideTextureOnly then
+                                if pb._ScootUFOrigPBAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha) end
+                                if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, true) end
+                                if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                            else
+                                if pb._ScootUFOrigPBAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha) end
+                                if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, false) end
+                            end
+
+                            local colorModePB = cfg.powerBarColorMode or "default"
+                            local texKeyPB = cfg.powerBarTexture or "default"
+                            applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
+
+                            do
+                                local function hasBackgroundCustomization()
+                                    local texKey = cfg.powerBarBackgroundTexture
+                                    if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
+                                        return true
+                                    end
+                                    local mode = cfg.powerBarBackgroundColorMode
+                                    if type(mode) == "string" and mode ~= "" and mode ~= "default" then
+                                        return true
+                                    end
+                                    local op = cfg.powerBarBackgroundOpacity
+                                    local opNum = tonumber(op)
+                                    if op ~= nil and opNum ~= nil and opNum ~= 50 then
+                                        return true
+                                    end
+                                    if mode == "custom" and type(cfg.powerBarBackgroundTint) == "table" then
+                                        return true
+                                    end
+                                    return false
+                                end
+                                if hasBackgroundCustomization() then
+                                    local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
+                                    local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
+                                    local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
+                                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+                                end
+                            end
+
+                            if powerBarHideTextureOnly and not powerBarHidden then
+                                if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, true) end
+                            end
+
+                            ensureMaskOnBarTexture(pb, resolveBossPowerMask(bossFrame))
+
+                            -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
+                            do
+                                local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
+                                local tintEnabled
+                                if cfg.powerBarBorderTintEnable ~= nil then
+                                    tintEnabled = not not cfg.powerBarBorderTintEnable
+                                else
+                                    tintEnabled = not not cfg.healthBarBorderTintEnable
+                                end
+                                local baseTint = type(cfg.powerBarBorderTintColor) == "table" and cfg.powerBarBorderTintColor or cfg.healthBarBorderTintColor
+                                local tintColor = type(baseTint) == "table" and {
+                                    baseTint[1] or 1,
+                                    baseTint[2] or 1,
+                                    baseTint[3] or 1,
+                                    baseTint[4] or 1,
+                                } or {1, 1, 1, 1}
+                                local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
+                                if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                                local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
+                                if cfg.useCustomBorders then
+                                    if styleKey == "none" or styleKey == nil then
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                    else
+                                        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+                                        local color
+                                        if tintEnabled then
+                                            color = tintColor
+                                        else
+                                            if styleDef then
+                                                color = {1, 1, 1, 1}
+                                            else
+                                                color = {0, 0, 0, 1}
+                                            end
+                                        end
+                                        local handled = false
+                                        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+                                            if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                            handled = addon.BarBorders.ApplyToBarFrame(pb, styleKey, {
+                                                color = color,
+                                                thickness = thickness,
+                                                levelOffset = 1,
+                                                containerParent = (pb and pb:GetParent()) or nil,
+                                                inset = inset,
+                                            })
+                                        end
+                                        if not handled then
+                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                            if addon.Borders and addon.Borders.ApplySquare then
+                                                local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                                local baseY = (thickness <= 1) and 0 or 1
+                                                local baseX = 1
+                                                local expandY = baseY - inset
+                                                local expandX = baseX - inset
+                                                if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                                if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                                addon.Borders.ApplySquare(pb, {
+                                                    size = thickness,
+                                                    color = sqColor,
+                                                    layer = "OVERLAY",
+                                                    layerSublevel = 3,
+                                                    expandX = expandX,
+                                                    expandY = expandY,
+                                                })
+                                            end
+                                        end
+                                        ensureTextAndBorderOrdering(unit)
+                                    end
+                                else
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                end
+                            end
+
+                            -- Boss power bars can get refreshed by Blizzard which resets textures.
+                            -- Install a hook to re-assert our styling after Blizzard updates.
+                            if _G.hooksecurefunc and not bossFrame._ScootBossPowerUpdateHooked then
+                                bossFrame._ScootBossPowerUpdateHooked = true
+                                -- Hook the power bar's SetValue which is called on every power change
+                                if pb.SetValue and type(pb.SetValue) == "function" then
+                                    _G.hooksecurefunc(pb, "SetValue", function()
+                                        local db2 = addon and addon.db and addon.db.profile
+                                        if not db2 then return end
+                                        local unitFrames2 = rawget(db2, "unitFrames")
+                                        local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                                        if not cfgBoss then return end
+
+                                        local texKey = cfgBoss.powerBarTexture or "default"
+                                        local colorMode = cfgBoss.powerBarColorMode or "default"
+                                        local tint = cfgBoss.powerBarTint
+
+                                        local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "texture")
+                                        if not hasCustomTexture and not hasCustomColor then return end
+
+                                        -- Throttle: skip if a reapply is already pending
+                                        if bossFrame._ScootBossPowerReapplyPending then return end
+                                        bossFrame._ScootBossPowerReapplyPending = true
+
+                                        if _G.C_Timer and _G.C_Timer.After then
+                                            _G.C_Timer.After(0, function()
+                                                bossFrame._ScootBossPowerReapplyPending = nil
+                                                local pbReapply = bossFrame.manabar
+                                                if pbReapply then
+                                                    local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+                                                    if resolvedPath and pbReapply.SetStatusBarTexture then
+                                                        pcall(pbReapply.SetStatusBarTexture, pbReapply, resolvedPath)
+                                                    end
+                                                    local tex = pbReapply:GetStatusBarTexture()
+                                                    if tex and tex.SetVertexColor then
+                                                        local r, g, b, a = 1, 1, 1, 1
+                                                        if colorMode == "custom" and type(tint) == "table" then
+                                                            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+                                                        elseif colorMode == "class" and addon.GetClassColorRGB then
+                                                            local cr, cg, cb = addon.GetClassColorRGB("player")
+                                                            r, g, b = cr or 1, cg or 1, cb or 1
+                                                        elseif colorMode == "texture" then
+                                                            r, g, b, a = 1, 1, 1, 1
+                                                        end
+                                                        pcall(tex.SetVertexColor, tex, r, g, b, a)
+                                                    end
+                                                end
+                                            end)
+                                        end
+                                    end)
+                                end
+                            end
+                        end
+                end
+            end
+
+            -- Boss frame art: Handle all 5 Boss frames (Boss1TargetFrame through Boss5TargetFrame)
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame and bossFrame.TargetFrameContainer then
+                    local bossFT = bossFrame.TargetFrameContainer.FrameTexture
+                    if bossFT then
+                        local function computeBossAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            local hide = cfgBoss and (cfgBoss.useCustomBorders or cfgBoss.healthBarHideBorder)
+                            return hide and 0 or 1
+                        end
+                        applyAlpha(bossFT, computeBossAlpha())
+                        hookAlphaEnforcer(bossFT, computeBossAlpha)
+                    end
+                    -- Also hide the Flash (aggro/threat glow) if present on Boss frames
+                    local bossFlash = bossFrame.TargetFrameContainer.Flash
+                    if bossFlash then
+                        local function computeBossFlashAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        end
+                        applyAlpha(bossFlash, computeBossFlashAlpha())
+                        hookAlphaEnforcer(bossFlash, computeBossFlashAlpha)
+                    end
+                end
+            end
+
+            return
         end
 
         local hb = resolveHealthBar(frame, unit)
@@ -2867,6 +3392,57 @@ do
             end
         end
 
+        -- Boss-specific frame art: Handle all 5 Boss frames (Boss1TargetFrame through Boss5TargetFrame)
+        -- Unlike other unit frames where there's a single frame per unit, Boss frames have 5 individual frames
+        -- that all share the same config (db.unitFrames.Boss). We must apply hiding to each one.
+        if unit == "Boss" then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame and bossFrame.TargetFrameContainer then
+                    local bossFT = bossFrame.TargetFrameContainer.FrameTexture
+                    if bossFT then
+                        local function computeBossAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            local hide = cfgBoss and (cfgBoss.useCustomBorders or cfgBoss.healthBarHideBorder)
+                            return hide and 0 or 1
+                        end
+                        applyAlpha(bossFT, computeBossAlpha())
+                        hookAlphaEnforcer(bossFT, computeBossAlpha)
+                    end
+                    -- Also hide the Flash (aggro/threat glow) if present on Boss frames
+                    local bossFlash = bossFrame.TargetFrameContainer.Flash
+                    if bossFlash then
+                        local function computeBossFlashAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        end
+                        applyAlpha(bossFlash, computeBossFlashAlpha())
+                        hookAlphaEnforcer(bossFlash, computeBossFlashAlpha)
+                    end
+
+                    -- Hide ReputationColor strip (Boss1TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor)
+                    -- when "Hide Blizzard Frame Art & Animations" (useCustomBorders) is enabled.
+                    local bossReputationColor = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                    if bossReputationColor then
+                        local function computeBossReputationAlpha()
+                            local db2 = addon and addon.db and addon.db.profile
+                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        end
+                        applyAlpha(bossReputationColor, computeBossReputationAlpha())
+                        hookAlphaEnforcer(bossReputationColor, computeBossReputationAlpha)
+                    end
+                end
+            end
+        end
+
         -- Player-specific frame art
         if unit == "Player" and _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer then
             local container = _G.PlayerFrame.PlayerFrameContainer
@@ -3023,6 +3599,7 @@ do
         applyForUnit("Player")
         applyForUnit("Target")
         applyForUnit("Focus")
+        applyForUnit("Boss")
         applyForUnit("Pet")
         applyForUnit("TargetOfTarget")
     end

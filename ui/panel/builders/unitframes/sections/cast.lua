@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has no cast bar
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own scaffolded section builder (boss_cast)
+	if componentId == "ufBoss" then return end
 
 			-- Sixth collapsible section: Cast Bar (Player/Target/Focus)
 				if componentId == "ufPlayer" or componentId == "ufTarget" or componentId == "ufFocus" then

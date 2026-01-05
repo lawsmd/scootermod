@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has its own section builder (tot_root)
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own section builder (boss_root)
+	if componentId == "ufBoss" then return end
 
 				-- Top-level Parent Frame rows (no collapsible or tabs)
 				-- Shared helpers for the four unit frames

@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - Focus-only section
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own scaffolded sections
+	if componentId == "ufBoss" then return end
 
 				-- Misc. collapsible section (Focus only) - contains miscellaneous visibility/hide options
 				if componentId == "ufFocus" then

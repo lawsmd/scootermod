@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has its own section builder (tot_portrait)
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - Boss frames do not have portraits and use scaffolded sections
+	if componentId == "ufBoss" then return end
 
 			-- Fifth collapsible section: Portrait (all unit frames)
 			local expInitializerPortrait = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

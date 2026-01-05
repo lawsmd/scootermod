@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has its own section builder (tot_health)
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own section builder (boss_health)
+	if componentId == "ufBoss" then return end
 
 				-- Second collapsible section: Health Bar (blank for now)
 				local expInitializerHB = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {

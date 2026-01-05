@@ -12,6 +12,8 @@ local function build(ctx, init)
 
 	-- Skip for ToT - it has its own debuff system (future section)
 	if componentId == "ufToT" then return end
+	-- Skip for Boss - it has its own scaffolded sections
+	if componentId == "ufBoss" then return end
 
 				-- Fifth collapsible section: Buffs & Debuffs (Target only)
 				if componentId == "ufTarget" then

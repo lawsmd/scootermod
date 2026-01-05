@@ -139,6 +139,12 @@ function addon:GetDefaults()
 end
 
 function addon:RegisterEvents()
+    -- AceEvent hard-errors when registering unknown events; guard any version-variant events.
+    local function safeRegisterEvent(eventName)
+        local ok = pcall(self.RegisterEvent, self, eventName)
+        return ok
+    end
+
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	self:RegisterEvent("ADDON_LOADED")
@@ -153,6 +159,9 @@ function addon:RegisterEvents()
     self:RegisterEvent("PET_ATTACK_STOP")
     -- Pet threat changes drive PetFrameFlash via UnitFrame_UpdateThreatIndicator
     self:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+    -- Boss unit frames can be created/shown after initial load; re-apply when encounter units update.
+    safeRegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
+    safeRegisterEvent("UPDATE_BOSS_FRAMES")
     -- Re-evaluate Rules when player levels up (for playerLevel trigger type)
     self:RegisterEvent("PLAYER_LEVEL_UP")
     -- Combat state changes for opacity updates (priority: With Target > In Combat > Out of Combat)
@@ -426,6 +435,17 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             -- Also reapply bar textures for Player to catch Alternate Power Bar text styling
             if addon.ApplyUnitFrameBarTexturesFor then
                 addon.ApplyUnitFrameBarTexturesFor("Player")
+                -- Boss frames may appear/update during/after instance transitions; reapply on the longer delay.
+                addon.ApplyUnitFrameBarTexturesFor("Boss")
+            end
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then
+                addon.ApplyUnitFrameHealthTextVisibilityFor("Boss")
+            end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                addon.ApplyUnitFramePowerTextVisibilityFor("Boss")
+            end
+            if addon.ApplyUnitFrameNameLevelTextFor then
+                addon.ApplyUnitFrameNameLevelTextFor("Boss")
             end
         end)
     end
@@ -544,6 +564,41 @@ function addon:PLAYER_FOCUS_CHANGED()
         if addon.ApplyUnitFramePowerTextVisibilityFor then
             addon.ApplyUnitFramePowerTextVisibilityFor("Focus")
         end
+    end
+end
+
+-- Boss unit frames can appear/update without target/focus change events.
+-- Re-apply our styling after Blizzard updates boss units.
+function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+        end)
+        -- Small follow-up pass to catch late Boss frame construction.
+        C_Timer.After(0.1, function()
+            if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+        end)
+    else
+        if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+        if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+    end
+end
+
+function addon:UPDATE_BOSS_FRAMES()
+    -- Keep this lightweight: boss frames can update frequently during encounters.
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+            if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+            if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+        end)
+    else
+        if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+        if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+        if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
     end
 end
 

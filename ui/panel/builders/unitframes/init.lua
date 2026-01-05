@@ -64,6 +64,7 @@ function panel.RenderUFTarget() return createUFRenderer("ufTarget", "Target") en
 function panel.RenderUFFocus()  return createUFRenderer("ufFocus",  "Focus")  end
 function panel.RenderUFPet()    return createUFRenderer("ufPet",    "Pet")    end
 function panel.RenderUFToT()    return createUFRenderer("ufToT",    "Target of Target") end
+function panel.RenderUFBoss()   return createUFRenderer("ufBoss",   "Boss") end
 
 panel.UnitFramesInit = panel.UnitFramesInit or function() end
 panel.UnitFramesInit()
