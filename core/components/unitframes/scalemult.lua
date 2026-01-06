@@ -71,13 +71,13 @@ local function getEditModeScale(unit)
     return math.max(100, math.min(200, v))
 end
 
--- Ensure DB structure exists and return the unit frame config table
-local function ensureUFDB(unit)
+-- Zero‑Touch: return the unit frame config table only if it already exists.
+-- Do NOT create `db.unitFrames[unit]` implicitly; new profiles must be stock Blizzard UI.
+local function getUFDB(unit)
     local db = addon and addon.db and addon.db.profile
     if not db then return nil end
-    db.unitFrames = db.unitFrames or {}
-    db.unitFrames[unit] = db.unitFrames[unit] or {}
-    return db.unitFrames[unit]
+    local unitFrames = rawget(db, "unitFrames")
+    return unitFrames and rawget(unitFrames, unit) or nil
 end
 
 -- Clamp scale multiplier to valid range (1.0 to 2.0)
@@ -90,11 +90,15 @@ end
 
 -- Apply scale multiplier for a single unit
 local function applyScaleMultFor(unit)
-    local cfg = ensureUFDB(unit)
-    if not cfg then
-        debugPrint("No config for", unit)
+    -- PetFrame is an Edit Mode managed/protected frame; do not scale it from addon code.
+    if unit == "Pet" then
         return
     end
+
+    local cfg = getUFDB(unit)
+    if not cfg then return end
+    -- Zero‑Touch: only apply when the user explicitly configured the multiplier.
+    if cfg.scaleMult == nil then return end
     
     local frame = getUnitFrameFor(unit)
     if not frame then
@@ -106,11 +110,6 @@ local function applyScaleMultFor(unit)
     if frame.IsForbidden and frame:IsForbidden() then
         debugPrint("Frame forbidden for", unit)
         return
-    end
-    
-    -- Initialize default if not set
-    if cfg.scaleMult == nil then
-        cfg.scaleMult = 1.0
     end
     
     local scaleMult = clampScaleMult(cfg.scaleMult)

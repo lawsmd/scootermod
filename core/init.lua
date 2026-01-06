@@ -206,20 +206,21 @@ function addon:PLAYER_REGEN_DISABLED()
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             self:RefreshOpacityState()
-            if addon.UnitFrames_EnforcePetOverlays then
-                addon.UnitFrames_EnforcePetOverlays()
-            end
         end)
     else
         self:RefreshOpacityState()
-        if addon.UnitFrames_EnforcePetOverlays then
-            addon.UnitFrames_EnforcePetOverlays()
-        end
     end
 end
 
 -- Shared helper for pet overlay enforcement events
 local function handlePetOverlayEvent()
+    -- IMPORTANT: PetFrame is an Edit Mode managed/protected system frame.
+    -- Do NOT mutate Pet frame textures/regions during combat; that can taint the frame
+    -- and cause Blizzard's protected Edit Mode calls (e.g., PetFrame:HideBase()) to be blocked.
+    if InCombatLockdown and InCombatLockdown() then
+        addon._pendingPetOverlaysEnforce = true
+        return
+    end
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.UnitFrames_EnforcePetOverlays then
@@ -263,6 +264,14 @@ function addon:PLAYER_REGEN_ENABLED()
                 self:RefreshOpacityState()
             end
 
+            -- Apply any deferred Pet overlay enforcement now that combat lockdown is lifted.
+            if addon._pendingPetOverlaysEnforce then
+                addon._pendingPetOverlaysEnforce = nil
+                if addon.UnitFrames_EnforcePetOverlays then
+                    addon.UnitFrames_EnforcePetOverlays()
+                end
+            end
+
             -- If a spec change required a profile switch while combat-locked, prompt now (out of combat).
             if self.Profiles and self.Profiles._pendingSpecReload then
                 local pending = self.Profiles._pendingSpecReload
@@ -288,6 +297,13 @@ function addon:PLAYER_REGEN_ENABLED()
             self:ApplyStyles()
         else
             self:RefreshOpacityState()
+        end
+
+        if addon._pendingPetOverlaysEnforce then
+            addon._pendingPetOverlaysEnforce = nil
+            if addon.UnitFrames_EnforcePetOverlays then
+                addon.UnitFrames_EnforcePetOverlays()
+            end
         end
 
         -- If a spec change required a profile switch while combat-locked, prompt now (out of combat).

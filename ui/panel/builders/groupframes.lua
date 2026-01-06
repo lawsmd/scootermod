@@ -1946,10 +1946,12 @@ function panel.RenderGFRaid()
         -- 5. Text section header (contains tabbed section)
         addHeader("Text", "Text")
 
-        -- Text tabbed section: Player Name tab (more tabs can be added later)
+        -- Text tabbed section: Player Name + Status Text + Group Numbers
         local textTabs = {
             sectionTitle = "",
             tabAText = "Player Name",
+            tabBText = "Status Text",
+            tabCText = "Group Numbers",
             build = function(frame)
                 -- Helper: read groupFrames.raid.textPlayerName DB (Zero-Touch: does not create tables)
                 local function getTextDB()
@@ -1975,9 +1977,69 @@ function panel.RenderGFRaid()
                     return db.groupFrames.raid.textPlayerName
                 end
 
+                -- Helper: read groupFrames.raid.textStatusText DB (Zero-Touch: does not create tables)
+                local function getStatusTextDB()
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames") or nil
+                    local raid = gf and rawget(gf, "raid") or nil
+                    return raid and rawget(raid, "textStatusText") or nil
+                end
+
+                -- Helper: ensure groupFrames.raid.textStatusText DB exists (for setters only)
+                local function ensureStatusTextDB()
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return nil end
+                    db.groupFrames = db.groupFrames or {}
+                    db.groupFrames.raid = db.groupFrames.raid or {}
+                    db.groupFrames.raid.textStatusText = db.groupFrames.raid.textStatusText or {
+                        fontFace = "FRIZQT__",
+                        size = 12,
+                        style = "OUTLINE",
+                        color = { 1, 1, 1, 1 },
+                        offset = { x = 0, y = 0 },
+                    }
+                    return db.groupFrames.raid.textStatusText
+                end
+
+                -- Helper: read groupFrames.raid.textGroupNumbers DB (Zero-Touch: does not create tables)
+                local function getGroupNumbersDB()
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames") or nil
+                    local raid = gf and rawget(gf, "raid") or nil
+                    return raid and rawget(raid, "textGroupNumbers") or nil
+                end
+
+                -- Helper: ensure groupFrames.raid.textGroupNumbers DB exists (for setters only)
+                local function ensureGroupNumbersDB()
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return nil end
+                    db.groupFrames = db.groupFrames or {}
+                    db.groupFrames.raid = db.groupFrames.raid or {}
+                    db.groupFrames.raid.textGroupNumbers = db.groupFrames.raid.textGroupNumbers or {
+                        fontFace = "FRIZQT__",
+                        size = 12,
+                        style = "OUTLINE",
+                        color = { 1, 1, 1, 1 },
+                        offset = { x = 0, y = 0 },
+                    }
+                    return db.groupFrames.raid.textGroupNumbers
+                end
+
                 local function applyNow()
                     if addon and addon.ApplyRaidFrameTextStyle then
                         addon.ApplyRaidFrameTextStyle()
+                    end
+                end
+
+                local function applyStatusTextNow()
+                    if addon and addon.ApplyRaidFrameStatusTextStyle then
+                        addon.ApplyRaidFrameStatusTextStyle()
+                    end
+                end
+
+                local function applyGroupNumbersNow()
+                    if addon and addon.ApplyRaidFrameGroupTitlesStyle then
+                        addon.ApplyRaidFrameGroupTitlesStyle()
                     end
                 end
 
@@ -2216,12 +2278,248 @@ function panel.RenderGFRaid()
                         end,
                         y)
                 end
+
+                -- PageB: Status Text settings (same options as Player Name)
+                if frame.PageB then
+                    local y = { y = -50 }
+
+                    -- 1. Font Face
+                    addDropdown(frame.PageB, "Status Text Font", fontOptions,
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            return cfg.fontFace or "FRIZQT__"
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then cfg.fontFace = v end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 2. Font Size
+                    addSlider(frame.PageB, "Status Text Size", 6, 32, 1,
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            return tonumber(cfg.size) or 12
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then cfg.size = tonumber(v) or 12 end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 3. Font Style
+                    addStyleDropdown(frame.PageB, "Status Text Style",
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            return cfg.style or "OUTLINE"
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then cfg.style = v end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 4. Font Color
+                    addColorRow(frame.PageB, "Status Text Color",
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            local c = cfg.color or { 1, 1, 1, 1 }
+                            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                        end,
+                        function(r, g, b, a)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then cfg.color = { r or 1, g or 1, b or 1, a or 1 } end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 5. Alignment (9-way anchor)
+                    local function alignmentOptions()
+                        local container = Settings.CreateControlTextContainer()
+                        container:Add("TOPLEFT", "Top-Left")
+                        container:Add("TOP", "Top-Center")
+                        container:Add("TOPRIGHT", "Top-Right")
+                        container:Add("LEFT", "Left")
+                        container:Add("CENTER", "Center")
+                        container:Add("RIGHT", "Right")
+                        container:Add("BOTTOMLEFT", "Bottom-Left")
+                        container:Add("BOTTOM", "Bottom-Center")
+                        container:Add("BOTTOMRIGHT", "Bottom-Right")
+                        return container:GetData()
+                    end
+                    addDropdown(frame.PageB, "Status Text Alignment", alignmentOptions,
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            return cfg.anchor or "TOPLEFT"
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then cfg.anchor = v or "TOPLEFT" end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 6. X Offset
+                    addSlider(frame.PageB, "Status Text Offset X", -50, 50, 1,
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.x) or 0
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.x = tonumber(v) or 0
+                            end
+                            applyStatusTextNow()
+                        end,
+                        y)
+
+                    -- 7. Y Offset
+                    addSlider(frame.PageB, "Status Text Offset Y", -50, 50, 1,
+                        function()
+                            local cfg = getStatusTextDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.y) or 0
+                        end,
+                        function(v)
+                            local cfg = ensureStatusTextDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.y = tonumber(v) or 0
+                            end
+                            applyStatusTextNow()
+                        end,
+                        y)
+                end
+
+                -- PageC: Group Numbers settings (same options as Player Name)
+                if frame.PageC then
+                    local y = { y = -50 }
+
+                    -- 1. Font Face
+                    addDropdown(frame.PageC, "Group Numbers Font", fontOptions,
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            return cfg.fontFace or "FRIZQT__"
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then cfg.fontFace = v end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 2. Font Size
+                    addSlider(frame.PageC, "Group Numbers Size", 6, 32, 1,
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            return tonumber(cfg.size) or 12
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then cfg.size = tonumber(v) or 12 end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 3. Font Style
+                    addStyleDropdown(frame.PageC, "Group Numbers Style",
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            return cfg.style or "OUTLINE"
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then cfg.style = v end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 4. Font Color
+                    addColorRow(frame.PageC, "Group Numbers Color",
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            local c = cfg.color or { 1, 1, 1, 1 }
+                            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                        end,
+                        function(r, g, b, a)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then cfg.color = { r or 1, g or 1, b or 1, a or 1 } end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 5. Alignment (9-way anchor)
+                    local function alignmentOptions()
+                        local container = Settings.CreateControlTextContainer()
+                        container:Add("TOPLEFT", "Top-Left")
+                        container:Add("TOP", "Top-Center")
+                        container:Add("TOPRIGHT", "Top-Right")
+                        container:Add("LEFT", "Left")
+                        container:Add("CENTER", "Center")
+                        container:Add("RIGHT", "Right")
+                        container:Add("BOTTOMLEFT", "Bottom-Left")
+                        container:Add("BOTTOM", "Bottom-Center")
+                        container:Add("BOTTOMRIGHT", "Bottom-Right")
+                        return container:GetData()
+                    end
+                    addDropdown(frame.PageC, "Group Numbers Alignment", alignmentOptions,
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            return cfg.anchor or "TOPLEFT"
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then cfg.anchor = v or "TOPLEFT" end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 6. X Offset
+                    addSlider(frame.PageC, "Group Numbers Offset X", -50, 50, 1,
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.x) or 0
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.x = tonumber(v) or 0
+                            end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+
+                    -- 7. Y Offset
+                    addSlider(frame.PageC, "Group Numbers Offset Y", -50, 50, 1,
+                        function()
+                            local cfg = getGroupNumbersDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.y) or 0
+                        end,
+                        function(v)
+                            local cfg = ensureGroupNumbersDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.y = tonumber(v) or 0
+                            end
+                            applyGroupNumbersNow()
+                        end,
+                        y)
+                end
             end,
         }
 
         local textInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", textTabs)
-        -- Height: 50 top + (7 controls * 34) = 288px, rounded to 304px for safety
-        textInit.GetExtent = function() return 304 end
+        -- Height: 50 top + (7 controls * 34) = 288px, rounded to 330px for multi-tab safety
+        textInit.GetExtent = function() return 330 end
         textInit:AddShownPredicate(function()
             return panel:IsSectionExpanded(componentId, "Text")
         end)

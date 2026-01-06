@@ -365,6 +365,72 @@ local function registerDefaultActions()
             return true
         end,
     }
+
+    -- Player Unit Frame: Power Bar - Disable % Text (LeftText when present)
+    ACTIONS["ufPlayerPower.percentTextDisabled"] = {
+        id = "ufPlayerPower.percentTextDisabled",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "ufPlayer",
+        settingId = "powerPercentHidden",
+        defaultValue = false,
+        path = { "Player Unit Frame", "Power Bar", "% Text", "Disable % Text" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local uf = profile and profile.unitFrames
+            local player = uf and uf.Player
+            return player and player.powerPercentHidden or false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then return false end
+            profile.unitFrames = profile.unitFrames or {}
+            profile.unitFrames.Player = profile.unitFrames.Player or {}
+            local player = profile.unitFrames.Player
+            local boolVal = value and true or false
+            if player.powerPercentHidden == boolVal then return false end
+            player.powerPercentHidden = boolVal
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                pcall(addon.ApplyUnitFramePowerTextVisibilityFor, "Player")
+            elseif addon.ApplyStyles then
+                pcall(addon.ApplyStyles, addon)
+            end
+            return true
+        end,
+    }
+
+    -- Player Unit Frame: Power Bar - Disable Value Text (RightText when present)
+    ACTIONS["ufPlayerPower.valueTextDisabled"] = {
+        id = "ufPlayerPower.valueTextDisabled",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "ufPlayer",
+        settingId = "powerValueHidden",
+        defaultValue = false,
+        path = { "Player Unit Frame", "Power Bar", "Value Text", "Disable Value Text" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local uf = profile and profile.unitFrames
+            local player = uf and uf.Player
+            return player and player.powerValueHidden or false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then return false end
+            profile.unitFrames = profile.unitFrames or {}
+            profile.unitFrames.Player = profile.unitFrames.Player or {}
+            local player = profile.unitFrames.Player
+            local boolVal = value and true or false
+            if player.powerValueHidden == boolVal then return false end
+            player.powerValueHidden = boolVal
+            if addon.ApplyUnitFramePowerTextVisibilityFor then
+                pcall(addon.ApplyUnitFramePowerTextVisibilityFor, "Player")
+            elseif addon.ApplyStyles then
+                pcall(addon.ApplyStyles, addon)
+            end
+            return true
+        end,
+    }
 end
 
 local function ruleMatchesSpecialization(trigger, specID)
@@ -867,13 +933,13 @@ function Rules:ApplyAll(reason)
     end
 
     -- Step 2: Restore baselines for actions that were previously overridden but are not anymore.
-    for actionId, _ in pairs(ACTIVE_OVERRIDES) do
+    -- IMPORTANT: ACTIVE_OVERRIDES is in-memory only and resets on reload/character switch.
+    -- Baselines are persisted in profile.ruleBaselines, so restoration must iterate baselines
+    -- to correctly revert settings when no rules match (including across characters).
+    local baselines = getBaselinesTable()
+    for actionId, baselineValue in pairs(baselines) do
         if not newOverrides[actionId] then
-            -- This action was overridden before but no rule matches now - restore baseline
-            local baseline = getBaseline(actionId)
-            if baseline ~= nil then
-                applyActionValue(actionId, baseline, reason .. " (restore baseline)")
-            end
+            applyActionValue(actionId, baselineValue, reason .. " (restore baseline)")
             -- Keep the baseline in the profile - it represents the user's "normal" setting
             -- and will be used again if rules reactivate later.
         end

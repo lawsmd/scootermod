@@ -125,6 +125,19 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyRaidFrameTextStyle then
                 addon.ApplyRaidFrameTextStyle()
             end
+            if addon.ApplyRaidFrameStatusTextStyle then
+                addon.ApplyRaidFrameStatusTextStyle()
+            end
+            if addon.ApplyRaidFrameGroupTitlesStyle then
+                addon.ApplyRaidFrameGroupTitlesStyle()
+            end
+            -- Also apply combat-safe overlays (create/update overlays out of combat)
+            if addon.ApplyRaidFrameHealthOverlays then
+                addon.ApplyRaidFrameHealthOverlays()
+            end
+            if addon.ApplyRaidFrameNameOverlays then
+                addon.ApplyRaidFrameNameOverlays()
+            end
         end
 
         if doParty then
@@ -133,6 +146,13 @@ local function ensureRaidFrameCombatWatcher()
             end
             if addon.ApplyPartyFrameTextStyle then
                 addon.ApplyPartyFrameTextStyle()
+            end
+            -- Also apply combat-safe overlays (create/update overlays out of combat)
+            if addon.ApplyPartyFrameHealthOverlays then
+                addon.ApplyPartyFrameHealthOverlays()
+            end
+            if addon.ApplyPartyFrameNameOverlays then
+                addon.ApplyPartyFrameNameOverlays()
             end
         end
     end)
@@ -785,6 +805,13 @@ do
 
     -- Compute border holder level below current text and enforce ordering deterministically
     local function ensureTextAndBorderOrdering(unit)
+        -- PetFrame is an Edit Mode managed/protected unit frame.
+        -- Even out-of-combat frame-level/strata adjustments on PetFrame children can taint the frame
+        -- and later cause protected Edit Mode methods (e.g., PetFrame:HideBase(), PetFrame:SetPointBase())
+        -- to be blocked. Do not perform any ordering work for Pet.
+        if unit == "Pet" then
+            return
+        end
         -- Guard against combat lockdown: raising frame levels on protected unit frames
         -- during combat will taint subsequent secure operations (see taint.log).
         if InCombatLockdown and InCombatLockdown() then
@@ -1662,7 +1689,8 @@ do
                                 local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                                 local inset = tonumber(cfg.healthBarBorderInset) or 0
-                                if cfg.useCustomBorders then
+					-- PetFrame is managed/protected: do not create or level custom border frames.
+					if unit ~= "Pet" and cfg.useCustomBorders then
                                     if styleKey == "none" or styleKey == nil then
                                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
@@ -2483,8 +2511,13 @@ do
             -- Lightweight persistence hooks for Player Power Bar:
             --  - Texture: keep custom texture applied if Blizzard swaps StatusBarTexture.
             --  - Color:   keep Foreground Color (default/class/custom) applied if Blizzard calls SetStatusBarColor.
-            -- Note: We allow these hooks to run during combat to maintain visual consistency.
-            -- The applyToBar function only changes texture/color (no layout), similar to Cast Bar.
+            -- IMPORTANT: Do NOT re-apply during combat. Even "cosmetic-only" calls like
+            -- SetStatusBarTexture/SetVertexColor on protected unitframe StatusBars can taint the
+            -- execution context and later surface as blocked calls in unrelated Blizzard code paths
+            -- (e.g., AlternatePowerBar:Hide()).
+            --
+            -- Also IMPORTANT: Defer work with C_Timer.After(0) to break Blizzard's execution chain
+            -- (see DEBUG.md: global hook taint propagation lessons).
             if unit == "Player" and _G.hooksecurefunc then
                 if not pb._ScootPowerTextureHooked then
                     pb._ScootPowerTextureHooked = true
@@ -2493,38 +2526,105 @@ do
                         if self._ScootUFInternalTextureWrite then
                             return
                         end
-                        local db = addon and addon.db and addon.db.profile
-                        if not db then return end
-                        local unitFrames = rawget(db, "unitFrames")
-                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
-                        if not cfgP then return end
-                        local texKey = cfgP.powerBarTexture or "default"
-                        local colorMode = cfgP.powerBarColorMode or "default"
-                        local tint = cfgP.powerBarTint
-                        -- Only re-apply if the user has configured a non-default texture.
-                        if not (type(texKey) == "string" and texKey ~= "" and texKey ~= "default") then
+                        if InCombatLockdown and InCombatLockdown() then
+                            queuePowerBarReapply("Player")
                             return
                         end
-                        applyToBar(self, texKey, colorMode, tint, "player", "power", "player")
+
+                        -- Throttle: coalesce rapid texture resets into a single 0s re-apply.
+                        if self._ScootPowerReapplyPending then
+                            return
+                        end
+                        self._ScootPowerReapplyPending = true
+
+                        local bar = self
+                        if _G.C_Timer and _G.C_Timer.After then
+                            _G.C_Timer.After(0, function()
+                                if not bar then return end
+                                bar._ScootPowerReapplyPending = nil
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePowerBarReapply("Player")
+                                    return
+                                end
+                                local db = addon and addon.db and addon.db.profile
+                                if not db then return end
+                                local unitFrames = rawget(db, "unitFrames")
+                                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                                if not cfgP then return end
+                                local texKey = cfgP.powerBarTexture or "default"
+                                local colorMode = cfgP.powerBarColorMode or "default"
+                                local tint = cfgP.powerBarTint
+                                -- Only re-apply if the user has configured a non-default texture.
+                                if not (type(texKey) == "string" and texKey ~= "" and texKey ~= "default") then
+                                    return
+                                end
+                                applyToBar(bar, texKey, colorMode, tint, "player", "power", "player")
+                                -- Re-assert texture-only hide after any texture swap. The hide feature
+                                -- attaches to the current fill/background textures, so a SetStatusBarTexture
+                                -- can create a fresh texture that needs to be re-hidden.
+                                if Util and Util.SetPowerBarTextureOnlyHidden and cfgP.powerBarHideTextureOnly == true and not (cfgP.powerBarHidden == true) then
+                                    Util.SetPowerBarTextureOnlyHidden(bar, true)
+                                end
+                            end)
+                        else
+                            self._ScootPowerReapplyPending = nil
+                        end
                     end)
                 end
                 if not pb._ScootPowerColorHooked then
                     pb._ScootPowerColorHooked = true
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
-                        local db = addon and addon.db and addon.db.profile
-                        if not db then return end
-                        local unitFrames = rawget(db, "unitFrames")
-                        local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
-                        if not cfgP then return end
-                        local texKey = cfgP.powerBarTexture or "default"
-                        local colorMode = cfgP.powerBarColorMode or "default"
-                        local tint = cfgP.powerBarTint
-                        -- If color mode is "texture", the user wants the texture's original colors;
-                        -- in that case we allow Blizzard's SetStatusBarColor to stand.
-                        if colorMode == "texture" then
+                        if InCombatLockdown and InCombatLockdown() then
+                            queuePowerBarReapply("Player")
                             return
                         end
-                        applyToBar(self, texKey, colorMode, tint, "player", "power", "player")
+
+                        if self._ScootPowerReapplyPending then
+                            return
+                        end
+                        self._ScootPowerReapplyPending = true
+
+                        local bar = self
+                        if _G.C_Timer and _G.C_Timer.After then
+                            _G.C_Timer.After(0, function()
+                                if not bar then return end
+                                bar._ScootPowerReapplyPending = nil
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePowerBarReapply("Player")
+                                    return
+                                end
+                                local db = addon and addon.db and addon.db.profile
+                                if not db then return end
+                                local unitFrames = rawget(db, "unitFrames")
+                                local cfgP = unitFrames and rawget(unitFrames, "Player") or nil
+                                if not cfgP then return end
+                                local texKey = cfgP.powerBarTexture or "default"
+                                local colorMode = cfgP.powerBarColorMode or "default"
+                                local tint = cfgP.powerBarTint
+
+                                -- If color mode is "texture", the user wants the texture's original colors;
+                                -- in that case we allow Blizzard's SetStatusBarColor to stand.
+                                if colorMode == "texture" then
+                                    return
+                                end
+
+                                -- Only do work when the user has customized either texture or color;
+                                -- default settings can safely follow Blizzard's behavior.
+                                local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                                local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class")
+                                if not hasCustomTexture and not hasCustomColor then
+                                    return
+                                end
+
+                                applyToBar(bar, texKey, colorMode, tint, "player", "power", "player")
+                                -- Re-assert texture-only hide after any styling pass that may refresh textures.
+                                if Util and Util.SetPowerBarTextureOnlyHidden and cfgP.powerBarHideTextureOnly == true and not (cfgP.powerBarHidden == true) then
+                                    Util.SetPowerBarTextureOnlyHidden(bar, true)
+                                end
+                            end)
+                        else
+                            self._ScootPowerReapplyPending = nil
+                        end
                     end)
                 end
             end
@@ -3289,7 +3389,8 @@ do
                 local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                 local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
-                if cfg.useCustomBorders then
+                -- PetFrame is managed/protected: do not create or level custom border frames.
+                if unit ~= "Pet" and cfg.useCustomBorders then
                     if styleKey == "none" or styleKey == nil then
                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
@@ -4154,6 +4255,406 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- Raid Frame Health Bar Overlay (Combat-Safe Persistence)
+--------------------------------------------------------------------------------
+-- Creates addon-owned overlay textures on raid health bars that visually
+-- replace Blizzard's fill texture. These overlays can be updated during combat
+-- without taint because we only manipulate our own textures, not Blizzard's
+-- protected StatusBar.
+--
+-- Pattern: Same as ScooterPartyHealthFill for party frames.
+--
+-- BACKGROUND TEXTURE NOTE: The background texture (ScooterModBG) does NOT need
+-- a separate overlay because it is already an addon-owned texture created via
+-- _ApplyBackgroundToStatusBar. Once created, it persists through combat since
+-- we own it. The only limitation is initial creation must happen out of combat.
+--------------------------------------------------------------------------------
+
+do
+    -- Update the overlay texture width based on health bar value
+    -- NOTE: No combat guard needed - we only touch our own texture (ScooterRaidHealthFill)
+    local function updateRaidHealthOverlay(bar)
+        if not bar or not bar.ScooterRaidHealthFill then return end
+        if not bar._ScootRaidOverlayActive then
+            bar.ScooterRaidHealthFill:Hide()
+            return
+        end
+
+        local overlay = bar.ScooterRaidHealthFill
+        local totalWidth = bar:GetWidth() or 0
+        local minVal, maxVal = bar:GetMinMaxValues()
+        local value = bar:GetValue() or minVal
+
+        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+            overlay:Hide()
+            return
+        end
+
+        local frac = (value - minVal) / (maxVal - minVal)
+        if frac <= 0 then
+            overlay:Hide()
+            return
+        end
+        if frac > 1 then frac = 1 end
+
+        overlay:Show()
+        overlay:SetWidth(totalWidth * frac)
+        overlay:ClearAllPoints()
+        -- Raid health bars fill left-to-right
+        overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+        overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    end
+
+    -- Apply texture and color to the overlay based on config
+    local function styleRaidHealthOverlay(bar, cfg)
+        if not bar or not bar.ScooterRaidHealthFill or not cfg then return end
+
+        local overlay = bar.ScooterRaidHealthFill
+        local texKey = cfg.healthBarTexture or "default"
+        local colorMode = cfg.healthBarColorMode or "default"
+        local tint = cfg.healthBarTint
+
+        -- Resolve texture path
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+
+        if resolvedPath then
+            overlay:SetTexture(resolvedPath)
+        else
+            -- Default: copy from bar's current texture or use a fallback
+            local tex = bar:GetStatusBarTexture()
+            local applied = false
+            if tex then
+                local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
+                if okAtlas and atlasName and atlasName ~= "" then
+                    if overlay.SetAtlas then
+                        pcall(overlay.SetAtlas, overlay, atlasName, true)
+                        applied = true
+                    end
+                end
+                if not applied then
+                    local okTex, texPath = pcall(tex.GetTexture, tex)
+                    if okTex and texPath then
+                        if type(texPath) == "string" and texPath:match("^[A-Za-z]") and not texPath:match("\\") and not texPath:match("/") then
+                            -- Likely an atlas token, use SetAtlas
+                            if overlay.SetAtlas then
+                                pcall(overlay.SetAtlas, overlay, texPath, true)
+                                applied = true
+                            end
+                        elseif type(texPath) == "number" or (type(texPath) == "string" and (texPath:match("\\") or texPath:match("/"))) then
+                            pcall(overlay.SetTexture, overlay, texPath)
+                            applied = true
+                        end
+                    end
+                end
+            end
+            if not applied then
+                -- Ultimate fallback: white texture
+                overlay:SetTexture("Interface\\Buttons\\WHITE8x8")
+            end
+        end
+
+        -- Apply color based on mode
+        local r, g, b, a = 1, 1, 1, 1
+        if colorMode == "custom" and type(tint) == "table" then
+            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+        elseif colorMode == "class" then
+            -- For raid frames, we'd need the unit's class - for now use a green health color
+            r, g, b, a = 0, 1, 0, 1
+        elseif colorMode == "texture" then
+            r, g, b, a = 1, 1, 1, 1
+        else
+            -- Default: use Blizzard's current bar color
+            local barR, barG, barB = bar:GetStatusBarColor()
+            if barR then
+                r, g, b = barR, barG, barB
+            else
+                r, g, b = 0, 1, 0
+            end
+        end
+        overlay:SetVertexColor(r, g, b, a)
+    end
+
+    -- Hide Blizzard's fill texture and install alpha-enforcement hook
+    local function hideBlizzardRaidHealthFill(bar)
+        if not bar then return end
+        local blizzFill = bar:GetStatusBarTexture()
+        if not blizzFill then return end
+
+        -- Mark as hidden and set alpha to 0
+        blizzFill._ScootHidden = true
+        blizzFill:SetAlpha(0)
+
+        -- Install alpha-enforcement hook (only once per texture)
+        if not blizzFill._ScootAlphaHooked and _G.hooksecurefunc then
+            blizzFill._ScootAlphaHooked = true
+            _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
+                if alpha > 0 and self._ScootHidden then
+                    -- Defer to avoid fighting Blizzard's call
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if self._ScootHidden then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Show Blizzard's fill texture (for restore/cleanup)
+    local function showBlizzardRaidHealthFill(bar)
+        if not bar then return end
+        local blizzFill = bar:GetStatusBarTexture()
+        if blizzFill then
+            blizzFill._ScootHidden = nil
+            blizzFill:SetAlpha(1)
+        end
+    end
+
+    -- Create or update the raid health overlay for a specific bar
+    local function ensureRaidHealthOverlay(bar, cfg)
+        if not bar then return end
+
+        -- Determine if overlay should be active based on config
+        local hasCustom = cfg and (
+            (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+            (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+        )
+
+        bar._ScootRaidOverlayActive = hasCustom
+
+        if not hasCustom then
+            -- Disable overlay, show Blizzard's texture
+            if bar.ScooterRaidHealthFill then
+                bar.ScooterRaidHealthFill:Hide()
+            end
+            showBlizzardRaidHealthFill(bar)
+            return
+        end
+
+        -- Create overlay texture if it doesn't exist
+        if not bar.ScooterRaidHealthFill then
+            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            overlay:SetVertTile(false)
+            overlay:SetHorizTile(false)
+            overlay:SetTexCoord(0, 1, 0, 1)
+            bar.ScooterRaidHealthFill = overlay
+
+            -- Install hooks for value/size changes - NO COMBAT GUARDS
+            -- These hooks only touch our overlay texture, not Blizzard's StatusBar
+            if _G.hooksecurefunc and not bar._ScootRaidOverlayHooksInstalled then
+                bar._ScootRaidOverlayHooksInstalled = true
+                _G.hooksecurefunc(bar, "SetValue", function(self)
+                    updateRaidHealthOverlay(self)
+                end)
+                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    updateRaidHealthOverlay(self)
+                end)
+                if bar.HookScript then
+                    bar:HookScript("OnSizeChanged", function(self)
+                        updateRaidHealthOverlay(self)
+                    end)
+                end
+            end
+        end
+
+        -- Hook SetStatusBarTexture to re-hide Blizzard's fill if it swaps textures
+        if not bar._ScootRaidTextureSwapHooked and _G.hooksecurefunc then
+            bar._ScootRaidTextureSwapHooked = true
+            _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
+                if self._ScootRaidOverlayActive then
+                    -- Blizzard may have created a new texture, re-hide it
+                    -- Defer to break execution chain
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            hideBlizzardRaidHealthFill(self)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Style the overlay and hide Blizzard's fill
+        styleRaidHealthOverlay(bar, cfg)
+        hideBlizzardRaidHealthFill(bar)
+
+        -- Trigger initial size calculation
+        updateRaidHealthOverlay(bar)
+    end
+
+    -- Disable overlay and restore Blizzard's appearance for a bar
+    local function disableRaidHealthOverlay(bar)
+        if not bar then return end
+        bar._ScootRaidOverlayActive = false
+        if bar.ScooterRaidHealthFill then
+            bar.ScooterRaidHealthFill:Hide()
+        end
+        showBlizzardRaidHealthFill(bar)
+    end
+
+    -- Apply overlays to all raid health bars
+    function addon.ApplyRaidFrameHealthOverlays()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+
+        -- Zero-Touch check
+        local hasCustom = cfg and (
+            (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+            (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+        )
+
+        -- Combined layout: CompactRaidFrame1..40HealthBar
+        for i = 1, 40 do
+            local bar = _G["CompactRaidFrame" .. i .. "HealthBar"]
+            if bar then
+                if hasCustom then
+                    -- Only create overlays out of combat (initial setup)
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        ensureRaidHealthOverlay(bar, cfg)
+                    elseif bar.ScooterRaidHealthFill then
+                        -- Already have overlay, just update styling (safe during combat for our texture)
+                        styleRaidHealthOverlay(bar, cfg)
+                        updateRaidHealthOverlay(bar)
+                    end
+                else
+                    disableRaidHealthOverlay(bar)
+                end
+            end
+        end
+
+        -- Group layout: CompactRaidGroup1..8Member1..5HealthBar
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local bar = _G["CompactRaidGroup" .. group .. "Member" .. member .. "HealthBar"]
+                if bar then
+                    if hasCustom then
+                        if not (InCombatLockdown and InCombatLockdown()) then
+                            ensureRaidHealthOverlay(bar, cfg)
+                        elseif bar.ScooterRaidHealthFill then
+                            styleRaidHealthOverlay(bar, cfg)
+                            updateRaidHealthOverlay(bar)
+                        end
+                    else
+                        disableRaidHealthOverlay(bar)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Restore all raid health bars to stock appearance
+    function addon.RestoreRaidFrameHealthOverlays()
+        -- Combined layout
+        for i = 1, 40 do
+            local bar = _G["CompactRaidFrame" .. i .. "HealthBar"]
+            if bar then
+                disableRaidHealthOverlay(bar)
+            end
+        end
+        -- Group layout
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local bar = _G["CompactRaidGroup" .. group .. "Member" .. member .. "HealthBar"]
+                if bar then
+                    disableRaidHealthOverlay(bar)
+                end
+            end
+        end
+    end
+
+    -- Helper: Check if a CompactUnitFrame is a raid frame
+    local function isRaidFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        if name:match("^CompactRaidFrame%d+$") then return true end
+        if name:match("^CompactRaidGroup%d+Member%d+$") then return true end
+        return false
+    end
+
+    -- Install hooks that trigger overlay setup/updates via CompactUnitFrame events
+    local function installRaidHealthOverlayHooks()
+        if addon._RaidHealthOverlayHooksInstalled then return end
+        addon._RaidHealthOverlayHooksInstalled = true
+
+        local function isRaidHealthBar(frame)
+            if not frame or not frame.healthBar then return false end
+            return isRaidFrame(frame)
+        end
+
+        -- Hook CompactUnitFrame_UpdateAll to set up overlays
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if not isRaidHealthBar(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local cfg = db and db.groupFrames and db.groupFrames.raid or nil
+
+                local hasCustom = cfg and (
+                    (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                    (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+                )
+
+                if hasCustom then
+                    local bar = frame.healthBar
+                    -- Defer setup to break Blizzard's execution chain
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not bar then return end
+                            -- Only create new overlay out of combat
+                            if not bar.ScooterRaidHealthFill then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                            end
+                            ensureRaidHealthOverlay(bar, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_SetUnit for unit assignment changes
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if not unit or not isRaidHealthBar(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local cfg = db and db.groupFrames and db.groupFrames.raid or nil
+
+                local hasCustom = cfg and (
+                    (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                    (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+                )
+
+                if hasCustom then
+                    local bar = frame.healthBar
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not bar then return end
+                            if not bar.ScooterRaidHealthFill then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queueRaidFrameReapply()
+                                    return
+                                end
+                            end
+                            ensureRaidHealthOverlay(bar, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    installRaidHealthOverlayHooks()
+end
+
+--------------------------------------------------------------------------------
 -- Raid Frame Text Styling (Player Name)
 --------------------------------------------------------------------------------
 -- Applies font settings (Baseline 6) to raid frame name text elements.
@@ -4455,6 +4956,827 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- Raid Frame Text Overlay (Combat-Safe Persistence)
+--------------------------------------------------------------------------------
+-- Creates addon-owned FontString overlays on raid frames that visually replace
+-- Blizzard's name text. These overlays can be styled during initial setup and
+-- their text content can be updated during combat without taint because we only
+-- manipulate our own FontStrings.
+--
+-- Pattern: Mirror text via SetText hook, style on setup, hide Blizzard's element.
+--------------------------------------------------------------------------------
+
+do
+    local function isRaidFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        if name:match("^CompactRaidFrame%d+$") then return true end
+        if name:match("^CompactRaidGroup%d+Member%d+$") then return true end
+        return false
+    end
+
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        -- Anchor customization (non-default position)
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT"
+    end
+
+    local function styleRaidNameOverlay(frame, cfg)
+        if not frame or not frame.ScooterRaidNameText or not cfg then return end
+
+        local overlay = frame.ScooterRaidNameText
+        local container = frame.ScooterRaidNameContainer or frame
+
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        local success = pcall(overlay.SetFont, overlay, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(overlay.SetFont, overlay, fallback, fontSize, fontStyle)
+            end
+        end
+
+        pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        pcall(overlay.SetJustifyH, overlay, getJustifyHFromAnchor(anchor))
+        if overlay.SetJustifyV then
+            pcall(overlay.SetJustifyV, overlay, "MIDDLE")
+        end
+        if overlay.SetWordWrap then
+            pcall(overlay.SetWordWrap, overlay, false)
+        end
+        if overlay.SetNonSpaceWrap then
+            pcall(overlay.SetNonSpaceWrap, overlay, false)
+        end
+        if overlay.SetMaxLines then
+            pcall(overlay.SetMaxLines, overlay, 1)
+        end
+
+        -- Position within an addon-owned clipping container that matches Blizzard's name anchors.
+        -- This preserves truncation/clipping even when using single-point anchors (CENTER, etc.).
+        overlay:ClearAllPoints()
+        overlay:SetPoint(anchor, container, anchor, offsetX, offsetY)
+    end
+
+    local function hideBlizzardRaidNameText(frame)
+        if not frame or not frame.name then return end
+        local blizzName = frame.name
+
+        blizzName._ScootHidden = true
+        if blizzName.SetAlpha then
+            pcall(blizzName.SetAlpha, blizzName, 0)
+        end
+        if blizzName.Hide then
+            pcall(blizzName.Hide, blizzName)
+        end
+
+        if not blizzName._ScootAlphaHooked and _G.hooksecurefunc then
+            blizzName._ScootAlphaHooked = true
+            _G.hooksecurefunc(blizzName, "SetAlpha", function(self, alpha)
+                if alpha > 0 and self._ScootHidden then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if self._ScootHidden then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+
+        if not blizzName._ScootShowHooked and _G.hooksecurefunc then
+            blizzName._ScootShowHooked = true
+            _G.hooksecurefunc(blizzName, "Show", function(self)
+                if not self._ScootHidden then return end
+                -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
+                if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if self and self._ScootHidden then
+                            if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                            if self.Hide then pcall(self.Hide, self) end
+                        end
+                    end)
+                else
+                    if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
+    end
+
+    local function showBlizzardRaidNameText(frame)
+        if not frame or not frame.name then return end
+        frame.name._ScootHidden = nil
+        if frame.name.SetAlpha then
+            pcall(frame.name.SetAlpha, frame.name, 1)
+        end
+        if frame.name.Show then
+            pcall(frame.name.Show, frame.name)
+        end
+    end
+
+    local function ensureRaidNameOverlay(frame, cfg)
+        if not frame then return end
+
+        local hasCustom = hasCustomTextSettings(cfg)
+        frame._ScootRaidNameOverlayActive = hasCustom
+
+        if not hasCustom then
+            if frame.ScooterRaidNameText then
+                frame.ScooterRaidNameText:Hide()
+            end
+            showBlizzardRaidNameText(frame)
+            return
+        end
+
+        -- Ensure an addon-owned clipping container that matches Blizzard's original name anchors.
+        if not frame.ScooterRaidNameContainer then
+            local container = CreateFrame("Frame", nil, frame)
+            container:SetClipsChildren(true)
+
+            -- Copy the Blizzard name's anchor layout (often two points) so our container width matches stock.
+            local p1, r1, rp1, x1, y1 = nil, nil, nil, 0, 0
+            local p2, r2, rp2, x2, y2 = nil, nil, nil, 0, 0
+            if frame.name and frame.name.GetPoint then
+                local ok1, ap1, ar1, arp1, ax1, ay1 = pcall(frame.name.GetPoint, frame.name, 1)
+                if ok1 then
+                    p1, r1, rp1, x1, y1 = ap1, ar1, arp1, ax1, ay1
+                end
+                local ok2, ap2, ar2, arp2, ax2, ay2 = pcall(frame.name.GetPoint, frame.name, 2)
+                if ok2 then
+                    p2, r2, rp2, x2, y2 = ap2, ar2, arp2, ax2, ay2
+                end
+            end
+
+            container:ClearAllPoints()
+            if p1 then
+                container:SetPoint(p1, r1 or frame, rp1 or p1, tonumber(x1) or 0, tonumber(y1) or 0)
+                if p2 then
+                    container:SetPoint(p2, r2 or frame, rp2 or p2, tonumber(x2) or 0, tonumber(y2) or 0)
+                else
+                    -- Fallback: reasonable right boundary if Blizzard only provided one point.
+                    container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+                end
+            else
+                -- Ultimate fallback: match common CUF name region bounds.
+                container:SetPoint("LEFT", frame, "LEFT", 3, 0)
+                container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+            end
+
+            -- Critical: our container must have a non-zero height or it will clip everything.
+            -- Blizzard's name element is usually anchored with left/right + top only, so height is implicit there.
+            local h = 12
+            if frame.name and frame.name.GetHeight then
+                local okH, hh = pcall(frame.name.GetHeight, frame.name)
+                if okH and hh and hh > 0 then
+                    h = hh
+                end
+            end
+            if container.SetHeight then
+                pcall(container.SetHeight, container, h)
+            end
+
+            frame.ScooterRaidNameContainer = container
+        end
+
+        -- Create overlay FontString if it doesn't exist (as a child of the clipping container)
+        if not frame.ScooterRaidNameText then
+            local parentForText = frame.ScooterRaidNameContainer or frame
+            local overlay = parentForText:CreateFontString(nil, "OVERLAY", nil)
+            overlay:SetDrawLayer("OVERLAY", 7)
+            frame.ScooterRaidNameText = overlay
+
+            if frame.name and not frame.name._ScootTextMirrorHooked and _G.hooksecurefunc then
+                frame.name._ScootTextMirrorHooked = true
+                frame.name._ScootTextMirrorOwner = frame
+                _G.hooksecurefunc(frame.name, "SetText", function(self, text)
+                    local owner = self._ScootTextMirrorOwner
+                    if owner and owner.ScooterRaidNameText and owner._ScootRaidNameOverlayActive then
+                        owner.ScooterRaidNameText:SetText(text or "")
+                    end
+                end)
+            end
+        end
+
+        styleRaidNameOverlay(frame, cfg)
+        hideBlizzardRaidNameText(frame)
+
+        if frame.name and frame.name.GetText then
+            local currentText = frame.name:GetText()
+            frame.ScooterRaidNameText:SetText(currentText or "")
+        end
+
+        frame.ScooterRaidNameText:Show()
+    end
+
+    local function disableRaidNameOverlay(frame)
+        if not frame then return end
+        frame._ScootRaidNameOverlayActive = false
+        if frame.ScooterRaidNameText then
+            frame.ScooterRaidNameText:Hide()
+        end
+        showBlizzardRaidNameText(frame)
+    end
+
+    function addon.ApplyRaidFrameNameOverlays()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+        local cfg = raidCfg and rawget(raidCfg, "textPlayerName") or nil
+
+        local hasCustom = hasCustomTextSettings(cfg)
+
+        -- Combined layout: CompactRaidFrame1..40
+        for i = 1, 40 do
+            local frame = _G["CompactRaidFrame" .. i]
+            if frame and frame.name then
+                if hasCustom then
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        ensureRaidNameOverlay(frame, cfg)
+                    elseif frame.ScooterRaidNameText then
+                        styleRaidNameOverlay(frame, cfg)
+                    end
+                else
+                    disableRaidNameOverlay(frame)
+                end
+            end
+        end
+
+        -- Group layout: CompactRaidGroup1Member1..CompactRaidGroup8Member5
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+                if frame and frame.name then
+                    if hasCustom then
+                        if not (InCombatLockdown and InCombatLockdown()) then
+                            ensureRaidNameOverlay(frame, cfg)
+                        elseif frame.ScooterRaidNameText then
+                            styleRaidNameOverlay(frame, cfg)
+                        end
+                    else
+                        disableRaidNameOverlay(frame)
+                    end
+                end
+            end
+        end
+    end
+
+    function addon.RestoreRaidFrameNameOverlays()
+        for i = 1, 40 do
+            local frame = _G["CompactRaidFrame" .. i]
+            if frame then
+                disableRaidNameOverlay(frame)
+            end
+        end
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+                if frame then
+                    disableRaidNameOverlay(frame)
+                end
+            end
+        end
+    end
+
+    local function installRaidNameOverlayHooks()
+        if addon._RaidNameOverlayHooksInstalled then return end
+        addon._RaidNameOverlayHooksInstalled = true
+
+        local function getCfg()
+            local db = addon and addon.db and addon.db.profile
+            local gf = db and rawget(db, "groupFrames") or nil
+            local raidCfg = gf and rawget(gf, "raid") or nil
+            return raidCfg and rawget(raidCfg, "textPlayerName") or nil
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if not (frame and frame.name and isRaidFrame(frame)) then return end
+                local cfg = getCfg()
+                if not hasCustomTextSettings(cfg) then return end
+
+                local frameRef = frame
+                local cfgRef = cfg
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if not frameRef then return end
+                        if InCombatLockdown and InCombatLockdown() then
+                            queueRaidFrameReapply()
+                            return
+                        end
+                        ensureRaidNameOverlay(frameRef, cfgRef)
+                    end)
+                else
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if not unit then return end
+                if not (frame and frame.name and isRaidFrame(frame)) then return end
+                local cfg = getCfg()
+                if not hasCustomTextSettings(cfg) then return end
+
+                local frameRef = frame
+                local cfgRef = cfg
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if not frameRef then return end
+                        if InCombatLockdown and InCombatLockdown() then
+                            queueRaidFrameReapply()
+                            return
+                        end
+                        ensureRaidNameOverlay(frameRef, cfgRef)
+                    end)
+                else
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+                if not (frame and frame.name and isRaidFrame(frame)) then return end
+                local cfg = getCfg()
+                if not hasCustomTextSettings(cfg) then return end
+
+                local frameRef = frame
+                local cfgRef = cfg
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if not frameRef then return end
+                        if InCombatLockdown and InCombatLockdown() then
+                            queueRaidFrameReapply()
+                            return
+                        end
+                        ensureRaidNameOverlay(frameRef, cfgRef)
+                    end)
+                else
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end
+            end)
+        end
+    end
+
+    installRaidNameOverlayHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Text Styling (Status Text)
+--------------------------------------------------------------------------------
+-- Applies the same 7 settings as Player Name to raid unit frame StatusText.
+-- Targets:
+--   - CompactRaidFrame1..40: frame.statusText (FontString, name "$parentStatusText")
+--   - CompactRaidGroup1..8Member1..5: frame.statusText (FontString, name "$parentStatusText")
+--------------------------------------------------------------------------------
+do
+    -- Helper: Determine SetJustifyH based on anchor's horizontal component
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT"
+    end
+
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function applyTextToFontString(fs, ownerFrame, cfg)
+        if not fs or not ownerFrame or not cfg then return end
+
+        -- Resolve font face
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        -- Get settings with defaults
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        -- Apply font
+        local success = pcall(fs.SetFont, fs, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(fs.SetFont, fs, fallback, fontSize, fontStyle)
+            end
+        end
+
+        -- Apply color + alignment
+        if fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, getJustifyHFromAnchor(anchor))
+        end
+
+        -- Capture baseline position on first application so we can restore later
+        if not fs._ScootOriginalPoint_StatusText then
+            local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
+            if point then
+                fs._ScootOriginalPoint_StatusText = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            end
+        end
+
+        local isDefaultAnchor = (anchor == "TOPLEFT")
+        local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+        if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_StatusText then
+            -- Restore baseline (stock position) when user has reset to default
+            local orig = fs._ScootOriginalPoint_StatusText
+            fs:ClearAllPoints()
+            fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+            if fs.SetJustifyH then
+                pcall(fs.SetJustifyH, fs, "LEFT")
+            end
+        else
+            -- Position the FontString using the user-selected anchor, relative to the owner frame
+            fs:ClearAllPoints()
+            fs:SetPoint(anchor, ownerFrame, anchor, offsetX, offsetY)
+        end
+    end
+
+    local function applyStatusTextToRaidFrame(frame, cfg)
+        if not frame or not cfg then return end
+        local fs = frame.statusText
+        if not fs then return end
+        applyTextToFontString(fs, frame, cfg)
+    end
+
+    function addon.ApplyRaidFrameStatusTextStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        -- Zero‑Touch: only apply if user has configured raid status text styling.
+        local groupFrames = rawget(db, "groupFrames")
+        local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+        local cfg = raidCfg and rawget(raidCfg, "textStatusText") or nil
+        if not cfg then
+            return
+        end
+
+        -- Zero‑Touch: if user hasn't actually changed anything from the defaults, do nothing.
+        if not hasCustomTextSettings(cfg) then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queueRaidFrameReapply()
+            return
+        end
+
+        -- Combined layout: CompactRaidFrame1..40
+        for i = 1, 40 do
+            local frame = _G["CompactRaidFrame" .. i]
+            if frame and frame.statusText then
+                applyStatusTextToRaidFrame(frame, cfg)
+            end
+        end
+
+        -- Group layout: CompactRaidGroup1..8Member1..5
+        for group = 1, 8 do
+            for member = 1, 5 do
+                local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+                if frame and frame.statusText then
+                    applyStatusTextToRaidFrame(frame, cfg)
+                end
+            end
+        end
+    end
+
+    local function isRaidFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        if name:match("^CompactRaidFrame%d+$") then return true end
+        if name:match("^CompactRaidGroup%d+Member%d+$") then return true end
+        return false
+    end
+
+    local function installRaidFrameStatusTextHooks()
+        if addon._RaidFrameStatusTextHooksInstalled then return end
+        addon._RaidFrameStatusTextHooksInstalled = true
+
+        local function tryApply(frame)
+            if not frame or not frame.statusText or not isRaidFrame(frame) then
+                return
+            end
+            local db = addon and addon.db and addon.db.profile
+            local cfg = db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textStatusText or nil
+            if not cfg or not hasCustomTextSettings(cfg) then
+                return
+            end
+            local frameRef = frame
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueRaidFrameReapply()
+                        return
+                    end
+                    applyStatusTextToRaidFrame(frameRef, cfgRef)
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    queueRaidFrameReapply()
+                    return
+                end
+                applyStatusTextToRaidFrame(frameRef, cfgRef)
+            end
+        end
+
+        if _G.hooksecurefunc then
+            if _G.CompactUnitFrame_UpdateStatusText then
+                _G.hooksecurefunc("CompactUnitFrame_UpdateStatusText", tryApply)
+            end
+            if _G.CompactUnitFrame_UpdateLayout then
+                _G.hooksecurefunc("CompactUnitFrame_UpdateLayout", tryApply)
+            end
+            if _G.CompactUnitFrame_UpdateAll then
+                _G.hooksecurefunc("CompactUnitFrame_UpdateAll", tryApply)
+            end
+            if _G.CompactUnitFrame_SetUnit then
+                _G.hooksecurefunc("CompactUnitFrame_SetUnit", tryApply)
+            end
+        end
+    end
+
+    installRaidFrameStatusTextHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Text Styling (Group Numbers)
+--------------------------------------------------------------------------------
+-- Applies the same 7 settings as Player Name to raid group title text.
+-- Target: CompactRaidGroup1..8Title (Button, parentKey "title").
+--------------------------------------------------------------------------------
+do
+    -- Helper: Determine SetJustifyH based on anchor's horizontal component
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT"
+    end
+
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function applyTextToFontString(fs, ownerFrame, cfg)
+        if not fs or not ownerFrame or not cfg then return end
+
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        local success = pcall(fs.SetFont, fs, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(fs.SetFont, fs, fallback, fontSize, fontStyle)
+            end
+        end
+
+        if fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, getJustifyHFromAnchor(anchor))
+        end
+
+        if not fs._ScootOriginalPoint_GroupTitle then
+            local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
+            if point then
+                fs._ScootOriginalPoint_GroupTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            end
+        end
+
+        local isDefaultAnchor = (anchor == "TOPLEFT")
+        local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+        if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_GroupTitle then
+            local orig = fs._ScootOriginalPoint_GroupTitle
+            fs:ClearAllPoints()
+            fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+            if fs.SetJustifyH then
+                pcall(fs.SetJustifyH, fs, "LEFT")
+            end
+        else
+            fs:ClearAllPoints()
+            fs:SetPoint(anchor, ownerFrame, anchor, offsetX, offsetY)
+        end
+    end
+
+    local function applyGroupTitleToButton(titleButton, cfg)
+        if not titleButton or not cfg then return end
+        if not titleButton.GetFontString then return end
+        local fs = titleButton:GetFontString()
+        if not fs then return end
+        applyTextToFontString(fs, titleButton, cfg)
+    end
+
+    function addon.ApplyRaidFrameGroupTitlesStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        -- Zero‑Touch: only apply if user has configured raid group title styling.
+        local groupFrames = rawget(db, "groupFrames")
+        local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+        local cfg = raidCfg and rawget(raidCfg, "textGroupNumbers") or nil
+        if not cfg then
+            return
+        end
+
+        if not hasCustomTextSettings(cfg) then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queueRaidFrameReapply()
+            return
+        end
+
+        for group = 1, 8 do
+            local groupFrame = _G["CompactRaidGroup" .. group]
+            local titleButton = (groupFrame and groupFrame.title) or _G["CompactRaidGroup" .. group .. "Title"]
+            if titleButton then
+                applyGroupTitleToButton(titleButton, cfg)
+            end
+        end
+    end
+
+    local function isCompactRaidGroupFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        return name:match("^CompactRaidGroup%d+$") ~= nil
+    end
+
+    local function installRaidFrameGroupTitleHooks()
+        if addon._RaidFrameGroupTitleHooksInstalled then return end
+        addon._RaidFrameGroupTitleHooksInstalled = true
+
+        local function tryApplyTitle(groupFrame)
+            if not groupFrame or not isCompactRaidGroupFrame(groupFrame) then
+                return
+            end
+            local titleButton = groupFrame.title or _G[groupFrame:GetName() .. "Title"]
+            if not titleButton then return end
+
+            local db = addon and addon.db and addon.db.profile
+            local cfg = db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textGroupNumbers or nil
+            if not cfg or not hasCustomTextSettings(cfg) then
+                return
+            end
+
+            local titleRef = titleButton
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if InCombatLockdown and InCombatLockdown() then
+                        queueRaidFrameReapply()
+                        return
+                    end
+                    applyGroupTitleToButton(titleRef, cfgRef)
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    queueRaidFrameReapply()
+                    return
+                end
+                applyGroupTitleToButton(titleRef, cfgRef)
+            end
+        end
+
+        if _G.hooksecurefunc then
+            if _G.CompactRaidGroup_UpdateLayout then
+                _G.hooksecurefunc("CompactRaidGroup_UpdateLayout", tryApplyTitle)
+            end
+            if _G.CompactRaidGroup_InitializeForGroup then
+                _G.hooksecurefunc("CompactRaidGroup_InitializeForGroup", function(groupFrame, groupIndex)
+                    tryApplyTitle(groupFrame)
+                end)
+            end
+            if _G.CompactRaidGroup_UpdateUnits then
+                _G.hooksecurefunc("CompactRaidGroup_UpdateUnits", tryApplyTitle)
+            end
+        end
+    end
+
+    installRaidFrameGroupTitleHooks()
+end
+
+--------------------------------------------------------------------------------
 -- Party Frame Health Bar Styling
 --------------------------------------------------------------------------------
 -- Applies foreground/background texture and color settings to party frame health
@@ -4610,6 +5932,369 @@ do
 end
 
 --------------------------------------------------------------------------------
+-- Party Frame Health Bar Overlay (Combat-Safe Persistence)
+--------------------------------------------------------------------------------
+-- Creates addon-owned overlay textures on party health bars that visually
+-- replace Blizzard's fill texture. These overlays can be updated during combat
+-- without taint because we only manipulate our own textures, not Blizzard's
+-- protected StatusBar.
+--
+-- Pattern: Same as ScooterRectFill for individual unit frames.
+--
+-- BACKGROUND TEXTURE NOTE: The background texture (ScooterModBG) does NOT need
+-- a separate overlay because it is already an addon-owned texture created via
+-- _ApplyBackgroundToStatusBar. Once created, it persists through combat since
+-- we own it. The only limitation is initial creation must happen out of combat.
+--------------------------------------------------------------------------------
+
+do
+    -- Update the overlay texture width based on health bar value
+    -- NOTE: No combat guard needed - we only touch our own texture (ScooterPartyHealthFill)
+    local function updatePartyHealthOverlay(bar)
+        if not bar or not bar.ScooterPartyHealthFill then return end
+        if not bar._ScootPartyOverlayActive then
+            bar.ScooterPartyHealthFill:Hide()
+            return
+        end
+
+        local overlay = bar.ScooterPartyHealthFill
+        local totalWidth = bar:GetWidth() or 0
+        local minVal, maxVal = bar:GetMinMaxValues()
+        local value = bar:GetValue() or minVal
+
+        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+            overlay:Hide()
+            return
+        end
+
+        local frac = (value - minVal) / (maxVal - minVal)
+        if frac <= 0 then
+            overlay:Hide()
+            return
+        end
+        if frac > 1 then frac = 1 end
+
+        overlay:Show()
+        overlay:SetWidth(totalWidth * frac)
+        overlay:ClearAllPoints()
+        -- Party health bars fill left-to-right
+        overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+        overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    end
+
+    -- Apply texture and color to the overlay based on config
+    local function stylePartyHealthOverlay(bar, cfg)
+        if not bar or not bar.ScooterPartyHealthFill or not cfg then return end
+
+        local overlay = bar.ScooterPartyHealthFill
+        local texKey = cfg.healthBarTexture or "default"
+        local colorMode = cfg.healthBarColorMode or "default"
+        local tint = cfg.healthBarTint
+
+        -- Resolve texture path
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+
+        if resolvedPath then
+            overlay:SetTexture(resolvedPath)
+        else
+            -- Default: copy from bar's current texture or use a fallback
+            local tex = bar:GetStatusBarTexture()
+            local applied = false
+            if tex then
+                local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
+                if okAtlas and atlasName and atlasName ~= "" then
+                    if overlay.SetAtlas then
+                        pcall(overlay.SetAtlas, overlay, atlasName, true)
+                        applied = true
+                    end
+                end
+                if not applied then
+                    local okTex, texPath = pcall(tex.GetTexture, tex)
+                    if okTex and texPath then
+                        if type(texPath) == "string" and texPath:match("^[A-Za-z]") and not texPath:match("\\") and not texPath:match("/") then
+                            -- Likely an atlas token, use SetAtlas
+                            if overlay.SetAtlas then
+                                pcall(overlay.SetAtlas, overlay, texPath, true)
+                                applied = true
+                            end
+                        elseif type(texPath) == "number" or (type(texPath) == "string" and (texPath:match("\\") or texPath:match("/"))) then
+                            pcall(overlay.SetTexture, overlay, texPath)
+                            applied = true
+                        end
+                    end
+                end
+            end
+            if not applied then
+                -- Ultimate fallback: white texture
+                overlay:SetTexture("Interface\\Buttons\\WHITE8x8")
+            end
+        end
+
+        -- Apply color based on mode
+        local r, g, b, a = 1, 1, 1, 1
+        if colorMode == "custom" and type(tint) == "table" then
+            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+        elseif colorMode == "class" then
+            -- For party frames, we'd need the unit's class - for now use a green health color
+            -- This could be enhanced to read from UnitClass(bar.unit) if needed
+            r, g, b, a = 0, 1, 0, 1
+        elseif colorMode == "texture" then
+            r, g, b, a = 1, 1, 1, 1
+        else
+            -- Default: use Blizzard's current bar color
+            local barR, barG, barB = bar:GetStatusBarColor()
+            if barR then
+                r, g, b = barR, barG, barB
+            else
+                r, g, b = 0, 1, 0
+            end
+        end
+        overlay:SetVertexColor(r, g, b, a)
+    end
+
+    -- Hide Blizzard's fill texture and install alpha-enforcement hook
+    local function hideBlizzardPartyHealthFill(bar)
+        if not bar then return end
+        local blizzFill = bar:GetStatusBarTexture()
+        if not blizzFill then return end
+
+        -- Mark as hidden and set alpha to 0
+        blizzFill._ScootHidden = true
+        blizzFill:SetAlpha(0)
+
+        -- Install alpha-enforcement hook (only once per texture)
+        if not blizzFill._ScootAlphaHooked and _G.hooksecurefunc then
+            blizzFill._ScootAlphaHooked = true
+            _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
+                if alpha > 0 and self._ScootHidden then
+                    -- Defer to avoid fighting Blizzard's call
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if self._ScootHidden then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Show Blizzard's fill texture (for restore/cleanup)
+    local function showBlizzardPartyHealthFill(bar)
+        if not bar then return end
+        local blizzFill = bar:GetStatusBarTexture()
+        if blizzFill then
+            blizzFill._ScootHidden = nil
+            blizzFill:SetAlpha(1)
+        end
+    end
+
+    -- Create or update the party health overlay for a specific bar
+    local function ensurePartyHealthOverlay(bar, cfg)
+        if not bar then return end
+
+        -- Determine if overlay should be active based on config
+        local hasCustom = cfg and (
+            (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+            (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+        )
+
+        bar._ScootPartyOverlayActive = hasCustom
+
+        if not hasCustom then
+            -- Disable overlay, show Blizzard's texture
+            if bar.ScooterPartyHealthFill then
+                bar.ScooterPartyHealthFill:Hide()
+            end
+            showBlizzardPartyHealthFill(bar)
+            return
+        end
+
+        -- Create overlay texture if it doesn't exist
+        if not bar.ScooterPartyHealthFill then
+            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            overlay:SetVertTile(false)
+            overlay:SetHorizTile(false)
+            overlay:SetTexCoord(0, 1, 0, 1)
+            bar.ScooterPartyHealthFill = overlay
+
+            -- Install hooks for value/size changes - NO COMBAT GUARDS
+            -- These hooks only touch our overlay texture, not Blizzard's StatusBar
+            if _G.hooksecurefunc and not bar._ScootPartyOverlayHooksInstalled then
+                bar._ScootPartyOverlayHooksInstalled = true
+                _G.hooksecurefunc(bar, "SetValue", function(self)
+                    updatePartyHealthOverlay(self)
+                end)
+                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    updatePartyHealthOverlay(self)
+                end)
+                if bar.HookScript then
+                    bar:HookScript("OnSizeChanged", function(self)
+                        updatePartyHealthOverlay(self)
+                    end)
+                end
+            end
+        end
+
+        -- Hook SetStatusBarTexture to re-hide Blizzard's fill if it swaps textures
+        if not bar._ScootPartyTextureSwapHooked and _G.hooksecurefunc then
+            bar._ScootPartyTextureSwapHooked = true
+            _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
+                if self._ScootPartyOverlayActive then
+                    -- Blizzard may have created a new texture, re-hide it
+                    -- Defer to break execution chain
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            hideBlizzardPartyHealthFill(self)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Style the overlay and hide Blizzard's fill
+        stylePartyHealthOverlay(bar, cfg)
+        hideBlizzardPartyHealthFill(bar)
+
+        -- Trigger initial size calculation
+        updatePartyHealthOverlay(bar)
+    end
+
+    -- Disable overlay and restore Blizzard's appearance for a bar
+    local function disablePartyHealthOverlay(bar)
+        if not bar then return end
+        bar._ScootPartyOverlayActive = false
+        if bar.ScooterPartyHealthFill then
+            bar.ScooterPartyHealthFill:Hide()
+        end
+        showBlizzardPartyHealthFill(bar)
+    end
+
+    -- Apply overlays to all party health bars
+    function addon.ApplyPartyFrameHealthOverlays()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local cfg = groupFrames and rawget(groupFrames, "party") or nil
+
+        -- Zero-Touch check
+        local hasCustom = cfg and (
+            (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+            (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+        )
+
+        for i = 1, 5 do
+            local bar = _G["CompactPartyFrameMember" .. i .. "HealthBar"]
+            if bar then
+                if hasCustom then
+                    -- Only create overlays out of combat (initial setup)
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        ensurePartyHealthOverlay(bar, cfg)
+                    elseif bar.ScooterPartyHealthFill then
+                        -- Already have overlay, just update styling (safe during combat for our texture)
+                        stylePartyHealthOverlay(bar, cfg)
+                        updatePartyHealthOverlay(bar)
+                    end
+                else
+                    disablePartyHealthOverlay(bar)
+                end
+            end
+        end
+    end
+
+    -- Restore all party health bars to stock appearance
+    function addon.RestorePartyFrameHealthOverlays()
+        for i = 1, 5 do
+            local bar = _G["CompactPartyFrameMember" .. i .. "HealthBar"]
+            if bar then
+                disablePartyHealthOverlay(bar)
+            end
+        end
+    end
+
+    -- Install hooks that trigger overlay setup/updates via CompactUnitFrame events
+    local function installPartyHealthOverlayHooks()
+        if addon._PartyHealthOverlayHooksInstalled then return end
+        addon._PartyHealthOverlayHooksInstalled = true
+
+        local function isPartyHealthBar(frame)
+            if not frame or not frame.healthBar then return false end
+            local ok, name = pcall(function() return frame:GetName() end)
+            if not ok or not name then return false end
+            return name:match("^CompactPartyFrameMember%d+$") ~= nil
+        end
+
+        -- Hook CompactUnitFrame_UpdateAll to set up overlays
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if not isPartyHealthBar(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local cfg = db and db.groupFrames and db.groupFrames.party or nil
+
+                local hasCustom = cfg and (
+                    (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                    (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+                )
+
+                if hasCustom then
+                    local bar = frame.healthBar
+                    -- Defer setup to break Blizzard's execution chain
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not bar then return end
+                            -- Only create new overlay out of combat
+                            if not bar.ScooterPartyHealthFill then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                            end
+                            ensurePartyHealthOverlay(bar, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_SetUnit for unit assignment changes
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if not unit or not isPartyHealthBar(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local cfg = db and db.groupFrames and db.groupFrames.party or nil
+
+                local hasCustom = cfg and (
+                    (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                    (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+                )
+
+                if hasCustom then
+                    local bar = frame.healthBar
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not bar then return end
+                            if not bar.ScooterPartyHealthFill then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                            end
+                            ensurePartyHealthOverlay(bar, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    installPartyHealthOverlayHooks()
+end
+
+--------------------------------------------------------------------------------
 -- Party Frame Text Styling (Player Name)
 --------------------------------------------------------------------------------
 -- Applies font settings (Baseline 6) to party frame name text elements.
@@ -4717,6 +6402,27 @@ do
             -- Position the name FontString using the user-selected anchor, relative to the frame
             nameFS:ClearAllPoints()
             nameFS:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+        end
+
+        -- Preserve Blizzard's truncation/clipping behavior: explicitly constrain the name FontString width.
+        -- Blizzard normally constrains this via a dual-anchor layout (TOPLEFT + TOPRIGHT). Our single-point
+        -- anchor (for 9-way alignment) removes that implicit width, so we restore it with SetWidth.
+        if nameFS.SetMaxLines then
+            pcall(nameFS.SetMaxLines, nameFS, 1)
+        end
+        if frame.GetWidth and nameFS.SetWidth then
+            local frameWidth = frame:GetWidth()
+            local roleIconWidth = 0
+            if frame.roleIcon and frame.roleIcon.GetWidth then
+                roleIconWidth = frame.roleIcon:GetWidth() or 0
+            end
+            -- 3px right padding + (role icon area) + 3px left padding ~= 6px padding total, matching CUF defaults.
+            local availableWidth = (frameWidth or 0) - (roleIconWidth or 0) - 6
+            if availableWidth and availableWidth > 1 then
+                pcall(nameFS.SetWidth, nameFS, availableWidth)
+            else
+                pcall(nameFS.SetWidth, nameFS, 1)
+            end
         end
     end
 
@@ -4858,4 +6564,448 @@ do
     end
 
     installPartyFrameTextHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Party Frame Text Overlay (Combat-Safe Persistence)
+--------------------------------------------------------------------------------
+-- Creates addon-owned FontString overlays on party frames that visually replace
+-- Blizzard's name text. These overlays can be styled during initial setup and
+-- their text content can be updated during combat without taint because we only
+-- manipulate our own FontStrings.
+--
+-- Pattern: Mirror text via SetText hook, style on setup, hide Blizzard's element.
+--------------------------------------------------------------------------------
+
+do
+    local function isPartyFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        return name:match("^CompactPartyFrameMember%d+$") ~= nil
+    end
+
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT"
+    end
+
+    -- Apply styling to the overlay FontString
+    local function stylePartyNameOverlay(frame, cfg)
+        if not frame or not frame.ScooterPartyNameText or not cfg then return end
+
+        local overlay = frame.ScooterPartyNameText
+        local container = frame.ScooterPartyNameContainer or frame
+
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        -- Apply font
+        local success = pcall(overlay.SetFont, overlay, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(overlay.SetFont, overlay, fallback, fontSize, fontStyle)
+            end
+        end
+
+        -- Apply color
+        pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+
+        -- Apply text alignment
+        pcall(overlay.SetJustifyH, overlay, getJustifyHFromAnchor(anchor))
+        if overlay.SetJustifyV then
+            pcall(overlay.SetJustifyV, overlay, "MIDDLE")
+        end
+        if overlay.SetWordWrap then
+            pcall(overlay.SetWordWrap, overlay, false)
+        end
+        if overlay.SetNonSpaceWrap then
+            pcall(overlay.SetNonSpaceWrap, overlay, false)
+        end
+        if overlay.SetMaxLines then
+            pcall(overlay.SetMaxLines, overlay, 1)
+        end
+
+        -- Position within an addon-owned clipping container that matches Blizzard's original name anchors.
+        overlay:ClearAllPoints()
+        overlay:SetPoint(anchor, container, anchor, offsetX, offsetY)
+    end
+
+    -- Hide Blizzard's name FontString and install alpha-enforcement hook
+    local function hideBlizzardPartyNameText(frame)
+        if not frame or not frame.name then return end
+        local blizzName = frame.name
+
+        blizzName._ScootHidden = true
+        if blizzName.SetAlpha then
+            pcall(blizzName.SetAlpha, blizzName, 0)
+        end
+        if blizzName.Hide then
+            pcall(blizzName.Hide, blizzName)
+        end
+
+        -- Install alpha-enforcement hook (only once)
+        if not blizzName._ScootAlphaHooked and _G.hooksecurefunc then
+            blizzName._ScootAlphaHooked = true
+            _G.hooksecurefunc(blizzName, "SetAlpha", function(self, alpha)
+                if alpha > 0 and self._ScootHidden then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if self._ScootHidden then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+
+        if not blizzName._ScootShowHooked and _G.hooksecurefunc then
+            blizzName._ScootShowHooked = true
+            _G.hooksecurefunc(blizzName, "Show", function(self)
+                if not self._ScootHidden then return end
+                -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
+                if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if self and self._ScootHidden then
+                            if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                            if self.Hide then pcall(self.Hide, self) end
+                        end
+                    end)
+                else
+                    if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
+    end
+
+    -- Show Blizzard's name FontString (for restore/cleanup)
+    local function showBlizzardPartyNameText(frame)
+        if not frame or not frame.name then return end
+        frame.name._ScootHidden = nil
+        if frame.name.SetAlpha then
+            pcall(frame.name.SetAlpha, frame.name, 1)
+        end
+        if frame.name.Show then
+            pcall(frame.name.Show, frame.name)
+        end
+    end
+
+    -- Create or update the party name text overlay for a specific frame
+    local function ensurePartyNameOverlay(frame, cfg)
+        if not frame then return end
+
+        local hasCustom = hasCustomTextSettings(cfg)
+        frame._ScootPartyNameOverlayActive = hasCustom
+
+        if not hasCustom then
+            -- Disable overlay, show Blizzard's text
+            if frame.ScooterPartyNameText then
+                frame.ScooterPartyNameText:Hide()
+            end
+            showBlizzardPartyNameText(frame)
+            return
+        end
+
+        -- Ensure an addon-owned clipping container that matches Blizzard's original name anchors.
+        if not frame.ScooterPartyNameContainer then
+            local container = CreateFrame("Frame", nil, frame)
+            container:SetClipsChildren(true)
+
+            local p1, r1, rp1, x1, y1 = nil, nil, nil, 0, 0
+            local p2, r2, rp2, x2, y2 = nil, nil, nil, 0, 0
+            if frame.name and frame.name.GetPoint then
+                local ok1, ap1, ar1, arp1, ax1, ay1 = pcall(frame.name.GetPoint, frame.name, 1)
+                if ok1 then
+                    p1, r1, rp1, x1, y1 = ap1, ar1, arp1, ax1, ay1
+                end
+                local ok2, ap2, ar2, arp2, ax2, ay2 = pcall(frame.name.GetPoint, frame.name, 2)
+                if ok2 then
+                    p2, r2, rp2, x2, y2 = ap2, ar2, arp2, ax2, ay2
+                end
+            end
+
+            container:ClearAllPoints()
+            if p1 then
+                container:SetPoint(p1, r1 or frame, rp1 or p1, tonumber(x1) or 0, tonumber(y1) or 0)
+                if p2 then
+                    container:SetPoint(p2, r2 or frame, rp2 or p2, tonumber(x2) or 0, tonumber(y2) or 0)
+                else
+                    container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+                end
+            else
+                container:SetPoint("LEFT", frame, "LEFT", 3, 0)
+                container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+            end
+
+            -- Critical: container must have height or it will clip everything.
+            local h = 12
+            if frame.name and frame.name.GetHeight then
+                local okH, hh = pcall(frame.name.GetHeight, frame.name)
+                if okH and hh and hh > 0 then
+                    h = hh
+                end
+            end
+            if container.SetHeight then
+                pcall(container.SetHeight, container, h)
+            end
+
+            frame.ScooterPartyNameContainer = container
+        end
+
+        -- Create overlay FontString if it doesn't exist
+        if not frame.ScooterPartyNameText then
+            local parentForText = frame.ScooterPartyNameContainer or frame
+            local overlay = parentForText:CreateFontString(nil, "OVERLAY", nil)
+            overlay:SetDrawLayer("OVERLAY", 7) -- High sublayer to ensure visibility
+            frame.ScooterPartyNameText = overlay
+
+            -- Install SetText hook on Blizzard's name FontString to mirror text
+            if frame.name and not frame.name._ScootTextMirrorHooked and _G.hooksecurefunc then
+                frame.name._ScootTextMirrorHooked = true
+                frame.name._ScootTextMirrorOwner = frame
+                _G.hooksecurefunc(frame.name, "SetText", function(self, text)
+                    local owner = self._ScootTextMirrorOwner
+                    if owner and owner.ScooterPartyNameText and owner._ScootPartyNameOverlayActive then
+                        owner.ScooterPartyNameText:SetText(text or "")
+                    end
+                end)
+            end
+        end
+
+        -- Style the overlay and hide Blizzard's text
+        stylePartyNameOverlay(frame, cfg)
+        hideBlizzardPartyNameText(frame)
+
+        -- Copy current text from Blizzard's FontString to our overlay
+        if frame.name and frame.name.GetText then
+            local currentText = frame.name:GetText()
+            frame.ScooterPartyNameText:SetText(currentText or "")
+        end
+
+        frame.ScooterPartyNameText:Show()
+    end
+
+    -- Disable overlay and restore Blizzard's appearance for a frame
+    local function disablePartyNameOverlay(frame)
+        if not frame then return end
+        frame._ScootPartyNameOverlayActive = false
+        if frame.ScooterPartyNameText then
+            frame.ScooterPartyNameText:Hide()
+        end
+        showBlizzardPartyNameText(frame)
+    end
+
+    -- Apply overlays to all party frames
+    function addon.ApplyPartyFrameNameOverlays()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local partyCfg = groupFrames and rawget(groupFrames, "party") or nil
+        local cfg = partyCfg and rawget(partyCfg, "textPlayerName") or nil
+
+        local hasCustom = hasCustomTextSettings(cfg)
+
+        for i = 1, 5 do
+            local frame = _G["CompactPartyFrameMember" .. i]
+            if frame then
+                if hasCustom then
+                    -- Only create overlays out of combat (initial setup)
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        ensurePartyNameOverlay(frame, cfg)
+                    elseif frame.ScooterPartyNameText then
+                        -- Already have overlay, just update styling (safe during combat for our FontString)
+                        stylePartyNameOverlay(frame, cfg)
+                    end
+                else
+                    disablePartyNameOverlay(frame)
+                end
+            end
+        end
+    end
+
+    -- Restore all party frames to stock appearance
+    function addon.RestorePartyFrameNameOverlays()
+        for i = 1, 5 do
+            local frame = _G["CompactPartyFrameMember" .. i]
+            if frame then
+                disablePartyNameOverlay(frame)
+            end
+        end
+    end
+
+    -- Install hooks that trigger overlay setup/updates via CompactUnitFrame events
+    local function installPartyNameOverlayHooks()
+        if addon._PartyNameOverlayHooksInstalled then return end
+        addon._PartyNameOverlayHooksInstalled = true
+
+        -- Hook CompactUnitFrame_UpdateAll to set up overlays
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+                if not frame or not frame.name or not isPartyFrame(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+                local cfg = partyCfg and partyCfg.textPlayerName or nil
+
+                if hasCustomTextSettings(cfg) then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not frame then return end
+                            if not frame.ScooterPartyNameText then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                            end
+                            ensurePartyNameOverlay(frame, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_SetUnit for unit assignment changes
+        if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+                if not unit or not frame or not frame.name or not isPartyFrame(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+                local cfg = partyCfg and partyCfg.textPlayerName or nil
+
+                if hasCustomTextSettings(cfg) then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not frame then return end
+                            if not frame.ScooterPartyNameText then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                            end
+                            ensurePartyNameOverlay(frame, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Hook CompactUnitFrame_UpdateName for name text updates
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+                if not frame or not frame.name or not isPartyFrame(frame) then return end
+
+                local db = addon and addon.db and addon.db.profile
+                local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+                local cfg = partyCfg and partyCfg.textPlayerName or nil
+
+                if hasCustomTextSettings(cfg) then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if not frame then return end
+                            if not frame.ScooterPartyNameText then
+                                if InCombatLockdown and InCombatLockdown() then
+                                    queuePartyFrameReapply()
+                                    return
+                                end
+                            end
+                            ensurePartyNameOverlay(frame, cfg)
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    installPartyNameOverlayHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Party Frame Overlay Restore (Profile Switch / Category Reset)
+--------------------------------------------------------------------------------
+-- Centralized function to restore all party frames to stock Blizzard appearance.
+-- Called during profile switches when the new profile has no party frame config,
+-- or when the user explicitly resets the Party Frames category to defaults.
+--------------------------------------------------------------------------------
+
+function addon.RestoreAllPartyFrameOverlays()
+    -- Restore health bar overlays
+    if addon.RestorePartyFrameHealthOverlays then
+        addon.RestorePartyFrameHealthOverlays()
+    end
+    -- Restore name text overlays
+    if addon.RestorePartyFrameNameOverlays then
+        addon.RestorePartyFrameNameOverlays()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Overlay Restore (Profile Switch / Category Reset)
+--------------------------------------------------------------------------------
+-- Centralized function to restore all raid frames to stock Blizzard appearance.
+-- Called during profile switches when the new profile has no raid frame config,
+-- or when the user explicitly resets the Raid Frames category to defaults.
+--------------------------------------------------------------------------------
+
+function addon.RestoreAllRaidFrameOverlays()
+    -- Restore health bar overlays
+    if addon.RestoreRaidFrameHealthOverlays then
+        addon.RestoreRaidFrameHealthOverlays()
+    end
+    -- Restore name text overlays
+    if addon.RestoreRaidFrameNameOverlays then
+        addon.RestoreRaidFrameNameOverlays()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Raid Frame Overlay Restore (Profile Switch / Category Reset)
+--------------------------------------------------------------------------------
+-- Centralized function to restore all raid frames to stock Blizzard appearance.
+--------------------------------------------------------------------------------
+
+function addon.RestoreAllRaidFrameOverlays()
+    if addon.RestoreRaidFrameNameOverlays then
+        addon.RestoreRaidFrameNameOverlays()
+    end
 end

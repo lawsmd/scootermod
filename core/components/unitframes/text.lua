@@ -97,8 +97,16 @@ do
         return nil
     end
 
-    -- Helper: determine whether the current player's spec uses an Alternate Power Bar.
-    -- We intentionally key off spec IDs so the check is cheap and future‑proof.
+    -- Helper: determine whether the current player can ever have an Alternate Power Bar.
+    -- We intentionally key off spec IDs where possible so the check is cheap and future‑proof.
+    --
+    -- IMPORTANT (Druid nuance):
+    -- Some classes (notably DRUID) can surface the global AlternatePowerBar based on form/talents
+    -- even when the player's active spec is not the "typical" spec for that resource.
+    -- Example: Restoration Druid can talent into Moonkin Form, causing Astral Power to become the
+    -- main bar and mana to appear on the AlternatePowerBar.
+    --
+    -- Because the Settings UI should allow pre-configuration, we treat DRUID as class-capable.
     -- Specs covered (per user guidance):
     --   - Balance Druid      (specID = 102, class = DRUID)
     --   - Shadow Priest      (specID = 258, class = PRIEST)
@@ -112,6 +120,12 @@ do
         if not classToken then
             return false
         end
+
+        -- Class-capable fast-paths (form/talent driven; not reliably spec-gated).
+        if classToken == "DRUID" then
+            return true
+        end
+
         local specIndex = GetSpecialization()
         if not specIndex then
             return false
@@ -123,7 +137,6 @@ do
 
         -- Map of class -> set of specIDs that use the global AlternatePowerBar.
         local altSpecsByClass = {
-            DRUID  = { [102] = true },  -- Balance
             PRIEST = { [258] = true },  -- Shadow
             MONK   = { [268] = true },  -- Brewmaster
             SHAMAN = { [262] = true },  -- Elemental

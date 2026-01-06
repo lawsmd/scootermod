@@ -656,24 +656,52 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
         return
     end
     glowFrame._ScootOverAbsorbGlowHidden = not not hidden
+
+    -- Capture original alpha once so we can restore it when un-hiding.
+    if glowFrame.GetAlpha and glowFrame._ScootOverAbsorbGlowOrigAlpha == nil then
+        local ok, a = pcall(glowFrame.GetAlpha, glowFrame)
+        glowFrame._ScootOverAbsorbGlowOrigAlpha = ok and (a or 1) or 1
+    end
+
+    -- IMPORTANT: Do NOT call Hide()/Show() on this frame.
+    -- Hide/Show on protected unitframe children is taint-prone and can later surface as blocked
+    -- calls in unrelated Blizzard code paths (e.g., AlternatePowerBar:Hide()).
+    --
+    -- Approach: enforce invisibility with SetAlpha(0) and persistent hooks.
     if glowFrame._ScootOverAbsorbGlowHidden then
-        -- Hide the glow
-        if glowFrame.Hide then
-            pcall(glowFrame.Hide, glowFrame)
-        end
         if glowFrame.SetAlpha then
             pcall(glowFrame.SetAlpha, glowFrame, 0)
         end
-        -- NOTE: Do NOT override Show() on this frame - method overrides cause persistent taint
-        -- that propagates to the parent StatusBar and causes "blocked from an action" errors.
-        -- SetAlpha(0) is sufficient to make the glow invisible even if Blizzard shows it.
-        --
-        -- If the glow becomes visible despite alpha 0, use hooksecurefunc instead:
-        -- hooksecurefunc(glowFrame, "Show", function(self) if self._ScootOverAbsorbGlowHidden then self:SetAlpha(0) end end)
+
+        if _G.hooksecurefunc and not glowFrame._ScootOverAbsorbGlowVisibilityHooked then
+            glowFrame._ScootOverAbsorbGlowVisibilityHooked = true
+
+            _G.hooksecurefunc(glowFrame, "Show", function(self)
+                if self._ScootOverAbsorbGlowHidden and self.SetAlpha then
+                    if not self._ScootSettingAlpha then
+                        self._ScootSettingAlpha = true
+                        pcall(self.SetAlpha, self, 0)
+                        self._ScootSettingAlpha = nil
+                    end
+                end
+            end)
+
+            _G.hooksecurefunc(glowFrame, "SetAlpha", function(self, alpha)
+                if self._ScootOverAbsorbGlowHidden and alpha and alpha > 0 and self.SetAlpha then
+                    if not self._ScootSettingAlpha then
+                        self._ScootSettingAlpha = true
+                        pcall(self.SetAlpha, self, 0)
+                        self._ScootSettingAlpha = nil
+                    end
+                end
+            end)
+        end
     else
-        -- Restore visibility - the glow will show naturally when Blizzard calls Show
+        -- Restore alpha; allow Blizzard's visibility logic to drive Show/Hide naturally.
         if glowFrame.SetAlpha then
-            pcall(glowFrame.SetAlpha, glowFrame, 1)
+            local restoreAlpha = glowFrame._ScootOverAbsorbGlowOrigAlpha
+            if restoreAlpha == nil then restoreAlpha = 1 end
+            pcall(glowFrame.SetAlpha, glowFrame, restoreAlpha)
         end
     end
 end
@@ -1225,6 +1253,36 @@ function addon:ApplyStyles()
     -- Group Frames: Apply raid frame text styling
     if addon.ApplyRaidFrameTextStyle then
         addon.ApplyRaidFrameTextStyle()
+    end
+    -- Group Frames: Apply raid frame status text styling
+    if addon.ApplyRaidFrameStatusTextStyle then
+        addon.ApplyRaidFrameStatusTextStyle()
+    end
+    -- Group Frames: Apply raid group title styling (Group Numbers)
+    if addon.ApplyRaidFrameGroupTitlesStyle then
+        addon.ApplyRaidFrameGroupTitlesStyle()
+    end
+    -- Group Frames: Apply raid frame combat-safe overlays
+    if addon.ApplyRaidFrameHealthOverlays then
+        addon.ApplyRaidFrameHealthOverlays()
+    end
+    if addon.ApplyRaidFrameNameOverlays then
+        addon.ApplyRaidFrameNameOverlays()
+    end
+    -- Group Frames: Apply party frame health bar styling
+    if addon.ApplyPartyFrameHealthBarStyle then
+        addon.ApplyPartyFrameHealthBarStyle()
+    end
+    -- Group Frames: Apply party frame text styling
+    if addon.ApplyPartyFrameTextStyle then
+        addon.ApplyPartyFrameTextStyle()
+    end
+    -- Group Frames: Apply party frame combat-safe overlays
+    if addon.ApplyPartyFrameHealthOverlays then
+        addon.ApplyPartyFrameHealthOverlays()
+    end
+    if addon.ApplyPartyFrameNameOverlays then
+        addon.ApplyPartyFrameNameOverlays()
     end
 end
 

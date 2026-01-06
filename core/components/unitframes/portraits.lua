@@ -143,6 +143,8 @@ do
 
 			-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
 			_G.hooksecurefunc(texture, "Show", function(self)
+				-- Avoid taint propagation: do not mutate PetFrame textures during combat.
+				if InCombatLockdown and InCombatLockdown() then return end
 				if not self._ScooterPetOverlayHidden then return end
 
 				-- Enforce both frame alpha and vertex alpha, since Blizzard may drive visibility via SetVertexColor.
@@ -165,6 +167,7 @@ do
 			-- If Blizzard uses SetShown(true), treat it like Show().
 			if texture.SetShown then
 				_G.hooksecurefunc(texture, "SetShown", function(self, shown)
+					if InCombatLockdown and InCombatLockdown() then return end
 					if not shown or not self._ScooterPetOverlayHidden then return end
 					if self.SetAlpha then
 						pcall(self.SetAlpha, self, 0)
@@ -184,6 +187,7 @@ do
 
 			-- If Blizzard sets alpha > 0, schedule a correction to avoid recursion loops.
 			_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
+				if InCombatLockdown and InCombatLockdown() then return end
 				if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
 					if not self._ScooterPetOverlayAlphaDeferred then
 						self._ScooterPetOverlayAlphaDeferred = true
@@ -210,6 +214,7 @@ do
 			-- If we don't hook this, the glow can reappear despite alpha=0.
 			if texture.SetVertexColor then
 				_G.hooksecurefunc(texture, "SetVertexColor", function(self, r, g, b, a)
+					if InCombatLockdown and InCombatLockdown() then return end
 					if not self._ScooterPetOverlayHidden then
 						return
 					end
@@ -235,6 +240,10 @@ do
 		end
 
 		-- Apply current desired state immediately (and set the sticky flag).
+		if InCombatLockdown and InCombatLockdown() then
+			-- Out-of-combat only: avoid mutating PetFrame textures during combat.
+			return
+		end
 		if hidden then
 			texture._ScooterPetOverlayHidden = true
 			if texture.SetAlpha then
@@ -249,6 +258,12 @@ do
 	end
 
 	local function EnforcePetOverlays()
+		-- PetFrame is managed/protected by Edit Mode. Never touch its overlays during combat;
+		-- defer and let PLAYER_REGEN_ENABLED apply any pending enforcement.
+		if InCombatLockdown and InCombatLockdown() then
+			addon._pendingPetOverlaysEnforce = true
+			return
+		end
 		local db = addon and addon.db and addon.db.profile
 		if not db or not db.unitFrames or not db.unitFrames.Pet then
 			return
@@ -1079,6 +1094,12 @@ do
 			end
 			
 			if unitKey and self.feedbackText then
+				-- PetFrame is managed/protected by Edit Mode. Avoid any in-combat writes to its
+				-- feedback text (SetAlpha/SetFont) to prevent taint propagation that can later
+				-- block protected Edit Mode methods like PetFrame:HideBase().
+				if unitKey == "Pet" and InCombatLockdown and InCombatLockdown() then
+					return
+				end
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local cfg = db.unitFrames[unitKey].portrait
@@ -1129,6 +1150,9 @@ do
 			end
 			
 			if unitKey and self.feedbackText then
+				if unitKey == "Pet" and InCombatLockdown and InCombatLockdown() then
+					return
+				end
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local damageTextDisabled = db.unitFrames[unitKey].portrait.damageTextDisabled == true

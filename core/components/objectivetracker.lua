@@ -190,24 +190,16 @@ end
 local function ApplyColorWithDefaultRestore(fs, cfg)
     if not fs or not cfg then return end
 
-    -- Color is a mode selector (Default/Custom). We must support reverting back to Blizzard
-    -- by restoring a captured baseline color. Baseline is captured only while in Default mode.
+    -- IMPORTANT: Objective Tracker recycles (pools) block/line frames on collapse/expand.
+    -- Any state cached directly on a fontstring can become stale when that fontstring is reused
+    -- for a different quest/line. Clear cached color state on every pass to avoid “swapping”
+    -- behavior where one item is styled and the other is not.
+    fs._ScooterObjectiveTrackerBaseColor = nil
+    fs._ScooterObjectiveTrackerAppliedCustomColor = nil
+
+    -- Color is a mode selector (Default/Custom).
+    -- In Default mode, we do not set a color at all; Blizzard remains the source of truth.
     if cfg.colorMode ~= "custom" then
-        -- Capture baseline while in Default mode (first time only).
-        if not fs._ScooterObjectiveTrackerBaseColor and fs.GetTextColor then
-            local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
-            if ok and r and g and b then
-                fs._ScooterObjectiveTrackerBaseColor = { r, g, b, a or 1 }
-            end
-        end
-        -- If we previously applied a custom color, restore baseline when returning to Default.
-        if fs._ScooterObjectiveTrackerAppliedCustomColor and type(fs._ScooterObjectiveTrackerBaseColor) == "table" then
-            local c = fs._ScooterObjectiveTrackerBaseColor
-            fs._ScooterObjectiveTrackerApplyingColor = true
-            SafeSetTextColor(fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-            fs._ScooterObjectiveTrackerApplyingColor = nil
-            fs._ScooterObjectiveTrackerAppliedCustomColor = nil
-        end
         return
     end
 
@@ -216,7 +208,6 @@ local function ApplyColorWithDefaultRestore(fs, cfg)
     fs._ScooterObjectiveTrackerApplyingColor = true
     SafeSetTextColor(fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
     fs._ScooterObjectiveTrackerApplyingColor = nil
-    fs._ScooterObjectiveTrackerAppliedCustomColor = true
 end
 
 local function EnsureQuestNameHoverColorHook(headerText, ownerBlock)
@@ -292,6 +283,27 @@ local function IterateModuleBlocks(module, fn)
     if type(module.usedBlocks) == "table" then
         for _, b in pairs(module.usedBlocks) do
             if type(b) == "table" then fn(b) end
+        end
+    end
+
+    -- AdventureObjectiveTracker (Collections): blocks are keyed under ContentsFrame with dynamic keys.
+    -- Framestack example:
+    -- - AdventureObjectiveTracker.ContentsFrame.<dynamicKey>.HeaderText
+    -- - AdventureObjectiveTracker.ContentsFrame.<dynamicKey>.objective.Text
+    -- These are not exposed via firstBlock/usedBlocks on some client builds.
+    local adventure = _G.AdventureObjectiveTracker
+    if adventure and module == adventure then
+        local contents = module.ContentsFrame
+        if type(contents) == "table" then
+            for _, b in pairs(contents) do
+                if type(b) == "table" then
+                    local hasHeader = b.HeaderText and type(b.HeaderText.SetTextColor) == "function"
+                    local hasObjective = b.objective and b.objective.Text and type(b.objective.Text.SetTextColor) == "function"
+                    if hasHeader or hasObjective then
+                        fn(b)
+                    end
+                end
+            end
         end
     end
 end
@@ -381,6 +393,12 @@ local function ApplyObjectiveTrackerTextStyling(self)
                     if block.lastRegion and block.lastRegion.Text then
                         ApplyFontFaceAndStylePreservingSize(block.lastRegion.Text, objectiveCfg, textSize)
                         ApplyColorWithDefaultRestore(block.lastRegion.Text, objectiveCfg)
+                    end
+
+                    -- AdventureObjectiveTracker (Collections): per-item objective text lives at block.objective.Text.
+                    if block.objective and block.objective.Text then
+                        ApplyFontFaceAndStylePreservingSize(block.objective.Text, objectiveCfg, textSize)
+                        ApplyColorWithDefaultRestore(block.objective.Text, objectiveCfg)
                     end
                 end
             end)
