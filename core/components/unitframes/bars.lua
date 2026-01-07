@@ -122,9 +122,6 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyRaidFrameHealthBarStyle then
                 addon.ApplyRaidFrameHealthBarStyle()
             end
-            if addon.ApplyRaidFrameTextStyle then
-                addon.ApplyRaidFrameTextStyle()
-            end
             if addon.ApplyRaidFrameStatusTextStyle then
                 addon.ApplyRaidFrameStatusTextStyle()
             end
@@ -144,8 +141,8 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyPartyFrameHealthBarStyle then
                 addon.ApplyPartyFrameHealthBarStyle()
             end
-            if addon.ApplyPartyFrameTextStyle then
-                addon.ApplyPartyFrameTextStyle()
+            if addon.ApplyPartyFrameTitleStyle then
+                addon.ApplyPartyFrameTitleStyle()
             end
             -- Also apply combat-safe overlays (create/update overlays out of combat)
             if addon.ApplyPartyFrameHealthOverlays then
@@ -4829,23 +4826,12 @@ do
             return
         end
 
-        if InCombatLockdown and InCombatLockdown() then
-            queueRaidFrameReapply()
-            return
-        end
-
-        -- Rescan frames each time to catch frames created/destroyed by Blizzard
-        collectRaidNameTexts()
-
-        for _, frame in ipairs(raidNameTexts) do
-            applyTextToRaidFrame(frame, cfg)
-        end
-
-        -- Clear the counted flag for next scan
-        for _, frame in ipairs(raidNameTexts) do
-            if frame.name then
-                frame.name._ScootRaidTextCounted = nil
-            end
+        -- Deprecated: Raid Player Name styling is now driven by overlay FontStrings
+        -- (see ApplyRaidFrameNameOverlays). We must avoid moving Blizzard's `frame.name`
+        -- because the overlay clipping container copies its anchor geometry to preserve
+        -- truncation. Touching `frame.name` here reintroduces leaking/incorrect clipping.
+        if addon.ApplyRaidFrameNameOverlays then
+            addon.ApplyRaidFrameNameOverlays()
         end
     end
 
@@ -4853,6 +4839,10 @@ do
     local function installRaidFrameTextHooks()
         if addon._RaidFrameTextHooksInstalled then return end
         addon._RaidFrameTextHooksInstalled = true
+
+        -- Deprecated: name styling hooks must not touch Blizzard's `frame.name`.
+        -- Overlay system installs its own hooks (installRaidNameOverlayHooks()).
+        return
 
         -- Hook CompactUnitFrame_UpdateAll to catch frame updates
         if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
@@ -5049,6 +5039,20 @@ do
             pcall(overlay.SetMaxLines, overlay, 1)
         end
 
+        -- Keep the clipping container tall enough for the configured font size.
+        -- If the container is created too early (before Blizzard sizes `frame.name`), it can end up 1px tall,
+        -- which clips the overlay into a thin horizontal sliver.
+        if container and container.SetHeight then
+            local minH = math.max(12, (tonumber(fontSize) or 12) + 6)
+            if overlay.GetStringHeight then
+                local okSH, sh = pcall(overlay.GetStringHeight, overlay)
+                if okSH and sh and sh > 0 and (sh + 2) > minH then
+                    minH = sh + 2
+                end
+            end
+            pcall(container.SetHeight, container, minH)
+        end
+
         -- Position within an addon-owned clipping container that matches Blizzard's name anchors.
         -- This preserves truncation/clipping even when using single-point anchors (CENTER, etc.).
         overlay:ClearAllPoints()
@@ -5164,10 +5168,11 @@ do
 
             -- Critical: our container must have a non-zero height or it will clip everything.
             -- Blizzard's name element is usually anchored with left/right + top only, so height is implicit there.
-            local h = 12
+            local fontSize = tonumber(cfg and cfg.size) or 12
+            local h = math.max(12, fontSize + 6)
             if frame.name and frame.name.GetHeight then
                 local okH, hh = pcall(frame.name.GetHeight, frame.name)
-                if okH and hh and hh > 0 then
+                if okH and hh and hh > h then
                     h = hh
                 end
             end
@@ -6457,26 +6462,21 @@ do
             return
         end
 
-        if InCombatLockdown and InCombatLockdown() then
-            queuePartyFrameReapply()
-            return
-        end
-
-        collectPartyFrames()
-        for _, frame in ipairs(partyFrames) do
-            applyTextToPartyFrame(frame, cfg)
-        end
-
-        for _, frame in ipairs(partyFrames) do
-            if frame.name then
-                frame.name._ScootPartyTextCounted = nil
-            end
+        -- Deprecated: Party Player Name styling is now driven by overlay FontStrings
+        -- (see ApplyPartyFrameNameOverlays). Avoid touching Blizzard's `frame.name`
+        -- so overlay clipping preserves stock truncation behavior.
+        if addon.ApplyPartyFrameNameOverlays then
+            addon.ApplyPartyFrameNameOverlays()
         end
     end
 
     local function installPartyFrameTextHooks()
         if addon._PartyFrameTextHooksInstalled then return end
         addon._PartyFrameTextHooksInstalled = true
+
+        -- Deprecated: name styling hooks must not touch Blizzard's `frame.name`.
+        -- Overlay system installs its own hooks (installPartyNameOverlayHooks()).
+        return
 
         if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
             _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
@@ -6662,6 +6662,20 @@ do
             pcall(overlay.SetMaxLines, overlay, 1)
         end
 
+        -- Keep the clipping container tall enough for the configured font size.
+        -- If the container is created too early (before Blizzard sizes `frame.name`), it can end up 1px tall,
+        -- which clips the overlay into a thin horizontal sliver.
+        if container and container.SetHeight then
+            local minH = math.max(12, (tonumber(fontSize) or 12) + 6)
+            if overlay.GetStringHeight then
+                local okSH, sh = pcall(overlay.GetStringHeight, overlay)
+                if okSH and sh and sh > 0 and (sh + 2) > minH then
+                    minH = sh + 2
+                end
+            end
+            pcall(container.SetHeight, container, minH)
+        end
+
         -- Position within an addon-owned clipping container that matches Blizzard's original name anchors.
         overlay:ClearAllPoints()
         overlay:SetPoint(anchor, container, anchor, offsetX, offsetY)
@@ -6777,10 +6791,11 @@ do
             end
 
             -- Critical: container must have height or it will clip everything.
-            local h = 12
+            local fontSize = tonumber(cfg and cfg.size) or 12
+            local h = math.max(12, fontSize + 6)
             if frame.name and frame.name.GetHeight then
                 local okH, hh = pcall(frame.name.GetHeight, frame.name)
-                if okH and hh and hh > 0 then
+                if okH and hh and hh > h then
                     h = hh
                 end
             end
@@ -6958,6 +6973,280 @@ do
     end
 
     installPartyNameOverlayHooks()
+end
+
+--------------------------------------------------------------------------------
+-- Party Frame Text Styling (Party Title)
+--------------------------------------------------------------------------------
+-- Applies the same 7 settings as Party Frames > Text > Player Name to the party frame title text.
+-- Target: CompactPartyFrame.title (Button from CompactRaidGroupTemplate: "$parentTitle", parentKey="title").
+--------------------------------------------------------------------------------
+do
+    local function hasCustomTextSettings(cfg)
+        if not cfg then return false end
+        if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
+        if cfg.size and cfg.size ~= 12 then return true end
+        if cfg.style and cfg.style ~= "OUTLINE" then return true end
+        if cfg.color then
+            local c = cfg.color
+            if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end
+        end
+        if cfg.anchor and cfg.anchor ~= "TOPLEFT" then return true end
+        if cfg.offset then
+            if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
+        end
+        return false
+    end
+
+    local function getJustifyHFromAnchor(anchor)
+        if anchor == "TOPLEFT" or anchor == "LEFT" or anchor == "BOTTOMLEFT" then
+            return "LEFT"
+        elseif anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+            return "CENTER"
+        elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+            return "RIGHT"
+        end
+        return "LEFT"
+    end
+
+    local function isCompactPartyFrame(frame)
+        if not frame then return false end
+        local ok, name = pcall(function() return frame:GetName() end)
+        if not ok or not name then return false end
+        return name == "CompactPartyFrame"
+    end
+
+    local function applyTextToFontString(fs, ownerFrame, cfg)
+        if not fs or not ownerFrame or not cfg then return end
+
+        local fontFace = cfg.fontFace or "FRIZQT__"
+        local resolvedFace
+        if addon and addon.ResolveFontFace then
+            resolvedFace = addon.ResolveFontFace(fontFace)
+        else
+            local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+            resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+        end
+
+        local fontSize = tonumber(cfg.size) or 12
+        local fontStyle = cfg.style or "OUTLINE"
+        local color = cfg.color or { 1, 1, 1, 1 }
+        local anchor = cfg.anchor or "TOPLEFT"
+        local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+        local success = pcall(fs.SetFont, fs, resolvedFace, fontSize, fontStyle)
+        if not success then
+            local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+            if fallback then
+                pcall(fs.SetFont, fs, fallback, fontSize, fontStyle)
+            end
+        end
+
+        if fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, getJustifyHFromAnchor(anchor))
+        end
+
+        if not fs._ScootOriginalPoint_PartyTitle then
+            local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
+            if point then
+                fs._ScootOriginalPoint_PartyTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            end
+        end
+
+        local isDefaultAnchor = (anchor == "TOPLEFT")
+        local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+        if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_PartyTitle then
+            local orig = fs._ScootOriginalPoint_PartyTitle
+            fs:ClearAllPoints()
+            fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+            if fs.SetJustifyH then
+                pcall(fs.SetJustifyH, fs, "LEFT")
+            end
+        else
+            fs:ClearAllPoints()
+            fs:SetPoint(anchor, ownerFrame, anchor, offsetX, offsetY)
+        end
+    end
+
+    local function applyPartyTitle(titleButton, cfg)
+        if not titleButton or not cfg then return end
+        if not titleButton.GetFontString then return end
+        local fs = titleButton:GetFontString()
+        if not fs then return end
+        if cfg.hide == true then
+            -- Hide always wins; styling is irrelevant while hidden.
+            -- The hide logic is handled by hideBlizzardPartyTitleText below.
+            return
+        end
+        applyTextToFontString(fs, titleButton, cfg)
+    end
+
+    -- Hide Blizzard's party title FontString and install alpha-enforcement hook
+    local function hideBlizzardPartyTitleText(titleButton)
+        if not titleButton or not titleButton.GetFontString then return end
+        local fs = titleButton:GetFontString()
+        if not fs then return end
+
+        fs._ScootHidden = true
+        if fs.SetAlpha then
+            pcall(fs.SetAlpha, fs, 0)
+        end
+        if fs.Hide then
+            pcall(fs.Hide, fs)
+        end
+
+        -- Install alpha-enforcement hook (only once)
+        if not fs._ScootAlphaHooked and _G.hooksecurefunc then
+            fs._ScootAlphaHooked = true
+            _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                if alpha > 0 and self._ScootHidden then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            if self and self._ScootHidden then
+                                self:SetAlpha(0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+
+        if not fs._ScootShowHooked and _G.hooksecurefunc then
+            fs._ScootShowHooked = true
+            _G.hooksecurefunc(fs, "Show", function(self)
+                if not self._ScootHidden then return end
+                -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
+                if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if self and self._ScootHidden then
+                            if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                            if self.Hide then pcall(self.Hide, self) end
+                        end
+                    end)
+                else
+                    if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                    if self.Hide then pcall(self.Hide, self) end
+                end
+            end)
+        end
+    end
+
+    -- Show Blizzard's party title FontString (for restore/cleanup)
+    local function showBlizzardPartyTitleText(titleButton)
+        if not titleButton or not titleButton.GetFontString then return end
+        local fs = titleButton:GetFontString()
+        if not fs then return end
+        fs._ScootHidden = nil
+        if fs.SetAlpha then
+            pcall(fs.SetAlpha, fs, 1)
+        end
+        if fs.Show then
+            pcall(fs.Show, fs)
+        end
+    end
+
+    function addon.ApplyPartyFrameTitleStyle()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local groupFrames = rawget(db, "groupFrames")
+        local partyCfg = groupFrames and rawget(groupFrames, "party") or nil
+        local cfg = partyCfg and rawget(partyCfg, "textPartyTitle") or nil
+        if not cfg then
+            return
+        end
+
+        -- If the user has asked to hide it, do that even if other style settings are default.
+        if cfg.hide ~= true and not hasCustomTextSettings(cfg) then
+            return
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            queuePartyFrameReapply()
+            return
+        end
+
+        local partyFrame = _G.CompactPartyFrame
+        local titleButton = partyFrame and partyFrame.title or _G.CompactPartyFrameTitle
+        if titleButton then
+            if cfg.hide == true then
+                hideBlizzardPartyTitleText(titleButton)
+            else
+                showBlizzardPartyTitleText(titleButton)
+                applyPartyTitle(titleButton, cfg)
+            end
+        end
+    end
+
+    local function installPartyTitleHooks()
+        if addon._PartyFrameTitleHooksInstalled then return end
+        addon._PartyFrameTitleHooksInstalled = true
+
+        local function tryApply(groupFrame)
+            if not groupFrame or not isCompactPartyFrame(groupFrame) then
+                return
+            end
+            local db = addon and addon.db and addon.db.profile
+            local cfg = db and db.groupFrames and db.groupFrames.party and db.groupFrames.party.textPartyTitle or nil
+            if not cfg then
+                return
+            end
+            if cfg.hide ~= true and not hasCustomTextSettings(cfg) then
+                return
+            end
+
+            local titleButton = groupFrame.title or _G[groupFrame:GetName() .. "Title"]
+            if not titleButton then return end
+
+            local titleRef = titleButton
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if InCombatLockdown and InCombatLockdown() then
+                        queuePartyFrameReapply()
+                        return
+                    end
+                    if cfgRef.hide == true then
+                        hideBlizzardPartyTitleText(titleRef)
+                    else
+                        showBlizzardPartyTitleText(titleRef)
+                        applyPartyTitle(titleRef, cfgRef)
+                    end
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    queuePartyFrameReapply()
+                    return
+                end
+                if cfgRef.hide == true then
+                    hideBlizzardPartyTitleText(titleRef)
+                else
+                    showBlizzardPartyTitleText(titleRef)
+                    applyPartyTitle(titleRef, cfgRef)
+                end
+            end
+        end
+
+        if _G.hooksecurefunc then
+            if _G.CompactRaidGroup_UpdateLayout then
+                _G.hooksecurefunc("CompactRaidGroup_UpdateLayout", tryApply)
+            end
+            if _G.CompactRaidGroup_UpdateUnits then
+                _G.hooksecurefunc("CompactRaidGroup_UpdateUnits", tryApply)
+            end
+            if _G.CompactRaidGroup_UpdateBorder then
+                _G.hooksecurefunc("CompactRaidGroup_UpdateBorder", tryApply)
+            end
+        end
+    end
+
+    installPartyTitleHooks()
 end
 
 --------------------------------------------------------------------------------

@@ -928,6 +928,7 @@ function panel.RenderGFParty()
         local textTabs = {
             sectionTitle = "",
             tabAText = "Player Name",
+            tabBText = "Party Title",
             build = function(frame)
                 local function getTextDB()
                     local db = addon and addon.db and addon.db.profile
@@ -951,9 +952,37 @@ function panel.RenderGFParty()
                     return db.groupFrames.party.textPlayerName
                 end
 
+                local function getPartyTitleDB()
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames") or nil
+                    local party = gf and rawget(gf, "party") or nil
+                    return party and rawget(party, "textPartyTitle") or nil
+                end
+
+                local function ensurePartyTitleDB()
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return nil end
+                    db.groupFrames = db.groupFrames or {}
+                    db.groupFrames.party = db.groupFrames.party or {}
+                    db.groupFrames.party.textPartyTitle = db.groupFrames.party.textPartyTitle or {
+                        fontFace = "FRIZQT__",
+                        size = 12,
+                        style = "OUTLINE",
+                        color = { 1, 1, 1, 1 },
+                        offset = { x = 0, y = 0 },
+                    }
+                    return db.groupFrames.party.textPartyTitle
+                end
+
                 local function applyNow()
-                    if addon and addon.ApplyPartyFrameTextStyle then
-                        addon.ApplyPartyFrameTextStyle()
+                    if addon and addon.ApplyPartyFrameNameOverlays then
+                        addon.ApplyPartyFrameNameOverlays()
+                    end
+                end
+
+                local function applyPartyTitleNow()
+                    if addon and addon.ApplyPartyFrameTitleStyle then
+                        addon.ApplyPartyFrameTitleStyle()
                     end
                 end
 
@@ -1179,12 +1208,156 @@ function panel.RenderGFParty()
                         end,
                         y)
                 end
+
+                -- PageB: Party Title settings (same options as Player Name)
+                if frame.PageB then
+                    local y = { y = -50 }
+
+                    -- 0. Hide Party Title
+                    do
+                        local label = "Hide Party Title"
+                        local setting = CreateLocalSetting(label, "boolean",
+                            function()
+                                local cfg = getPartyTitleDB() or {}
+                                return cfg.hide == true
+                            end,
+                            function(v)
+                                local cfg = ensurePartyTitleDB()
+                                if not cfg then return end
+                                cfg.hide = (v == true)
+                                applyPartyTitleNow()
+                            end,
+                            false)
+                        local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+                            name = label,
+                            setting = setting,
+                            options = {},
+                        })
+                        local row = CreateFrame("Frame", nil, frame.PageB, "SettingsCheckboxControlTemplate")
+                        row.GetElementData = function() return initCb end
+                        row:SetPoint("TOPLEFT", 4, y.y)
+                        row:SetPoint("TOPRIGHT", -16, y.y)
+                        initCb:InitFrame(row)
+                        if panel and panel.ApplyRobotoWhite then
+                            if row.Text then panel.ApplyRobotoWhite(row.Text) end
+                            local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+                            if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+                        end
+                        y.y = y.y - 34
+                    end
+
+                    addDropdown(frame.PageB, "Party Title Font", fontOptions,
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            return cfg.fontFace or "FRIZQT__"
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then cfg.fontFace = v end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    addSlider(frame.PageB, "Party Title Size", 6, 32, 1,
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            return tonumber(cfg.size) or 12
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then cfg.size = tonumber(v) or 12 end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    addStyleDropdown(frame.PageB, "Party Title Style",
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            return cfg.style or "OUTLINE"
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then cfg.style = v end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    addColorRow(frame.PageB, "Party Title Color",
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            local c = cfg.color or { 1, 1, 1, 1 }
+                            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                        end,
+                        function(r, g, b, a)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then cfg.color = { r or 1, g or 1, b or 1, a or 1 } end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    local function alignmentOptions()
+                        local container = Settings.CreateControlTextContainer()
+                        container:Add("TOPLEFT", "Top-Left")
+                        container:Add("TOP", "Top-Center")
+                        container:Add("TOPRIGHT", "Top-Right")
+                        container:Add("LEFT", "Left")
+                        container:Add("CENTER", "Center")
+                        container:Add("RIGHT", "Right")
+                        container:Add("BOTTOMLEFT", "Bottom-Left")
+                        container:Add("BOTTOM", "Bottom-Center")
+                        container:Add("BOTTOMRIGHT", "Bottom-Right")
+                        return container:GetData()
+                    end
+                    addDropdown(frame.PageB, "Party Title Alignment", alignmentOptions,
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            return cfg.anchor or "TOPLEFT"
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then cfg.anchor = v or "TOPLEFT" end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    addSlider(frame.PageB, "Party Title Offset X", -50, 50, 1,
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.x) or 0
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.x = tonumber(v) or 0
+                            end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+
+                    addSlider(frame.PageB, "Party Title Offset Y", -50, 50, 1,
+                        function()
+                            local cfg = getPartyTitleDB() or {}
+                            local o = cfg.offset or {}
+                            return tonumber(o.y) or 0
+                        end,
+                        function(v)
+                            local cfg = ensurePartyTitleDB()
+                            if cfg then
+                                cfg.offset = cfg.offset or {}
+                                cfg.offset.y = tonumber(v) or 0
+                            end
+                            applyPartyTitleNow()
+                        end,
+                        y)
+                end
             end,
         }
 
         local textInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", textTabs)
-        -- Height: 50 top + (7 controls * 34) = 288px, rounded to 304px for safety
-        textInit.GetExtent = function() return 304 end
+        -- Height: 8 controls (checkbox + 7 controls) -> use the standard 364px tabbed-section height.
+        textInit.GetExtent = function() return 364 end
         textInit:AddShownPredicate(function()
             return panel:IsSectionExpanded(componentId, "Text")
         end)
@@ -2026,8 +2199,8 @@ function panel.RenderGFRaid()
                 end
 
                 local function applyNow()
-                    if addon and addon.ApplyRaidFrameTextStyle then
-                        addon.ApplyRaidFrameTextStyle()
+                    if addon and addon.ApplyRaidFrameNameOverlays then
+                        addon.ApplyRaidFrameNameOverlays()
                     end
                 end
 

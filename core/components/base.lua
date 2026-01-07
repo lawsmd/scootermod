@@ -1250,10 +1250,6 @@ function addon:ApplyStyles()
     if addon.ApplyRaidFrameHealthBarStyle then
         addon.ApplyRaidFrameHealthBarStyle()
     end
-    -- Group Frames: Apply raid frame text styling
-    if addon.ApplyRaidFrameTextStyle then
-        addon.ApplyRaidFrameTextStyle()
-    end
     -- Group Frames: Apply raid frame status text styling
     if addon.ApplyRaidFrameStatusTextStyle then
         addon.ApplyRaidFrameStatusTextStyle()
@@ -1273,9 +1269,9 @@ function addon:ApplyStyles()
     if addon.ApplyPartyFrameHealthBarStyle then
         addon.ApplyPartyFrameHealthBarStyle()
     end
-    -- Group Frames: Apply party frame text styling
-    if addon.ApplyPartyFrameTextStyle then
-        addon.ApplyPartyFrameTextStyle()
+    -- Group Frames: Apply party frame title styling (Party Title)
+    if addon.ApplyPartyFrameTitleStyle then
+        addon.ApplyPartyFrameTitleStyle()
     end
     -- Group Frames: Apply party frame combat-safe overlays
     if addon.ApplyPartyFrameHealthOverlays then
