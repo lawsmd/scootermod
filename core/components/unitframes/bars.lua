@@ -1,3 +1,19 @@
+--------------------------------------------------------------------------------
+-- bars.lua
+-- Unit Frame Bar Styling (Main File)
+--
+-- This file orchestrates bar styling for all unit frames. The functionality
+-- has been modularized into separate files in the bars/ subdirectory:
+--   - bars/utils.lua       - Shared utility functions
+--   - bars/combat.lua      - Combat deferral systems
+--   - bars/resolvers.lua   - Frame resolution helpers
+--   - bars/textures.lua    - Texture application functions
+--   - bars/alpha.lua       - Alpha enforcement helpers
+--   - bars/preemptive.lua  - Pre-emptive hiding and early hooks
+--   - bars/raidframes.lua  - Raid frame styling
+--   - bars/partyframes.lua - Party frame styling
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
@@ -5,6 +21,21 @@ local ClampOpacity = Util.ClampOpacity
 local PlayerInCombat = Util.PlayerInCombat
 local HideDefaultBarTextures = Util.HideDefaultBarTextures
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
+
+-- Reference extracted modules (loaded via TOC before this file)
+local Utils = addon.BarsUtils
+local Combat = addon.BarsCombat
+local Resolvers = addon.BarsResolvers
+local Textures = addon.BarsTextures
+local Alpha = addon.BarsAlpha
+local Preemptive = addon.BarsPreemptive
+local RaidFrames = addon.BarsRaidFrames
+local PartyFrames = addon.BarsPartyFrames
+
+--------------------------------------------------------------------------------
+-- Legacy Utility Functions (kept for backward compatibility)
+-- These delegate to the extracted Utils module when possible
+--------------------------------------------------------------------------------
 
 local function getUiScale()
     if UIParent and UIParent.GetEffectiveScale then
@@ -3745,54 +3776,8 @@ do
         local function defer(unit)
             if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, function() ensureTextAndBorderOrdering(unit) end) else ensureTextAndBorderOrdering(unit) end
         end
-        -- TEMPORARY DIAGNOSTIC (2025-11-14):
-        -- The hooks below re-apply bar textures and borders after Blizzard updates
-        -- unit frames (Player/Target/Focus). These updates can be frequent in combat.
-        -- To measure their CPU impact, we keep the z-order defers available but
-        -- disable the texture re-application hooks entirely for now.
-
-        if false and _G.PlayerFrame and _G.PlayerFrame.UpdateSystem then
-            _G.hooksecurefunc(_G.PlayerFrame, "UpdateSystem", function()
-                defer("Player")
-                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
-                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Player") end)
-                elseif addon.ApplyUnitFrameBarTexturesFor then
-                    addon.ApplyUnitFrameBarTexturesFor("Player")
-                end
-            end)
-        end
-        if false and type(_G.PlayerFrame_Update) == "function" then
-            _G.hooksecurefunc("PlayerFrame_Update", function()
-                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
-                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Player") end)
-                elseif addon.ApplyUnitFrameBarTexturesFor then
-                    addon.ApplyUnitFrameBarTexturesFor("Player")
-                end
-            end)
-        end
-        if false and type(_G.TargetFrame_Update) == "function" then
-            _G.hooksecurefunc("TargetFrame_Update", function()
-                defer("Target")
-                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
-                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Target") end)
-                elseif addon.ApplyUnitFrameBarTexturesFor then
-                    addon.ApplyUnitFrameBarTexturesFor("Target")
-                end
-            end)
-        end
-        if false and type(_G.FocusFrame_Update) == "function" then
-            _G.hooksecurefunc("FocusFrame_Update", function()
-                defer("Focus")
-                if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
-                    _G.C_Timer.After(0, function() addon.ApplyUnitFrameBarTexturesFor("Focus") end)
-                elseif addon.ApplyUnitFrameBarTexturesFor then
-                    addon.ApplyUnitFrameBarTexturesFor("Focus")
-                end
-            end)
-        end
-        if false and type(_G.PetFrame_Update) == "function" then
-            _G.hooksecurefunc("PetFrame_Update", function() defer("Pet") end)
-        end
+        -- NOTE: Texture re-application hooks were removed (2025-11-14) as dead code.
+        -- The z-order enforcement hooks remain active via installUFZOrderHooks().
     end
 
     if not addon._UFZOrderHooksInstalled then
@@ -7105,14 +7090,3 @@ function addon.RestoreAllRaidFrameOverlays()
     end
 end
 
---------------------------------------------------------------------------------
--- Raid Frame Overlay Restore (Profile Switch / Category Reset)
---------------------------------------------------------------------------------
--- Centralized function to restore all raid frames to stock Blizzard appearance.
---------------------------------------------------------------------------------
-
-function addon.RestoreAllRaidFrameOverlays()
-    if addon.RestoreRaidFrameNameOverlays then
-        addon.RestoreRaidFrameNameOverlays()
-    end
-end

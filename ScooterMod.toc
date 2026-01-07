@@ -42,6 +42,14 @@ core/components/nameplates.lua
 core/components/personal_resource_display.lua
 core/components/scrollingcombattext.lua
 core/components/unitframes/text.lua
+core/components/unitframes/bars/utils.lua
+core/components/unitframes/bars/combat.lua
+core/components/unitframes/bars/resolvers.lua
+core/components/unitframes/bars/textures.lua
+core/components/unitframes/bars/alpha.lua
+core/components/unitframes/bars/preemptive.lua
+core/components/unitframes/bars/raidframes.lua
+core/components/unitframes/bars/partyframes.lua
 core/components/unitframes/bars.lua
 core/components/unitframes/portraits.lua
 core/components/unitframes/classresource.lua
