@@ -504,4 +504,884 @@ end
 -- Install hooks on load
 RaidFrames.installHooks()
 
+--------------------------------------------------------------------------------
+-- Text Styling (Player Name)
+--------------------------------------------------------------------------------
+-- Applies font settings to raid frame name text elements.
+-- Target: CompactRaidGroup*Member*Name (the name FontString on each raid unit frame)
+--------------------------------------------------------------------------------
+
+-- Apply text settings to a raid frame's name FontString
+local function applyTextToRaidFrame(frame, cfg)
+    if not frame or not cfg then return end
+
+    -- Get the name FontString (frame.name is the standard CompactUnitFrame name element)
+    local nameFS = frame.name
+    if not nameFS then return end
+
+    -- Resolve font face
+    local fontFace = cfg.fontFace or "FRIZQT__"
+    local resolvedFace
+    if addon and addon.ResolveFontFace then
+        resolvedFace = addon.ResolveFontFace(fontFace)
+    else
+        -- Fallback to GameFontNormal's font
+        local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+        resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+    end
+
+    -- Get settings with defaults
+    local fontSize = tonumber(cfg.size) or 12
+    local fontStyle = cfg.style or "OUTLINE"
+    local color = cfg.color or { 1, 1, 1, 1 }
+    local anchor = cfg.anchor or "TOPLEFT"
+    local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+    local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+    -- Apply font (SetFont must be called before SetText)
+    local success = pcall(nameFS.SetFont, nameFS, resolvedFace, fontSize, fontStyle)
+    if not success then
+        -- Fallback to default font on failure
+        local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+        if fallback then
+            pcall(nameFS.SetFont, nameFS, fallback, fontSize, fontStyle)
+        end
+    end
+
+    -- Apply color
+    if nameFS.SetTextColor then
+        pcall(nameFS.SetTextColor, nameFS, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    end
+
+    -- Apply text alignment based on anchor's horizontal component
+    if nameFS.SetJustifyH then
+        pcall(nameFS.SetJustifyH, nameFS, Utils.getJustifyHFromAnchor(anchor))
+    end
+
+    -- Capture baseline position on first application so we can restore later
+    if not nameFS._ScootOriginalPoint then
+        local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
+        if point then
+            nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
+        end
+    end
+
+    -- Apply anchor-based positioning with offsets relative to selected anchor
+    local isDefaultAnchor = (anchor == "TOPLEFT")
+    local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+    if isDefaultAnchor and isZeroOffset and nameFS._ScootOriginalPoint then
+        -- Restore baseline (stock position) when user has reset to default
+        local orig = nameFS._ScootOriginalPoint
+        nameFS:ClearAllPoints()
+        nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+        -- Also restore default text alignment
+        if nameFS.SetJustifyH then
+            pcall(nameFS.SetJustifyH, nameFS, "LEFT")
+        end
+    else
+        -- Position the name FontString using the user-selected anchor, relative to the frame
+        nameFS:ClearAllPoints()
+        nameFS:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+    end
+end
+
+-- Collect all raid frame name FontStrings
+local raidNameTexts = {}
+
+local function collectRaidNameTexts()
+    if wipe then
+        wipe(raidNameTexts)
+    else
+        raidNameTexts = {}
+    end
+
+    -- Scan CompactRaidFrame1 through CompactRaidFrame40 (combined layout)
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame and frame.name and not frame.name._ScootRaidTextCounted then
+            frame.name._ScootRaidTextCounted = true
+            table.insert(raidNameTexts, frame)
+        end
+    end
+
+    -- Scan CompactRaidGroup1Member1 through CompactRaidGroup8Member5 (group layout)
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame and frame.name and not frame.name._ScootRaidTextCounted then
+                frame.name._ScootRaidTextCounted = true
+                table.insert(raidNameTexts, frame)
+            end
+        end
+    end
+end
+
+-- Main entry point: Apply raid frame text styling from DB settings
+function addon.ApplyRaidFrameTextStyle()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    -- Zero-Touch: only apply if user has configured raid text styling.
+    local groupFrames = rawget(db, "groupFrames")
+    local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+    local cfg = raidCfg and rawget(raidCfg, "textPlayerName") or nil
+    if not cfg then
+        return
+    end
+
+    -- Zero-Touch: if user hasn't actually changed anything from the defaults, do nothing.
+    if not Utils.hasCustomTextSettings(cfg) then
+        return
+    end
+
+    -- Deprecated: Raid Player Name styling is now driven by overlay FontStrings
+    -- (see ApplyRaidFrameNameOverlays). We must avoid moving Blizzard's `frame.name`
+    -- because the overlay clipping container copies its anchor geometry to preserve
+    -- truncation. Touching `frame.name` here reintroduces leaking/incorrect clipping.
+    if addon.ApplyRaidFrameNameOverlays then
+        addon.ApplyRaidFrameNameOverlays()
+    end
+end
+
+-- Install hooks to reapply text styling when raid frames update
+local function installRaidFrameTextHooks()
+    if addon._RaidFrameTextHooksInstalled then return end
+    addon._RaidFrameTextHooksInstalled = true
+
+    -- Deprecated: name styling hooks must not touch Blizzard's `frame.name`.
+    -- Overlay system installs its own hooks (installRaidNameOverlayHooks()).
+end
+
+--------------------------------------------------------------------------------
+-- Text Overlay (Name Text - Combat-Safe Persistence)
+--------------------------------------------------------------------------------
+-- Creates addon-owned FontString overlays on raid frames that visually replace
+-- Blizzard's name text. These overlays can be styled during initial setup and
+-- their text content can be updated during combat without taint because we only
+-- manipulate our own FontStrings.
+--
+-- Pattern: Mirror text via SetText hook, style on setup, hide Blizzard's element.
+--------------------------------------------------------------------------------
+
+local function styleRaidNameOverlay(frame, cfg)
+    if not frame or not frame.ScooterRaidNameText or not cfg then return end
+
+    local overlay = frame.ScooterRaidNameText
+    local container = frame.ScooterRaidNameContainer or frame
+
+    local fontFace = cfg.fontFace or "FRIZQT__"
+    local resolvedFace
+    if addon and addon.ResolveFontFace then
+        resolvedFace = addon.ResolveFontFace(fontFace)
+    else
+        local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+        resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+    end
+
+    local fontSize = tonumber(cfg.size) or 12
+    local fontStyle = cfg.style or "OUTLINE"
+    local color = cfg.color or { 1, 1, 1, 1 }
+    local anchor = cfg.anchor or "TOPLEFT"
+    local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+    local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+    local success = pcall(overlay.SetFont, overlay, resolvedFace, fontSize, fontStyle)
+    if not success then
+        local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+        if fallback then
+            pcall(overlay.SetFont, overlay, fallback, fontSize, fontStyle)
+        end
+    end
+
+    pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    pcall(overlay.SetJustifyH, overlay, Utils.getJustifyHFromAnchor(anchor))
+    if overlay.SetJustifyV then
+        pcall(overlay.SetJustifyV, overlay, "MIDDLE")
+    end
+    if overlay.SetWordWrap then
+        pcall(overlay.SetWordWrap, overlay, false)
+    end
+    if overlay.SetNonSpaceWrap then
+        pcall(overlay.SetNonSpaceWrap, overlay, false)
+    end
+    if overlay.SetMaxLines then
+        pcall(overlay.SetMaxLines, overlay, 1)
+    end
+
+    -- Keep the clipping container tall enough for the configured font size.
+    -- If the container is created too early (before Blizzard sizes `frame.name`), it can end up 1px tall,
+    -- which clips the overlay into a thin horizontal sliver.
+    if container and container.SetHeight then
+        local minH = math.max(12, (tonumber(fontSize) or 12) + 6)
+        if overlay.GetStringHeight then
+            local okSH, sh = pcall(overlay.GetStringHeight, overlay)
+            if okSH and sh and sh > 0 and (sh + 2) > minH then
+                minH = sh + 2
+            end
+        end
+        pcall(container.SetHeight, container, minH)
+    end
+
+    -- Position within an addon-owned clipping container that matches Blizzard's name anchors.
+    -- This preserves truncation/clipping even when using single-point anchors (CENTER, etc.).
+    overlay:ClearAllPoints()
+    overlay:SetPoint(anchor, container, anchor, offsetX, offsetY)
+end
+
+local function hideBlizzardRaidNameText(frame)
+    if not frame or not frame.name then return end
+    local blizzName = frame.name
+
+    blizzName._ScootHidden = true
+    if blizzName.SetAlpha then
+        pcall(blizzName.SetAlpha, blizzName, 0)
+    end
+    if blizzName.Hide then
+        pcall(blizzName.Hide, blizzName)
+    end
+
+    if not blizzName._ScootAlphaHooked and _G.hooksecurefunc then
+        blizzName._ScootAlphaHooked = true
+        _G.hooksecurefunc(blizzName, "SetAlpha", function(self, alpha)
+            if alpha > 0 and self._ScootHidden then
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        if self._ScootHidden then
+                            self:SetAlpha(0)
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+
+    if not blizzName._ScootShowHooked and _G.hooksecurefunc then
+        blizzName._ScootShowHooked = true
+        _G.hooksecurefunc(blizzName, "Show", function(self)
+            if not self._ScootHidden then return end
+            -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
+            if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if self and self._ScootHidden then
+                        if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                        if self.Hide then pcall(self.Hide, self) end
+                    end
+                end)
+            else
+                if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
+                if self.Hide then pcall(self.Hide, self) end
+            end
+        end)
+    end
+end
+
+local function showBlizzardRaidNameText(frame)
+    if not frame or not frame.name then return end
+    frame.name._ScootHidden = nil
+    if frame.name.SetAlpha then
+        pcall(frame.name.SetAlpha, frame.name, 1)
+    end
+    if frame.name.Show then
+        pcall(frame.name.Show, frame.name)
+    end
+end
+
+local function ensureRaidNameOverlay(frame, cfg)
+    if not frame then return end
+
+    local hasCustom = Utils.hasCustomTextSettings(cfg)
+    frame._ScootRaidNameOverlayActive = hasCustom
+
+    if not hasCustom then
+        if frame.ScooterRaidNameText then
+            frame.ScooterRaidNameText:Hide()
+        end
+        showBlizzardRaidNameText(frame)
+        return
+    end
+
+    -- Ensure an addon-owned clipping container that matches Blizzard's original name anchors.
+    if not frame.ScooterRaidNameContainer then
+        local container = CreateFrame("Frame", nil, frame)
+        container:SetClipsChildren(true)
+
+        -- Copy the Blizzard name's anchor layout (often two points) so our container width matches stock.
+        local p1, r1, rp1, x1, y1 = nil, nil, nil, 0, 0
+        local p2, r2, rp2, x2, y2 = nil, nil, nil, 0, 0
+        if frame.name and frame.name.GetPoint then
+            local ok1, ap1, ar1, arp1, ax1, ay1 = pcall(frame.name.GetPoint, frame.name, 1)
+            if ok1 then
+                p1, r1, rp1, x1, y1 = ap1, ar1, arp1, ax1, ay1
+            end
+            local ok2, ap2, ar2, arp2, ax2, ay2 = pcall(frame.name.GetPoint, frame.name, 2)
+            if ok2 then
+                p2, r2, rp2, x2, y2 = ap2, ar2, arp2, ax2, ay2
+            end
+        end
+
+        container:ClearAllPoints()
+        if p1 then
+            container:SetPoint(p1, r1 or frame, rp1 or p1, tonumber(x1) or 0, tonumber(y1) or 0)
+            if p2 then
+                container:SetPoint(p2, r2 or frame, rp2 or p2, tonumber(x2) or 0, tonumber(y2) or 0)
+            else
+                -- Fallback: reasonable right boundary if Blizzard only provided one point.
+                container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+            end
+        else
+            -- Ultimate fallback: match common CUF name region bounds.
+            container:SetPoint("LEFT", frame, "LEFT", 3, 0)
+            container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
+        end
+
+        -- Critical: our container must have a non-zero height or it will clip everything.
+        -- Blizzard's name element is usually anchored with left/right + top only, so height is implicit there.
+        local fontSize = tonumber(cfg and cfg.size) or 12
+        local h = math.max(12, fontSize + 6)
+        if frame.name and frame.name.GetHeight then
+            local okH, hh = pcall(frame.name.GetHeight, frame.name)
+            if okH and hh and hh > h then
+                h = hh
+            end
+        end
+        if container.SetHeight then
+            pcall(container.SetHeight, container, h)
+        end
+
+        frame.ScooterRaidNameContainer = container
+    end
+
+    -- Create overlay FontString if it doesn't exist (as a child of the clipping container)
+    if not frame.ScooterRaidNameText then
+        local parentForText = frame.ScooterRaidNameContainer or frame
+        local overlay = parentForText:CreateFontString(nil, "OVERLAY", nil)
+        overlay:SetDrawLayer("OVERLAY", 7)
+        frame.ScooterRaidNameText = overlay
+
+        if frame.name and not frame.name._ScootTextMirrorHooked and _G.hooksecurefunc then
+            frame.name._ScootTextMirrorHooked = true
+            frame.name._ScootTextMirrorOwner = frame
+            _G.hooksecurefunc(frame.name, "SetText", function(self, text)
+                local owner = self._ScootTextMirrorOwner
+                if owner and owner.ScooterRaidNameText and owner._ScootRaidNameOverlayActive then
+                    owner.ScooterRaidNameText:SetText(text or "")
+                end
+            end)
+        end
+    end
+
+    styleRaidNameOverlay(frame, cfg)
+    hideBlizzardRaidNameText(frame)
+
+    if frame.name and frame.name.GetText then
+        local currentText = frame.name:GetText()
+        frame.ScooterRaidNameText:SetText(currentText or "")
+    end
+
+    frame.ScooterRaidNameText:Show()
+end
+
+local function disableRaidNameOverlay(frame)
+    if not frame then return end
+    frame._ScootRaidNameOverlayActive = false
+    if frame.ScooterRaidNameText then
+        frame.ScooterRaidNameText:Hide()
+    end
+    showBlizzardRaidNameText(frame)
+end
+
+function addon.ApplyRaidFrameNameOverlays()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    local groupFrames = rawget(db, "groupFrames")
+    local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+    local cfg = raidCfg and rawget(raidCfg, "textPlayerName") or nil
+
+    local hasCustom = Utils.hasCustomTextSettings(cfg)
+
+    -- Combined layout: CompactRaidFrame1..40
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame and frame.name then
+            if hasCustom then
+                if not (InCombatLockdown and InCombatLockdown()) then
+                    ensureRaidNameOverlay(frame, cfg)
+                elseif frame.ScooterRaidNameText then
+                    styleRaidNameOverlay(frame, cfg)
+                end
+            else
+                disableRaidNameOverlay(frame)
+            end
+        end
+    end
+
+    -- Group layout: CompactRaidGroup1Member1..CompactRaidGroup8Member5
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame and frame.name then
+                if hasCustom then
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        ensureRaidNameOverlay(frame, cfg)
+                    elseif frame.ScooterRaidNameText then
+                        styleRaidNameOverlay(frame, cfg)
+                    end
+                else
+                    disableRaidNameOverlay(frame)
+                end
+            end
+        end
+    end
+end
+
+function addon.RestoreRaidFrameNameOverlays()
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame then
+            disableRaidNameOverlay(frame)
+        end
+    end
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame then
+                disableRaidNameOverlay(frame)
+            end
+        end
+    end
+end
+
+local function installRaidNameOverlayHooks()
+    if addon._RaidNameOverlayHooksInstalled then return end
+    addon._RaidNameOverlayHooksInstalled = true
+
+    local function getCfg()
+        local db = addon and addon.db and addon.db.profile
+        local gf = db and rawget(db, "groupFrames") or nil
+        local raidCfg = gf and rawget(gf, "raid") or nil
+        return raidCfg and rawget(raidCfg, "textPlayerName") or nil
+    end
+
+    if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
+        _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+            if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
+            local cfg = getCfg()
+            if not Utils.hasCustomTextSettings(cfg) then return end
+
+            local frameRef = frame
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if not frameRef then return end
+                    if InCombatLockdown and InCombatLockdown() then
+                        Combat.queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                ensureRaidNameOverlay(frameRef, cfgRef)
+            end
+        end)
+    end
+
+    if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
+        _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+            if not unit then return end
+            if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
+            local cfg = getCfg()
+            if not Utils.hasCustomTextSettings(cfg) then return end
+
+            local frameRef = frame
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if not frameRef then return end
+                    if InCombatLockdown and InCombatLockdown() then
+                        Combat.queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                ensureRaidNameOverlay(frameRef, cfgRef)
+            end
+        end)
+    end
+
+    if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
+        _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+            if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
+            local cfg = getCfg()
+            if not Utils.hasCustomTextSettings(cfg) then return end
+
+            local frameRef = frame
+            local cfgRef = cfg
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    if not frameRef then return end
+                    if InCombatLockdown and InCombatLockdown() then
+                        Combat.queueRaidFrameReapply()
+                        return
+                    end
+                    ensureRaidNameOverlay(frameRef, cfgRef)
+                end)
+            else
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                ensureRaidNameOverlay(frameRef, cfgRef)
+            end
+        end)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Text Styling (Status Text)
+--------------------------------------------------------------------------------
+-- Applies the same 7 settings as Player Name to raid unit frame StatusText.
+-- Targets:
+--   - CompactRaidFrame1..40: frame.statusText (FontString, name "$parentStatusText")
+--   - CompactRaidGroup1..8Member1..5: frame.statusText (FontString, name "$parentStatusText")
+--------------------------------------------------------------------------------
+
+local function applyTextToFontString_StatusText(fs, ownerFrame, cfg)
+    if not fs or not ownerFrame or not cfg then return end
+
+    -- Resolve font face
+    local fontFace = cfg.fontFace or "FRIZQT__"
+    local resolvedFace
+    if addon and addon.ResolveFontFace then
+        resolvedFace = addon.ResolveFontFace(fontFace)
+    else
+        local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+        resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+    end
+
+    -- Get settings with defaults
+    local fontSize = tonumber(cfg.size) or 12
+    local fontStyle = cfg.style or "OUTLINE"
+    local color = cfg.color or { 1, 1, 1, 1 }
+    local anchor = cfg.anchor or "TOPLEFT"
+    local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+    local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+    -- Apply font
+    local success = pcall(fs.SetFont, fs, resolvedFace, fontSize, fontStyle)
+    if not success then
+        local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+        if fallback then
+            pcall(fs.SetFont, fs, fallback, fontSize, fontStyle)
+        end
+    end
+
+    -- Apply color + alignment
+    if fs.SetTextColor then
+        pcall(fs.SetTextColor, fs, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    end
+    if fs.SetJustifyH then
+        pcall(fs.SetJustifyH, fs, Utils.getJustifyHFromAnchor(anchor))
+    end
+
+    -- Capture baseline position on first application so we can restore later
+    if not fs._ScootOriginalPoint_StatusText then
+        local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
+        if point then
+            fs._ScootOriginalPoint_StatusText = { point, relativeTo, relativePoint, x or 0, y or 0 }
+        end
+    end
+
+    local isDefaultAnchor = (anchor == "TOPLEFT")
+    local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+    if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_StatusText then
+        -- Restore baseline (stock position) when user has reset to default
+        local orig = fs._ScootOriginalPoint_StatusText
+        fs:ClearAllPoints()
+        fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, "LEFT")
+        end
+    else
+        -- Position the FontString using the user-selected anchor, relative to the owner frame
+        fs:ClearAllPoints()
+        fs:SetPoint(anchor, ownerFrame, anchor, offsetX, offsetY)
+    end
+end
+
+local function applyStatusTextToRaidFrame(frame, cfg)
+    if not frame or not cfg then return end
+    local fs = frame.statusText
+    if not fs then return end
+    applyTextToFontString_StatusText(fs, frame, cfg)
+end
+
+function addon.ApplyRaidFrameStatusTextStyle()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    -- Zero-Touch: only apply if user has configured raid status text styling.
+    local groupFrames = rawget(db, "groupFrames")
+    local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+    local cfg = raidCfg and rawget(raidCfg, "textStatusText") or nil
+    if not cfg then
+        return
+    end
+
+    -- Zero-Touch: if user hasn't actually changed anything from the defaults, do nothing.
+    if not Utils.hasCustomTextSettings(cfg) then
+        return
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        Combat.queueRaidFrameReapply()
+        return
+    end
+
+    -- Combined layout: CompactRaidFrame1..40
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame and frame.statusText then
+            applyStatusTextToRaidFrame(frame, cfg)
+        end
+    end
+
+    -- Group layout: CompactRaidGroup1..8Member1..5
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame and frame.statusText then
+                applyStatusTextToRaidFrame(frame, cfg)
+            end
+        end
+    end
+end
+
+local function installRaidFrameStatusTextHooks()
+    if addon._RaidFrameStatusTextHooksInstalled then return end
+    addon._RaidFrameStatusTextHooksInstalled = true
+
+    local function tryApply(frame)
+        if not frame or not frame.statusText or not Utils.isRaidFrame(frame) then
+            return
+        end
+        local db = addon and addon.db and addon.db.profile
+        local cfg = db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textStatusText or nil
+        if not cfg or not Utils.hasCustomTextSettings(cfg) then
+            return
+        end
+        local frameRef = frame
+        local cfgRef = cfg
+        if _G.C_Timer and _G.C_Timer.After then
+            _G.C_Timer.After(0, function()
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                applyStatusTextToRaidFrame(frameRef, cfgRef)
+            end)
+        else
+            if InCombatLockdown and InCombatLockdown() then
+                Combat.queueRaidFrameReapply()
+                return
+            end
+            applyStatusTextToRaidFrame(frameRef, cfgRef)
+        end
+    end
+
+    if _G.hooksecurefunc then
+        if _G.CompactUnitFrame_UpdateStatusText then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateStatusText", tryApply)
+        end
+        if _G.CompactUnitFrame_UpdateLayout then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateLayout", tryApply)
+        end
+        if _G.CompactUnitFrame_UpdateAll then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateAll", tryApply)
+        end
+        if _G.CompactUnitFrame_SetUnit then
+            _G.hooksecurefunc("CompactUnitFrame_SetUnit", tryApply)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Text Styling (Group Numbers / Group Titles)
+--------------------------------------------------------------------------------
+-- Applies the same 7 settings as Player Name to raid group title text.
+-- Target: CompactRaidGroup1..8Title (Button, parentKey "title").
+--------------------------------------------------------------------------------
+
+local function applyTextToFontString_GroupTitle(fs, ownerFrame, cfg)
+    if not fs or not ownerFrame or not cfg then return end
+
+    local fontFace = cfg.fontFace or "FRIZQT__"
+    local resolvedFace
+    if addon and addon.ResolveFontFace then
+        resolvedFace = addon.ResolveFontFace(fontFace)
+    else
+        local defaultFont = _G.GameFontNormal and _G.GameFontNormal:GetFont()
+        resolvedFace = defaultFont or "Fonts\\FRIZQT__.TTF"
+    end
+
+    local fontSize = tonumber(cfg.size) or 12
+    local fontStyle = cfg.style or "OUTLINE"
+    local color = cfg.color or { 1, 1, 1, 1 }
+    local anchor = cfg.anchor or "TOPLEFT"
+    local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
+    local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
+
+    local success = pcall(fs.SetFont, fs, resolvedFace, fontSize, fontStyle)
+    if not success then
+        local fallback = _G.GameFontNormal and select(1, _G.GameFontNormal:GetFont())
+        if fallback then
+            pcall(fs.SetFont, fs, fallback, fontSize, fontStyle)
+        end
+    end
+
+    if fs.SetTextColor then
+        pcall(fs.SetTextColor, fs, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    end
+    if fs.SetJustifyH then
+        pcall(fs.SetJustifyH, fs, Utils.getJustifyHFromAnchor(anchor))
+    end
+
+    if not fs._ScootOriginalPoint_GroupTitle then
+        local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
+        if point then
+            fs._ScootOriginalPoint_GroupTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
+        end
+    end
+
+    local isDefaultAnchor = (anchor == "TOPLEFT")
+    local isZeroOffset = (offsetX == 0 and offsetY == 0)
+
+    if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_GroupTitle then
+        local orig = fs._ScootOriginalPoint_GroupTitle
+        fs:ClearAllPoints()
+        fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, "LEFT")
+        end
+    else
+        fs:ClearAllPoints()
+        fs:SetPoint(anchor, ownerFrame, anchor, offsetX, offsetY)
+    end
+end
+
+local function applyGroupTitleToButton(titleButton, cfg)
+    if not titleButton or not cfg then return end
+    if not titleButton.GetFontString then return end
+    local fs = titleButton:GetFontString()
+    if not fs then return end
+    applyTextToFontString_GroupTitle(fs, titleButton, cfg)
+end
+
+function addon.ApplyRaidFrameGroupTitlesStyle()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    -- Zero-Touch: only apply if user has configured raid group title styling.
+    local groupFrames = rawget(db, "groupFrames")
+    local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
+    local cfg = raidCfg and rawget(raidCfg, "textGroupNumbers") or nil
+    if not cfg then
+        return
+    end
+
+    if not Utils.hasCustomTextSettings(cfg) then
+        return
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        Combat.queueRaidFrameReapply()
+        return
+    end
+
+    for group = 1, 8 do
+        local groupFrame = _G["CompactRaidGroup" .. group]
+        local titleButton = (groupFrame and groupFrame.title) or _G["CompactRaidGroup" .. group .. "Title"]
+        if titleButton then
+            applyGroupTitleToButton(titleButton, cfg)
+        end
+    end
+end
+
+local function installRaidFrameGroupTitleHooks()
+    if addon._RaidFrameGroupTitleHooksInstalled then return end
+    addon._RaidFrameGroupTitleHooksInstalled = true
+
+    local function tryApplyTitle(groupFrame)
+        if not groupFrame or not Utils.isCompactRaidGroupFrame(groupFrame) then
+            return
+        end
+        local titleButton = groupFrame.title or _G[groupFrame:GetName() .. "Title"]
+        if not titleButton then return end
+
+        local db = addon and addon.db and addon.db.profile
+        local cfg = db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textGroupNumbers or nil
+        if not cfg or not Utils.hasCustomTextSettings(cfg) then
+            return
+        end
+
+        local titleRef = titleButton
+        local cfgRef = cfg
+        if _G.C_Timer and _G.C_Timer.After then
+            _G.C_Timer.After(0, function()
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                applyGroupTitleToButton(titleRef, cfgRef)
+            end)
+        else
+            if InCombatLockdown and InCombatLockdown() then
+                Combat.queueRaidFrameReapply()
+                return
+            end
+            applyGroupTitleToButton(titleRef, cfgRef)
+        end
+    end
+
+    if _G.hooksecurefunc then
+        if _G.CompactRaidGroup_UpdateLayout then
+            _G.hooksecurefunc("CompactRaidGroup_UpdateLayout", tryApplyTitle)
+        end
+        if _G.CompactRaidGroup_InitializeForGroup then
+            _G.hooksecurefunc("CompactRaidGroup_InitializeForGroup", function(groupFrame, groupIndex)
+                tryApplyTitle(groupFrame)
+            end)
+        end
+        if _G.CompactRaidGroup_UpdateUnits then
+            _G.hooksecurefunc("CompactRaidGroup_UpdateUnits", tryApplyTitle)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Text Hook Installation
+--------------------------------------------------------------------------------
+
+function RaidFrames.installTextHooks()
+    installRaidFrameTextHooks()
+    installRaidNameOverlayHooks()
+    installRaidFrameStatusTextHooks()
+    installRaidFrameGroupTitleHooks()
+end
+
+-- Install text hooks on load
+RaidFrames.installTextHooks()
+
 return RaidFrames
