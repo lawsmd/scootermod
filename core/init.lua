@@ -189,7 +189,7 @@ function addon:RefreshOpacityState()
             -- - Action Bars use: barOpacity, barOpacityOutOfCombat, barOpacityWithTarget
             -- - Auras use: opacity, opacityOutOfCombat, opacityWithTarget
             local hasOpacity = component.settings.opacity or
-                component.settings.opacityInCombat or
+                component.settings.opacityInInstanceCombat or
                 component.settings.opacityOutOfCombat or
                 component.settings.opacityWithTarget or
                 component.settings.barOpacity or
@@ -215,11 +215,11 @@ end
 -- Shared helper for pet overlay enforcement events
 local function handlePetOverlayEvent()
     -- IMPORTANT: PetFrame is an Edit Mode managed/protected system frame.
-    -- Do NOT mutate Pet frame textures/regions during combat; that can taint the frame
-    -- and cause Blizzard's protected Edit Mode calls (e.g., PetFrame:HideBase()) to be blocked.
+    -- We *flag* pending work during combat so we always re-assert on PLAYER_REGEN_ENABLED.
+    -- Experimental: we also allow in-combat alpha enforcement for PetFrameFlash to prevent
+    -- the red glow/ring from reappearing and persisting until combat ends.
     if InCombatLockdown and InCombatLockdown() then
         addon._pendingPetOverlaysEnforce = true
-        return
     end
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
@@ -354,6 +354,8 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     
     -- Use centralized sync function
     addon.EditMode.RefreshSyncAndNotify("PLAYER_ENTERING_WORLD")
+    -- Re-evaluate combat/instance-driven opacity overrides when zoning (including entering/leaving instances).
+    self:RefreshOpacityState()
     if self.Profiles then
         if self.Profiles.TryPendingSync then
             self.Profiles:TryPendingSync()

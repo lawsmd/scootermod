@@ -587,6 +587,19 @@ local function PlayerInCombat()
     return false
 end
 
+local function PlayerInDungeonOrRaidInstance()
+    if type(IsInInstance) ~= "function" then
+        return false
+    end
+
+    local ok, inInstance, instanceType = pcall(IsInInstance)
+    if not ok then
+        return false
+    end
+
+    return (inInstance == true) and (instanceType == "party" or instanceType == "raid")
+end
+
 local function ApplyObjectiveTrackerCombatOpacity(self)
     local tracker = _G.ObjectiveTrackerFrame
     if not tracker then return end
@@ -600,7 +613,9 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     if type(db) ~= "table" then return end
 
     local inCombat = PlayerInCombat()
-    local configured = ClampPercent0To100(db.opacityInCombat)
+    local inInstance = PlayerInDungeonOrRaidInstance()
+    local configured = ClampPercent0To100(db.opacityInInstanceCombat)
+    local shouldApply = inCombat and inInstance
 
     -- NOTE: We intentionally do NOT set alpha on ObjectiveTrackerFrame itself.
     -- Alpha is multiplicative through the frame tree; if we faded the parent, children like
@@ -662,7 +677,7 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
         frame._ScooterObjectiveTrackerCombatOpacityApplied = true
     end
 
-    if inCombat then
+    if shouldApply then
         if configured == nil then
             -- If the user cleared the setting mid-combat, restore baseline immediately.
             ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
@@ -675,7 +690,8 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
         return
     end
 
-    -- Out of combat: restore baseline if we applied an override during combat.
+    -- Not in qualifying combat (either out of combat, or in combat but not in a dungeon/raid):
+    -- restore baseline if we applied an override previously.
     ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
 end
 
@@ -699,6 +715,16 @@ local function InstallObjectiveTrackerHooks(self)
         end)
     end
 
+    local function EnsureModuleEndLayoutHook(module)
+        if type(module) ~= "table" then return end
+        if module._ScooterObjectiveTrackerModuleHooked then return end
+        module._ScooterObjectiveTrackerModuleHooked = true
+
+        if type(module.EndLayout) == "function" then
+            hooksecurefunc(module, "EndLayout", requestApply)
+        end
+    end
+
     -- Re-apply after any tracker update/layout pass.
     if type(tracker.Update) == "function" then
         hooksecurefunc(tracker, "Update", requestApply)
@@ -716,13 +742,19 @@ local function InstallObjectiveTrackerHooks(self)
     local modules = tracker.modules
     if type(modules) == "table" then
         for _, module in pairs(modules) do
-            if type(module) == "table" and not module._ScooterObjectiveTrackerModuleHooked then
-                module._ScooterObjectiveTrackerModuleHooked = true
-                if type(module.EndLayout) == "function" then
-                    hooksecurefunc(module, "EndLayout", requestApply)
-                end
-            end
+            EnsureModuleEndLayoutHook(module)
         end
+    end
+
+    -- IMPORTANT: `ObjectiveTrackerFrame.modules` can be nil or incomplete if ScooterMod installs hooks
+    -- before the ObjectiveTrackerManager assigns modules (e.g., early in the login flow on some clients).
+    -- When modules are later added to the container, ensure we attach our EndLayout hook then too.
+    if type(tracker.AddModule) == "function" then
+        hooksecurefunc(tracker, "AddModule", function(_, module)
+            EnsureModuleEndLayoutHook(module)
+            -- Apply after this module's first layout completes (coalesced).
+            requestApply()
+        end)
     end
 
     -- Critical: Text Size changes are applied via UpdateSystemSettingTextSize(). If ScooterMod has
@@ -755,9 +787,10 @@ addon:RegisterComponentInitializer(function(self)
             opacity = { type = "editmode", settingId = 1, default = 100, ui = { hidden = true } },
             textSize = { type = "editmode", settingId = 2, default = 12, ui = { hidden = true } },
 
-            -- Addon-only: combat override for Objective Tracker module alpha (0..100). Nil means "disabled".
+            -- Addon-only: in-instance combat override for Objective Tracker module alpha (0..100). Nil means "disabled".
+            -- Applies only when the player is in combat AND in a dungeon/raid instance.
             -- ScenarioObjectiveTracker is intentionally excluded so Mythic+/Scenario progress remains readable.
-            opacityInCombat = { type = "addon", ui = { hidden = true } },
+            opacityInInstanceCombat = { type = "addon", ui = { hidden = true } },
 
             -- Addon-only text styling. UI is custom (tabbed section), so hide in generic renderer.
             textHeader = { type = "addon", default = {

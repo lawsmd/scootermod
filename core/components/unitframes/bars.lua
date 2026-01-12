@@ -867,6 +867,66 @@ do
             end
         end
 
+        -- Target/Focus frames can be updated/rebuilt by Blizzard during combat (rapid target swaps, faction updates, etc.).
+        -- We must NEVER touch protected StatusBars/layout during combat, but we CAN safely enforce visual-only overlays
+        -- (like ReputationColor) via SetAlpha + alpha enforcers. Do this BEFORE the combat early-return so the element
+        -- stays hidden even if Blizzard recreates the region while we're in combat.
+        --
+        -- IMPORTANT: Blizzard may recreate the ReputationColor texture during rapid target changes. We must:
+        -- 1. Always apply alpha (even if _ScootAlphaEnforcerHooked is set on an old object)
+        -- 2. Always try to install enforcer (it will skip if already hooked on THIS object)
+        -- 3. Schedule a follow-up re-hide to catch late Blizzard updates
+        if unit == "Target" or unit == "Focus" then
+            local function computeUseCustomBordersAlpha()
+                local db2 = addon and addon.db and addon.db.profile
+                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+            end
+
+            local reputationColor
+            if unit == "Target" and _G.TargetFrame then
+                reputationColor = _G.TargetFrame.TargetFrameContent
+                    and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                    and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            elseif unit == "Focus" and _G.FocusFrame then
+                reputationColor = _G.FocusFrame.TargetFrameContent
+                    and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                    and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            end
+
+            if reputationColor then
+                -- Always apply current alpha, regardless of hook state
+                local desiredAlpha = computeUseCustomBordersAlpha()
+                applyAlpha(reputationColor, desiredAlpha)
+                hookAlphaEnforcer(reputationColor, computeUseCustomBordersAlpha)
+                
+                -- Belt-and-suspenders: schedule a follow-up re-hide after Blizzard's updates complete
+                -- This catches cases where Blizzard resets alpha after our initial hide
+                if _G.C_Timer and _G.C_Timer.After then
+                    _G.C_Timer.After(0, function()
+                        -- Re-resolve in case the texture object changed
+                        local repColor2
+                        if unit == "Target" and _G.TargetFrame then
+                            repColor2 = _G.TargetFrame.TargetFrameContent
+                                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                        elseif unit == "Focus" and _G.FocusFrame then
+                            repColor2 = _G.FocusFrame.TargetFrameContent
+                                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                        end
+                        if repColor2 and repColor2.SetAlpha then
+                            local alpha2 = computeUseCustomBordersAlpha()
+                            pcall(repColor2.SetAlpha, repColor2, alpha2)
+                            -- Install enforcer on the (possibly new) object
+                            hookAlphaEnforcer(repColor2, computeUseCustomBordersAlpha)
+                        end
+                    end)
+                end
+            end
+        end
+
         -- Combat safety: do not touch protected unit frame bars during combat. Queue a post-combat reapply.
         if InCombatLockdown and InCombatLockdown() then
             queueUnitFrameTextureReapply(unit)
@@ -3133,8 +3193,8 @@ do
     end
 
     -- Pre-emptive hiding and alpha hooks are now provided by the Preemptive module
-    addon.PreemptiveHideTargetElements = Preemptive.preemptiveHideTargetElements
-    addon.PreemptiveHideFocusElements = Preemptive.preemptiveHideFocusElements
+    addon.PreemptiveHideTargetElements = Preemptive.hideTargetElements
+    addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
     addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
 
 end

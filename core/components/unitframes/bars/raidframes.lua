@@ -238,7 +238,18 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     end
 
     if not bar.ScooterRaidHealthFill then
-        local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+        -- IMPORTANT: This overlay must NOT be parented to the StatusBar.
+        -- WoW draws all parent frame layers first, then all child frame layers.
+        -- If we parent to the health bar (child), our overlay can draw *above*
+        -- CompactUnitFrame parent-layer elements like roleIcon (ARTWORK) and
+        -- readyCheckIcon (OVERLAY), effectively hiding them.
+        --
+        -- Fix: parent the overlay to the CompactUnitFrame (the health bar's parent)
+        -- and draw it in BORDER sublevel 7 so it stays above heal-prediction layers
+        -- but below role/ready-check indicators.
+        local unitFrame = (bar.GetParent and bar:GetParent()) or nil
+        local overlayParent = unitFrame or bar
+        local overlay = overlayParent:CreateTexture(nil, "BORDER", nil, 7)
         overlay:SetVertTile(false)
         overlay:SetHorizTile(false)
         overlay:SetTexCoord(0, 1, 0, 1)
@@ -695,7 +706,10 @@ local function styleRaidNameOverlay(frame, cfg)
     end
 
     pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-    pcall(overlay.SetJustifyH, overlay, Utils.getJustifyHFromAnchor(anchor))
+
+    -- Always use LEFT justify so truncation only happens on the right side.
+    -- This ensures player names always show the beginning of the name.
+    pcall(overlay.SetJustifyH, overlay, "LEFT")
     if overlay.SetJustifyV then
         pcall(overlay.SetJustifyV, overlay, "MIDDLE")
     end
@@ -709,24 +723,36 @@ local function styleRaidNameOverlay(frame, cfg)
         pcall(overlay.SetMaxLines, overlay, 1)
     end
 
-    -- Keep the clipping container tall enough for the configured font size.
-    -- If the container is created too early (before Blizzard sizes `frame.name`), it can end up 1px tall,
-    -- which clips the overlay into a thin horizontal sliver.
-    if container and container.SetHeight then
-        local minH = math.max(12, (tonumber(fontSize) or 12) + 6)
-        if overlay.GetStringHeight then
-            local okSH, sh = pcall(overlay.GetStringHeight, overlay)
-            if okSH and sh and sh > 0 and (sh + 2) > minH then
-                minH = sh + 2
-            end
-        end
-        pcall(container.SetHeight, container, minH)
+    -- Convert 9-way anchor to LEFT-based vertical anchor for proper right-side truncation.
+    -- The anchor setting controls vertical position; text always starts from the left.
+    local vertAnchor
+    if anchor == "TOPLEFT" or anchor == "TOP" or anchor == "TOPRIGHT" then
+        vertAnchor = "TOPLEFT"
+    elseif anchor == "LEFT" or anchor == "CENTER" or anchor == "RIGHT" then
+        vertAnchor = "LEFT"
+    else -- BOTTOMLEFT, BOTTOM, BOTTOMRIGHT
+        vertAnchor = "BOTTOMLEFT"
     end
 
-    -- Position within an addon-owned clipping container that matches Blizzard's name anchors.
-    -- This preserves truncation/clipping even when using single-point anchors (CENTER, etc.).
+    -- Calculate horizontal offset based on anchor's horizontal component.
+    -- This provides approximate CENTER/RIGHT positioning while maintaining left-to-right text flow.
+    local containerWidth = (container.GetWidth and container:GetWidth()) or 0
+    local baseHOffset = 0
+    if anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+        -- For CENTER, shift text toward the horizontal center
+        baseHOffset = containerWidth * 0.25
+    elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+        -- For RIGHT, shift text further toward the right edge
+        baseHOffset = containerWidth * 0.5
+    end
+
+    -- Position within the full-frame clipping container using LEFT-based anchors.
+    -- The baseHOffset shifts text horizontally based on alignment preference.
     overlay:ClearAllPoints()
-    overlay:SetPoint(anchor, container, anchor, offsetX, offsetY)
+    overlay:SetPoint(vertAnchor, container, vertAnchor, offsetX + baseHOffset, offsetY)
+    -- NOTE: We intentionally do NOT set an explicit width on the overlay.
+    -- The container's SetClipsChildren(true) will hard-clip the text at the
+    -- right edge without adding Blizzard's "..." ellipsis.
 end
 
 local function hideBlizzardRaidNameText(frame)
@@ -802,53 +828,16 @@ local function ensureRaidNameOverlay(frame, cfg)
         return
     end
 
-    -- Ensure an addon-owned clipping container that matches Blizzard's original name anchors.
+    -- Ensure an addon-owned clipping container that spans the FULL unit frame.
+    -- This allows 9-way alignment to position text anywhere within the frame.
     if not frame.ScooterRaidNameContainer then
         local container = CreateFrame("Frame", nil, frame)
         container:SetClipsChildren(true)
 
-        -- Copy the Blizzard name's anchor layout (often two points) so our container width matches stock.
-        local p1, r1, rp1, x1, y1 = nil, nil, nil, 0, 0
-        local p2, r2, rp2, x2, y2 = nil, nil, nil, 0, 0
-        if frame.name and frame.name.GetPoint then
-            local ok1, ap1, ar1, arp1, ax1, ay1 = pcall(frame.name.GetPoint, frame.name, 1)
-            if ok1 then
-                p1, r1, rp1, x1, y1 = ap1, ar1, arp1, ax1, ay1
-            end
-            local ok2, ap2, ar2, arp2, ax2, ay2 = pcall(frame.name.GetPoint, frame.name, 2)
-            if ok2 then
-                p2, r2, rp2, x2, y2 = ap2, ar2, arp2, ax2, ay2
-            end
-        end
-
+        -- Span the entire unit frame with small padding for visual breathing room.
         container:ClearAllPoints()
-        if p1 then
-            container:SetPoint(p1, r1 or frame, rp1 or p1, tonumber(x1) or 0, tonumber(y1) or 0)
-            if p2 then
-                container:SetPoint(p2, r2 or frame, rp2 or p2, tonumber(x2) or 0, tonumber(y2) or 0)
-            else
-                -- Fallback: reasonable right boundary if Blizzard only provided one point.
-                container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
-            end
-        else
-            -- Ultimate fallback: match common CUF name region bounds.
-            container:SetPoint("LEFT", frame, "LEFT", 3, 0)
-            container:SetPoint("RIGHT", frame, "RIGHT", -3, 0)
-        end
-
-        -- Critical: our container must have a non-zero height or it will clip everything.
-        -- Blizzard's name element is usually anchored with left/right + top only, so height is implicit there.
-        local fontSize = tonumber(cfg and cfg.size) or 12
-        local h = math.max(12, fontSize + 6)
-        if frame.name and frame.name.GetHeight then
-            local okH, hh = pcall(frame.name.GetHeight, frame.name)
-            if okH and hh and hh > h then
-                h = hh
-            end
-        end
-        if container.SetHeight then
-            pcall(container.SetHeight, container, h)
-        end
+        container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
+        container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
         frame.ScooterRaidNameContainer = container
     end

@@ -1879,6 +1879,21 @@ function panel.RenderCdmQoL()
                     if not q then return end
                     q.enableCDM = (v and true) or false
                     setCooldownViewerEnabledCVar(q.enableCDM)
+                    -- If the user enables CDM for this profile, immediately apply any existing
+                    -- ScooterMod CDM component styling stored in the profile.
+                    --
+                    -- Zero‑Touch is preserved because ApplyStyles() only applies component styling
+                    -- when that component has an explicit SavedVariables table (rawget(profile.components, id)).
+                    if q.enableCDM and addon and addon.ApplyStyles then
+                        -- Defer one tick so the CVar update is visible to cooldowns.lua guards.
+                        if C_Timer and C_Timer.After then
+                            C_Timer.After(0, function()
+                                if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                            end)
+                        else
+                            addon:ApplyStyles()
+                        end
+                    end
                 end,
                 getCooldownViewerEnabledFromCVar()
             )

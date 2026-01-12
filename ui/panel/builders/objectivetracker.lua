@@ -486,7 +486,7 @@ function panel.RenderObjectiveTracker()
 		-- Visibility: Opacity (Edit Mode)
 		addHeader("Visibility", "Visibility")
 		addEditModeSlider("Visibility", "Background Opacity", "opacity", 1)
-		addAddonSlider("Visibility", "Opacity In-Combat", "opacityInCombat", 0, 100, 1, 100, refreshOpacityNow)
+		addAddonSlider("Visibility", "Opacity In-Instance-Combat", "opacityInInstanceCombat", 0, 100, 1, 100, refreshOpacityNow)
 
 		if right.SetTitle then
 			right:SetTitle("Objective Tracker")

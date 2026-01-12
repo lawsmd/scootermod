@@ -137,75 +137,73 @@ do
 		if not texture then return end
 		if visibleAlpha == nil then visibleAlpha = 1.0 end
 
+		-- Experimental: allow enforcing Pet overlay alpha even during combat to prevent
+		-- PetFrameFlash (red ring/glow) from reappearing and staying visible until combat ends.
+		-- To minimize taint propagation risk, we:
+		-- - only ever write alpha/vertex alpha (no Hide/Show/SetShown calls)
+		-- - defer enforcement with C_Timer.After(0) to break Blizzard execution chains
+		local function enforceHiddenNow(tex)
+			if not tex or not tex._ScooterPetOverlayHidden then return end
+			if tex._ScooterPetOverlayEnforcing then return end
+			tex._ScooterPetOverlayEnforcing = true
+
+			if tex.SetAlpha then
+				pcall(tex.SetAlpha, tex, 0)
+			end
+
+			-- Enforce both frame alpha and vertex alpha, since Blizzard may drive visibility via SetVertexColor.
+			if tex.SetVertexColor then
+				local r, g, b = 1, 1, 1
+				if tex.GetVertexColor then
+					local ok, rr, gg, bb = pcall(tex.GetVertexColor, tex)
+					if ok then
+						r, g, b = rr or r, gg or g, bb or b
+					end
+				end
+				pcall(tex.SetVertexColor, tex, r, g, b, 0)
+			end
+
+			tex._ScooterPetOverlayEnforcing = nil
+		end
+
+		local function scheduleEnforceHidden(tex)
+			if not tex then return end
+			if tex._ScooterPetOverlayEnforceScheduled then return end
+			tex._ScooterPetOverlayEnforceScheduled = true
+
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0, function()
+					tex._ScooterPetOverlayEnforceScheduled = nil
+					enforceHiddenNow(tex)
+				end)
+			else
+				tex._ScooterPetOverlayEnforceScheduled = nil
+				enforceHiddenNow(tex)
+			end
+		end
+
 		-- Install hooks once per texture instance.
 		if not texture._ScooterPetOverlayHooked and _G.hooksecurefunc then
 			texture._ScooterPetOverlayHooked = true
 
 			-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
 			_G.hooksecurefunc(texture, "Show", function(self)
-				-- Avoid taint propagation: do not mutate PetFrame textures during combat.
-				if InCombatLockdown and InCombatLockdown() then return end
 				if not self._ScooterPetOverlayHidden then return end
-
-				-- Enforce both frame alpha and vertex alpha, since Blizzard may drive visibility via SetVertexColor.
-				if self.SetAlpha then
-					pcall(self.SetAlpha, self, 0)
-				end
-				if self.SetVertexColor then
-					-- Preserve current RGB if available; just zero vertex alpha.
-					if self.GetVertexColor then
-						local ok, r, g, b = pcall(self.GetVertexColor, self)
-						if ok then
-							pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
-							return
-						end
-					end
-					pcall(self.SetVertexColor, self, 1, 1, 1, 0)
-				end
+				scheduleEnforceHidden(self)
 			end)
 
 			-- If Blizzard uses SetShown(true), treat it like Show().
 			if texture.SetShown then
 				_G.hooksecurefunc(texture, "SetShown", function(self, shown)
-					if InCombatLockdown and InCombatLockdown() then return end
 					if not shown or not self._ScooterPetOverlayHidden then return end
-					if self.SetAlpha then
-						pcall(self.SetAlpha, self, 0)
-					end
-					if self.SetVertexColor then
-						if self.GetVertexColor then
-							local ok, r, g, b = pcall(self.GetVertexColor, self)
-							if ok then
-								pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
-								return
-							end
-						end
-						pcall(self.SetVertexColor, self, 1, 1, 1, 0)
-					end
+					scheduleEnforceHidden(self)
 				end)
 			end
 
 			-- If Blizzard sets alpha > 0, schedule a correction to avoid recursion loops.
 			_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
-				if InCombatLockdown and InCombatLockdown() then return end
 				if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
-					if not self._ScooterPetOverlayAlphaDeferred then
-						self._ScooterPetOverlayAlphaDeferred = true
-						if _G.C_Timer and _G.C_Timer.After then
-							_G.C_Timer.After(0, function()
-								self._ScooterPetOverlayAlphaDeferred = nil
-								if self._ScooterPetOverlayHidden and self.SetAlpha then
-									pcall(self.SetAlpha, self, 0)
-								end
-							end)
-						else
-							-- Fallback: immediate is safe because alpha=0 won't re-trigger the correction path.
-							self._ScooterPetOverlayAlphaDeferred = nil
-							if self.SetAlpha then
-								pcall(self.SetAlpha, self, 0)
-							end
-						end
-					end
+					scheduleEnforceHidden(self)
 				end
 			end)
 
@@ -214,7 +212,6 @@ do
 			-- If we don't hook this, the glow can reappear despite alpha=0.
 			if texture.SetVertexColor then
 				_G.hooksecurefunc(texture, "SetVertexColor", function(self, r, g, b, a)
-					if InCombatLockdown and InCombatLockdown() then return end
 					if not self._ScooterPetOverlayHidden then
 						return
 					end
@@ -224,45 +221,36 @@ do
 						return
 					end
 
-					-- Enforce immediately (hooksecurefunc runs *after* Blizzard's call), with a recursion guard.
-					-- This prevents a one-frame flash when Blizzard pulses the vertex alpha every OnUpdate tick.
-					if self._ScooterPetOverlayApplyingVertex then
-						return
-					end
-					self._ScooterPetOverlayApplyingVertex = true
-					if self.SetVertexColor then
-						-- Preserve color channels, force vertex alpha to 0.
-						pcall(self.SetVertexColor, self, r or 1, g or 1, b or 1, 0)
-					end
-					self._ScooterPetOverlayApplyingVertex = nil
+					-- Defer enforcement to avoid propagating taint through Blizzard's immediate call stack.
+					scheduleEnforceHidden(self)
 				end)
 			end
 		end
 
 		-- Apply current desired state immediately (and set the sticky flag).
-		if InCombatLockdown and InCombatLockdown() then
-			-- Out-of-combat only: avoid mutating PetFrame textures during combat.
-			return
-		end
 		if hidden then
 			texture._ScooterPetOverlayHidden = true
-			if texture.SetAlpha then
-				pcall(texture.SetAlpha, texture, 0)
+			if InCombatLockdown and InCombatLockdown() then
+				scheduleEnforceHidden(texture)
+			else
+				enforceHiddenNow(texture)
 			end
 		else
 			texture._ScooterPetOverlayHidden = false
-			if texture.SetAlpha then
-				pcall(texture.SetAlpha, texture, visibleAlpha)
+			if not (InCombatLockdown and InCombatLockdown()) then
+				if texture.SetAlpha then
+					pcall(texture.SetAlpha, texture, visibleAlpha)
+				end
 			end
 		end
 	end
 
 	local function EnforcePetOverlays()
-		-- PetFrame is managed/protected by Edit Mode. Never touch its overlays during combat;
-		-- defer and let PLAYER_REGEN_ENABLED apply any pending enforcement.
+		-- PetFrame is managed/protected by Edit Mode.
+		-- We still flag pending when combat-locked (so we re-assert again on combat end),
+		-- but we also allow the experimental in-combat alpha enforcement to keep PetFrameFlash hidden.
 		if InCombatLockdown and InCombatLockdown() then
 			addon._pendingPetOverlaysEnforce = true
-			return
 		end
 		local db = addon and addon.db and addon.db.profile
 		if not db or not db.unitFrames or not db.unitFrames.Pet then
