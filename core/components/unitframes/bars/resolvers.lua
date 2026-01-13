@@ -128,8 +128,16 @@ function Resolvers.resolveHealthBar(frame, unit)
         local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
         if hb then return hb end
     elseif unit == "Boss" then
-        -- Boss frames expose healthbar as a direct property (Boss1TargetFrame.healthbar).
-        if frame and frame.healthbar then return frame.healthbar end
+        -- Boss frames expose healthbar as a direct property (Boss1TargetFrame.healthbar),
+        -- but we must verify it is actually the StatusBar (not a container frame).
+        local hb = frame and frame.healthbar
+        if hb and hb.GetObjectType and hb:GetObjectType() == "StatusBar" then
+            return hb
+        end
+
+        -- Deterministic fallback path from Framestack findings.
+        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+        if explicit then return explicit end
     end
     -- Fallbacks
     if frame and frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar then return frame.HealthBarsContainer.HealthBar end
@@ -181,8 +189,16 @@ function Resolvers.resolvePowerBar(frame, unit)
         local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
         if mb then return mb end
     elseif unit == "Boss" then
-        -- Boss frames expose manabar as a direct property (Boss1TargetFrame.manabar).
-        if frame and frame.manabar then return frame.manabar end
+        -- Boss frames expose manabar as a direct property (Boss1TargetFrame.manabar),
+        -- but we must verify it is actually the StatusBar (not a container frame).
+        local mb = frame and frame.manabar
+        if mb and mb.GetObjectType and mb:GetObjectType() == "StatusBar" then
+            return mb
+        end
+
+        -- Deterministic fallback path from Framestack findings.
+        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+        if explicit then return explicit end
     end
     if frame and frame.ManaBar then return frame.ManaBar end
     return findStatusBarByHints(frame, {"ManaBar", ".ManaBar", "PowerBar"}, {"Prediction"})

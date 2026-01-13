@@ -588,6 +588,12 @@ end
 -- Boss unit frames can appear/update without target/focus change events.
 -- Re-apply our styling after Blizzard updates boss units.
 function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
+    -- Boss unit frames can update during combat. Do not touch protected Boss frames during combat
+    -- (even "cosmetic" changes) to avoid taint that can later block BossTargetFrameContainer:SetSize().
+    if InCombatLockdown and InCombatLockdown() then
+        self._pendingApplyStyles = true
+        return
+    end
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
@@ -607,6 +613,10 @@ end
 
 function addon:UPDATE_BOSS_FRAMES()
     -- Keep this lightweight: boss frames can update frequently during encounters.
+    if InCombatLockdown and InCombatLockdown() then
+        self._pendingApplyStyles = true
+        return
+    end
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end

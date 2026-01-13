@@ -48,6 +48,88 @@ local queueUnitFrameTextureReapply = Combat.queueUnitFrameTextureReapply
 local queueRaidFrameReapply = Combat.queueRaidFrameReapply
 local queuePartyFrameReapply = Combat.queuePartyFrameReapply
 
+--------------------------------------------------------------------------------
+-- Power Bar Custom Position Debug Trace
+--------------------------------------------------------------------------------
+-- Enable with: /scoot debug powerbar trace on
+-- Disable with: /scoot debug powerbar trace off
+-- Shows SetPoint calls and reapply attempts in real-time for diagnosing
+-- portal-induced position resets.
+
+local powerBarDebugTraceEnabled = false
+
+addon.SetPowerBarDebugTrace = function(enabled)
+    powerBarDebugTraceEnabled = enabled
+    if enabled then
+        print("|cff00ff00[ScooterMod]|r Power bar position debug trace ENABLED")
+    else
+        print("|cff00ff00[ScooterMod]|r Power bar position debug trace DISABLED")
+    end
+end
+
+local function debugTracePowerBar(message, ...)
+    if not powerBarDebugTraceEnabled then return end
+    local timestamp = GetTime and string.format("%.3f", GetTime()) or "?"
+    local combat = (InCombatLockdown and InCombatLockdown()) and "COMBAT" or "safe"
+    local lockdown = (InCombatLockdown and InCombatLockdown()) and "LOCKED" or "unlocked"
+    local formatted = string.format("[%s][%s/%s] %s", timestamp, combat, lockdown, message)
+    if select("#", ...) > 0 then
+        formatted = string.format(formatted, ...)
+    end
+    print("|cff88ccff[PowerBar]|r " .. formatted)
+end
+
+--------------------------------------------------------------------------------
+-- Power Bar Custom Position Retry System
+--------------------------------------------------------------------------------
+-- When a SetPoint reset occurs during combat on a protected frame, we start
+-- a throttled retry loop that attempts reapply periodically until successful
+-- or combat ends.
+
+local powerBarRetryTicker = nil
+local powerBarRetryUnit = nil
+local POWERBAR_RETRY_INTERVAL = 0.5 -- seconds between retry attempts
+
+local function stopPowerBarRetry()
+    if powerBarRetryTicker then
+        powerBarRetryTicker:Cancel()
+        powerBarRetryTicker = nil
+    end
+    powerBarRetryUnit = nil
+end
+
+-- Forward declaration for the reapply helper (defined below)
+local forcePowerBarCustomPosition
+
+local function startPowerBarRetry(unit)
+    if powerBarRetryTicker then
+        -- Already retrying
+        return
+    end
+    powerBarRetryUnit = unit
+    debugTracePowerBar("Starting retry loop for unit=%s", unit or "Player")
+    
+    powerBarRetryTicker = C_Timer.NewTicker(POWERBAR_RETRY_INTERVAL, function()
+        if not powerBarRetryUnit then
+            stopPowerBarRetry()
+            return
+        end
+        
+        -- Try to reapply
+        local success = forcePowerBarCustomPosition(powerBarRetryUnit)
+        if success then
+            debugTracePowerBar("Retry loop succeeded, stopping")
+            stopPowerBarRetry()
+        else
+            debugTracePowerBar("Retry attempt failed, will try again in %.1fs", POWERBAR_RETRY_INTERVAL)
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- Power Bar Baseline Capture/Restore
+--------------------------------------------------------------------------------
+
 local function capturePowerBarBaseline(pb)
     if not pb then
         return
@@ -113,9 +195,118 @@ local function ensurePowerBarCustomSeed(cfg, pb)
     end
 end
 
--- Persistent custom-position enforcement:
--- Blizzard can reposition the Player ManaBar (e.g., via PlayerFrame_ToPlayerArt calling manaBar:SetPoint).
--- We install a hook on SetPoint to detect those resets and re-apply the custom position when allowed.
+--------------------------------------------------------------------------------
+-- forcePowerBarCustomPosition: Core Helper for Custom Positioning
+--------------------------------------------------------------------------------
+-- This helper is the single source of truth for applying custom power bar
+-- positioning. It is called by:
+--   1. applyCustomPowerBarPosition (initial apply)
+--   2. The SetPoint hook (Blizzard reset detection)
+--   3. The retry loop (combat recovery)
+--   4. Portal/vehicle event handlers (explicit triggers)
+--
+-- Returns true if position was successfully applied, false if deferred/failed.
+
+forcePowerBarCustomPosition = function(unit)
+    unit = unit or "Player"
+    
+    -- Resolve the power bar frame
+    local pb = _G.PlayerFrame
+        and _G.PlayerFrame.PlayerFrameContent
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+        and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+    
+    if not pb then
+        debugTracePowerBar("forcePowerBarCustomPosition: Power bar not found")
+        return false
+    end
+    
+    -- Check if custom positioning is enabled (either on frame or in config)
+    local isEnabled = pb._ScootPowerBarCustomPosEnabled
+    if not isEnabled then
+        -- Also check config in case frame flags weren't set yet
+        local db = addon and addon.db and addon.db.profile
+        local unitFrames = db and rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Player")
+        if not (cfg and cfg.powerBarCustomPositionEnabled) then
+            debugTracePowerBar("forcePowerBarCustomPosition: Custom positioning not enabled")
+            return false
+        end
+    end
+    
+    local x = clampScreenCoordinate(pb._ScootPowerBarCustomPosX or 0)
+    local y = clampScreenCoordinate(pb._ScootPowerBarCustomPosY or 0)
+    
+    -- Check combat lockdown
+    local inCombat = InCombatLockdown and InCombatLockdown()
+    
+    -- Check if frame is protected (ManaBar typically is a protected StatusBar)
+    local isProtected = pb.IsProtected and pb:IsProtected()
+    local isForbidden = pb.IsForbidden and pb:IsForbidden()
+    
+    debugTracePowerBar("forcePowerBarCustomPosition: x=%.1f y=%.1f combat=%s protected=%s forbidden=%s",
+        x, y,
+        tostring(inCombat),
+        tostring(isProtected),
+        tostring(isForbidden))
+    
+    -- If in combat lockdown AND frame is protected, we cannot safely SetPoint
+    -- Queue a retry and start the retry loop
+    if inCombat then
+        debugTracePowerBar("forcePowerBarCustomPosition: In combat, starting retry loop")
+        queuePowerBarReapply(unit)
+        startPowerBarRetry(unit)
+        return false
+    end
+    
+    -- Safe to apply immediately (out of combat)
+    -- Use C_Timer.After(0) to break any Blizzard call stacks and reduce taint risk
+    C_Timer.After(0, function()
+        if not pb or not pb._ScootPowerBarCustomPosEnabled then
+            return
+        end
+        
+        -- Double-check combat state (could have changed in the deferred frame)
+        if InCombatLockdown and InCombatLockdown() then
+            debugTracePowerBar("forcePowerBarCustomPosition (deferred): Combat started, aborting")
+            queuePowerBarReapply(unit)
+            startPowerBarRetry(unit)
+            return
+        end
+        
+        debugTracePowerBar("forcePowerBarCustomPosition (deferred): Applying position")
+        
+        pb._ScootPowerBarSettingPoint = true
+        if pb.SetIgnoreFramePositionManager then
+            pcall(pb.SetIgnoreFramePositionManager, pb, true)
+        end
+        if pb.ClearAllPoints and pb.SetPoint then
+            pcall(pb.ClearAllPoints, pb)
+            pcall(pb.SetPoint, pb, "CENTER", UIParent, "CENTER", pixelsToUiUnits(x), pixelsToUiUnits(y))
+        end
+        pb._ScootPowerBarSettingPoint = nil
+        pb._ScootPowerBarCustomActive = true
+        
+        -- Stop any retry loop since we succeeded
+        stopPowerBarRetry()
+        
+        debugTracePowerBar("forcePowerBarCustomPosition (deferred): Position applied successfully")
+    end)
+    
+    return true
+end
+
+-- Expose the helper for use by event handlers
+addon.ForcePowerBarCustomPosition = forcePowerBarCustomPosition
+
+--------------------------------------------------------------------------------
+-- Power Bar SetPoint Hook
+--------------------------------------------------------------------------------
+-- Blizzard can reposition the Player ManaBar (e.g., via PlayerFrame_ToPlayerArt,
+-- portal transitions, vehicle art changes). We install a hook on SetPoint to
+-- detect those resets and re-apply the custom position when allowed.
+
 local function installPowerBarCustomPositionHook(pb)
     if not pb or pb._ScootPowerBarCustomPosHooked then
         return
@@ -126,33 +317,36 @@ local function installPowerBarCustomPositionHook(pb)
         return
     end
 
-    _G.hooksecurefunc(pb, "SetPoint", function(self)
+    _G.hooksecurefunc(pb, "SetPoint", function(self, point, relativeTo, relativePoint, xOfs, yOfs)
         if not self or not self._ScootPowerBarCustomPosEnabled then
             return
         end
         if self._ScootPowerBarSettingPoint then
             return
         end
-
-        -- If we're in combat lockdown, do not attempt to move protected frames.
-        -- Instead, queue a re-apply for when combat ends.
-        if InCombatLockdown and InCombatLockdown() then
-            queuePowerBarReapply(self._ScootPowerBarCustomPosUnit or "Player")
-            return
+        
+        -- Log the incoming SetPoint call for debugging
+        local relName = "<nil>"
+        if relativeTo then
+            if type(relativeTo) == "table" and relativeTo.GetName then
+                local ok, nm = pcall(relativeTo.GetName, relativeTo)
+                if ok and nm and nm ~= "" then
+                    relName = nm
+                else
+                    relName = tostring(relativeTo)
+                end
+            else
+                relName = tostring(relativeTo)
+            end
         end
-
-        local x = clampScreenCoordinate(self._ScootPowerBarCustomPosX or 0)
-        local y = clampScreenCoordinate(self._ScootPowerBarCustomPosY or 0)
-
-        self._ScootPowerBarSettingPoint = true
-        if self.SetIgnoreFramePositionManager then
-            pcall(self.SetIgnoreFramePositionManager, self, true)
-        end
-        if self.ClearAllPoints and self.SetPoint then
-            pcall(self.ClearAllPoints, self)
-            pcall(self.SetPoint, self, "CENTER", UIParent, "CENTER", pixelsToUiUnits(x), pixelsToUiUnits(y))
-        end
-        self._ScootPowerBarSettingPoint = nil
+        debugTracePowerBar("SetPoint HOOK: point=%s relativeTo=%s relPoint=%s x=%s y=%s",
+            tostring(point), relName, tostring(relativePoint),
+            tostring(xOfs), tostring(yOfs))
+        
+        -- Use the shared helper to reapply custom position
+        -- This handles combat checks, retry loops, and deferred application
+        local unit = self._ScootPowerBarCustomPosUnit or "Player"
+        forcePowerBarCustomPosition(unit)
     end)
 end
 
@@ -160,12 +354,17 @@ local function applyCustomPowerBarPosition(unit, pb, cfg)
     if unit ~= "Player" or not cfg or not pb then
         return false
     end
+    
+    debugTracePowerBar("applyCustomPowerBarPosition: enabled=%s", tostring(cfg.powerBarCustomPositionEnabled))
+    
     if not cfg.powerBarCustomPositionEnabled then
         -- Restore original state when custom positioning is disabled.
         -- Important: clear custom-position flags even if we never successfully applied the move
         -- (e.g., custom enabled while in combat, then disabled before we could apply).
         if pb._ScootPowerBarCustomActive or pb._ScootPowerBarCustomPosEnabled then
+            debugTracePowerBar("applyCustomPowerBarPosition: Restoring baseline (custom disabled)")
             restorePowerBarBaseline(pb)
+            stopPowerBarRetry() -- Stop any active retry loop
         end
         pb._ScootPowerBarCustomActive = nil
         return false
@@ -184,27 +383,11 @@ local function applyCustomPowerBarPosition(unit, pb, cfg)
     pb._ScootPowerBarCustomPosUnit = unit
     installPowerBarCustomPositionHook(pb)
 
-    if PlayerInCombat() then
-        queuePowerBarReapply(unit)
-        return true
-    end
-
-    -- POLICY COMPLIANT: Do NOT re-parent the frame. Instead:
-    -- 1. Keep the frame parented where Blizzard placed it
-    -- 2. Use SetIgnoreFramePositionManager to prevent layout manager from overriding
-    -- 3. Anchor to UIParent for absolute screen positioning (frames CAN anchor to non-parents)
-    -- This preserves scale, text styling, and all other customizations.
-    pb._ScootPowerBarSettingPoint = true
-    if pb.SetIgnoreFramePositionManager then
-        pcall(pb.SetIgnoreFramePositionManager, pb, true)
-    end
-    if pb.ClearAllPoints and pb.SetPoint then
-        pcall(pb.ClearAllPoints, pb)
-        pcall(pb.SetPoint, pb, "CENTER", UIParent, "CENTER", pixelsToUiUnits(posX), pixelsToUiUnits(posY))
-    end
-    pb._ScootPowerBarSettingPoint = nil
-    pb._ScootPowerBarCustomActive = true
-    return true
+    debugTracePowerBar("applyCustomPowerBarPosition: Calling forcePowerBarCustomPosition x=%.1f y=%.1f", posX, posY)
+    
+    -- Use the shared helper to apply the position
+    -- This handles combat checks, retry loops, and deferred application
+    return forcePowerBarCustomPosition(unit)
 end
 
 -- Debug helper:
@@ -815,53 +998,58 @@ do
         if not frame then return end
 
         -- Boss unit frames commonly appear/update during combat (e.g., INSTANCE_ENCOUNTER_ENGAGE_UNIT / UPDATE_BOSS_FRAMES).
-        -- We must NEVER touch protected StatusBars/layout during combat, but we CAN safely hide purely-visual overlays
-        -- via SetAlpha + alpha enforcers. Do this BEFORE the combat early-return so "Hide Blizzard Frame Art & Animations"
-        -- works immediately and persistently for Boss frames.
+        -- IMPORTANT (taint): Even "cosmetic-only" writes to Boss unit frame regions (including SetAlpha on textures)
+        -- can taint the Boss system and later block protected layout calls like BossTargetFrameContainer:SetSize().
+        -- Per DEBUG.md: do not mutate protected unit frame regions during combat. If Boss needs a re-assertion,
+        -- queue a post-combat reapply instead.
         if unit == "Boss" then
-            for i = 1, 5 do
-                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
-                if bossFrame then
-                    -- FrameTexture (hide for useCustomBorders OR healthBarHideBorder)
-                    local bossFT = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.FrameTexture
-                    if bossFT then
-                        local function computeBossFTAlpha()
-                            local db2 = addon and addon.db and addon.db.profile
-                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
-                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
-                            local hide = cfgBoss and (cfgBoss.useCustomBorders or cfgBoss.healthBarHideBorder)
-                            return hide and 0 or 1
+            if InCombatLockdown and InCombatLockdown() then
+                queueUnitFrameTextureReapply("Boss")
+            else
+                for i = 1, 5 do
+                    local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                    if bossFrame then
+                        -- FrameTexture (hide for useCustomBorders OR healthBarHideBorder)
+                        local bossFT = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.FrameTexture
+                        if bossFT then
+                            local function computeBossFTAlpha()
+                                local db2 = addon and addon.db and addon.db.profile
+                                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                                local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                                local hide = cfgBoss and (cfgBoss.useCustomBorders or cfgBoss.healthBarHideBorder)
+                                return hide and 0 or 1
+                            end
+                            applyAlpha(bossFT, computeBossFTAlpha())
+                            hookAlphaEnforcer(bossFT, computeBossFTAlpha)
                         end
-                        applyAlpha(bossFT, computeBossFTAlpha())
-                        hookAlphaEnforcer(bossFT, computeBossFTAlpha)
-                    end
 
-                    -- Flash (aggro/threat glow) (hide for useCustomBorders)
-                    local bossFlash = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.Flash
-                    if bossFlash then
-                        local function computeBossFlashAlpha()
-                            local db2 = addon and addon.db and addon.db.profile
-                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
-                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
-                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        -- Flash (aggro/threat glow) (hide for useCustomBorders)
+                        local bossFlash = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.Flash
+                        if bossFlash then
+                            local function computeBossFlashAlpha()
+                                local db2 = addon and addon.db and addon.db.profile
+                                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                                local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                                return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                            end
+                            applyAlpha(bossFlash, computeBossFlashAlpha())
+                            hookAlphaEnforcer(bossFlash, computeBossFlashAlpha)
                         end
-                        applyAlpha(bossFlash, computeBossFlashAlpha())
-                        hookAlphaEnforcer(bossFlash, computeBossFlashAlpha)
-                    end
 
-                    -- ReputationColor strip (hide for useCustomBorders)
-                    local bossReputationColor = bossFrame.TargetFrameContent
-                        and bossFrame.TargetFrameContent.TargetFrameContentMain
-                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-                    if bossReputationColor then
-                        local function computeBossRepAlpha()
-                            local db2 = addon and addon.db and addon.db.profile
-                            local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
-                            local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
-                            return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                        -- ReputationColor strip (hide for useCustomBorders)
+                        local bossReputationColor = bossFrame.TargetFrameContent
+                            and bossFrame.TargetFrameContent.TargetFrameContentMain
+                            and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                        if bossReputationColor then
+                            local function computeBossRepAlpha()
+                                local db2 = addon and addon.db and addon.db.profile
+                                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                                local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                                return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+                            end
+                            applyAlpha(bossReputationColor, computeBossRepAlpha())
+                            hookAlphaEnforcer(bossReputationColor, computeBossRepAlpha)
                         end
-                        applyAlpha(bossReputationColor, computeBossRepAlpha())
-                        hookAlphaEnforcer(bossReputationColor, computeBossRepAlpha)
                     end
                 end
             end
@@ -2273,10 +2461,12 @@ do
                             end
 
                             -- Apply text alignment (requires explicit width on the FontString)
+                            -- Check for both :right and -right patterns to handle all key formats
                             local defaultAlign = "LEFT"
-                            -- For the Value (right) text, default to RIGHT align unless explicitly overridden.
-                            if baselineKey and baselineKey:find("%-right") then
+                            if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
                                 defaultAlign = "RIGHT"
+                            elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
+                                defaultAlign = "CENTER"
                             end
                             local alignment = styleCfg.alignment or defaultAlign
                             local parentBar = fs:GetParent()
@@ -3196,6 +3386,101 @@ do
     addon.PreemptiveHideTargetElements = Preemptive.hideTargetElements
     addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
     addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
+
+    -- =========================================================================
+    -- Power Bar Custom Position: Portal/Vehicle Event Triggers
+    -- =========================================================================
+    -- These events are fired when the player goes through portals, enters/exits
+    -- vehicles, or has control restored after forced movement. Blizzard often
+    -- resets the ManaBar position during these transitions (via PlayerFrame_ToPlayerArt,
+    -- UpdateSystemSettingFramePositions, etc.). We hook these events to trigger
+    -- a reapply of the custom power bar position.
+    --
+    -- Events monitored:
+    --   PLAYER_ENTERING_WORLD: Fired after loading screens (includes portal transitions)
+    --   UNIT_ENTERED_VEHICLE: Player entered a vehicle
+    --   UNIT_EXITED_VEHICLE: Player exited a vehicle
+    --   PLAYER_CONTROL_GAINED: Player regained control (portals, mind control, etc.)
+    --   UPDATE_VEHICLE_ACTIONBAR: Vehicle-related UI changes
+    --
+    -- We also hook PlayerFrame_ToPlayerArt and PlayerFrame_ToVehicleArt directly
+    -- since these are the Blizzard functions that actually reset the ManaBar position.
+
+    if not addon._PowerBarPortalHooksInstalled then
+        addon._PowerBarPortalHooksInstalled = true
+
+        -- Helper to check if custom positioning is enabled and trigger reapply
+        local function triggerPowerBarPositionReapply(source)
+            local pb = _G.PlayerFrame
+                and _G.PlayerFrame.PlayerFrameContent
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+            
+            if not pb then return end
+            
+            -- Check if custom positioning is enabled
+            if not pb._ScootPowerBarCustomPosEnabled then
+                -- Also check config in case frame flags weren't set yet
+                local db = addon and addon.db and addon.db.profile
+                local unitFrames = db and rawget(db, "unitFrames")
+                local cfg = unitFrames and rawget(unitFrames, "Player")
+                if not (cfg and cfg.powerBarCustomPositionEnabled) then
+                    return
+                end
+            end
+            
+            debugTracePowerBar("Portal/Vehicle trigger: source=%s", source or "unknown")
+            
+            -- Use the shared helper to reapply (handles combat, retries, etc.)
+            forcePowerBarCustomPosition("Player")
+        end
+
+        -- Hook PlayerFrame_ToPlayerArt - called when returning to player art from vehicle
+        -- This is a major source of ManaBar position resets
+        if _G.hooksecurefunc and type(_G.PlayerFrame_ToPlayerArt) == "function" then
+            _G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
+                -- Defer slightly to let Blizzard finish its layout changes
+                C_Timer.After(0.1, function()
+                    triggerPowerBarPositionReapply("PlayerFrame_ToPlayerArt")
+                end)
+            end)
+        end
+
+        -- Hook PlayerFrame_ToVehicleArt - called when entering vehicle art
+        -- ManaBar may be repositioned during this transition
+        if _G.hooksecurefunc and type(_G.PlayerFrame_ToVehicleArt) == "function" then
+            _G.hooksecurefunc("PlayerFrame_ToVehicleArt", function()
+                C_Timer.After(0.1, function()
+                    triggerPowerBarPositionReapply("PlayerFrame_ToVehicleArt")
+                end)
+            end)
+        end
+
+        -- Create an event frame to listen for portal/vehicle events
+        local powerBarEventFrame = CreateFrame("Frame")
+        powerBarEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        powerBarEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
+        powerBarEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
+        powerBarEventFrame:RegisterEvent("PLAYER_CONTROL_GAINED")
+        powerBarEventFrame:RegisterEvent("PLAYER_CONTROL_LOST")
+        powerBarEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+        
+        powerBarEventFrame:SetScript("OnEvent", function(self, event, ...)
+            -- For unit events, only care about player
+            if event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
+                local unit = ...
+                if unit ~= "player" then return end
+            end
+            
+            -- Defer the reapply slightly to let Blizzard finish its updates
+            C_Timer.After(0.15, function()
+                triggerPowerBarPositionReapply(event)
+            end)
+        end)
+        
+        debugTracePowerBar("Portal/Vehicle hooks installed")
+    end
 
 end
 

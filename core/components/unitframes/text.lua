@@ -250,12 +250,11 @@ do
         end
 
         -- Determine default alignment based on text role
+        -- Check for both :right and -right patterns to handle all unit types (Player:right, Boss1:health-right, etc.)
         local defaultAlign = "LEFT"
-        if baselineKey and baselineKey:find(":right", 1, true) then
+        if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
             defaultAlign = "RIGHT"
-        elseif baselineKey and baselineKey:find(":health-center", 1, true) then
-            defaultAlign = "CENTER"
-        elseif baselineKey and baselineKey:find(":power-center", 1, true) then
+        elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
             defaultAlign = "CENTER"
         end
         local alignment = styleCfg.alignment or defaultAlign
@@ -1045,10 +1044,13 @@ do
 			-- colorMode == "custom" uses styleCfg.color as-is
 			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
-			-- Determine default alignment based on whether this is left (%) or right (value) text
+			-- Determine default alignment based on whether this is left (%) or right (value) or center text
+			-- Check for both :right and -right patterns to handle all unit types
 			local defaultAlign = "LEFT"
-			if baselineKey and baselineKey:find("%-right") then
+			if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
 				defaultAlign = "RIGHT"
+			elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
+				defaultAlign = "CENTER"
 			end
 			local alignment = styleCfg.alignment or defaultAlign
 
@@ -1422,8 +1424,23 @@ do
 					container._ScootBossNameTextContainerHooked = true
 					if type(container.OnShow) == "function" then
 						_G.hooksecurefunc(container, "OnShow", function()
-							if addon and addon.ApplyUnitFrameNameLevelTextFor then
-								addon.ApplyUnitFrameNameLevelTextFor("Boss")
+							-- IMPORTANT (taint): This hook executes inside Blizzard's boss-frame show/layout flow.
+							-- Do not run styling synchronously here; defer to break the execution context chain
+							-- (see DEBUG.md "Global Mixin Hooks" + general deferral guidance).
+							local function doApply()
+								if InCombatLockdown and InCombatLockdown() then
+									-- Boss frames show/hide during encounters; defer the heavy work until out of combat.
+									addon._pendingApplyStyles = true
+									return
+								end
+								if addon and addon.ApplyUnitFrameNameLevelTextFor then
+									addon.ApplyUnitFrameNameLevelTextFor("Boss")
+								end
+							end
+							if _G.C_Timer and _G.C_Timer.After then
+								_G.C_Timer.After(0, doApply)
+							else
+								doApply()
 							end
 						end)
 					end

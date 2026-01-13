@@ -205,6 +205,29 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             return
         end
 
+        -- /scoot debug powerbar trace <on|off>
+        -- Enable/disable real-time debug tracing for Power Bar SetPoint changes
+        if sub1 == "powerbar" and sub2 == "trace" then
+            local toggle = args[4]
+            if toggle == "on" then
+                if addon.SetPowerBarDebugTrace then
+                    addon.SetPowerBarDebugTrace(true)
+                else
+                    addon:Print("Power Bar debug trace not available (bars module missing).")
+                end
+            elseif toggle == "off" then
+                if addon.SetPowerBarDebugTrace then
+                    addon.SetPowerBarDebugTrace(false)
+                else
+                    addon:Print("Power Bar debug trace not available (bars module missing).")
+                end
+            else
+                addon:Print("Usage: /scoot debug powerbar trace <on|off>")
+                addon:Print("Enables real-time tracing of Power Bar SetPoint changes for portal reset debugging.")
+            end
+            return
+        end
+
         local target = args[2]
         if not target or target == "" then
             addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|<FrameName>>")

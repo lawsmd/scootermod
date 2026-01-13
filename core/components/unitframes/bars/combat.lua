@@ -29,6 +29,12 @@ local function ensurePowerBarCombatWatcher()
             if addon.ApplyUnitFrameBarTexturesFor then
                 addon.ApplyUnitFrameBarTexturesFor(unit)
             end
+            -- Also explicitly force custom position reapply for Player
+            -- This ensures custom positioning is restored even if it was reset
+            -- mid-combat by portals or other transitions
+            if unit == "Player" and addon.ForcePowerBarCustomPosition then
+                addon.ForcePowerBarCustomPosition("Player")
+            end
         end
     end)
 end
