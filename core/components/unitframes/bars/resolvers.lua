@@ -346,4 +346,51 @@ function Resolvers.resolveBossPowerMask(bossFrame)
     return nil
 end
 
+--------------------------------------------------------------------------------
+-- Boss Health Bar Container Resolution
+--------------------------------------------------------------------------------
+
+-- Resolve the HealthBarsContainer for Boss frames.
+-- The HealthBar StatusBar has oversized dimensions spanning both health and power bars,
+-- but the HealthBarsContainer parent has the correct bounds for just the health bar area.
+-- This is because ManaBar is a SIBLING of HealthBarsContainer (not a child), so
+-- HealthBarsContainer contains ONLY the health bar region.
+function Resolvers.resolveBossHealthBarsContainer(bossFrame)
+    -- Try explicit path first (most reliable)
+    local container = getNested(bossFrame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer")
+    if container then return container end
+
+    -- Fallback: use healthbar property and get its parent
+    local hb = bossFrame and bossFrame.healthbar
+    if hb then
+        local parent = hb:GetParent()
+        -- Verify it's the HealthBarsContainer by checking for HealthBarMask child
+        if parent and parent.HealthBarMask then return parent end
+    end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- Boss Power Bar (ManaBar) Resolution
+--------------------------------------------------------------------------------
+
+-- Resolve the ManaBar for Boss frames for border anchoring.
+-- Unlike HealthBar, ManaBar is NOT inside a container - it's directly under TargetFrameContentMain.
+-- The ManaBar StatusBar should have correct bounds (it's a sibling of HealthBarsContainer).
+-- However, for consistency with the Health Bar pattern, we use the same anchor frame approach.
+function Resolvers.resolveBossManaBar(bossFrame)
+    -- Try explicit path first (most reliable)
+    local mb = getNested(bossFrame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+    if mb and mb.GetObjectType and mb:GetObjectType() == "StatusBar" then
+        return mb
+    end
+
+    -- Fallback: use manabar property
+    local manabar = bossFrame and bossFrame.manabar
+    if manabar and manabar.GetObjectType and manabar:GetObjectType() == "StatusBar" then
+        return manabar
+    end
+    return nil
+end
+
 return Resolvers

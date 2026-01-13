@@ -623,6 +623,8 @@ do
     local resolveUnitFrameFrameTexture = Resolvers.resolveUnitFrameFrameTexture
     local resolveBossHealthMask = Resolvers.resolveBossHealthMask
     local resolveBossPowerMask = Resolvers.resolveBossPowerMask
+    local resolveBossHealthBarsContainer = Resolvers.resolveBossHealthBarsContainer
+    local resolveBossManaBar = Resolvers.resolveBossManaBar
     
     -- Use texture functions from extracted module
     local applyToBar = Textures.applyToBar
@@ -742,6 +744,75 @@ do
         if InCombatLockdown and InCombatLockdown() then
             return
         end
+
+        -- Boss frames: ensure text containers are above border anchor frames for all Boss1-Boss5
+        if unit == "Boss" then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame then
+                    -- Health bar text ordering
+                    local hbContainer = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                    local hb = hbContainer and hbContainer.HealthBar
+
+                    if hb and hbContainer then
+                        -- Get border anchor frame level (if it exists)
+                        local borderAnchor = hb._ScooterBossHealthBorderAnchor
+                        local borderLevel = borderAnchor and borderAnchor.GetFrameLevel and borderAnchor:GetFrameLevel() or 0
+                        local barLevel = hb.GetFrameLevel and hb:GetFrameLevel() or 0
+
+                        -- Text container must be above border anchor
+                        local desiredTextLevel = math.max(
+                            (hbContainer.GetFrameLevel and hbContainer:GetFrameLevel() or 0),
+                            borderLevel + 1,
+                            barLevel + 2
+                        )
+                        if hbContainer.SetFrameLevel then
+                            pcall(hbContainer.SetFrameLevel, hbContainer, desiredTextLevel)
+                        end
+
+                        -- Keep border anchor between bar and text
+                        if borderAnchor and borderAnchor.SetFrameLevel then
+                            local holderLevel = math.max(1, desiredTextLevel - 1, barLevel + 1)
+                            pcall(borderAnchor.SetFrameLevel, borderAnchor, holderLevel)
+                        end
+                    end
+
+                    -- Power bar text ordering
+                    local pb = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ManaBar
+
+                    if pb then
+                        -- Get border anchor frame level (if it exists)
+                        local borderAnchor = pb._ScooterBossPowerBorderAnchor
+                        local borderLevel = borderAnchor and borderAnchor.GetFrameLevel and borderAnchor:GetFrameLevel() or 0
+                        local barLevel = pb.GetFrameLevel and pb:GetFrameLevel() or 0
+
+                        -- ManaBar is both the StatusBar and the text container for Boss frames
+                        local desiredTextLevel = math.max(
+                            (pb.GetFrameLevel and pb:GetFrameLevel() or 0),
+                            borderLevel + 1,
+                            barLevel + 2
+                        )
+                        if pb.SetFrameLevel then
+                            pcall(pb.SetFrameLevel, pb, desiredTextLevel)
+                        end
+
+                        -- Keep border anchor between bar and text
+                        if borderAnchor and borderAnchor.SetFrameLevel then
+                            local holderLevel = math.max(1, desiredTextLevel - 1, barLevel + 1)
+                            pcall(borderAnchor.SetFrameLevel, borderAnchor, holderLevel)
+                        end
+                    end
+                end
+            end
+            -- Raise text draw layers to high OVERLAY sublevel
+            raiseUnitTextLayers("Boss")
+            return
+        end
+
         local root = (unit == "Player" and _G.PlayerFrame)
             or (unit == "Target" and _G.TargetFrame)
             or (unit == "Focus" and _G.FocusFrame)
@@ -1192,6 +1263,53 @@ do
             end
         end
 
+        -- Boss frames can also be updated by Blizzard during combat (boss target changes, etc.).
+        -- Apply the same early ReputationColor handling pattern as Target/Focus: run BEFORE the combat
+        -- early-return so the element stays hidden, with C_Timer follow-up to catch late Blizzard updates.
+        if unit == "Boss" then
+            local function computeBossUseCustomBordersAlpha()
+                local db2 = addon and addon.db and addon.db.profile
+                local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
+                return (cfgBoss and cfgBoss.useCustomBorders) and 0 or 1
+            end
+
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame then
+                    local bossRepColor = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+
+                    if bossRepColor then
+                        -- Always apply current alpha, regardless of hook state
+                        local desiredAlpha = computeBossUseCustomBordersAlpha()
+                        applyAlpha(bossRepColor, desiredAlpha)
+                        hookAlphaEnforcer(bossRepColor, computeBossUseCustomBordersAlpha)
+
+                        -- Belt-and-suspenders: schedule a follow-up re-hide after Blizzard's updates complete
+                        -- This catches cases where Blizzard resets alpha after our initial hide
+                        if _G.C_Timer and _G.C_Timer.After then
+                            local bossIndex = i  -- Capture loop variable for closure
+                            _G.C_Timer.After(0, function()
+                                -- Re-resolve in case the texture object changed
+                                local bossFrame2 = _G["Boss" .. bossIndex .. "TargetFrame"]
+                                local repColor2 = bossFrame2 and bossFrame2.TargetFrameContent
+                                    and bossFrame2.TargetFrameContent.TargetFrameContentMain
+                                    and bossFrame2.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                                if repColor2 and repColor2.SetAlpha then
+                                    local alpha2 = computeBossUseCustomBordersAlpha()
+                                    pcall(repColor2.SetAlpha, repColor2, alpha2)
+                                    -- Install enforcer on the (possibly new) object
+                                    hookAlphaEnforcer(repColor2, computeBossUseCustomBordersAlpha)
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+
         -- Combat safety: do not touch protected unit frame bars during combat. Queue a post-combat reapply.
         if InCombatLockdown and InCombatLockdown() then
             queueUnitFrameTextureReapply(unit)
@@ -1310,6 +1428,10 @@ do
                             ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
 
                             -- Health Bar custom border (same settings as other unit frames)
+                            -- BOSS FRAME FIX: The HealthBar StatusBar has oversized dimensions spanning both
+                            -- health and power bars. The HealthBarsContainer (parent of HealthBar) has the
+                            -- correct bounds because ManaBar is a sibling of HealthBarsContainer, not a child.
+                            -- We anchor the border to HealthBarsContainer instead of the StatusBar.
                             do
                                 local styleKey = cfg.healthBarBorderStyle
                                 local tintEnabled = not not cfg.healthBarBorderTintEnable
@@ -1323,18 +1445,42 @@ do
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                                 local inset = tonumber(cfg.healthBarBorderInset) or 0
 
-                                -- BOSS FRAME CLEANUP: Clear any stale borders on parent containers.
+                                -- Resolve HealthBarsContainer which has correct bounds (just health bar area)
+                                local hbContainer = resolveBossHealthBarsContainer(bossFrame)
+
+                                -- Create or retrieve the anchor frame for border application
+                                -- This frame matches the HealthBarsContainer bounds, not the oversized StatusBar
+                                local anchorFrame = hb._ScooterBossHealthBorderAnchor
+                                if not anchorFrame then
+                                    anchorFrame = CreateFrame("Frame", nil, hb)
+                                    anchorFrame:SetFrameLevel((hb:GetFrameLevel() or 0) + 1)
+                                    hb._ScooterBossHealthBorderAnchor = anchorFrame
+                                end
+
+                                -- Anchor to HealthBarsContainer bounds if available, else fall back to StatusBar
+                                anchorFrame:ClearAllPoints()
+                                if hbContainer then
+                                    anchorFrame:SetPoint("TOPLEFT", hbContainer, "TOPLEFT", 0, 0)
+                                    anchorFrame:SetPoint("BOTTOMRIGHT", hbContainer, "BOTTOMRIGHT", 0, 0)
+                                else
+                                    anchorFrame:SetAllPoints(hb)
+                                end
+                                anchorFrame:Show()
+
+                                -- BOSS FRAME CLEANUP: Clear any stale borders on parent containers and the StatusBar.
                                 -- Previously borders may have been applied to wrong frames (e.g., HealthBarsContainer,
                                 -- TargetFrameContentMain, bossFrame.healthbar with wrong dimensions). Clear them all.
                                 do
                                     local clearTargets = {
                                         bossFrame.healthbar,
+                                        hb,
                                         hb and hb:GetParent(), -- HealthBarsContainer
                                         bossFrame.TargetFrameContent and bossFrame.TargetFrameContent.TargetFrameContentMain,
                                         bossFrame.TargetFrameContent,
                                     }
                                     for _, target in ipairs(clearTargets) do
-                                        if target and target ~= hb then
+                                        -- Don't clear the anchor frame itself (it's where we apply new borders)
+                                        if target and target ~= anchorFrame then
                                             if addon.BarBorders and addon.BarBorders.ClearBarFrame then
                                                 addon.BarBorders.ClearBarFrame(target)
                                             end
@@ -1345,11 +1491,11 @@ do
                                     end
                                 end
 
-					-- PetFrame is managed/protected: do not create or level custom border frames.
-					if unit ~= "Pet" and cfg.useCustomBorders then
+                                -- Apply border to anchor frame (not hb!) so it matches HealthBarTexture bounds
+                                if cfg.useCustomBorders then
                                     if styleKey == "none" or styleKey == nil then
-                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
-                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
+                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
                                     else
                                         local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
                                         local color
@@ -1363,41 +1509,41 @@ do
                                             end
                                         end
                                         local handled = false
-                                        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-                                            if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
-                                            handled = addon.BarBorders.ApplyToBarFrame(hb, styleKey, {
-                                                color = color,
-                                                thickness = thickness,
-                                                levelOffset = 1,
-                                                containerParent = (hb and hb:GetParent()) or nil,
-                                                inset = inset,
+                                        -- Clear old borders from anchor frame before applying new
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                                            addon.BarBorders.ClearBarFrame(anchorFrame)
+                                        end
+                                        if addon.Borders and addon.Borders.HideAll then
+                                            addon.Borders.HideAll(anchorFrame)
+                                        end
+                                        -- Try ApplySquare for Boss health bar borders (simpler, more reliable)
+                                        -- BarBorders.ApplyToBarFrame requires a StatusBar, but anchorFrame is a Frame
+                                        if addon.Borders and addon.Borders.ApplySquare then
+                                            local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                            local baseY = 1
+                                            local baseX = 1
+                                            local expandY = baseY - inset
+                                            local expandX = baseX - inset
+                                            if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                            if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                            addon.Borders.ApplySquare(anchorFrame, {
+                                                size = thickness,
+                                                color = sqColor,
+                                                layer = "OVERLAY",
+                                                layerSublevel = 3,
+                                                expandX = expandX,
+                                                expandY = expandY,
+                                                skipDimensionCheck = true, -- Anchor frame may be small
                                             })
+                                            handled = true
                                         end
-                                        if not handled then
-                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
-                                            if addon.Borders and addon.Borders.ApplySquare then
-                                                local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
-                                                local baseY = 1
-                                                local baseX = 1
-                                                local expandY = baseY - inset
-                                                local expandX = baseX - inset
-                                                if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
-                                                if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
-                                                addon.Borders.ApplySquare(hb, {
-                                                    size = thickness,
-                                                    color = sqColor,
-                                                    layer = "OVERLAY",
-                                                    layerSublevel = 3,
-                                                    expandX = expandX,
-                                                    expandY = expandY,
-                                                })
-                                            end
+                                        if handled then
+                                            ensureTextAndBorderOrdering(unit)
                                         end
-                                        ensureTextAndBorderOrdering(unit)
                                     end
                                 else
-                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
-                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(hb) end
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
                                 end
                             end
 
@@ -1534,6 +1680,9 @@ do
                             ensureMaskOnBarTexture(pb, resolveBossPowerMask(bossFrame))
 
                             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
+                            -- BOSS FRAME FIX: Use the same anchor frame pattern as Health Bar for consistency.
+                            -- Unlike HealthBar, ManaBar is NOT inside a container - it's directly under TargetFrameContentMain.
+                            -- The ManaBar StatusBar should have correct bounds (it's a sibling of HealthBarsContainer).
                             do
                                 local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
                                 local tintEnabled
@@ -1552,10 +1701,55 @@ do
                                 local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                                 local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
+
+                                -- Resolve ManaBar for correct bounds
+                                local mbResolved = resolveBossManaBar(bossFrame)
+
+                                -- Create or retrieve the anchor frame for border application
+                                -- For consistency with Health Bar, use the same pattern even though ManaBar
+                                -- may already have correct bounds (it's not inside an oversized container)
+                                local anchorFrame = pb._ScooterBossPowerBorderAnchor
+                                if not anchorFrame then
+                                    anchorFrame = CreateFrame("Frame", nil, pb)
+                                    anchorFrame:SetFrameLevel((pb:GetFrameLevel() or 0) + 1)
+                                    pb._ScooterBossPowerBorderAnchor = anchorFrame
+                                end
+
+                                -- Anchor to resolved ManaBar bounds if available, else fall back to pb
+                                anchorFrame:ClearAllPoints()
+                                if mbResolved then
+                                    anchorFrame:SetPoint("TOPLEFT", mbResolved, "TOPLEFT", 0, 0)
+                                    anchorFrame:SetPoint("BOTTOMRIGHT", mbResolved, "BOTTOMRIGHT", 0, 0)
+                                else
+                                    anchorFrame:SetAllPoints(pb)
+                                end
+                                anchorFrame:Show()
+
+                                -- BOSS FRAME CLEANUP: Clear any stale borders on the StatusBar
+                                do
+                                    local clearTargets = {
+                                        bossFrame.manabar,
+                                        pb,
+                                        pb and pb:GetParent(),
+                                    }
+                                    for _, target in ipairs(clearTargets) do
+                                        -- Don't clear the anchor frame itself (it's where we apply new borders)
+                                        if target and target ~= anchorFrame then
+                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                                                addon.BarBorders.ClearBarFrame(target)
+                                            end
+                                            if addon.Borders and addon.Borders.HideAll then
+                                                addon.Borders.HideAll(target)
+                                            end
+                                        end
+                                    end
+                                end
+
+                                -- Apply border to anchor frame
                                 if cfg.useCustomBorders then
                                     if styleKey == "none" or styleKey == nil then
-                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
-                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
+                                        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
                                     else
                                         local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
                                         local color
@@ -1568,42 +1762,37 @@ do
                                                 color = {0, 0, 0, 1}
                                             end
                                         end
-                                        local handled = false
-                                        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-                                            if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
-                                            handled = addon.BarBorders.ApplyToBarFrame(pb, styleKey, {
-                                                color = color,
-                                                thickness = thickness,
-                                                levelOffset = 1,
-                                                containerParent = (pb and pb:GetParent()) or nil,
-                                                inset = inset,
-                                            })
+                                        -- Clear old borders from anchor frame before applying new
+                                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                                            addon.BarBorders.ClearBarFrame(anchorFrame)
                                         end
-                                        if not handled then
-                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
-                                            if addon.Borders and addon.Borders.ApplySquare then
-                                                local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
-                                                local baseY = (thickness <= 1) and 0 or 1
-                                                local baseX = 1
-                                                local expandY = baseY - inset
-                                                local expandX = baseX - inset
-                                                if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
-                                                if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
-                                                addon.Borders.ApplySquare(pb, {
-                                                    size = thickness,
-                                                    color = sqColor,
-                                                    layer = "OVERLAY",
-                                                    layerSublevel = 3,
-                                                    expandX = expandX,
-                                                    expandY = expandY,
-                                                })
-                                            end
+                                        if addon.Borders and addon.Borders.HideAll then
+                                            addon.Borders.HideAll(anchorFrame)
+                                        end
+                                        -- Use ApplySquare for Boss power bar borders (same pattern as health bar)
+                                        if addon.Borders and addon.Borders.ApplySquare then
+                                            local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                                            local baseY = 1
+                                            local baseX = 1
+                                            local expandY = baseY - inset
+                                            local expandX = baseX - inset
+                                            if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                                            if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                            addon.Borders.ApplySquare(anchorFrame, {
+                                                size = thickness,
+                                                color = sqColor,
+                                                layer = "OVERLAY",
+                                                layerSublevel = 3,
+                                                expandX = expandX,
+                                                expandY = expandY,
+                                                skipDimensionCheck = true, -- Anchor frame may be small
+                                            })
                                         end
                                         ensureTextAndBorderOrdering(unit)
                                     end
                                 else
-                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
-                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
                                 end
                             end
 

@@ -2342,6 +2342,55 @@ local function buildBossMisc(ctx, init)
 	})
 	exp.GetExtent = function() return 30 end
 	table.insert(init, exp)
+
+	-- Hide Boss Threat Counter checkbox
+	-- Hides: Boss1TargetFrame..Boss5TargetFrame -> TargetFrameContentContextual.NumericalThreat
+	do
+		local label = "Hide Boss Threat Counter"
+
+		local function ensureMiscDB()
+			local t = ensureBossDB(); if not t then return nil end
+			t.misc = t.misc or {}
+			return t.misc
+		end
+
+		local function applyNow()
+			if addon and addon.ApplyBossThreatCounterVisibility then
+				addon.ApplyBossThreatCounterVisibility()
+			end
+		end
+
+		local setting = CreateLocalSetting(label, "boolean",
+			function()
+				local t = ensureMiscDB() or {}
+				return t.hideBossThreatCounter == true
+			end,
+			function(v)
+				local t = ensureMiscDB(); if not t then return end
+				t.hideBossThreatCounter = (v == true)
+				applyNow()
+			end,
+			false)
+
+		local row = Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {}, componentId = componentId })
+		row.GetExtent = function() return 34 end
+		row:AddShownPredicate(function()
+			return panel:IsSectionExpanded(componentId, "Misc")
+		end)
+		do
+			local base = row.InitFrame
+			row.InitFrame = function(self, frame)
+				if base then base(self, frame) end
+				if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
+				if panel and panel.ApplyRobotoWhite then
+					if frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
+					local cb = frame.Checkbox or frame.CheckBox or (frame.Control and frame.Control.Checkbox)
+					if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				end
+			end
+		end
+		table.insert(init, row)
+	end
 end
 
 panel.UnitFramesSections.boss_root = buildBossRoot

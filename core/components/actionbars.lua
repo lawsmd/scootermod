@@ -206,6 +206,24 @@ local function ApplyActionBarStyling(self)
         local c = self.db.borderTintColor or {1,1,1,1}
         tintColor = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
     end
+    
+    local function getButtonIconRegion(button)
+        if not button then return nil end
+        local icon = button.icon or button.Icon
+        if icon and icon.GetObjectType and icon:GetObjectType() == "Texture" then
+            return icon
+        end
+        if button.GetName then
+            local name = button:GetName()
+            if name and _G[name .. "Icon"] then
+                local tex = _G[name .. "Icon"]
+                if tex and tex.GetObjectType and tex:GetObjectType() == "Texture" then
+                    return tex
+                end
+            end
+        end
+        return nil
+    end
 
     for _, btn in ipairs(enumerateButtons()) do
         if disableAll then
@@ -215,6 +233,8 @@ local function ApplyActionBarStyling(self)
             if styleKey == "square" and addon.Borders and addon.Borders.ApplySquare then
                 if addon.Borders.HideAll then addon.Borders.HideAll(btn) end
                 local col = tintEnabled and tintColor or {0, 0, 0, 1}
+                local isPetButton = (self.frameName == "PetActionBar")
+                local iconRegion = isPetButton and getButtonIconRegion(btn) or nil
                 -- Base offsets: expandTop = 1, expandBottom = -1, right edge at -1
                 -- borderInset adjusts these additively (negative = expand, positive = shrink)
                 addon.Borders.ApplySquare(btn, {
@@ -226,6 +246,11 @@ local function ApplyActionBarStyling(self)
                     expandY = 0 - borderInset,
                     expandTop = 1 - borderInset,
                     expandBottom = -1 - borderInset,
+                    -- Pet Action Buttons have extra internal padding vs other action buttons; anchor the
+                    -- square border to the icon region so Border Inset = 0 hugs the icon edge.
+                    levelOffset = iconRegion and 5 or nil,
+                    containerParent = iconRegion and btn or nil,
+                    containerAnchorRegion = iconRegion,
                 })
                 local container = btn.ScootSquareBorderContainer or btn
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges

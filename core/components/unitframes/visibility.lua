@@ -202,6 +202,119 @@ do
     function addon.ApplyAllThreatMeterVisibility()
         addon.ApplyTargetThreatMeterVisibility()
         addon.ApplyFocusThreatMeterVisibility()
+        if addon.ApplyBossThreatCounterVisibility then
+            addon.ApplyBossThreatCounterVisibility()
+        end
+    end
+end
+
+-- Boss Misc.: Threat Counter visibility (all 5 boss frames)
+-- Frame paths:
+--   Boss1TargetFrame.TargetFrameContent.TargetFrameContentContextual.NumericalThreat
+--   ...
+--   Boss5TargetFrame.TargetFrameContent.TargetFrameContentContextual.NumericalThreat
+do
+    local _bossThreatHooked = {}
+    local _originalBossThreatAlpha = {}
+
+    local function getBossThreatCounterFrame(index)
+        local parentFrame = _G["Boss" .. tostring(index) .. "TargetFrame"]
+        if not parentFrame then return nil end
+        local content = parentFrame.TargetFrameContent
+        if not content then return nil end
+        local contextual = content.TargetFrameContentContextual
+        if not contextual then return nil end
+        return contextual.NumericalThreat
+    end
+
+    local function applyBossThreatCounterVisibilityFor(index)
+        local threatFrame = getBossThreatCounterFrame(index)
+        if not threatFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        -- Zero‑Touch: only operate if the user has a misc config table for Boss.
+        local unitFrames = rawget(db, "unitFrames")
+        local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+        local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+        if not miscCfg then
+            return
+        end
+
+        -- Zero‑Touch: nil means "don't touch"; only apply if explicitly set.
+        if miscCfg.hideBossThreatCounter == nil then
+            return
+        end
+        local hideThreat = (miscCfg.hideBossThreatCounter == true)
+
+        -- Capture original alpha on first run (per boss frame)
+        if _originalBossThreatAlpha[index] == nil then
+            _originalBossThreatAlpha[index] = threatFrame:GetAlpha() or 1
+        end
+
+        if hideThreat then
+            if threatFrame.SetAlpha then
+                pcall(threatFrame.SetAlpha, threatFrame, 0)
+            end
+        else
+            if threatFrame.SetAlpha then
+                pcall(threatFrame.SetAlpha, threatFrame, _originalBossThreatAlpha[index])
+            end
+        end
+    end
+
+    local function installBossThreatCounterHooksFor(index)
+        if _bossThreatHooked[index] then return end
+        _bossThreatHooked[index] = true
+
+        local threatFrame = getBossThreatCounterFrame(index)
+        if not threatFrame then return end
+
+        if threatFrame.Show then
+            hooksecurefunc(threatFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+
+                local unitFrames = rawget(db, "unitFrames")
+                local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+                local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+                if miscCfg and miscCfg.hideBossThreatCounter == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        if threatFrame.SetAlpha then
+            hooksecurefunc(threatFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+
+                local unitFrames = rawget(db, "unitFrames")
+                local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+                local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+                if miscCfg and miscCfg.hideBossThreatCounter == true and alpha and alpha > 0 then
+                    if not self._ScootBossThreatAlphaDeferred then
+                        self._ScootBossThreatAlphaDeferred = true
+                        C_Timer.After(0, function()
+                            self._ScootBossThreatAlphaDeferred = nil
+                            if miscCfg and miscCfg.hideBossThreatCounter == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyBossThreatCounterVisibility()
+        for i = 1, 5 do
+            installBossThreatCounterHooksFor(i)
+            applyBossThreatCounterVisibilityFor(i)
+        end
     end
 end
 

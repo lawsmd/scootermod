@@ -29,7 +29,7 @@ local function hideLegacy(frame)
     -- No mask textures used in the final design, so nothing else to clear here.
 end
 
-local function ensureContainer(frame, strata, levelOffset, parent)
+local function ensureContainer(frame, strata, levelOffset, parent, anchorRegion)
     local f = frame.ScootSquareBorderContainer
     if not f then
         f = CreateFrame("Frame", nil, parent or UIParent)
@@ -38,9 +38,10 @@ local function ensureContainer(frame, strata, levelOffset, parent)
     local valid = { BACKGROUND=true, LOW=true, MEDIUM=true, HIGH=true, DIALOG=true, FULLSCREEN=true, FULLSCREEN_DIALOG=true, TOOLTIP=true }
     local desiredStrata = valid[strata or ""] and strata or (frame.GetFrameStrata and frame:GetFrameStrata()) or "BACKGROUND"
     local lvlOffset = tonumber(levelOffset) or 5
-    f:ClearAllPoints();
-    f:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    f:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    local anchor = anchorRegion or frame
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+    f:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
     f:SetFrameStrata(desiredStrata)
     f:SetFrameLevel((frame:GetFrameLevel() or 0) + lvlOffset)
     f:Show()
@@ -97,7 +98,7 @@ function Borders.ApplySquare(frame, opts)
     -- If containerStrata is nil, ensureContainer will inherit the parent frame's strata,
     -- which keeps borders below Blizzard menus while still allowing elevated frame level.
     if opts.containerStrata or opts.levelOffset then
-        container = ensureContainer(frame, opts.containerStrata, opts.levelOffset, opts.containerParent)
+        container = ensureContainer(frame, opts.containerStrata, opts.levelOffset, opts.containerParent, opts.containerAnchorRegion)
     end
     local e = ensureSquare(frame, layer, layerSublevel, container)
     colorEdges(e, r, g, b, a)

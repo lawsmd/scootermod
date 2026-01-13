@@ -399,11 +399,26 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     end
     
     self:ApplyStyles()
+    
+    -- Enforce Pet overlay visibility immediately after initial styling.
+    -- This ensures PetAttackModeTexture is hidden before the first frame renders if the
+    -- player has a pet that's already in attack mode when logging in or reloading.
+    if addon.UnitFrames_EnforcePetOverlays then
+        addon.UnitFrames_EnforcePetOverlays()
+    end
+    
     -- Deferred reapply of Player textures to catch any Blizzard resets after initial apply
     -- This ensures textures persist even if Blizzard updates the frame after our initial styling
     if C_Timer and C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
         C_Timer.After(0.1, function()
             addon.ApplyUnitFrameBarTexturesFor("Player")
+        end)
+    end
+    -- Deferred Pet overlay enforcement to catch Blizzard resets (PetFrame:Update runs after login).
+    -- This ensures PetAttackModeTexture stays hidden even if Blizzard shows it after initial styling.
+    if C_Timer and C_Timer.After and addon.UnitFrames_EnforcePetOverlays then
+        C_Timer.After(0.1, function()
+            addon.UnitFrames_EnforcePetOverlays()
         end)
     end
     -- Deferred reapply of Cast Bars to catch any Blizzard resets after initial apply.
