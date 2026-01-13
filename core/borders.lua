@@ -72,6 +72,20 @@ end
 
 function Borders.ApplySquare(frame, opts)
     if not frame or not opts then return end
+
+    -- Sanity check: refuse to apply borders to frames larger than reasonable for a bar.
+    -- This catches cases where the wrong frame is passed (e.g., a parent container instead
+    -- of the actual bar). Skip the check if opts.skipDimensionCheck is set.
+    if not opts.skipDimensionCheck then
+        local fw = frame.GetWidth and frame:GetWidth() or 0
+        local fh = frame.GetHeight and frame:GetHeight() or 0
+        if fw > 400 or fh > 100 then
+            -- Frame is too large to be a bar; clear any existing border and return.
+            hideLegacy(frame)
+            return
+        end
+    end
+
     hideLegacy(frame)
     local size = math.max(1, tonumber(opts.size) or 1)
     local col = opts.color or {0, 0, 0, 1}

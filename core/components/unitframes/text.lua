@@ -803,6 +803,128 @@ do
 		-- No-op: hooks removed for performance
 	end
 
+	-- Styling helpers (defined at do-block scope for use by both applyForUnit and ApplyBossPowerTextStyling)
+	addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
+	local function ensureBaseline(fs, key, fallbackFrame)
+		addon._ufPowerTextBaselines[key] = addon._ufPowerTextBaselines[key] or {}
+		local b = addon._ufPowerTextBaselines[key]
+		if b.point == nil then
+			if fs and fs.GetPoint then
+				local p, relTo, rp, x, y = fs:GetPoint(1)
+				b.point = p or "CENTER"
+				b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+				b.relPoint = rp or b.point
+				b.x = tonumber(x) or 0
+				b.y = tonumber(y) or 0
+			else
+				b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or fallbackFrame, "CENTER", 0, 0
+			end
+		end
+		return b
+	end
+
+	-- Helper to force FontString redraw after alignment change
+	local function forceTextRedraw(fs)
+		if fs and fs.GetText and fs.SetText then
+			local txt = fs:GetText()
+			if txt then
+				fs:SetText("")
+				fs:SetText(txt)
+			end
+		end
+	end
+
+	-- Default/clean profiles should not modify Blizzard text.
+	-- Only treat settings as "customized" if they differ from structural defaults.
+	local function hasTextCustomization(styleCfg)
+		if not styleCfg then return false end
+		if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
+			return true
+		end
+		if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+			return true
+		end
+		-- colorMode is used for Power Bar text to support "classPower" color
+		if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
+			return true
+		end
+		if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
+			local ox = tonumber(styleCfg.offset.x) or 0
+			local oy = tonumber(styleCfg.offset.y) or 0
+			if ox ~= 0 or oy ~= 0 then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function applyTextStyle(fs, styleCfg, baselineKey, fallbackFrame)
+		if not fs or not styleCfg then return end
+		if not hasTextCustomization(styleCfg) then
+			return
+		end
+		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+		local size = tonumber(styleCfg.size) or 14
+		local outline = tostring(styleCfg.style or "OUTLINE")
+		-- Set flag to prevent our SetFont hook from triggering a reapply loop
+		fs._ScooterApplyingFont = true
+		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
+		fs._ScooterApplyingFont = nil
+		-- Determine effective color based on colorMode (for Power Bar text)
+		local c = styleCfg.color or {1,1,1,1}
+		local colorMode = styleCfg.colorMode or "default"
+		if colorMode == "classPower" then
+			-- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
+			if addon.GetPowerColorRGB then
+				local pr, pg, pb = addon.GetPowerColorRGB("player")
+				c = {pr or 1, pg or 1, pb or 1, 1}
+			end
+		elseif colorMode == "default" then
+			-- Default white for Blizzard's standard bar text color
+			c = {1, 1, 1, 1}
+		end
+		-- colorMode == "custom" uses styleCfg.color as-is
+		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+
+		-- Determine default alignment based on whether this is left (%) or right (value) or center text
+		-- Check for both :right and -right patterns to handle all unit types
+		local defaultAlign = "LEFT"
+		if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
+			defaultAlign = "RIGHT"
+		elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
+			defaultAlign = "CENTER"
+		end
+		local alignment = styleCfg.alignment or defaultAlign
+
+		-- Set explicit width on FontString to enable alignment (use full parent bar width)
+		local parentBar = fs:GetParent()
+		if parentBar and parentBar.GetWidth then
+			local barWidth = parentBar:GetWidth()
+			if barWidth and barWidth > 0 then
+				-- Use full bar width so alignment spans the entire bar
+				if fs.SetWidth then
+					pcall(fs.SetWidth, fs, barWidth)
+				end
+			end
+		end
+
+		-- Apply text alignment
+		if fs.SetJustifyH then
+			pcall(fs.SetJustifyH, fs, alignment)
+		end
+
+		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+		if fs.ClearAllPoints and fs.SetPoint then
+			local b = ensureBaseline(fs, baselineKey, fallbackFrame)
+			fs:ClearAllPoints()
+			fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+		end
+
+		-- Force redraw to apply alignment visually
+		forceTextRedraw(fs)
+	end
+
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
@@ -961,130 +1083,8 @@ do
             end
         end
 
-		-- Styling
-		addon._ufPowerTextBaselines = addon._ufPowerTextBaselines or {}
-		local function ensureBaseline(fs, key)
-			addon._ufPowerTextBaselines[key] = addon._ufPowerTextBaselines[key] or {}
-			local b = addon._ufPowerTextBaselines[key]
-			if b.point == nil then
-				if fs and fs.GetPoint then
-					local p, relTo, rp, x, y = fs:GetPoint(1)
-					b.point = p or "CENTER"
-					b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
-					b.relPoint = rp or b.point
-					b.x = tonumber(x) or 0
-					b.y = tonumber(y) or 0
-				else
-					b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
-				end
-			end
-			return b
-		end
-
-		-- Helper to force FontString redraw after alignment change
-		local function forceTextRedraw(fs)
-			if fs and fs.GetText and fs.SetText then
-				local txt = fs:GetText()
-				if txt then
-					fs:SetText("")
-					fs:SetText(txt)
-				end
-			end
-		end
-
-		-- Default/clean profiles should not modify Blizzard text.
-		-- Only treat settings as "customized" if they differ from structural defaults.
-		local function hasTextCustomization(styleCfg)
-			if not styleCfg then return false end
-			if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
-				return true
-			end
-			if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
-				return true
-			end
-			-- colorMode is used for Power Bar text to support "classPower" color
-			if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
-				return true
-			end
-			if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
-				local ox = tonumber(styleCfg.offset.x) or 0
-				local oy = tonumber(styleCfg.offset.y) or 0
-				if ox ~= 0 or oy ~= 0 then
-					return true
-				end
-			end
-			return false
-		end
-
-		local function applyTextStyle(fs, styleCfg, baselineKey)
-			if not fs or not styleCfg then return end
-			if not hasTextCustomization(styleCfg) then
-				return
-			end
-			local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
-			local size = tonumber(styleCfg.size) or 14
-			local outline = tostring(styleCfg.style or "OUTLINE")
-			-- Set flag to prevent our SetFont hook from triggering a reapply loop
-			fs._ScooterApplyingFont = true
-			if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-			fs._ScooterApplyingFont = nil
-			-- Determine effective color based on colorMode (for Power Bar text)
-			local c = styleCfg.color or {1,1,1,1}
-			local colorMode = styleCfg.colorMode or "default"
-			if colorMode == "classPower" then
-				-- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
-				if addon.GetPowerColorRGB then
-					local pr, pg, pb = addon.GetPowerColorRGB("player")
-					c = {pr or 1, pg or 1, pb or 1, 1}
-				end
-			elseif colorMode == "default" then
-				-- Default white for Blizzard's standard bar text color
-				c = {1, 1, 1, 1}
-			end
-			-- colorMode == "custom" uses styleCfg.color as-is
-			if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-
-			-- Determine default alignment based on whether this is left (%) or right (value) or center text
-			-- Check for both :right and -right patterns to handle all unit types
-			local defaultAlign = "LEFT"
-			if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
-				defaultAlign = "RIGHT"
-			elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
-				defaultAlign = "CENTER"
-			end
-			local alignment = styleCfg.alignment or defaultAlign
-
-			-- Set explicit width on FontString to enable alignment (use full parent bar width)
-			local parentBar = fs:GetParent()
-			if parentBar and parentBar.GetWidth then
-				local barWidth = parentBar:GetWidth()
-				if barWidth and barWidth > 0 then
-					-- Use full bar width so alignment spans the entire bar
-					if fs.SetWidth then
-						pcall(fs.SetWidth, fs, barWidth)
-					end
-				end
-			end
-
-			-- Apply text alignment
-			if fs.SetJustifyH then
-				pcall(fs.SetJustifyH, fs, alignment)
-			end
-
-			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-			if fs.ClearAllPoints and fs.SetPoint then
-				local b = ensureBaseline(fs, baselineKey)
-				fs:ClearAllPoints()
-				fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
-			end
-
-			-- Force redraw to apply alignment visually
-			forceTextRedraw(fs)
-		end
-
-		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left") end
-		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right") end
+		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left", frame) end
+		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right", frame) end
         -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
         -- Always apply styling if we have text customizations; handle visibility separately
         if textStringFS then
@@ -1110,10 +1110,52 @@ do
             end
             -- Always apply styling (applyTextStyle returns early if no customizations)
             if not textStringFS._ScooterPowerTextCenterHidden then
-                applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center")
+                applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center", frame)
             end
         end
 	end
+
+    -- Boss frames: Apply Power % (LeftText) and Value (RightText) styling.
+    -- Boss frames are not returned by EditModeManagerFrame's UnitFrame system indices like Player/Target/Focus/Pet,
+    -- so we resolve Boss1..Boss5 deterministically using their global names.
+    function addon.ApplyBossPowerTextStyling()
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local unitFrames = rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Boss") or nil
+        if not cfg then
+            return
+        end
+
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            local manaBar = bossFrame
+                and bossFrame.TargetFrameContent
+                and bossFrame.TargetFrameContent.TargetFrameContentMain
+                and bossFrame.TargetFrameContent.TargetFrameContentMain.ManaBar
+
+            if manaBar then
+                -- Ensure combat-time visibility enforcement exists for Boss power texts
+                hookPowerBarUpdateTextString(manaBar, "Boss")
+
+                local leftFS = manaBar.LeftText
+                local rightFS = manaBar.RightText
+
+                if leftFS then
+                    applyTextStyle(leftFS, cfg.textPowerPercent or {}, "Boss" .. tostring(i) .. ":power-left", manaBar)
+                end
+                if rightFS then
+                    applyTextStyle(rightFS, cfg.textPowerValue or {}, "Boss" .. tostring(i) .. ":power-right", manaBar)
+                end
+            end
+        end
+
+        -- Apply visibility once as part of the styling pass.
+        if addon.ApplyUnitFramePowerTextVisibilityFor then
+            addon.ApplyUnitFramePowerTextVisibilityFor("Boss")
+        end
+    end
 
     -- Lightweight visibility-only function used by UpdateTextString hooks.
     -- Uses SetAlpha instead of SetShown to avoid taint during combat.
@@ -1234,6 +1276,9 @@ do
 		applyForUnit("Target")
 		applyForUnit("Focus")
 		applyForUnit("Pet")
+        if addon.ApplyBossPowerTextStyling then
+            addon.ApplyBossPowerTextStyling()
+        end
 	end
 
 	-- Optional helper mirroring health text settings copy (no-op if missing)

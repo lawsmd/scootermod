@@ -51,32 +51,65 @@ local queuePartyFrameReapply = Combat.queuePartyFrameReapply
 --------------------------------------------------------------------------------
 -- Power Bar Custom Position Debug Trace
 --------------------------------------------------------------------------------
--- Enable with: /scoot debug powerbar trace on
--- Disable with: /scoot debug powerbar trace off
--- Shows SetPoint calls and reapply attempts in real-time for diagnosing
--- portal-induced position resets.
+-- Commands:
+--   /scoot debug powerbar trace on   - Enable tracing (buffers messages)
+--   /scoot debug powerbar trace off  - Disable tracing
+--   /scoot debug powerbar log        - Show buffered trace in copyable window
+--   /scoot debug powerbar clear      - Clear the trace buffer
 
 local powerBarDebugTraceEnabled = false
+local powerBarTraceBuffer = {}
+local POWERBAR_TRACE_MAX_LINES = 500 -- Max lines to keep in buffer
 
 addon.SetPowerBarDebugTrace = function(enabled)
     powerBarDebugTraceEnabled = enabled
     if enabled then
-        print("|cff00ff00[ScooterMod]|r Power bar position debug trace ENABLED")
+        print("|cff00ff00[ScooterMod]|r Power bar trace ENABLED (buffering to log)")
+        print("|cff00ff00[ScooterMod]|r Use '/scoot debug powerbar log' to view, '/scoot debug powerbar clear' to clear")
+        -- Add a start marker
+        table.insert(powerBarTraceBuffer, "=== Trace started at " .. date("%Y-%m-%d %H:%M:%S") .. " ===")
     else
-        print("|cff00ff00[ScooterMod]|r Power bar position debug trace DISABLED")
+        print("|cff00ff00[ScooterMod]|r Power bar trace DISABLED")
+        table.insert(powerBarTraceBuffer, "=== Trace stopped at " .. date("%Y-%m-%d %H:%M:%S") .. " ===")
     end
+end
+
+addon.ShowPowerBarTraceLog = function()
+    if #powerBarTraceBuffer == 0 then
+        print("|cff00ff00[ScooterMod]|r Power bar trace buffer is empty")
+        return
+    end
+    
+    local text = table.concat(powerBarTraceBuffer, "\n")
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Power Bar Trace Log (" .. #powerBarTraceBuffer .. " lines)", text)
+    else
+        print("|cff00ff00[ScooterMod]|r Debug window not available. Buffer has " .. #powerBarTraceBuffer .. " lines.")
+    end
+end
+
+addon.ClearPowerBarTraceLog = function()
+    local count = #powerBarTraceBuffer
+    powerBarTraceBuffer = {}
+    print("|cff00ff00[ScooterMod]|r Cleared " .. count .. " lines from power bar trace buffer")
 end
 
 local function debugTracePowerBar(message, ...)
     if not powerBarDebugTraceEnabled then return end
     local timestamp = GetTime and string.format("%.3f", GetTime()) or "?"
     local combat = (InCombatLockdown and InCombatLockdown()) and "COMBAT" or "safe"
-    local lockdown = (InCombatLockdown and InCombatLockdown()) and "LOCKED" or "unlocked"
-    local formatted = string.format("[%s][%s/%s] %s", timestamp, combat, lockdown, message)
+    local formatted = string.format("[%s][%s] %s", timestamp, combat, message)
     if select("#", ...) > 0 then
         formatted = string.format(formatted, ...)
     end
-    print("|cff88ccff[PowerBar]|r " .. formatted)
+    
+    -- Add to buffer
+    table.insert(powerBarTraceBuffer, formatted)
+    
+    -- Trim buffer if too large
+    while #powerBarTraceBuffer > POWERBAR_TRACE_MAX_LINES do
+        table.remove(powerBarTraceBuffer, 1)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -303,9 +336,19 @@ addon.ForcePowerBarCustomPosition = forcePowerBarCustomPosition
 --------------------------------------------------------------------------------
 -- Power Bar SetPoint Hook
 --------------------------------------------------------------------------------
--- Blizzard can reposition the Player ManaBar (e.g., via PlayerFrame_ToPlayerArt,
--- portal transitions, vehicle art changes). We install a hook on SetPoint to
--- detect those resets and re-apply the custom position when allowed.
+-- Catches Blizzard SetPoint resets and triggers a full reapply.
+-- 
+-- Key insight: When WE set position, we anchor to UIParent (CENTER).
+-- When BLIZZARD resets position, they anchor to the parent frame (ManaBarArea).
+-- So we only trigger reapply when the anchor target is NOT UIParent.
+--
+-- Guard flag prevents recursive triggers: ApplyUnitFrameBarTexturesFor contains
+-- width/height scaling code that calls SetPoint internally, which would
+-- otherwise trigger the hook again.
+
+local lastPowerBarReapplyTime = 0
+local POWERBAR_REAPPLY_THROTTLE = 0.2 -- Minimum seconds between reapplies
+local powerBarFullReapplyInProgress = false -- Guard flag to prevent recursion
 
 local function installPowerBarCustomPositionHook(pb)
     if not pb or pb._ScootPowerBarCustomPosHooked then
@@ -318,35 +361,69 @@ local function installPowerBarCustomPositionHook(pb)
     end
 
     _G.hooksecurefunc(pb, "SetPoint", function(self, point, relativeTo, relativePoint, xOfs, yOfs)
+        -- Skip if custom positioning not enabled
         if not self or not self._ScootPowerBarCustomPosEnabled then
             return
         end
+        -- Skip if this is OUR SetPoint call (guard flag set)
         if self._ScootPowerBarSettingPoint then
             return
         end
+        -- Skip if a full reapply is already in progress (prevents recursive triggers)
+        if powerBarFullReapplyInProgress then
+            return
+        end
+        
+        -- KEY FILTER: Only trigger if anchoring to something OTHER than UIParent
+        -- When we apply custom position, we anchor to UIParent
+        -- When Blizzard resets, they anchor to ManaBarArea or similar
+        if relativeTo == UIParent or relativeTo == _G.UIParent then
+            return
+        end
+        
+        -- Throttle: Don't trigger too frequently
+        local now = GetTime()
+        if (now - lastPowerBarReapplyTime) < POWERBAR_REAPPLY_THROTTLE then
+            return
+        end
+        lastPowerBarReapplyTime = now
         
         -- Log the incoming SetPoint call for debugging
-        local relName = "<nil>"
-        if relativeTo then
-            if type(relativeTo) == "table" and relativeTo.GetName then
-                local ok, nm = pcall(relativeTo.GetName, relativeTo)
-                if ok and nm and nm ~= "" then
-                    relName = nm
+        if powerBarDebugTraceEnabled then
+            local relName = "<nil>"
+            if relativeTo then
+                if type(relativeTo) == "table" and relativeTo.GetName then
+                    local ok, nm = pcall(relativeTo.GetName, relativeTo)
+                    if ok and nm and nm ~= "" then
+                        relName = nm
+                    else
+                        relName = tostring(relativeTo)
+                    end
                 else
                     relName = tostring(relativeTo)
                 end
-            else
-                relName = tostring(relativeTo)
             end
+            debugTracePowerBar("SetPoint HOOK (Blizzard reset detected): point=%s relativeTo=%s",
+                tostring(point), relName)
         end
-        debugTracePowerBar("SetPoint HOOK: point=%s relativeTo=%s relPoint=%s x=%s y=%s",
-            tostring(point), relName, tostring(relativePoint),
-            tostring(xOfs), tostring(yOfs))
         
-        -- Use the shared helper to reapply custom position
-        -- This handles combat checks, retry loops, and deferred application
-        local unit = self._ScootPowerBarCustomPosUnit or "Player"
-        forcePowerBarCustomPosition(unit)
+        -- Schedule a FULL reapply (deferred to avoid infinite loops)
+        -- This restores position, width, height, textures, text positioning, etc.
+        C_Timer.After(0.05, function()
+            if InCombatLockdown and InCombatLockdown() then
+                debugTracePowerBar("SetPoint hook: In combat, queuing full reapply")
+                queuePowerBarReapply("Player")
+                return
+            end
+            
+            -- Set guard flag to prevent recursive triggers
+            powerBarFullReapplyInProgress = true
+            debugTracePowerBar("SetPoint hook: Executing ApplyUnitFrameBarTexturesFor(Player)")
+            if addon.ApplyUnitFrameBarTexturesFor then
+                addon.ApplyUnitFrameBarTexturesFor("Player")
+            end
+            powerBarFullReapplyInProgress = false
+        end)
     end)
 end
 
@@ -1245,6 +1322,29 @@ do
                                 local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                                 local inset = tonumber(cfg.healthBarBorderInset) or 0
+
+                                -- BOSS FRAME CLEANUP: Clear any stale borders on parent containers.
+                                -- Previously borders may have been applied to wrong frames (e.g., HealthBarsContainer,
+                                -- TargetFrameContentMain, bossFrame.healthbar with wrong dimensions). Clear them all.
+                                do
+                                    local clearTargets = {
+                                        bossFrame.healthbar,
+                                        hb and hb:GetParent(), -- HealthBarsContainer
+                                        bossFrame.TargetFrameContent and bossFrame.TargetFrameContent.TargetFrameContentMain,
+                                        bossFrame.TargetFrameContent,
+                                    }
+                                    for _, target in ipairs(clearTargets) do
+                                        if target and target ~= hb then
+                                            if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                                                addon.BarBorders.ClearBarFrame(target)
+                                            end
+                                            if addon.Borders and addon.Borders.HideAll then
+                                                addon.Borders.HideAll(target)
+                                            end
+                                        end
+                                    end
+                                end
+
 					-- PetFrame is managed/protected: do not create or level custom border frames.
 					if unit ~= "Pet" and cfg.useCustomBorders then
                                     if styleKey == "none" or styleKey == nil then
@@ -3409,55 +3509,68 @@ do
     if not addon._PowerBarPortalHooksInstalled then
         addon._PowerBarPortalHooksInstalled = true
 
-        -- Helper to check if custom positioning is enabled and trigger reapply
-        local function triggerPowerBarPositionReapply(source)
-            local pb = _G.PlayerFrame
-                and _G.PlayerFrame.PlayerFrameContent
-                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
-                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
-                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
-            
-            if not pb then return end
-            
-            -- Check if custom positioning is enabled
-            if not pb._ScootPowerBarCustomPosEnabled then
-                -- Also check config in case frame flags weren't set yet
-                local db = addon and addon.db and addon.db.profile
-                local unitFrames = db and rawget(db, "unitFrames")
-                local cfg = unitFrames and rawget(unitFrames, "Player")
-                if not (cfg and cfg.powerBarCustomPositionEnabled) then
-                    return
-                end
+        -- Helper to trigger FULL power bar style reapply (not just position)
+        -- Portal transitions reset more than just position - they also reset width,
+        -- height, and other bar properties. We need to reapply ALL styling.
+        local function triggerPowerBarFullReapply(source)
+            -- Skip if a reapply is already in progress (prevents overlapping reapplies)
+            if powerBarFullReapplyInProgress then
+                debugTracePowerBar("Portal/Vehicle trigger: Skipping, reapply already in progress")
+                return
             end
             
-            debugTracePowerBar("Portal/Vehicle trigger: source=%s", source or "unknown")
+            -- Check if we have any Player unit frame config at all
+            local db = addon and addon.db and addon.db.profile
+            local unitFrames = db and rawget(db, "unitFrames")
+            local cfg = unitFrames and rawget(unitFrames, "Player")
+            if not cfg then return end
             
-            -- Use the shared helper to reapply (handles combat, retries, etc.)
-            forcePowerBarCustomPosition("Player")
+            debugTracePowerBar("Portal/Vehicle FULL reapply trigger: source=%s", source or "unknown")
+            
+            -- If in combat, queue for later
+            if InCombatLockdown and InCombatLockdown() then
+                debugTracePowerBar("Portal/Vehicle trigger: In combat, queuing full reapply")
+                queuePowerBarReapply("Player")
+                startPowerBarRetry("Player")
+                return
+            end
+            
+            -- Set guard flag to prevent recursive triggers from SetPoint hook
+            powerBarFullReapplyInProgress = true
+            
+            -- Do a FULL reapply of all Player power bar styling
+            -- This handles position, width, height, textures, borders, text, etc.
+            if addon.ApplyUnitFrameBarTexturesFor then
+                debugTracePowerBar("Portal/Vehicle trigger: Calling ApplyUnitFrameBarTexturesFor(Player)")
+                addon.ApplyUnitFrameBarTexturesFor("Player")
+            end
+            
+            -- Clear guard flag
+            powerBarFullReapplyInProgress = false
         end
 
         -- Hook PlayerFrame_ToPlayerArt - called when returning to player art from vehicle
-        -- This is a major source of ManaBar position resets
+        -- This is a major source of ManaBar position AND size resets
         if _G.hooksecurefunc and type(_G.PlayerFrame_ToPlayerArt) == "function" then
             _G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
                 -- Defer slightly to let Blizzard finish its layout changes
                 C_Timer.After(0.1, function()
-                    triggerPowerBarPositionReapply("PlayerFrame_ToPlayerArt")
+                    triggerPowerBarFullReapply("PlayerFrame_ToPlayerArt")
                 end)
             end)
         end
 
         -- Hook PlayerFrame_ToVehicleArt - called when entering vehicle art
-        -- ManaBar may be repositioned during this transition
+        -- ManaBar may be repositioned AND resized during this transition
         if _G.hooksecurefunc and type(_G.PlayerFrame_ToVehicleArt) == "function" then
             _G.hooksecurefunc("PlayerFrame_ToVehicleArt", function()
                 C_Timer.After(0.1, function()
-                    triggerPowerBarPositionReapply("PlayerFrame_ToVehicleArt")
+                    triggerPowerBarFullReapply("PlayerFrame_ToVehicleArt")
                 end)
             end)
         end
 
-        -- Create an event frame to listen for portal/vehicle events
+        -- Create an event frame to listen for portal/vehicle/transition events
         local powerBarEventFrame = CreateFrame("Frame")
         powerBarEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         powerBarEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
@@ -3465,6 +3578,7 @@ do
         powerBarEventFrame:RegisterEvent("PLAYER_CONTROL_GAINED")
         powerBarEventFrame:RegisterEvent("PLAYER_CONTROL_LOST")
         powerBarEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+        powerBarEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")  -- New area transitions (portals)
         
         powerBarEventFrame:SetScript("OnEvent", function(self, event, ...)
             -- For unit events, only care about player
@@ -3473,9 +3587,12 @@ do
                 if unit ~= "player" then return end
             end
             
+            debugTracePowerBar("Event trigger: %s", event)
+            
             -- Defer the reapply slightly to let Blizzard finish its updates
+            -- Use FULL reapply to restore width, height, and other properties
             C_Timer.After(0.15, function()
-                triggerPowerBarPositionReapply(event)
+                triggerPowerBarFullReapply(event)
             end)
         end)
         

@@ -205,25 +205,44 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             return
         end
 
-        -- /scoot debug powerbar trace <on|off>
-        -- Enable/disable real-time debug tracing for Power Bar SetPoint changes
-        if sub1 == "powerbar" and sub2 == "trace" then
-            local toggle = args[4]
-            if toggle == "on" then
-                if addon.SetPowerBarDebugTrace then
-                    addon.SetPowerBarDebugTrace(true)
+        -- /scoot debug powerbar <trace|log|clear>
+        -- Debug tracing for Power Bar positioning issues
+        if sub1 == "powerbar" then
+            if sub2 == "trace" then
+                local toggle = args[4]
+                if toggle == "on" then
+                    if addon.SetPowerBarDebugTrace then
+                        addon.SetPowerBarDebugTrace(true)
+                    else
+                        addon:Print("Power Bar debug trace not available (bars module missing).")
+                    end
+                elseif toggle == "off" then
+                    if addon.SetPowerBarDebugTrace then
+                        addon.SetPowerBarDebugTrace(false)
+                    else
+                        addon:Print("Power Bar debug trace not available (bars module missing).")
+                    end
                 else
-                    addon:Print("Power Bar debug trace not available (bars module missing).")
+                    addon:Print("Usage: /scoot debug powerbar trace <on|off>")
                 end
-            elseif toggle == "off" then
-                if addon.SetPowerBarDebugTrace then
-                    addon.SetPowerBarDebugTrace(false)
+            elseif sub2 == "log" then
+                if addon.ShowPowerBarTraceLog then
+                    addon.ShowPowerBarTraceLog()
                 else
-                    addon:Print("Power Bar debug trace not available (bars module missing).")
+                    addon:Print("Power Bar trace log not available (bars module missing).")
+                end
+            elseif sub2 == "clear" then
+                if addon.ClearPowerBarTraceLog then
+                    addon.ClearPowerBarTraceLog()
+                else
+                    addon:Print("Power Bar trace clear not available (bars module missing).")
                 end
             else
-                addon:Print("Usage: /scoot debug powerbar trace <on|off>")
-                addon:Print("Enables real-time tracing of Power Bar SetPoint changes for portal reset debugging.")
+                addon:Print("Usage: /scoot debug powerbar <trace|log|clear>")
+                addon:Print("  trace on  - Start tracing Power Bar position changes")
+                addon:Print("  trace off - Stop tracing")
+                addon:Print("  log       - Show trace buffer in copyable window")
+                addon:Print("  clear     - Clear the trace buffer")
             end
             return
         end

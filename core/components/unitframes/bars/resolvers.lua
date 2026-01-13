@@ -128,16 +128,19 @@ function Resolvers.resolveHealthBar(frame, unit)
         local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
         if hb then return hb end
     elseif unit == "Boss" then
-        -- Boss frames expose healthbar as a direct property (Boss1TargetFrame.healthbar),
-        -- but we must verify it is actually the StatusBar (not a container frame).
+        -- Boss frames: ALWAYS use the deterministic path from Framestack findings.
+        -- The `healthbar` property may point to a StatusBar with wrong dimensions (spanning
+        -- the entire frame content area rather than just the visible health bar region).
+        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+        if explicit and explicit.GetObjectType and explicit:GetObjectType() == "StatusBar" then
+            return explicit
+        end
+
+        -- Fallback to direct property only if deterministic path fails.
         local hb = frame and frame.healthbar
         if hb and hb.GetObjectType and hb:GetObjectType() == "StatusBar" then
             return hb
         end
-
-        -- Deterministic fallback path from Framestack findings.
-        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
-        if explicit then return explicit end
     end
     -- Fallbacks
     if frame and frame.HealthBarsContainer and frame.HealthBarsContainer.HealthBar then return frame.HealthBarsContainer.HealthBar end
@@ -189,16 +192,18 @@ function Resolvers.resolvePowerBar(frame, unit)
         local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
         if mb then return mb end
     elseif unit == "Boss" then
-        -- Boss frames expose manabar as a direct property (Boss1TargetFrame.manabar),
-        -- but we must verify it is actually the StatusBar (not a container frame).
+        -- Boss frames: ALWAYS use the deterministic path from Framestack findings.
+        -- The `manabar` property may point to a StatusBar with wrong dimensions.
+        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+        if explicit and explicit.GetObjectType and explicit:GetObjectType() == "StatusBar" then
+            return explicit
+        end
+
+        -- Fallback to direct property only if deterministic path fails.
         local mb = frame and frame.manabar
         if mb and mb.GetObjectType and mb:GetObjectType() == "StatusBar" then
             return mb
         end
-
-        -- Deterministic fallback path from Framestack findings.
-        local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
-        if explicit then return explicit end
     end
     if frame and frame.ManaBar then return frame.ManaBar end
     return findStatusBarByHints(frame, {"ManaBar", ".ManaBar", "PowerBar"}, {"Prediction"})

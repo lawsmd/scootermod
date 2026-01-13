@@ -1016,10 +1016,12 @@ local function buildBossPower(ctx, init)
 	local tabs = {
 		sectionTitle = "",
 		-- Boss frames match Target/Focus feature set, except we do NOT offer custom Positioning/Sizing/Direction for Power.
-		-- Tabs ordered by Unit Frames tab priority: Style/Texture > Border > Visibility.
+		-- Tabs ordered by Unit Frames tab priority: Style/Texture > Border > Text Elements > Visibility.
 		tabAText = "Style",
 		tabBText = "Border",
-		tabCText = "Visibility",
+		tabCText = "% Text",
+		tabDText = "Value Text",
+		tabEText = "Visibility",
 		build = function(frame) end,
 	}
 	tabs.build = function(frame)
@@ -1075,6 +1077,33 @@ local function buildBossPower(ctx, init)
 				return container:GetData()
 			end
 			return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+		end
+		local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+			local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+			f:SetHeight(26)
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			f.Text:SetText(label)
+			if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			local right = CreateFrame("Frame", nil, f)
+			right:SetSize(250, 26)
+			right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+			f.Text:ClearAllPoints()
+			f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+			f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+			f.Text:SetJustifyH("LEFT")
+			-- Use centralized color swatch factory
+			local function getColorTable()
+				local r, g, b, a = getFunc()
+				return {r or 1, g or 1, b or 1, a or 1}
+			end
+			local function setColorTable(r, g, b, a)
+				setFunc(r, g, b, a)
+			end
+			local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+			swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+			yRef.y = yRef.y - 34
+			return f
 		end
 
 		-- PageA: Style (Power Bar foreground/background texture + color)
@@ -1343,7 +1372,190 @@ local function buildBossPower(ctx, init)
 			end
 		end
 
-		-- PageC: Visibility
+		-- PageC: % Text
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
+				if addon and addon.ApplyBossPowerTextStyling then addon.ApplyBossPowerTextStyling() end
+			end
+			local function fontOptions()
+				return addon.BuildFontOptionsContainer()
+			end
+			local y = { y = -50 }
+			local label = "Disable % Text"
+			local function getter()
+				local t = ensureUFDB()
+				return t and not not t.powerPercentHidden or false
+			end
+			local function setter(v)
+				local t = ensureUFDB(); if not t then return end
+				t.powerPercentHidden = (v and true) or false
+				applyNow()
+			end
+			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+			local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+			row.GetElementData = function() return initCb end
+			row:SetPoint("TOPLEFT", 4, y.y)
+			row:SetPoint("TOPRIGHT", -16, y.y)
+			initCb:InitFrame(row)
+			if panel and panel.ApplyRobotoWhite then
+				if row.Text then panel.ApplyRobotoWhite(row.Text) end
+				local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+			end
+			y.y = y.y - 34
+
+			addDropdown(frame.PageC, "% Text Font", fontOptions,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.fontFace or "FRIZQT__" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.fontFace = v; applyNow() end,
+				y)
+			addStyle(frame.PageC, "% Text Style",
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.style or "OUTLINE" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.style = v; applyNow() end,
+				y)
+			addSlider(frame.PageC, "% Text Size", 6, 48, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return tonumber(s.size) or 14 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyNow() end,
+				y)
+			addColor(frame.PageC, "% Text Color", true,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyNow() end,
+				y)
+			do
+				local function alignOpts()
+					local c = Settings.CreateControlTextContainer()
+					c:Add("LEFT", "Left")
+					c:Add("CENTER", "Center")
+					c:Add("RIGHT", "Right")
+					return c:GetData()
+				end
+				local function getAlign()
+					local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; return s.alignment or "LEFT"
+				end
+				local function setAlign(v)
+					local t = ensureUFDB(); if not t then return end
+					t.textPowerPercent = t.textPowerPercent or {}
+					t.textPowerPercent.alignment = v or "LEFT"
+					applyNow()
+				end
+				local setting2 = CreateLocalSetting("% Text Alignment", "string", getAlign, setAlign, getAlign())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "% Text Alignment", setting = setting2, options = alignOpts })
+				local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				if panel and panel.ApplyRobotoWhite then
+					local lbl = f and (f.Text or f.Label)
+					if lbl then panel.ApplyRobotoWhite(lbl) end
+				end
+				if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+				y.y = y.y - 34
+			end
+			addSlider(frame.PageC, "% Text Offset X", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.x = tonumber(v) or 0; applyNow() end,
+				y)
+			addSlider(frame.PageC, "% Text Offset Y", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerPercent or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.offset = t.textPowerPercent.offset or {}; t.textPowerPercent.offset.y = tonumber(v) or 0; applyNow() end,
+				y)
+		end
+
+		-- PageD: Value Text
+		do
+			local function applyNow()
+				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
+				if addon and addon.ApplyBossPowerTextStyling then addon.ApplyBossPowerTextStyling() end
+			end
+			local function fontOptions()
+				return addon.BuildFontOptionsContainer()
+			end
+			local y = { y = -50 }
+			local label = "Disable Value Text"
+			local function getter()
+				local t = ensureUFDB()
+				return t and not not t.powerValueHidden or false
+			end
+			local function setter(v)
+				local t = ensureUFDB(); if not t then return end
+				t.powerValueHidden = (v and true) or false
+				applyNow()
+			end
+			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
+			local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = CreateFrame("Frame", nil, frame.PageD, "SettingsCheckboxControlTemplate")
+			row.GetElementData = function() return initCb end
+			row:SetPoint("TOPLEFT", 4, y.y)
+			row:SetPoint("TOPRIGHT", -16, y.y)
+			initCb:InitFrame(row)
+			if panel and panel.ApplyRobotoWhite then
+				if row.Text then panel.ApplyRobotoWhite(row.Text) end
+				local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
+			end
+			y.y = y.y - 34
+			addDropdown(frame.PageD, "Value Text Font", fontOptions,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.fontFace or "FRIZQT__" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.fontFace = v; applyNow() end,
+				y)
+			addStyle(frame.PageD, "Value Text Style",
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.style or "OUTLINE" end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.style = v; applyNow() end,
+				y)
+			addSlider(frame.PageD, "Value Text Size", 6, 48, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return tonumber(s.size) or 14 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyNow() end,
+				y)
+			addColor(frame.PageD, "Value Text Color", true,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local c = s.color or {1,1,1,1}; return c[1], c[2], c[3], c[4] end,
+				function(r,g,b,a) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyNow() end,
+				y)
+			do
+				local function alignOpts()
+					local c = Settings.CreateControlTextContainer()
+					c:Add("LEFT", "Left")
+					c:Add("CENTER", "Center")
+					c:Add("RIGHT", "Right")
+					return c:GetData()
+				end
+				local function getAlign()
+					local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; return s.alignment or "RIGHT"
+				end
+				local function setAlign(v)
+					local t = ensureUFDB(); if not t then return end
+					t.textPowerValue = t.textPowerValue or {}
+					t.textPowerValue.alignment = v or "RIGHT"
+					applyNow()
+				end
+				local setting2 = CreateLocalSetting("Value Text Alignment", "string", getAlign, setAlign, getAlign())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Value Text Alignment", setting = setting2, options = alignOpts })
+				local f = CreateFrame("Frame", nil, frame.PageD, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				if panel and panel.ApplyRobotoWhite then
+					local lbl = f and (f.Text or f.Label)
+					if lbl then panel.ApplyRobotoWhite(lbl) end
+				end
+				if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+				y.y = y.y - 34
+			end
+			addSlider(frame.PageD, "Value Text Offset X", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.x = tonumber(v) or 0; applyNow() end,
+				y)
+			addSlider(frame.PageD, "Value Text Offset Y", -100, 100, 1,
+				function() local t = ensureUFDB() or {}; local s = t.textPowerValue or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+				function(v) local t = ensureUFDB(); if not t then return end; t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.offset = t.textPowerValue.offset or {}; t.textPowerValue.offset.y = tonumber(v) or 0; applyNow() end,
+				y)
+		end
+
+		-- PageE: Visibility
 		do
 			local function applyNow()
 				local uk = unitKey()
@@ -1367,7 +1579,7 @@ local function buildBossPower(ctx, init)
 				end
 				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 				local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-				local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+				local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
 				row.GetElementData = function() return initCb end
 				row:SetPoint("TOPLEFT", 4, y.y)
 				row:SetPoint("TOPRIGHT", -16, y.y)
@@ -1395,7 +1607,7 @@ local function buildBossPower(ctx, init)
 				end
 				local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
 				local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-				local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+				local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
 				row.GetElementData = function() return initCb end
 				row:SetPoint("TOPLEFT", 4, y.y)
 				row:SetPoint("TOPRIGHT", -16, y.y)
@@ -1410,8 +1622,8 @@ local function buildBossPower(ctx, init)
 			end
 		end
 
-		-- NOTE: Boss power bars do not display text (Blizzard never wires up SetBarText() for Boss ManaBar),
-		-- so we intentionally do not expose %/Value Text controls here.
+		-- Apply current visibility once when building
+		if addon and addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor(unitKey()) end
 	end
 	local tInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", tabs)
 	tInit.GetExtent = function() return 364 end
