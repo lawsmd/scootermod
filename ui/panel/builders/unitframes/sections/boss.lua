@@ -2260,11 +2260,117 @@ local function buildBossCast(ctx, init)
 	}
 
 	tabs.build = function(frame)
-		-- PageA: Positioning (only Cast Bar on Side for now)
+		-- Helper: ensure Boss Cast Bar DB namespace
+		local function ensureCastBarDB()
+			local t = ensureBossDB(); if not t then return nil end
+			t.castBar = t.castBar or {}
+			return t.castBar
+		end
+
+		local function applyNow()
+			if addon and addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
+			if addon and addon.ApplyStyles then addon:ApplyStyles() end
+		end
+
+		-- Local UI helpers
+		local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+		local function addSlider(parent, label, minV, maxV, step, getFunc, setFunc, yRef)
+			local options = Settings.CreateSliderOptions(minV, maxV, step)
+			options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return fmtInt(v) end)
+			local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
+			local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
+			local f = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
+			f.GetElementData = function() return initSlider end
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			initSlider:InitFrame(f)
+			if f.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(f) end
+			yRef.y = yRef.y - 34
+			return f
+		end
+		local function addDropdown(parent, label, optsProvider, getFunc, setFunc, yRef)
+			local setting = CreateLocalSetting(label, "string", getFunc, setFunc, getFunc())
+			local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = optsProvider })
+			local f = CreateFrame("Frame", nil, parent, "SettingsDropdownControlTemplate")
+			f.GetElementData = function() return initDrop end
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			initDrop:InitFrame(f)
+			local lbl = f and (f.Text or f.Label)
+			if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+			if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+			if type(label) == "string" and string.find(label, "Font") and not string.find(label, "Style") and f.Control and f.Control.Dropdown and addon and addon.InitFontDropdown then
+				addon.InitFontDropdown(f.Control.Dropdown, setting, optsProvider)
+			end
+			yRef.y = yRef.y - 34
+			return f
+		end
+		local function addStyle(parent, label, getFunc, setFunc, yRef)
+			local function styleOptions()
+				local container = Settings.CreateControlTextContainer()
+				container:Add("NONE", "Regular")
+				container:Add("OUTLINE", "Outline")
+				container:Add("THICKOUTLINE", "Thick Outline")
+				container:Add("HEAVYTHICKOUTLINE", "Heavy Thick Outline")
+				container:Add("SHADOW", "Shadow")
+				container:Add("SHADOWOUTLINE", "Shadow Outline")
+				container:Add("SHADOWTHICKOUTLINE", "Shadow Thick Outline")
+				container:Add("HEAVYSHADOWTHICKOUTLINE", "Heavy Shadow Thick Outline")
+				return container:GetData()
+			end
+			return addDropdown(parent, label, styleOptions, getFunc, setFunc, yRef)
+		end
+		local function addColor(parent, label, hasAlpha, getFunc, setFunc, yRef)
+			local f = CreateFrame("Frame", nil, parent, "SettingsListElementTemplate")
+			f:SetHeight(26)
+			f:SetPoint("TOPLEFT", 4, yRef.y)
+			f:SetPoint("TOPRIGHT", -16, yRef.y)
+			f.Text:SetText(label)
+			if panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(f.Text) end
+			local right = CreateFrame("Frame", nil, f)
+			right:SetSize(250, 26)
+			right:SetPoint("RIGHT", f, "RIGHT", -16, 0)
+			f.Text:ClearAllPoints()
+			f.Text:SetPoint("LEFT", f, "LEFT", 36.5, 0)
+			f.Text:SetPoint("RIGHT", right, "LEFT", 0, 0)
+			f.Text:SetJustifyH("LEFT")
+			local function getColorTable()
+				local r, g, b, a = getFunc()
+				return {r or 1, g or 1, b or 1, a or 1}
+			end
+			local function setColorTable(r, g, b, a)
+				setFunc(r, g, b, a)
+			end
+			local swatch = CreateColorSwatch(right, getColorTable, setColorTable, hasAlpha)
+			swatch:SetPoint("LEFT", right, "LEFT", 8, 0)
+			yRef.y = yRef.y - 34
+			return f
+		end
+		local function addCheckbox(parent, label, getFunc, setFunc, yRef)
+			local setting = CreateLocalSetting(label, "boolean", getFunc, setFunc, getFunc())
+			local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
+			local row = CreateFrame("Frame", nil, parent, "SettingsCheckboxControlTemplate")
+			row.GetElementData = function() return initCb end
+			row:SetPoint("TOPLEFT", 4, yRef.y)
+			row:SetPoint("TOPRIGHT", -16, yRef.y)
+			initCb:InitFrame(row)
+			if panel and panel.ApplyRobotoWhite then
+				if row.Text then panel.ApplyRobotoWhite(row.Text) end
+				local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+				if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+			end
+			yRef.y = yRef.y - 34
+			return row
+		end
+
+		-- PageA: Positioning (Cast Bar on Side checkbox + Anchor Cast Bar dropdown)
 		do
 			local y = { y = -50 }
-			local label = "Cast Bar on Side"
-			local function getter()
+
+			-- Shared getter for "Cast Bar on Side" Edit Mode setting
+			-- Used by both the checkbox and the anchor dropdown's isEnabled predicate
+			local function isCastBarOnSide()
 				local frameUF = getBossSystemFrame()
 				local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.CastBarOnSide
 				if frameUF and settingId and addon and addon.EditMode and addon.EditMode.GetSetting then
@@ -2273,34 +2379,720 @@ local function buildBossCast(ctx, init)
 				end
 				return false
 			end
-			local function setter(b)
-				local frameUF = getBossSystemFrame()
-				local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.CastBarOnSide
-				local val = (b and true) and 1 or 0
-				if frameUF and settingId and addon and addon.EditMode then
-					if addon.EditMode.WriteSetting then
-						addon.EditMode.WriteSetting(frameUF, settingId, val, {
-							updaters        = { "UpdateSystemSettingCastBarOnSide" },
-							suspendDuration = 0.25,
-						})
-					elseif addon.EditMode.SetSetting then
-						addon.EditMode.SetSetting(frameUF, settingId, val)
-						if type(frameUF.UpdateSystemSettingCastBarOnSide) == "function" then pcall(frameUF.UpdateSystemSettingCastBarOnSide, frameUF) end
-						if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-						if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+
+			-- Cast Bar on Side checkbox (Edit Mode setting)
+			do
+				local label = "Cast Bar on Side"
+				local function setter(b)
+					local frameUF = getBossSystemFrame()
+					local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.CastBarOnSide
+					local val = (b and true) and 1 or 0
+					if frameUF and settingId and addon and addon.EditMode then
+						if addon.EditMode.WriteSetting then
+							addon.EditMode.WriteSetting(frameUF, settingId, val, {
+								updaters        = { "UpdateSystemSettingCastBarOnSide" },
+								suspendDuration = 0.25,
+							})
+						elseif addon.EditMode.SetSetting then
+							addon.EditMode.SetSetting(frameUF, settingId, val)
+							if type(frameUF.UpdateSystemSettingCastBarOnSide) == "function" then pcall(frameUF.UpdateSystemSettingCastBarOnSide, frameUF) end
+							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+						end
+					end
+					-- Refresh the anchor dropdown's enabled state (grayed out when Cast Bar on Side is enabled)
+					if frame.PageA and frame.PageA._refreshAnchorDropdown then
+						frame.PageA._refreshAnchorDropdown()
+					end
+					-- Re-apply cast bar styling after toggle (repositioning may change)
+					applyNow()
+				end
+				addCheckbox(frame.PageA, label, isCastBarOnSide, setter, y)
+			end
+
+			-- Anchor Cast Bar to... dropdown (addon-only, grayed out when Cast Bar on Side is enabled)
+			do
+				local label = "Anchor Cast Bar to..."
+				local _anchorDropdownFrame
+
+				local function anchorModeOptions()
+					local container = Settings.CreateControlTextContainer()
+					container:Add("default", "Default")
+					container:Add("centeredUnderPower", "Centered Under Power Bar")
+					return container:GetData()
+				end
+				local function getter()
+					local t = ensureCastBarDB() or {}
+					return t.anchorMode or "default"
+				end
+				local function setter(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.anchorMode = v or "default"
+					applyNow()
+				end
+				-- isEnabled: dropdown is only enabled when Cast Bar on Side is NOT checked
+				local function isEnabled()
+					return not isCastBarOnSide()
+				end
+
+				local setting = CreateLocalSetting(label, "string", getter, setter, getter())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = label, setting = setting, options = anchorModeOptions })
+				local f = CreateFrame("Frame", nil, frame.PageA, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				local lbl = f and (f.Text or f.Label)
+				if lbl and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(lbl) end
+				if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+				y.y = y.y - 34
+				_anchorDropdownFrame = f
+
+				-- Apply gray-out state based on isEnabled
+				local function refreshAnchorDropdownState()
+					if not _anchorDropdownFrame then return end
+					local enabled = isEnabled()
+					local alpha = enabled and 1 or 0.5
+					if _anchorDropdownFrame.SetAlpha then _anchorDropdownFrame:SetAlpha(alpha) end
+					-- Disable/enable the dropdown control
+					local ctrl = _anchorDropdownFrame.Control
+					if ctrl then
+						if ctrl.Dropdown and ctrl.Dropdown.SetEnabled then
+							ctrl.Dropdown:SetEnabled(enabled)
+						elseif ctrl.SetEnabled then
+							ctrl:SetEnabled(enabled)
+						end
+					end
+				end
+				-- Initial state
+				refreshAnchorDropdownState()
+				-- Store refresh function so checkbox setter can call it (via closure)
+				frame.PageA._refreshAnchorDropdown = refreshAnchorDropdownState
+			end
+		end
+
+		-- PageB: Sizing (Cast Bar Scale, Bar Width)
+		do
+			local y = { y = -50 }
+
+			-- Cast Bar Scale (%) slider: 50-150, default 100
+			addSlider(frame.PageB, "Cast Bar Scale (%)", 50, 150, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarScale) or 100 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 100
+					if val < 50 then val = 50 elseif val > 150 then val = 150 end
+					t.castBarScale = val
+					applyNow()
+				end,
+				y)
+
+			-- Bar Width (%) slider: 50-150, default 100
+			addSlider(frame.PageB, "Bar Width (%)", 50, 150, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.widthPct) or 100 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 100
+					if val < 50 then val = 50 elseif val > 150 then val = 150 end
+					t.widthPct = val
+					applyNow()
+				end,
+				y)
+		end
+
+		-- PageC: Style (Foreground/Background Texture, Color, Opacity)
+		do
+			local y = { y = -50 }
+			local function texOpts() return addon.BuildBarTextureOptionsContainer() end
+
+			-- Foreground Texture dropdown
+			do
+				local function getTex() local t = ensureCastBarDB() or {}; return t.castBarTexture or "default" end
+				local function setTex(v) local t = ensureCastBarDB(); if not t then return end; t.castBarTexture = v; applyNow() end
+				local texSetting = CreateLocalSetting("Foreground Texture", "string", getTex, setTex, getTex())
+				local initDrop = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Foreground Texture", setting = texSetting, options = texOpts })
+				local f = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+				f.GetElementData = function() return initDrop end
+				f:SetPoint("TOPLEFT", 4, y.y)
+				f:SetPoint("TOPRIGHT", -16, y.y)
+				initDrop:InitFrame(f)
+				if panel and panel.ApplyRobotoWhite then
+					local lbl = f and (f.Text or f.Label)
+					if lbl then panel.ApplyRobotoWhite(lbl) end
+				end
+				if f.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(f.Control) end
+				if f.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(f.Control, texSetting) end
+				y.y = y.y - 34
+			end
+
+			-- Foreground Color (dropdown + inline swatch)
+			do
+				local function colorOpts()
+					local container = Settings.CreateControlTextContainer()
+					container:Add("default", "Default")
+					container:Add("texture", "Texture Original")
+					container:Add("class", "Class Color")
+					container:Add("custom", "Custom")
+					return container:GetData()
+				end
+				local function getMode() local t = ensureCastBarDB() or {}; return t.castBarColorMode or "default" end
+				local function setMode(v) local t = ensureCastBarDB(); if not t then return end; t.castBarColorMode = v or "default"; applyNow() end
+				local function getTint()
+					local t = ensureCastBarDB() or {}; local c = t.castBarTint or {1,1,1,1}
+					return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+				end
+				local function setTint(r,g,b,a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarTint = { r or 1, g or 1, b or 1, a or 1 }
+					applyNow()
+				end
+				panel.DropdownWithInlineSwatch(frame.PageC, y, {
+					label = "Foreground Color",
+					getMode = getMode,
+					setMode = setMode,
+					getColor = getTint,
+					setColor = setTint,
+					options = colorOpts,
+					insideButton = true,
+				})
+			end
+
+			-- Background Texture dropdown
+			do
+				local function getBgTex() local t = ensureCastBarDB() or {}; return t.castBarBackgroundTexture or "default" end
+				local function setBgTex(v) local t = ensureCastBarDB(); if not t then return end; t.castBarBackgroundTexture = v; applyNow() end
+				local bgSetting = CreateLocalSetting("Background Texture", "string", getBgTex, setBgTex, getBgTex())
+				local initBg = Settings.CreateSettingInitializer("SettingsDropdownControlTemplate", { name = "Background Texture", setting = bgSetting, options = texOpts })
+				local fbg = CreateFrame("Frame", nil, frame.PageC, "SettingsDropdownControlTemplate")
+				fbg.GetElementData = function() return initBg end
+				fbg:SetPoint("TOPLEFT", 4, y.y)
+				fbg:SetPoint("TOPRIGHT", -16, y.y)
+				initBg:InitFrame(fbg)
+				if panel and panel.ApplyRobotoWhite then
+					local lbl = fbg and (fbg.Text or fbg.Label)
+					if lbl then panel.ApplyRobotoWhite(lbl) end
+				end
+				if fbg.Control and panel.ThemeDropdownWithSteppers then panel.ThemeDropdownWithSteppers(fbg.Control) end
+				if fbg.Control and addon.InitBarTextureDropdown then addon.InitBarTextureDropdown(fbg.Control, bgSetting) end
+				y.y = y.y - 34
+			end
+
+			-- Background Color (dropdown + inline swatch)
+			do
+				local function bgColorOpts()
+					local container = Settings.CreateControlTextContainer()
+					container:Add("default", "Default")
+					container:Add("texture", "Texture Original")
+					container:Add("custom", "Custom")
+					return container:GetData()
+				end
+				local function getBgMode() local t = ensureCastBarDB() or {}; return t.castBarBackgroundColorMode or "default" end
+				local function setBgMode(v) local t = ensureCastBarDB(); if not t then return end; t.castBarBackgroundColorMode = v or "default"; applyNow() end
+				local function getBgTint()
+					local t = ensureCastBarDB() or {}; local c = t.castBarBackgroundTint or {0,0,0,1}
+					return { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
+				end
+				local function setBgTint(r,g,b,a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarBackgroundTint = { r or 0, g or 0, b or 0, a or 1 }
+					applyNow()
+				end
+				panel.DropdownWithInlineSwatch(frame.PageC, y, {
+					label = "Background Color",
+					getMode = getBgMode,
+					setMode = setBgMode,
+					getColor = getBgTint,
+					setColor = setBgTint,
+					options = bgColorOpts,
+					insideButton = true,
+				})
+			end
+
+			-- Background Opacity slider (0-100%)
+			addSlider(frame.PageC, "Background Opacity", 0, 100, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBackgroundOpacity) or 50 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 50
+					if val < 0 then val = 0 elseif val > 100 then val = 100 end
+					t.castBarBackgroundOpacity = val
+					applyNow()
+				end,
+				y)
+		end
+
+		-- PageD: Border
+		do
+			local y = { y = -50 }
+
+			local function isEnabled()
+				local t = ensureCastBarDB() or {}
+				return not not t.castBarBorderEnable
+			end
+
+			-- Local refs for gray-out state
+			local _styleFrame, _colorFrame, _thickFrame, _insetFrame
+			local function refreshBorderEnabledState()
+				local enabled = isEnabled()
+				local function applyToRow(row, isColorRow)
+					if not row then return end
+					if row.Control and row.Control.SetEnabled then
+						row.Control:SetEnabled(enabled)
+					end
+					local lbl = row.Text or row.Label
+					if lbl and lbl.SetTextColor then
+						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+					if isColorRow and row.ScooterInlineSwatch then
+						local sw = row.ScooterInlineSwatch
+						if sw.EnableMouse then sw:EnableMouse(enabled) end
+						if sw.SetAlpha then sw:SetAlpha(enabled and 1 or 0.5) end
+					end
+				end
+				applyToRow(_styleFrame, false)
+				applyToRow(_colorFrame, true)
+				applyToRow(_thickFrame, false)
+				applyToRow(_insetFrame, false)
+			end
+
+			-- Enable Custom Border checkbox
+			addCheckbox(frame.PageD, "Enable Custom Border",
+				function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderEnable end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarBorderEnable = (v == true)
+					applyNow()
+					refreshBorderEnabledState()
+				end,
+				y)
+
+			-- Border Style dropdown
+			do
+				local function optionsBorder()
+					if addon.BuildBarBorderOptionsContainer then
+						return addon.BuildBarBorderOptionsContainer()
+					end
+					local c = Settings.CreateControlTextContainer()
+					c:Add("square", "Default (Square)")
+					return c:GetData()
+				end
+				local function getStyle() local t = ensureCastBarDB() or {}; return t.castBarBorderStyle or "square" end
+				local function setStyle(v) local t = ensureCastBarDB(); if not t then return end; t.castBarBorderStyle = v or "square"; applyNow() end
+				_styleFrame = addDropdown(frame.PageD, "Border Style", optionsBorder, getStyle, setStyle, y)
+			end
+
+			-- Border Color (dropdown + inline swatch)
+			do
+				local function colorOpts()
+					local c = Settings.CreateControlTextContainer()
+					c:Add("default", "Default")
+					c:Add("texture", "Texture Original")
+					c:Add("custom", "Custom")
+					return c:GetData()
+				end
+				local function getMode() local t = ensureCastBarDB() or {}; return t.castBarBorderColorMode or "default" end
+				local function setMode(v) local t = ensureCastBarDB(); if not t then return end; t.castBarBorderColorMode = v or "default"; applyNow() end
+				local function getTint()
+					local t = ensureCastBarDB() or {}; local c = t.castBarBorderTintColor or {1,1,1,1}
+					return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+				end
+				local function setTint(r,g,b,a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+					applyNow()
+				end
+				_colorFrame = panel.DropdownWithInlineSwatch(frame.PageD, y, {
+					label = "Border Color",
+					getMode = getMode,
+					setMode = setMode,
+					getColor = getTint,
+					setColor = setTint,
+					options = colorOpts,
+					isEnabled = isEnabled,
+					insideButton = true,
+				})
+			end
+
+			-- Border Thickness slider (1-8)
+			_thickFrame = addSlider(frame.PageD, "Border Thickness", 1, 8, 0.2,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderThickness) or 1 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local nv = tonumber(v) or 1
+					if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
+					t.castBarBorderThickness = nv
+					applyNow()
+				end,
+				y)
+
+			-- Border Inset slider (-4 to 4)
+			_insetFrame = addSlider(frame.PageD, "Border Inset", -4, 4, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderInset) or 0 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local nv = tonumber(v) or 0
+					if nv < -4 then nv = -4 elseif nv > 4 then nv = 4 end
+					t.castBarBorderInset = nv
+					applyNow()
+				end,
+				y)
+
+			-- Initialize gray-out state
+			refreshBorderEnabledState()
+		end
+
+		-- PageE: Icon
+		do
+			local y = { y = -50 }
+
+			local function isIconEnabled()
+				local t = ensureCastBarDB() or {}
+				return not t.iconDisabled
+			end
+
+			-- Local refs for gray-out state
+			local _iconHeightFrame, _iconWidthFrame, _iconPadFrame
+			local _iconBorderEnableFrame, _iconBorderStyleFrame, _iconBorderThickFrame, _iconBorderTintFrame
+			local function refreshIconEnabledState()
+				local enabled = isIconEnabled()
+				local function setFrameEnabled(row)
+					if not row then return end
+					if row.Control and row.Control.SetEnabled then
+						row.Control:SetEnabled(enabled)
+					end
+					local lbl = row.Text or row.Label
+					if lbl and lbl.SetTextColor then
+						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+				end
+				setFrameEnabled(_iconHeightFrame)
+				setFrameEnabled(_iconWidthFrame)
+				setFrameEnabled(_iconPadFrame)
+				setFrameEnabled(_iconBorderEnableFrame)
+				setFrameEnabled(_iconBorderStyleFrame)
+				setFrameEnabled(_iconBorderThickFrame)
+				setFrameEnabled(_iconBorderTintFrame)
+				if _iconBorderTintFrame and _iconBorderTintFrame.ScooterInlineSwatch then
+					local sw = _iconBorderTintFrame.ScooterInlineSwatch
+					if sw.EnableMouse then sw:EnableMouse(enabled) end
+					if sw.SetAlpha then sw:SetAlpha(enabled and 1 or 0.5) end
+				end
+			end
+
+			-- Hide Icon checkbox
+			addCheckbox(frame.PageE, "Hide Icon",
+				function() local t = ensureCastBarDB() or {}; return not not t.iconDisabled end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.iconDisabled = (v == true)
+					applyNow()
+					refreshIconEnabledState()
+				end,
+				y)
+
+			-- Icon Height slider (8-64)
+			_iconHeightFrame = addSlider(frame.PageE, "Icon Height", 8, 64, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.iconHeight) or 16 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 16
+					if val < 8 then val = 8 elseif val > 64 then val = 64 end
+					t.iconHeight = val
+					applyNow()
+				end,
+				y)
+
+			-- Icon Width slider (8-64)
+			_iconWidthFrame = addSlider(frame.PageE, "Icon Width", 8, 64, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.iconWidth) or 16 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 16
+					if val < 8 then val = 8 elseif val > 64 then val = 64 end
+					t.iconWidth = val
+					applyNow()
+				end,
+				y)
+
+			-- Icon/Bar Padding slider (-20 to 80)
+			_iconPadFrame = addSlider(frame.PageE, "Icon/Bar Padding", -20, 80, 1,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.iconBarPadding) or 0 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local val = tonumber(v) or 0
+					if val < -20 then val = -20 elseif val > 80 then val = 80 end
+					t.iconBarPadding = val
+					applyNow()
+				end,
+				y)
+
+			-- Use Custom Icon Border checkbox
+			_iconBorderEnableFrame = addCheckbox(frame.PageE, "Use Custom Icon Border",
+				function() local t = ensureCastBarDB() or {}; return not not t.iconBorderEnable end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.iconBorderEnable = (v == true)
+					applyNow()
+				end,
+				y)
+
+			-- Icon Border Style dropdown
+			do
+				local function optionsIconBorder()
+					if addon.BuildIconBorderOptionsContainer then
+						return addon.BuildIconBorderOptionsContainer()
+					end
+					local c = Settings.CreateControlTextContainer()
+					c:Add("square", "Default")
+					return c:GetData()
+				end
+				local function getStyle() local t = ensureCastBarDB() or {}; return t.iconBorderStyle or "square" end
+				local function setStyle(v) local t = ensureCastBarDB(); if not t then return end; t.iconBorderStyle = v or "square"; applyNow() end
+				_iconBorderStyleFrame = addDropdown(frame.PageE, "Icon Border", optionsIconBorder, getStyle, setStyle, y)
+			end
+
+			-- Icon Border Thickness slider (1-8)
+			_iconBorderThickFrame = addSlider(frame.PageE, "Icon Border Thickness", 1, 8, 0.2,
+				function() local t = ensureCastBarDB() or {}; return tonumber(t.iconBorderThickness) or 1 end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					local nv = tonumber(v) or 1
+					if nv < 1 then nv = 1 elseif nv > 8 then nv = 8 end
+					t.iconBorderThickness = nv
+					applyNow()
+				end,
+				y)
+
+			-- Icon Border Tint (checkbox + inline swatch)
+			do
+				local label = "Icon Border Tint"
+				local function getTintEnabled() local t = ensureCastBarDB() or {}; return not not t.iconBorderTintEnable end
+				local function setTintEnabled(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.iconBorderTintEnable = (v == true)
+					applyNow()
+				end
+				local function getTintColor()
+					local t = ensureCastBarDB() or {}; local c = t.iconBorderTintColor or {1,1,1,1}
+					return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+				end
+				local function setTintColor(r, g, b, a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.iconBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+					applyNow()
+				end
+				local setting = CreateLocalSetting(label, "boolean", getTintEnabled, setTintEnabled, getTintEnabled())
+				local initCb = CreateCheckboxWithSwatchInitializer(setting, label, getTintColor, setTintColor, 8)
+				local row = CreateFrame("Frame", nil, frame.PageE, "SettingsCheckboxControlTemplate")
+				row.GetElementData = function() return initCb end
+				row:SetPoint("TOPLEFT", 4, y.y)
+				row:SetPoint("TOPRIGHT", -16, y.y)
+				initCb:InitFrame(row)
+				if panel and panel.ApplyRobotoWhite then
+					if row.Text then panel.ApplyRobotoWhite(row.Text) end
+					local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
+					if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
+				end
+				_iconBorderTintFrame = row
+			end
+
+			-- Initialize gray-out state
+			refreshIconEnabledState()
+		end
+
+		-- PageF: Spell Name Text
+		do
+			local y = { y = -50 }
+			local function fontOptions() return addon.BuildFontOptionsContainer() end
+
+			-- Hide Spell Name Border checkbox
+			addCheckbox(frame.PageF, "Hide Spell Name Border",
+				function() local t = ensureCastBarDB() or {}; return not not t.hideSpellNameBorder end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.hideSpellNameBorder = (v == true)
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name Font dropdown
+			addDropdown(frame.PageF, "Spell Name Font", fontOptions,
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					return s.fontFace or "FRIZQT__"
+				end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.fontFace = v
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name Font Style dropdown
+			addStyle(frame.PageF, "Spell Name Font Style",
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					return s.style or "OUTLINE"
+				end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.style = v
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name Font Size slider (6-48)
+			addSlider(frame.PageF, "Spell Name Font Size", 6, 48, 1,
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					return tonumber(s.size) or 14
+				end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.size = tonumber(v) or 14
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name Font Color
+			addColor(frame.PageF, "Spell Name Font Color", true,
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					local c = s.color or {1,1,1,1}
+					return c[1], c[2], c[3], c[4]
+				end,
+				function(r,g,b,a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.color = {r or 1, g or 1, b or 1, a or 1}
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name X Offset slider (-100 to 100)
+			addSlider(frame.PageF, "Spell Name X Offset", -100, 100, 1,
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					local o = s.offset or {}
+					return tonumber(o.x) or 0
+				end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.offset = t.spellNameText.offset or {}
+					t.spellNameText.offset.x = tonumber(v) or 0
+					applyNow()
+				end,
+				y)
+
+			-- Spell Name Y Offset slider (-100 to 100)
+			addSlider(frame.PageF, "Spell Name Y Offset", -100, 100, 1,
+				function()
+					local t = ensureCastBarDB() or {}
+					local s = t.spellNameText or {}
+					local o = s.offset or {}
+					return tonumber(o.y) or 0
+				end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.spellNameText = t.spellNameText or {}
+					t.spellNameText.offset = t.spellNameText.offset or {}
+					t.spellNameText.offset.y = tonumber(v) or 0
+					applyNow()
+				end,
+				y)
+		end
+
+		-- PageG: Visibility (Spark controls + Border Shield)
+		do
+			local y = { y = -50 }
+
+			local function isSparkEnabled()
+				local t = ensureCastBarDB() or {}
+				return not t.castBarSparkHidden
+			end
+
+			local _sparkColorFrame
+			local function refreshSparkEnabledState()
+				local enabled = isSparkEnabled()
+				if _sparkColorFrame then
+					if _sparkColorFrame.Control and _sparkColorFrame.Control.SetEnabled then
+						_sparkColorFrame.Control:SetEnabled(enabled)
+					end
+					local lbl = _sparkColorFrame.Text or _sparkColorFrame.Label
+					if lbl and lbl.SetTextColor then
+						if enabled then lbl:SetTextColor(1, 1, 1, 1) else lbl:SetTextColor(0.6, 0.6, 0.6, 1) end
+					end
+					if _sparkColorFrame.ScooterInlineSwatch then
+						local sw = _sparkColorFrame.ScooterInlineSwatch
+						if sw.EnableMouse then sw:EnableMouse(enabled) end
+						if sw.SetAlpha then sw:SetAlpha(enabled and 1 or 0.5) end
 					end
 				end
 			end
-			local setting = CreateLocalSetting(label, "boolean", getter, setter, getter())
-			local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-			local f = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-			f.GetElementData = function() return row end
-			f:SetPoint("TOPLEFT", 4, y.y)
-			f:SetPoint("TOPRIGHT", -16, y.y)
-			row:InitFrame(f)
-			if panel and panel.ApplyRobotoWhite and f.Text then panel.ApplyRobotoWhite(f.Text) end
-			if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(f) end
-			y.y = y.y - 34
+
+			-- Hide Cast Bar Spark checkbox
+			addCheckbox(frame.PageG, "Hide Cast Bar Spark",
+				function() local t = ensureCastBarDB() or {}; return not not t.castBarSparkHidden end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarSparkHidden = (v == true)
+					applyNow()
+					refreshSparkEnabledState()
+				end,
+				y)
+
+			-- Cast Bar Spark Color (dropdown + inline swatch)
+			do
+				local function colorOpts()
+					local c = Settings.CreateControlTextContainer()
+					c:Add("default", "Default")
+					c:Add("custom", "Custom")
+					return c:GetData()
+				end
+				local function getMode() local t = ensureCastBarDB() or {}; return t.castBarSparkColorMode or "default" end
+				local function setMode(v) local t = ensureCastBarDB(); if not t then return end; t.castBarSparkColorMode = v or "default"; applyNow() end
+				local function getTint()
+					local t = ensureCastBarDB() or {}; local c = t.castBarSparkTint or {1,1,1,1}
+					return { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+				end
+				local function setTint(r,g,b,a)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarSparkTint = { r or 1, g or 1, b or 1, a or 1 }
+					applyNow()
+				end
+				_sparkColorFrame = panel.DropdownWithInlineSwatch(frame.PageG, y, {
+					label = "Cast Bar Spark Color",
+					getMode = getMode,
+					setMode = setMode,
+					getColor = getTint,
+					setColor = setTint,
+					options = colorOpts,
+					isEnabled = isSparkEnabled,
+					insideButton = true,
+				})
+			end
+
+			-- Hide Border Shield checkbox
+			addCheckbox(frame.PageG, "Hide Border Shield",
+				function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderShieldHidden end,
+				function(v)
+					local t = ensureCastBarDB(); if not t then return end
+					t.castBarBorderShieldHidden = (v == true)
+					applyNow()
+				end,
+				y)
+
+			-- Initialize gray-out state
+			refreshSparkEnabledState()
 		end
 	end
 

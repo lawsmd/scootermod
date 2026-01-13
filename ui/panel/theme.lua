@@ -524,6 +524,57 @@ do
             end)
         end
     end
+
+    ------------------------------------------------------------------------
+    -- MinimalScrollBar auto-hide (hide chrome when no scrolling is needed)
+    ------------------------------------------------------------------------
+    -- Some Blizzard scrollbars (notably MinimalScrollBar) keep their rail/arrow
+    -- chrome visible even when the thumb is hidden due to a zero scroll range.
+    --
+    -- ScooterMod uses MinimalScrollBar for:
+    -- - Left nav (ui/ScooterSettingsPanel.lua)
+    -- - Custom right pane (ui/panel/rightpane.lua)
+    --
+    -- This helper hides the entire scrollbar frame when the scroll range is 0,
+    -- so the "empty scrollbar gutter" is not visible until scrolling is needed.
+    function panel.BindAutoHideMinimalScrollBar(scrollFrame, scrollBar)
+        if not scrollFrame or not scrollBar then return end
+        if scrollBar._scooterAutoHideBound then return end
+        scrollBar._scooterAutoHideBound = true
+
+        local function update()
+            if not scrollFrame or not scrollBar then return end
+            -- If the content doesn't exceed the viewport, no scrolling is needed.
+            local range = 0
+            if scrollFrame.GetVerticalScrollRange then
+                range = scrollFrame:GetVerticalScrollRange() or 0
+            end
+            local needsScroll = (range and range > 0) and true or false
+
+            -- If we don't need scrolling, ensure we aren't stuck scrolled down.
+            if not needsScroll and scrollFrame.SetVerticalScroll then
+                pcall(scrollFrame.SetVerticalScroll, scrollFrame, 0)
+            end
+
+            scrollBar:SetShown(needsScroll)
+        end
+
+        -- Update immediately and on the common resize/range-change pathways.
+        update()
+
+        -- When the scroll child is resized/recomputed, WoW updates the range.
+        if scrollFrame.UpdateScrollChildRect then
+            hooksecurefunc(scrollFrame, "UpdateScrollChildRect", update)
+        end
+
+        -- Also respond to direct range changes (some layouts update range without
+        -- calling UpdateScrollChildRect explicitly).
+        scrollFrame:HookScript("OnScrollRangeChanged", update)
+        scrollFrame:HookScript("OnSizeChanged", update)
+
+        -- Expose for callers that want to force a refresh after a big relayout.
+        scrollBar.ScooterAutoHideUpdate = update
+    end
 end
 
 

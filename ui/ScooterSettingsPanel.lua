@@ -2807,6 +2807,11 @@ end
 
 		-- Wire ScrollFrame and ScrollBar together using Blizzard's official bridge API
 		ScrollUtil.InitScrollFrameWithScrollBar(navScroll, navScrollBar)
+		-- Hide the entire MinimalScrollBar chrome when no scrolling is needed
+		-- (prevents the "empty groove" from showing until the thumb appears).
+		if panel and panel.BindAutoHideMinimalScrollBar then
+			panel.BindAutoHideMinimalScrollBar(navScroll, navScrollBar)
+		end
 
 		local navContent = CreateFrame("Frame", nil, navScroll)
 		navContent:SetPoint("TOPLEFT", navScroll, "TOPLEFT", 0, 0)

@@ -876,6 +876,233 @@ do
         -- (experimental text reparent/strata bump removed; see HOLDING.md 2025-11-07)
     end
 
+    -- ============================================================================
+    -- BOSS FRAME RECTANGULAR OVERLAYS
+    -- ============================================================================
+    -- Boss frames have unique structural chips (missing corners) caused by
+    -- Blizzard's frame art overlap with the bar masks:
+    --   - Health Bar: Top-left corner chip
+    --   - Power Bar: Bottom-right corner chip
+    --
+    -- When "Hide Blizzard Frame Art & Animations" (useCustomBorders) is enabled,
+    -- these chips become visible gaps. We fill them using the same overlay pattern
+    -- as Player/Target/Focus frames (see ensureRectHealthOverlay below).
+    --
+    -- Key differences from standard unit frames:
+    --   1. Boss frames use separate overlay keys per bar type:
+    --      - Health: ScooterRectFillHealth
+    --      - Power: ScooterRectFillPower
+    --   2. Boss bars always fill left-to-right (no reverse fill support)
+    --   3. Overlays activate ONLY when useCustomBorders == true
+    --   4. There are 5 Boss frames (Boss1-Boss5), each styled independently
+    --
+    -- See ADDONCONTEXT/Docs/UNITFRAMES/UFBOSS.md for full architecture details.
+    -- ============================================================================
+
+    -- Boss frame rectangular overlays: fill chips in health bar (top-left) and power bar (bottom-right)
+    -- when "Hide Blizzard Frame Art & Animations" is enabled (useCustomBorders).
+    -- Unlike Target/Focus (which have portrait chips), Boss frames have mask chips caused by frame art overlap.
+    local function updateBossRectOverlay(bar, overlayKey)
+        if not bar or not bar[overlayKey] then return end
+        if not bar._ScootRectActive then
+            bar[overlayKey]:Hide()
+            return
+        end
+
+        local overlay = bar[overlayKey]
+        
+        -- CRITICAL: For Boss health bars, the StatusBar has oversized bounds spanning both
+        -- health and power areas. We must anchor to the correct bounds frame stored during setup.
+        local boundsFrame = bar._ScootBossRectBoundsFrame or bar
+        
+        local totalWidth = boundsFrame:GetWidth() or 0
+        local minVal, maxVal = bar:GetMinMaxValues()
+        local value = bar:GetValue() or minVal
+
+        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+            overlay:Hide()
+            return
+        end
+
+        local frac = (value - minVal) / (maxVal - minVal)
+        if frac <= 0 then
+            overlay:Hide()
+            return
+        end
+        if frac > 1 then frac = 1 end
+
+        overlay:Show()
+        overlay:SetWidth(totalWidth * frac)
+        overlay:ClearAllPoints()
+
+        -- Boss bars always fill left-to-right
+        -- Anchor to the correct bounds frame, not the StatusBar itself
+        overlay:SetPoint("TOPLEFT", boundsFrame, "TOPLEFT", 0, 0)
+        overlay:SetPoint("BOTTOMLEFT", boundsFrame, "BOTTOMLEFT", 0, 0)
+    end
+
+    local function ensureBossRectOverlay(bossFrame, bar, cfg, barType)
+        if not bar or not bossFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+        
+        -- Zero-Touch: do not create config tables
+        local unitFrames = rawget(db, "unitFrames")
+        local ufCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+        if not ufCfg then
+            return
+        end
+
+        -- Boss overlays activate when useCustomBorders is enabled (fills chips created by frame art masks)
+        local shouldActivate = (ufCfg.useCustomBorders == true)
+        
+        local overlayKey = (barType == "health") and "ScooterRectFillHealth" or "ScooterRectFillPower"
+        bar._ScootRectActive = shouldActivate
+
+        -- CRITICAL: Resolve the correct bounds frame for Boss bars.
+        -- For health: HealthBarsContainer (correct bounds - health bar only)
+        -- For power: ManaBar directly (correct bounds - it's a sibling of HealthBarsContainer)
+        -- The HealthBar StatusBar has oversized bounds spanning both bars!
+        local boundsFrame
+        if barType == "health" then
+            -- Use the same resolver as the border code
+            if Resolvers and Resolvers.resolveBossHealthBarsContainer then
+                boundsFrame = Resolvers.resolveBossHealthBarsContainer(bossFrame)
+            end
+            if not boundsFrame then
+                -- Fallback: try to get parent (HealthBarsContainer)
+                boundsFrame = bar:GetParent()
+            end
+        else
+            -- For power bar, use the ManaBar resolver
+            if Resolvers and Resolvers.resolveBossManaBar then
+                boundsFrame = Resolvers.resolveBossManaBar(bossFrame)
+            end
+            if not boundsFrame then
+                -- Fallback: ManaBar should have correct bounds itself
+                boundsFrame = bar
+            end
+        end
+        
+        -- Store the correct bounds frame for use in updateBossRectOverlay
+        bar._ScootBossRectBoundsFrame = boundsFrame or bar
+
+        if not shouldActivate then
+            if bar[overlayKey] then
+                bar[overlayKey]:Hide()
+            end
+            return
+        end
+
+        if not bar[overlayKey] then
+            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            overlay:SetVertTile(false)
+            overlay:SetHorizTile(false)
+            overlay:SetTexCoord(0, 1, 0, 1)
+            bar[overlayKey] = overlay
+
+            -- Drive overlay width from the bar's value/size changes
+            local hookKey = (barType == "health") and "_ScootBossHealthRectHooksInstalled" or "_ScootBossPowerRectHooksInstalled"
+            if _G.hooksecurefunc and not bar[hookKey] then
+                bar[hookKey] = true
+                _G.hooksecurefunc(bar, "SetValue", function(self)
+                    updateBossRectOverlay(self, overlayKey)
+                end)
+                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    updateBossRectOverlay(self, overlayKey)
+                end)
+                if bar.HookScript then
+                    bar:HookScript("OnSizeChanged", function(self)
+                        updateBossRectOverlay(self, overlayKey)
+                    end)
+                end
+            end
+        end
+
+        -- Copy the configured bar texture/tint so the overlay visually matches
+        local texKey, texPath, stockAtlas
+        if barType == "health" then
+            texKey = cfg.healthBarTexture or "default"
+            texPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health" -- Boss uses Target-style atlas
+        else -- power
+            texKey = cfg.powerBarTexture or "default"
+            texPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+            stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Mana" -- Boss uses Target-style atlas
+        end
+
+        if texPath then
+            -- Custom texture configured
+            bar[overlayKey]:SetTexture(texPath)
+        else
+            -- Default texture - try to copy from bar
+            local tex = bar:GetStatusBarTexture()
+            local applied = false
+            if tex then
+                -- Try GetAtlas first
+                local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
+                if okAtlas and atlasName and atlasName ~= "" then
+                    if bar[overlayKey].SetAtlas then
+                        pcall(bar[overlayKey].SetAtlas, bar[overlayKey], atlasName, true)
+                        applied = true
+                    end
+                end
+                
+                if not applied then
+                    local okTex, pathOrTex = pcall(tex.GetTexture, tex)
+                    if okTex then
+                        if type(pathOrTex) == "string" and pathOrTex ~= "" then
+                            local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
+                            if isAtlas and bar[overlayKey].SetAtlas then
+                                pcall(bar[overlayKey].SetAtlas, bar[overlayKey], pathOrTex, true)
+                                applied = true
+                            else
+                                bar[overlayKey]:SetTexture(pathOrTex)
+                                applied = true
+                            end
+                        elseif type(pathOrTex) == "number" and pathOrTex > 0 then
+                            bar[overlayKey]:SetTexture(pathOrTex)
+                            applied = true
+                        end
+                    end
+                end
+            end
+            
+            -- Fallback to stock atlas
+            if not applied and stockAtlas and bar[overlayKey].SetAtlas then
+                pcall(bar[overlayKey].SetAtlas, bar[overlayKey], stockAtlas, true)
+            end
+        end
+
+        -- Copy vertex color from configured settings
+        local colorMode, tint
+        if barType == "health" then
+            colorMode = cfg.healthBarColorMode or "default"
+            tint = cfg.healthBarTint
+        else
+            colorMode = cfg.powerBarColorMode or "default"
+            tint = cfg.powerBarTint
+        end
+
+        local r, g, b, a = 1, 1, 1, 1
+        if colorMode == "custom" and type(tint) == "table" then
+            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+        elseif colorMode == "class" and addon.GetClassColorRGB then
+            local cr, cg, cb = addon.GetClassColorRGB("player")
+            r, g, b = cr or 1, cg or 1, cb or 1
+        elseif colorMode == "texture" then
+            r, g, b, a = 1, 1, 1, 1
+        elseif barType == "health" and colorMode == "default" and addon.GetDefaultHealthColorRGB then
+            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+            r, g, b = hr or 0, hg or 1, hb or 0
+        end
+        bar[overlayKey]:SetVertexColor(r, g, b, a)
+
+        -- Initial update to match current bar state
+        updateBossRectOverlay(bar, overlayKey)
+    end
+
     -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
     -- This is used to visually "fill in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
@@ -1427,6 +1654,9 @@ do
 
                             ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
 
+                            -- Rectangular overlay to fill top-left chip when using custom borders
+                            ensureBossRectOverlay(bossFrame, hb, cfg, "health")
+
                             -- Health Bar custom border (same settings as other unit frames)
                             -- BOSS FRAME FIX: The HealthBar StatusBar has oversized dimensions spanning both
                             -- health and power bars. The HealthBarsContainer (parent of HealthBar) has the
@@ -1678,6 +1908,9 @@ do
                             end
 
                             ensureMaskOnBarTexture(pb, resolveBossPowerMask(bossFrame))
+
+                            -- Rectangular overlay to fill bottom-right chip when using custom borders
+                            ensureBossRectOverlay(bossFrame, pb, cfg, "power")
 
                             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
                             -- BOSS FRAME FIX: Use the same anchor frame pattern as Health Bar for consistency.
@@ -3674,7 +3907,9 @@ do
     -- Pre-emptive hiding and alpha hooks are now provided by the Preemptive module
     addon.PreemptiveHideTargetElements = Preemptive.hideTargetElements
     addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
+    addon.PreemptiveHideBossElements = Preemptive.hideBossElements
     addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
+    addon.InstallBossFrameHooks = Preemptive.installBossFrameHooks
 
     -- =========================================================================
     -- Power Bar Custom Position: Portal/Vehicle Event Triggers

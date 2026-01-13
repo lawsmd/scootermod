@@ -154,6 +154,11 @@ function RightPane:Init(ownerFrame, container)
 
     -- Wire ScrollFrame and ScrollBar together using Blizzard's official bridge API
     ScrollUtil.InitScrollFrameWithScrollBar(scrollFrame, scrollBar)
+    -- Hide the entire MinimalScrollBar chrome when no scrolling is needed
+    -- (prevents the "empty groove" from showing until the thumb appears).
+    if panel and panel.BindAutoHideMinimalScrollBar then
+        panel.BindAutoHideMinimalScrollBar(scrollFrame, scrollBar)
+    end
 
     -- Scroll child that actually hosts all rows. IMPORTANT: give this frame an
     -- explicit width that tracks the scroll frame's width; if we leave width at

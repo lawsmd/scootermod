@@ -453,9 +453,222 @@ function Preemptive.installEarlyAlphaHooks()
     end
 end
 
+--------------------------------------------------------------------------------
+-- Pre-emptive Hiding for Boss Frame Elements
+--------------------------------------------------------------------------------
+-- Boss frames (Boss1TargetFrame through Boss5TargetFrame) can appear/update
+-- during combat. Unlike Target/Focus which have dedicated PLAYER_X_CHANGED events,
+-- Boss frames update via INSTANCE_ENCOUNTER_ENGAGE_UNIT and UPDATE_BOSS_FRAMES.
+-- These events fire during combat, but our handlers currently skip applying
+-- during combat lockdown. These functions provide direct hooks to catch updates.
+
+-- Pre-emptive hide for all Boss frame elements (ReputationColor, FrameTexture, Flash)
+function Preemptive.hideBossElements()
+    local db = addon and addon.db and addon.db.profile
+    local unitFrames = db and rawget(db, "unitFrames")
+    local cfg = unitFrames and rawget(unitFrames, "Boss")
+    if not cfg then return end
+
+    -- Shared computeAlpha for enforcers - re-reads config each call
+    local function computeAlpha()
+        local db2 = addon and addon.db and addon.db.profile
+        local unitFrames2 = db2 and rawget(db2, "unitFrames")
+        local cfg2 = unitFrames2 and rawget(unitFrames2, "Boss")
+        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+    end
+
+    local function computeAlphaWithBorder()
+        local db2 = addon and addon.db and addon.db.profile
+        local unitFrames2 = db2 and rawget(db2, "unitFrames")
+        local cfg2 = unitFrames2 and rawget(unitFrames2, "Boss")
+        local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+        return hide and 0 or 1
+    end
+
+    -- Helper to hide ReputationColor on a specific Boss frame and install enforcer
+    local function hideRepColorOnBoss(bossFrame)
+        if not bossFrame then return end
+        local repColor = bossFrame.TargetFrameContent
+            and bossFrame.TargetFrameContent.TargetFrameContentMain
+            and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+        if repColor and repColor.SetAlpha then
+            pcall(repColor.SetAlpha, repColor, 0)
+            if Alpha and Alpha.hookAlphaEnforcer then
+                Alpha.hookAlphaEnforcer(repColor, computeAlpha)
+            end
+        end
+    end
+
+    -- Only hide if useCustomBorders is enabled
+    if cfg.useCustomBorders then
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            if bossFrame then
+                -- Hide ReputationColor immediately
+                hideRepColorOnBoss(bossFrame)
+
+                -- Hide FrameTexture immediately
+                local ft = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.FrameTexture
+                if ft and ft.SetAlpha then
+                    pcall(ft.SetAlpha, ft, 0)
+                    if Alpha and Alpha.hookAlphaEnforcer then
+                        Alpha.hookAlphaEnforcer(ft, computeAlphaWithBorder)
+                    end
+                end
+
+                -- Hide Flash (aggro/threat glow) immediately
+                local flash = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.Flash
+                if flash and flash.SetAlpha then
+                    pcall(flash.SetAlpha, flash, 0)
+                    if Alpha and Alpha.hookAlphaEnforcer then
+                        Alpha.hookAlphaEnforcer(flash, computeAlpha)
+                    end
+                end
+            end
+        end
+
+        -- Schedule a micro-delay follow-up to catch textures if Blizzard creates them
+        -- AFTER our synchronous pre-emptive hide
+        if _G.C_Timer and _G.C_Timer.After then
+            _G.C_Timer.After(0, function()
+                for i = 1, 5 do
+                    local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                    hideRepColorOnBoss(bossFrame)
+                end
+            end)
+        end
+    end
+
+    -- Hide frame texture if healthBarHideBorder is enabled (separate from useCustomBorders)
+    if cfg.healthBarHideBorder then
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            if bossFrame then
+                local ft = bossFrame.TargetFrameContainer and bossFrame.TargetFrameContainer.FrameTexture
+                if ft and ft.SetAlpha then
+                    pcall(ft.SetAlpha, ft, 0)
+                end
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Boss Frame Hook Installation
+--------------------------------------------------------------------------------
+-- Install hooks on Boss frame methods to catch updates during combat.
+
+function Preemptive.installBossFrameHooks()
+    local function makeComputeAlpha()
+        return function()
+            local db2 = addon and addon.db and addon.db.profile
+            local unitFrames2 = db2 and rawget(db2, "unitFrames")
+            local cfg2 = unitFrames2 and rawget(unitFrames2, "Boss")
+            return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+        end
+    end
+
+    -- Helper to re-hide Boss elements after Blizzard updates
+    local function rehideBossElements()
+        local db = addon and addon.db and addon.db.profile
+        local unitFrames = db and rawget(db, "unitFrames")
+        local cfg = unitFrames and rawget(unitFrames, "Boss")
+        if not cfg or not cfg.useCustomBorders then return end
+
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            if bossFrame then
+                -- Re-hide ReputationColor
+                local repColor = bossFrame.TargetFrameContent
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                if repColor and repColor.SetAlpha then
+                    pcall(repColor.SetAlpha, repColor, 0)
+                    if Alpha and Alpha.hookAlphaEnforcer then
+                        Alpha.hookAlphaEnforcer(repColor, makeComputeAlpha())
+                    end
+                end
+
+                -- Re-hide Flash
+                local flash = bossFrame.TargetFrameContainer
+                    and bossFrame.TargetFrameContainer.Flash
+                if flash and flash.SetAlpha then
+                    pcall(flash.SetAlpha, flash, 0)
+                end
+            end
+        end
+    end
+
+    -- Install hooks on individual Boss frames
+    for i = 1, 5 do
+        local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+        if bossFrame then
+            -- Hook OnShow to re-hide elements when the frame becomes visible
+            if not bossFrame._ScootBossOnShowHooked then
+                bossFrame._ScootBossOnShowHooked = true
+                bossFrame:HookScript("OnShow", function()
+                    -- Small delay to let Blizzard finish setting up the frame
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, rehideBossElements)
+                    else
+                        rehideBossElements()
+                    end
+                end)
+            end
+
+            -- Hook CheckFaction if it exists (called when faction/reputation updates)
+            if bossFrame.CheckFaction and not bossFrame._ScootBossCheckFactionHooked then
+                bossFrame._ScootBossCheckFactionHooked = true
+                _G.hooksecurefunc(bossFrame, "CheckFaction", rehideBossElements)
+            end
+
+            -- Hook SetVertexColor on ReputationColor for extra robustness
+            local repColor = bossFrame.TargetFrameContent
+                and bossFrame.TargetFrameContent.TargetFrameContentMain
+                and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+            if repColor and repColor.SetVertexColor and not repColor._ScootSetVertexColorHooked then
+                repColor._ScootSetVertexColorHooked = true
+                _G.hooksecurefunc(repColor, "SetVertexColor", function(self)
+                    local db = addon and addon.db and addon.db.profile
+                    local unitFrames = db and rawget(db, "unitFrames")
+                    local cfg = unitFrames and rawget(unitFrames, "Boss")
+                    if cfg and cfg.useCustomBorders and self and self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end)
+            end
+
+            -- Install early alpha enforcer on ReputationColor
+            if repColor and not repColor._ScootAlphaEnforcerHooked then
+                Alpha.hookAlphaEnforcer(repColor, makeComputeAlpha())
+            end
+        end
+    end
+
+    -- Hook BossTargetFrameContainer's UpdateShownState if available
+    -- This is called when boss frames are shown/hidden during encounters
+    local container = _G.BossTargetFrameContainer
+    if container and container.UpdateShownState and not addon._ScootBossContainerUpdateHooked then
+        addon._ScootBossContainerUpdateHooked = true
+        _G.hooksecurefunc(container, "UpdateShownState", function()
+            -- Small delay to let Blizzard finish updating
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, rehideBossElements)
+            else
+                rehideBossElements()
+            end
+        end)
+    end
+
+    -- Do initial hide pass for currently configured settings
+    Preemptive.hideBossElements()
+end
+
 -- Expose to addon namespace for backwards compatibility
 addon.PreemptiveHideTargetElements = Preemptive.hideTargetElements
 addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
+addon.PreemptiveHideBossElements = Preemptive.hideBossElements
 addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
+addon.InstallBossFrameHooks = Preemptive.installBossFrameHooks
 
 return Preemptive

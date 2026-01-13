@@ -398,6 +398,13 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         addon.InstallEarlyUnitFrameAlphaHooks()
     end
     
+    -- Install Boss frame hooks to catch updates during combat.
+    -- Boss frames are updated via INSTANCE_ENCOUNTER_ENGAGE_UNIT and UPDATE_BOSS_FRAMES,
+    -- but those handlers skip during combat. These hooks catch Show/CheckFaction/etc.
+    if addon.InstallBossFrameHooks then
+        addon.InstallBossFrameHooks()
+    end
+    
     self:ApplyStyles()
     
     -- Enforce Pet overlay visibility immediately after initial styling.
@@ -603,6 +610,13 @@ end
 -- Boss unit frames can appear/update without target/focus change events.
 -- Re-apply our styling after Blizzard updates boss units.
 function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
+    -- IMPORTANT: Call preemptive hide BEFORE combat check to ensure ReputationColor
+    -- (and other visual elements) are hidden immediately, even during combat.
+    -- SetAlpha via pcall is safe during combat and won't cause taint.
+    if addon.PreemptiveHideBossElements then
+        addon.PreemptiveHideBossElements()
+    end
+
     -- Boss unit frames can update during combat. Do not touch protected Boss frames during combat
     -- (even "cosmetic" changes) to avoid taint that can later block BossTargetFrameContainer:SetSize().
     if InCombatLockdown and InCombatLockdown() then
@@ -614,19 +628,29 @@ function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
             if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
             if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
             if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+            if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
         end)
         -- Small follow-up pass to catch late Boss frame construction.
         C_Timer.After(0.1, function()
             if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
+            if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
         if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
         if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+        if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
     end
 end
 
 function addon:UPDATE_BOSS_FRAMES()
+    -- IMPORTANT: Call preemptive hide BEFORE combat check to ensure ReputationColor
+    -- (and other visual elements) are hidden immediately, even during combat.
+    -- SetAlpha via pcall is safe during combat and won't cause taint.
+    if addon.PreemptiveHideBossElements then
+        addon.PreemptiveHideBossElements()
+    end
+
     -- Keep this lightweight: boss frames can update frequently during encounters.
     if InCombatLockdown and InCombatLockdown() then
         self._pendingApplyStyles = true
@@ -637,11 +661,13 @@ function addon:UPDATE_BOSS_FRAMES()
             if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
             if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
             if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+            if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
         if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
         if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+        if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
     end
 end
 
