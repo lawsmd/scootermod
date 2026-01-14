@@ -1,8 +1,16 @@
 local addonName, addon = ...
 
 -- Tooltip Component: Manages GameTooltip text styling
--- The GameTooltip creates FontStrings dynamically: GameTooltipTextLeft1, GameTooltipTextLeft2, etc.
--- TextLeft1 is typically the "title/name" line and uses GameTooltipHeaderText by default.
+-- The GameTooltip creates FontStrings dynamically on BOTH sides of each line:
+-- - GameTooltipTextLeft1, GameTooltipTextLeft2, etc. (left side)
+-- - GameTooltipTextRight1, GameTooltipTextRight2, etc. (right side)
+-- TextLeft1/TextRight1 use GameTooltipHeaderText, others use GameTooltipText by default.
+--
+-- Right-side text is used for sell prices, armor types, weapon speeds, spell ranges/cooldowns, etc.
+--
+-- Money displays (sell prices) use MoneyFrames with special structure:
+-- - GameTooltipMoneyFrame1, GameTooltipMoneyFrame2, etc.
+-- - Each has PrefixText ("Sell Price:"), GoldButton.Text, SilverButton.Text, CopperButton.Text
 --
 -- NOTE: We intentionally do NOT customize:
 -- - Color: Tooltip text is dynamically colored by the game (item quality, spell schools, etc.)
@@ -85,20 +93,58 @@ local function EnsureNewTooltipTextConfigs(db)
 end
 
 local function ApplyGameTooltipText(db)
-    -- Title / name line
+    -- Title / name line (Left1 and Right1 both use title settings)
     local titleFS = _G["GameTooltipTextLeft1"]
     if titleFS then
         ApplyFontSettings(titleFS, db.textTitle or {}, 14)
     end
+    local titleRightFS = _G["GameTooltipTextRight1"]
+    if titleRightFS then
+        ApplyFontSettings(titleRightFS, db.textTitle or {}, 14)
+    end
 
-    -- Everything else: lines 2..N
+    -- Everything else: lines 2..N (both Left and Right)
     local cfg = db.textEverythingElse or {}
     local i = 2
     while true do
-        local fs = _G["GameTooltipTextLeft" .. i]
-        if not fs then break end
-        ApplyFontSettings(fs, cfg, 12)
+        local leftFS = _G["GameTooltipTextLeft" .. i]
+        local rightFS = _G["GameTooltipTextRight" .. i]
+        if not leftFS and not rightFS then break end
+        
+        if leftFS then
+            ApplyFontSettings(leftFS, cfg, 12)
+        end
+        if rightFS then
+            ApplyFontSettings(rightFS, cfg, 12)
+        end
         i = i + 1
+    end
+
+    -- Money frames: Sell Price and similar money displays
+    -- GameTooltip can have multiple money frames (GameTooltipMoneyFrame1, GameTooltipMoneyFrame2, etc.)
+    local moneyIdx = 1
+    while true do
+        local moneyFrame = _G["GameTooltipMoneyFrame" .. moneyIdx]
+        if not moneyFrame then break end
+        
+        -- Style the "Sell Price:" prefix text
+        local prefixText = moneyFrame.PrefixText or _G["GameTooltipMoneyFrame" .. moneyIdx .. "PrefixText"]
+        if prefixText then
+            ApplyFontSettings(prefixText, cfg, 12)
+        end
+        
+        -- Style the gold/silver/copper text (they're ButtonText elements on the denomination buttons)
+        if moneyFrame.GoldButton and moneyFrame.GoldButton.Text then
+            ApplyFontSettings(moneyFrame.GoldButton.Text, cfg, 12)
+        end
+        if moneyFrame.SilverButton and moneyFrame.SilverButton.Text then
+            ApplyFontSettings(moneyFrame.SilverButton.Text, cfg, 12)
+        end
+        if moneyFrame.CopperButton and moneyFrame.CopperButton.Text then
+            ApplyFontSettings(moneyFrame.CopperButton.Text, cfg, 12)
+        end
+        
+        moneyIdx = moneyIdx + 1
     end
 end
 
@@ -107,13 +153,53 @@ local function ApplyComparisonTooltipText(tooltip, db)
     local prefix = tooltip:GetName()
     if not prefix or prefix == "" then return end
 
-    local cfg = db.textComparison or {}
+    -- Line 1 uses Title settings, lines 2+ use Comparison settings
+    local titleCfg = db.textTitle or {}
+    local comparisonCfg = db.textComparison or {}
+    
     local i = 1
     while true do
-        local fs = _G[prefix .. "TextLeft" .. i]
-        if not fs then break end
-        ApplyFontSettings(fs, cfg, 12)
+        local leftFS = _G[prefix .. "TextLeft" .. i]
+        local rightFS = _G[prefix .. "TextRight" .. i]
+        if not leftFS and not rightFS then break end
+        
+        -- Use Title settings for line 1, Comparison settings for everything else
+        local cfg = (i == 1) and titleCfg or comparisonCfg
+        local defaultSize = (i == 1) and 14 or 12
+        
+        if leftFS then
+            ApplyFontSettings(leftFS, cfg, defaultSize)
+        end
+        if rightFS then
+            ApplyFontSettings(rightFS, cfg, defaultSize)
+        end
         i = i + 1
+    end
+
+    -- Money frames on comparison tooltips (e.g., ShoppingTooltip1MoneyFrame1)
+    local moneyIdx = 1
+    while true do
+        local moneyFrame = _G[prefix .. "MoneyFrame" .. moneyIdx]
+        if not moneyFrame then break end
+        
+        -- Style the prefix text (e.g., "Sell Price:")
+        local prefixText = moneyFrame.PrefixText or _G[prefix .. "MoneyFrame" .. moneyIdx .. "PrefixText"]
+        if prefixText then
+            ApplyFontSettings(prefixText, comparisonCfg, 12)
+        end
+        
+        -- Style the gold/silver/copper text
+        if moneyFrame.GoldButton and moneyFrame.GoldButton.Text then
+            ApplyFontSettings(moneyFrame.GoldButton.Text, comparisonCfg, 12)
+        end
+        if moneyFrame.SilverButton and moneyFrame.SilverButton.Text then
+            ApplyFontSettings(moneyFrame.SilverButton.Text, comparisonCfg, 12)
+        end
+        if moneyFrame.CopperButton and moneyFrame.CopperButton.Text then
+            ApplyFontSettings(moneyFrame.CopperButton.Text, comparisonCfg, 12)
+        end
+        
+        moneyIdx = moneyIdx + 1
     end
 end
 

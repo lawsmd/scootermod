@@ -409,10 +409,10 @@ do
         themeStepper(control.DecrementButton)
     end
 
-    -- Theme a slider control's value text to ScooterMod green
+    -- Theme a slider control's value text to ScooterMod green + Roboto font
     -- The value text is displayed in SliderWithSteppers.RightText (and potentially LeftText, TopText, etc.)
     -- Blizzard's MinimalSliderWithSteppersMixin:SetEnabled() resets these to NORMAL_FONT_COLOR (yellow),
-    -- so we need a hook to maintain our green color.
+    -- so we need a hook to maintain our green color and Roboto font.
     function panel.ThemeSliderValue(control)
         if not control then return end
 
@@ -420,27 +420,27 @@ do
         local sliderWithSteppers = control.SliderWithSteppers or control
         if not sliderWithSteppers then return end
 
-        -- Apply green to all label text elements
-        local function applyGreenToLabels(slider)
-            if slider.RightText and slider.RightText.SetTextColor then
-                slider.RightText:SetTextColor(brandR, brandG, brandB, 1)
+        -- Apply green + Roboto to all label text elements
+        local function applyGreenRobotoToLabels(slider)
+            if slider.RightText then
+                panel.ApplyGreenRoboto(slider.RightText)
             end
-            if slider.LeftText and slider.LeftText.SetTextColor then
-                slider.LeftText:SetTextColor(brandR, brandG, brandB, 1)
+            if slider.LeftText then
+                panel.ApplyGreenRoboto(slider.LeftText)
             end
-            if slider.TopText and slider.TopText.SetTextColor then
-                slider.TopText:SetTextColor(brandR, brandG, brandB, 1)
+            if slider.TopText then
+                panel.ApplyGreenRoboto(slider.TopText)
             end
-            if slider.MinText and slider.MinText.SetTextColor then
-                slider.MinText:SetTextColor(brandR, brandG, brandB, 1)
+            if slider.MinText then
+                panel.ApplyGreenRoboto(slider.MinText)
             end
-            if slider.MaxText and slider.MaxText.SetTextColor then
-                slider.MaxText:SetTextColor(brandR, brandG, brandB, 1)
+            if slider.MaxText then
+                panel.ApplyGreenRoboto(slider.MaxText)
             end
         end
 
         -- Apply immediately
-        applyGreenToLabels(sliderWithSteppers)
+        applyGreenRobotoToLabels(sliderWithSteppers)
 
         -- Mark that we've themed this slider so the global hook can re-apply
         sliderWithSteppers._scooterSliderThemed = true
@@ -457,28 +457,28 @@ do
         return false
     end
 
-    -- Global hook on MinimalSliderWithSteppersMixin.SetEnabled to maintain green color
+    -- Global hook on MinimalSliderWithSteppersMixin.SetEnabled to maintain green color + Roboto font
     -- This is necessary because Blizzard resets the color to NORMAL_FONT_COLOR when enabling
     if not panel._sliderSetEnabledHooked then
         panel._sliderSetEnabledHooked = true
         if type(MinimalSliderWithSteppersMixin) == "table" and type(MinimalSliderWithSteppersMixin.SetEnabled) == "function" then
             hooksecurefunc(MinimalSliderWithSteppersMixin, "SetEnabled", function(self, enabled)
-                -- Only re-apply green for sliders that have been themed and are in our panel
+                -- Only re-apply green + Roboto for sliders that have been themed and are in our panel
                 if self._scooterSliderThemed and enabled and belongsToScooterPanel(self) then
-                    if self.RightText and self.RightText.SetTextColor then
-                        self.RightText:SetTextColor(brandR, brandG, brandB, 1)
+                    if self.RightText then
+                        panel.ApplyGreenRoboto(self.RightText)
                     end
-                    if self.LeftText and self.LeftText.SetTextColor then
-                        self.LeftText:SetTextColor(brandR, brandG, brandB, 1)
+                    if self.LeftText then
+                        panel.ApplyGreenRoboto(self.LeftText)
                     end
-                    if self.TopText and self.TopText.SetTextColor then
-                        self.TopText:SetTextColor(brandR, brandG, brandB, 1)
+                    if self.TopText then
+                        panel.ApplyGreenRoboto(self.TopText)
                     end
-                    if self.MinText and self.MinText.SetTextColor then
-                        self.MinText:SetTextColor(brandR, brandG, brandB, 1)
+                    if self.MinText then
+                        panel.ApplyGreenRoboto(self.MinText)
                     end
-                    if self.MaxText and self.MaxText.SetTextColor then
-                        self.MaxText:SetTextColor(brandR, brandG, brandB, 1)
+                    if self.MaxText then
+                        panel.ApplyGreenRoboto(self.MaxText)
                     end
                 end
             end)
