@@ -54,6 +54,11 @@ local Overlays = addon.CDMOverlays
 local overlayPool = {}
 local activeOverlays = {}  -- Map from CDM icon frame to overlay frame
 
+-- Track which icons have been sized (weak keys for GC)
+-- Using a local table instead of writing to Blizzard frames avoids taint
+-- that can cause allowAvailableAlert and other fields to become secret values
+local sizedIcons = setmetatable({}, { __mode = "k" })
+
 --------------------------------------------------------------------------------
 -- Overlay Frame Management
 --------------------------------------------------------------------------------
@@ -831,8 +836,8 @@ function Overlays.ApplyIconSize(cdmIcon, opts)
         iconTexture:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
     end)
 
-    -- Mark as sized so overlays can track
-    cdmIcon.__scootIconSized = true
+    -- Mark as sized so overlays can track (using local table, not writing to Blizzard frame)
+    sizedIcons[cdmIcon] = true
 end
 
 function Overlays.ResetIconSize(cdmIcon)
@@ -846,7 +851,7 @@ function Overlays.ResetIconSize(cdmIcon)
         end)
     end
 
-    cdmIcon.__scootIconSized = nil
+    sizedIcons[cdmIcon] = nil
 end
 
 --------------------------------------------------------------------------------
@@ -890,7 +895,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                         width = iconWidth,
                         height = iconHeight,
                     })
-                elseif child.__scootIconSized then
+                elseif sizedIcons[child] then
                     -- Reset if previously sized but no longer configured
                     Overlays.ResetIconSize(child)
                 end
@@ -991,8 +996,16 @@ function Overlays.HookViewer(viewerFrameName, componentId)
     
     if viewer.OnReleaseItemFrame then
         hooksecurefunc(viewer, "OnReleaseItemFrame", function(_, itemFrame)
-            Overlays.HideOverlay(itemFrame)
-            Overlays.ResetIconSize(itemFrame)
+            -- Defer cleanup to break Blizzard's call stack and avoid taint propagation
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    Overlays.HideOverlay(itemFrame)
+                    Overlays.ResetIconSize(itemFrame)
+                end)
+            else
+                Overlays.HideOverlay(itemFrame)
+                Overlays.ResetIconSize(itemFrame)
+            end
         end)
     end
     
@@ -1173,20 +1186,12 @@ local function applyViewerOpacity(viewerName, componentId)
     local alpha = getViewerOpacityForState(componentId)
     
     -- Apply to viewer frame
+    -- Overlays are parented to CDM icons (children of the viewer), so they
+    -- automatically inherit the viewer's alpha through the parent chain.
+    -- No need to explicitly set overlay alpha - doing so would double-reduce it.
     pcall(function()
         viewer:SetAlpha(alpha)
     end)
-    
-    -- Apply to overlay frames for this viewer's icons
-    -- Overlays are parented to UIParent (to avoid taint) so they don't inherit viewer alpha
-    for cdmIcon, overlay in pairs(activeOverlays) do
-        local iconParent = cdmIcon:GetParent()
-        if iconParent and iconParent == viewer then
-            pcall(function()
-                overlay:SetAlpha(alpha)
-            end)
-        end
-    end
 end
 
 -- Update all CDM viewer opacities based on current state

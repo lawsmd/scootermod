@@ -54,24 +54,10 @@ function Window:Create(name, parent, width, height)
     -- Store subscription key for cleanup
     frame._tuiSubscribeKey = subscribeKey
 
-    -- Dragging
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        -- Optionally save position
-        if addon.db and addon.db.global then
-            local point, _, relPoint, x, y = self:GetPoint()
-            addon.db.global.tuiWindowPosition = {
-                point = point,
-                relPoint = relPoint,
-                x = x,
-                y = y
-            }
-        end
-    end)
+    -- NOTE: Dragging is NOT registered on the main frame.
+    -- The SettingsPanel creates a title bar that handles dragging instead,
+    -- so users can only drag the window by the title bar area (not the entire window).
+    -- Position saving is handled by the title bar's OnDragStop in SettingsPanel.lua.
 
     -- Mark as UI window
     frame._isTUIWindow = true

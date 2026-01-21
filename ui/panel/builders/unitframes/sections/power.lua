@@ -131,192 +131,24 @@ local function build(ctx, init)
 						yRef.y = yRef.y - 34
 					end
 	
-					-- Helper: Convert position value to rounded integer
-					local function roundPositionValuePB(v)
-						return math.floor((tonumber(v) or 0) + 0.5)
-					end
-	
-					-- Helper: Add text input (for position coordinates)
-					local function addTextInput(parent, label, minV, maxV, getFunc, setFunc, yRef, settingId)
-						local options = Settings.CreateSliderOptions(minV, maxV, 1)
-						options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
-							return tostring(roundPositionValuePB(v))
-						end)
-						local setting = CreateLocalSetting(label, "number", getFunc, setFunc, getFunc())
-						local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-						initSlider.data = initSlider.data or {}
-						initSlider.data.settingId = settingId
-						initSlider.data.componentId = componentId
-						if ConvertSliderInitializerToTextInput then
-							ConvertSliderInitializerToTextInput(initSlider)
-						end
-						local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
-						row.GetElementData = function() return initSlider end
-						row:SetPoint("TOPLEFT", 4, yRef.y)
-						row:SetPoint("TOPRIGHT", -16, yRef.y)
-						initSlider:InitFrame(row)
-						if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
-						if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
-						yRef.y = yRef.y - 34
-						return row
-					end
-	
-					-- Helper: Enable/disable a settings row
-					local function setRowEnabled(row, enabled)
-						if not row then return end
-						local alpha = enabled and 1 or 0.4
-						local labelEl = row.Text or row.Label
-						if labelEl and labelEl.SetTextColor then
-							labelEl:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
-						end
-						if row.ScooterTextInput then
-							row.ScooterTextInput:SetEnabled(enabled)
-							row.ScooterTextInput:SetAlpha(alpha)
-						end
-						local controls = {
-							row.Control,
-							row.SliderWithSteppers,
-							row.Slider,
-						}
-						for _, ctrl in ipairs(controls) do
-							if ctrl then
-								if ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
-								if ctrl.EnableMouse then ctrl:EnableMouse(enabled) end
-								if enabled and ctrl.Enable then ctrl:Enable() end
-								if not enabled and ctrl.Disable then ctrl:Disable() end
-								if ctrl.SetAlpha then ctrl:SetAlpha(alpha) end
-							end
-						end
-						if row.EnableMouse then row:EnableMouse(enabled) end
-						row:SetAlpha(alpha)
-					end
-	
-					-- Helper: Clamp screen position input
-					local function clampScreenInput(value)
-						local v = roundPositionValuePB(value or 0)
-						if v > 2000 then v = 2000 elseif v < -2000 then v = -2000 end
-						return v
-					end
-	
-					-- State table for custom position controls
-					local customPositionRows = {}
-					local function refreshPowerPositionState()
-						local enabled = customPositionRows.isEnabled and customPositionRows.isEnabled()
-						setRowEnabled(customPositionRows.customX, enabled)
-						setRowEnabled(customPositionRows.customY, enabled)
-						setRowEnabled(customPositionRows.offsetX, not enabled)
-						setRowEnabled(customPositionRows.offsetY, not enabled)
-					end
-	
 					-- PageA: Positioning (Power Bar)
 					do
 						local function applyNow()
 							if addon and addon.ApplyStyles then addon:ApplyStyles() end
 						end
 						local y = { y = -50 }
-						local function fmtInt(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
-						local function isCustomPositionEnabled()
-							local t = ensureUFDB() or {}
-							return t.powerBarCustomPositionEnabled == true
-						end
-						local function seedCurrentPosition(t)
-							-- Force 0,0 (screen center) for new users to avoid unexpected positioning
-							-- Previously tried to seed from current frame position but this caused
-							-- the bar to disappear on first enable due to coordinate conversion issues
-							t.powerBarPosX = 0
-							t.powerBarPosY = 0
-						end
-						local function setCustomPositionEnabled(state)
-							local t = ensureUFDB(); if not t then return end
-							local newState = state and true or false
-							if t.powerBarCustomPositionEnabled ~= newState then
-								t.powerBarCustomPositionEnabled = newState
-								if newState and (t.powerBarPosX == nil or t.powerBarPosY == nil) then
-									seedCurrentPosition(t)
-								end
-								applyNow()
-							end
-							refreshPowerPositionState()
-						end
-	
-						-- Custom Position toggle
-						do
-							local label = "Custom Position"
-							local setting = CreateLocalSetting(label, "boolean", isCustomPositionEnabled, setCustomPositionEnabled, isCustomPositionEnabled())
-							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-							local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-							row.GetElementData = function() return initCb end
-							row:SetPoint("TOPLEFT", 4, y.y)
-							row:SetPoint("TOPRIGHT", -16, y.y)
-							initCb:InitFrame(row)
-							if panel and panel.ApplyRobotoWhite then
-								if row.Text then panel.ApplyRobotoWhite(row.Text) end
-								local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-								if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-								-- Theme the checkbox checkmark to green
-								if cb and panel.ThemeCheckbox then panel.ThemeCheckbox(cb) end
-							end
-							if panel and panel.CreateInfoIconForLabel then
-								local tooltip = "Detach the Player Power Bar from the Player frame and place it using exact screen coordinates. When enabled, the X/Y Offset sliders are disabled."
-								local targetLabel = row.Text or (row.Checkbox and row.Checkbox.Text)
-								if targetLabel then
-									row.ScooterCustomPowerInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltip, -6, 0, 32)
-									if row.ScooterCustomPowerInfoIcon then
-										C_Timer.After(0, function()
-											if not row or not row.ScooterCustomPowerInfoIcon then return end
-											local lbl = row.Text or (row.Checkbox and row.Checkbox.Text)
-											if not lbl then return end
-											row.ScooterCustomPowerInfoIcon:ClearAllPoints()
-											row.ScooterCustomPowerInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
-										end)
-									end
-								end
-							end
-							y.y = y.y - 34
-							customPositionRows.checkbox = row
-							customPositionRows.isEnabled = isCustomPositionEnabled
-						end
-	
-						-- Custom X/Y coordinate inputs
-						customPositionRows.customX = addTextInput(frame.PageA, "X Position (px)", -2000, 2000,
-							function()
-								local t = ensureUFDB() or {}
-								return clampScreenInput(t.powerBarPosX or 0)
-							end,
-							function(v)
-								local t = ensureUFDB(); if not t then return end
-								t.powerBarPosX = clampScreenInput(v)
-								applyNow()
-							end,
-							y,
-							"powerBarCustomPosX")
-	
-						customPositionRows.customY = addTextInput(frame.PageA, "Y Position (px)", -2000, 2000,
-							function()
-								local t = ensureUFDB() or {}
-								return clampScreenInput(t.powerBarPosY or 0)
-							end,
-							function(v)
-								local t = ensureUFDB(); if not t then return end
-								t.powerBarPosY = clampScreenInput(v)
-								applyNow()
-							end,
-							y,
-							"powerBarCustomPosY")
-						
+
 						-- X Offset slider
-						customPositionRows.offsetX = addSlider(frame.PageA, "X Offset", -100, 100, 1,
+						addSlider(frame.PageA, "X Offset", -100, 100, 1,
 							function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetX) or 0 end,
 							function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetX = tonumber(v) or 0; applyNow() end,
 							y)
-						
+
 						-- Y Offset slider
-						customPositionRows.offsetY = addSlider(frame.PageA, "Y Offset", -100, 100, 1,
+						addSlider(frame.PageA, "Y Offset", -100, 100, 1,
 							function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetY) or 0 end,
 							function(v) local t = ensureUFDB(); if not t then return end; t.powerBarOffsetY = tonumber(v) or 0; applyNow() end,
 							y)
-	
-						refreshPowerPositionState()
 					end
 	
 					-- PageB: Sizing/Direction (Power Bar)

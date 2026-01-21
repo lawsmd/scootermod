@@ -115,10 +115,13 @@ ui/v2/controls/Selector.lua
 ui/v2/controls/Slider.lua
 ui/v2/controls/Tabbed.lua
 ui/v2/controls/FontSelector.lua
+ui/v2/controls/InfoIcon.lua
 ui/v2/controls/ColorPicker.lua
 ui/v2/controls/ToggleColorPicker.lua
 ui/v2/controls/SelectorColorPicker.lua
 ui/v2/controls/Dropdown.lua
+ui/v2/controls/BarTexturePicker.lua
+ui/v2/controls/Dialog.lua
 ui/v2/Window.lua
 ui/v2/Navigation.lua
 ui/v2/SettingsBuilder.lua

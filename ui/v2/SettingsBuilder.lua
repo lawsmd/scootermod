@@ -529,6 +529,7 @@ end
 --   onEditModeSync : Function(newValue) to call for Edit Mode sync (debounced)
 --   debounceDelay  : Delay before Edit Mode sync (default 0.2s)
 --   debounceKey    : Unique key for debounce timer (auto-generated if nil)
+--   infoIcon       : Optional table { tooltipText, tooltipTitle } to add info icon
 --------------------------------------------------------------------------------
 
 function Builder:AddSlider(options)
@@ -573,6 +574,25 @@ function Builder:AddSlider(options)
         -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = slider
+        end
+
+        -- Add info icon if specified (positioned at top-right corner of label)
+        if options.infoIcon and options.infoIcon.tooltipText and slider._label then
+            local iconSize = options.infoIcon.size or 12  -- Slightly smaller for corner position
+            local infoIcon = Controls:CreateInfoIcon({
+                parent = slider,
+                tooltipText = options.infoIcon.tooltipText,
+                tooltipTitle = options.infoIcon.tooltipTitle,
+                size = iconSize,
+            })
+            if infoIcon then
+                -- Position icon at top-right corner of the label text
+                -- Offset up (positive Y) to align with top of text
+                infoIcon:SetPoint("LEFT", slider._label, "RIGHT", 4, 4)
+
+                slider._infoIcon = infoIcon
+                table.insert(self._controls, infoIcon)
+            end
         end
 
         -- Update Y position
@@ -628,6 +648,57 @@ function Builder:AddFontSelector(options)
 
         -- Update Y position
         self._currentY = self._currentY - fontSelector:GetHeight()
+    end
+
+    return self
+end
+
+--------------------------------------------------------------------------------
+-- AddBarTextureSelector: Add a bar texture selection dropdown with popup picker
+--------------------------------------------------------------------------------
+-- Options:
+--   label       : Setting label text
+--   description : Optional description below label
+--   get         : Function returning current texture key (e.g., "bevelled")
+--   set         : Function(textureKey) to save selected texture
+--   width       : Selector box width (optional)
+--------------------------------------------------------------------------------
+
+function Builder:AddBarTextureSelector(options)
+    local scrollContent = self._scrollContent
+    if not scrollContent then return self end
+
+    -- Add item spacing
+    if #self._controls > 0 then
+        self._currentY = self._currentY - ITEM_SPACING
+    end
+
+    -- Create bar texture selector using Controls module
+    local barTextureSelector = Controls:CreateBarTextureSelector({
+        parent = scrollContent,
+        label = options.label,
+        description = options.description,
+        get = options.get,
+        set = options.set,
+        width = options.width,
+        useLightDim = self._useLightDim,
+    })
+
+    if barTextureSelector then
+        -- Position the bar texture selector
+        barTextureSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
+        barTextureSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
+
+        -- Track for cleanup
+        table.insert(self._controls, barTextureSelector)
+
+        -- Register by key for dynamic updates
+        if options.key then
+            self._controlsByKey[options.key] = barTextureSelector
+        end
+
+        -- Update Y position
+        self._currentY = self._currentY - barTextureSelector:GetHeight()
     end
 
     return self

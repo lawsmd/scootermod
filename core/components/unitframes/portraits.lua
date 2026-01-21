@@ -555,6 +555,12 @@ do
 		-- Apply scaling to portrait, mask, and corner icon frames
 		-- Baseline is always 1.0 for portraits (no Edit Mode scale setting)
 		local function applyScale()
+			-- PetFrame is an Edit Mode managed/protected frame. Calling SetScale on its children
+			-- can taint the frame and later cause protected Edit Mode methods (e.g., ClearAllPointsBase)
+			-- to be blocked. Do not perform any scale operations for Pet.
+			if unit == "Pet" then
+				return
+			end
 			if not InCombatLockdown() then
 				-- Scale portrait frame (baseline 1.0 × multiplier)
 				portraitFrame:SetScale(scaleMultiplier)
@@ -573,12 +579,18 @@ do
 
 		-- Apply zoom to portrait texture via SetTexCoord
 		local function applyZoom()
-			if not portraitTexture then 
+			-- PetFrame is an Edit Mode managed/protected frame. Calling SetTexCoord on its children
+			-- can taint the frame and later cause protected Edit Mode methods (e.g., ClearAllPointsBase)
+			-- to be blocked. Do not perform any zoom operations for Pet.
+			if unit == "Pet" then
+				return
+			end
+			if not portraitTexture then
 				-- Debug: log if texture not found
 				if addon.debug then
 					print("ScooterMod: Portrait zoom - texture not found for", unit)
 				end
-				return 
+				return
 			end
 			
 			-- Re-capture original coordinates if not stored yet (handles texture recreation)
@@ -688,8 +700,15 @@ do
 
 		-- Apply portrait border using custom textures
 		local function applyBorder()
+			-- PetFrame is an Edit Mode managed/protected frame. Creating textures on PetFrame
+			-- or calling Show/Hide on PetFrame children can taint the frame and later cause
+			-- protected Edit Mode methods (e.g., ClearAllPointsBase) to be blocked.
+			-- Do not perform any border operations for Pet.
+			if unit == "Pet" then
+				return
+			end
 			if not portraitFrame then return end
-			
+
 			-- Get parent frame for creating border texture (portrait is a Texture, not a Frame)
 			local parentFrame = portraitFrame:GetParent()
 			if not parentFrame then return end
@@ -784,27 +803,34 @@ do
 		local function applyVisibility()
 			-- If "Hide Portrait" is checked, hide everything (ignore individual flags)
 			-- Otherwise, check individual flags for each element
-			
-			-- Portrait frame: hidden if "Hide Portrait" is checked
-			local portraitHidden = hidePortrait
-			local finalAlpha = portraitHidden and 0.0 or (origPortraitAlpha * opacityValue)
-			
-			if portraitFrame.SetAlpha then
-				portraitFrame:SetAlpha(finalAlpha)
-			end
-			if portraitHidden and portraitFrame.Hide then
-				portraitFrame:Hide()
-			end
 
-			-- Mask frame: hidden if "Hide Portrait" is checked
-			if maskFrame then
-				local maskHidden = hidePortrait
-				local maskAlpha = maskHidden and 0.0 or (origMaskAlpha * opacityValue)
-				if maskFrame.SetAlpha then
-					maskFrame:SetAlpha(maskAlpha)
+			-- PetFrame is an Edit Mode managed/protected frame. Calling SetAlpha/Hide on its portrait
+			-- and mask children (PetPortrait, PetPortraitMask) can taint the frame and later cause
+			-- protected Edit Mode methods (e.g., ClearAllPointsBase) to be blocked.
+			-- Skip portrait and mask visibility for Pet - the Pet-specific overlays below use
+			-- applyStickyOverlayAlpha() which is designed to be safe.
+			if unit ~= "Pet" then
+				-- Portrait frame: hidden if "Hide Portrait" is checked
+				local portraitHidden = hidePortrait
+				local finalAlpha = portraitHidden and 0.0 or (origPortraitAlpha * opacityValue)
+
+				if portraitFrame.SetAlpha then
+					portraitFrame:SetAlpha(finalAlpha)
 				end
-				if maskHidden and maskFrame.Hide then
-					maskFrame:Hide()
+				if portraitHidden and portraitFrame.Hide then
+					portraitFrame:Hide()
+				end
+
+				-- Mask frame: hidden if "Hide Portrait" is checked
+				if maskFrame then
+					local maskHidden = hidePortrait
+					local maskAlpha = maskHidden and 0.0 or (origMaskAlpha * opacityValue)
+					if maskFrame.SetAlpha then
+						maskFrame:SetAlpha(maskAlpha)
+					end
+					if maskHidden and maskFrame.Hide then
+						maskFrame:Hide()
+					end
 				end
 			end
 
@@ -880,9 +906,13 @@ do
 			end
 		end
 
-		-- Apply damage text styling (Player and Pet)
+		-- Apply damage text styling (Player only)
+		-- PetFrame is an Edit Mode managed/protected frame. Modifying PetHitIndicator
+		-- (PetFrame.feedbackText) with SetFont/SetTextColor/ClearAllPoints/SetPoint can taint
+		-- the frame and later cause protected Edit Mode methods (e.g., ClearAllPointsBase)
+		-- to be blocked. Do not perform any damage text styling for Pet.
 		local function applyDamageText()
-			if unit ~= "Player" and unit ~= "Pet" then return end
+			if unit ~= "Player" then return end
 			local damageTextFrame = resolveDamageTextFrame(unit)
 			if not damageTextFrame then return end
 
@@ -1075,23 +1105,16 @@ do
 	-- CombatFeedback_OnUpdate also receives PlayerFrame/PetFrame as 'self'
 	if _G.CombatFeedback_OnCombatEvent then
 		_G.hooksecurefunc("CombatFeedback_OnCombatEvent", function(self, event, flags, amount, type)
-			-- Check if this is PlayerFrame or PetFrame
+			-- Only handle PlayerFrame - PetFrame is managed/protected by Edit Mode.
+			-- Modifying PetHitIndicator (PetFrame.feedbackText) can taint the frame and
+			-- later cause protected Edit Mode methods (e.g., ClearAllPointsBase) to be blocked.
 			local playerFrame = _G.PlayerFrame
-			local petFrame = _G.PetFrame
-			local unitKey = nil
-			if self and self == playerFrame then
-				unitKey = "Player"
-			elseif self and self == petFrame then
-				unitKey = "Pet"
+			if self ~= playerFrame then
+				return
 			end
-			
-			if unitKey and self.feedbackText then
-				-- PetFrame is managed/protected by Edit Mode. Avoid any in-combat writes to its
-				-- feedback text (SetAlpha/SetFont) to prevent taint propagation that can later
-				-- block protected Edit Mode methods like PetFrame:HideBase().
-				if unitKey == "Pet" and InCombatLockdown and InCombatLockdown() then
-					return
-				end
+			local unitKey = "Player"
+
+			if self.feedbackText then
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local cfg = db.unitFrames[unitKey].portrait
@@ -1128,23 +1151,17 @@ do
 
 	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
 	-- This is critical because OnUpdate runs every frame and will override our alpha setting
-	-- OnUpdate receives PlayerFrame/PetFrame as 'self'
+	-- OnUpdate receives PlayerFrame only - PetFrame is excluded (see CombatFeedback_OnCombatEvent comment)
 	if _G.CombatFeedback_OnUpdate then
 		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)
-			-- Check if this is PlayerFrame or PetFrame
+			-- Only handle PlayerFrame - PetFrame is managed/protected by Edit Mode
 			local playerFrame = _G.PlayerFrame
-			local petFrame = _G.PetFrame
-			local unitKey = nil
-			if self and self == playerFrame then
-				unitKey = "Player"
-			elseif self and self == petFrame then
-				unitKey = "Pet"
+			if self ~= playerFrame then
+				return
 			end
-			
-			if unitKey and self.feedbackText then
-				if unitKey == "Pet" and InCombatLockdown and InCombatLockdown() then
-					return
-				end
+			local unitKey = "Player"
+
+			if self.feedbackText then
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local damageTextDisabled = db.unitFrames[unitKey].portrait.damageTextDisabled == true

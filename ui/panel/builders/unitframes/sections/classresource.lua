@@ -87,149 +87,8 @@ local function build(ctx, init)
 						-- PageA: Positioning
 						do
 							local y = { y = -50 }
-							local function clampScreenInput(value)
-								local v = roundPositionValue(value or 0)
-								if v > 2000 then v = 2000 elseif v < -2000 then v = -2000 end
-								return v
-							end
-							local function addTextInput(parent, label, getter, setter, yRef, settingId)
-								local options = Settings.CreateSliderOptions(-2000, 2000, 1)
-								options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
-									return tostring(roundPositionValue(v))
-								end)
-								local setting = CreateLocalSetting(label, "number", getter, setter, getter())
-								local initSlider = Settings.CreateSettingInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options })
-								initSlider.data = initSlider.data or {}
-								initSlider.data.settingId = settingId
-								initSlider.data.componentId = componentId
-								if ConvertSliderInitializerToTextInput then
-									ConvertSliderInitializerToTextInput(initSlider)
-								end
-								local row = CreateFrame("Frame", nil, parent, "SettingsSliderControlTemplate")
-								row.GetElementData = function() return initSlider end
-								row:SetPoint("TOPLEFT", 4, yRef.y)
-								row:SetPoint("TOPRIGHT", -16, yRef.y)
-								initSlider:InitFrame(row)
-								if row.Text and panel and panel.ApplyRobotoWhite then panel.ApplyRobotoWhite(row.Text) end
-								if panel and panel.ThemeSliderValue then panel.ThemeSliderValue(row) end
-								yRef.y = yRef.y - 34
-								return row
-							end
-							local function setRowEnabled(row, enabled)
-								if not row then return end
-								local alpha = enabled and 1 or 0.4
-								local label = row.Text or row.Label
-								if label and label.SetTextColor then
-									label:SetTextColor(enabled and 1 or 0.6, enabled and 1 or 0.6, enabled and 1 or 0.6, 1)
-								end
-								if row.ScooterTextInput then
-									row.ScooterTextInput:SetEnabled(enabled)
-									row.ScooterTextInput:SetAlpha(alpha)
-								end
-								local controls = { row.Control, row.SliderWithSteppers, row.Slider }
-								for _, ctrl in ipairs(controls) do
-									if ctrl then
-										if ctrl.SetEnabled then ctrl:SetEnabled(enabled) end
-										if ctrl.EnableMouse then ctrl:EnableMouse(enabled) end
-										if enabled and ctrl.Enable then ctrl:Enable() end
-										if not enabled and ctrl.Disable then ctrl:Disable() end
-										if ctrl.SetAlpha then ctrl:SetAlpha(alpha) end
-									end
-								end
-								if row.EnableMouse then row:EnableMouse(enabled) end
-								row:SetAlpha(alpha)
-							end
-	
-							local customRows = {}
-							local function refreshState()
-								local enabled = customRows.isEnabled and customRows.isEnabled()
-								setRowEnabled(customRows.customX, enabled)
-								setRowEnabled(customRows.customY, enabled)
-								setRowEnabled(customRows.offsetX, not enabled)
-								setRowEnabled(customRows.offsetY, not enabled)
-							end
-	
-							-- Custom Position checkbox
-							do
-								local function isCustomEnabled()
-									local cfg = ensureCRDB() or {}
-									return cfg.classResourceCustomPositionEnabled == true
-								end
-								local function setCustomEnabled(state)
-									local cfg = ensureCRDB(); if not cfg then return end
-									local desired = state and true or false
-									if cfg.classResourceCustomPositionEnabled ~= desired then
-										cfg.classResourceCustomPositionEnabled = desired
-									if desired and (cfg.classResourcePosX == nil or cfg.classResourcePosY == nil) then
-										-- Force 0,0 (screen center) for new users to avoid unexpected positioning
-										cfg.classResourcePosX = 0
-										cfg.classResourcePosY = 0
-									end
-										applyNow()
-									end
-									refreshState()
-								end
-								local label = "Custom Position"
-								local setting = CreateLocalSetting(label, "boolean", isCustomEnabled, setCustomEnabled, isCustomEnabled())
-								local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label, setting = setting, options = {} })
-								local row = CreateFrame("Frame", nil, frame.PageA, "SettingsCheckboxControlTemplate")
-								row.GetElementData = function() return initCb end
-								row:SetPoint("TOPLEFT", 4, y.y)
-								row:SetPoint("TOPRIGHT", -16, y.y)
-								initCb:InitFrame(row)
-								if panel and panel.ApplyRobotoWhite then
-									if row.Text then panel.ApplyRobotoWhite(row.Text) end
-									local cb = row.Checkbox or row.CheckBox or (row.Control and row.Control.Checkbox)
-									if cb and cb.Text then panel.ApplyRobotoWhite(cb.Text) end
-								end
-								if panel and panel.CreateInfoIconForLabel then
-									local tooltip = "Detach the class resource from the Player frame and position it anywhere on the screen using absolute coordinates."
-									local targetLabel = row.Text or (row.Checkbox and row.Checkbox.Text)
-									if targetLabel then
-										row.ScooterClassResourceInfoIcon = panel.CreateInfoIconForLabel(targetLabel, tooltip, -6, 0, 32)
-										if row.ScooterClassResourceInfoIcon then
-											C_Timer.After(0, function()
-												if not row or not row.ScooterClassResourceInfoIcon then return end
-												local lbl = row.Text or (row.Checkbox and row.Checkbox.Text)
-												if not lbl then return end
-												row.ScooterClassResourceInfoIcon:ClearAllPoints()
-												row.ScooterClassResourceInfoIcon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
-											end)
-										end
-									end
-								end
-								y.y = y.y - 34
-								customRows.checkbox = row
-								customRows.isEnabled = isCustomEnabled
-							end
-	
-							customRows.customX = addTextInput(frame.PageA, "X Position (px)",
-								function()
-									local cfg = ensureCRDB() or {}
-									return clampScreenInput(cfg.classResourcePosX or 0)
-								end,
-								function(v)
-									local cfg = ensureCRDB(); if not cfg then return end
-									cfg.classResourcePosX = clampScreenInput(v)
-									applyNow()
-								end,
-								y,
-								"classResourceCustomPosX")
-	
-							customRows.customY = addTextInput(frame.PageA, "Y Position (px)",
-								function()
-									local cfg = ensureCRDB() or {}
-									return clampScreenInput(cfg.classResourcePosY or 0)
-								end,
-								function(v)
-									local cfg = ensureCRDB(); if not cfg then return end
-									cfg.classResourcePosY = clampScreenInput(v)
-									applyNow()
-								end,
-								y,
-								"classResourceCustomPosY")
-	
-							customRows.offsetX = addSlider(frame.PageA, "X Offset", -150, 150, 1,
+
+							addSlider(frame.PageA, "X Offset", -150, 150, 1,
 								function()
 									local cfg = ensureCRDB() or {}
 									return tonumber(cfg.offsetX) or 0
@@ -242,8 +101,8 @@ local function build(ctx, init)
 									applyNow()
 								end,
 								y)
-	
-							customRows.offsetY = addSlider(frame.PageA, "Y Offset", -150, 150, 1,
+
+							addSlider(frame.PageA, "Y Offset", -150, 150, 1,
 								function()
 									local cfg = ensureCRDB() or {}
 									return tonumber(cfg.offsetY) or 0
@@ -256,8 +115,6 @@ local function build(ctx, init)
 									applyNow()
 								end,
 								y)
-	
-							refreshState()
 						end
 	
 						-- PageB: Sizing
@@ -313,9 +170,8 @@ local function build(ctx, init)
 					end
 	
 					local crInit = Settings.CreateElementInitializer("ScooterTabbedSectionTemplate", crTabs)
-					-- Height for 5 settings: checkbox + 2 text inputs + 2 sliders = 30 + (5 * 34) + 20 = 220px
-					-- Increased to 270px to accommodate Custom Position controls with proper spacing
-					crInit.GetExtent = function() return 270 end
+					-- Height for 2 sliders (X/Y Offset): 30 + (2 * 34) + 20 = 118px, rounded to 150px
+					crInit.GetExtent = function() return 150 end
 					crInit:AddShownPredicate(function()
 						return panel:IsSectionExpanded(componentId, "Class Resource")
 					end)

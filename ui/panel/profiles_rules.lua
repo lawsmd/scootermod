@@ -2177,3 +2177,6 @@ end
 function panel.RenderProfilesRules()
     return renderProfilesRules()
 end
+
+-- Export spec picker for TUI Rules
+addon.ShowSpecPicker = OpenSpecPicker
