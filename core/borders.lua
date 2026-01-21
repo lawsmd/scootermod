@@ -3,6 +3,43 @@ local addonName, addon = ...
 addon.Borders = addon.Borders or {}
 local Borders = addon.Borders
 
+-- 12.0+: Frame getters can trigger Blizzard secret-value errors
+-- on managed unit frames. Use safe getters that fall back gracefully.
+-- NOTE: These helpers must be defined BEFORE ensureContainer which uses them.
+local function safeGetter(func, fallback)
+    if not func then return fallback end
+    local ok, result = pcall(func)
+    return ok and result or fallback
+end
+
+-- 12.0+: Detect "secret values" that hard-error on math/compare.
+local function safeNumber(v)
+    local okNil, isNil = pcall(function() return v == nil end)
+    if okNil and isNil then return nil end
+    local n = v
+    if type(n) ~= "number" then
+        local ok, conv = pcall(tonumber, n)
+        if ok and type(conv) == "number" then
+            n = conv
+        else
+            return nil
+        end
+    end
+    local ok = pcall(function() return n + 0 end)
+    if not ok then
+        return nil
+    end
+    return n
+end
+
+-- 12.0+: Frame:GetWidth() and GetHeight() can trigger Blizzard secret-value errors
+-- on managed unit frames. Use safe getters that fall back to 0 on error.
+local function safeDimension(func)
+    local value = safeGetter(func, nil)
+    local num = safeNumber(value)
+    return num or 0
+end
+
 local function hideLegacy(frame)
     if not frame then return end
     if frame.ScootSquareBorder and frame.ScootSquareBorder.edges then
@@ -36,14 +73,14 @@ local function ensureContainer(frame, strata, levelOffset, parent, anchorRegion)
         frame.ScootSquareBorderContainer = f
     end
     local valid = { BACKGROUND=true, LOW=true, MEDIUM=true, HIGH=true, DIALOG=true, FULLSCREEN=true, FULLSCREEN_DIALOG=true, TOOLTIP=true }
-    local desiredStrata = valid[strata or ""] and strata or (frame.GetFrameStrata and frame:GetFrameStrata()) or "BACKGROUND"
+    local desiredStrata = valid[strata or ""] and strata or (frame.GetFrameStrata and safeGetter(function() return frame:GetFrameStrata() end, "BACKGROUND")) or "BACKGROUND"
     local lvlOffset = tonumber(levelOffset) or 5
     local anchor = anchorRegion or frame
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
     f:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
     f:SetFrameStrata(desiredStrata)
-    f:SetFrameLevel((frame:GetFrameLevel() or 0) + lvlOffset)
+    f:SetFrameLevel(safeDimension(function() return frame:GetFrameLevel() end) + lvlOffset)
     f:Show()
     return f
 end
@@ -78,8 +115,8 @@ function Borders.ApplySquare(frame, opts)
     -- This catches cases where the wrong frame is passed (e.g., a parent container instead
     -- of the actual bar). Skip the check if opts.skipDimensionCheck is set.
     if not opts.skipDimensionCheck then
-        local fw = frame.GetWidth and frame:GetWidth() or 0
-        local fh = frame.GetHeight and frame:GetHeight() or 0
+        local fw = safeDimension(function() return frame:GetWidth() end)
+        local fh = safeDimension(function() return frame:GetHeight() end)
         if fw > 400 or fh > 100 then
             -- Frame is too large to be a bar; clear any existing border and return.
             hideLegacy(frame)

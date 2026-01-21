@@ -16,6 +16,27 @@ local Combat = addon.BarsCombat
 addon.BarsPartyFrames = addon.BarsPartyFrames or {}
 local PartyFrames = addon.BarsPartyFrames
 
+-- 12.0+: Some values can be "secret" and will hard-error on arithmetic/comparisons.
+-- Treat those as unreadable and skip optional overlays rather than crashing.
+local function safeNumber(v)
+    local okNil, isNil = pcall(function() return v == nil end)
+    if okNil and isNil then return nil end
+    local n = v
+    if type(n) ~= "number" then
+        local ok, conv = pcall(tonumber, n)
+        if ok and type(conv) == "number" then
+            n = conv
+        else
+            return nil
+        end
+    end
+    local ok = pcall(function() return n + 0 end)
+    if not ok then
+        return nil
+    end
+    return n
+end
+
 --------------------------------------------------------------------------------
 -- Party Frame Detection
 --------------------------------------------------------------------------------
@@ -83,11 +104,34 @@ local function updateHealthOverlay(bar)
     end
 
     local overlay = bar.ScooterPartyHealthFill
-    local totalWidth = bar:GetWidth() or 0
-    local minVal, maxVal = bar:GetMinMaxValues()
-    local value = bar:GetValue() or minVal
+    -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
+    local totalWidth = 0
+    do
+        -- Avoid StatusBar:GetWidth(); prefer StatusBarTexture width.
+        local tex = (bar.GetStatusBarTexture and bar:GetStatusBarTexture()) or nil
+        if tex and tex.GetWidth then
+            local okW, w = pcall(tex.GetWidth, tex)
+            totalWidth = safeNumber(okW and w) or 0
+        end
+    end
+    local minVal, maxVal
+    do
+        local okMM, mn, mx = pcall(bar.GetMinMaxValues, bar)
+        minVal = safeNumber(okMM and mn)
+        maxVal = safeNumber(okMM and mx)
+    end
+    local value
+    do
+        local okV, v = pcall(bar.GetValue, bar)
+        value = safeNumber(okV and v)
+        if value == nil then value = minVal end
+    end
 
-    if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+    if not totalWidth or totalWidth <= 0 or minVal == nil or maxVal == nil or value == nil then
+        overlay:Hide()
+        return
+    end
+    if maxVal <= minVal then
         overlay:Hide()
         return
     end

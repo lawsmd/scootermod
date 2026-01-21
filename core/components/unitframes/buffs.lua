@@ -99,9 +99,18 @@ do
 				-- first active aura we see so default sliders match Blizzard visuals.
 				if auraFrame and auraFrame.SetSize then
 					if not originalAuraSizes[auraFrame] then
+						local w, h
+						do
+							local okW, ww = pcall(auraFrame.GetWidth, auraFrame)
+							w = (okW and type(ww) == "number") and ww or 21
+						end
+						do
+							local okH, hh = pcall(auraFrame.GetHeight, auraFrame)
+							h = (okH and type(hh) == "number") and hh or 21
+						end
 						originalAuraSizes[auraFrame] = {
-							width = auraFrame:GetWidth() or 21,
-							height = auraFrame:GetHeight() or 21,
+							width = w,
+							height = h,
 						}
 					end
 

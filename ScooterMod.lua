@@ -325,6 +325,25 @@ function SlashCmdList.SCOOTERCDM(msg, editBox)
     addon:OpenCooldownManagerSettings()
 end
 
+-- /scoot2 - TUI Settings Panel (parallel development)
+SLASH_SCOOTERTUI1 = "/scoot2"
+function SlashCmdList.SCOOTERTUI(msg, editBox)
+    if InCombatLockdown and InCombatLockdown() then
+        if addon and addon.Print then
+            addon:Print("Cannot open settings during combat.")
+        end
+        return
+    end
+
+    if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
+        addon.UI.SettingsPanel:Toggle()
+    else
+        if addon and addon.Print then
+            addon:Print("UI Settings Panel not loaded.")
+        end
+    end
+end
+
 -- NOTE: PLAYER_TARGET_CHANGED is handled in core/init.lua via PLAYER_TARGET_CHANGED()
 -- which calls RefreshOpacityState() - this is combat-safe and properly updates opacity
 -- for all components (Action Bars, CDM, Auras, etc.) without blocking during combat.

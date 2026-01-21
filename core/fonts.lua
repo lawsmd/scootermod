@@ -220,54 +220,148 @@ end
 local function CreateFontPicker()
     if fontPickerFrame then return fontPickerFrame end
 
+    -- Get UI theme colors if available, fallback to brand colors
+    local Theme = addon.UI and addon.UI.Theme
+    local accentR, accentG, accentB = BRAND_R, BRAND_G, BRAND_B
+    if Theme and Theme.GetAccentColor then
+        accentR, accentG, accentB = Theme:GetAccentColor()
+    end
+
     -- Calculate popup dimensions based on grid
     local contentWidth = (FONT_BUTTON_WIDTH * FONTS_PER_ROW) + (FONT_BUTTON_SPACING * (FONTS_PER_ROW - 1)) + (PICKER_PADDING * 2)
     local popupWidth = contentWidth + 24 -- Extra for scrollbar
     local popupHeight = 420
 
-    local frame = CreateFrame("Frame", "ScooterFontPickerFrame", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "ScooterFontPickerFrame", UIParent)
     frame:SetSize(popupWidth, popupHeight)
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetFrameLevel(100)
-    frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    frame:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
-    frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     frame:EnableMouse(true)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
-    frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
-    -- Title
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", frame, "TOP", 0, -8)
+    -- TUI-style background (dark, semi-transparent)
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.04, 0.04, 0.06, 0.96)
+    frame._bg = bg
+
+    -- TUI-style border (accent color)
+    local borderWidth = 1
+    local borders = {}
+
+    local topBorder = frame:CreateTexture(nil, "BORDER", nil, -1)
+    topBorder:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    topBorder:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    topBorder:SetHeight(borderWidth)
+    topBorder:SetColorTexture(accentR, accentG, accentB, 0.8)
+    borders.TOP = topBorder
+
+    local bottomBorder = frame:CreateTexture(nil, "BORDER", nil, -1)
+    bottomBorder:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    bottomBorder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    bottomBorder:SetHeight(borderWidth)
+    bottomBorder:SetColorTexture(accentR, accentG, accentB, 0.8)
+    borders.BOTTOM = bottomBorder
+
+    local leftBorder = frame:CreateTexture(nil, "BORDER", nil, -1)
+    leftBorder:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -borderWidth)
+    leftBorder:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, borderWidth)
+    leftBorder:SetWidth(borderWidth)
+    leftBorder:SetColorTexture(accentR, accentG, accentB, 0.8)
+    borders.LEFT = leftBorder
+
+    local rightBorder = frame:CreateTexture(nil, "BORDER", nil, -1)
+    rightBorder:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -borderWidth)
+    rightBorder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, borderWidth)
+    rightBorder:SetWidth(borderWidth)
+    rightBorder:SetColorTexture(accentR, accentG, accentB, 0.8)
+    borders.RIGHT = rightBorder
+
+    frame._borders = borders
+
+    -- Title (TUI style - white text, JetBrains Mono if available)
+    local title = frame:CreateFontString(nil, "OVERLAY")
+    local titleFont = (Theme and Theme.GetFont and Theme:GetFont("HEADER")) or "Fonts\\FRIZQT__.TTF"
+    title:SetFont(titleFont, 14, "")
+    title:SetPoint("TOPLEFT", frame, "TOPLEFT", PICKER_PADDING, -10)
     title:SetText("Select Font")
-    title:SetTextColor(BRAND_R, BRAND_G, BRAND_B, 1)
+    title:SetTextColor(1, 1, 1, 1)
     frame.Title = title
 
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
-    closeBtn:SetScript("OnClick", CloseFontPicker)
+    -- TUI-style close button (X)
+    local closeBtn = CreateFrame("Button", nil, frame)
+    closeBtn:SetSize(24, 24)
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -6, -6)
+    closeBtn:EnableMouse(true)
+    closeBtn:RegisterForClicks("AnyUp")
 
-    -- Scroll frame for content
-    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    local closeBtnBg = closeBtn:CreateTexture(nil, "BACKGROUND", nil, -7)
+    closeBtnBg:SetAllPoints()
+    closeBtnBg:SetColorTexture(accentR, accentG, accentB, 1)
+    closeBtnBg:Hide()
+    closeBtn._bg = closeBtnBg
+
+    local closeBtnText = closeBtn:CreateFontString(nil, "OVERLAY")
+    closeBtnText:SetFont(titleFont, 14, "")
+    closeBtnText:SetPoint("CENTER", 0, 0)
+    closeBtnText:SetText("X")
+    closeBtnText:SetTextColor(accentR, accentG, accentB, 1)
+    closeBtn._text = closeBtnText
+
+    closeBtn:SetScript("OnEnter", function(self)
+        self._bg:Show()
+        self._text:SetTextColor(0, 0, 0, 1)
+    end)
+    closeBtn:SetScript("OnLeave", function(self)
+        self._bg:Hide()
+        self._text:SetTextColor(accentR, accentG, accentB, 1)
+    end)
+    closeBtn:SetScript("OnClick", CloseFontPicker)
+    frame.CloseButton = closeBtn
+
+    -- Scroll frame for content (minimal template, we'll style the scrollbar)
+    local scrollFrame = CreateFrame("ScrollFrame", "ScooterFontPickerScrollFrame", frame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", PICKER_PADDING, -(PICKER_TITLE_HEIGHT + 4))
-    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(PICKER_PADDING + 22), PICKER_PADDING)
+    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(PICKER_PADDING + 20), PICKER_PADDING)
     frame.ScrollFrame = scrollFrame
 
-    -- Style the scrollbar
+    -- Style the scrollbar to match TUI
     local scrollBar = scrollFrame.ScrollBar or _G[scrollFrame:GetName() .. "ScrollBar"]
     if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 4, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 4, 16)
+        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 6, -16)
+        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 6, 16)
+
+        -- Hide default textures and restyle
+        if scrollBar.Background then scrollBar.Background:Hide() end
+        if scrollBar.Track then
+            if scrollBar.Track.Begin then scrollBar.Track.Begin:Hide() end
+            if scrollBar.Track.End then scrollBar.Track.End:Hide() end
+            if scrollBar.Track.Middle then scrollBar.Track.Middle:Hide() end
+        end
+
+        -- Create custom track background
+        local trackBg = scrollBar:CreateTexture(nil, "BACKGROUND", nil, -8)
+        trackBg:SetPoint("TOPLEFT", 4, 0)
+        trackBg:SetPoint("BOTTOMRIGHT", -4, 0)
+        trackBg:SetColorTexture(accentR, accentG, accentB, 0.15)
+        scrollBar._trackBg = trackBg
+
+        -- Style the thumb
+        local thumb = scrollBar.ThumbTexture or scrollBar:GetThumbTexture()
+        if thumb then
+            thumb:SetColorTexture(accentR, accentG, accentB, 0.6)
+            thumb:SetSize(8, 40)
+        end
+
+        -- Hide up/down buttons or style them minimally
+        local upBtn = scrollBar.ScrollUpButton or scrollBar.Back or _G[scrollBar:GetName() .. "ScrollUpButton"]
+        local downBtn = scrollBar.ScrollDownButton or scrollBar.Forward or _G[scrollBar:GetName() .. "ScrollDownButton"]
+        if upBtn then upBtn:SetAlpha(0) upBtn:EnableMouse(false) end
+        if downBtn then downBtn:SetAlpha(0) downBtn:EnableMouse(false) end
     end
 
     -- Content frame (scroll child)
@@ -279,11 +373,12 @@ local function CreateFontPicker()
     -- Button pool for font options
     frame.Buttons = {}
 
+    -- Store accent colors for button styling
+    frame._accentR = accentR
+    frame._accentG = accentG
+    frame._accentB = accentB
+
     -- Escape key to close
-    --
-    -- IMPORTANT (taint): Frame:SetPropagateKeyboardInput() is a protected API and can
-    -- trigger ADDON_ACTION_BLOCKED (most commonly during combat lockdown). We avoid
-    -- calling it entirely; it's not required for our font picker behavior.
     frame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             CloseFontPicker()
@@ -294,7 +389,6 @@ local function CreateFontPicker()
     frame:SetScript("OnShow", function(self)
         self:SetScript("OnUpdate", function(self, elapsed)
             if not self:IsMouseOver() and IsMouseButtonDown("LeftButton") then
-                -- Small delay to avoid closing immediately on the opening click
                 C_Timer.After(0.05, function()
                     if fontPickerFrame and fontPickerFrame:IsShown() and not fontPickerFrame:IsMouseOver() then
                         CloseFontPicker()
@@ -354,32 +448,25 @@ local function PopulateFontPicker(currentValue)
     -- Get default font for fallback
     local defaultFont = select(1, _G.GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.TTF"
 
-    -- Create/reuse buttons for each font option
+    -- Get accent colors from frame
+    local accentR = frame._accentR or BRAND_R
+    local accentG = frame._accentG or BRAND_G
+    local accentB = frame._accentB or BRAND_B
+
+    -- Create/reuse buttons for each font option (TUI style: no backgrounds, clean text)
     for i, option in ipairs(fontOptions) do
         local btn = frame.Buttons[i]
         if not btn then
-            btn = CreateFrame("Button", nil, content, "BackdropTemplate")
+            btn = CreateFrame("Button", nil, content)
             btn:SetSize(FONT_BUTTON_WIDTH, FONT_BUTTON_HEIGHT)
-            btn:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = 1,
-                insets = { left = 1, right = 1, top = 1, bottom = 1 },
-            })
 
             -- Create label with GameFontNormalSmall as template for initial font
             local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("LEFT", btn, "LEFT", 6, 0)
-            label:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+            label:SetPoint("LEFT", btn, "LEFT", 4, 0)
+            label:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
             label:SetJustifyH("LEFT")
             label:SetWordWrap(false)
             btn.Label = label
-
-            -- Highlight texture
-            local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-            highlight:SetAllPoints()
-            highlight:SetColorTexture(BRAND_R, BRAND_G, BRAND_B, 0.2)
-            btn.Highlight = highlight
 
             frame.Buttons[i] = btn
         end
@@ -391,16 +478,6 @@ local function PopulateFontPicker(currentValue)
         local y = -(row * (FONT_BUTTON_HEIGHT + FONT_BUTTON_SPACING))
         btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
-
-        -- Set button appearance
-        local isSelected = (currentValue == option.value)
-        if isSelected then
-            btn:SetBackdropColor(BRAND_R * 0.3, BRAND_G * 0.3, BRAND_B * 0.3, 0.8)
-            btn:SetBackdropBorderColor(BRAND_R, BRAND_G, BRAND_B, 1)
-        else
-            btn:SetBackdropColor(0.15, 0.15, 0.15, 0.8)
-            btn:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-        end
 
         -- Set font FIRST (before text) - try custom font, fall back to default
         local fontFace = addon.ResolveFontFace(option.value)
@@ -415,11 +492,22 @@ local function PopulateFontPicker(currentValue)
 
         -- Now set text (font is guaranteed to be set)
         btn.Label:SetText(option.text)
-        btn.Label:SetTextColor(1, 1, 1, 1)
 
-        -- Store option data
+        -- Set text color based on selected state (TUI style: accent for selected, white for unselected)
+        local isSelected = (currentValue == option.value)
+        if isSelected then
+            btn.Label:SetTextColor(accentR, accentG, accentB, 1)
+        else
+            btn.Label:SetTextColor(1, 1, 1, 0.9)
+        end
+
+        -- Store option data and selected state
         btn._fontValue = option.value
         btn._fontText = option.text
+        btn._isSelected = isSelected
+        btn._accentR = accentR
+        btn._accentG = accentG
+        btn._accentB = accentB
 
         -- Click handler
         btn:SetScript("OnClick", function(self)
@@ -438,17 +526,17 @@ local function PopulateFontPicker(currentValue)
             CloseFontPicker()
         end)
 
-        -- Hover effects
+        -- Hover effects (TUI style: accent color on hover)
         btn:SetScript("OnEnter", function(self)
-            if self._fontValue ~= currentValue then
-                self:SetBackdropBorderColor(BRAND_R * 0.7, BRAND_G * 0.7, BRAND_B * 0.7, 1)
+            if not self._isSelected then
+                self.Label:SetTextColor(self._accentR, self._accentG, self._accentB, 1)
             end
         end)
         btn:SetScript("OnLeave", function(self)
-            if self._fontValue == currentValue then
-                self:SetBackdropBorderColor(BRAND_R, BRAND_G, BRAND_B, 1)
+            if self._isSelected then
+                self.Label:SetTextColor(self._accentR, self._accentG, self._accentB, 1)
             else
-                self:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+                self.Label:SetTextColor(1, 1, 1, 0.9)
             end
         end)
 

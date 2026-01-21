@@ -1548,6 +1548,49 @@ function Profiles:CleanupOrphanedProfiles()
     end
 end
 
+-- Detect when the current profile's Edit Mode layout was deleted externally (via Blizzard's Edit Mode UI).
+-- This is called from RefreshFromEditMode after _layoutLookup is rebuilt.
+-- If the current profile no longer has a matching layout, prompt for reload.
+function Profiles:CheckForExternalDeletion()
+    if not self.db or not self._layoutLookup then
+        return
+    end
+
+    -- Skip if we already prompted this session (avoid spamming on rapid events)
+    if self._externalDeletionPrompted then
+        return
+    end
+
+    local protected = {
+        ["Default"] = true,
+        ["Modern"] = true,
+        ["Classic"] = true,
+    }
+
+    local currentProfile = self.db:GetCurrentProfile()
+    if not currentProfile or protected[currentProfile] then
+        return
+    end
+
+    -- If the current profile has no matching Edit Mode layout, it was deleted externally
+    if not self._layoutLookup[currentProfile] then
+        self._externalDeletionPrompted = true
+        Debug("CheckForExternalDeletion: current profile has no matching layout", currentProfile)
+
+        -- Defer the dialog slightly to allow any pending UI updates to complete
+        C_Timer.After(0.1, function()
+            if addon and addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOTERMOD_EXTERNAL_LAYOUT_DELETED", {
+                    formatArgs = { currentProfile },
+                    onAccept = function()
+                        ReloadUI()
+                    end,
+                })
+            end
+        end)
+    end
+end
+
 function Profiles:GetAvailableLayouts()
     local editable = {}
     local presets = {}
@@ -1799,6 +1842,10 @@ function Profiles:RefreshFromEditMode(origin)
     -- Auto-heal: if AceDB contains profiles that don't exist as layouts, remove them
     -- so they can't block preset creation or cause cross-machine desync confusion.
     self:CleanupOrphanedProfiles()
+
+    -- Detect if the current profile's Edit Mode layout was deleted externally (via Blizzard's Edit Mode UI).
+    -- If so, prompt the user to reload so state can be properly synchronized.
+    self:CheckForExternalDeletion()
 
     self:PruneSpecAssignments()
     if addon and addon._dbgProfiles then

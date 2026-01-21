@@ -1,10 +1,10 @@
-## Interface: 110207
+## Interface: 120000
 ## Title: ScooterMod
 ## Notes: A modern, cosmetic-only UI addon.
 ## Author: Scooter
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\ScooterMod\Scooter
-## OptionalDeps: Blizzard_Settings_Shared
+## OptionalDeps: Blizzard_Settings, Blizzard_Settings_Shared
 ## SavedVariables: ScooterModDB
 ## SlashCmd: /scoot
 
@@ -105,6 +105,24 @@ ui/panel/profiles_manage.lua
 ui/panel/profiles_presets.lua
 ui/panel/profiles_rules.lua
 ui/panel/apply_all.lua
+
+ui/v2/Theme.lua
+ui/v2/controls/Utils.lua
+ui/v2/controls/Button.lua
+ui/v2/controls/Toggle.lua
+ui/v2/controls/Collapsible.lua
+ui/v2/controls/Selector.lua
+ui/v2/controls/Slider.lua
+ui/v2/controls/Tabbed.lua
+ui/v2/controls/FontSelector.lua
+ui/v2/controls/ColorPicker.lua
+ui/v2/controls/ToggleColorPicker.lua
+ui/v2/controls/SelectorColorPicker.lua
+ui/v2/controls/Dropdown.lua
+ui/v2/Window.lua
+ui/v2/Navigation.lua
+ui/v2/SettingsBuilder.lua
+ui/v2/SettingsPanel.lua
 
 core/ui_fixes.lua
 core/init.lua

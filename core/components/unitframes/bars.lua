@@ -1,4 +1,4 @@
-﻿--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 -- bars.lua
 -- Unit Frame Bar Styling (Main File)
 --
@@ -21,6 +21,28 @@ local ClampOpacity = Util.ClampOpacity
 local PlayerInCombat = Util.PlayerInCombat
 local HideDefaultBarTextures = Util.HideDefaultBarTextures
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
+
+-- 12.0+: Some StatusBar values (min/max/value) can be "secret" and will hard-error
+-- on comparisons/arithmetic. For optional cosmetics like rectangular fill overlays,
+-- treat secret values as unavailable and skip the overlay update.
+local function safeNumber(v)
+    local okNil, isNil = pcall(function() return v == nil end)
+    if okNil and isNil then return nil end
+    local n = v
+    if type(n) ~= "number" then
+        local ok, conv = pcall(tonumber, n)
+        if ok and type(conv) == "number" then
+            n = conv
+        else
+            return nil
+        end
+    end
+    local ok = pcall(function() return n + 0 end)
+    if not ok then
+        return nil
+    end
+    return n
+end
 
 -- Reference extracted modules (loaded via TOC before this file)
 local Utils = addon.BarsUtils
@@ -910,35 +932,20 @@ do
         end
 
         local overlay = bar[overlayKey]
-        
-        -- CRITICAL: For Boss health bars, the StatusBar has oversized bounds spanning both
-        -- health and power areas. We must anchor to the correct bounds frame stored during setup.
-        local boundsFrame = bar._ScootBossRectBoundsFrame or bar
-        
-        local totalWidth = boundsFrame:GetWidth() or 0
-        local minVal, maxVal = bar:GetMinMaxValues()
-        local value = bar:GetValue() or minVal
 
-        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+        -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
+        -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
+        -- is the actual "fill" portion of the StatusBar and automatically scales with bar value.
+        -- This follows the 12.0 paradigm: anchor to existing elements, don't read values.
+        local statusBarTex = bar:GetStatusBarTexture()
+        if not statusBarTex then
             overlay:Hide()
             return
         end
 
-        local frac = (value - minVal) / (maxVal - minVal)
-        if frac <= 0 then
-            overlay:Hide()
-            return
-        end
-        if frac > 1 then frac = 1 end
-
-        overlay:Show()
-        overlay:SetWidth(totalWidth * frac)
         overlay:ClearAllPoints()
-
-        -- Boss bars always fill left-to-right
-        -- Anchor to the correct bounds frame, not the StatusBar itself
-        overlay:SetPoint("TOPLEFT", boundsFrame, "TOPLEFT", 0, 0)
-        overlay:SetPoint("BOTTOMLEFT", boundsFrame, "BOTTOMLEFT", 0, 0)
+        overlay:SetAllPoints(statusBarTex)
+        overlay:Show()
     end
 
     local function ensureBossRectOverlay(bossFrame, bar, cfg, barType)
@@ -1114,38 +1121,33 @@ do
         end
 
         local overlay = bar.ScooterRectFill
-        local totalWidth = bar:GetWidth() or 0
-        local minVal, maxVal = bar:GetMinMaxValues()
-        local value = bar:GetValue() or minVal
+        -- 12.0 PTR: PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
+        -- innocuous StatusBar reads from addon code, and may hard-error due to "secret values" inside
+        -- Blizzard_UnitFrame (e.g., myCurrentHealAbsorb comparisons). This overlay is purely cosmetic,
+        -- so we disable it for Pet to guarantee preset/profile application can't provoke that path.
+        if bar._ScootRectDisabledForSecretValues then
+            -- Important: do not call methods (Hide/Show/SetWidth/etc.) from inside the
+            -- bar:SetValue / bar:SetMinMaxValues hook path when we're in a "secret value"
+            -- environment. This overlay is cosmetic; we prefer a complete no-op.
+            return
+        end
+        if type(unit) == "string" and string.lower(unit) == "pet" then
+            return
+        end
 
-        if not totalWidth or totalWidth <= 0 or not maxVal or maxVal <= minVal then
+        -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
+        -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
+        -- is the actual "fill" portion of the StatusBar and automatically scales with health value.
+        -- This follows the 12.0 paradigm: anchor to existing elements, don't read values.
+        local statusBarTex = bar:GetStatusBarTexture()
+        if not statusBarTex then
             overlay:Hide()
             return
         end
 
-        local frac = (value - minVal) / (maxVal - minVal)
-        if frac <= 0 then
-            overlay:Hide()
-            return
-        end
-        if frac > 1 then frac = 1 end
-
-        overlay:Show()
-        overlay:SetWidth(totalWidth * frac)
         overlay:ClearAllPoints()
-
-        local reverse = not not bar._ScootRectReverseFill
-        -- Overlay matches the bar frame bounds exactly.
-        -- Any bleeding above the frame is covered by extending the border's expandY.
-        local topOffset = 0
-
-        if reverse then
-            overlay:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, topOffset)
-            overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-        else
-            overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, topOffset)
-            overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-        end
+        overlay:SetAllPoints(statusBarTex)
+        overlay:Show()
     end
 
     local function ensureRectHealthOverlay(unit, bar, cfg)
@@ -1166,6 +1168,9 @@ do
         -- - Pet: activate when using custom borders (fills top-right corner chip in mask)
         local shouldActivate = false
 
+        -- Reset per-call disable flag unless explicitly re-set below.
+        bar._ScootRectDisabledForSecretValues = nil
+
         if unit == "Target" or unit == "Focus" then
             local portraitCfg = rawget(ufCfg, "portrait")
             shouldActivate = (portraitCfg and portraitCfg.hidePortrait == true) or false
@@ -1178,10 +1183,13 @@ do
         elseif unit == "TargetOfTarget" then
             shouldActivate = (ufCfg.useCustomBorders == true)
             bar._ScootRectReverseFill = false -- ToT health bar always fills left-to-right
-        elseif unit == "Pet" then
+        elseif type(unit) == "string" and string.lower(unit) == "pet" then
             -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
             -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
-            shouldActivate = (ufCfg.useCustomBorders == true)
+            -- 12.0 PTR: disable this optional cosmetic overlay for Pet to avoid triggering
+            -- Blizzard heal prediction updates that can error on "secret values".
+            shouldActivate = false
+            bar._ScootRectDisabledForSecretValues = true
             bar._ScootRectReverseFill = false -- Pet health bar always fills left-to-right
         else
             -- Others: skip
@@ -1371,6 +1379,15 @@ do
         end
         local frame = getUnitFrameFor(unit)
         if not frame then return end
+
+        -- 12.0+: PetFrame is a managed/protected unit frame. Even innocuous getters (GetWidth, GetHeight,
+        -- GetMinMaxValues, GetValue) on PetFrame's health/power bars can trigger Blizzard's internal
+        -- heal prediction update callbacks that error on "secret values". Skip ALL bar styling for Pet
+        -- to guarantee preset/profile application doesn't provoke that path. This is a temporary
+        -- workaround until Blizzard stabilizes the 12.0 secret-value implementation.
+        if unit == "Pet" then
+            return
+        end
 
         -- Boss unit frames commonly appear/update during combat (e.g., INSTANCE_ENCOUNTER_ENGAGE_UNIT / UPDATE_BOSS_FRAMES).
         -- IMPORTANT (taint): Even "cosmetic-only" writes to Boss unit frame regions (including SetAlpha on textures)
@@ -2214,6 +2231,10 @@ do
             end
             
             -- Health Bar custom border (Health Bar only)
+            -- 12.0+: PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
+            -- on PetFrame's health bar can trigger Blizzard internal updates that error on "secret values".
+            -- Skip ALL border operations for Pet to guarantee preset/profile application doesn't provoke that path.
+            if unit ~= "Pet" then
             do
 				local styleKey = cfg.healthBarBorderStyle
 				local tintEnabled = not not cfg.healthBarBorderTintEnable
@@ -2260,7 +2281,7 @@ do
                                 })
 							end
                             if not handled then
-								-- Fallback: pixel (square) border drawn with our lightweight helper
+                                -- Fallback: pixel (square) border drawn with our lightweight helper
 								if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                 if addon.Borders and addon.Borders.ApplySquare then
 									local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
@@ -2271,14 +2292,15 @@ do
                                     local expandX = baseX - inset
                                     if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                     if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                    -- Pet is already excluded by the outer guard
                                     addon.Borders.ApplySquare(hb, {
-										size = thickness,
-										color = sqColor,
+                                        size = thickness,
+                                        color = sqColor,
                                         layer = "OVERLAY",
                                         layerSublevel = 3,
-										expandX = expandX,
-										expandY = expandY,
-									})
+                                        expandX = expandX,
+                                        expandY = expandY,
+                                    })
                                 end
 							end
                             -- Deterministically place border below text and ensure text wins
@@ -2301,6 +2323,7 @@ do
 					end
 				end
             end
+            end -- Pet guard
 
             -- Lightweight persistence hooks for Player Health Bar:
             -- Texture: keep custom texture applied if Blizzard swaps StatusBarTexture.
@@ -2993,7 +3016,21 @@ do
                             local alignment = styleCfg.alignment or defaultAlign
                             local parentBar = fs:GetParent()
                             if parentBar and parentBar.GetWidth then
-                                local barWidth = parentBar:GetWidth()
+                                -- 12.0+: StatusBar:GetWidth() can trigger Blizzard internal updates that may
+                                -- error due to secret values. Treat width as best-effort and skip alignment
+                                -- forcing if we can't safely read a number.
+                                local barWidth
+                                do
+                                    local isStatusBar = false
+                                    if parentBar.GetObjectType then
+                                        local okT, t = pcall(parentBar.GetObjectType, parentBar)
+                                        isStatusBar = okT and (t == "StatusBar")
+                                    end
+                                    if not isStatusBar then
+                                        local okW, w = pcall(parentBar.GetWidth, parentBar)
+                                        barWidth = safeNumber(okW and w)
+                                    end
+                                end
                                 if barWidth and barWidth > 0 and fs.SetWidth then
                                     pcall(fs.SetWidth, fs, barWidth)
                                 end
@@ -3122,10 +3159,12 @@ do
 
             -- Experimental: Power Bar Width scaling (texture/mask only)
             -- For Target/Focus: Only when reverse fill is enabled
-            -- For Player/Pet: Always available
+            -- For Player: Always available
+            -- 12.0+: Pet excluded - even pcall-wrapped GetWidth on PetFrame's power bar
+            -- can trigger Blizzard internal updates that error on "secret values".
             do
                 local canScale = false
-                if unit == "Player" or unit == "Pet" then
+                if unit == "Player" then
                     canScale = true
                 elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
                     canScale = true
@@ -3268,13 +3307,15 @@ do
 			
 			-- Power Bar Height scaling (texture/mask only)
 			-- For Target/Focus: Only when reverse fill is enabled
-			-- For Player/Pet: Always available
+			-- For Player: Always available
+			-- 12.0+: Pet excluded - even pcall-wrapped GetHeight on PetFrame's power bar
+			-- can trigger Blizzard internal updates that error on "secret values".
 			do
                 -- Skip all Power Bar height scaling while in combat; defer to the next
                 -- out-of-combat styling pass instead to avoid taint.
                 if not inCombat then
 				    local canScale = false
-				    if unit == "Player" or unit == "Pet" then
+				    if unit == "Player" then
 					    canScale = true
 				    elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
 					    canScale = true
@@ -3507,6 +3548,7 @@ do
                                 local expandX = baseX - inset
                                 if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                 if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                -- Pet is already excluded by the outer guard
                                 addon.Borders.ApplySquare(pb, {
                                     size = thickness,
                                     color = sqColor,
@@ -3777,12 +3819,18 @@ do
     end
 
     function addon.ApplyAllUnitFrameBarTextures()
-        applyForUnit("Player")
-        applyForUnit("Target")
-        applyForUnit("Focus")
-        applyForUnit("Boss")
-        applyForUnit("Pet")
-        applyForUnit("TargetOfTarget")
+        -- 12.0+: Styling passes must be resilient to Blizzard "secret value" errors that can
+        -- surface from innocuous getters on managed UnitFrames (e.g., PetFrame heal prediction).
+        -- Never allow those to hard-fail profile switching/preset apply.
+        local function safeApply(unit)
+            pcall(applyForUnit, unit)
+        end
+        safeApply("Player")
+        safeApply("Target")
+        safeApply("Focus")
+        safeApply("Boss")
+        safeApply("Pet")
+        safeApply("TargetOfTarget")
     end
 
     -- =========================================================================

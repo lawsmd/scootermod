@@ -776,86 +776,264 @@ local function SafeCall(fn, ...)
     return nil
 end
 
+-- 12.0 secret value handling: some getters return "secret" values that cannot be
+-- used in string operations, comparisons, or arithmetic. We detect these by
+-- attempting the operation in a pcall. IMPORTANT: Even comparing a secret to nil
+-- can fail, so ALL operations must be wrapped in pcall.
+
+-- Returns a guaranteed-safe string, or fallback if the value is a secret
+-- IMPORTANT: In 12.0, even tostring(secret) can return a "tainted" value that
+-- passes initial checks but fails in table.concat. We must verify the result
+-- is a real Lua string type AND can be used in string operations.
+local function safeString(value, fallback)
+    fallback = fallback or "<secret>"
+    local result
+    local ok = pcall(function()
+        -- Check if value is nil (comparison can fail on secrets)
+        if value == nil then return end
+        -- Try to convert to string
+        local str = tostring(value)
+        -- Verify it's actually a string type (not a secret masquerading as one)
+        if type(str) ~= "string" then return end
+        -- Verify it can be used in string operations
+        local test = str .. ""
+        -- Verify it has reasonable content (not a weird secret representation)
+        if #test < 0 then return end -- length check
+        -- Final test: can we format it?
+        local formatted = string.format("%s", str)
+        if type(formatted) ~= "string" then return end
+        result = str
+    end)
+    -- Double-check the result is actually usable
+    if ok and result and type(result) == "string" then
+        -- One more pcall to verify the result is truly usable
+        local finalOk = pcall(function()
+            local _ = result .. ""
+            local _ = string.format("%s", result)
+        end)
+        if finalOk then
+            return result
+        end
+    end
+    return fallback
+end
+
+-- Alias for compatibility
+local function safeToString(value)
+    return safeString(value, "<secret>")
+end
+
+-- Returns true only if the value can be safely used as a string
+local function isUsableValue(value)
+    local ok = pcall(function()
+        if value == nil then return end
+        local str = tostring(value)
+        local _ = str .. ""
+    end)
+    return ok
+end
+
+-- Alias for compatibility
+local function isUsableString(value)
+    return isUsableValue(value)
+end
+
 local function GetDebugNameSafe(obj)
     if not obj then return nil end
-    return SafeCall(function() return obj.GetDebugName and obj:GetDebugName() or nil end)
+    local ok, result = pcall(function()
+        if not obj.GetDebugName then return nil end
+        local name = obj:GetDebugName()
+        if name == nil then return nil end
+        -- Verify it's usable
+        local _ = name .. ""
+        return name
+    end)
+    if ok and result then
+        return result
+    end
+    return nil
 end
 
 local function TableInspectorBuildDump(focusedTable)
     if not focusedTable then return "[No Table Selected]" end
-    local attributes = {}
-    local childFrameDisplayed = {}
-
-    local function shouldShow(object)
-        -- Attempt to honor widget access checks if available; otherwise allow
-        local isWidget = SafeCall(function() return C_Widget and C_Widget.IsWidget and C_Widget.IsWidget(object) end)
-        local canAccess = SafeCall(function() return CanAccessObject and CanAccessObject(object) or true end)
-        if isWidget == nil then isWidget = false end
-        if canAccess == nil then canAccess = true end
-        return (not isWidget) or canAccess
-    end
-
-    for key, value in pairs(focusedTable) do
-        if shouldShow(key) and shouldShow(value) then
-            local vType = type(value)
-            local display
-            if vType == "number" or vType == "string" or vType == "boolean" then
-                display = tostring(value)
-            elseif vType == "table" and GetDebugNameSafe(value) then
-                display = GetDebugNameSafe(value)
-                vType = "childFrame"
-                childFrameDisplayed[value] = true
-            elseif vType == "nil" then
-                display = "nil"
-            else
-                display = "N/A"
-            end
-            table.insert(attributes, { key = key, type = vType, rawValue = value, displayValue = display })
-        end
-    end
-
-    if focusedTable.GetChildren then
-        local children = { focusedTable:GetChildren() }
-        for _, child in ipairs(children) do
-            if shouldShow(child) and not childFrameDisplayed[child] then
-                table.insert(attributes, { key = "N/A", type = "childFrame", rawValue = child, displayValue = GetDebugNameSafe(child) or "<child>" })
-                childFrameDisplayed[child] = true
-            end
-        end
-    end
-
-    if focusedTable.GetRegions then
-        local regions = { focusedTable:GetRegions() }
-        for _, region in ipairs(regions) do
-            if shouldShow(region) then
-                table.insert(attributes, { key = "N/A", type = "region", rawValue = region, displayValue = GetDebugNameSafe(region) or "<region>" })
-            end
-        end
-    end
-
-    local typeOrder = { childFrame = 10, boolean = 20, number = 30, string = 40, table = 50, region = 60, ["function"] = 70 }
-    table.sort(attributes, function(a, b)
-        local ao = typeOrder[a.type] or 500
-        local bo = typeOrder[b.type] or 500
-        if ao ~= bo then return ao < bo end
-        if a.key ~= b.key then return tostring(a.key) < tostring(b.key) end
-        return tostring(a.displayValue) < tostring(b.displayValue)
-    end)
 
     local out = {}
-    local function push(line) table.insert(out, line) end
-    local title = SafeCall(function() return TableAttributeDisplay and TableAttributeDisplay.TitleButton and TableAttributeDisplay.TitleButton.Text and TableAttributeDisplay.TitleButton.Text:GetText() end)
-    push(string.format("%s", title or "Table Attributes"))
-    push(string.rep("-", 60))
-    local lastType
-    for _, entry in ipairs(attributes) do
-        if entry.type ~= lastType then
-            push(string.format("%s(s)", entry.type))
-            lastType = entry.type
+    local function push(line)
+        local safeLine = safeString(line, "[unreadable]")
+        if type(safeLine) == "string" then
+            table.insert(out, safeLine)
         end
-        push(string.format("  %s = %s", tostring(entry.key), tostring(entry.displayValue)))
     end
-    return table.concat(out, "\n")
+
+    -- 12.0 STRATEGY: Instead of pairs() iteration (which returns secrets),
+    -- call specific known frame methods directly. These are more likely to work.
+
+    push("Frame Information")
+    push(string.rep("-", 60))
+
+    -- Try to get basic identity info via explicit method calls
+    local function tryGet(label, fn)
+        local ok, val = pcall(fn)
+        if ok and val ~= nil then
+            -- Verify the value is usable (not a secret)
+            local strOk, str = pcall(function()
+                local s = tostring(val)
+                local _ = s .. "" -- verify string ops work
+                return s
+            end)
+            if strOk and str then
+                push(label .. ": " .. str)
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Identity
+    tryGet("Name", function() return focusedTable:GetName() end)
+    tryGet("DebugName", function() return focusedTable:GetDebugName() end)
+    tryGet("ObjectType", function() return focusedTable:GetObjectType() end)
+
+    -- Dimensions (these often work)
+    tryGet("Width", function() return focusedTable:GetWidth() end)
+    tryGet("Height", function() return focusedTable:GetHeight() end)
+    tryGet("Scale", function() return focusedTable:GetScale() end)
+    tryGet("EffectiveScale", function() return focusedTable:GetEffectiveScale() end)
+    tryGet("Alpha", function() return focusedTable:GetAlpha() end)
+
+    -- Visibility/State
+    tryGet("IsShown", function() return focusedTable:IsShown() end)
+    tryGet("IsVisible", function() return focusedTable:IsVisible() end)
+    tryGet("IsProtected", function() return focusedTable:IsProtected() end)
+    tryGet("IsForbidden", function() return focusedTable:IsForbidden() end)
+
+    -- Frame Level/Strata
+    tryGet("FrameLevel", function() return focusedTable:GetFrameLevel() end)
+    tryGet("FrameStrata", function() return focusedTable:GetFrameStrata() end)
+
+    -- Parent info
+    local parent = SafeCall(function() return focusedTable:GetParent() end)
+    if parent then
+        tryGet("Parent", function() return parent:GetDebugName() or parent:GetName() or "<unnamed>" end)
+    end
+
+    -- Build ancestry chain (this is the most useful part for copying frame paths)
+    local ancestry = {}
+    local current = focusedTable
+    local depth = 0
+    while current and depth < 20 do
+        local name = GetDebugNameSafe(current)
+        table.insert(ancestry, 1, name or "<unnamed>")
+        current = SafeCall(function() return current:GetParent() end)
+        depth = depth + 1
+    end
+
+    -- Add a clean "Full Path" line at the top for easy copying
+    if #ancestry > 0 then
+        push("")
+        push("Full Path (for copying):")
+        local pathOk, fullPath = pcall(table.concat, ancestry, ".")
+        if pathOk and fullPath then
+            push(fullPath)
+        end
+    end
+
+    push("")
+    push("Ancestry (indented):")
+    for i, name in ipairs(ancestry) do
+        local indent = string.rep("  ", i - 1)
+        push(indent .. name)
+    end
+
+    -- Anchor points (often partially readable)
+    -- IMPORTANT: numPoints might be a secret - extract as safe number inside pcall
+    local safeNumPoints = 0
+    pcall(function()
+        local np = focusedTable:GetNumPoints()
+        if np and type(np) == "number" and np > 0 then
+            safeNumPoints = np
+        end
+    end)
+    if safeNumPoints > 0 then
+        push("")
+        push("Anchor Points:")
+        for i = 1, safeNumPoints do
+            local point, relTo, relPoint, x, y = SafeCall(function()
+                return focusedTable:GetPoint(i)
+            end)
+            if point then
+                local parts = {}
+                -- Point name (usually works)
+                local pointOk, pointStr = pcall(tostring, point)
+                if pointOk then table.insert(parts, pointStr) end
+
+                -- Relative frame
+                if relTo then
+                    local relName = GetDebugNameSafe(relTo) or "<frame>"
+                    table.insert(parts, "-> " .. relName)
+                end
+
+                -- Relative point (may be secret)
+                if relPoint then
+                    local rpOk, rpStr = pcall(tostring, relPoint)
+                    if rpOk then table.insert(parts, "(" .. rpStr .. ")") end
+                end
+
+                -- Offsets (often secrets in 12.0)
+                if x and y and type(x) == "number" and type(y) == "number" then
+                    local offsetOk, offsetStr = pcall(string.format, "%.1f, %.1f", x, y)
+                    if offsetOk then table.insert(parts, "offset: " .. offsetStr) end
+                end
+
+                if #parts > 0 then
+                    local lineOk, line = pcall(table.concat, parts, " ")
+                    if lineOk then push("  [" .. i .. "] " .. line) end
+                end
+            end
+        end
+    end
+
+    -- Children (GetDebugName usually works on child references)
+    -- Wrap everything in pcall to handle any secret contamination
+    pcall(function()
+        local children = { focusedTable:GetChildren() }
+        if children and #children > 0 then
+            push("")
+            push("Children:")
+            for _, child in ipairs(children) do
+                local childName = GetDebugNameSafe(child)
+                if childName then
+                    push("  " .. childName)
+                end
+            end
+        end
+    end)
+
+    -- Regions
+    pcall(function()
+        local regions = { focusedTable:GetRegions() }
+        if regions and #regions > 0 then
+            push("")
+            push("Regions:")
+            for _, region in ipairs(regions) do
+                local regionName = GetDebugNameSafe(region)
+                local regionType = nil
+                pcall(function() regionType = region:GetObjectType() end)
+                if regionName or regionType then
+                    local desc = regionName or "<unnamed>"
+                    if regionType then desc = desc .. " (" .. regionType .. ")" end
+                    push("  " .. desc)
+                end
+            end
+        end
+    end)
+
+    -- Final assembly
+    local ok, result = pcall(table.concat, out, "\n")
+    if ok and type(result) == "string" then
+        return result
+    end
+    return "[Error building dump - secret values detected]"
 end
 
 -- Separate copy window for Table Inspector (reuse pattern from ShowDebugCopyWindow)
@@ -901,6 +1079,75 @@ local function ShowTableInspectorCopyWindow(title, text)
     if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
 end
 
+-- Extract text directly from FrameStackTooltip's displayed lines
+-- This reads what Blizzard is actually showing, bypassing GetDebugName() secrets
+-- IMPORTANT: Must be defined before AttachTableInspectorCopyButton which calls it
+--
+-- 12.0 CRITICAL: GetText() returns secret values even on Blizzard's own tooltips.
+-- We must wrap ALL operations (including type() checks) in pcall because
+-- comparing or type-checking a secret value throws an error.
+local function ExtractFrameStackTooltipText()
+    local fs = _G.FrameStackTooltip
+    if not fs then return nil end
+
+    local lines = {}
+
+    -- Helper: safely extract text from a FontString, returns nil if secret/unavailable
+    local function safeGetText(fontString)
+        if not fontString then return nil end
+        local result = nil
+        pcall(function()
+            if not fontString.GetText then return end
+            local raw = fontString:GetText()
+            -- ALL checks must be inside pcall because type()/comparisons fail on secrets
+            if raw == nil then return end
+            if type(raw) ~= "string" then return end
+            if raw == "" then return end
+            -- Final verification: try string operation
+            local _ = raw .. ""
+            result = raw
+        end)
+        return result
+    end
+
+    -- Try numbered text lines like GameTooltip pattern (most reliable)
+    -- FrameStackTooltip has TextLeft1, TextLeft2, etc.
+    for i = 1, 30 do
+        local leftLine = fs["TextLeft" .. i] or _G["FrameStackTooltipTextLeft" .. i]
+        local text = safeGetText(leftLine)
+        if text then
+            table.insert(lines, text)
+        end
+    end
+
+    -- Also try LinesContainer if present and we got nothing
+    local linesContainer = fs.LinesContainer
+    if linesContainer and #lines == 0 then
+        pcall(function()
+            local children = { linesContainer:GetChildren() }
+            for _, child in ipairs(children) do
+                if child and child.GetRegions then
+                    local regions = { child:GetRegions() }
+                    for _, region in ipairs(regions) do
+                        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                            local text = safeGetText(region)
+                            if text then
+                                table.insert(lines, text)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if #lines > 0 then
+        local ok, result = pcall(table.concat, lines, "\n")
+        return ok and result or nil
+    end
+    return nil
+end
+
 local function AttachTableInspectorCopyButton()
     local parent = _G.TableAttributeDisplay
     if not parent or parent.ScooterCopyButton then return end
@@ -912,9 +1159,19 @@ local function AttachTableInspectorCopyButton()
     btn:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -6)
     btn:SetScript("OnClick", function()
         local focused = parent.focusedTable
-        local dump = TableInspectorBuildDump(focused)
-        local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
-        ShowTableInspectorCopyWindow(title, dump)
+        -- If framestack is active, prioritize extracting its visible text
+        local fs = _G.FrameStackTooltip
+        local frameStackText = (fs and fs:IsShown()) and ExtractFrameStackTooltipText() or nil
+
+        local dump
+        if frameStackText then
+            -- Combine framestack text with table dump
+            local tableDump = TableInspectorBuildDump(focused)
+            dump = "=== FrameStack Visible Text ===\n" .. frameStackText .. "\n\n" .. tableDump
+        else
+            dump = TableInspectorBuildDump(focused)
+        end
+        ShowTableInspectorCopyWindow("Table Attributes", dump)
     end)
     parent.ScooterCopyButton = btn
 end
@@ -924,13 +1181,16 @@ function addon.AttachTableInspectorCopyButton()
     AttachTableInspectorCopyButton()
 end
 
+-- NOTE: FrameStackTooltip copy button removed - can't hover and click simultaneously.
+-- Use TableAttributeDisplay copy button instead: /fstack -> Alt to select -> Ctrl to inspect -> Copy
+
 -- Expose the attribute dump logic for the slash command (/scoot attr)
 function addon.DumpTableAttributes()
     local parent = _G.TableAttributeDisplay
     if parent and parent:IsShown() and parent.focusedTable then
         local dump = TableInspectorBuildDump(parent.focusedTable)
-        local title = (parent.TitleButton and parent.TitleButton.Text and parent.TitleButton.Text:GetText()) or "Table Attributes"
-        ShowTableInspectorCopyWindow(title, dump)
+        -- 12.0: Title is now hardcoded in dump; use simple title for window
+        ShowTableInspectorCopyWindow("Table Attributes", dump)
         return true
     end
     -- Fallback: if framestack is active, try to inspect highlight and dump
@@ -938,7 +1198,9 @@ function addon.DumpTableAttributes()
     if fs and fs.highlightFrame then
         local dump = TableInspectorBuildDump(fs.highlightFrame)
         local name = GetDebugNameSafe(fs.highlightFrame) or "Frame"
-        ShowTableInspectorCopyWindow("Frame Attributes - "..name, dump)
+        -- Wrap title construction in pcall for safety
+        local ok, title = pcall(function() return "Frame Attributes - " .. name end)
+        ShowTableInspectorCopyWindow(ok and title or "Frame Attributes", dump)
         return true
     end
     return false

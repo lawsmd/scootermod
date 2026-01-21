@@ -571,3 +571,14 @@ Dialogs:Register("SCOOTERMOD_IMPORT_CONSOLEPORT", {
     height = 210,
 })
 
+--------------------------------------------------------------------------------
+-- External Layout Deletion Detection
+--------------------------------------------------------------------------------
+
+Dialogs:Register("SCOOTERMOD_EXTERNAL_LAYOUT_DELETED", {
+    text = "The Edit Mode layout '%s' was deleted outside of ScooterMod.\n\nA UI reload is required to properly sync your profile state.",
+    acceptText = "Reload UI",
+    locked = true,  -- Cannot be dismissed except by clicking the button
+    height = 180,
+})
+

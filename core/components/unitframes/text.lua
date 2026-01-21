@@ -1,5 +1,58 @@
 local addonName, addon = ...
 
+-- 12.0+: Blizzard can mark certain UI-derived numbers as "secret", which causes
+-- arithmetic like `x + 1` to hard-error ("attempt to perform arithmetic on a secret value").
+-- We treat those as unreadable offsets and fall back to 0 so styling does not crash.
+local function safeOffset(v)
+    local okNil, isNil = pcall(function() return v == nil end)
+    if okNil and isNil then return 0 end
+    local n = v
+    if type(n) ~= "number" then
+        local ok, conv = pcall(tonumber, n)
+        if ok and type(conv) == "number" then
+            n = conv
+        else
+            return 0
+        end
+    end
+    local ok = pcall(function() return n + 0 end)
+    if not ok then
+        return 0
+    end
+    return n
+end
+
+local function safePointToken(v, fallback)
+    if type(v) ~= "string" then return fallback end
+    -- Even simple string comparisons can error on "secret" values; guard it.
+    local ok, nonEmpty = pcall(function() return v ~= "" end)
+    if ok and nonEmpty then return v end
+    return fallback
+end
+
+-- Some managed frames (notably UnitFrame StatusBars) can run internal update code during
+-- "harmless" queries like GetWidth(). In 12.0 PTR this can surface Blizzard errors due to
+-- "secret values" when those updates run in an addon context.
+--
+-- Practical rule: **never call GetWidth() on StatusBars** during our styling passes.
+-- If width is needed, callers must either rely on existing FontString widths or degrade
+-- gracefully (hide optional cosmetics) when a safe width can't be obtained.
+local function safeGetWidth(frame)
+    if not frame or not frame.GetWidth then return nil end
+    if frame.GetObjectType then
+        local okT, t = pcall(frame.GetObjectType, frame)
+        if okT and t == "StatusBar" then
+            return nil
+        end
+    end
+    local ok, w = pcall(frame.GetWidth, frame)
+    if not ok then return nil end
+    if type(w) ~= "number" then return nil end
+    local okArith = pcall(function() return w + 0 end)
+    if not okArith then return nil end
+    return w
+end
+
 -- Unit Frames: Toggle Health % (LeftText) and Value (RightText) visibility per unit
 do
     -- Cache for resolved health text fontstrings per unit so combat-time hooks stay cheap.
@@ -185,8 +238,8 @@ do
                 b.point = p or "CENTER"
                 b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
                 b.relPoint = rp or b.point
-                b.x = tonumber(x) or 0
-                b.y = tonumber(y) or 0
+                b.x = safeOffset(x)
+                b.y = safeOffset(y)
             else
                 b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or fallbackFrame, "CENTER", 0, 0
             end
@@ -262,7 +315,7 @@ do
         -- Set explicit width on FontString to enable alignment (use full parent bar width)
         local parentBar = fs:GetParent()
         if parentBar and parentBar.GetWidth then
-            local barWidth = parentBar:GetWidth()
+            local barWidth = safeGetWidth(parentBar)
             if barWidth and barWidth > 0 and fs.SetWidth then
                 pcall(fs.SetWidth, fs, barWidth)
             end
@@ -278,13 +331,17 @@ do
         if fs.ClearAllPoints and fs.SetPoint then
             local b = ensureBaseline(fs, baselineKey, fallbackFrame or (fs.GetParent and fs:GetParent()))
             fs:ClearAllPoints()
-            fs:SetPoint(
-                b.point or "CENTER",
-                b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame,
-                b.relPoint or b.point or "CENTER",
-                (b.x or 0) + ox,
-                (b.y or 0) + oy
-            )
+            local point = safePointToken(b.point, "CENTER")
+            local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+            local relPoint = safePointToken(b.relPoint, point)
+            local x = safeOffset(b.x) + ox
+            local y = safeOffset(b.y) + oy
+            local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+            if not ok then
+                -- Fallback: anchor to parent without offsets (best-effort, avoid hard-crash on 12.0).
+                local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
+                pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+            end
         end
 
         -- Force redraw to apply alignment visually
@@ -814,8 +871,8 @@ do
 				b.point = p or "CENTER"
 				b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
 				b.relPoint = rp or b.point
-				b.x = tonumber(x) or 0
-				b.y = tonumber(y) or 0
+				b.x = safeOffset(x)
+				b.y = safeOffset(y)
 			else
 				b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or fallbackFrame, "CENTER", 0, 0
 			end
@@ -899,7 +956,7 @@ do
 		-- Set explicit width on FontString to enable alignment (use full parent bar width)
 		local parentBar = fs:GetParent()
 		if parentBar and parentBar.GetWidth then
-			local barWidth = parentBar:GetWidth()
+			local barWidth = safeGetWidth(parentBar)
 			if barWidth and barWidth > 0 then
 				-- Use full bar width so alignment spans the entire bar
 				if fs.SetWidth then
@@ -918,7 +975,16 @@ do
 		if fs.ClearAllPoints and fs.SetPoint then
 			local b = ensureBaseline(fs, baselineKey, fallbackFrame)
 			fs:ClearAllPoints()
-			fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+			local point = safePointToken(b.point, "CENTER")
+			local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+			local relPoint = safePointToken(b.relPoint, point)
+			local x = safeOffset(b.x) + ox
+			local y = safeOffset(b.y) + oy
+			local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+			if not ok then
+				local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
+				pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+			end
 		end
 
 		-- Force redraw to apply alignment visually
@@ -1536,8 +1602,8 @@ do
 						b.point = p or "CENTER"
 						b.relTo = relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
 						b.relPoint = rp or b.point
-						b.x = tonumber(x) or 0
-						b.y = tonumber(y) or 0
+						b.x = safeOffset(x)
+						b.y = safeOffset(y)
 					else
 						b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fallbackFrame or (fs and fs.GetParent and fs:GetParent())), "CENTER", 0, 0
 					end
@@ -1588,7 +1654,16 @@ do
 				if fs.ClearAllPoints and fs.SetPoint then
 					local b = ensureBossBaseline(fs, baselineKey, fallbackFrame)
 					fs:ClearAllPoints()
-					fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+					local point = safePointToken(b.point, "CENTER")
+					local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+					local relPoint = safePointToken(b.relPoint, point)
+					local x = safeOffset(b.x) + ox
+					local y = safeOffset(b.y) + oy
+					local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+					if not ok then
+						local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
+						pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+					end
 				end
 			end
 
@@ -1631,8 +1706,15 @@ do
 					local baseKey = "Boss" .. tostring(index)
 					local base = tonumber(addon._ufNameBackdropBaseWidth[baseKey])
 					if not base or base <= 0 then
-						base = (hb.GetWidth and hb:GetWidth()) or 0
-						addon._ufNameBackdropBaseWidth[baseKey] = base
+						base = safeGetWidth(hb)
+						if base and base > 0 then
+							addon._ufNameBackdropBaseWidth[baseKey] = base
+						end
+					end
+					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					if not base or base <= 0 then
+						tex:Hide()
+						return
 					end
 					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
@@ -1713,8 +1795,15 @@ do
 					local baseKey = "Boss" .. tostring(index)
 					local base = tonumber(addon._ufNameBackdropBaseWidth[baseKey])
 					if not base or base <= 0 then
-						base = (hb.GetWidth and hb:GetWidth()) or 0
-						addon._ufNameBackdropBaseWidth[baseKey] = base
+						base = safeGetWidth(hb)
+						if base and base > 0 then
+							addon._ufNameBackdropBaseWidth[baseKey] = base
+						end
+					end
+					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					if not base or base <= 0 then
+						borderFrame:Hide()
+						return
 					end
 					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
@@ -1888,8 +1977,8 @@ do
 					b.point = p or "CENTER"
 					b.relTo = relTo or (fs.GetParent and fs:GetParent()) or frame
 					b.relPoint = rp or b.point
-					b.x = tonumber(x) or 0
-					b.y = tonumber(y) or 0
+					b.x = safeOffset(x)
+					b.y = safeOffset(y)
 				else
 					b.point, b.relTo, b.relPoint, b.x, b.y = "CENTER", (fs and fs.GetParent and fs:GetParent()) or frame, "CENTER", 0, 0
 				end
@@ -1930,14 +2019,14 @@ do
 			local baseline = addon._ufNameContainerBaselines[key]
 			if not baseline then
 				baseline = {}
-				baseline.width = nameFSLocal.GetWidth and nameFSLocal:GetWidth() or 90
+				baseline.width = safeGetWidth(nameFSLocal) or 90
 				if nameFSLocal.GetPoint then
 					local p, relTo, rp, x, y = nameFSLocal:GetPoint(1)
 					baseline.point = p or "TOPLEFT"
 					baseline.relTo = relTo or (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame
 					baseline.relPoint = rp or baseline.point
-					baseline.x = tonumber(x) or 0
-					baseline.y = tonumber(y) or 0
+					baseline.x = safeOffset(x)
+					baseline.y = safeOffset(y)
 				else
 					baseline.point, baseline.relTo, baseline.relPoint, baseline.x, baseline.y =
 						"TOPLEFT", (nameFSLocal.GetParent and nameFSLocal:GetParent()) or frame, "TOPLEFT", 0, 0
@@ -1981,7 +2070,7 @@ do
 				return
 			end
 
-			local baseWidth = baseline.width or (nameFSLocal.GetWidth and nameFSLocal:GetWidth()) or 90
+			local baseWidth = baseline.width or safeGetWidth(nameFSLocal) or 90
 			local newWidth = math.floor((baseWidth * pct / 100) + 0.5)
 
 			-- Default behavior: scale the width and preserve left anchor.
@@ -2082,7 +2171,16 @@ do
 		if fs.ClearAllPoints and fs.SetPoint then
 			local b = ensureBaseline(fs, baselineKey)
 			fs:ClearAllPoints()
-			fs:SetPoint(b.point or "CENTER", b.relTo or (fs.GetParent and fs:GetParent()) or frame, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+			local point = safePointToken(b.point, "CENTER")
+			local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or frame
+			local relPoint = safePointToken(b.relPoint, point)
+			local x = safeOffset(b.x) + ox
+			local y = safeOffset(b.y) + oy
+			local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+			if not ok then
+				local parent = (fs.GetParent and fs:GetParent()) or frame
+				pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+			end
 		end
 	end
 
@@ -2170,8 +2268,15 @@ do
 					addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
 					local base = tonumber(addon._ufNameBackdropBaseWidth[unit])
 					if not base or base <= 0 then
-						base = (hb.GetWidth and hb:GetWidth()) or 0
-						addon._ufNameBackdropBaseWidth[unit] = base
+						base = safeGetWidth(hb)
+						if base and base > 0 then
+							addon._ufNameBackdropBaseWidth[unit] = base
+						end
+					end
+					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					if not base or base <= 0 then
+						tex:Hide()
+						return
 					end
 					local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 					if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
@@ -2264,8 +2369,15 @@ do
 				addon._ufNameBackdropBaseWidth = addon._ufNameBackdropBaseWidth or {}
 				local base = tonumber(addon._ufNameBackdropBaseWidth[unit])
 				if not base or base <= 0 then
-					base = (hb.GetWidth and hb:GetWidth()) or 0
-					addon._ufNameBackdropBaseWidth[unit] = base
+					base = safeGetWidth(hb)
+					if base and base > 0 then
+						addon._ufNameBackdropBaseWidth[unit] = base
+					end
+				end
+				-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+				if not base or base <= 0 then
+					borderFrame:Hide()
+					return
 				end
 				local wPct = tonumber(cfg.nameBackdropWidthPct) or 100
 				if wPct < 25 then wPct = 25 elseif wPct > 300 then wPct = 300 end
@@ -2709,8 +2821,8 @@ do
 					addon._ufToTNameTextBaseline.point = p or "TOPLEFT"
 					addon._ufToTNameTextBaseline.relTo = relTo or (nameFS.GetParent and nameFS:GetParent())
 					addon._ufToTNameTextBaseline.relPoint = rp or addon._ufToTNameTextBaseline.point
-					addon._ufToTNameTextBaseline.x = tonumber(x) or 0
-					addon._ufToTNameTextBaseline.y = tonumber(y) or 0
+					addon._ufToTNameTextBaseline.x = safeOffset(x)
+					addon._ufToTNameTextBaseline.y = safeOffset(y)
 				else
 					addon._ufToTNameTextBaseline.point = "TOPLEFT"
 					addon._ufToTNameTextBaseline.relTo = nameFS and nameFS.GetParent and nameFS:GetParent()
@@ -2760,7 +2872,16 @@ do
 		if nameFS.ClearAllPoints and nameFS.SetPoint then
 			local b = ensureBaseline()
 			nameFS:ClearAllPoints()
-			nameFS:SetPoint(b.point, b.relTo, b.relPoint, (b.x or 0) + ox, (b.y or 0) + oy)
+			local point = safePointToken(b.point, "TOPLEFT")
+			local relTo = b.relTo or (nameFS.GetParent and nameFS:GetParent())
+			local relPoint = safePointToken(b.relPoint, point)
+			local x = safeOffset(b.x) + ox
+			local y = safeOffset(b.y) + oy
+			local ok = pcall(nameFS.SetPoint, nameFS, point, relTo, relPoint, x, y)
+			if not ok then
+				local parent = (nameFS.GetParent and nameFS:GetParent())
+				pcall(nameFS.SetPoint, nameFS, point, parent, relPoint, 0, 0)
+			end
 		end
 	end
 

@@ -4,7 +4,12 @@ addon.FeatureToggles = addon.FeatureToggles or {}
 addon.FeatureToggles.enablePRD = addon.FeatureToggles.enablePRD or false
 
 function addon:OnInitialize()
-    C_AddOns.LoadAddOn("Blizzard_Settings")
+    -- 12.0 PTR safety: Settings modules can be renamed/restructured between builds.
+    -- Treat these loads as best-effort to avoid hard errors during initialization.
+    if C_AddOns and C_AddOns.LoadAddOn then
+        pcall(C_AddOns.LoadAddOn, "Blizzard_Settings")
+        pcall(C_AddOns.LoadAddOn, "Blizzard_Settings_Shared")
+    end
     -- Warm up bundled fonts early to avoid first-open rendering differences
     if addon.PreloadFonts then addon.PreloadFonts() end
     -- 1. Define components and populate self.Components
@@ -79,6 +84,9 @@ function addon:GetDefaults()
         global = {
             pendingPresetActivation = nil,
             pendingProfileActivation = nil,
+            -- TUI Settings Panel (global accent color, position)
+            tuiAccentColor = { r = 0, g = 1, b = 0.255, a = 1 },  -- Matrix green #00FF41
+            tuiWindowPosition = nil,  -- Saved as { point, relPoint, x, y }
         },
         profile = {
             applyAll = {
@@ -146,7 +154,8 @@ function addon:RegisterEvents()
     end
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
-    self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+    -- 12.0 PTR safety: Edit Mode event names have historically changed between major patches.
+    safeRegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	self:RegisterEvent("ADDON_LOADED")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     -- Ensure Unit Frame styling is re-applied when target/focus units change
@@ -328,8 +337,10 @@ function addon:PLAYER_REGEN_ENABLED()
 end
 
 function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
-    -- Initialize Edit Mode integration
-    addon.EditMode.Initialize()
+    -- Initialize Edit Mode integration (best-effort; keep addon loading even if Edit Mode changes in 12.0).
+    if addon.EditMode and addon.EditMode.Initialize then
+        pcall(addon.EditMode.Initialize)
+    end
     -- Ensure fonts are preloaded even if initialization order changes
     if addon.PreloadFonts then addon.PreloadFonts() end
     -- Force index-mode for Opacity on Cooldown Viewer systems (compat path); safe no-op if already set
@@ -352,8 +363,10 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     -- "press and hold" system. The cosmetic benefit of suppressing announcements is not worth
     -- breaking core action bar functionality. See DEBUG.md "Golden Rules for Taint Prevention".
     
-    -- Use centralized sync function
-    addon.EditMode.RefreshSyncAndNotify("PLAYER_ENTERING_WORLD")
+    -- Use centralized sync function (if available)
+    if addon.EditMode and addon.EditMode.RefreshSyncAndNotify then
+        pcall(addon.EditMode.RefreshSyncAndNotify, "PLAYER_ENTERING_WORLD")
+    end
     -- Re-evaluate combat/instance-driven opacity overrides when zoning (including entering/leaving instances).
     self:RefreshOpacityState()
     if self.Profiles then
@@ -679,8 +692,10 @@ function addon:PLAYER_LEVEL_UP()
 end
 
 function addon:EDIT_MODE_LAYOUTS_UPDATED()
-    -- Use centralized sync function
-    addon.EditMode.RefreshSyncAndNotify("EDIT_MODE_LAYOUTS_UPDATED")
+    -- Use centralized sync function (if available)
+    if addon.EditMode and addon.EditMode.RefreshSyncAndNotify then
+        pcall(addon.EditMode.RefreshSyncAndNotify, "EDIT_MODE_LAYOUTS_UPDATED")
+    end
     if self.Profiles and self.Profiles.RequestSync then
         self.Profiles:RequestSync("EDIT_MODE_LAYOUTS_UPDATED")
     end
@@ -707,13 +722,14 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
     end
 end
 
--- ADDON_LOADED handler for attaching Table Inspector copy button (implementation in debug.lua)
+-- ADDON_LOADED handler for attaching copy buttons to debug tools (implementation in debug.lua)
 function addon:ADDON_LOADED(event, name)
     if name == "Blizzard_DebugTools" then
         C_Timer.After(0, function()
             if addon.AttachTableInspectorCopyButton then
                 addon.AttachTableInspectorCopyButton()
             end
+            -- NOTE: FrameStackTooltip copy button removed - can't hover and click simultaneously
         end)
     end
 end

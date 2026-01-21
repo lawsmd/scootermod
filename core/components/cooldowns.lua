@@ -4,100 +4,1331 @@ local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
 --------------------------------------------------------------------------------
--- Proc Glow Animation Fix
+-- Cooldown Manager (CDM) Component
 --------------------------------------------------------------------------------
--- When a proc/spell activation overlay fires, Blizzard's ActionButtonSpellAlertManager
--- creates a SpellActivationAlert frame sized to the button's current dimensions.
--- If ScooterMod has customized the icon to a non-square ratio (e.g., wider than tall),
--- the proc glow animation initially appears square until Blizzard's layout catches up (~0.5s).
+-- This module provides all CDM styling using an overlay-based approach that
+-- avoids taint on Blizzard's protected CooldownViewer frames.
 --
--- This fix hooks ShowAlert and immediately resizes the ProcLoopFlipbook and
--- SpellActivationAlert frame to match ScooterMod's custom dimensions.
+-- Key principle: We create our own frames (parented to UIParent) and position
+-- them relative to CDM icons via anchoring. Hooks are safe; frame modifications
+-- on Blizzard frames are not.
+--
+-- Supported customizations:
+--   - Border styling (color, thickness, inset) via overlays
+--   - Text styling (cooldown timer, charge/stack count) via overlay FontStrings
+--   - TrackedBars (bar textures, icon borders, text) - direct styling is safe
+--
+-- See ADDONCONTEXT/Docs/COOLDOWNMANAGER.md for full documentation.
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- CDM Taint Mitigation (12.0)
+--------------------------------------------------------------------------------
+-- In 12.0, CooldownViewer icon frames are semi-protected. We cannot style them
+-- directly. However, SetAlpha on viewer CONTAINER frames is safe (verified Jan 15).
+-- This enables opacity settings (in-combat, out-of-combat, with-target).
+--------------------------------------------------------------------------------
+addon.CDM_TAINT_DIAG = addon.CDM_TAINT_DIAG or {
+    skipAllCDM = true,  -- Always true in 12.0+; overlay-based styling only
+}
+
+--------------------------------------------------------------------------------
+-- CDM Viewer Mappings
 --------------------------------------------------------------------------------
 
 local CDM_VIEWERS = {
     EssentialCooldownViewer = "essentialCooldowns",
     UtilityCooldownViewer = "utilityCooldowns",
     BuffIconCooldownViewer = "trackedBuffs",
+    -- Note: trackedBars (BuffBarCooldownViewer) use direct styling, not overlays
 }
 
-local function GetScooterModIconDimensions(itemFrame)
-    -- Determine which CDM viewer this item belongs to
-    local parent = itemFrame:GetParent()
-    if not parent then return nil, nil end
+--------------------------------------------------------------------------------
+-- Overlay System
+--------------------------------------------------------------------------------
+
+addon.CDMOverlays = addon.CDMOverlays or {}
+local Overlays = addon.CDMOverlays
+
+-- Pool of overlay frames for reuse
+local overlayPool = {}
+local activeOverlays = {}  -- Map from CDM icon frame to overlay frame
+
+--------------------------------------------------------------------------------
+-- Overlay Frame Management
+--------------------------------------------------------------------------------
+
+local function createOverlayFrame(parent)
+    -- Create a frame parented to the CDM icon
+    -- This ensures proper frame level ordering with SpellActivationAlert (proc glow)
+    -- Creating a child frame doesn't cause taint - only modifying protected properties does
+    local overlay = CreateFrame("Frame", nil, parent or UIParent)
+    overlay:EnableMouse(false)  -- Don't intercept mouse events
+
+    -- Create border edges using BORDER layer (renders below OVERLAY where proc glow lives)
+    overlay.borderEdges = {
+        Top = overlay:CreateTexture(nil, "BORDER", nil, 1),
+        Bottom = overlay:CreateTexture(nil, "BORDER", nil, 1),
+        Left = overlay:CreateTexture(nil, "BORDER", nil, 1),
+        Right = overlay:CreateTexture(nil, "BORDER", nil, 1),
+    }
+
+    -- Create atlas border texture for non-square styles
+    overlay.atlasBorder = overlay:CreateTexture(nil, "BORDER", nil, 1)
+    overlay.atlasBorder:Hide()
+
+    -- Create text overlays for cooldown and charge/stack count
+    -- These FontStrings are ours - styling them doesn't cause taint
+    overlay.cooldownText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    overlay.cooldownText:SetDrawLayer("OVERLAY", 7)
+    overlay.cooldownText:SetPoint("CENTER", overlay, "CENTER", 0, 0)
+    overlay.cooldownText:Hide()
+
+    overlay.chargeText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    overlay.chargeText:SetDrawLayer("OVERLAY", 7)
+    overlay.chargeText:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", -2, 2)
+    overlay.chargeText:Hide()
+
+    return overlay
+end
+
+local function getOverlay(parent)
+    local overlay = table.remove(overlayPool)
+    if not overlay then
+        overlay = createOverlayFrame(parent)
+    elseif parent then
+        -- Re-parent pooled overlay to new parent
+        overlay:SetParent(parent)
+    end
+    return overlay
+end
+
+local function releaseOverlay(overlay)
+    if not overlay then return end
+    overlay:Hide()
+    overlay:ClearAllPoints()
+    overlay:SetParent(UIParent)  -- Re-parent to UIParent so we don't hold CDM icon reference
+    overlay:SetAlpha(1.0)  -- Reset alpha when returning to pool
+    if overlay.cooldownText then
+        overlay.cooldownText:SetText("")
+        overlay.cooldownText:Hide()
+    end
+    if overlay.chargeText then
+        overlay.chargeText:SetText("")
+        overlay.chargeText:Hide()
+    end
+    table.insert(overlayPool, overlay)
+end
+
+--------------------------------------------------------------------------------
+-- Border Application (on our own frames, not Blizzard's)
+--------------------------------------------------------------------------------
+
+-- Hide edge-based square border textures
+local function hideEdgeBorder(overlay)
+    if not overlay or not overlay.borderEdges then return end
+    for _, tex in pairs(overlay.borderEdges) do
+        tex:Hide()
+    end
+end
+
+-- Hide atlas-based border texture
+local function hideAtlasBorder(overlay)
+    if not overlay or not overlay.atlasBorder then return end
+    overlay.atlasBorder:Hide()
+end
+
+-- Apply square border (edges meet at corners, no gaps)
+local function applySquareBorder(overlay, opts)
+    if not overlay or not overlay.borderEdges then return end
+
+    -- Hide atlas border if it was previously shown
+    hideAtlasBorder(overlay)
+
+    local edges = overlay.borderEdges
+    local thickness = math.max(1, tonumber(opts.thickness) or 1)
+    local col = opts.color or {0, 0, 0, 1}
+    local r, g, b, a = col[1] or 0, col[2] or 0, col[3] or 0, col[4] or 1
+
+    -- Set color on all edges
+    for _, tex in pairs(edges) do
+        tex:SetColorTexture(r, g, b, a)
+    end
+
+    -- Inset: positive = move border inward, negative = move outward
+    local inset = (tonumber(opts.inset) or 0)
+
+    -- Horizontal edges span full width; vertical edges trimmed to avoid corner overlap
+    edges.Top:ClearAllPoints()
+    edges.Top:SetPoint("TOPLEFT", overlay, "TOPLEFT", -inset, inset)
+    edges.Top:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", inset, inset)
+    edges.Top:SetHeight(thickness)
+
+    edges.Bottom:ClearAllPoints()
+    edges.Bottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -inset, -inset)
+    edges.Bottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", inset, -inset)
+    edges.Bottom:SetHeight(thickness)
+
+    -- Vertical edges: trimmed by thickness at top/bottom to avoid corner overlap
+    edges.Left:ClearAllPoints()
+    edges.Left:SetPoint("TOPLEFT", overlay, "TOPLEFT", -inset, inset - thickness)
+    edges.Left:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -inset, -inset + thickness)
+    edges.Left:SetWidth(thickness)
+
+    edges.Right:ClearAllPoints()
+    edges.Right:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", inset, inset - thickness)
+    edges.Right:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", inset, -inset + thickness)
+    edges.Right:SetWidth(thickness)
+
+    for _, tex in pairs(edges) do
+        tex:Show()
+    end
+end
+
+-- Apply atlas-based border style
+local function applyAtlasBorder(overlay, opts, styleDef)
+    if not overlay or not overlay.atlasBorder then return end
+
+    -- Hide square border edges
+    hideEdgeBorder(overlay)
+
+    local atlasTex = overlay.atlasBorder
+
+    -- For atlas borders: use style's default color (typically white) unless tint is enabled
+    -- This lets the atlas texture show its natural colors when tint is off
+    local col
+    if opts.tintEnabled and opts.tintColor then
+        col = opts.tintColor
+    else
+        col = styleDef.defaultColor or {1, 1, 1, 1}
+    end
+    local r, g, b, a = col[1] or 1, col[2] or 1, col[3] or 1, col[4] or 1
+
+    -- Get the atlas name
+    local atlasName = styleDef.atlas
+    if not atlasName then return end
+
+    -- Set atlas
+    atlasTex:SetAtlas(atlasName, true)
+    atlasTex:SetVertexColor(r, g, b, a)
+
+    -- Calculate expansion based on style definition and inset
+    local baseExpandX = styleDef.expandX or 0
+    local baseExpandY = styleDef.expandY or baseExpandX
+    local inset = tonumber(opts.inset) or 0
+    local expandX = baseExpandX - inset
+    local expandY = baseExpandY - inset
+
+    -- Position the atlas texture
+    atlasTex:ClearAllPoints()
+    atlasTex:SetPoint("TOPLEFT", overlay, "TOPLEFT", -expandX, expandY)
+    atlasTex:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", expandX, -expandY)
+    atlasTex:Show()
+end
+
+local function applyBorderToOverlay(overlay, opts)
+    if not overlay then return end
+
+    local style = opts.style or "square"
+
+    -- Get style definition for non-square styles
+    local styleDef = nil
+    if style ~= "square" and addon.IconBorders and addon.IconBorders.GetStyle then
+        styleDef = addon.IconBorders.GetStyle(style)
+    end
+
+    -- Apply the appropriate border type
+    if styleDef and styleDef.type == "atlas" and styleDef.atlas then
+        applyAtlasBorder(overlay, opts, styleDef)
+    else
+        -- Default to square border (with chamfered corners)
+        applySquareBorder(overlay, opts)
+    end
+end
+
+local function hideBorderOnOverlay(overlay)
+    hideEdgeBorder(overlay)
+    hideAtlasBorder(overlay)
+end
+
+--------------------------------------------------------------------------------
+-- Text Overlay Application (on our own FontStrings, not Blizzard's)
+--------------------------------------------------------------------------------
+
+local function getDefaultFontFace()
+    local face = select(1, GameFontNormal:GetFont())
+    return face
+end
+
+local function applyTextStyleToFontString(fontString, cfg, defaultSize)
+    if not fontString then return end
     
-    local parentName = parent:GetName()
-    local componentId = parentName and CDM_VIEWERS[parentName]
-    if not componentId then return nil, nil end
+    local size = tonumber(cfg and cfg.size) or defaultSize or 14
+    local style = (cfg and cfg.style) or "OUTLINE"
+    local color = (cfg and cfg.color) or {1, 1, 1, 1}
+    local fontFace = getDefaultFontFace()
     
-    -- Get the component's DB settings
+    if cfg and cfg.fontFace and addon.ResolveFontFace then
+        fontFace = addon.ResolveFontFace(cfg.fontFace) or fontFace
+    end
+    
+    if addon.ApplyFontStyle then
+        addon.ApplyFontStyle(fontString, fontFace, size, style)
+    else
+        fontString:SetFont(fontFace, size, style)
+    end
+    
+    local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+    fontString:SetTextColor(r, g, b, a)
+end
+
+--------------------------------------------------------------------------------
+-- DIRECT TEXT STYLING (12.0 Compatible)
+-- 
+-- Key insight from Neph UI: You CAN modify the appearance of Blizzard's text
+-- (SetFont, SetTextColor, SetShadowOffset), you just CAN'T read its content
+-- (GetText returns secret values).
+--
+-- Approach:
+-- 1. Hook CooldownFrame_Set to intercept cooldown updates (safe)
+-- 2. Find the FontString inside the Cooldown frame's regions
+-- 3. Apply SetFont/SetTextColor/SetShadowOffset directly (no GetText)
+-- 4. Wrap in pcall and defer with C_Timer.After for combat safety
+--------------------------------------------------------------------------------
+
+local directTextStyleHooked = false
+local CDM_VIEWER_NAMES = {
+    ["EssentialCooldownViewer"] = "essentialCooldowns",
+    ["UtilityCooldownViewer"] = "utilityCooldowns",
+    ["BuffIconCooldownViewer"] = "trackedBuffs",
+}
+
+-- Find the cooldown text FontString inside a Cooldown frame
+local function getCooldownFontString(cooldownFrame)
+    if not cooldownFrame then return nil end
+    
+    -- Use cached reference if available
+    if cooldownFrame._scooterFontString then
+        return cooldownFrame._scooterFontString
+    end
+    
+    -- Search regions for FontString
+    if cooldownFrame.GetRegions then
+        for _, region in ipairs({cooldownFrame:GetRegions()}) do
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                cooldownFrame._scooterFontString = region
+                return region
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Find the charge/stack count FontString inside an icon frame
+local function getChargeCountFontString(iconFrame)
+    if not iconFrame then return nil end
+    
+    -- ChargeCount (for cooldowns with charges)
+    if iconFrame.ChargeCount then
+        local charge = iconFrame.ChargeCount
+        -- Check for .Current or .Text child
+        local fs = charge.Current or charge.Text or charge.Count
+        if fs and fs.GetObjectType and fs:GetObjectType() == "FontString" then
+            return fs
+        end
+        -- Search regions
+        if charge.GetRegions then
+            for _, region in ipairs({charge:GetRegions()}) do
+                if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    return region
+                end
+            end
+        end
+    end
+    
+    -- Applications (for buff stacks)
+    if iconFrame.Applications then
+        local apps = iconFrame.Applications
+        if apps.GetRegions then
+            for _, region in ipairs({apps:GetRegions()}) do
+                if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    return region
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Identify which CDM viewer a cooldown belongs to
+local function identifyCooldownSource(cooldownFrame)
+    if not cooldownFrame then return nil end
+    
+    local parent = cooldownFrame:GetParent()
+    if not parent then return nil end
+    
+    -- parent should be the icon frame, check its parent for the viewer
+    local viewerFrame = parent:GetParent()
+    if viewerFrame and viewerFrame.GetName then
+        local viewerName = viewerFrame:GetName()
+        if viewerName and CDM_VIEWER_NAMES[viewerName] then
+            return CDM_VIEWER_NAMES[viewerName]
+        end
+    end
+    
+    return nil
+end
+
+-- Get text settings for a component
+local function getCooldownTextSettings(componentId)
+    if not componentId then return nil end
     local component = addon.Components and addon.Components[componentId]
-    if not component or not component.db then return nil, nil end
-    
-    local width = component.db.iconWidth or (component.settings and component.settings.iconWidth and component.settings.iconWidth.default)
-    local height = component.db.iconHeight or (component.settings and component.settings.iconHeight and component.settings.iconHeight.default)
-    
-    return width, height
+    if not component or not component.db then return nil end
+    return component.db.textCooldown
 end
 
-local function UpdateProcGlowSize(itemFrame)
-    local alertFrame = itemFrame.SpellActivationAlert
-    if not alertFrame then return end
-    
-    local width, height = GetScooterModIconDimensions(itemFrame)
-    if not width or not height then return end
-    
-    -- Resize the SpellActivationAlert frame to match ScooterMod's custom icon dimensions
-    -- Blizzard uses a 1.4 multiplier for the alert frame size
-    local alertWidth = width * 1.4
-    local alertHeight = height * 1.4
-    alertFrame:SetSize(alertWidth, alertHeight)
-    
-    -- Explicitly resize and reposition the ProcLoopFlipbook texture
-    -- This is the key fix - the flipbook uses setAllPoints but doesn't update immediately
-    if alertFrame.ProcLoopFlipbook then
-        alertFrame.ProcLoopFlipbook:ClearAllPoints()
-        alertFrame.ProcLoopFlipbook:SetSize(alertWidth, alertHeight)
-        alertFrame.ProcLoopFlipbook:SetPoint("CENTER", alertFrame, "CENTER", 0, 0)
-    end
-    
-    -- Also resize ProcStartFlipbook if present (the initial burst animation)
-    if alertFrame.ProcStartFlipbook then
-        -- ProcStartFlipbook is typically larger, using a 3x multiplier from Blizzard's template (150/50)
-        local startMultiplier = 3
-        alertFrame.ProcStartFlipbook:ClearAllPoints()
-        alertFrame.ProcStartFlipbook:SetSize(width * startMultiplier, height * startMultiplier)
-        alertFrame.ProcStartFlipbook:SetPoint("CENTER", alertFrame, "CENTER", 0, 0)
-    end
+local function getChargeTextSettings(componentId)
+    if not componentId then return nil end
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return nil end
+    return component.db.textStacks
 end
 
--- Hook ActionButtonSpellAlertManager.ShowAlert to fix proc glow sizing for CDM icons
-local function HookProcGlowSizing()
-    if not ActionButtonSpellAlertManager then return end
-    if addon._procGlowHooked then return end
+-- Apply font styling directly to a Blizzard FontString (no GetText!)
+-- opts.isChargeText: if true, uses BOTTOMRIGHT anchor; otherwise uses CENTER
+-- opts.parentFrame: the frame to anchor to (defaults to fontString's parent)
+local function applyFontStyleDirect(fontString, cfg, opts)
+    if not fontString or not cfg then return end
     
-    hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
-        -- Only process CDM item frames (they have a parent that's a CooldownViewer)
-        if not actionButton then return end
-        local parent = actionButton:GetParent()
-        if not parent then return end
-        
-        local parentName = parent:GetName()
-        if not parentName or not CDM_VIEWERS[parentName] then return end
-        
-        -- Defer slightly to ensure the alert frame has been created
-        C_Timer.After(0, function()
-            UpdateProcGlowSize(actionButton)
-        end)
+    opts = opts or {}
+    local size = tonumber(cfg.size) or 14
+    local style = cfg.style or "OUTLINE"
+    local color = cfg.color or {1, 1, 1, 1}
+    local fontFace = getDefaultFontFace()
+    
+    if cfg.fontFace and addon.ResolveFontFace then
+        fontFace = addon.ResolveFontFace(cfg.fontFace) or fontFace
+    end
+    
+    -- Apply font styling directly - this works even on protected frames!
+    pcall(function()
+        fontString:SetFont(fontFace, size, style)
     end)
     
-    addon._procGlowHooked = true
+    pcall(function()
+        local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+        fontString:SetTextColor(r, g, b, a)
+    end)
+    
+    -- Apply shadow if specified
+    if cfg.shadowX or cfg.shadowY then
+        pcall(function()
+            fontString:SetShadowOffset(cfg.shadowX or 1, cfg.shadowY or -1)
+        end)
+    end
+    
+    -- Apply position offset if specified
+    -- This repositions the FontString relative to its parent using the configured anchor and offset
+    -- We always reposition if cfg.offset exists (even if values are 0) to ensure proper reset behavior
+    if cfg.offset or cfg.anchor then
+        local offsetX = (cfg.offset and tonumber(cfg.offset.x)) or 0
+        local offsetY = (cfg.offset and tonumber(cfg.offset.y)) or 0
+        local anchor = cfg.anchor
+        
+        -- Determine default anchor based on text type
+        if not anchor then
+            if opts.isChargeText then
+                anchor = "BOTTOMRIGHT"  -- Default anchor for charge/stack counts
+            else
+                anchor = "CENTER"  -- Default anchor for cooldown text
+            end
+        end
+        
+        pcall(function()
+            -- Get the parent frame to anchor to
+            local parentFrame = opts.parentFrame or fontString:GetParent()
+            if parentFrame then
+                fontString:ClearAllPoints()
+                fontString:SetPoint(anchor, parentFrame, anchor, offsetX, offsetY)
+            end
+        end)
+    end
 end
 
--- Initialize the hook when the addon loads
-addon:RegisterComponentInitializer(function()
-    HookProcGlowSizing()
+-- Apply cooldown text styling when a cooldown is set
+local function applyCooldownTextStyle(cooldownFrame)
+    if not cooldownFrame then return end
+    if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
+    
+    -- Skip action bar cooldowns to avoid taint
+    local parent = cooldownFrame:GetParent()
+    if parent then
+        local parentName = parent:GetName() or ""
+        if parentName:match("ActionButton") or parentName:match("MultiBar") or
+           parentName:match("PetActionButton") or parentName:match("StanceButton") then
+            return
+        end
+    end
+    
+    local componentId = identifyCooldownSource(cooldownFrame)
+    if not componentId then return end
+    
+    local cfg = getCooldownTextSettings(componentId)
+    if not cfg then return end
+    
+    -- Clear cached FontString reference to force re-scan
+    cooldownFrame._scooterFontString = nil
+    
+    local fontString = getCooldownFontString(cooldownFrame)
+    if fontString then
+        -- Cooldown text uses CENTER anchor by default
+        applyFontStyleDirect(fontString, cfg, { 
+            isChargeText = false,
+            parentFrame = cooldownFrame
+        })
+    end
+    
+    -- Also try to style charge/stack count
+    if parent then
+        local chargeCfg = getChargeTextSettings(componentId)
+        if chargeCfg then
+            local chargeFS = getChargeCountFontString(parent)
+            if chargeFS then
+                -- Charge/stack text uses BOTTOMRIGHT anchor by default
+                -- Find the icon texture to anchor to (same as Neph UI approach)
+                local iconTexture = parent.Icon or parent.icon
+                applyFontStyleDirect(chargeFS, chargeCfg, { 
+                    isChargeText = true,
+                    parentFrame = iconTexture or parent
+                })
+            end
+        end
+    end
+end
+
+-- Hook into Blizzard's cooldown system to intercept updates
+local function hookCooldownTextStyling()
+    if directTextStyleHooked then return end
+    
+    -- Hook CooldownFrame_Set (the main function that updates cooldowns)
+    if CooldownFrame_Set then
+        hooksecurefunc("CooldownFrame_Set", function(cooldownFrame, start, duration, enable, forceShowDrawEdge, modRate)
+            if not cooldownFrame then return end
+            if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
+            
+            -- Defer styling to next frame for safety
+            pcall(function()
+                C_Timer.After(0, function()
+                    if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
+                        pcall(applyCooldownTextStyle, cooldownFrame)
+                    end
+                end)
+            end)
+        end)
+    end
+    
+    -- Also hook CooldownFrame_SetTimer if it exists (legacy API)
+    if CooldownFrame_SetTimer then
+        hooksecurefunc("CooldownFrame_SetTimer", function(cooldownFrame, start, duration, enable, forceShowDrawEdge, modRate)
+            if not cooldownFrame then return end
+            if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
+            
+            pcall(function()
+                C_Timer.After(0, function()
+                    if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
+                        pcall(applyCooldownTextStyle, cooldownFrame)
+                    end
+                end)
+            end)
+        end)
+    end
+    
+    directTextStyleHooked = true
+end
+
+-- Exposed function to refresh text styling (called when settings change)
+function addon.RefreshCDMTextStyling()
+    -- Apply to all existing cooldowns in CDM viewers
+    for viewerName, componentId in pairs(CDM_VIEWER_NAMES) do
+        local viewer = _G[viewerName]
+        if viewer and viewer.IsShown and viewer:IsShown() then
+            local children = {viewer:GetChildren()}
+            for _, child in ipairs(children) do
+                if child and child.Cooldown then
+                    pcall(applyCooldownTextStyle, child.Cooldown)
+                end
+            end
+        end
+    end
+end
+
+-- Legacy stub functions (kept for compatibility but no longer used)
+local function applyCooldownTextToOverlay(overlay, cdmIcon, cfg)
+    -- Overlay text approach replaced by direct styling
+    if overlay and overlay.cooldownText then
+        overlay.cooldownText:Hide()
+    end
+end
+
+local function applyChargeTextToOverlay(overlay, cdmIcon, cfg)
+    -- Overlay text approach replaced by direct styling
+    if overlay and overlay.chargeText then
+        overlay.chargeText:Hide()
+    end
+end
+
+local function hideTextOnOverlay(overlay)
+    if not overlay then return end
+    if overlay.cooldownText then overlay.cooldownText:Hide() end
+    if overlay.chargeText then overlay.chargeText:Hide() end
+end
+
+--------------------------------------------------------------------------------
+-- Frame Validation
+--------------------------------------------------------------------------------
+
+local function isValidCDMItemFrame(frame)
+    if not frame then return false end
+    if frame.Icon or frame.Cooldown or frame.ChargeCount or frame.Applications then
+        return true
+    end
+    if frame.GetIconTexture then
+        return true
+    end
+    return false
+end
+
+local function isFrameVisible(frame)
+    if not frame then return false end
+    if frame.IsShown and not frame:IsShown() then
+        return false
+    end
+    if frame.IsVisible and not frame:IsVisible() then
+        return false
+    end
+    if frame.GetWidth and frame.GetHeight then
+        local w, h = frame:GetWidth(), frame:GetHeight()
+        if (w or 0) < 5 or (h or 0) < 5 then
+            return false
+        end
+    end
+    return true
+end
+
+--------------------------------------------------------------------------------
+-- Public Overlay API
+--------------------------------------------------------------------------------
+
+function Overlays.GetOrCreateForIcon(cdmIcon)
+    if not cdmIcon then return nil end
+    if not isValidCDMItemFrame(cdmIcon) then
+        return nil
+    end
+
+    local existing = activeOverlays[cdmIcon]
+    if existing then
+        return existing
+    end
+
+    -- Create overlay as child of CDM icon - this ensures proper layering
+    -- with SpellActivationAlert (proc glow). Creating a child frame is safe.
+    local overlay = getOverlay(cdmIcon)
+    activeOverlays[cdmIcon] = overlay
+
+    overlay:ClearAllPoints()
+    overlay:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", 0, 0)
+    overlay:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", 0, 0)
+
+    -- Set frame level just above the icon but below SpellActivationAlert
+    -- SpellActivationAlert is typically at iconLevel + 5 or higher
+    local iconLevel = cdmIcon:GetFrameLevel()
+    overlay:SetFrameLevel(iconLevel + 1)
+
+    overlay:Show()
+    return overlay
+end
+
+function Overlays.ReleaseForIcon(cdmIcon)
+    if not cdmIcon then return end
+    local overlay = activeOverlays[cdmIcon]
+    if overlay then
+        activeOverlays[cdmIcon] = nil
+        releaseOverlay(overlay)
+    end
+end
+
+function Overlays.ApplyBorder(cdmIcon, opts)
+    if not cdmIcon then return end
+    
+    if not isFrameVisible(cdmIcon) then
+        Overlays.HideOverlay(cdmIcon)
+        return
+    end
+    
+    local overlay = Overlays.GetOrCreateForIcon(cdmIcon)
+    if not overlay then return end
+    
+    if opts and opts.enable then
+        applyBorderToOverlay(overlay, opts)
+        overlay:Show()
+    else
+        hideBorderOnOverlay(overlay)
+        overlay:Hide()
+    end
+end
+
+function Overlays.HideBorder(cdmIcon)
+    if not cdmIcon then return end
+    local overlay = activeOverlays[cdmIcon]
+    if overlay then
+        hideBorderOnOverlay(overlay)
+    end
+end
+
+function Overlays.ApplyText(cdmIcon, opts)
+    if not cdmIcon then return end
+    
+    if not isFrameVisible(cdmIcon) then
+        local overlay = activeOverlays[cdmIcon]
+        if overlay then hideTextOnOverlay(overlay) end
+        return
+    end
+    
+    local overlay = Overlays.GetOrCreateForIcon(cdmIcon)
+    if not overlay then return end
+    
+    if opts then
+        applyCooldownTextToOverlay(overlay, cdmIcon, opts.cooldown)
+        applyChargeTextToOverlay(overlay, cdmIcon, opts.stacks)
+        overlay:Show()
+    else
+        hideTextOnOverlay(overlay)
+    end
+end
+
+function Overlays.HideText(cdmIcon)
+    if not cdmIcon then return end
+    local overlay = activeOverlays[cdmIcon]
+    if overlay then
+        hideTextOnOverlay(overlay)
+    end
+end
+
+function Overlays.RefreshText(cdmIcon, opts)
+    if not cdmIcon then return end
+    local overlay = activeOverlays[cdmIcon]
+    if not overlay then return end
+    
+    if not isFrameVisible(cdmIcon) then
+        hideTextOnOverlay(overlay)
+        return
+    end
+    
+    if opts then
+        applyCooldownTextToOverlay(overlay, cdmIcon, opts.cooldown)
+        applyChargeTextToOverlay(overlay, cdmIcon, opts.stacks)
+    end
+end
+
+function Overlays.HideAll()
+    for cdmIcon, overlay in pairs(activeOverlays) do
+        releaseOverlay(overlay)
+    end
+    activeOverlays = {}
+end
+
+function Overlays.HideOverlay(cdmIcon)
+    if not cdmIcon then return end
+    local overlay = activeOverlays[cdmIcon]
+    if overlay then
+        overlay:Hide()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Icon Sizing (12.0 Compatible)
+--------------------------------------------------------------------------------
+-- NephUI reference: Direct SetSize() on CDM icons works if we:
+--   1. Set values directly from settings (don't read current size)
+--   2. Wrap in pcall for safety
+--   3. Adjust texture coordinates to prevent stretching
+--------------------------------------------------------------------------------
+
+function Overlays.ApplyIconSize(cdmIcon, opts)
+    if not cdmIcon then return end
+    if not opts then return end
+    if cdmIcon.IsForbidden and cdmIcon:IsForbidden() then return end
+
+    local iconWidth = tonumber(opts.width)
+    local iconHeight = tonumber(opts.height)
+    if not iconWidth or not iconHeight then return end
+    if iconWidth <= 0 or iconHeight <= 0 then return end
+
+    -- Find the icon texture (handle both .icon and .Icon for compatibility)
+    local iconTexture = cdmIcon.icon or cdmIcon.Icon
+    if not iconTexture then return end
+
+    -- Apply size change via pcall to catch any issues
+    local ok = pcall(function()
+        cdmIcon:SetWidth(iconWidth)
+        cdmIcon:SetHeight(iconHeight)
+        cdmIcon:SetSize(iconWidth, iconHeight)
+    end)
+
+    if not ok then return end
+
+    -- Calculate texture coordinates to crop instead of stretch
+    -- This prevents the icon from looking distorted with non-square dimensions
+    local aspectRatio = iconWidth / iconHeight
+    local left, right, top, bottom = 0, 1, 0, 1
+
+    if aspectRatio > 1.0 then
+        -- Wider than tall - crop top/bottom
+        local cropAmount = 1.0 - (1.0 / aspectRatio)
+        local offset = cropAmount / 2.0
+        top = offset
+        bottom = 1.0 - offset
+    elseif aspectRatio < 1.0 then
+        -- Taller than wide - crop left/right
+        local cropAmount = 1.0 - aspectRatio
+        local offset = cropAmount / 2.0
+        left = offset
+        right = 1.0 - offset
+    end
+
+    -- Apply texture coordinates
+    pcall(function()
+        iconTexture:SetTexCoord(left, right, top, bottom)
+    end)
+
+    -- Reposition internal elements to match new size
+    local padding = 0
+
+    -- Cooldown swipe
+    if cdmIcon.Cooldown then
+        pcall(function()
+            cdmIcon.Cooldown:ClearAllPoints()
+            cdmIcon.Cooldown:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
+            cdmIcon.Cooldown:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
+        end)
+    end
+
+    -- Cooldown flash
+    if cdmIcon.CooldownFlash then
+        pcall(function()
+            cdmIcon.CooldownFlash:ClearAllPoints()
+            cdmIcon.CooldownFlash:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
+            cdmIcon.CooldownFlash:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
+        end)
+    end
+
+    -- Icon texture itself
+    pcall(function()
+        iconTexture:ClearAllPoints()
+        iconTexture:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
+        iconTexture:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
+    end)
+
+    -- Mark as sized so overlays can track
+    cdmIcon.__scootIconSized = true
+end
+
+function Overlays.ResetIconSize(cdmIcon)
+    if not cdmIcon then return end
+
+    -- Reset texture coordinates to default
+    local iconTexture = cdmIcon.icon or cdmIcon.Icon
+    if iconTexture then
+        pcall(function()
+            iconTexture:SetTexCoord(0, 1, 0, 1)
+        end)
+    end
+
+    cdmIcon.__scootIconSized = nil
+end
+
+--------------------------------------------------------------------------------
+-- Viewer Integration
+--------------------------------------------------------------------------------
+
+function Overlays.ApplyToViewer(viewerFrameName, componentId)
+    local viewer = _G[viewerFrameName]
+    if not viewer then return end
+    
+    if viewer.IsVisible and not viewer:IsVisible() then
+        for _, child in ipairs({ viewer:GetChildren() }) do
+            Overlays.HideOverlay(child)
+        end
+        return
+    end
+    
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return end
+    
+    local db = component.db
+    local borderEnabled = db.borderEnable
+    local hasTextConfig = db.textCooldown or db.textStacks
+
+    -- Check if icon sizing is configured (either width or height differs from default)
+    local iconWidth = tonumber(db.iconWidth)
+    local iconHeight = tonumber(db.iconHeight)
+    local defaultWidth = component.settings and component.settings.iconWidth and component.settings.iconWidth.default
+    local defaultHeight = component.settings and component.settings.iconHeight and component.settings.iconHeight.default
+    local hasCustomSize = iconWidth and iconHeight and
+        (iconWidth ~= defaultWidth or iconHeight ~= defaultHeight)
+
+    for _, child in ipairs({ viewer:GetChildren() }) do
+        if isValidCDMItemFrame(child) then
+            if not isFrameVisible(child) then
+                Overlays.HideOverlay(child)
+            else
+                -- Apply icon sizing if configured
+                if hasCustomSize then
+                    Overlays.ApplyIconSize(child, {
+                        width = iconWidth,
+                        height = iconHeight,
+                    })
+                elseif child.__scootIconSized then
+                    -- Reset if previously sized but no longer configured
+                    Overlays.ResetIconSize(child)
+                end
+
+                if borderEnabled then
+                    Overlays.ApplyBorder(child, {
+                        enable = true,
+                        style = db.borderStyle or "square",
+                        thickness = tonumber(db.borderThickness) or 1,
+                        inset = tonumber(db.borderInset) or -1,
+                        color = db.borderTintEnable and db.borderTintColor or {0, 0, 0, 1},
+                        tintEnabled = db.borderTintEnable,
+                        tintColor = db.borderTintColor,
+                    })
+                else
+                    Overlays.HideBorder(child)
+                end
+                
+                if hasTextConfig then
+                    Overlays.ApplyText(child, {
+                        cooldown = db.textCooldown,
+                        stacks = db.textStacks,
+                    })
+                else
+                    Overlays.HideText(child)
+                end
+                
+                local overlay = activeOverlays[child]
+                if overlay then
+                    if borderEnabled or hasTextConfig then
+                        overlay:Show()
+                    else
+                        overlay:Hide()
+                    end
+                end
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Hook Registration
+--------------------------------------------------------------------------------
+
+local hookedViewers = {}
+
+function Overlays.HookViewer(viewerFrameName, componentId)
+    if hookedViewers[viewerFrameName] then return true end
+    
+    local viewer = _G[viewerFrameName]
+    if not viewer then return false end
+    
+    if viewer.OnAcquireItemFrame then
+        hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, itemFrame)
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if not isValidCDMItemFrame(itemFrame) then return end
+                    if not isFrameVisible(itemFrame) then return end
+
+                    local component = addon.Components and addon.Components[componentId]
+                    if not component or not component.db then return end
+
+                    -- Apply icon sizing if configured
+                    local iconWidth = tonumber(component.db.iconWidth)
+                    local iconHeight = tonumber(component.db.iconHeight)
+                    local defaultWidth = component.settings and component.settings.iconWidth and component.settings.iconWidth.default
+                    local defaultHeight = component.settings and component.settings.iconHeight and component.settings.iconHeight.default
+                    if iconWidth and iconHeight and (iconWidth ~= defaultWidth or iconHeight ~= defaultHeight) then
+                        Overlays.ApplyIconSize(itemFrame, {
+                            width = iconWidth,
+                            height = iconHeight,
+                        })
+                    end
+
+                    if component.db.borderEnable then
+                        Overlays.ApplyBorder(itemFrame, {
+                            enable = true,
+                            style = component.db.borderStyle or "square",
+                            thickness = tonumber(component.db.borderThickness) or 1,
+                            inset = tonumber(component.db.borderInset) or -1,
+                            color = component.db.borderTintEnable and component.db.borderTintColor or {0, 0, 0, 1},
+                            tintEnabled = component.db.borderTintEnable,
+                            tintColor = component.db.borderTintColor,
+                        })
+                    end
+
+                    local hasTextConfig = component.db.textCooldown or component.db.textStacks
+                    if hasTextConfig then
+                        Overlays.ApplyText(itemFrame, {
+                            cooldown = component.db.textCooldown,
+                            stacks = component.db.textStacks,
+                        })
+                    end
+                end)
+            end
+        end)
+    end
+    
+    if viewer.OnReleaseItemFrame then
+        hooksecurefunc(viewer, "OnReleaseItemFrame", function(_, itemFrame)
+            Overlays.HideOverlay(itemFrame)
+            Overlays.ResetIconSize(itemFrame)
+        end)
+    end
+    
+    if viewer.RefreshLayout then
+        hooksecurefunc(viewer, "RefreshLayout", function()
+            if InCombatLockdown and InCombatLockdown() then return end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    Overlays.ApplyToViewer(viewerFrameName, componentId)
+                end)
+            end
+        end)
+    end
+    
+    hookedViewers[viewerFrameName] = true
+    return true
+end
+
+--------------------------------------------------------------------------------
+-- Periodic Cleanup and Text Refresh
+--------------------------------------------------------------------------------
+
+local cleanupTicker = nil
+local textRefreshTicker = nil
+
+local function runOverlayCleanup()
+    for cdmIcon, overlay in pairs(activeOverlays) do
+        if not isFrameVisible(cdmIcon) then
+            overlay:Hide()
+        end
+    end
+end
+
+local function runTextRefresh()
+    for cdmIcon, overlay in pairs(activeOverlays) do
+        if isFrameVisible(cdmIcon) and overlay:IsShown() then
+            local parent = cdmIcon:GetParent()
+            local parentName = parent and parent:GetName()
+            local componentId = parentName and CDM_VIEWERS[parentName]
+            
+            if componentId then
+                local component = addon.Components and addon.Components[componentId]
+                if component and component.db then
+                    local hasTextConfig = component.db.textCooldown or component.db.textStacks
+                    if hasTextConfig then
+                        Overlays.RefreshText(cdmIcon, {
+                            cooldown = component.db.textCooldown,
+                            stacks = component.db.textStacks,
+                        })
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function startCleanupTicker()
+    if cleanupTicker then return end
+    if C_Timer and C_Timer.NewTicker then
+        cleanupTicker = C_Timer.NewTicker(0.5, runOverlayCleanup)
+    end
+end
+
+local function startTextRefreshTicker()
+    -- Text refresh ticker disabled: text overlays don't work in 12.0
+    -- GetText() returns secret values that can't be compared or used
+    return
+end
+
+--------------------------------------------------------------------------------
+-- Overlay Initialization
+--------------------------------------------------------------------------------
+
+local pendingViewers = {}
+local initRetryCount = 0
+local MAX_INIT_RETRIES = 10
+
+function Overlays.Initialize()
+    pendingViewers = {}
+    for viewerName, componentId in pairs(CDM_VIEWERS) do
+        local hooked = Overlays.HookViewer(viewerName, componentId)
+        if hooked then
+            Overlays.ApplyToViewer(viewerName, componentId)
+        else
+            pendingViewers[viewerName] = componentId
+        end
+    end
+    
+    if next(pendingViewers) then
+        Overlays.ScheduleRetry()
+    end
+    
+    startCleanupTicker()
+    
+    -- Initialize direct text styling (12.0 compatible approach)
+    -- This hooks CooldownFrame_Set to style text directly on Blizzard's FontStrings
+    hookCooldownTextStyling()
+end
+
+function Overlays.ScheduleRetry()
+    initRetryCount = initRetryCount + 1
+    if initRetryCount > MAX_INIT_RETRIES then
+        pendingViewers = {}
+        return
+    end
+    
+    C_Timer.After(1.0, function()
+        local stillPending = {}
+        for viewerName, componentId in pairs(pendingViewers) do
+            local hooked = Overlays.HookViewer(viewerName, componentId)
+            if hooked then
+                Overlays.ApplyToViewer(viewerName, componentId)
+            else
+                stillPending[viewerName] = componentId
+            end
+        end
+        pendingViewers = stillPending
+        
+        if next(pendingViewers) then
+            Overlays.ScheduleRetry()
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- Viewer-Level Opacity System (12.0 Safe)
+--------------------------------------------------------------------------------
+-- SetAlpha on viewer container frames (not individual icons) is safe in 12.0.
+-- Verified Jan 15 2026: No taint errors in combat with viewer-level SetAlpha.
+--
+-- This system implements the opacity settings from each CDM component:
+--   - opacity: Alpha when in combat (from Edit Mode, stored as 50-100)
+--   - opacityOutOfCombat: Alpha when not in combat
+--   - opacityWithTarget: Alpha when player has a target
+--------------------------------------------------------------------------------
+
+-- All viewers that support opacity (including trackedBars)
+local CDM_OPACITY_VIEWERS = {
+    EssentialCooldownViewer = "essentialCooldowns",
+    UtilityCooldownViewer = "utilityCooldowns",
+    BuffIconCooldownViewer = "trackedBuffs",
+    BuffBarCooldownViewer = "trackedBars",
+}
+
+-- Get the appropriate opacity value based on current game state
+local function getViewerOpacityForState(componentId)
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return 1.0 end
+    
+    local db = component.db
+    local inCombat = InCombatLockdown and InCombatLockdown()
+    local hasTarget = UnitExists("target")
+    
+    -- Priority: combat > target > out-of-combat
+    local opacityValue
+    if inCombat then
+        -- In combat: use combat opacity (Edit Mode setting, stored as 50-100)
+        opacityValue = tonumber(db.opacity) or 100
+    elseif hasTarget then
+        -- Has target: use target opacity
+        opacityValue = tonumber(db.opacityWithTarget) or 100
+    else
+        -- Out of combat, no target: use out-of-combat opacity
+        opacityValue = tonumber(db.opacityOutOfCombat) or 100
+    end
+    
+    -- Convert from percentage (1-100) to alpha (0.0-1.0)
+    return math.max(0.01, math.min(1.0, opacityValue / 100))
+end
+
+-- Apply opacity to a single viewer frame and its overlays
+local function applyViewerOpacity(viewerName, componentId)
+    local viewer = _G[viewerName]
+    if not viewer then return end
+    
+    if viewer.IsForbidden and viewer:IsForbidden() then return end
+    
+    local alpha = getViewerOpacityForState(componentId)
+    
+    -- Apply to viewer frame
+    pcall(function()
+        viewer:SetAlpha(alpha)
+    end)
+    
+    -- Apply to overlay frames for this viewer's icons
+    -- Overlays are parented to UIParent (to avoid taint) so they don't inherit viewer alpha
+    for cdmIcon, overlay in pairs(activeOverlays) do
+        local iconParent = cdmIcon:GetParent()
+        if iconParent and iconParent == viewer then
+            pcall(function()
+                overlay:SetAlpha(alpha)
+            end)
+        end
+    end
+end
+
+-- Update all CDM viewer opacities based on current state
+local function updateAllViewerOpacities()
+    for viewerName, componentId in pairs(CDM_OPACITY_VIEWERS) do
+        applyViewerOpacity(viewerName, componentId)
+    end
+end
+
+-- Exposed function for settings changes
+function addon.RefreshCDMViewerOpacity(componentId)
+    if componentId then
+        -- Refresh specific component
+        for viewerName, cid in pairs(CDM_OPACITY_VIEWERS) do
+            if cid == componentId then
+                applyViewerOpacity(viewerName, componentId)
+                break
+            end
+        end
+    else
+        -- Refresh all
+        updateAllViewerOpacities()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Event Handling
+--------------------------------------------------------------------------------
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("UNIT_AURA")
+eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")  -- Combat start
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Combat end
+
+local lastRefreshTime = {}
+local REFRESH_THROTTLE = 0.1
+
+local function throttledRefresh(viewerName, componentId)
+    local now = GetTime()
+    local lastTime = lastRefreshTime[viewerName] or 0
+    if now - lastTime < REFRESH_THROTTLE then
+        return
+    end
+    lastRefreshTime[viewerName] = now
+    
+    C_Timer.After(0.05, function()
+        Overlays.ApplyToViewer(viewerName, componentId)
+    end)
+end
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
+    if event == "PLAYER_ENTERING_WORLD" then
+        initRetryCount = 0
+        C_Timer.After(1.0, function()
+            for viewerName, componentId in pairs(CDM_VIEWERS) do
+                if not hookedViewers[viewerName] then
+                    local hooked = Overlays.HookViewer(viewerName, componentId)
+                    if hooked then
+                        Overlays.ApplyToViewer(viewerName, componentId)
+                    end
+                else
+                    Overlays.ApplyToViewer(viewerName, componentId)
+                end
+            end
+            startCleanupTicker()
+            hookCooldownTextStyling()
+            
+            -- Apply initial viewer opacity based on current state
+            updateAllViewerOpacities()
+        end)
+        
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        -- Combat started: update viewer opacities to combat values
+        updateAllViewerOpacities()
+        
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended: update viewer opacities to out-of-combat values
+        updateAllViewerOpacities()
+        
+    elseif event == "UNIT_AURA" then
+        if arg1 == "player" then
+            throttledRefresh("BuffIconCooldownViewer", "trackedBuffs")
+        end
+        
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        -- Update opacity for target state change
+        updateAllViewerOpacities()
+        
+        for viewerName, componentId in pairs(CDM_VIEWERS) do
+            throttledRefresh(viewerName, componentId)
+        end
+        
+    elseif event == "SPELL_UPDATE_COOLDOWN" then
+        throttledRefresh("EssentialCooldownViewer", "essentialCooldowns")
+        throttledRefresh("UtilityCooldownViewer", "utilityCooldowns")
+    end
 end)
+
+--------------------------------------------------------------------------------
+-- Settings Change Handler
+--------------------------------------------------------------------------------
+
+function Overlays.OnSettingsChanged(componentId)
+    for viewerName, cid in pairs(CDM_VIEWERS) do
+        if cid == componentId then
+            Overlays.ApplyToViewer(viewerName, componentId)
+            break
+        end
+    end
+end
+
+addon.RefreshCDMOverlays = function(componentId)
+    if componentId then
+        Overlays.OnSettingsChanged(componentId)
+    else
+        for viewerName, cid in pairs(CDM_VIEWERS) do
+            Overlays.ApplyToViewer(viewerName, cid)
+        end
+    end
+    
+    -- Also refresh direct text styling (12.0 compatible approach)
+    if addon.RefreshCDMTextStyling then
+        C_Timer.After(0.1, function()
+            addon.RefreshCDMTextStyling()
+        end)
+    end
+    
+    -- Refresh viewer opacity when settings change
+    if addon.RefreshCDMViewerOpacity then
+        addon.RefreshCDMViewerOpacity(componentId)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- TrackedBars Styling (Direct - Safe for Bar Frames)
+--------------------------------------------------------------------------------
+-- TrackedBars (BuffBarCooldownViewer) use direct styling because bar frames
+-- are not protected the same way as icon viewers. This is safe and tested.
+--------------------------------------------------------------------------------
 
 function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not component or not child then return end
@@ -128,8 +1359,6 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local mask = iconFrame.Mask or iconFrame.IconMask
         if mask and mask.SetAllPoints then mask:SetAllPoints(iconFrame) end
     end
-
-    local isActive = (child.IsActive and child:IsActive()) or child.isActive
 
     local desiredPad = tonumber(component.db and component.db.iconBarPadding) or (component.settings.iconBarPadding and component.settings.iconBarPadding.default) or 0
     desiredPad = tonumber(desiredPad) or 0
@@ -265,8 +1494,6 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         else
             if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
             if addon.Borders and addon.Borders.ApplySquare then
-                -- Use levelOffset to elevate the border above bar content, but don't set
-                -- containerStrata so it inherits parent's strata and stays below Blizzard menus
                 addon.Borders.ApplySquare(barFrame, {
                     size = thickness,
                     color = color,
@@ -324,6 +1551,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(iconFrame) end
     end
 
+    local defaultFace = (select(1, GameFontNormal:GetFont()))
+    
     local function promoteFontLayer(font)
         if font and font.SetDrawLayer then
             font:SetDrawLayer("OVERLAY", 5)
@@ -331,454 +1560,206 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     end
     promoteFontLayer((child.GetNameLabel and child:GetNameLabel()) or child.Name or child.Text or child.Label)
     promoteFontLayer((child.GetDurationLabel and child:GetDurationLabel()) or child.Duration or child.DurationText or child.Timer or child.TimerText)
-end
 
-local function ApplyCooldownViewerStyling(self)
-    local frame = _G[self.frameName]
-    if not frame then return end
-
-    -- Respect Blizzard's Cooldown Manager enable/disable state.
-    -- When cooldownViewerEnabled is off, we must not force-show or restyle CDM frames.
-    -- This fixes the "CDM appears after reload even though disabled" bug by ensuring
-    -- our visibility logic never overrides the disabled state.
-    do
-        local enabled
-        if C_CVar and C_CVar.GetCVarBool then
-            enabled = C_CVar.GetCVarBool("cooldownViewerEnabled")
-        else
-            local v = (C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("cooldownViewerEnabled")) or (GetCVar and GetCVar("cooldownViewerEnabled")) or "0"
-            enabled = tostring(v) == "1"
-        end
-
-        if not enabled then
-            if frame.SetShown then
-                pcall(frame.SetShown, frame, false)
-            elseif frame.Hide then
-                pcall(frame.Hide, frame)
-            end
-            return
-        end
-    end
-
-    local width = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
-    local height = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
-    local spacing = self.db.iconPadding or (self.settings.iconPadding and self.settings.iconPadding.default)
-
-    if self.id == "trackedBars" and not frame._ScooterTBHooked then
-        if hooksecurefunc then
-            if frame.OnAcquireItemFrame then
-                hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
-                    -- Guard against combat to prevent taint (see DEBUG.md)
-                    if InCombatLockdown and InCombatLockdown() then return end
-                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, itemFrame) end
-                end)
-            end
-            if frame.RefreshLayout then
-                hooksecurefunc(frame, "RefreshLayout", function()
-                    -- Guard against combat to prevent taint (see DEBUG.md)
-                    if InCombatLockdown and InCombatLockdown() then return end
-                    if C_Timer and C_Timer.After then
-                        C_Timer.After(0, function()
-                            if not addon or not addon.Components or not addon.Components.trackedBars then return end
-                            local f = _G[addon.Components.trackedBars.frameName]
-                            if not f then return end
-                            for _, child in ipairs({ f:GetChildren() }) do
-                                if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, child) end
-                            end
-                        end)
-                    end
-                end)
-            end
-        end
-        frame._ScooterTBHooked = true
-    end
-
-    -- Hook OnAcquireItemFrame for non-bar viewers (Essential, Utility, Tracked Buffs)
-    -- This ensures newly learned spells that Blizzard auto-adds to CDM get ScooterMod styling
-    if self.id ~= "trackedBars" and not frame._ScooterIconHooked then
-        if hooksecurefunc and frame.OnAcquireItemFrame then
-            hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
-                -- Guard against combat to prevent taint on UtilityCooldownViewer:SetSize() etc.
-                -- When this hook fires during combat, calling SetSize/ApplyStyling taints the
-                -- viewer frame, causing Blizzard's LayoutFrame:Layout() to be blocked.
-                -- Styling will be applied after combat via PLAYER_REGEN_ENABLED. (see DEBUG.md)
-                if InCombatLockdown and InCombatLockdown() then return end
-                -- Apply sizing immediately
-                local w = self.db.iconWidth or (self.settings.iconWidth and self.settings.iconWidth.default)
-                local h = self.db.iconHeight or (self.settings.iconHeight and self.settings.iconHeight.default)
-                if w and h and itemFrame.SetSize then
-                    itemFrame:SetSize(w, h)
+    local function findFontStringByNameHint(root, hint)
+        local target = nil
+        local function scan(obj)
+            if not obj or target then return end
+            if obj.GetObjectType and obj:GetObjectType() == "FontString" then
+                local nm = obj.GetName and obj:GetName() or ""
+                if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                    target = obj; return
                 end
-                -- Apply border if enabled
-                if self.db.borderEnable then
-                    local styleKey = self.db.borderStyle or "square"
-                    if styleKey == "none" then styleKey = "square" end
-                    local thickness = tonumber(self.db.borderThickness) or 1
-                    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                    local tintEnabled = self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
-                    local tintColor
-                    if tintEnabled then
-                        tintColor = {
-                            self.db.borderTintColor[1] or 1,
-                            self.db.borderTintColor[2] or 1,
-                            self.db.borderTintColor[3] or 1,
-                            self.db.borderTintColor[4] or 1,
-                        }
-                    end
-                    addon.ApplyIconBorderStyle(itemFrame, styleKey, {
-                        thickness = thickness,
-                        color = tintColor,
-                        tintEnabled = tintEnabled,
-                        db = self.db,
-                        thicknessKey = "borderThickness",
-                        tintColorKey = "borderTintColor",
-                        inset = self.db.borderInset or 0,
-                        defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
-                    })
-                end
-                -- Defer full re-style to pick up text settings after frame is fully set up
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        ApplyCooldownViewerStyling(self)
-                    end)
-                end
-            end)
-        end
-        frame._ScooterIconHooked = true
-    end
-
-    if self.id == "trackedBars" then
-        local mode = self.db.displayMode or (self.settings.displayMode and self.settings.displayMode.default) or "both"
-        local emVal = (mode == "icon") and 1 or (mode == "name" and 2 or 0)
-        if frame.SetBarContent then pcall(frame.SetBarContent, frame, emVal) end
-    end
-
-    for _, child in ipairs({ frame:GetChildren() }) do
-        if width and height and child.SetSize and self.id ~= "trackedBars" then
-            child:SetSize(width, height)
-            -- Update any active proc glow animation to match the new icon dimensions
-            if child.SpellActivationAlert then
-                UpdateProcGlowSize(child)
             end
-        end
-        if self.id ~= "trackedBars" then
-            if self.db.borderEnable then
-                local styleKey = self.db.borderStyle or "square"
-                if styleKey == "none" then
-                    styleKey = "square"
-                    self.db.borderStyle = styleKey
-                end
-                local thickness = tonumber(self.db.borderThickness) or 1
-                if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                local tintEnabled = self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
-                local tintColor
-                if tintEnabled then
-                    tintColor = {
-                        self.db.borderTintColor[1] or 1,
-                        self.db.borderTintColor[2] or 1,
-                        self.db.borderTintColor[3] or 1,
-                        self.db.borderTintColor[4] or 1,
-                    }
-                end
-                addon.ApplyIconBorderStyle(child, styleKey, {
-                    thickness = thickness,
-                    color = tintColor,
-                    tintEnabled = tintEnabled,
-                    db = self.db,
-                    thicknessKey = "borderThickness",
-                    tintColorKey = "borderTintColor",
-                    inset = self.db.borderInset or 0,
-                    defaultThickness = self.settings and self.settings.borderThickness and self.settings.borderThickness.default or 1,
-                })
-            else
-                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
-            end
-        elseif addon and addon.ApplyTrackedBarVisualsForChild then
-            addon.ApplyTrackedBarVisualsForChild(self, child)
-        end
-
-        local defaultFace = (select(1, GameFontNormal:GetFont()))
-        local function findFontStringOn(obj)
-            if not obj then return nil end
-            if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
             if obj.GetRegions then
                 local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
                 for i = 1, n do
                     local r = select(i, obj:GetRegions())
-                    if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
+                    if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+                        local nm = r.GetName and r:GetName() or ""
+                        if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                            target = r; return
+                        end
+                    end
                 end
             end
             if obj.GetChildren then
                 local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
                 for i = 1, m do
                     local c = select(i, obj:GetChildren())
-                    local found = findFontStringOn(c)
-                    if found then return found end
+                    scan(c)
+                    if target then return end
                 end
             end
-            return nil
         end
-        local function findFontStringByNameHint(root, hint)
-            local target = nil
-            local function scan(obj)
-                if not obj or target then return end
-                if obj.GetObjectType and obj:GetObjectType() == "FontString" then
-                    local nm = obj.GetName and obj:GetName() or ""
-                    if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
-                        target = obj; return
-                    end
-                end
-                if obj.GetRegions then
-                    local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
-                    for i = 1, n do
-                        local r = select(i, obj:GetRegions())
-                        if r and r.GetObjectType and r:GetObjectType() == "FontString" then
-                            local nm = r.GetName and r:GetName() or ""
-                            if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
-                                target = r; return
-                            end
-                        end
-                    end
-                end
-                if obj.GetChildren then
-                    local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
-                    for i = 1, m do
-                        local c = select(i, obj:GetChildren())
-                        scan(c)
-                        if target then return end
-                    end
-                end
+        scan(root)
+        return target
+    end
+
+    local function findFontStringOn(obj)
+        if not obj then return nil end
+        if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
+        if obj.GetRegions then
+            local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
+            for i = 1, n do
+                local r = select(i, obj:GetRegions())
+                if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
             end
-            scan(root)
-            return target
         end
+        if obj.GetChildren then
+            local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+            for i = 1, m do
+                local c = select(i, obj:GetChildren())
+                local found = findFontStringOn(c)
+                if found then return found end
+            end
+        end
+        return nil
+    end
 
-        if self.id == "trackedBars" then
-            local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar or child
-            local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")
-            local durFS  = (barFrame and barFrame.Duration) or findFontStringByNameHint(barFrame or child, "Bar.Duration") or findFontStringByNameHint(child, "Duration")
-            local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
+    local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")
+    local durFS  = (barFrame and barFrame.Duration) or findFontStringByNameHint(barFrame or child, "Bar.Duration") or findFontStringByNameHint(child, "Duration")
 
-            if nameFS and nameFS.SetFont then
-                local cfg = self.db.textName or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
-                pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
-                if addon.ApplyFontStyle then addon.ApplyFontStyle(nameFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else nameFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-                local c = cfg.color or {1,1,1,1}
-                if nameFS.SetTextColor then nameFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-                if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
-                local ox = (cfg.offset and cfg.offset.x) or 0
-                local oy = (cfg.offset and cfg.offset.y) or 0
-                if (ox ~= 0 or oy ~= 0) and nameFS.ClearAllPoints and nameFS.SetPoint then
-                    nameFS:ClearAllPoints()
-                    local anchorTo = barFrame or child
-                    nameFS:SetPoint("LEFT", anchorTo, "LEFT", ox, oy)
-                end
-            end
+    if nameFS and nameFS.SetFont then
+        local cfg = component.db.textName or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+        local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+        pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
+        if addon.ApplyFontStyle then addon.ApplyFontStyle(nameFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else nameFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
+        local c = cfg.color or {1,1,1,1}
+        if nameFS.SetTextColor then nameFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+        if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
+        local ox = (cfg.offset and cfg.offset.x) or 0
+        local oy = (cfg.offset and cfg.offset.y) or 0
+        if (ox ~= 0 or oy ~= 0) and nameFS.ClearAllPoints and nameFS.SetPoint then
+            nameFS:ClearAllPoints()
+            local anchorTo = barFrame or child
+            nameFS:SetPoint("LEFT", anchorTo, "LEFT", ox, oy)
+        end
+    end
 
-            if durFS and durFS.SetFont then
-                local cfg = self.db.textDuration or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
-                pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
-                if addon.ApplyFontStyle then addon.ApplyFontStyle(durFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else durFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-                local c = cfg.color or {1,1,1,1}
-                if durFS.SetTextColor then durFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-                if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
-                local ox = (cfg.offset and cfg.offset.x) or 0
-                local oy = (cfg.offset and cfg.offset.y) or 0
-                if (ox ~= 0 or oy ~= 0) and durFS.ClearAllPoints and durFS.SetPoint then
-                    durFS:ClearAllPoints()
-                    local anchorTo = barFrame or child
-                    durFS:SetPoint("RIGHT", anchorTo, "RIGHT", ox, oy)
-                end
-            end
+    if durFS and durFS.SetFont then
+        local cfg = component.db.textDuration or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+        local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+        pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
+        if addon.ApplyFontStyle then addon.ApplyFontStyle(durFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else durFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
+        local c = cfg.color or {1,1,1,1}
+        if durFS.SetTextColor then durFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+        if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
+        local ox = (cfg.offset and cfg.offset.x) or 0
+        local oy = (cfg.offset and cfg.offset.y) or 0
+        if (ox ~= 0 or oy ~= 0) and durFS.ClearAllPoints and durFS.SetPoint then
+            durFS:ClearAllPoints()
+            local anchorTo = barFrame or child
+            durFS:SetPoint("RIGHT", anchorTo, "RIGHT", ox, oy)
+        end
+    end
 
-            local stacksFS
-            if iconFrame and iconFrame.Applications then
-                if iconFrame.Applications.GetObjectType and iconFrame.Applications:GetObjectType() == "FontString" then
-                    stacksFS = iconFrame.Applications
-                else
-                    stacksFS = findFontStringOn(iconFrame.Applications)
-                end
-            end
-            if not stacksFS and iconFrame then
-                stacksFS = findFontStringByNameHint(iconFrame, "Applications")
-            end
-            if not stacksFS then
-                stacksFS = findFontStringByNameHint(child, "Applications")
-            end
-
-            if stacksFS and stacksFS.SetFont then
-                local cfg = self.db.textStacks or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
-                pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
-                if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-                local c = cfg.color or {1,1,1,1}
-                if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-                if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
-                local ox = (cfg.offset and cfg.offset.x) or 0
-                local oy = (cfg.offset and cfg.offset.y) or 0
-                if stacksFS.ClearAllPoints and stacksFS.SetPoint then
-                    stacksFS:ClearAllPoints()
-                    local anchorTo = iconFrame or child
-                    stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
-                end
-            end
+    local stacksFS
+    if iconFrame and iconFrame.Applications then
+        if iconFrame.Applications.GetObjectType and iconFrame.Applications:GetObjectType() == "FontString" then
+            stacksFS = iconFrame.Applications
         else
-            local cdFS = (child.Cooldown and findFontStringOn(child.Cooldown)) or findFontStringByNameHint(child, "Cooldown")
-            local stacksFS = (child.ChargeCount and findFontStringOn(child.ChargeCount))
-                or (child.Applications and findFontStringOn(child.Applications))
-                or findFontStringByNameHint(child, "Applications")
-
-            if stacksFS and stacksFS.SetFont then
-                local cfg = self.db.textStacks or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
-                pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
-                if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") end
-                local c = cfg.color or {1,1,1,1}
-                if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-                if stacksFS.ClearAllPoints and stacksFS.SetPoint then
-                    stacksFS:ClearAllPoints()
-                    local ox = (cfg.offset and cfg.offset.x) or 0
-                    local oy = (cfg.offset and cfg.offset.y) or 0
-                    stacksFS:SetPoint("CENTER", child, "CENTER", ox, oy)
-                end
-            end
-
-            if cdFS and cdFS.SetFont then
-                local cfg = self.db.textCooldown or { size = 16, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-                local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
-                pcall(cdFS.SetDrawLayer, cdFS, "OVERLAY", 10)
-                if addon.ApplyFontStyle then addon.ApplyFontStyle(cdFS, face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") else cdFS:SetFont(face, tonumber(cfg.size) or 16, cfg.style or "OUTLINE") end
-                local c = cfg.color or {1,1,1,1}
-                if cdFS.SetTextColor then cdFS.SetTextColor(cdFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-                if cdFS.ClearAllPoints and cdFS.SetPoint then
-                    cdFS:ClearAllPoints()
-                    local ox = (cfg.offset and cfg.offset.x) or 0
-                    local oy = (cfg.offset and cfg.offset.y) or 0
-                    cdFS:SetPoint("CENTER", child, "CENTER", ox, oy)
-                end
-            end
-        end
-
-        if self.id == "trackedBars" then
-            local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar
-            local iconFrame = child.GetIconFrame and child:GetIconFrame() or child.Icon
-
-            if barFrame and not child._ScootBordersActiveHooked then
-                if child.SetIsActive then
-                    hooksecurefunc(child, "SetIsActive", function(f, active)
-                        if not active then
-                            if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
-                                local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
-                                if bf then addon.Borders.HideAll(bf) end
-                                local ic = (f.GetIconFrame and f:GetIconFrame()) or f.Icon
-                                if ic then
-                                    addon.Borders.HideAll(ic)
-                                    Util.ToggleDefaultIconOverlay(ic, true)
-                                end
-                            end
-                        else
-                            if C_Timer and C_Timer.After then
-                                C_Timer.After(0, function()
-                                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, f) end
-                                end)
-                            elseif addon and addon.ApplyTrackedBarVisualsForChild then
-                                addon.ApplyTrackedBarVisualsForChild(self, f)
-                            end
-                        end
-                    end)
-                end
-                if child.OnActiveStateChanged then
-                    hooksecurefunc(child, "OnActiveStateChanged", function(f)
-                        local active = (f.IsActive and f:IsActive()) or f.isActive
-                        if not active then
-                            if component and component.db and component.db.hideWhenInactive and addon.Borders and addon.Borders.HideAll then
-                                local bf = (f.GetBarFrame and f:GetBarFrame()) or f.Bar
-                                if bf then addon.Borders.HideAll(bf) end
-                                local ic = (f.GetIconFrame and f:GetIconFrame()) or f.Icon
-                                if ic then
-                                    addon.Borders.HideAll(ic)
-                                    Util.ToggleDefaultIconOverlay(ic, true)
-                                end
-                            end
-                        else
-                            if C_Timer and C_Timer.After then
-                                C_Timer.After(0, function()
-                                    if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, f) end
-                                end)
-                            elseif addon and addon.ApplyTrackedBarVisualsForChild then
-                                addon.ApplyTrackedBarVisualsForChild(self, f)
-                            end
-                        end
-                    end)
-                end
-                child._ScootBordersActiveHooked = true
-            end
-
-            if barFrame and iconFrame then
-                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(child) end
-                if addon and addon.ApplyTrackedBarVisualsForChild then addon.ApplyTrackedBarVisualsForChild(self, child) end
-            end
+            stacksFS = findFontStringOn(iconFrame.Applications)
         end
     end
-
-    do
-        local ic = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
-        if ic and spacing ~= nil then
-            if ic.childXPadding ~= nil then ic.childXPadding = spacing end
-            if ic.childYPadding ~= nil then ic.childYPadding = spacing end
-            if ic.iconPadding ~= nil then ic.iconPadding = spacing end
-            if type(ic.MarkDirty) == "function" then pcall(ic.MarkDirty, ic) end
-        end
+    if not stacksFS and iconFrame then
+        stacksFS = findFontStringByNameHint(iconFrame, "Applications")
+    end
+    if not stacksFS then
+        stacksFS = findFontStringByNameHint(child, "Applications")
     end
 
-    if frame.UpdateLayout then pcall(frame.UpdateLayout, frame) end
-    local ic2 = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
-    if ic2 and type(ic2.UpdateLayout) == "function" then pcall(ic2.UpdateLayout, ic2) end
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            local ic3 = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
-            if ic3 and ic3.UpdateLayout then pcall(ic3.UpdateLayout, ic3) end
-        end)
-    end
-
-    do
-        local mode = self.db.visibilityMode or (self.settings.visibilityMode and self.settings.visibilityMode.default) or "always"
-        local wantShown
-        if mode == "never" then wantShown = false
-        elseif mode == "combat" then wantShown = (type(UnitAffectingCombat) == "function") and UnitAffectingCombat("player") or false
-        else wantShown = true end
-        local wasShown = frame:IsShown() and true or false
-        if frame.SetShown then pcall(frame.SetShown, frame, wantShown) end
-        if wasShown and not wantShown then
-            for _, child in ipairs({ frame:GetChildren() }) do
-                local barFrame = child.GetBarFrame and child:GetBarFrame() or child.Bar
-                if barFrame and addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
-            end
+    if stacksFS and stacksFS.SetFont then
+        local cfg = component.db.textStacks or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
+        local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+        pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
+        if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
+        local c = cfg.color or {1,1,1,1}
+        if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
+        if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
+        local ox = (cfg.offset and cfg.offset.x) or 0
+        local oy = (cfg.offset and cfg.offset.y) or 0
+        if stacksFS.ClearAllPoints and stacksFS.SetPoint then
+            stacksFS:ClearAllPoints()
+            local anchorTo = iconFrame or child
+            stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
         end
-    end
-
-    do
-        local baseRaw = self.db and self.db.opacity or (self.settings.opacity and self.settings.opacity.default) or 100
-        local baseOpacity = Util.ClampOpacity(baseRaw, 50)
-        local oocRaw = self.db and self.db.opacityOutOfCombat
-        if oocRaw == nil and self.settings and self.settings.opacityOutOfCombat then
-            oocRaw = self.settings.opacityOutOfCombat.default
-        end
-        local oocOpacity = Util.ClampOpacity(oocRaw or baseOpacity, 1)
-        local tgtRaw = self.db and self.db.opacityWithTarget
-        if tgtRaw == nil and self.settings and self.settings.opacityWithTarget then
-            tgtRaw = self.settings.opacityWithTarget.default
-        end
-        local tgtOpacity = Util.ClampOpacity(tgtRaw or baseOpacity, 1)
-        local hasTarget = (UnitExists and UnitExists("target")) and true or false
-        local applied = hasTarget and tgtOpacity or (Util.PlayerInCombat() and baseOpacity or oocOpacity)
-        if frame.SetAlpha then pcall(frame.SetAlpha, frame, applied / 100) end
     end
 end
 
+--------------------------------------------------------------------------------
+-- TrackedBars Hooks
+--------------------------------------------------------------------------------
+
+local trackedBarsHooked = false
+
+local function hookTrackedBars(component)
+    if trackedBarsHooked then return end
+    
+    local frame = _G[component.frameName]
+    if not frame then return end
+    
+    if frame.OnAcquireItemFrame then
+        hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
+            if InCombatLockdown and InCombatLockdown() then return end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if addon and addon.ApplyTrackedBarVisualsForChild then
+                        addon.ApplyTrackedBarVisualsForChild(component, itemFrame)
+                    end
+                end)
+            end
+        end)
+    end
+    
+    if frame.RefreshLayout then
+        hooksecurefunc(frame, "RefreshLayout", function()
+            if InCombatLockdown and InCombatLockdown() then return end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if not addon or not addon.Components or not addon.Components.trackedBars then return end
+                    local f = _G[addon.Components.trackedBars.frameName]
+                    if not f then return end
+                    for _, child in ipairs({ f:GetChildren() }) do
+                        if addon and addon.ApplyTrackedBarVisualsForChild then
+                            addon.ApplyTrackedBarVisualsForChild(component, child)
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+    
+    trackedBarsHooked = true
+end
+
+--------------------------------------------------------------------------------
+-- Component Registration
+--------------------------------------------------------------------------------
+
 addon:RegisterComponentInitializer(function(self)
+    -- TrackedBars apply styling directly; icon-based CDM uses overlays
+    local function SafeApplyStyling(component)
+        if component.id == "trackedBars" then
+            -- TrackedBars use direct styling (safe for bar frames)
+            local frame = _G[component.frameName]
+            if not frame then return end
+            
+            hookTrackedBars(component)
+            
+            for _, child in ipairs({ frame:GetChildren() }) do
+                if addon and addon.ApplyTrackedBarVisualsForChild then
+                    addon.ApplyTrackedBarVisualsForChild(component, child)
+                end
+            end
+        else
+            -- Icon-based CDM uses overlay system
+            if addon.RefreshCDMOverlays then
+                addon.RefreshCDMOverlays(component.id)
+            end
+        end
+    end
+
     local essentialCooldowns = Component:New({
         id = "essentialCooldowns",
         name = "Essential Cooldowns",
@@ -794,13 +1775,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Icon Direction", widget = "dropdown", values = { left = "Left", right = "Right", up = "Up", down = "Down" }, section = "Positioning", order = 3, dynamicValues = true
             }},
             iconPadding = { type = "editmode", settingId = 4, default = 2, ui = {
-                label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 4
-            }},
-            positionX = { type = "addon", default = 0, ui = {
-                label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 5
-            }},
-            positionY = { type = "addon", default = 0, ui = {
-                label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 6
+                label = "Icon Padding", widget = "slider", min = 2, max = 14, step = 1, section = "Positioning", order = 4
             }},
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
@@ -830,9 +1805,9 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            borderInset = { type = "addon", default = 0, ui = {
+            borderInset = { type = "addon", default = -1, ui = {
                 label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
@@ -855,7 +1830,7 @@ addon:RegisterComponentInitializer(function(self)
             }},
             supportsText = { type = "addon", default = true },
         },
-        ApplyStyling = ApplyCooldownViewerStyling,
+        ApplyStyling = SafeApplyStyling,
     })
     self:RegisterComponent(essentialCooldowns)
 
@@ -874,7 +1849,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Icon Direction", widget = "dropdown", values = { left = "Left", right = "Right", up = "Up", down = "Down" }, section = "Positioning", order = 3, dynamicValues = true
             }},
             iconPadding = { type = "editmode", settingId = 4, default = 2, ui = {
-                label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 4
+                label = "Icon Padding", widget = "slider", min = 2, max = 14, step = 1, section = "Positioning", order = 4
             }},
             positionX = { type = "addon", default = 0, ui = {
                 label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 5
@@ -910,9 +1885,9 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            borderInset = { type = "addon", default = 0, ui = {
+            borderInset = { type = "addon", default = -1, ui = {
                 label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
@@ -938,7 +1913,7 @@ addon:RegisterComponentInitializer(function(self)
             }},
             supportsText = { type = "addon", default = true },
         },
-        ApplyStyling = ApplyCooldownViewerStyling,
+        ApplyStyling = SafeApplyStyling,
     })
     self:RegisterComponent(utilityCooldowns)
 
@@ -954,7 +1929,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Icon Direction", widget = "dropdown", values = { left = "Left", right = "Right", up = "Up", down = "Down" }, section = "Positioning", order = 2, dynamicValues = true
             }},
             iconPadding = { type = "editmode", settingId = 4, default = 2, ui = {
-                label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 3
+                label = "Icon Padding", widget = "slider", min = 2, max = 14, step = 1, section = "Positioning", order = 3
             }},
             positionX = { type = "addon", default = 0, ui = {
                 label = "X Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 4
@@ -990,9 +1965,9 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            borderInset = { type = "addon", default = 0, ui = {
+            borderInset = { type = "addon", default = -1, ui = {
                 label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
@@ -1018,7 +1993,7 @@ addon:RegisterComponentInitializer(function(self)
             }},
             supportsText = { type = "addon", default = true },
         },
-        ApplyStyling = ApplyCooldownViewerStyling,
+        ApplyStyling = SafeApplyStyling,
     })
     self:RegisterComponent(trackedBuffs)
 
@@ -1143,8 +2118,12 @@ addon:RegisterComponentInitializer(function(self)
             }},
             supportsText = { type = "addon", default = true },
         },
-        ApplyStyling = ApplyCooldownViewerStyling,
+        ApplyStyling = SafeApplyStyling,
     })
     self:RegisterComponent(trackedBars)
+    
+    -- Initialize overlay system after components are registered
+    C_Timer.After(0.5, function()
+        Overlays.Initialize()
+    end)
 end)
-

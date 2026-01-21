@@ -726,7 +726,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         end
     elseif settingId == "iconPadding" then
         -- WRITING to the library requires the RAW value. Ranges:
-        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–10
+        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–14
         --  - Aura Frame (Buffs/Debuffs): 5–15
         local pad = tonumber(dbValue)
         local sysEnum = _G.Enum and _G.Enum.EditModeSystem
@@ -735,7 +735,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if pad < 5 then pad = 5 elseif pad > 15 then pad = 15 end
         else
             if not pad then pad = 2 end
-            if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+            if pad < 2 then pad = 2 elseif pad > 14 then pad = 14 end
         end
         editModeValue = pad
     elseif settingId == "iconLimit" then
@@ -1059,7 +1059,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             return true
         elseif settingId == "iconPadding" then
             -- Write raw padding value, clamped per system:
-            --  - Cooldown Viewer / Action Bars / Tracked Bars: 2..10
+            --  - Cooldown Viewer / Action Bars / Tracked Bars: 2..14
             --  - Aura Frame (Buffs/Debuffs): 5..15
             setting.settingId = setting.settingId or ResolveSettingId(frame, "icon_padding") or setting.settingId
             local pad = tonumber(component.db.iconPadding)
@@ -1069,7 +1069,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
                 if pad < 5 then pad = 5 elseif pad > 15 then pad = 15 end
             else
                 if not pad then pad = 2 end
-                if pad < 2 then pad = 2 elseif pad > 10 then pad = 10 end
+                if pad < 2 then pad = 2 elseif pad > 14 then pad = 14 end
             end
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
@@ -1522,7 +1522,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         end
     elseif settingId == "iconPadding" then
         -- Library returns raw value; clamp per system:
-        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–10
+        --  - Cooldown Viewer / Action Bars / Tracked Bars: 2–14
         --  - Aura Frame (Buffs/Debuffs): 5–15
         local sysEnum = _G.Enum and _G.Enum.EditModeSystem
         local v = tonumber(editModeValue)
@@ -1531,7 +1531,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
             if v < 5 then v = 5 elseif v > 15 then v = 15 end
         else
             if not v then v = 2 end
-            if v < 2 then v = 2 elseif v > 10 then v = 10 end
+            if v < 2 then v = 2 elseif v > 14 then v = 14 end
         end
         dbValue = v
     elseif settingId == "iconLimit" then
@@ -1668,6 +1668,10 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         end
         if addon and addon.SettingsPanel and type(addon.SettingsPanel.HandleEditModeBackSync) == "function" then
             addon.SettingsPanel:HandleEditModeBackSync(component.id, settingId)
+        end
+        -- Also notify UI panel if available (new UI accessed via /scoot2)
+        if addon and addon.UI and addon.UI.SettingsPanel and type(addon.UI.SettingsPanel.HandleEditModeBackSync) == "function" then
+            addon.UI.SettingsPanel:HandleEditModeBackSync(component.id, settingId)
         end
         return true -- Indicates a change was made
     end
@@ -2358,11 +2362,21 @@ function addon.EditMode.Initialize()
         if addon and addon.EditMode and addon.EditMode._inScooterApplyChanges then
             return
         end
+        -- Close old settings panel if open
         local panel = addon and addon.SettingsPanel
-        if not panel then return end
-        panel._closedByEditMode = true
-        if panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
-            pcall(panel.frame.Hide, panel.frame)
+        if panel then
+            panel._closedByEditMode = true
+            if panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
+                pcall(panel.frame.Hide, panel.frame)
+            end
+        end
+        -- Close UI panel if open (new UI)
+        local uiPanel = addon and addon.UI and addon.UI.SettingsPanel
+        if uiPanel then
+            uiPanel._closedByEditMode = true
+            if uiPanel.frame and uiPanel.frame.IsShown and uiPanel.frame:IsShown() then
+                pcall(uiPanel.frame.Hide, uiPanel.frame)
+            end
         end
     end
 

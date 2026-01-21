@@ -175,6 +175,7 @@ local function renderProfilesManage()
                 if frame.Text then frame.Text:Hide() end
                 if frame.MessageText then frame.MessageText:Hide() end
                 if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
+                if frame.ActiveLayoutLabel then frame.ActiveLayoutLabel:Hide() end
                 if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
                 if frame.RenameBtn then frame.RenameBtn:Hide() end
                 if frame.CopyBtn then frame.CopyBtn:Hide() end
@@ -184,6 +185,8 @@ local function renderProfilesManage()
                 if frame.SpecIcon then frame.SpecIcon:Hide() end
                 if frame.SpecName then frame.SpecName:Hide() end
                 if frame.SpecDropdown then frame.SpecDropdown:Hide() end
+                if frame.DeleteProfileLabel then frame.DeleteProfileLabel:Hide() end
+                if frame.DeleteProfileDropdown then frame.DeleteProfileDropdown:Hide() end
                 if not frame.InfoText then
                     local text = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
                     text:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, 4)
@@ -211,171 +214,244 @@ local function renderProfilesManage()
         -- Reload warning is now a fixed footer message (non-scrolling) so it doesn't
         -- feel "in the flow" and can't be overlapped by right-pane scrolling content.
 
+        -- Active Layout controls (parent-level, no collapsible section)
         do
-            local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
-                name = "Active Layout",
-                sectionKey = "ActiveLayout",
-                componentId = "profilesManage",
-                expanded = panel:IsSectionExpanded("profilesManage", "ActiveLayout"),
-            })
-            exp.GetExtent = function() return 30 end
-            table.insert(init, exp)
-        end
-
-        do
-            local sectionRow = Settings.CreateElementInitializer("ScooterActiveListElementTemplate")
-            sectionRow.GetExtent = function() return 190 end
-            sectionRow.InitFrame = function(self, frame)
+            local activeRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            activeRow.GetExtent = function() return 140 end
+            activeRow.InitFrame = function(self, frame)
                 EnsureCallbackContainer(frame)
+                -- Hide standard template elements
                 if frame.Text then frame.Text:Hide() end
-                if frame.InfoText then frame.InfoText:Hide() end
-                if frame.ButtonContainer then frame.ButtonContainer:Hide() end
                 if frame.MessageText then frame.MessageText:Hide() end
+                if frame.ButtonContainer then frame.ButtonContainer:Hide(); frame.ButtonContainer:SetAlpha(0); frame.ButtonContainer:EnableMouse(false) end
+                -- Hide elements from other row types that may leak via recycling
+                if frame.InfoText then frame.InfoText:Hide() end
+                if frame.ActiveTestText then frame.ActiveTestText:Hide() end
+                if frame.DeleteProfileLabel then frame.DeleteProfileLabel:Hide() end
+                if frame.DeleteProfileDropdown then frame.DeleteProfileDropdown:Hide() end
+                if frame.SpecEnableCheck then frame.SpecEnableCheck:Hide() end
                 if frame.SpecIcon then frame.SpecIcon:Hide() end
                 if frame.SpecName then frame.SpecName:Hide() end
                 if frame.SpecDropdown then frame.SpecDropdown:Hide() end
-                frame.IsScooterActiveLayoutRow = true
 
+                -- Centered dropdown
                 if not frame.ActiveDropdown then
                     local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-                    dropdown:SetPoint("LEFT", frame, "LEFT", 28, 0)
-                    dropdown.align = "RIGHT"
+                    dropdown:SetPoint("TOP", frame, "TOP", 0, -8)
                     dropdown:SetScale(1.5)
-                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 170) end
-                    if dropdown.SetWidth then dropdown:SetWidth(170) end
+                    UIDropDownMenu_SetWidth(dropdown, 220)
                     frame.ActiveDropdown = dropdown
-                else
-                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(frame.ActiveDropdown, 170) end
-                    if frame.ActiveDropdown.SetWidth then frame.ActiveDropdown:SetWidth(170) end
                 end
                 refreshActiveDropdown(frame.ActiveDropdown)
-                if UIDropDownMenu_SetAnchor then UIDropDownMenu_SetAnchor(frame.ActiveDropdown, 0, 0, "TOPRIGHT", frame.ActiveDropdown, "BOTTOMRIGHT") end
                 if panel and panel.StyleDropdownLabel then panel.StyleDropdownLabel(frame.ActiveDropdown, 1.25) end
                 if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame.ActiveDropdown) end
-                -- Center the dropdown text
-                if frame.ActiveDropdown and frame.ActiveDropdown.Text then
-                    frame.ActiveDropdown.Text:SetJustifyH("CENTER")
-                end
-                local widgets = panel._profileWidgets or {}
-                panel._profileWidgets = widgets
-                widgets.ActiveLayoutRow = frame
-                
-                -- Track ALL frames that have ever been used for Active Layout widgets.
-                -- This is critical because the SettingsList recycles frames, and the
-                -- OnHide handler needs to hide ALL frames that might have buttons, not
-                -- just the most recent one (which could be stale).
-                widgets.AllActiveLayoutFrames = widgets.AllActiveLayoutFrames or {}
-                widgets.AllActiveLayoutFrames[frame] = true
+                frame.ActiveDropdown:Show()
 
+                -- Store reference for external access
+                addon.SettingsPanel._profileDropdown = frame.ActiveDropdown
+
+                -- Button helper for styling
+                local function styleButton(btn)
+                    if not btn then return end
+                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
+                end
+
+                -- Button state helper
                 local function updateButtons()
                     local current = getActiveProfileKey()
                     local isPreset = current and addon.Profiles and addon.Profiles:IsPreset(current)
                     if frame.RenameBtn then frame.RenameBtn:SetEnabled(not not current and not isPreset) end
-                    if frame.DeleteBtn then frame.DeleteBtn:SetEnabled(not not current and not isPreset) end
                     if frame.CopyBtn then frame.CopyBtn:SetEnabled(not not current) end
                 end
 
-                local function scaleButton(btn)
-                    if not btn then return end
-                    local w, h = btn:GetSize()
-                    btn:SetSize(math.floor(w * 1.25), math.floor(h * 1.25))
-                    if btn.Text and btn.Text.GetFont then
-                        local face, size, flags = btn.Text:GetFont()
-                        if size then btn.Text:SetFont(face, math.floor(size * 1.25 + 0.5), flags) end
-                    end
-                end
+                -- Horizontal button row centered below dropdown (3 buttons)
+                local btnWidth, btnHeight, btnGap = 130, 32, 16
+                local totalWidth = (btnWidth * 3) + (btnGap * 2)
+                local startX = -totalWidth / 2
 
+                -- Create button
                 if not frame.CreateBtn then
                     local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(120, 28)
-                    btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -6)
+                    btn:SetSize(btnWidth, btnHeight)
                     btn:SetText("Create")
-                    btn:SetMotionScriptsWhileDisabled(true)
                     btn:SetScript("OnClick", function()
                         CloseDropDownMenus()
-                        addon.Profiles:PromptCreateLayout(addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                        addon.Profiles:PromptCreateLayout(frame.ActiveDropdown)
                     end)
+                    styleButton(btn)
                     frame.CreateBtn = btn
-                    scaleButton(btn)
-                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
                 end
+                frame.CreateBtn:ClearAllPoints()
+                frame.CreateBtn:SetPoint("TOP", frame.ActiveDropdown, "BOTTOM", startX + (btnWidth/2), -16)
+                frame.CreateBtn:Show()
 
+                -- Rename button
                 if not frame.RenameBtn then
                     local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(120, 28)
-                    btn:SetPoint("TOPRIGHT", frame.CreateBtn, "BOTTOMRIGHT", 0, -8)
+                    btn:SetSize(btnWidth, btnHeight)
                     btn:SetText("Rename")
-                    btn:SetMotionScriptsWhileDisabled(true)
                     btn:SetScript("OnClick", function()
                         CloseDropDownMenus()
                         local current = getActiveProfileKey()
-                        addon.Profiles:PromptRenameLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                        addon.Profiles:PromptRenameLayout(current, frame.ActiveDropdown)
                     end)
+                    styleButton(btn)
                     frame.RenameBtn = btn
-                    scaleButton(btn)
-                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
                 end
+                frame.RenameBtn:ClearAllPoints()
+                frame.RenameBtn:SetPoint("LEFT", frame.CreateBtn, "RIGHT", btnGap, 0)
+                frame.RenameBtn:Show()
 
+                -- Copy button
                 if not frame.CopyBtn then
                     local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(120, 28)
-                    btn:SetPoint("TOPRIGHT", frame.RenameBtn, "BOTTOMRIGHT", 0, -8)
+                    btn:SetSize(btnWidth, btnHeight)
                     btn:SetText("Copy")
-                    btn:SetMotionScriptsWhileDisabled(true)
                     btn:SetScript("OnClick", function()
                         CloseDropDownMenus()
                         local current = getActiveProfileKey()
                         if not current then return end
                         if addon.Profiles and addon.Profiles:IsPreset(current) then
-                            addon.Profiles:PromptClonePreset(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown, addon.Profiles:GetLayoutDisplayText(current), current)
+                            addon.Profiles:PromptClonePreset(current, frame.ActiveDropdown, addon.Profiles:GetLayoutDisplayText(current), current)
                         else
-                            addon.Profiles:PromptCopyLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
+                            addon.Profiles:PromptCopyLayout(current, frame.ActiveDropdown)
                         end
                     end)
+                    styleButton(btn)
                     frame.CopyBtn = btn
-                    scaleButton(btn)
-                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
                 end
+                frame.CopyBtn:ClearAllPoints()
+                frame.CopyBtn:SetPoint("LEFT", frame.RenameBtn, "RIGHT", btnGap, 0)
+                frame.CopyBtn:Show()
 
-                if not frame.DeleteBtn then
-                    local btn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-                    btn:SetSize(120, 28)
-                    btn:SetPoint("TOPRIGHT", frame.CopyBtn, "BOTTOMRIGHT", 0, -8)
-                    btn:SetText(DELETE)
-                    btn:SetMotionScriptsWhileDisabled(true)
-                    btn:SetScript("OnClick", function()
-                        CloseDropDownMenus()
-                        local current = getActiveProfileKey()
-                        addon.Profiles:ConfirmDeleteLayout(current, addon.SettingsPanel and addon.SettingsPanel._profileDropdown)
-                    end)
-                    frame.DeleteBtn = btn
-                    scaleButton(btn)
-                    if panel and panel.ApplyButtonTheme then panel.ApplyButtonTheme(btn) end
-                end
+                -- Hide Delete button if it exists from recycled frame
+                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
 
-                function frame:UpdateButtons()
-                    updateButtons()
-                end
+                -- Update button states
                 updateButtons()
                 addon.SettingsPanel.UpdateProfileActionButtons = function()
-                    if frame and frame.UpdateButtons then frame:UpdateButtons() end
+                    updateButtons()
                 end
-
-                -- Explicitly show child widgets. They may have been hidden by the
-                -- OnHide handler when the panel closed, and won't be recreated since
-                -- they already exist on the reused frame.
-                if frame.ActiveDropdown then frame.ActiveDropdown:Show() end
-                if frame.CreateBtn then frame.CreateBtn:Show() end
-                if frame.RenameBtn then frame.RenameBtn:Show() end
-                if frame.CopyBtn then frame.CopyBtn:Show() end
-                if frame.DeleteBtn then frame.DeleteBtn:Show() end
             end
-            sectionRow:AddShownPredicate(function()
-                return panel:IsSectionExpanded("profilesManage", "ActiveLayout")
-            end)
-            table.insert(init, sectionRow)
+            table.insert(init, activeRow)
         end
 
+        -- "Delete a Profile" collapsible section
+        do
+            local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
+                name = "Delete a Profile",
+                sectionKey = "DeleteProfile",
+                componentId = "profilesManage",
+                expanded = panel:IsSectionExpanded("profilesManage", "DeleteProfile"),
+            })
+            exp.GetExtent = function() return 30 end
+            table.insert(init, exp)
+        end
+
+        -- Delete a Profile content row
+        do
+            local deleteRow = Settings.CreateElementInitializer("SettingsListElementTemplate")
+            deleteRow.GetExtent = function() return 60 end
+            deleteRow.InitFrame = function(self, frame)
+                EnsureCallbackContainer(frame)
+                -- Hide standard elements
+                if frame.Text then frame.Text:Hide() end
+                if frame.MessageText then frame.MessageText:Hide() end
+                if frame.InfoText then frame.InfoText:Hide() end
+                if frame.ButtonContainer then
+                    frame.ButtonContainer:Hide()
+                    frame.ButtonContainer:SetAlpha(0)
+                    frame.ButtonContainer:EnableMouse(false)
+                end
+                -- Hide Active Layout elements that may leak from recycled frames
+                if frame.ActiveLayoutLabel then frame.ActiveLayoutLabel:Hide() end
+                if frame.ActiveDropdown then frame.ActiveDropdown:Hide() end
+                if frame.RenameBtn then frame.RenameBtn:Hide() end
+                if frame.CopyBtn then frame.CopyBtn:Hide() end
+                if frame.DeleteBtn then frame.DeleteBtn:Hide() end
+                if frame.CreateBtn then frame.CreateBtn:Hide() end
+                -- Hide Spec Profile elements
+                if frame.SpecEnableCheck then frame.SpecEnableCheck:Hide() end
+                if frame.SpecIcon then frame.SpecIcon:Hide() end
+                if frame.SpecName then frame.SpecName:Hide() end
+                if frame.SpecDropdown then frame.SpecDropdown:Hide() end
+
+                -- Hide label if it exists from recycled frame
+                if frame.DeleteProfileLabel then frame.DeleteProfileLabel:Hide() end
+
+                -- Create the centered dropdown if it doesn't exist
+                if not frame.DeleteProfileDropdown then
+                    local dropdown = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+                    dropdown:SetPoint("TOP", frame, "TOP", 0, 4)
+                    dropdown.align = "LEFT"
+                    dropdown:SetScale(1.25)
+                    if UIDropDownMenu_SetWidth then UIDropDownMenu_SetWidth(dropdown, 280) end
+                    frame.DeleteProfileDropdown = dropdown
+                    if panel and panel.StyleDropdownLabel then panel.StyleDropdownLabel(dropdown, 1.15) end
+                    if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(dropdown) end
+                end
+                frame.DeleteProfileDropdown:Show()
+
+                -- Helper to get deletable profiles (excludes current and presets)
+                local function getDeletableProfiles()
+                    local deletable = {}
+                    local currentProfile = getActiveProfileKey()
+                    local entries = buildLayoutEntries()
+                    for _, entry in ipairs(entries) do
+                        -- Skip the currently active profile and presets
+                        if entry.key ~= currentProfile and not entry.preset then
+                            table.insert(deletable, entry)
+                        end
+                    end
+                    return deletable
+                end
+
+                -- Refresh the delete dropdown
+                local function refreshDeleteDropdown()
+                    local dropdown = frame.DeleteProfileDropdown
+                    if not dropdown then return end
+                    local deletable = getDeletableProfiles()
+
+                    UIDropDownMenu_Initialize(dropdown, function(self)
+                        if #deletable == 0 then
+                            local info = UIDropDownMenu_CreateInfo()
+                            info.text = "No profiles available"
+                            info.disabled = true
+                            info.notCheckable = true
+                            UIDropDownMenu_AddButton(info)
+                        else
+                            for _, entry in ipairs(deletable) do
+                                local info = UIDropDownMenu_CreateInfo()
+                                info.text = entry.text
+                                info.value = entry.key
+                                info.notCheckable = true
+                                info.func = function()
+                                    -- Immediately reset the dropdown text
+                                    UIDropDownMenu_SetText(dropdown, "Select a profile...")
+                                    CloseDropDownMenus()
+                                    -- Confirm deletion via dialog
+                                    addon.Profiles:ConfirmDeleteLayout(entry.key, dropdown)
+                                end
+                                UIDropDownMenu_AddButton(info)
+                            end
+                        end
+                    end)
+                    UIDropDownMenu_SetWidth(dropdown, 280)
+                    UIDropDownMenu_SetText(dropdown, "Select a profile...")
+                end
+
+                refreshDeleteDropdown()
+
+                -- Store refresh function for external calls
+                frame.RefreshDeleteDropdown = refreshDeleteDropdown
+            end
+            deleteRow:AddShownPredicate(function()
+                return panel:IsSectionExpanded("profilesManage", "DeleteProfile")
+            end)
+            table.insert(init, deleteRow)
+        end
+
+        -- "Spec Profiles" collapsible section
         do
             local exp = Settings.CreateElementInitializer("ScooterExpandableSectionTemplate", {
                 name = "Spec Profiles",
