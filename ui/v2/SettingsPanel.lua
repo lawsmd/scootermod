@@ -112,6 +112,24 @@ function UIPanel:HandleEditModeBackSync(componentId, settingId)
         categoryKey = "trackedBars"
     elseif componentId == "cdmQoL" then
         categoryKey = "cdmQoL"
+    -- Unit Frames
+    elseif componentId == "ufPlayer" then
+        categoryKey = "ufPlayer"
+    elseif componentId == "ufTarget" then
+        categoryKey = "ufTarget"
+    elseif componentId == "ufFocus" then
+        categoryKey = "ufFocus"
+    elseif componentId == "ufPet" then
+        categoryKey = "ufPet"
+    elseif componentId == "ufToT" then
+        categoryKey = "ufToT"
+    elseif componentId == "ufBoss" then
+        categoryKey = "ufBoss"
+    -- Buffs/Debuffs
+    elseif componentId == "buffs" then
+        categoryKey = "buffs"
+    elseif componentId == "debuffs" then
+        categoryKey = "debuffs"
     end
 
     -- If currently viewing this category, trigger refresh
@@ -1133,6 +1151,10 @@ function UIPanel:CreateContentPane()
     if frame._logo then
         frame._logo:SetText("")
     end
+    -- Disable mouse on logo button initially (home page, no hover effect)
+    if frame._logoBtn then
+        frame._logoBtn:EnableMouse(false)
+    end
 
     -- Subscribe to theme updates
     Theme:Subscribe("UIPanel_ContentPane", function(r, g, b)
@@ -1221,16 +1243,69 @@ function UIPanel:ClearContent()
         self._rulesState.currentControls = {}
     end
 
-    -- 3. Future sections with custom state tracking should add cleanup here
-    -- Pattern:
-    -- if self._customSectionState and self._customSectionState.controls then
-    --     for _, control in ipairs(self._customSectionState.controls) do
-    --         if control.Cleanup then control:Cleanup() end
-    --         if control.Hide then control:Hide() end
-    --         if control.SetParent then control:SetParent(nil) end
-    --     end
-    --     self._customSectionState.controls = {}
-    -- end
+    -- 3. Clean up Profiles > Manage Profiles state-based content
+    if self._profilesManageState and self._profilesManageState.currentControls then
+        for _, control in ipairs(self._profilesManageState.currentControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._profilesManageState.currentControls = {}
+    end
+
+    -- 4. Clean up Profiles > Presets state-based content
+    if self._presetsState and self._presetsState.currentControls then
+        for _, control in ipairs(self._presetsState.currentControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._presetsState.currentControls = {}
+    end
+
+    -- 5. Clean up Apply All > Fonts state-based content
+    if self._applyAllFontsControls then
+        for _, control in ipairs(self._applyAllFontsControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._applyAllFontsControls = {}
+    end
+
+    -- 6. Clean up Apply All > Bar Textures state-based content
+    if self._applyAllTexturesControls then
+        for _, control in ipairs(self._applyAllTexturesControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._applyAllTexturesControls = {}
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -3802,6 +3877,465 @@ function UIPanel:RenderActionBar(scrollContent, componentId)
     })
 
     ---------------------------------------------------------------------------
+    -- Text Section (Action Bars 1-8 and Pet Bar only, NOT Stance Bar)
+    ---------------------------------------------------------------------------
+    local hasTextSection = isBar1 or isBar2to8 or isPetBar
+    if hasTextSection then
+        builder:AddCollapsibleSection({
+            title = "Text",
+            componentId = componentId,
+            sectionKey = "text",
+            defaultExpanded = false,
+            buildContent = function(contentFrame, inner)
+                -- Helper to apply text styling
+                local function applyText()
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end
+
+                -- Font style options
+                local fontStyleValues = {
+                    NONE = "None",
+                    OUTLINE = "Outline",
+                    THICKOUTLINE = "Thick Outline",
+                }
+                local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+
+                -- Determine tabs based on bar type
+                -- Action Bars and Pet Bar have 4 tabs: Charges, Cooldowns, Hotkey, Macro Name
+                local tabs = {
+                    { key = "charges", label = "Charges" },
+                    { key = "cooldowns", label = "Cooldowns" },
+                    { key = "hotkey", label = "Keybind" },
+                    { key = "macroName", label = "Macro Name" },
+                }
+
+                inner:AddTabbedSection({
+                    tabs = tabs,
+                    componentId = componentId,
+                    sectionKey = "textTabs",
+                    buildContent = {
+                        -------------------------------------------------------
+                        -- Charges (textStacks) Tab
+                        -------------------------------------------------------
+                        charges = function(tabContent, tabBuilder)
+                            local function getStacksSetting(key, default)
+                                local ts = getSetting("textStacks")
+                                if ts and ts[key] ~= nil then return ts[key] end
+                                return default
+                            end
+                            local function setStacksSetting(key, value)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks[key] = value
+                                end
+                                applyText()
+                            end
+
+                            tabBuilder:AddFontSelector({
+                                label = "Font",
+                                get = function() return getStacksSetting("fontFace", "FRIZQT__") end,
+                                set = function(v) setStacksSetting("fontFace", v) end,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Font Size",
+                                min = 6, max = 32, step = 1,
+                                get = function() return getStacksSetting("size", 16) end,
+                                set = function(v) setStacksSetting("size", v) end,
+                                minLabel = "6", maxLabel = "32",
+                            })
+
+                            tabBuilder:AddSelector({
+                                label = "Font Style",
+                                values = fontStyleValues,
+                                order = fontStyleOrder,
+                                get = function() return getStacksSetting("style", "OUTLINE") end,
+                                set = function(v) setStacksSetting("style", v) end,
+                            })
+
+                            tabBuilder:AddColorPicker({
+                                label = "Font Color",
+                                get = function()
+                                    local c = getStacksSetting("color", {1,1,1,1})
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                set = function(r, g, b, a)
+                                    setStacksSetting("color", {r, g, b, a})
+                                end,
+                                hasAlpha = true,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:Finalize()
+                        end,
+
+                        -------------------------------------------------------
+                        -- Cooldowns (textCooldown) Tab
+                        -------------------------------------------------------
+                        cooldowns = function(tabContent, tabBuilder)
+                            local function getCooldownSetting(key, default)
+                                local tc = getSetting("textCooldown")
+                                if tc and tc[key] ~= nil then return tc[key] end
+                                return default
+                            end
+                            local function setCooldownSetting(key, value)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                    comp.db.textCooldown = comp.db.textCooldown or {}
+                                    comp.db.textCooldown[key] = value
+                                end
+                                applyText()
+                            end
+
+                            tabBuilder:AddFontSelector({
+                                label = "Font",
+                                get = function() return getCooldownSetting("fontFace", "FRIZQT__") end,
+                                set = function(v) setCooldownSetting("fontFace", v) end,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Font Size",
+                                min = 6, max = 32, step = 1,
+                                get = function() return getCooldownSetting("size", 14) end,
+                                set = function(v) setCooldownSetting("size", v) end,
+                                minLabel = "6", maxLabel = "32",
+                            })
+
+                            tabBuilder:AddSelector({
+                                label = "Font Style",
+                                values = fontStyleValues,
+                                order = fontStyleOrder,
+                                get = function() return getCooldownSetting("style", "OUTLINE") end,
+                                set = function(v) setCooldownSetting("style", v) end,
+                            })
+
+                            tabBuilder:AddColorPicker({
+                                label = "Font Color",
+                                get = function()
+                                    local c = getCooldownSetting("color", {1,1,1,1})
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                set = function(r, g, b, a)
+                                    setCooldownSetting("color", {r, g, b, a})
+                                end,
+                                hasAlpha = true,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:Finalize()
+                        end,
+
+                        -------------------------------------------------------
+                        -- Hotkey (textHotkey) Tab
+                        -------------------------------------------------------
+                        hotkey = function(tabContent, tabBuilder)
+                            local function getHotkeySetting(key, default)
+                                local th = getSetting("textHotkey")
+                                if th and th[key] ~= nil then return th[key] end
+                                return default
+                            end
+                            local function setHotkeySetting(key, value)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                    comp.db.textHotkey = comp.db.textHotkey or {}
+                                    comp.db.textHotkey[key] = value
+                                end
+                                applyText()
+                            end
+
+                            -- Hide Hotkey toggle (stored as textHotkeyHidden)
+                            tabBuilder:AddToggle({
+                                label = "Hide Hotkey Text",
+                                get = function() return getSetting("textHotkeyHidden") or false end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textHotkeyHidden = v
+                                    end
+                                    applyText()
+                                end,
+                            })
+
+                            tabBuilder:AddFontSelector({
+                                label = "Font",
+                                get = function() return getHotkeySetting("fontFace", "FRIZQT__") end,
+                                set = function(v) setHotkeySetting("fontFace", v) end,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Font Size",
+                                min = 6, max = 32, step = 1,
+                                get = function() return getHotkeySetting("size", 14) end,
+                                set = function(v) setHotkeySetting("size", v) end,
+                                minLabel = "6", maxLabel = "32",
+                            })
+
+                            tabBuilder:AddSelector({
+                                label = "Font Style",
+                                values = fontStyleValues,
+                                order = fontStyleOrder,
+                                get = function() return getHotkeySetting("style", "OUTLINE") end,
+                                set = function(v) setHotkeySetting("style", v) end,
+                            })
+
+                            tabBuilder:AddColorPicker({
+                                label = "Font Color",
+                                get = function()
+                                    local c = getHotkeySetting("color", {1,1,1,1})
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                set = function(r, g, b, a)
+                                    setHotkeySetting("color", {r, g, b, a})
+                                end,
+                                hasAlpha = true,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getHotkeySetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textHotkey = comp.db.textHotkey or {}
+                                        comp.db.textHotkey.offset = comp.db.textHotkey.offset or {}
+                                        comp.db.textHotkey.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getHotkeySetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textHotkey = comp.db.textHotkey or {}
+                                        comp.db.textHotkey.offset = comp.db.textHotkey.offset or {}
+                                        comp.db.textHotkey.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:Finalize()
+                        end,
+
+                        -------------------------------------------------------
+                        -- Macro Name (textMacro) Tab
+                        -------------------------------------------------------
+                        macroName = function(tabContent, tabBuilder)
+                            local function getMacroSetting(key, default)
+                                local tm = getSetting("textMacro")
+                                if tm and tm[key] ~= nil then return tm[key] end
+                                return default
+                            end
+                            local function setMacroSetting(key, value)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                    comp.db.textMacro = comp.db.textMacro or {}
+                                    comp.db.textMacro[key] = value
+                                end
+                                applyText()
+                            end
+
+                            -- Hide Macro Name toggle (stored as textMacroHidden)
+                            tabBuilder:AddToggle({
+                                label = "Hide Macro Name",
+                                get = function() return getSetting("textMacroHidden") or false end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textMacroHidden = v
+                                    end
+                                    applyText()
+                                end,
+                            })
+
+                            tabBuilder:AddFontSelector({
+                                label = "Font",
+                                get = function() return getMacroSetting("fontFace", "FRIZQT__") end,
+                                set = function(v) setMacroSetting("fontFace", v) end,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Font Size",
+                                min = 6, max = 32, step = 1,
+                                get = function() return getMacroSetting("size", 14) end,
+                                set = function(v) setMacroSetting("size", v) end,
+                                minLabel = "6", maxLabel = "32",
+                            })
+
+                            tabBuilder:AddSelector({
+                                label = "Font Style",
+                                values = fontStyleValues,
+                                order = fontStyleOrder,
+                                get = function() return getMacroSetting("style", "OUTLINE") end,
+                                set = function(v) setMacroSetting("style", v) end,
+                            })
+
+                            tabBuilder:AddColorPicker({
+                                label = "Font Color",
+                                get = function()
+                                    local c = getMacroSetting("color", {1,1,1,1})
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                set = function(r, g, b, a)
+                                    setMacroSetting("color", {r, g, b, a})
+                                end,
+                                hasAlpha = true,
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getMacroSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textMacro = comp.db.textMacro or {}
+                                        comp.db.textMacro.offset = comp.db.textMacro.offset or {}
+                                        comp.db.textMacro.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:AddSlider({
+                                label = "Offset Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getMacroSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textMacro = comp.db.textMacro or {}
+                                        comp.db.textMacro.offset = comp.db.textMacro.offset or {}
+                                        comp.db.textMacro.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-50", maxLabel = "+50",
+                            })
+
+                            tabBuilder:Finalize()
+                        end,
+                    },
+                })
+
+                inner:Finalize()
+            end,
+        })
+    end
+
+    ---------------------------------------------------------------------------
     -- Border Section (not for Stance Bar)
     ---------------------------------------------------------------------------
     if hasBorderBackdrop then
@@ -4183,6 +4717,1172 @@ function UIPanel:RenderMicroBar(scrollContent)
         end,
     })
 
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Chat Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderChat(scrollContent)
+    -- Clear any existing content
+    self:ClearContent()
+
+    -- Create builder for this content area
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    -- Helper to get/set chat profile settings
+    local function getChatSetting(key)
+        local profile = addon.db and addon.db.profile
+        return profile and profile.chat and profile.chat[key]
+    end
+
+    local function setChatSetting(key, value)
+        if not (addon.db and addon.db.profile) then return end
+        addon.db.profile.chat = addon.db.profile.chat or {}
+        addon.db.profile.chat[key] = value
+        -- Apply styles after setting change
+        if addon and addon.ApplyStyles then
+            C_Timer.After(0, function()
+                if addon and addon.ApplyStyles then
+                    addon:ApplyStyles()
+                end
+            end)
+        end
+    end
+
+    builder:AddToggle({
+        label = "Hide In-Game Chat",
+        get = function()
+            return getChatSetting("hideInGameChat") or false
+        end,
+        set = function(val)
+            setChatSetting("hideInGameChat", val)
+        end,
+        infoIcon = {
+            tooltipTitle = "Hide In-Game Chat",
+            tooltipText = "Hides chat windows/tabs and related controls, but keeps the chat input box so you can see slash commands you run. Added for use with the ScooterDeck preset. If you want to customize your Chat frame, I recommend Chattynator. :)",
+        },
+    })
+
+    -- Finalize the layout
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Personal Resource Display Renderers
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderPRDGeneral(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderPRDGeneral(scrollContent)
+    end)
+
+    -- General tab is intentionally empty for now.
+    -- PRD positioning is now handled via Edit Mode (12.0+).
+    -- Future settings may be added here as needed.
+
+    builder:Finalize()
+end
+
+function UIPanel:RenderPRDHealthBar(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderPRDHealthBar(scrollContent)
+    end)
+
+    local function getComponent()
+        return addon.Components and addon.Components["prdHealth"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.db then
+            return comp.db[key]
+        end
+        return nil
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+            comp.db[key] = value
+        end
+        if comp and comp.ApplyStyling then
+            C_Timer.After(0, function()
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end)
+        end
+    end
+
+    -- Build border options
+    local function getBorderOptions()
+        local values = { none = "None", square = "Default (Square)" }
+        local order = { "none", "square" }
+        if addon.BuildBarBorderOptionsContainer then
+            local data = addon.BuildBarBorderOptionsContainer()
+            if data and #data > 0 then
+                values = { none = "None" }
+                order = { "none" }
+                for _, entry in ipairs(data) do
+                    local key = entry.value or entry.key
+                    local label = entry.text or entry.label or key
+                    if key then
+                        values[key] = label
+                        table.insert(order, key)
+                    end
+                end
+            end
+        end
+        return values, order
+    end
+
+    ---------------------------------------------------------------------------
+    -- Sizing Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "prdHealth",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Bar Width",
+                min = 60, max = 600, step = 1,
+                get = function() return getSetting("barWidth") or 200 end,
+                set = function(v) setSetting("barWidth", v) end,
+                minLabel = "60", maxLabel = "600",
+            })
+
+            inner:AddSlider({
+                label = "Bar Height",
+                min = 4, max = 60, step = 1,
+                get = function() return getSetting("barHeight") or 12 end,
+                set = function(v) setSetting("barHeight", v) end,
+                minLabel = "4", maxLabel = "60",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Border Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Border",
+        componentId = "prdHealth",
+        sectionKey = "border",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local borderValues, borderOrder = getBorderOptions()
+
+            inner:AddSelector({
+                label = "Border Style",
+                values = borderValues,
+                order = borderOrder,
+                get = function() return getSetting("borderStyle") or "square" end,
+                set = function(v) setSetting("borderStyle", v) end,
+            })
+
+            inner:AddToggleColorPicker({
+                label = "Border Tint",
+                getToggle = function() return getSetting("borderTintEnable") or false end,
+                setToggle = function(v) setSetting("borderTintEnable", v) end,
+                getColor = function()
+                    local c = getSetting("borderTintColor") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("borderTintColor", {r, g, b, a})
+                end,
+                hasAlpha = true,
+            })
+
+            inner:AddSlider({
+                label = "Border Thickness",
+                min = 1, max = 8, step = 0.2,
+                get = function() return getSetting("borderThickness") or 1 end,
+                set = function(v) setSetting("borderThickness", v) end,
+                minLabel = "1", maxLabel = "8",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Style Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Style",
+        componentId = "prdHealth",
+        sectionKey = "style",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Foreground Texture
+            inner:AddBarTextureSelector({
+                label = "Foreground Texture",
+                get = function() return getSetting("styleForegroundTexture") or "default" end,
+                set = function(v) setSetting("styleForegroundTexture", v) end,
+            })
+
+            -- Foreground Color
+            inner:AddSelectorColorPicker({
+                label = "Foreground Color",
+                values = {
+                    default = "Default",
+                    class = "Class Color",
+                    custom = "Custom",
+                },
+                order = { "default", "class", "custom" },
+                get = function() return getSetting("styleForegroundColorMode") or "default" end,
+                set = function(v) setSetting("styleForegroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleForegroundTint") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleForegroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
+            })
+
+            inner:AddSpacer(8)
+
+            -- Background Texture
+            inner:AddBarTextureSelector({
+                label = "Background Texture",
+                get = function() return getSetting("styleBackgroundTexture") or "default" end,
+                set = function(v) setSetting("styleBackgroundTexture", v) end,
+            })
+
+            -- Background Color
+            inner:AddSelectorColorPicker({
+                label = "Background Color",
+                values = {
+                    default = "Default",
+                    custom = "Custom",
+                },
+                order = { "default", "custom" },
+                get = function() return getSetting("styleBackgroundColorMode") or "default" end,
+                set = function(v) setSetting("styleBackgroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleBackgroundTint") or {0, 0, 0, 1}
+                    return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleBackgroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
+            })
+
+            -- Background Opacity
+            inner:AddSlider({
+                label = "Background Opacity",
+                min = 0, max = 100, step = 1,
+                get = function() return getSetting("styleBackgroundOpacity") or 50 end,
+                set = function(v) setSetting("styleBackgroundOpacity", v) end,
+                minLabel = "0%", maxLabel = "100%",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Text Section (Tabbed: Value Text / % Text)
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "prdHealth",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local textTabs = {
+                {
+                    key = "valueText",
+                    label = "Value Text",
+                    infoIcon = {
+                        tooltipTitle = "Value Text",
+                        tooltipText = "Displays current health as a number on the PRD health bar.",
+                    },
+                },
+                {
+                    key = "percentText",
+                    label = "% Text",
+                    infoIcon = {
+                        tooltipTitle = "Percentage Text",
+                        tooltipText = "Displays current health as a percentage on the PRD health bar.",
+                    },
+                },
+            }
+
+            inner:AddTabbedSection({
+                tabs = textTabs,
+                componentId = "prdHealth",
+                sectionKey = "textTabs",
+                buildContent = {
+                    valueText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Show Value Text",
+                            get = function() return getSetting("showText") or false end,
+                            set = function(v) setSetting("showText", v) end,
+                        })
+
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("textFont", v) end,
+                        })
+
+                        tabInner:AddSlider({
+                            label = "Font Size",
+                            min = 6, max = 24, step = 1,
+                            get = function() return getSetting("textFontSize") or 10 end,
+                            set = function(v) setSetting("textFontSize", v) end,
+                            minLabel = "6", maxLabel = "24",
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = {
+                                NONE = "None",
+                                OUTLINE = "Outline",
+                                THICKOUTLINE = "Thick Outline",
+                            },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
+                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("textFontFlags", v) end,
+                        })
+
+                        tabInner:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("textColor", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabInner:Finalize()
+                    end,
+                    percentText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Show % Text",
+                            get = function() return getSetting("showText") or false end,
+                            set = function(v) setSetting("showText", v) end,
+                        })
+
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("textFont", v) end,
+                        })
+
+                        tabInner:AddSlider({
+                            label = "Font Size",
+                            min = 6, max = 24, step = 1,
+                            get = function() return getSetting("textFontSize") or 10 end,
+                            set = function(v) setSetting("textFontSize", v) end,
+                            minLabel = "6", maxLabel = "24",
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = {
+                                NONE = "None",
+                                OUTLINE = "Outline",
+                                THICKOUTLINE = "Thick Outline",
+                            },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
+                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("textFontFlags", v) end,
+                        })
+
+                        tabInner:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("textColor", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Visibility Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = "prdHealth",
+        sectionKey = "visibility",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Hide Health Bar",
+                get = function() return getSetting("hideBar") or false end,
+                set = function(v) setSetting("hideBar", v) end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    builder:Finalize()
+end
+
+function UIPanel:RenderPRDPowerBar(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderPRDPowerBar(scrollContent)
+    end)
+
+    local function getComponent()
+        return addon.Components and addon.Components["prdPower"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.db then
+            return comp.db[key]
+        end
+        return nil
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+            comp.db[key] = value
+        end
+        if comp and comp.ApplyStyling then
+            C_Timer.After(0, function()
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end)
+        end
+    end
+
+    -- Build border options
+    local function getBorderOptions()
+        local values = { none = "None", square = "Default (Square)" }
+        local order = { "none", "square" }
+        if addon.BuildBarBorderOptionsContainer then
+            local data = addon.BuildBarBorderOptionsContainer()
+            if data and #data > 0 then
+                values = { none = "None" }
+                order = { "none" }
+                for _, entry in ipairs(data) do
+                    local key = entry.value or entry.key
+                    local label = entry.text or entry.label or key
+                    if key then
+                        values[key] = label
+                        table.insert(order, key)
+                    end
+                end
+            end
+        end
+        return values, order
+    end
+
+    ---------------------------------------------------------------------------
+    -- Sizing Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "prdPower",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Bar Height",
+                min = 4, max = 40, step = 1,
+                get = function() return getSetting("barHeight") or 8 end,
+                set = function(v) setSetting("barHeight", v) end,
+                minLabel = "4", maxLabel = "40",
+                infoIcon = {
+                    tooltipTitle = "Power Bar Height",
+                    tooltipText = "Width automatically follows the Health Bar width.",
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Style Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Style",
+        componentId = "prdPower",
+        sectionKey = "style",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Foreground Texture
+            inner:AddBarTextureSelector({
+                label = "Foreground Texture",
+                get = function() return getSetting("styleForegroundTexture") or "default" end,
+                set = function(v) setSetting("styleForegroundTexture", v) end,
+            })
+
+            -- Foreground Color
+            inner:AddSelectorColorPicker({
+                label = "Foreground Color",
+                values = {
+                    default = "Default",
+                    power = "Power Color",
+                    custom = "Custom",
+                },
+                order = { "default", "power", "custom" },
+                get = function() return getSetting("styleForegroundColorMode") or "default" end,
+                set = function(v) setSetting("styleForegroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleForegroundTint") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleForegroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
+            })
+
+            inner:AddSpacer(8)
+
+            -- Background Texture
+            inner:AddBarTextureSelector({
+                label = "Background Texture",
+                get = function() return getSetting("styleBackgroundTexture") or "default" end,
+                set = function(v) setSetting("styleBackgroundTexture", v) end,
+            })
+
+            -- Background Color
+            inner:AddSelectorColorPicker({
+                label = "Background Color",
+                values = {
+                    default = "Default",
+                    custom = "Custom",
+                },
+                order = { "default", "custom" },
+                get = function() return getSetting("styleBackgroundColorMode") or "default" end,
+                set = function(v) setSetting("styleBackgroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleBackgroundTint") or {0, 0, 0, 1}
+                    return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleBackgroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
+            })
+
+            -- Background Opacity
+            inner:AddSlider({
+                label = "Background Opacity",
+                min = 0, max = 100, step = 1,
+                get = function() return getSetting("styleBackgroundOpacity") or 50 end,
+                set = function(v) setSetting("styleBackgroundOpacity", v) end,
+                minLabel = "0%", maxLabel = "100%",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Border Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Border",
+        componentId = "prdPower",
+        sectionKey = "border",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local borderValues, borderOrder = getBorderOptions()
+
+            inner:AddSelector({
+                label = "Border Style",
+                values = borderValues,
+                order = borderOrder,
+                get = function() return getSetting("borderStyle") or "square" end,
+                set = function(v) setSetting("borderStyle", v) end,
+            })
+
+            inner:AddToggleColorPicker({
+                label = "Border Tint",
+                getToggle = function() return getSetting("borderTintEnable") or false end,
+                setToggle = function(v) setSetting("borderTintEnable", v) end,
+                getColor = function()
+                    local c = getSetting("borderTintColor") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("borderTintColor", {r, g, b, a})
+                end,
+                hasAlpha = true,
+            })
+
+            inner:AddSlider({
+                label = "Border Thickness",
+                min = 1, max = 8, step = 0.2,
+                get = function() return getSetting("borderThickness") or 1 end,
+                set = function(v) setSetting("borderThickness", v) end,
+                minLabel = "1", maxLabel = "8",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Text Section (Tabbed: Value Text / % Text)
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "prdPower",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local textTabs = {
+                {
+                    key = "valueText",
+                    label = "Value Text",
+                    infoIcon = {
+                        tooltipTitle = "Value Text",
+                        tooltipText = "Displays current power as a number on the PRD power bar.",
+                    },
+                },
+                {
+                    key = "percentText",
+                    label = "% Text",
+                    infoIcon = {
+                        tooltipTitle = "Percentage Text",
+                        tooltipText = "Displays current power as a percentage on the PRD power bar.",
+                    },
+                },
+            }
+
+            inner:AddTabbedSection({
+                tabs = textTabs,
+                componentId = "prdPower",
+                sectionKey = "textTabs",
+                buildContent = {
+                    valueText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Show Value Text",
+                            get = function() return getSetting("showText") or false end,
+                            set = function(v) setSetting("showText", v) end,
+                        })
+
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("textFont", v) end,
+                        })
+
+                        tabInner:AddSlider({
+                            label = "Font Size",
+                            min = 6, max = 24, step = 1,
+                            get = function() return getSetting("textFontSize") or 10 end,
+                            set = function(v) setSetting("textFontSize", v) end,
+                            minLabel = "6", maxLabel = "24",
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = {
+                                NONE = "None",
+                                OUTLINE = "Outline",
+                                THICKOUTLINE = "Thick Outline",
+                            },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
+                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("textFontFlags", v) end,
+                        })
+
+                        tabInner:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("textColor", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabInner:Finalize()
+                    end,
+                    percentText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Show % Text",
+                            get = function() return getSetting("showText") or false end,
+                            set = function(v) setSetting("showText", v) end,
+                        })
+
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("textFont", v) end,
+                        })
+
+                        tabInner:AddSlider({
+                            label = "Font Size",
+                            min = 6, max = 24, step = 1,
+                            get = function() return getSetting("textFontSize") or 10 end,
+                            set = function(v) setSetting("textFontSize", v) end,
+                            minLabel = "6", maxLabel = "24",
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = {
+                                NONE = "None",
+                                OUTLINE = "Outline",
+                                THICKOUTLINE = "Thick Outline",
+                            },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
+                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("textFontFlags", v) end,
+                        })
+
+                        tabInner:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("textColor", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Visibility Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = "prdPower",
+        sectionKey = "visibility",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Hide Power Bar",
+                get = function() return getSetting("hideBar") or false end,
+                set = function(v) setSetting("hideBar", v) end,
+            })
+
+            inner:AddToggle({
+                label = "Hide Full Bar Animations",
+                get = function() return getSetting("hideSpikeAnimations") or false end,
+                set = function(v) setSetting("hideSpikeAnimations", v) end,
+                infoIcon = {
+                    tooltipTitle = "Hide Full Bar Animations",
+                    tooltipText = "Hides the 'spike' animations that play when your power bar reaches full.",
+                },
+            })
+
+            inner:AddToggle({
+                label = "Hide Power Feedback",
+                get = function() return getSetting("hidePowerFeedback") or false end,
+                set = function(v) setSetting("hidePowerFeedback", v) end,
+                infoIcon = {
+                    tooltipTitle = "Hide Power Feedback",
+                    tooltipText = "Hides the visual feedback animation when power is gained or spent.",
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    builder:Finalize()
+end
+
+function UIPanel:RenderPRDClassResource(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderPRDClassResource(scrollContent)
+    end)
+
+    local function getComponent()
+        return addon.Components and addon.Components["prdClassResource"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.db then
+            return comp.db[key]
+        end
+        return nil
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+            comp.db[key] = value
+        end
+        if comp and comp.ApplyStyling then
+            C_Timer.After(0, function()
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end)
+        end
+    end
+
+    ---------------------------------------------------------------------------
+    -- Sizing Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "prdClassResource",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Scale",
+                min = 50, max = 150, step = 1,
+                get = function() return getSetting("scale") or 100 end,
+                set = function(v) setSetting("scale", v) end,
+                minLabel = "50%", maxLabel = "150%",
+                infoIcon = {
+                    tooltipTitle = "Class Resource Scale",
+                    tooltipText = "Adjusts the size of the class resource display (combo points, runes, holy power, etc.).",
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
+    -- Visibility Section
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = "prdClassResource",
+        sectionKey = "visibility",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Hide Class Resource",
+                get = function() return getSetting("hideBar") or false end,
+                set = function(v) setSetting("hideBar", v) end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Tooltip Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderTooltip(scrollContent)
+    -- Clear any existing content
+    self:ClearContent()
+
+    -- Create builder for this content area
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    -- Store reference to this function for re-rendering on expand/collapse
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderTooltip(scrollContent)
+    end)
+
+    -- Helper to get component settings
+    local function getComponent()
+        return addon.Components and addon.Components["tooltip"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.GetSetting then
+            return comp:GetSetting(key)
+        end
+        -- Fallback to profile if component not loaded
+        local profile = addon.db and addon.db.profile
+        return profile and profile.tooltip and profile.tooltip[key]
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            -- Ensure component DB exists
+            if addon.EnsureComponentDB then
+                addon:EnsureComponentDB(comp)
+            end
+            comp.db[key] = value
+        else
+            -- Fallback to profile
+            local profile = addon.db and addon.db.profile
+            if profile then
+                profile.tooltip = profile.tooltip or {}
+                profile.tooltip[key] = value
+            end
+        end
+        -- Apply styles after setting change
+        if addon and addon.ApplyStyles then
+            C_Timer.After(0, function()
+                if addon and addon.ApplyStyles then
+                    addon:ApplyStyles()
+                end
+            end)
+        end
+    end
+
+    -- Helper to get text config sub-table
+    local function getTextConfig(key)
+        local comp = getComponent()
+        local db = comp and comp.db
+        if db and type(db[key]) == "table" then
+            return db[key]
+        end
+        return nil
+    end
+
+    local function ensureTextConfig(key, defaults)
+        local comp = getComponent()
+        if not comp then return nil end
+        local db = comp.db
+        if not db then return nil end
+
+        db[key] = db[key] or {}
+        local t = db[key]
+        if t.fontFace == nil then t.fontFace = defaults.fontFace end
+        if t.size == nil then t.size = defaults.size end
+        if t.style == nil then t.style = defaults.style end
+        return t
+    end
+
+    -- Font style options
+    local fontStyleValues = {
+        NONE = "Regular",
+        OUTLINE = "Outline",
+        THICKOUTLINE = "Thick Outline",
+    }
+    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+
+    -- Helper to build text tab content (used by all three tabs)
+    local function buildTextTabContent(tabBuilder, dbKey, defaults)
+        -- Font selector
+        tabBuilder:AddFontSelector({
+            label = "Font",
+            description = "The font used for this text element.",
+            get = function()
+                local t = getTextConfig(dbKey)
+                return (t and t.fontFace) or defaults.fontFace
+            end,
+            set = function(fontKey)
+                local t = ensureTextConfig(dbKey, defaults)
+                if t then
+                    t.fontFace = fontKey or defaults.fontFace
+                    if addon and addon.ApplyStyles then
+                        addon:ApplyStyles()
+                    end
+                end
+            end,
+        })
+
+        -- Font size slider
+        tabBuilder:AddSlider({
+            label = "Font Size",
+            description = "The size of this text element.",
+            min = 6,
+            max = 32,
+            step = 1,
+            get = function()
+                local t = getTextConfig(dbKey)
+                return (t and t.size) or defaults.size
+            end,
+            set = function(v)
+                local t = ensureTextConfig(dbKey, defaults)
+                if t then
+                    t.size = v or defaults.size
+                    if addon and addon.ApplyStyles then
+                        addon:ApplyStyles()
+                    end
+                end
+            end,
+            minLabel = "6",
+            maxLabel = "32",
+        })
+
+        -- Font style selector
+        tabBuilder:AddSelector({
+            label = "Font Style",
+            description = "The outline style for this text.",
+            values = fontStyleValues,
+            order = fontStyleOrder,
+            get = function()
+                local t = getTextConfig(dbKey)
+                return (t and t.style) or defaults.style
+            end,
+            set = function(v)
+                local t = ensureTextConfig(dbKey, defaults)
+                if t then
+                    t.style = v or defaults.style
+                    if addon and addon.ApplyStyles then
+                        addon:ApplyStyles()
+                    end
+                end
+            end,
+        })
+
+        tabBuilder:Finalize()
+    end
+
+    -- Collapsible section: Text (with tabbed sub-sections)
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "tooltip",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "nameTitle", label = "Name & Title" },
+                    { key = "everythingElse", label = "Everything Else" },
+                    { key = "comparison", label = "Comparison" },
+                },
+                componentId = "tooltip",
+                sectionKey = "textTabs",
+                buildContent = {
+                    nameTitle = function(tabContent, tabBuilder)
+                        buildTextTabContent(tabBuilder, "textTitle", {
+                            fontFace = "FRIZQT__",
+                            size = 12,
+                            style = "NONE",
+                        })
+                    end,
+                    everythingElse = function(tabContent, tabBuilder)
+                        buildTextTabContent(tabBuilder, "textEverythingElse", {
+                            fontFace = "FRIZQT__",
+                            size = 12,
+                            style = "NONE",
+                        })
+                    end,
+                    comparison = function(tabContent, tabBuilder)
+                        buildTextTabContent(tabBuilder, "textComparison", {
+                            fontFace = "FRIZQT__",
+                            size = 12,
+                            style = "NONE",
+                        })
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Visibility
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = "tooltip",
+        sectionKey = "visibility",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Hide Tooltip Health Bar",
+                description = "Hide the health bar that appears on unit tooltips.",
+                get = function()
+                    return getSetting("hideHealthBar") or false
+                end,
+                set = function(val)
+                    setSetting("hideHealthBar", val)
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Finalize the layout
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Minimap Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderMinimap(scrollContent)
+    -- Clear any existing content
+    self:ClearContent()
+
+    -- Create builder for this content area
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    builder:AddDescription(
+        "Minimap customization is coming soon.\n\n" ..
+        "This section will include options for positioning, scale, and visibility of minimap buttons."
+    )
+
+    -- Finalize the layout
     builder:Finalize()
 end
 
@@ -5972,6 +7672,2199 @@ function UIPanel:RenderProfilesRules(scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Profiles > Manage Profiles Renderer
+--------------------------------------------------------------------------------
+
+-- Profiles Manage state (similar to _rulesState for Rules)
+UIPanel._profilesManageState = {
+    currentControls = {},
+}
+
+function UIPanel:RenderProfilesManage(scrollContent)
+    self:ClearContent()
+
+    -- Clean up previous Profiles Manage controls
+    local state = self._profilesManageState
+    if state.currentControls then
+        for _, control in ipairs(state.currentControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+    end
+    state.currentControls = {}
+
+    local ar, ag, ab = Theme:GetAccentColor()
+    local dimR, dimG, dimB = Theme:GetDimTextColor()
+    local fontPath = Theme:GetFont("VALUE")
+    local fontPathMed = Theme:GetFont("LABEL")
+
+    -- Constants for this page
+    local DROPDOWN_SCALE = 1.2
+    local BUTTON_WIDTH = 140
+    local BUTTON_HEIGHT = 32
+    local BUTTON_GAP = 16
+    local SPEC_ICON_SIZE = 28
+    local CONTENT_PADDING = 8
+
+    -- Refresh callback
+    local function refreshProfilesManage()
+        self:RenderProfilesManage(scrollContent)
+    end
+
+    -- Helper: Get active profile key
+    local function getActiveProfileKey()
+        if addon.Profiles and addon.Profiles.GetActiveProfile then
+            return addon.Profiles:GetActiveProfile()
+        end
+        if addon.db and addon.db.GetCurrentProfile then
+            return addon.db:GetCurrentProfile()
+        end
+        return nil
+    end
+
+    -- Helper: Build layout menu entries
+    local function buildLayoutEntries()
+        if not addon.Profiles or not addon.Profiles.GetLayoutMenuEntries then
+            return {}
+        end
+        return addon.Profiles:GetLayoutMenuEntries()
+    end
+
+    -- Track y offset for manual layout
+    local yOffset = -CONTENT_PADDING
+
+    ---------------------------------------------------------------------------
+    -- Info Text Section
+    ---------------------------------------------------------------------------
+    local infoFrame = CreateFrame("Frame", nil, scrollContent)
+    infoFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING + 8, yOffset)
+    infoFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING - 8, yOffset)
+
+    local infoText = infoFrame:CreateFontString(nil, "OVERLAY")
+    infoText:SetFont(fontPath, 13, "")
+    infoText:SetPoint("TOPLEFT", infoFrame, "TOPLEFT", 0, 0)
+    infoText:SetPoint("TOPRIGHT", infoFrame, "TOPRIGHT", 0, 0)
+    infoText:SetText("ScooterMod profiles stay synchronized with Edit Mode layouts. Switch layouts here or via Edit Mode and ScooterMod will keep them in sync.")
+    infoText:SetTextColor(dimR, dimG, dimB, 1)
+    infoText:SetJustifyH("LEFT")
+    infoText:SetWordWrap(true)
+
+    -- Calculate text height after layout
+    C_Timer.After(0, function()
+        if infoText and infoFrame then
+            local h = infoText:GetStringHeight() or 40
+            infoFrame:SetHeight(h + 8)
+        end
+    end)
+    infoFrame:SetHeight(50)
+    table.insert(state.currentControls, infoFrame)
+    yOffset = yOffset - 60
+
+    ---------------------------------------------------------------------------
+    -- Active Layout Dropdown (centered, larger)
+    ---------------------------------------------------------------------------
+    local activeLayoutLabel = scrollContent:CreateFontString(nil, "OVERLAY")
+    activeLayoutLabel:SetFont(fontPathMed, 18, "")
+    activeLayoutLabel:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    activeLayoutLabel:SetText("Active Layout")
+    activeLayoutLabel:SetTextColor(ar, ag, ab, 1)
+    table.insert(state.currentControls, activeLayoutLabel)
+    yOffset = yOffset - 24
+
+    -- Build values and order for dropdown
+    local entries = buildLayoutEntries()
+    local dropdownValues = {}
+    local dropdownOrder = {}
+    for _, entry in ipairs(entries) do
+        dropdownValues[entry.key] = entry.text
+        table.insert(dropdownOrder, entry.key)
+    end
+
+    local activeDropdown = Controls:CreateDropdown({
+        parent = scrollContent,
+        values = dropdownValues,
+        order = dropdownOrder,
+        get = function()
+            return getActiveProfileKey()
+        end,
+        set = function(key)
+            local entry = nil
+            for _, e in ipairs(entries) do
+                if e.key == key then
+                    entry = e
+                    break
+                end
+            end
+            if entry and entry.preset then
+                -- Preset selected - need to clone
+                local currentKey = getActiveProfileKey()
+                addon.Profiles:PromptClonePreset(key, nil, entry.text, currentKey)
+                return
+            end
+            if addon.Profiles and addon.Profiles.SwitchToProfile then
+                addon.Profiles:SwitchToProfile(key, { reason = "ManageProfilesDropdown" })
+            end
+            -- Refresh after switch
+            C_Timer.After(0.1, refreshProfilesManage)
+        end,
+        placeholder = "Select a layout...",
+        width = 240,
+        height = 28,
+        fontSize = 13,
+    })
+    activeDropdown:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    activeDropdown:SetScale(DROPDOWN_SCALE)
+    table.insert(state.currentControls, activeDropdown)
+    yOffset = yOffset - (34 * DROPDOWN_SCALE) - 28
+
+    -- Store reference for button state updates
+    state.activeDropdown = activeDropdown
+
+    ---------------------------------------------------------------------------
+    -- Action Buttons Row (Create, Rename, Copy)
+    ---------------------------------------------------------------------------
+    local totalButtonsWidth = (BUTTON_WIDTH * 3) + (BUTTON_GAP * 2)
+    local startX = -totalButtonsWidth / 2
+
+    -- Update button states helper
+    local function updateButtonStates()
+        local current = getActiveProfileKey()
+        local isPreset = current and addon.Profiles and addon.Profiles:IsPreset(current)
+        if state.renameBtn then
+            state.renameBtn:SetEnabled(current and not isPreset)
+        end
+        if state.copyBtn then
+            state.copyBtn:SetEnabled(not not current)
+        end
+    end
+
+    -- Create button
+    local createBtn = Controls:CreateButton({
+        parent = scrollContent,
+        text = "Create",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = function()
+            addon.Profiles:PromptCreateLayout(nil)
+            C_Timer.After(0.1, refreshProfilesManage)
+        end,
+    })
+    createBtn:SetPoint("TOP", scrollContent, "TOP", startX + (BUTTON_WIDTH / 2), yOffset)
+    table.insert(state.currentControls, createBtn)
+    state.createBtn = createBtn
+
+    -- Rename button
+    local renameBtn = Controls:CreateButton({
+        parent = scrollContent,
+        text = "Rename",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = function()
+            local current = getActiveProfileKey()
+            if current then
+                addon.Profiles:PromptRenameLayout(current, nil)
+                C_Timer.After(0.1, refreshProfilesManage)
+            end
+        end,
+    })
+    renameBtn:SetPoint("LEFT", createBtn, "RIGHT", BUTTON_GAP, 0)
+    table.insert(state.currentControls, renameBtn)
+    state.renameBtn = renameBtn
+
+    -- Copy button
+    local copyBtn = Controls:CreateButton({
+        parent = scrollContent,
+        text = "Copy",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = function()
+            local current = getActiveProfileKey()
+            if not current then return end
+            if addon.Profiles and addon.Profiles:IsPreset(current) then
+                addon.Profiles:PromptClonePreset(current, nil, addon.Profiles:GetLayoutDisplayText(current), current)
+            else
+                addon.Profiles:PromptCopyLayout(current, nil)
+            end
+            C_Timer.After(0.1, refreshProfilesManage)
+        end,
+    })
+    copyBtn:SetPoint("LEFT", renameBtn, "RIGHT", BUTTON_GAP, 0)
+    table.insert(state.currentControls, copyBtn)
+    state.copyBtn = copyBtn
+
+    -- Update button states
+    updateButtonStates()
+    yOffset = yOffset - BUTTON_HEIGHT - 24
+
+    ---------------------------------------------------------------------------
+    -- Delete a Profile (Collapsible Section)
+    ---------------------------------------------------------------------------
+    local deleteSection = Controls:CreateCollapsibleSection({
+        parent = scrollContent,
+        title = "Delete a Profile",
+        componentId = "profilesManage",
+        sectionKey = "deleteProfile",
+        defaultExpanded = false,
+        onToggle = function()
+            C_Timer.After(0, refreshProfilesManage)
+        end,
+    })
+    deleteSection:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, yOffset)
+    deleteSection:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, yOffset)
+    table.insert(state.currentControls, deleteSection)
+
+    -- Build delete dropdown content
+    local deleteContent = deleteSection:GetContentFrame()
+
+    -- Get deletable profiles (exclude current and presets)
+    local function getDeletableProfiles()
+        local deletable = {}
+        local currentProfile = getActiveProfileKey()
+        for _, entry in ipairs(entries) do
+            if entry.key ~= currentProfile and not entry.preset then
+                table.insert(deletable, entry)
+            end
+        end
+        return deletable
+    end
+
+    local deletable = getDeletableProfiles()
+    local deleteValues = {}
+    local deleteOrder = {}
+    for _, entry in ipairs(deletable) do
+        deleteValues[entry.key] = entry.text
+        table.insert(deleteOrder, entry.key)
+    end
+
+    local deleteDropdown = Controls:CreateDropdown({
+        parent = deleteContent,
+        values = deleteValues,
+        order = deleteOrder,
+        set = function(key)
+            -- Confirm deletion
+            addon.Profiles:ConfirmDeleteLayout(key, nil)
+            C_Timer.After(0.2, refreshProfilesManage)
+        end,
+        placeholder = #deletable > 0 and "Select a profile to delete..." or "No deletable profiles",
+        width = 280,
+        height = 26,
+        fontSize = 12,
+    })
+    deleteDropdown:SetPoint("TOP", deleteContent, "TOP", 0, -12)
+    table.insert(state.currentControls, deleteDropdown)
+
+    -- Set content height
+    deleteSection:SetContentHeight(60)
+
+    -- Get section height and update offset
+    local deleteSectionHeight = deleteSection:GetHeight()
+    yOffset = yOffset - deleteSectionHeight - 16
+
+    ---------------------------------------------------------------------------
+    -- Spec Profiles (Collapsible Section)
+    ---------------------------------------------------------------------------
+    local specSection = Controls:CreateCollapsibleSection({
+        parent = scrollContent,
+        title = "Spec Profiles",
+        componentId = "profilesManage",
+        sectionKey = "specProfiles",
+        defaultExpanded = false,
+        onToggle = function()
+            C_Timer.After(0, refreshProfilesManage)
+        end,
+    })
+    specSection:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, yOffset)
+    specSection:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, yOffset)
+    table.insert(state.currentControls, specSection)
+
+    local specContent = specSection:GetContentFrame()
+
+    -- Enable Spec Profiles toggle
+    local specEnabled = addon.Profiles and addon.Profiles.IsSpecProfilesEnabled and addon.Profiles:IsSpecProfilesEnabled() or false
+
+    local enableToggle = Controls:CreateToggle({
+        parent = specContent,
+        label = "Enable Spec Profiles",
+        description = "Automatically switch profiles when you change specializations.",
+        get = function()
+            return addon.Profiles and addon.Profiles:IsSpecProfilesEnabled() or false
+        end,
+        set = function(value)
+            local wasEnabled = addon.Profiles and addon.Profiles:IsSpecProfilesEnabled()
+            if addon.Profiles and addon.Profiles.SetSpecProfilesEnabled then
+                addon.Profiles:SetSpecProfilesEnabled(value)
+            end
+            -- Seed assignments when first enabling
+            if value and not wasEnabled then
+                local current = getActiveProfileKey()
+                if current and addon.Profiles and addon.Profiles.SetSpecAssignment then
+                    local specs = (addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions()) or {}
+                    for _, s in ipairs(specs) do
+                        if s and s.specID then
+                            addon.Profiles:SetSpecAssignment(s.specID, current)
+                        end
+                    end
+                end
+            end
+            if value and addon.Profiles and addon.Profiles.OnPlayerSpecChanged then
+                addon.Profiles:OnPlayerSpecChanged()
+            end
+            -- Refresh to show/hide spec rows
+            C_Timer.After(0.05, refreshProfilesManage)
+        end,
+    })
+    enableToggle:SetPoint("TOPLEFT", specContent, "TOPLEFT", 0, 0)
+    enableToggle:SetPoint("TOPRIGHT", specContent, "TOPRIGHT", 0, 0)
+    table.insert(state.currentControls, enableToggle)
+
+    local specContentHeight = enableToggle:GetHeight() + 8
+
+    -- Spec rows (only if enabled)
+    if specEnabled then
+        local specOptions = (addon.Profiles and addon.Profiles.GetSpecOptions and addon.Profiles:GetSpecOptions()) or {}
+        local specYOffset = -enableToggle:GetHeight() - 16
+
+        for _, spec in ipairs(specOptions) do
+            -- Spec row frame
+            local specRow = CreateFrame("Frame", nil, specContent)
+            specRow:SetPoint("TOPLEFT", specContent, "TOPLEFT", 8, specYOffset)
+            specRow:SetPoint("TOPRIGHT", specContent, "TOPRIGHT", -8, specYOffset)
+            specRow:SetHeight(40)
+
+            -- Spec icon
+            local specIcon = specRow:CreateTexture(nil, "ARTWORK")
+            specIcon:SetSize(SPEC_ICON_SIZE, SPEC_ICON_SIZE)
+            specIcon:SetPoint("LEFT", specRow, "LEFT", 0, 0)
+            if spec.icon then
+                specIcon:SetTexture(spec.icon)
+            end
+
+            -- Spec name
+            local specName = specRow:CreateFontString(nil, "OVERLAY")
+            specName:SetFont(fontPath, 13, "")
+            specName:SetPoint("LEFT", specIcon, "RIGHT", 10, 0)
+            specName:SetText(spec.name or ("Spec " .. tostring(spec.specIndex)))
+            specName:SetTextColor(1, 1, 1, 1)
+            specName:SetWidth(120)
+            specName:SetJustifyH("LEFT")
+
+            -- Spec dropdown (profile assignment)
+            local assigned = addon.Profiles and addon.Profiles.GetSpecAssignment and addon.Profiles:GetSpecAssignment(spec.specID) or nil
+
+            local specDropdown = Controls:CreateDropdown({
+                parent = specRow,
+                values = dropdownValues,
+                order = dropdownOrder,
+                get = function()
+                    return addon.Profiles and addon.Profiles:GetSpecAssignment(spec.specID) or getActiveProfileKey()
+                end,
+                set = function(key)
+                    if addon.Profiles and addon.Profiles.SetSpecAssignment then
+                        addon.Profiles:SetSpecAssignment(spec.specID, key)
+                    end
+                    -- Trigger spec change if applicable
+                    if addon.Profiles and addon.Profiles:IsSpecProfilesEnabled() then
+                        if addon.Profiles.OnPlayerSpecChanged then
+                            addon.Profiles:OnPlayerSpecChanged()
+                        end
+                    end
+                end,
+                placeholder = "Select a layout...",
+                width = 200,
+                height = 24,
+                fontSize = 11,
+            })
+            specDropdown:SetPoint("LEFT", specName, "RIGHT", 16, 0)
+
+            table.insert(state.currentControls, specRow)
+            table.insert(state.currentControls, specDropdown)
+
+            specYOffset = specYOffset - 44
+            specContentHeight = specContentHeight + 44
+        end
+    end
+
+    -- Set content height for spec section
+    specSection:SetContentHeight(specContentHeight + 16)
+
+    local specSectionHeight = specSection:GetHeight()
+    yOffset = yOffset - specSectionHeight - 24
+
+    ---------------------------------------------------------------------------
+    -- Warning Notice (bottom)
+    ---------------------------------------------------------------------------
+    local warningFrame = CreateFrame("Frame", nil, scrollContent)
+    warningFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, yOffset)
+    warningFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, yOffset)
+    warningFrame:SetHeight(80)
+
+    -- Divider line above warning
+    local divider = warningFrame:CreateTexture(nil, "ARTWORK")
+    divider:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, 0)
+    divider:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, 0)
+    divider:SetHeight(1)
+    divider:SetColorTexture(ar, ag, ab, 0.3)
+
+    -- Warning text
+    local warningText = warningFrame:CreateFontString(nil, "OVERLAY")
+    warningText:SetFont(fontPath, 12, "")
+    warningText:SetPoint("TOPLEFT", warningFrame, "TOPLEFT", 0, -12)
+    warningText:SetPoint("TOPRIGHT", warningFrame, "TOPRIGHT", 0, -12)
+    warningText:SetText("Creating, deleting, or switching between profiles will require a |cFFFFD100RELOAD|r.\n\nScooterMod only layers customizations on top of the Blizzard UI and a reload is needed to obtain current defaults for fields which you have customized in one profile but not another.")
+    warningText:SetTextColor(1.0, 0.82, 0.0, 1)
+    warningText:SetJustifyH("CENTER")
+    warningText:SetWordWrap(true)
+
+    table.insert(state.currentControls, warningFrame)
+    yOffset = yOffset - 100
+
+    ---------------------------------------------------------------------------
+    -- Set scroll content height
+    ---------------------------------------------------------------------------
+    local totalHeight = math.abs(yOffset) + 20
+    scrollContent:SetHeight(totalHeight)
+end
+
+--------------------------------------------------------------------------------
+-- Profiles > Presets Renderer
+--------------------------------------------------------------------------------
+
+-- Presets state
+UIPanel._presetsState = {
+    currentControls = {},
+    selectedIndex = 1,
+}
+
+function UIPanel:RenderProfilesPresets(scrollContent)
+    self:ClearContent()
+
+    -- Clean up previous controls
+    local state = self._presetsState
+    if state.currentControls then
+        for _, control in ipairs(state.currentControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+    end
+    state.currentControls = {}
+
+    local ar, ag, ab = Theme:GetAccentColor()
+    local dimR, dimG, dimB = Theme:GetDimTextColor()
+    local fontPath = Theme:GetFont("VALUE")
+    local fontPathMed = Theme:GetFont("LABEL")
+    local fontPathBold = Theme:GetFont("HEADER")
+
+    -- Constants
+    local CONTENT_PADDING = 8
+    local HERO_WIDTH = 560
+    local HERO_HEIGHT = 315
+    local COLUMN_WIDTH = 240
+    local COLUMN_OUTER_MARGIN = 40
+    local BUTTON_WIDTH = 280
+    local BUTTON_HEIGHT = 36
+
+    -- Get preset list
+    local function getPresetList()
+        if not addon.Presets or not addon.Presets.GetList then
+            return {}
+        end
+        return addon.Presets:GetList()
+    end
+
+    local presets = getPresetList()
+
+    -- Clamp selected index
+    if state.selectedIndex < 1 then state.selectedIndex = 1 end
+    if state.selectedIndex > #presets then state.selectedIndex = math.max(1, #presets) end
+
+    -- Refresh callback
+    local function refreshPresets()
+        self:RenderProfilesPresets(scrollContent)
+    end
+
+    local yOffset = -CONTENT_PADDING
+
+    ---------------------------------------------------------------------------
+    -- Empty State
+    ---------------------------------------------------------------------------
+    if #presets == 0 then
+        local emptyFrame = CreateFrame("Frame", nil, scrollContent)
+        emptyFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, yOffset - 40)
+        emptyFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, yOffset - 40)
+        emptyFrame:SetHeight(100)
+
+        -- Terminal-style empty message
+        local emptyText = emptyFrame:CreateFontString(nil, "OVERLAY")
+        emptyText:SetFont(fontPath, 14, "")
+        emptyText:SetPoint("CENTER", emptyFrame, "CENTER", 0, 0)
+        emptyText:SetText("[ No presets available ]\n\nPreset collections are coming soon.\nFor now, use Edit Mode to swap between\nBlizzard's Modern and Classic presets.")
+        emptyText:SetTextColor(dimR, dimG, dimB, 1)
+        emptyText:SetJustifyH("CENTER")
+
+        table.insert(state.currentControls, emptyFrame)
+        scrollContent:SetHeight(200)
+        return
+    end
+
+    ---------------------------------------------------------------------------
+    -- Preset Selector (horizontal: label on left, dropdown on right)
+    ---------------------------------------------------------------------------
+    local selectorRow = CreateFrame("Frame", nil, scrollContent)
+    selectorRow:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    selectorRow:SetSize(400, 32)
+    table.insert(state.currentControls, selectorRow)
+
+    local selectorLabel = selectorRow:CreateFontString(nil, "OVERLAY")
+    selectorLabel:SetFont(fontPathMed, 14, "")
+    selectorLabel:SetPoint("LEFT", selectorRow, "LEFT", 0, 0)
+    selectorLabel:SetText("Select a preset:")
+    selectorLabel:SetTextColor(ar, ag, ab, 1)
+
+    -- Build dropdown values
+    local dropdownValues = {}
+    local dropdownOrder = {}
+    for i, preset in ipairs(presets) do
+        local key = tostring(i)
+        dropdownValues[key] = preset.name or preset.id or ("Preset " .. i)
+        table.insert(dropdownOrder, key)
+    end
+
+    local presetDropdown = Controls:CreateDropdown({
+        parent = selectorRow,
+        values = dropdownValues,
+        order = dropdownOrder,
+        get = function()
+            return tostring(state.selectedIndex)
+        end,
+        set = function(key)
+            state.selectedIndex = tonumber(key) or 1
+            refreshPresets()
+        end,
+        placeholder = "Select a preset...",
+        width = 240,
+        height = 26,
+        fontSize = 12,
+    })
+    presetDropdown:SetPoint("LEFT", selectorLabel, "RIGHT", 12, 0)
+    table.insert(state.currentControls, presetDropdown)
+    yOffset = yOffset - 40
+
+    -- Get current preset
+    local currentPreset = presets[state.selectedIndex]
+    if not currentPreset then
+        scrollContent:SetHeight(100)
+        return
+    end
+
+    ---------------------------------------------------------------------------
+    -- Hero Image (with TUI-styled border)
+    ---------------------------------------------------------------------------
+    local heroContainer = CreateFrame("Frame", nil, scrollContent)
+    heroContainer:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    heroContainer:SetSize(HERO_WIDTH + 6, HERO_HEIGHT + 6)
+
+    -- Border around hero image
+    local borderTop = heroContainer:CreateTexture(nil, "BORDER")
+    borderTop:SetPoint("TOPLEFT", heroContainer, "TOPLEFT", 0, 0)
+    borderTop:SetPoint("TOPRIGHT", heroContainer, "TOPRIGHT", 0, 0)
+    borderTop:SetHeight(2)
+    borderTop:SetColorTexture(ar, ag, ab, 0.6)
+
+    local borderBottom = heroContainer:CreateTexture(nil, "BORDER")
+    borderBottom:SetPoint("BOTTOMLEFT", heroContainer, "BOTTOMLEFT", 0, 0)
+    borderBottom:SetPoint("BOTTOMRIGHT", heroContainer, "BOTTOMRIGHT", 0, 0)
+    borderBottom:SetHeight(2)
+    borderBottom:SetColorTexture(ar, ag, ab, 0.6)
+
+    local borderLeft = heroContainer:CreateTexture(nil, "BORDER")
+    borderLeft:SetPoint("TOPLEFT", heroContainer, "TOPLEFT", 0, 0)
+    borderLeft:SetPoint("BOTTOMLEFT", heroContainer, "BOTTOMLEFT", 0, 0)
+    borderLeft:SetWidth(2)
+    borderLeft:SetColorTexture(ar, ag, ab, 0.6)
+
+    local borderRight = heroContainer:CreateTexture(nil, "BORDER")
+    borderRight:SetPoint("TOPRIGHT", heroContainer, "TOPRIGHT", 0, 0)
+    borderRight:SetPoint("BOTTOMRIGHT", heroContainer, "BOTTOMRIGHT", 0, 0)
+    borderRight:SetWidth(2)
+    borderRight:SetColorTexture(ar, ag, ab, 0.6)
+
+    -- Hero image texture
+    local heroTexture = heroContainer:CreateTexture(nil, "ARTWORK")
+    heroTexture:SetPoint("TOPLEFT", heroContainer, "TOPLEFT", 3, -3)
+    heroTexture:SetPoint("BOTTOMRIGHT", heroContainer, "BOTTOMRIGHT", -3, 3)
+    heroTexture:SetTexture(currentPreset.previewTexture or "Interface\\AddOns\\ScooterMod\\Scooter")
+
+    -- "Coming Soon" overlay if applicable
+    if currentPreset.comingSoon then
+        local overlay = heroContainer:CreateTexture(nil, "OVERLAY")
+        overlay:SetAllPoints(heroTexture)
+        overlay:SetColorTexture(0, 0, 0, 0.7)
+
+        local comingSoonText = heroContainer:CreateFontString(nil, "OVERLAY")
+        comingSoonText:SetFont(fontPathBold, 24, "")
+        comingSoonText:SetPoint("CENTER", heroContainer, "CENTER", 0, 0)
+        comingSoonText:SetText("COMING SOON")
+        comingSoonText:SetTextColor(ar, ag, ab, 1)
+    end
+
+    table.insert(state.currentControls, heroContainer)
+    yOffset = yOffset - (HERO_HEIGHT + 6) - 20
+
+    ---------------------------------------------------------------------------
+    -- Two-Column Info Section
+    ---------------------------------------------------------------------------
+    local columnsContainer = CreateFrame("Frame", nil, scrollContent)
+    columnsContainer:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    columnsContainer:SetSize(HERO_WIDTH + (COLUMN_OUTER_MARGIN * 2), 120)
+    table.insert(state.currentControls, columnsContainer)
+
+    -- Helper to format bullet list
+    local function formatBulletList(items)
+        if type(items) ~= "table" or #items == 0 then
+            return "> (none specified)"
+        end
+        local lines = {}
+        for _, item in ipairs(items) do
+            table.insert(lines, "> " .. tostring(item))
+        end
+        return table.concat(lines, "\n")
+    end
+
+    -- Left column: "Designed for..."
+    local leftHeader = columnsContainer:CreateFontString(nil, "OVERLAY")
+    leftHeader:SetFont(fontPathMed, 14, "")
+    leftHeader:SetPoint("TOPLEFT", columnsContainer, "TOPLEFT", COLUMN_OUTER_MARGIN, 0)
+    leftHeader:SetText("Designed for...")
+    leftHeader:SetTextColor(ar, ag, ab, 1)
+
+    local leftList = columnsContainer:CreateFontString(nil, "OVERLAY")
+    leftList:SetFont(fontPath, 12, "")
+    leftList:SetPoint("TOPLEFT", leftHeader, "BOTTOMLEFT", 0, -8)
+    leftList:SetWidth(COLUMN_WIDTH)
+    leftList:SetJustifyH("LEFT")
+    leftList:SetJustifyV("TOP")
+    leftList:SetText(formatBulletList(currentPreset.designedFor))
+    leftList:SetTextColor(1, 1, 1, 0.9)
+    leftList:SetSpacing(4)
+
+    -- Right column: "Author also recommends..."
+    local rightHeader = columnsContainer:CreateFontString(nil, "OVERLAY")
+    rightHeader:SetFont(fontPathMed, 14, "")
+    rightHeader:SetPoint("TOPLEFT", columnsContainer, "TOP", 40, 0)
+    rightHeader:SetText("Author also recommends...")
+    rightHeader:SetTextColor(ar, ag, ab, 1)
+
+    local rightList = columnsContainer:CreateFontString(nil, "OVERLAY")
+    rightList:SetFont(fontPath, 12, "")
+    rightList:SetPoint("TOPLEFT", rightHeader, "BOTTOMLEFT", 0, -8)
+    rightList:SetWidth(COLUMN_WIDTH)
+    rightList:SetJustifyH("LEFT")
+    rightList:SetJustifyV("TOP")
+    rightList:SetText(formatBulletList(currentPreset.recommends))
+    rightList:SetTextColor(1, 1, 1, 0.9)
+    rightList:SetSpacing(4)
+
+    -- Calculate column height based on content
+    C_Timer.After(0, function()
+        if leftList and rightList and columnsContainer then
+            local leftH = leftList:GetStringHeight() or 60
+            local rightH = rightList:GetStringHeight() or 60
+            local maxH = math.max(leftH, rightH) + 30
+            columnsContainer:SetHeight(maxH)
+        end
+    end)
+
+    yOffset = yOffset - 140
+
+    ---------------------------------------------------------------------------
+    -- Apply Button
+    ---------------------------------------------------------------------------
+    -- Determine if preset is actionable
+    local canApplyPayload = addon.Presets and addon.Presets.IsPayloadReady and addon.Presets:IsPayloadReady(currentPreset)
+    local depsOk, depsErr = true, nil
+    if addon.Presets and addon.Presets.CheckDependencies then
+        depsOk, depsErr = addon.Presets:CheckDependencies(currentPreset)
+    end
+    local actionable = canApplyPayload and depsOk and not currentPreset.comingSoon
+
+    local disabledReason
+    if not canApplyPayload then
+        disabledReason = "Preset payload pending."
+    elseif not depsOk then
+        disabledReason = depsErr or "Dependencies not met."
+    elseif currentPreset.comingSoon then
+        disabledReason = "Preset not yet published."
+    end
+
+    local applyBtn = Controls:CreateButton({
+        parent = scrollContent,
+        text = "Apply this preset",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = function()
+            if not actionable then return end
+            -- Use the same apply logic as the old panel
+            if addon.SettingsPanel and addon.SettingsPanel.ApplyPresetFromUI then
+                addon.SettingsPanel:ApplyPresetFromUI(currentPreset)
+            elseif addon.Presets and addon.Presets.ApplyPreset then
+                -- Fallback: show the apply preset dialog directly
+                if addon.Dialogs and addon.Dialogs.Show then
+                    local presetName = currentPreset.name or currentPreset.id or "Preset"
+                    addon.Dialogs:Show("SCOOTERMOD_APPLY_PRESET", {
+                        formatArgs = { presetName },
+                        editBoxText = presetName,
+                        data = { preset = currentPreset },
+                        onAccept = function(d, newName)
+                            local ok, err = addon.Presets:ApplyPreset(d.preset.id, {
+                                targetName = newName,
+                            })
+                            if not ok then
+                                if err and addon.Print then addon:Print(err) end
+                                return
+                            end
+                            addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
+                            if type(ReloadUI) == "function" then
+                                ReloadUI()
+                            end
+                        end,
+                    })
+                end
+            end
+        end,
+    })
+    applyBtn:SetPoint("TOP", scrollContent, "TOP", 0, yOffset)
+    applyBtn:SetEnabled(actionable)
+    if not actionable then
+        applyBtn:SetAlpha(0.5)
+    end
+    table.insert(state.currentControls, applyBtn)
+
+    -- Tooltip for disabled state
+    if not actionable and disabledReason then
+        applyBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(disabledReason, 1, 0.82, 0, true)
+            GameTooltip:Show()
+        end)
+        applyBtn:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
+
+    yOffset = yOffset - BUTTON_HEIGHT - 24
+
+    ---------------------------------------------------------------------------
+    -- Additional Info (optional notes)
+    ---------------------------------------------------------------------------
+    if currentPreset.notes and currentPreset.notes ~= "" then
+        local notesFrame = CreateFrame("Frame", nil, scrollContent)
+        notesFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING + 40, yOffset)
+        notesFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING - 40, yOffset)
+        notesFrame:SetHeight(60)
+
+        local notesText = notesFrame:CreateFontString(nil, "OVERLAY")
+        notesText:SetFont(fontPath, 11, "")
+        notesText:SetAllPoints()
+        notesText:SetText(currentPreset.notes)
+        notesText:SetTextColor(dimR, dimG, dimB, 1)
+        notesText:SetJustifyH("CENTER")
+        notesText:SetWordWrap(true)
+
+        table.insert(state.currentControls, notesFrame)
+        yOffset = yOffset - 70
+    end
+
+    ---------------------------------------------------------------------------
+    -- Set scroll content height
+    ---------------------------------------------------------------------------
+    local totalHeight = math.abs(yOffset) + 40
+    scrollContent:SetHeight(totalHeight)
+end
+
+--------------------------------------------------------------------------------
+-- Apply All: Fonts
+--------------------------------------------------------------------------------
+-- Simple layout: Info row explaining the operation, FontSelector dropdown, Apply button.
+-- Uses TUI components for consistent styling.
+
+function UIPanel:RenderApplyAllFonts(scrollContent)
+    self:ClearContent()
+
+    local Controls = addon.UI.Controls
+    local Theme = addon.UI.Theme
+
+    -- Track controls for cleanup
+    self._applyAllFontsControls = self._applyAllFontsControls or {}
+    for _, ctrl in ipairs(self._applyAllFontsControls) do
+        if ctrl.Cleanup then ctrl:Cleanup() end
+        if ctrl.Hide then ctrl:Hide() end
+        if ctrl.SetParent then ctrl:SetParent(nil) end
+    end
+    self._applyAllFontsControls = {}
+
+    local ar, ag, ab = Theme:GetAccentColor()
+
+    -- Container frame for layout
+    local container = CreateFrame("Frame", nil, scrollContent)
+    container:SetSize(500, 280)
+    container:SetPoint("TOP", scrollContent, "TOP", 0, -60)
+    container:SetPoint("LEFT", scrollContent, "LEFT", 40, 0)
+    container:SetPoint("RIGHT", scrollContent, "RIGHT", -40, 0)
+    table.insert(self._applyAllFontsControls, container)
+
+    -- Info text (centered, dimmed)
+    local info = container:CreateFontString(nil, "OVERLAY")
+    info:SetFont(Theme:GetFont("LABEL"), 12, "")
+    info:SetPoint("TOP", container, "TOP", 0, 0)
+    info:SetWidth(420)
+    info:SetJustifyH("CENTER")
+    info:SetText("Select a font below, then click Apply. This will overwrite every ScooterMod font face and force a UI reload. Sizes, colors, offsets, and outlines remain unchanged.\n\nScrolling Combat Text fonts are excluded (require game restart).")
+    info:SetTextColor(0.6, 0.6, 0.6, 1)
+
+    -- Font selector row (larger, minimal label)
+    local fontSelector = Controls:CreateFontSelector({
+        parent = container,
+        label = "Font",
+        get = function()
+            return addon.ApplyAll and addon.ApplyAll:GetPendingFont() or "FRIZQT__"
+        end,
+        set = function(fontKey)
+            if addon.ApplyAll and addon.ApplyAll.SetPendingFont then
+                addon.ApplyAll:SetPendingFont(fontKey)
+            end
+        end,
+        width = 320,
+        labelFontSize = 16,
+        selectorHeight = 35,
+        rowHeight = 52,
+    })
+    if fontSelector then
+        fontSelector:SetPoint("TOPLEFT", container, "TOPLEFT", 20, -120)
+        fontSelector:SetPoint("TOPRIGHT", container, "TOPRIGHT", -20, -120)
+        table.insert(self._applyAllFontsControls, fontSelector)
+    end
+
+    -- Apply button
+    local applyBtn = Controls:CreateButton({
+        parent = container,
+        text = "Apply",
+        width = 160,
+        height = 38,
+        fontSize = 14,
+        onClick = function()
+            local pending = addon.ApplyAll and addon.ApplyAll:GetPendingFont()
+            if not pending or pending == "" then
+                if addon.Print then addon:Print("Select a font before applying.") end
+                return
+            end
+
+            local displayName = addon.FontDisplayNames and addon.FontDisplayNames[pending] or pending
+
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOTERMOD_APPLYALL_FONTS", {
+                    formatArgs = { displayName },
+                    data = { fontKey = pending },
+                    onAccept = function(data)
+                        if not data or not data.fontKey then return end
+                        if not addon.ApplyAll or not addon.ApplyAll.ApplyFonts then return end
+
+                        local result = addon.ApplyAll:ApplyFonts(data.fontKey, { updatePending = true })
+                        if result and result.ok and result.changed and result.changed > 0 then
+                            ReloadUI()
+                        else
+                            local reason = result and result.reason or "Unknown"
+                            local friendly = {
+                                noProfile = "Profile database unavailable.",
+                                noSelection = "Select a font before applying.",
+                                noChanges = "All entries already use that font.",
+                            }
+                            local detail = friendly[reason] or tostring(reason or "Unknown error.")
+                            if addon.Print then
+                                addon:Print("Apply All (Fonts) aborted: " .. detail)
+                            end
+                        end
+                    end,
+                })
+            else
+                if addon.Print then addon:Print("Dialog system unavailable.") end
+            end
+        end,
+    })
+    applyBtn:SetPoint("TOP", container, "TOP", 0, -200)
+    table.insert(self._applyAllFontsControls, applyBtn)
+
+    -- Set scroll content height
+    scrollContent:SetHeight(400)
+end
+
+--------------------------------------------------------------------------------
+-- Apply All: Bar Textures
+--------------------------------------------------------------------------------
+-- Simple layout: Info row explaining the operation, BarTextureSelector dropdown, Apply button.
+-- Uses TUI components for consistent styling.
+
+function UIPanel:RenderApplyAllTextures(scrollContent)
+    self:ClearContent()
+
+    local Controls = addon.UI.Controls
+    local Theme = addon.UI.Theme
+
+    -- Track controls for cleanup
+    self._applyAllTexturesControls = self._applyAllTexturesControls or {}
+    for _, ctrl in ipairs(self._applyAllTexturesControls) do
+        if ctrl.Cleanup then ctrl:Cleanup() end
+        if ctrl.Hide then ctrl:Hide() end
+        if ctrl.SetParent then ctrl:SetParent(nil) end
+    end
+    self._applyAllTexturesControls = {}
+
+    local ar, ag, ab = Theme:GetAccentColor()
+
+    -- Container frame for layout
+    local container = CreateFrame("Frame", nil, scrollContent)
+    container:SetSize(500, 260)
+    container:SetPoint("TOP", scrollContent, "TOP", 0, -60)
+    container:SetPoint("LEFT", scrollContent, "LEFT", 40, 0)
+    container:SetPoint("RIGHT", scrollContent, "RIGHT", -40, 0)
+    table.insert(self._applyAllTexturesControls, container)
+
+    -- Info text (centered, dimmed)
+    local info = container:CreateFontString(nil, "OVERLAY")
+    info:SetFont(Theme:GetFont("LABEL"), 12, "")
+    info:SetPoint("TOP", container, "TOP", 0, 0)
+    info:SetWidth(420)
+    info:SetJustifyH("CENTER")
+    info:SetText("Select a texture below, then click Apply. This will overwrite every ScooterMod bar texture (foreground and background) and force a UI reload. Tint, opacity, and color settings remain unchanged.")
+    info:SetTextColor(0.6, 0.6, 0.6, 1)
+
+    -- Bar texture selector row (larger, minimal label)
+    local textureSelector = Controls:CreateBarTextureSelector({
+        parent = container,
+        label = "Texture",
+        get = function()
+            return addon.ApplyAll and addon.ApplyAll:GetPendingBarTexture() or "default"
+        end,
+        set = function(textureKey)
+            if addon.ApplyAll and addon.ApplyAll.SetPendingBarTexture then
+                addon.ApplyAll:SetPendingBarTexture(textureKey)
+            end
+        end,
+        width = 320,
+        labelFontSize = 16,
+        selectorHeight = 35,
+        rowHeight = 52,
+    })
+    if textureSelector then
+        textureSelector:SetPoint("TOPLEFT", container, "TOPLEFT", 20, -100)
+        textureSelector:SetPoint("TOPRIGHT", container, "TOPRIGHT", -20, -100)
+        table.insert(self._applyAllTexturesControls, textureSelector)
+    end
+
+    -- Apply button
+    local applyBtn = Controls:CreateButton({
+        parent = container,
+        text = "Apply",
+        width = 160,
+        height = 38,
+        fontSize = 14,
+        onClick = function()
+            local pending = addon.ApplyAll and addon.ApplyAll:GetPendingBarTexture()
+            if not pending or pending == "" then
+                if addon.Print then addon:Print("Select a texture before applying.") end
+                return
+            end
+
+            local displayName = addon.Media and addon.Media.GetBarTextureDisplayName
+                and addon.Media.GetBarTextureDisplayName(pending) or pending
+
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOTERMOD_APPLYALL_TEXTURES", {
+                    formatArgs = { displayName or pending },
+                    data = { textureKey = pending },
+                    onAccept = function(data)
+                        if not data or not data.textureKey then return end
+                        if not addon.ApplyAll or not addon.ApplyAll.ApplyBarTextures then return end
+
+                        local result = addon.ApplyAll:ApplyBarTextures(data.textureKey, { updatePending = true })
+                        if result and result.ok and result.changed and result.changed > 0 then
+                            ReloadUI()
+                        else
+                            local reason = result and result.reason or "Unknown"
+                            local friendly = {
+                                noProfile = "Profile database unavailable.",
+                                noSelection = "Select a texture before applying.",
+                                noChanges = "All entries already use that texture.",
+                            }
+                            local detail = friendly[reason] or tostring(reason or "Unknown error.")
+                            if addon.Print then
+                                addon:Print("Apply All (Bar Textures) aborted: " .. detail)
+                            end
+                        end
+                    end,
+                })
+            else
+                if addon.Print then addon:Print("Dialog system unavailable.") end
+            end
+        end,
+    })
+    applyBtn:SetPoint("TOP", container, "TOP", 0, -180)
+    table.insert(self._applyAllTexturesControls, applyBtn)
+
+    -- Set scroll content height
+    scrollContent:SetHeight(400)
+end
+
+--------------------------------------------------------------------------------
+-- Buffs Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderBuffs(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderBuffs(scrollContent)
+    end)
+
+    -- Helper to get component settings
+    local function getComponent()
+        return addon.Components and addon.Components["buffs"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.GetSetting then
+            return comp:GetSetting(key)
+        end
+        local profile = addon.db and addon.db.profile
+        return profile and profile.buffs and profile.buffs[key]
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then
+                addon:EnsureComponentDB(comp)
+            end
+            comp.db[key] = value
+        else
+            local profile = addon.db and addon.db.profile
+            if profile then
+                profile.buffs = profile.buffs or {}
+                profile.buffs[key] = value
+            end
+        end
+    end
+
+    -- Helper to sync Edit Mode settings after value change
+    local function syncEditModeSetting(settingId)
+        local comp = getComponent()
+        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
+            if addon.EditMode.SaveOnly then
+                addon.EditMode.SaveOnly()
+            end
+            if addon.EditMode.RequestApplyChanges then
+                addon.EditMode.RequestApplyChanges(0.2)
+            end
+        end
+    end
+
+    -- Helper to apply styles after value change
+    local function applyStyles()
+        if addon and addon.ApplyAuraFrameVisualsFor then
+            C_Timer.After(0, function()
+                local comp = getComponent()
+                if comp then
+                    addon.ApplyAuraFrameVisualsFor(comp)
+                end
+            end)
+        end
+    end
+
+    -- Collapsible section: Positioning
+    builder:AddCollapsibleSection({
+        title = "Positioning",
+        componentId = "buffs",
+        sectionKey = "positioning",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local OrientationPatterns = addon.UI and addon.UI.SettingPatterns and addon.UI.SettingPatterns.Orientation
+
+            local orientationValues = { H = "Horizontal", V = "Vertical" }
+            local orientationOrder = { "H", "V" }
+
+            inner:AddSelector({
+                key = "orientation",
+                label = "Orientation",
+                description = "Horizontal arranges icons left-to-right, Vertical arranges top-to-bottom.",
+                values = orientationValues,
+                order = orientationOrder,
+                get = function() return getSetting("orientation") or "H" end,
+                set = function(v)
+                    setSetting("orientation", v)
+                    syncEditModeSetting("orientation")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            local wrapValues = { down = "Down", up = "Up" }
+            local wrapOrder = { "down", "up" }
+
+            inner:AddSelector({
+                key = "iconWrap",
+                label = "Icon Wrap",
+                description = "Direction icons wrap when reaching the limit per row/column.",
+                values = wrapValues,
+                order = wrapOrder,
+                get = function() return getSetting("iconWrap") or "down" end,
+                set = function(v)
+                    setSetting("iconWrap", v)
+                    syncEditModeSetting("iconWrap")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            local dirValues = { left = "Left", right = "Right" }
+            local dirOrder = { "left", "right" }
+
+            inner:AddSelector({
+                key = "direction",
+                label = "Icon Direction",
+                description = "Direction icons grow from the anchor point.",
+                values = dirValues,
+                order = dirOrder,
+                get = function() return getSetting("direction") or "left" end,
+                set = function(v)
+                    setSetting("direction", v)
+                    syncEditModeSetting("direction")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            inner:AddSlider({
+                label = "Icon Padding",
+                description = "Space between buff icons in pixels.",
+                min = 5,
+                max = 15,
+                step = 1,
+                get = function() return getSetting("iconPadding") or 10 end,
+                set = function(v) setSetting("iconPadding", v) end,
+                minLabel = "5px",
+                maxLabel = "15px",
+                debounceKey = "UI_buffs_iconPadding",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconPadding")
+                end,
+            })
+
+            inner:AddSlider({
+                label = "Icon Limit",
+                description = "Maximum number of buff icons to display.",
+                min = 2,
+                max = 32,
+                step = 1,
+                get = function() return getSetting("iconLimit") or 11 end,
+                set = function(v) setSetting("iconLimit", v) end,
+                minLabel = "2",
+                maxLabel = "32",
+                debounceKey = "UI_buffs_iconLimit",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconLimit")
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Sizing
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "buffs",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Icon Size (Scale)",
+                description = "Scale the icons in Edit Mode (50-200%).",
+                min = 50,
+                max = 200,
+                step = 10,
+                get = function() return getSetting("iconSize") or 100 end,
+                set = function(v) setSetting("iconSize", v) end,
+                minLabel = "50%",
+                maxLabel = "200%",
+                debounceKey = "UI_buffs_iconSize",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconSize")
+                end,
+            })
+
+            inner:AddSlider({
+                label = "Icon Width",
+                description = "Custom icon width in pixels.",
+                min = 24,
+                max = 48,
+                step = 1,
+                get = function() return getSetting("iconWidth") or 30 end,
+                set = function(v)
+                    setSetting("iconWidth", v)
+                    applyStyles()
+                end,
+                minLabel = "24px",
+                maxLabel = "48px",
+            })
+
+            inner:AddSlider({
+                label = "Icon Height",
+                description = "Custom icon height in pixels.",
+                min = 24,
+                max = 48,
+                step = 1,
+                get = function() return getSetting("iconHeight") or 30 end,
+                set = function(v)
+                    setSetting("iconHeight", v)
+                    applyStyles()
+                end,
+                minLabel = "24px",
+                maxLabel = "48px",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Border
+    builder:AddCollapsibleSection({
+        title = "Border",
+        componentId = "buffs",
+        sectionKey = "border",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                key = "borderEnable",
+                label = "Use Custom Border",
+                description = "Enable custom border styling for buff icons.",
+                get = function() return getSetting("borderEnable") or false end,
+                set = function(val)
+                    setSetting("borderEnable", val)
+                    applyStyles()
+                end,
+            })
+
+            inner:AddToggleColorPicker({
+                label = "Border Tint",
+                description = "Apply a custom tint color to the icon border.",
+                get = function() return getSetting("borderTintEnable") or false end,
+                set = function(val)
+                    setSetting("borderTintEnable", val)
+                    applyStyles()
+                end,
+                getColor = function()
+                    local c = getSetting("borderTintColor")
+                    if c then
+                        return c.r or c[1] or 1, c.g or c[2] or 1, c.b or c[3] or 1, c.a or c[4] or 1
+                    end
+                    return 1, 1, 1, 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("borderTintColor", { r = r, g = g, b = b, a = a })
+                    applyStyles()
+                end,
+                hasAlpha = true,
+            })
+
+            -- Border Style selector
+            local borderStyleValues = { square = "Default" }
+            local borderStyleOrder = { "square" }
+            if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
+                local entries = addon.IconBorders.GetDropdownEntries()
+                if entries then
+                    borderStyleValues = {}
+                    borderStyleOrder = {}
+                    for _, entry in ipairs(entries) do
+                        local key = entry.value or entry.key
+                        local label = entry.text or entry.label or key
+                        if key then
+                            borderStyleValues[key] = label
+                            table.insert(borderStyleOrder, key)
+                        end
+                    end
+                end
+            end
+
+            inner:AddSelector({
+                key = "borderStyle",
+                label = "Border Style",
+                description = "Choose the visual style for icon borders.",
+                values = borderStyleValues,
+                order = borderStyleOrder,
+                get = function() return getSetting("borderStyle") or "square" end,
+                set = function(v)
+                    setSetting("borderStyle", v)
+                    applyStyles()
+                end,
+            })
+
+            inner:AddSlider({
+                label = "Border Thickness",
+                description = "Thickness of the border in pixels.",
+                min = 1,
+                max = 8,
+                step = 0.5,
+                precision = 1,
+                get = function() return getSetting("borderThickness") or 1 end,
+                set = function(v)
+                    setSetting("borderThickness", v)
+                    applyStyles()
+                end,
+                minLabel = "1",
+                maxLabel = "8",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Text (tabbed for Stacks and Duration)
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "buffs",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local fontStyleValues = {
+                NONE = "None",
+                OUTLINE = "Outline",
+                THICKOUTLINE = "Thick Outline",
+            }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "stacks", label = "Stacks" },
+                    { key = "duration", label = "Duration" },
+                },
+                componentId = "buffs",
+                sectionKey = "textTabs",
+                buildContent = {
+                    stacks = function(tabContent, tabBuilder)
+                        local function getStacksSetting(key, default)
+                            local ts = getSetting("textStacks")
+                            if ts and ts[key] ~= nil then return ts[key] end
+                            return default
+                        end
+                        local function setStacksSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textStacks = comp.db.textStacks or {}
+                                comp.db.textStacks[key] = value
+                            end
+                            applyStyles()
+                        end
+
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for stack count text.",
+                            get = function() return getStacksSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setStacksSetting("fontFace", v) end,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getStacksSetting("size", 16) end,
+                            set = function(v) setStacksSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getStacksSetting("style", "OUTLINE") end,
+                            set = function(v) setStacksSetting("style", v) end,
+                        })
+
+                        tabBuilder:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getStacksSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setStacksSetting("color", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.x = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.y = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    duration = function(tabContent, tabBuilder)
+                        local function getDurationSetting(key, default)
+                            local td = getSetting("textDuration")
+                            if td and td[key] ~= nil then return td[key] end
+                            return default
+                        end
+                        local function setDurationSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textDuration = comp.db.textDuration or {}
+                                comp.db.textDuration[key] = value
+                            end
+                            applyStyles()
+                        end
+
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for remaining time text.",
+                            get = function() return getDurationSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setDurationSetting("fontFace", v) end,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getDurationSetting("size", 14) end,
+                            set = function(v) setDurationSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getDurationSetting("style", "OUTLINE") end,
+                            set = function(v) setDurationSetting("style", v) end,
+                        })
+
+                        tabBuilder:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getDurationSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setDurationSetting("color", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getDurationSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textDuration = comp.db.textDuration or {}
+                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                    comp.db.textDuration.offset.x = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getDurationSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textDuration = comp.db.textDuration or {}
+                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                    comp.db.textDuration.offset.y = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Visibility & Misc
+    builder:AddCollapsibleSection({
+        title = "Visibility & Misc",
+        componentId = "buffs",
+        sectionKey = "misc",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Opacity in Combat",
+                description = "Opacity when in combat (50-100%).",
+                min = 50,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacity") or 100 end,
+                set = function(v)
+                    setSetting("opacity", v)
+                    applyStyles()
+                end,
+                minLabel = "50%",
+                maxLabel = "100%",
+                infoIcon = {
+                    tooltipTitle = "Opacity Priority",
+                    tooltipText = "With Target takes precedence, then In Combat, then Out of Combat.",
+                },
+            })
+
+            inner:AddSlider({
+                label = "Opacity Out of Combat",
+                description = "Opacity when not in combat.",
+                min = 1,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacityOutOfCombat") or 100 end,
+                set = function(v)
+                    setSetting("opacityOutOfCombat", v)
+                    applyStyles()
+                end,
+                minLabel = "1%",
+                maxLabel = "100%",
+            })
+
+            inner:AddSlider({
+                label = "Opacity With Target",
+                description = "Opacity when you have a target.",
+                min = 1,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacityWithTarget") or 100 end,
+                set = function(v)
+                    setSetting("opacityWithTarget", v)
+                    applyStyles()
+                end,
+                minLabel = "1%",
+                maxLabel = "100%",
+            })
+
+            inner:AddToggle({
+                label = "Hide Expand/Collapse Button",
+                description = "Hide the button that expands or collapses the buff frame.",
+                get = function() return getSetting("hideCollapseButton") or false end,
+                set = function(val)
+                    setSetting("hideCollapseButton", val)
+                    applyStyles()
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Debuffs Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderDebuffs(scrollContent)
+    self:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    local panel = self
+    builder:SetOnRefresh(function()
+        panel:RenderDebuffs(scrollContent)
+    end)
+
+    -- Helper to get component settings
+    local function getComponent()
+        return addon.Components and addon.Components["debuffs"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.GetSetting then
+            return comp:GetSetting(key)
+        end
+        local profile = addon.db and addon.db.profile
+        return profile and profile.debuffs and profile.debuffs[key]
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then
+                addon:EnsureComponentDB(comp)
+            end
+            comp.db[key] = value
+        else
+            local profile = addon.db and addon.db.profile
+            if profile then
+                profile.debuffs = profile.debuffs or {}
+                profile.debuffs[key] = value
+            end
+        end
+    end
+
+    -- Helper to sync Edit Mode settings after value change
+    local function syncEditModeSetting(settingId)
+        local comp = getComponent()
+        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
+            if addon.EditMode.SaveOnly then
+                addon.EditMode.SaveOnly()
+            end
+            if addon.EditMode.RequestApplyChanges then
+                addon.EditMode.RequestApplyChanges(0.2)
+            end
+        end
+    end
+
+    -- Helper to apply styles after value change
+    local function applyStyles()
+        if addon and addon.ApplyAuraFrameVisualsFor then
+            C_Timer.After(0, function()
+                local comp = getComponent()
+                if comp then
+                    addon.ApplyAuraFrameVisualsFor(comp)
+                end
+            end)
+        end
+    end
+
+    -- Collapsible section: Positioning
+    builder:AddCollapsibleSection({
+        title = "Positioning",
+        componentId = "debuffs",
+        sectionKey = "positioning",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local orientationValues = { H = "Horizontal", V = "Vertical" }
+            local orientationOrder = { "H", "V" }
+
+            inner:AddSelector({
+                key = "orientation",
+                label = "Orientation",
+                description = "Horizontal arranges icons left-to-right, Vertical arranges top-to-bottom.",
+                values = orientationValues,
+                order = orientationOrder,
+                get = function() return getSetting("orientation") or "H" end,
+                set = function(v)
+                    setSetting("orientation", v)
+                    syncEditModeSetting("orientation")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            local wrapValues = { down = "Down", up = "Up" }
+            local wrapOrder = { "down", "up" }
+
+            inner:AddSelector({
+                key = "iconWrap",
+                label = "Icon Wrap",
+                description = "Direction icons wrap when reaching the limit per row/column.",
+                values = wrapValues,
+                order = wrapOrder,
+                get = function() return getSetting("iconWrap") or "down" end,
+                set = function(v)
+                    setSetting("iconWrap", v)
+                    syncEditModeSetting("iconWrap")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            local dirValues = { left = "Left", right = "Right" }
+            local dirOrder = { "left", "right" }
+
+            inner:AddSelector({
+                key = "direction",
+                label = "Icon Direction",
+                description = "Direction icons grow from the anchor point.",
+                values = dirValues,
+                order = dirOrder,
+                get = function() return getSetting("direction") or "left" end,
+                set = function(v)
+                    setSetting("direction", v)
+                    syncEditModeSetting("direction")
+                end,
+                syncCooldown = 0.4,
+            })
+
+            inner:AddSlider({
+                label = "Icon Padding",
+                description = "Space between debuff icons in pixels.",
+                min = 5,
+                max = 15,
+                step = 1,
+                get = function() return getSetting("iconPadding") or 10 end,
+                set = function(v) setSetting("iconPadding", v) end,
+                minLabel = "5px",
+                maxLabel = "15px",
+                debounceKey = "UI_debuffs_iconPadding",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconPadding")
+                end,
+            })
+
+            inner:AddSlider({
+                label = "Icon Limit",
+                description = "Maximum number of debuff icons to display.",
+                min = 1,
+                max = 16,
+                step = 1,
+                get = function() return getSetting("iconLimit") or 8 end,
+                set = function(v) setSetting("iconLimit", v) end,
+                minLabel = "1",
+                maxLabel = "16",
+                debounceKey = "UI_debuffs_iconLimit",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconLimit")
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Sizing
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "debuffs",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Icon Size (Scale)",
+                description = "Scale the icons in Edit Mode (50-200%).",
+                min = 50,
+                max = 200,
+                step = 10,
+                get = function() return getSetting("iconSize") or 100 end,
+                set = function(v) setSetting("iconSize", v) end,
+                minLabel = "50%",
+                maxLabel = "200%",
+                debounceKey = "UI_debuffs_iconSize",
+                debounceDelay = 0.2,
+                onEditModeSync = function()
+                    syncEditModeSetting("iconSize")
+                end,
+            })
+
+            inner:AddSlider({
+                label = "Icon Width",
+                description = "Custom icon width in pixels.",
+                min = 24,
+                max = 48,
+                step = 1,
+                get = function() return getSetting("iconWidth") or 30 end,
+                set = function(v)
+                    setSetting("iconWidth", v)
+                    applyStyles()
+                end,
+                minLabel = "24px",
+                maxLabel = "48px",
+            })
+
+            inner:AddSlider({
+                label = "Icon Height",
+                description = "Custom icon height in pixels.",
+                min = 24,
+                max = 48,
+                step = 1,
+                get = function() return getSetting("iconHeight") or 30 end,
+                set = function(v)
+                    setSetting("iconHeight", v)
+                    applyStyles()
+                end,
+                minLabel = "24px",
+                maxLabel = "48px",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Note: Debuffs do NOT have a Border section - they use Blizzard's red DebuffBorder
+
+    -- Collapsible section: Text (tabbed for Stacks and Duration)
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "debuffs",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            local fontStyleValues = {
+                NONE = "None",
+                OUTLINE = "Outline",
+                THICKOUTLINE = "Thick Outline",
+            }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "stacks", label = "Stacks" },
+                    { key = "duration", label = "Duration" },
+                },
+                componentId = "debuffs",
+                sectionKey = "textTabs",
+                buildContent = {
+                    stacks = function(tabContent, tabBuilder)
+                        local function getStacksSetting(key, default)
+                            local ts = getSetting("textStacks")
+                            if ts and ts[key] ~= nil then return ts[key] end
+                            return default
+                        end
+                        local function setStacksSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textStacks = comp.db.textStacks or {}
+                                comp.db.textStacks[key] = value
+                            end
+                            applyStyles()
+                        end
+
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for stack count text.",
+                            get = function() return getStacksSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setStacksSetting("fontFace", v) end,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getStacksSetting("size", 16) end,
+                            set = function(v) setStacksSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getStacksSetting("style", "OUTLINE") end,
+                            set = function(v) setStacksSetting("style", v) end,
+                        })
+
+                        tabBuilder:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getStacksSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setStacksSetting("color", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.x = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.y = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    duration = function(tabContent, tabBuilder)
+                        local function getDurationSetting(key, default)
+                            local td = getSetting("textDuration")
+                            if td and td[key] ~= nil then return td[key] end
+                            return default
+                        end
+                        local function setDurationSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textDuration = comp.db.textDuration or {}
+                                comp.db.textDuration[key] = value
+                            end
+                            applyStyles()
+                        end
+
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for remaining time text.",
+                            get = function() return getDurationSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setDurationSetting("fontFace", v) end,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getDurationSetting("size", 14) end,
+                            set = function(v) setDurationSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getDurationSetting("style", "OUTLINE") end,
+                            set = function(v) setDurationSetting("style", v) end,
+                        })
+
+                        tabBuilder:AddColorPicker({
+                            label = "Font Color",
+                            get = function()
+                                local c = getDurationSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                setDurationSetting("color", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getDurationSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textDuration = comp.db.textDuration or {}
+                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                    comp.db.textDuration.offset.x = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function()
+                                local offset = getDurationSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textDuration = comp.db.textDuration or {}
+                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                    comp.db.textDuration.offset.y = v
+                                end
+                                applyStyles()
+                            end,
+                            minLabel = "-50",
+                            maxLabel = "+50",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Collapsible section: Visibility
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = "debuffs",
+        sectionKey = "misc",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Opacity in Combat",
+                description = "Opacity when in combat (50-100%).",
+                min = 50,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacity") or 100 end,
+                set = function(v)
+                    setSetting("opacity", v)
+                    applyStyles()
+                end,
+                minLabel = "50%",
+                maxLabel = "100%",
+                infoIcon = {
+                    tooltipTitle = "Opacity Priority",
+                    tooltipText = "With Target takes precedence, then In Combat, then Out of Combat.",
+                },
+            })
+
+            inner:AddSlider({
+                label = "Opacity Out of Combat",
+                description = "Opacity when not in combat.",
+                min = 1,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacityOutOfCombat") or 100 end,
+                set = function(v)
+                    setSetting("opacityOutOfCombat", v)
+                    applyStyles()
+                end,
+                minLabel = "1%",
+                maxLabel = "100%",
+            })
+
+            inner:AddSlider({
+                label = "Opacity With Target",
+                description = "Opacity when you have a target.",
+                min = 1,
+                max = 100,
+                step = 1,
+                get = function() return getSetting("opacityWithTarget") or 100 end,
+                set = function(v)
+                    setSetting("opacityWithTarget", v)
+                    applyStyles()
+                end,
+                minLabel = "1%",
+                maxLabel = "100%",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
 -- Renderer Registry
 --------------------------------------------------------------------------------
 -- Maps navigation keys to render functions. Add new renderers here.
@@ -6027,13 +9920,105 @@ UIPanel._renderers = {
     microBar = function(self, scrollContent)
         self:RenderMicroBar(scrollContent)
     end,
-    -- Other
+    -- Personal Resource Display
+    prdGeneral = function(self, scrollContent)
+        self:RenderPRDGeneral(scrollContent)
+    end,
+    prdHealthBar = function(self, scrollContent)
+        self:RenderPRDHealthBar(scrollContent)
+    end,
+    prdPowerBar = function(self, scrollContent)
+        self:RenderPRDPowerBar(scrollContent)
+    end,
+    prdClassResource = function(self, scrollContent)
+        self:RenderPRDClassResource(scrollContent)
+    end,
+    -- Interface
+    tooltip = function(self, scrollContent)
+        self:RenderTooltip(scrollContent)
+    end,
     objectiveTracker = function(self, scrollContent)
         self:RenderObjectiveTracker(scrollContent)
     end,
+    minimap = function(self, scrollContent)
+        self:RenderMinimap(scrollContent)
+    end,
+    chat = function(self, scrollContent)
+        self:RenderChat(scrollContent)
+    end,
+    -- Unit Frames
+    ufPlayer = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderPlayer then
+            UF.RenderPlayer(self, scrollContent)
+        end
+    end,
+    ufTarget = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderTarget then
+            UF.RenderTarget(self, scrollContent)
+        end
+    end,
+    ufFocus = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderFocus then
+            UF.RenderFocus(self, scrollContent)
+        end
+    end,
+    ufPet = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderPet then
+            UF.RenderPet(self, scrollContent)
+        end
+    end,
+    ufToT = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderToT then
+            UF.RenderToT(self, scrollContent)
+        end
+    end,
+    ufBoss = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderBoss then
+            UF.RenderBoss(self, scrollContent)
+        end
+    end,
+    -- Group Frames
+    gfParty = function(self, scrollContent)
+        local GF = addon.UI and addon.UI.GroupFrames
+        if GF and GF.RenderParty then
+            GF.RenderParty(self, scrollContent)
+        end
+    end,
+    gfRaid = function(self, scrollContent)
+        local GF = addon.UI and addon.UI.GroupFrames
+        if GF and GF.RenderRaid then
+            GF.RenderRaid(self, scrollContent)
+        end
+    end,
     -- Profiles
+    profilesManage = function(self, scrollContent)
+        self:RenderProfilesManage(scrollContent)
+    end,
+    profilesPresets = function(self, scrollContent)
+        self:RenderProfilesPresets(scrollContent)
+    end,
     profilesRules = function(self, scrollContent)
         self:RenderProfilesRules(scrollContent)
+    end,
+    -- Apply All
+    applyAllFonts = function(self, scrollContent)
+        self:RenderApplyAllFonts(scrollContent)
+    end,
+    applyAllTextures = function(self, scrollContent)
+        self:RenderApplyAllTextures(scrollContent)
+    end,
+    -- Buffs/Debuffs
+    buffs = function(self, scrollContent)
+        self:RenderBuffs(scrollContent)
+    end,
+    debuffs = function(self, scrollContent)
+        self:RenderDebuffs(scrollContent)
     end,
 }
 
@@ -6083,6 +10068,10 @@ function UIPanel:OnNavigationSelect(key, previousKey)
         if frame._logo then
             frame._logo:SetText("")
         end
+        -- Disable mouse on logo button so hover effect doesn't trigger
+        if frame._logoBtn then
+            frame._logoBtn:EnableMouse(false)
+        end
 
         -- Expand scroll area to fill space where header was
         if contentPane._scrollFrame then
@@ -6117,6 +10106,10 @@ function UIPanel:OnNavigationSelect(key, previousKey)
         elseif frame._logo and frame._logo:GetText() == "" then
             -- Ensure logo is visible if it was hidden (e.g., panel reopened)
             frame._logo:SetText(ASCII_LOGO)
+        end
+        -- Re-enable mouse on logo button for hover effect
+        if frame._logoBtn then
+            frame._logoBtn:EnableMouse(true)
         end
         -- Category page: show header
         if contentPane._headerTitle then
@@ -6213,6 +10206,10 @@ function UIPanel:GetCategoryTitle(key)
         petBar = "Pet Bar",
         stanceBar = "Stance Bar",
         microBar = "Micro Bar",
+        prdGeneral = "Personal Resource: General",
+        prdHealthBar = "Personal Resource: Health Bar",
+        prdPowerBar = "Personal Resource: Power Bar",
+        prdClassResource = "Personal Resource: Class Resource",
         ufPlayer = "Unit Frames: Player",
         ufTarget = "Unit Frames: Target",
         ufFocus = "Unit Frames: Focus",
@@ -6221,7 +10218,6 @@ function UIPanel:GetCategoryTitle(key)
         ufBoss = "Unit Frames: Boss",
         gfParty = "Party Frames",
         gfRaid = "Raid Frames",
-        nameplatesUnit = "Unit Nameplates",
         buffs = "Buffs",
         debuffs = "Debuffs",
         sctDamage = "SCT: Damage Numbers",

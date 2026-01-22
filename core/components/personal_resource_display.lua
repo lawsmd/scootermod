@@ -3,38 +3,6 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil or {}
 
-local function isPRDEnabled()
-    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
-end
-
--- Purge PRD component SavedVariables when PRD feature is disabled.
--- Called from init.lua after DB creation to keep profiles clean.
-function addon.PurgeDisabledPRDComponents(db)
-    if isPRDEnabled() then
-        return
-    end
-    local profile = db and db.profile
-    local components = profile and profile.components
-    if not components then
-        return
-    end
-    local removed = {}
-    for _, key in ipairs({"prdGlobal", "prdHealth", "prdPower", "prdClassResource"}) do
-        if components[key] ~= nil then
-            components[key] = nil
-            table.insert(removed, key)
-        end
-    end
-    if #removed > 0 then
-        local message = string.format("PRD disabled – purged SavedVariables for: %s", table.concat(removed, ", "))
-        if addon.DebugPrint then
-            addon.DebugPrint("[ScooterMod]", message)
-        elseif addon.Print then
-            addon:Print(message)
-        end
-    end
-end
-
 local pendingCombatComponents = {}
 local combatWatcherFrame
 
@@ -391,6 +359,290 @@ local function applyHiddenAlpha(frame, hidden, storageKey)
     end
 end
 
+--------------------------------------------------------------------------------
+-- Text Overlay System
+--------------------------------------------------------------------------------
+
+-- Storage for text overlay frames
+local textOverlays = {
+    health = {},
+    power = {},
+}
+
+-- Format number with abbreviation (e.g., 1.5M, 250K)
+local function formatNumber(value)
+    if not value or type(value) ~= "number" then return "0" end
+    if value >= 1000000 then
+        return string.format("%.1fM", value / 1000000)
+    elseif value >= 1000 then
+        return string.format("%.1fK", value / 1000)
+    else
+        return tostring(math.floor(value))
+    end
+end
+
+-- Resolve font path from font name
+local function resolveFontPath(fontName)
+    if not fontName or fontName == "" then
+        return "Fonts\\FRIZQT__.TTF"
+    end
+    -- Check if it's already a path
+    if fontName:match("\\") or fontName:match("/") then
+        return fontName
+    end
+    -- Use SharedMedia if available
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if LSM then
+        local path = LSM:Fetch("font", fontName)
+        if path then return path end
+    end
+    -- Common font name mappings
+    local fontMap = {
+        ["Friz Quadrata TT"] = "Fonts\\FRIZQT__.TTF",
+        ["Arial Narrow"] = "Fonts\\ARIALN.TTF",
+        ["Morpheus"] = "Fonts\\MORPHEUS.TTF",
+        ["Skurri"] = "Fonts\\SKURRI.TTF",
+    }
+    return fontMap[fontName] or "Fonts\\FRIZQT__.TTF"
+end
+
+-- Create or get text overlay for a bar
+local function ensureTextOverlay(bar, overlayType)
+    if not bar then return nil, nil end
+
+    local storage = textOverlays[overlayType]
+    if not storage then return nil, nil end
+
+    -- Check if we already have overlays for this bar
+    if storage[bar] then
+        return storage[bar].left, storage[bar].right
+    end
+
+    -- Create left text (percentage)
+    local leftText = bar:CreateFontString(nil, "OVERLAY")
+    leftText:SetPoint("LEFT", bar, "LEFT", 4, 0)
+    leftText:SetJustifyH("LEFT")
+
+    -- Create right text (value)
+    local rightText = bar:CreateFontString(nil, "OVERLAY")
+    rightText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+    rightText:SetJustifyH("RIGHT")
+
+    storage[bar] = {
+        left = leftText,
+        right = rightText,
+    }
+
+    return leftText, rightText
+end
+
+-- Apply text styling from component settings
+local function applyTextStyle(leftText, rightText, component)
+    if not component or not component.db then return end
+
+    local db = component.db
+    local fontName = db.textFont or "Friz Quadrata TT"
+    local fontSize = tonumber(db.textFontSize) or 10
+    local fontFlags = db.textFontFlags or "OUTLINE"
+    local fontColor = db.textColor or {1, 1, 1, 1}
+
+    local fontPath = resolveFontPath(fontName)
+
+    -- Handle "NONE" font flags
+    if fontFlags == "NONE" then fontFlags = "" end
+
+    local function applyToFS(fs)
+        if not fs then return end
+        pcall(function()
+            fs:SetFont(fontPath, fontSize, fontFlags)
+            fs:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
+        end)
+    end
+
+    applyToFS(leftText)
+    applyToFS(rightText)
+end
+
+-- Update health text overlay
+local function updateHealthText(leftText, rightText, format)
+    if not leftText and not rightText then return end
+
+    -- Use C_Timer.After(0) for clean context
+    C_Timer.After(0, function()
+        local health = UnitHealth("player")
+        local maxHealth = UnitHealthMax("player")
+
+        if not maxHealth or maxHealth <= 0 then
+            if leftText then leftText:SetText("") end
+            if rightText then rightText:SetText("") end
+            return
+        end
+
+        local pct = math.floor((health / maxHealth) * 100)
+
+        if format == "percent" then
+            if leftText then leftText:SetText(pct .. "%") end
+            if rightText then rightText:SetText("") end
+        elseif format == "value" then
+            if leftText then leftText:SetText("") end
+            if rightText then rightText:SetText(formatNumber(health)) end
+        else -- "both"
+            if leftText then leftText:SetText(pct .. "%") end
+            if rightText then rightText:SetText(formatNumber(health)) end
+        end
+    end)
+end
+
+-- Update power text overlay
+local function updatePowerText(leftText, rightText, format)
+    if not leftText and not rightText then return end
+
+    -- Use C_Timer.After(0) for clean context
+    C_Timer.After(0, function()
+        local powerType = UnitPowerType("player")
+        local power = UnitPower("player", powerType)
+        local maxPower = UnitPowerMax("player", powerType)
+
+        if not maxPower or maxPower <= 0 then
+            if leftText then leftText:SetText("") end
+            if rightText then rightText:SetText("") end
+            return
+        end
+
+        local pct = math.floor((power / maxPower) * 100)
+
+        if format == "percent" then
+            if leftText then leftText:SetText(pct .. "%") end
+            if rightText then rightText:SetText("") end
+        elseif format == "value" then
+            if leftText then leftText:SetText("") end
+            if rightText then rightText:SetText(formatNumber(power)) end
+        else -- "both"
+            if leftText then leftText:SetText(pct .. "%") end
+            if rightText then rightText:SetText(formatNumber(power)) end
+        end
+    end)
+end
+
+-- Hide text overlay
+local function hideTextOverlay(bar, overlayType)
+    local storage = textOverlays[overlayType]
+    if not storage or not storage[bar] then return end
+
+    local overlay = storage[bar]
+    if overlay.left then
+        pcall(overlay.left.SetText, overlay.left, "")
+        pcall(overlay.left.Hide, overlay.left)
+    end
+    if overlay.right then
+        pcall(overlay.right.SetText, overlay.right, "")
+        pcall(overlay.right.Hide, overlay.right)
+    end
+end
+
+-- Show text overlay
+local function showTextOverlay(bar, overlayType)
+    local storage = textOverlays[overlayType]
+    if not storage or not storage[bar] then return end
+
+    local overlay = storage[bar]
+    if overlay.left then pcall(overlay.left.Show, overlay.left) end
+    if overlay.right then pcall(overlay.right.Show, overlay.right) end
+end
+
+-- Apply text overlay for health bar
+local function applyHealthTextOverlay(component, healthBar)
+    if not component or not component.db or not healthBar then return end
+
+    local db = component.db
+    local showText = db.showText
+    local hideBar = db.hideBar
+
+    if not showText or hideBar then
+        hideTextOverlay(healthBar, "health")
+        return
+    end
+
+    local leftText, rightText = ensureTextOverlay(healthBar, "health")
+    if not leftText and not rightText then return end
+
+    showTextOverlay(healthBar, "health")
+    applyTextStyle(leftText, rightText, component)
+    updateHealthText(leftText, rightText, db.textFormat or "both")
+end
+
+-- Apply text overlay for power bar
+local function applyPowerTextOverlay(component, powerBar)
+    if not component or not component.db or not powerBar then return end
+
+    local db = component.db
+    local showText = db.showText
+    local hideBar = db.hideBar
+
+    if not showText or hideBar then
+        hideTextOverlay(powerBar, "power")
+        return
+    end
+
+    local leftText, rightText = ensureTextOverlay(powerBar, "power")
+    if not leftText and not rightText then return end
+
+    showTextOverlay(powerBar, "power")
+    applyTextStyle(leftText, rightText, component)
+    updatePowerText(leftText, rightText, db.textFormat or "both")
+end
+
+-- Event frame for text updates
+local textEventFrame = nil
+
+local function ensureTextEventFrame()
+    if textEventFrame then return end
+
+    textEventFrame = CreateFrame("Frame")
+    textEventFrame:RegisterEvent("UNIT_HEALTH")
+    textEventFrame:RegisterEvent("UNIT_POWER_UPDATE")
+    textEventFrame:RegisterEvent("UNIT_DISPLAYPOWER")
+    textEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    textEventFrame:SetScript("OnEvent", function(self, event, unit, ...)
+        if unit and unit ~= "player" then return end
+
+        -- Defer updates to next frame
+        C_Timer.After(0, function()
+            -- Update health text
+            local healthComp = addon.Components and addon.Components.prdHealth
+            if healthComp and healthComp.db and healthComp.db.showText then
+                local container = getHealthContainer()
+                if container then
+                    local healthBar = container.healthBar or container.HealthBar
+                    if healthBar then
+                        local storage = textOverlays.health
+                        if storage and storage[healthBar] then
+                            updateHealthText(storage[healthBar].left, storage[healthBar].right, healthComp.db.textFormat or "both")
+                        end
+                    end
+                end
+            end
+
+            -- Update power text
+            local powerComp = addon.Components and addon.Components.prdPower
+            if powerComp and powerComp.db and powerComp.db.showText then
+                local powerFrame = _G.ClassNameplateManaBarFrame or (NamePlateDriverFrame and NamePlateDriverFrame.classNamePlatePowerBar)
+                if powerFrame then
+                    local storage = textOverlays.power
+                    if storage and storage[powerFrame] then
+                        updatePowerText(storage[powerFrame].left, storage[powerFrame].right, powerComp.db.textFormat or "both")
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- Bar Style Functions
+--------------------------------------------------------------------------------
+
 local function applyPRDStatusBarStyle(component, statusBar, barKind)
     if not component or not statusBar then
         return
@@ -499,10 +751,14 @@ local function applyPRDHealthVisuals(component, container)
     end
     if hide then
         clearBarBorder(statusBar)
+        hideTextOverlay(statusBar, "health")
         return
     end
     applyPRDStatusBarStyle(component, statusBar, "health")
     applyPRDBarBorder(component, statusBar)
+    -- Apply text overlay
+    ensureTextEventFrame()
+    applyHealthTextOverlay(component, statusBar)
 end
 
 local function applyPRDPowerVisuals(component, frame)
@@ -517,10 +773,14 @@ local function applyPRDPowerVisuals(component, frame)
     end
     if hide then
         clearBarBorder(frame)
+        hideTextOverlay(frame, "power")
         return
     end
     applyPRDStatusBarStyle(component, frame, "power")
     applyPRDBarBorder(component, frame)
+    -- Apply text overlay
+    ensureTextEventFrame()
+    applyPowerTextOverlay(component, frame)
 end
 
 local function applyPRDClassResourceVisibility(component, frame)
@@ -1065,111 +1325,23 @@ local function buildPRDBorderOptions()
     return results
 end
 
-if not isPRDEnabled() then
-    return
-end
-
 addon:RegisterComponentInitializer(function(self)
-    -- NOTE: The Personal Resource Display (PRD) will be added to Blizzard's Edit Mode
-    -- in the Midnight expansion. When that happens, these X/Y Position text entry fields
-    -- will need to be converted to EditMode-synced settings (type = "editmode") that
-    -- use LibEditModeOverride for bi-directional sync, similar to how we handle
-    -- positioning for other EditMode-controlled groups (Cooldown Manager, Action Bars,
-    -- Unit Frames, etc.) elsewhere in the addon.
-    -- See ADDONCONTEXT/Docs/EDITMODE.md for the canonical Edit Mode sync patterns.
+    -- PRD Global component - settings placeholder for future use.
+    -- As of 12.0 (Midnight), PRD positioning is handled entirely via Edit Mode.
+    -- The previous CVar-based "Minimize Vertical Movement" feature has been removed.
     local global = Component:New({
         id = "prdGlobal",
         name = "PRD — Global",
         frameName = nil,
         settings = {
-            staticPosition = { type = "addon", default = false, ui = {
-                label = "Minimize Vertical Movement", widget = "checkbox", section = "Positioning", order = 1
-            }},
-            -- Y Offset slider: Displayed as -50 to 50, stored internally as -50 to 50.
-            -- When applying CVars, we transform: (value + 50) / 100 to get the 0-1 range.
-            -- -50 = bottom of screen, 0 = center, 50 = top of screen.
-            screenPosition = { type = "addon", default = 0, ui = {
-                label = "Y Offset", widget = "slider", min = -50, max = 50, step = 1, section = "Positioning", order = 2, hidden = true,
-                tooltip = "Sets the preferred vertical position on screen (-50 = Bottom, 0 = Center, 50 = Top)."
-            }},
-            positionX = { type = "addon", default = 0, ui = {
-                label = "X Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 3
-            }},
-            positionY = { type = "addon", default = 0, ui = {
-                label = "Y Position", widget = "textEntry", min = -MAX_OFFSET, max = MAX_OFFSET, section = "Positioning", order = 4
-            }},
+            -- Reserved for future settings
         },
     })
     global.ApplyStyling = function(component)
         if not addon or not addon.Components then
             return
         end
-        
-        -- Handle Static Position Logic (Vertical Clamping)
-        local db = component.db or {}
-        local settings = component.settings
-        local isStatic = db.staticPosition
-        
-        -- Update UI visibility states based on lock status
-        local visibilityChanged = false
-        if settings then
-            if settings.positionY and settings.positionY.ui then
-                if settings.positionY.ui.hidden ~= isStatic then
-                    settings.positionY.ui.hidden = isStatic
-                    visibilityChanged = true
-                end
-            end
-            if settings.screenPosition and settings.screenPosition.ui then
-                if settings.screenPosition.ui.hidden ~= (not isStatic) then
-                    settings.screenPosition.ui.hidden = not isStatic
-                    visibilityChanged = true
-                end
-            end
-        end
-        
-        -- Apply the CVars
-        if isStatic then
-            -- Calculate a very narrow band to effectively "pin" the PRD to a fixed position.
-            -- Screen position is stored as -50 to 50 (bottom to top), with 0 = center.
-            -- Transform to 0-1 range: (value + 50) / 100
-            local posPercent = ((db.screenPosition or 0) + 50) / 100
-            
-            -- Insets are measured from the edge:
-            -- TopInset: 0 = Top edge, 1 = Bottom edge
-            -- BottomInset: 0 = Bottom edge, 1 = Top edge
-            
-            -- Use an extremely narrow band (0.1% of screen) to effectively pin the position.
-            -- The previous 12% band allowed too much camera-angle-based movement.
-            local bandHeight = 0.001
-            local halfBand = bandHeight / 2
-            
-            -- Clamp center so the band doesn't go off screen (with a small minimum margin)
-            local minMargin = 0.05  -- 5% from edges to keep PRD visible
-            if posPercent < minMargin then posPercent = minMargin end
-            if posPercent > (1 - minMargin) then posPercent = 1 - minMargin end
-            
-            -- Calculate insets
-            local bottomInset = posPercent - halfBand
-            local topInset = 1.0 - (posPercent + halfBand)
-            
-            -- Only apply CVar changes outside of combat to avoid taint
-            if C_CVar and C_CVar.SetCVar and not (InCombatLockdown and InCombatLockdown()) then
-                pcall(C_CVar.SetCVar, "nameplateSelfTopInset", topInset)
-                pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", bottomInset)
-            end
-        else
-            -- Restore defaults (only outside of combat to avoid taint)
-            if C_CVar and C_CVar.SetCVar and not (InCombatLockdown and InCombatLockdown()) then
-                pcall(C_CVar.SetCVar, "nameplateSelfTopInset", defaultTopInset)
-                pcall(C_CVar.SetCVar, "nameplateSelfBottomInset", defaultBottomInset)
-            end
-        end
-        
-        -- Refresh the panel if visibility toggled (deferred to avoid flicker/recursion)
-        if visibilityChanged and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-             addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-        end
-
+        -- Trigger re-styling of child components
         local comps = addon.Components
         local function apply(target)
             if target and target.ApplyStyling then
@@ -1222,6 +1394,25 @@ addon:RegisterComponentInitializer(function(self)
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Health Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
+            -- Text overlay settings
+            showText = { type = "addon", default = false, ui = {
+                label = "Show Text", widget = "checkbox", section = "Text", order = 1,
+            }},
+            textFormat = { type = "addon", default = "both", ui = {
+                label = "Text Format", widget = "dropdown", section = "Text", order = 2,
+            }},
+            textFont = { type = "addon", default = "Friz Quadrata TT", ui = {
+                label = "Font", widget = "fontSelector", section = "Text", order = 3,
+            }},
+            textFontSize = { type = "addon", default = 10, ui = {
+                label = "Font Size", widget = "slider", min = 6, max = 24, step = 1, section = "Text", order = 4,
+            }},
+            textFontFlags = { type = "addon", default = "OUTLINE", ui = {
+                label = "Font Style", widget = "dropdown", section = "Text", order = 5,
+            }},
+            textColor = { type = "addon", default = {1, 1, 1, 1}, ui = {
+                label = "Font Color", widget = "color", section = "Text", order = 6,
+            }},
         },
     })
     health.ApplyStyling = applyHealthOffsets
@@ -1271,6 +1462,25 @@ addon:RegisterComponentInitializer(function(self)
             }},
             hidePowerFeedback = { type = "addon", default = false, ui = {
                 label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 3,
+            }},
+            -- Text overlay settings
+            showText = { type = "addon", default = false, ui = {
+                label = "Show Text", widget = "checkbox", section = "Text", order = 1,
+            }},
+            textFormat = { type = "addon", default = "both", ui = {
+                label = "Text Format", widget = "dropdown", section = "Text", order = 2,
+            }},
+            textFont = { type = "addon", default = "Friz Quadrata TT", ui = {
+                label = "Font", widget = "fontSelector", section = "Text", order = 3,
+            }},
+            textFontSize = { type = "addon", default = 10, ui = {
+                label = "Font Size", widget = "slider", min = 6, max = 24, step = 1, section = "Text", order = 4,
+            }},
+            textFontFlags = { type = "addon", default = "OUTLINE", ui = {
+                label = "Font Style", widget = "dropdown", section = "Text", order = 5,
+            }},
+            textColor = { type = "addon", default = {1, 1, 1, 1}, ui = {
+                label = "Font Color", widget = "color", section = "Text", order = 6,
             }},
         },
     })

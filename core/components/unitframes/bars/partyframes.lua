@@ -16,6 +16,32 @@ local Combat = addon.BarsCombat
 addon.BarsPartyFrames = addon.BarsPartyFrames or {}
 local PartyFrames = addon.BarsPartyFrames
 
+--------------------------------------------------------------------------------
+-- 12.0 TAINT PREVENTION: Lookup table for party frame state
+--------------------------------------------------------------------------------
+-- In 12.0, writing properties directly to CompactPartyFrameMember frames
+-- (e.g., frame._ScootActive = true) can mark the entire frame as "addon-touched".
+-- This causes ALL field accesses to return secret values in protected contexts
+-- (like Edit Mode), breaking Blizzard's own code (frame.outOfRange becomes secret).
+--
+-- Solution: Store all ScooterMod state in a separate lookup table keyed by frame.
+-- This avoids modifying Blizzard's frames while preserving our overlay functionality.
+--------------------------------------------------------------------------------
+local PartyFrameState = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
+
+local function getState(frame)
+    if not frame then return nil end
+    return PartyFrameState[frame]
+end
+
+local function ensureState(frame)
+    if not frame then return nil end
+    if not PartyFrameState[frame] then
+        PartyFrameState[frame] = {}
+    end
+    return PartyFrameState[frame]
+end
+
 -- 12.0+: Some values can be "secret" and will hard-error on arithmetic/comparisons.
 -- Treat those as unreadable and skip optional overlays rather than crashing.
 local function safeNumber(v)
@@ -98,7 +124,8 @@ end
 -- Update overlay width based on health bar value
 local function updateHealthOverlay(bar)
     if not bar or not bar.ScooterPartyHealthFill then return end
-    if not bar._ScootPartyOverlayActive then
+    local state = getState(bar)
+    if not state or not state.overlayActive then
         bar.ScooterPartyHealthFill:Hide()
         return
     end
@@ -218,16 +245,20 @@ local function hideBlizzardFill(bar)
     local blizzFill = bar:GetStatusBarTexture()
     if not blizzFill then return end
 
-    blizzFill._ScootHidden = true
+    local state = ensureState(blizzFill)
+    if state then state.hidden = true end
     blizzFill:SetAlpha(0)
 
-    if not blizzFill._ScootAlphaHooked and _G.hooksecurefunc then
-        blizzFill._ScootAlphaHooked = true
+    local barState = getState(blizzFill)
+    if barState and not barState.alphaHooked and _G.hooksecurefunc then
+        barState.alphaHooked = true
         _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
-            if alpha > 0 and self._ScootHidden then
+            local st = getState(self)
+            if alpha > 0 and st and st.hidden then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
-                        if self._ScootHidden then
+                        local st2 = getState(self)
+                        if st2 and st2.hidden then
                             self:SetAlpha(0)
                         end
                     end)
@@ -242,7 +273,8 @@ local function showBlizzardFill(bar)
     if not bar then return end
     local blizzFill = bar:GetStatusBarTexture()
     if blizzFill then
-        blizzFill._ScootHidden = nil
+        local state = getState(blizzFill)
+        if state then state.hidden = nil end
         blizzFill:SetAlpha(1)
     end
 end
@@ -256,7 +288,8 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
     )
 
-    bar._ScootPartyOverlayActive = hasCustom
+    local state = ensureState(bar)
+    if state then state.overlayActive = hasCustom end
 
     if not hasCustom then
         if bar.ScooterPartyHealthFill then
@@ -284,8 +317,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         overlay:SetTexCoord(0, 1, 0, 1)
         bar.ScooterPartyHealthFill = overlay
 
-        if _G.hooksecurefunc and not bar._ScootPartyOverlayHooksInstalled then
-            bar._ScootPartyOverlayHooksInstalled = true
+        local barState = ensureState(bar)
+        if _G.hooksecurefunc and barState and not barState.overlayHooksInstalled then
+            barState.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
             end)
@@ -300,10 +334,12 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         end
     end
 
-    if not bar._ScootPartyTextureSwapHooked and _G.hooksecurefunc then
-        bar._ScootPartyTextureSwapHooked = true
+    local barState = ensureState(bar)
+    if barState and not barState.textureSwapHooked and _G.hooksecurefunc then
+        barState.textureSwapHooked = true
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
-            if self._ScootPartyOverlayActive then
+            local st = getState(self)
+            if st and st.overlayActive then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)
@@ -320,7 +356,8 @@ end
 
 function PartyFrames.disableHealthOverlay(bar)
     if not bar then return end
-    bar._ScootPartyOverlayActive = false
+    local state = getState(bar)
+    if state then state.overlayActive = false end
     if bar.ScooterPartyHealthFill then
         bar.ScooterPartyHealthFill:Hide()
     end
@@ -401,6 +438,16 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
+-- 12.0 EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
+-- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
+-- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
+-- frame type), the addon code in the execution context can cause UnitInRange() and
+-- similar APIs to return secret values, breaking Blizzard's own code.
+local function isEditModeActive()
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
 function PartyFrames.installHooks()
     if addon._PartyFrameHooksInstalled then return end
     addon._PartyFrameHooksInstalled = true
@@ -408,6 +455,8 @@ function PartyFrames.installHooks()
     -- Hook CompactUnitFrame_UpdateAll
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
         _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if frame and frame.healthBar and Utils.isPartyFrame(frame) then
                 local db = addon and addon.db and addon.db.profile
                 local cfg = db and db.groupFrames and db.groupFrames.party or nil
@@ -443,6 +492,8 @@ function PartyFrames.installHooks()
     -- Hook CompactUnitFrame_SetUnit
     if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
         _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if frame and frame.healthBar and unit and Utils.isPartyFrame(frame) then
                 local db = addon and addon.db and addon.db.profile
                 local cfg = db and db.groupFrames and db.groupFrames.party or nil
@@ -526,10 +577,11 @@ local function applyTextToPartyFrame(frame, cfg)
     end
 
     -- Capture baseline position on first application so we can restore later
-    if not nameFS._ScootOriginalPoint then
+    local nameState = ensureState(nameFS)
+    if nameState and not nameState.originalPoint then
         local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
         if point then
-            nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            nameState.originalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
         end
     end
 
@@ -537,9 +589,9 @@ local function applyTextToPartyFrame(frame, cfg)
     local isDefaultAnchor = (anchor == "TOPLEFT")
     local isZeroOffset = (offsetX == 0 and offsetY == 0)
 
-    if isDefaultAnchor and isZeroOffset and nameFS._ScootOriginalPoint then
+    if isDefaultAnchor and isZeroOffset and nameState and nameState.originalPoint then
         -- Restore baseline (stock position) when user has reset to default
-        local orig = nameFS._ScootOriginalPoint
+        local orig = nameState.originalPoint
         nameFS:ClearAllPoints()
         nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
         -- Also restore default text alignment
@@ -583,9 +635,13 @@ local function collectPartyFramesForText()
     end
     for i = 1, 5 do
         local frame = _G["CompactPartyFrameMember" .. i]
-        if frame and frame.name and not frame.name._ScootPartyTextCounted then
-            frame.name._ScootPartyTextCounted = true
-            table.insert(partyFramesForText, frame)
+        if frame and frame.name then
+            local nameState = getState(frame.name)
+            if not nameState or not nameState.partyTextCounted then
+                local st = ensureState(frame.name)
+                if st then st.partyTextCounted = true end
+                table.insert(partyFramesForText, frame)
+            end
         end
     end
 end
@@ -634,10 +690,11 @@ end
 
 -- Apply styling to the overlay FontString
 local function stylePartyNameOverlay(frame, cfg)
-    if not frame or not frame.ScooterPartyNameText or not cfg then return end
+    local state = getState(frame)
+    if not frame or not state or not state.overlayText or not cfg then return end
 
-    local overlay = frame.ScooterPartyNameText
-    local container = frame.ScooterPartyNameContainer or frame
+    local overlay = state.overlayText
+    local container = state.overlayContainer or frame
 
     local fontFace = cfg.fontFace or "FRIZQT__"
     local resolvedFace
@@ -720,7 +777,8 @@ local function hideBlizzardPartyNameText(frame)
     if not frame or not frame.name then return end
     local blizzName = frame.name
 
-    blizzName._ScootHidden = true
+    local nameState = ensureState(blizzName)
+    if nameState then nameState.hidden = true end
     if blizzName.SetAlpha then
         pcall(blizzName.SetAlpha, blizzName, 0)
     end
@@ -729,13 +787,15 @@ local function hideBlizzardPartyNameText(frame)
     end
 
     -- Install alpha-enforcement hook (only once)
-    if not blizzName._ScootAlphaHooked and _G.hooksecurefunc then
-        blizzName._ScootAlphaHooked = true
+    if nameState and not nameState.alphaHooked and _G.hooksecurefunc then
+        nameState.alphaHooked = true
         _G.hooksecurefunc(blizzName, "SetAlpha", function(self, alpha)
-            if alpha > 0 and self._ScootHidden then
+            local st = getState(self)
+            if alpha > 0 and st and st.hidden then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
-                        if self._ScootHidden then
+                        local st2 = getState(self)
+                        if st2 and st2.hidden then
                             self:SetAlpha(0)
                         end
                     end)
@@ -744,15 +804,17 @@ local function hideBlizzardPartyNameText(frame)
         end)
     end
 
-    if not blizzName._ScootShowHooked and _G.hooksecurefunc then
-        blizzName._ScootShowHooked = true
+    if nameState and not nameState.showHooked and _G.hooksecurefunc then
+        nameState.showHooked = true
         _G.hooksecurefunc(blizzName, "Show", function(self)
-            if not self._ScootHidden then return end
+            local st = getState(self)
+            if not st or not st.hidden then return end
             -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
             if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
             if _G.C_Timer and _G.C_Timer.After then
                 _G.C_Timer.After(0, function()
-                    if self and self._ScootHidden then
+                    local st2 = getState(self)
+                    if self and st2 and st2.hidden then
                         if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
                         if self.Hide then pcall(self.Hide, self) end
                     end
@@ -768,7 +830,8 @@ end
 -- Show Blizzard's name FontString (for restore/cleanup)
 local function showBlizzardPartyNameText(frame)
     if not frame or not frame.name then return end
-    frame.name._ScootHidden = nil
+    local state = getState(frame)
+    if state then state.nameHidden = nil end
     if frame.name.SetAlpha then
         pcall(frame.name.SetAlpha, frame.name, 1)
     end
@@ -778,16 +841,18 @@ local function showBlizzardPartyNameText(frame)
 end
 
 -- Create or update the party name text overlay for a specific frame
+-- 12.0 TAINT FIX: Uses lookup table instead of writing to Blizzard frames
 local function ensurePartyNameOverlay(frame, cfg)
     if not frame then return end
 
     local hasCustom = Utils.hasCustomTextSettings(cfg)
-    frame._ScootPartyNameOverlayActive = hasCustom
+    local state = ensureState(frame)
+    state.overlayActive = hasCustom
 
     if not hasCustom then
         -- Disable overlay, show Blizzard's text
-        if frame.ScooterPartyNameText then
-            frame.ScooterPartyNameText:Hide()
+        if state.overlayText then
+            state.overlayText:Hide()
         end
         showBlizzardPartyNameText(frame)
         return
@@ -796,7 +861,7 @@ local function ensurePartyNameOverlay(frame, cfg)
     -- Ensure an addon-owned clipping container for name text.
     -- IMPORTANT: This container must span the full available unit-frame area so 9-way alignment
     -- (e.g., BOTTOM / BOTTOMRIGHT) can genuinely reach the bottom of the frame.
-    if not frame.ScooterPartyNameContainer then
+    if not state.overlayContainer then
         local container = CreateFrame("Frame", nil, frame)
         container:SetClipsChildren(true)
 
@@ -805,24 +870,25 @@ local function ensurePartyNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
-        frame.ScooterPartyNameContainer = container
+        state.overlayContainer = container
     end
 
     -- Create overlay FontString if it doesn't exist
-    if not frame.ScooterPartyNameText then
-        local parentForText = frame.ScooterPartyNameContainer or frame
+    if not state.overlayText then
+        local parentForText = state.overlayContainer or frame
         local overlay = parentForText:CreateFontString(nil, "OVERLAY", nil)
         overlay:SetDrawLayer("OVERLAY", 7) -- High sublayer to ensure visibility
-        frame.ScooterPartyNameText = overlay
+        state.overlayText = overlay
 
         -- Install SetText hook on Blizzard's name FontString to mirror text
-        if frame.name and not frame.name._ScootTextMirrorHooked and _G.hooksecurefunc then
-            frame.name._ScootTextMirrorHooked = true
-            frame.name._ScootTextMirrorOwner = frame
+        -- Store hook state in our lookup table, not on Blizzard's frame
+        if frame.name and not state.textMirrorHooked and _G.hooksecurefunc then
+            state.textMirrorHooked = true
+            -- Capture state reference for the closure
+            local frameState = state
             _G.hooksecurefunc(frame.name, "SetText", function(self, text)
-                local owner = self._ScootTextMirrorOwner
-                if owner and owner.ScooterPartyNameText and owner._ScootPartyNameOverlayActive then
-                    owner.ScooterPartyNameText:SetText(text or "")
+                if frameState and frameState.overlayText and frameState.overlayActive then
+                    frameState.overlayText:SetText(text or "")
                 end
             end)
         end
@@ -833,20 +899,26 @@ local function ensurePartyNameOverlay(frame, cfg)
     hideBlizzardPartyNameText(frame)
 
     -- Copy current text from Blizzard's FontString to our overlay
+    -- Wrap in pcall as GetText() can return secrets in 12.0
     if frame.name and frame.name.GetText then
-        local currentText = frame.name:GetText()
-        frame.ScooterPartyNameText:SetText(currentText or "")
+        local ok, currentText = pcall(frame.name.GetText, frame.name)
+        if ok and currentText then
+            state.overlayText:SetText(currentText)
+        end
     end
 
-    frame.ScooterPartyNameText:Show()
+    state.overlayText:Show()
 end
 
 -- Disable overlay and restore Blizzard's appearance for a frame
 local function disablePartyNameOverlay(frame)
     if not frame then return end
-    frame._ScootPartyNameOverlayActive = false
-    if frame.ScooterPartyNameText then
-        frame.ScooterPartyNameText:Hide()
+    local state = getState(frame)
+    if state then
+        state.overlayActive = false
+        if state.overlayText then
+            state.overlayText:Hide()
+        end
     end
     showBlizzardPartyNameText(frame)
 end
@@ -867,9 +939,10 @@ function addon.ApplyPartyFrameNameOverlays()
         if frame then
             if hasCustom then
                 -- Only create overlays out of combat (initial setup)
+                local state = getState(frame)
                 if not (InCombatLockdown and InCombatLockdown()) then
                     ensurePartyNameOverlay(frame, cfg)
-                elseif frame.ScooterPartyNameText then
+                elseif state and state.overlayText then
                     -- Already have overlay, just update styling (safe during combat for our FontString)
                     stylePartyNameOverlay(frame, cfg)
                 end
@@ -898,6 +971,8 @@ local function installPartyNameOverlayHooks()
     -- Hook CompactUnitFrame_UpdateAll to set up overlays
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
         _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not frame or not frame.name or not Utils.isPartyFrame(frame) then return end
 
             local db = addon and addon.db and addon.db.profile
@@ -908,7 +983,8 @@ local function installPartyNameOverlayHooks()
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         if not frame then return end
-                        if not frame.ScooterPartyNameText then
+                        local state = getState(frame)
+                        if not state or not state.overlayText then
                             if InCombatLockdown and InCombatLockdown() then
                                 Combat.queuePartyFrameReapply()
                                 return
@@ -924,6 +1000,8 @@ local function installPartyNameOverlayHooks()
     -- Hook CompactUnitFrame_SetUnit for unit assignment changes
     if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
         _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not unit or not frame or not frame.name or not Utils.isPartyFrame(frame) then return end
 
             local db = addon and addon.db and addon.db.profile
@@ -934,7 +1012,8 @@ local function installPartyNameOverlayHooks()
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         if not frame then return end
-                        if not frame.ScooterPartyNameText then
+                        local state = getState(frame)
+                        if not state or not state.overlayText then
                             if InCombatLockdown and InCombatLockdown() then
                                 Combat.queuePartyFrameReapply()
                                 return
@@ -950,6 +1029,8 @@ local function installPartyNameOverlayHooks()
     -- Hook CompactUnitFrame_UpdateName for name text updates
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
         _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not frame or not frame.name or not Utils.isPartyFrame(frame) then return end
 
             local db = addon and addon.db and addon.db.profile
@@ -960,7 +1041,8 @@ local function installPartyNameOverlayHooks()
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         if not frame then return end
-                        if not frame.ScooterPartyNameText then
+                        local state = getState(frame)
+                        if not state or not state.overlayText then
                             if InCombatLockdown and InCombatLockdown() then
                                 Combat.queuePartyFrameReapply()
                                 return
@@ -1015,18 +1097,19 @@ local function applyTextToFontString_PartyTitle(fs, ownerFrame, cfg)
         pcall(fs.SetJustifyH, fs, Utils.getJustifyHFromAnchor(anchor))
     end
 
-    if not fs._ScootOriginalPoint_PartyTitle then
+    local fsState = ensureState(fs)
+    if fsState and not fsState.originalPointPartyTitle then
         local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
         if point then
-            fs._ScootOriginalPoint_PartyTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            fsState.originalPointPartyTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
         end
     end
 
     local isDefaultAnchor = (anchor == "TOPLEFT")
     local isZeroOffset = (offsetX == 0 and offsetY == 0)
 
-    if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_PartyTitle then
-        local orig = fs._ScootOriginalPoint_PartyTitle
+    if isDefaultAnchor and isZeroOffset and fsState and fsState.originalPointPartyTitle then
+        local orig = fsState.originalPointPartyTitle
         fs:ClearAllPoints()
         fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
         if fs.SetJustifyH then
@@ -1057,7 +1140,8 @@ local function hideBlizzardPartyTitleText(titleButton)
     local fs = titleButton:GetFontString()
     if not fs then return end
 
-    fs._ScootHidden = true
+    local fsState = ensureState(fs)
+    if fsState then fsState.hidden = true end
     if fs.SetAlpha then
         pcall(fs.SetAlpha, fs, 0)
     end
@@ -1066,13 +1150,15 @@ local function hideBlizzardPartyTitleText(titleButton)
     end
 
     -- Install alpha-enforcement hook (only once)
-    if not fs._ScootAlphaHooked and _G.hooksecurefunc then
-        fs._ScootAlphaHooked = true
+    if fsState and not fsState.alphaHooked and _G.hooksecurefunc then
+        fsState.alphaHooked = true
         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-            if alpha > 0 and self._ScootHidden then
+            local st = getState(self)
+            if alpha > 0 and st and st.hidden then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
-                        if self and self._ScootHidden then
+                        local st2 = getState(self)
+                        if self and st2 and st2.hidden then
                             self:SetAlpha(0)
                         end
                     end)
@@ -1081,15 +1167,17 @@ local function hideBlizzardPartyTitleText(titleButton)
         end)
     end
 
-    if not fs._ScootShowHooked and _G.hooksecurefunc then
-        fs._ScootShowHooked = true
+    if fsState and not fsState.showHooked and _G.hooksecurefunc then
+        fsState.showHooked = true
         _G.hooksecurefunc(fs, "Show", function(self)
-            if not self._ScootHidden then return end
+            local st = getState(self)
+            if not st or not st.hidden then return end
             -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
             if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
             if _G.C_Timer and _G.C_Timer.After then
                 _G.C_Timer.After(0, function()
-                    if self and self._ScootHidden then
+                    local st2 = getState(self)
+                    if self and st2 and st2.hidden then
                         if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
                         if self.Hide then pcall(self.Hide, self) end
                     end
@@ -1107,7 +1195,8 @@ local function showBlizzardPartyTitleText(titleButton)
     if not titleButton or not titleButton.GetFontString then return end
     local fs = titleButton:GetFontString()
     if not fs then return end
-    fs._ScootHidden = nil
+    local fsState = getState(fs)
+    if fsState then fsState.hidden = nil end
     if fs.SetAlpha then
         pcall(fs.SetAlpha, fs, 1)
     end

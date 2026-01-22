@@ -213,8 +213,8 @@ local function applyActionValue(actionId, value, reason)
 end
 
 local function registerDefaultActions()
-    if addon.FeatureToggles and addon.FeatureToggles.enablePRD then
-        ACTIONS["prdPower.hideBar"] = {
+    -- PRD Power Bar: Hide Power Bar action
+    ACTIONS["prdPower.hideBar"] = {
             id = "prdPower.hideBar",
             valueType = "boolean",
             widget = "checkbox",           -- Matches component.settings[settingId].ui.widget
@@ -253,7 +253,6 @@ local function registerDefaultActions()
                 return true
             end,
         }
-    end
 
     -- Target/Focus Unit Frames: Hide Level Text (applies to both Target and Focus frames)
     ACTIONS["ufTargetFocus.levelTextHidden"] = {

@@ -17,7 +17,7 @@ Presets:Register({
     previewTexture = "Interface\\AddOns\\ScooterMod\\Scooter",
     previewThumbnail = "Interface\\AddOns\\ScooterMod\\Scooter",
     designedFor = { "Optimized for 4k 16:9 monitors", "Competitive PvE content, M+ and Raid" },
-    recommends = { "Chattynator", "Platynator" },
+    recommends = { "Baganator", "Chattynator", "Platynator" },
     lastUpdated = "2025-12-23",
 
     -- Edit Mode layout payload (raw layoutInfo table).
@@ -2315,16 +2315,6 @@ Presets:Register({
         orientation = "V",
         positionX = -1037,
         positionY = -114,
-      },
-      nameplatesUnit = {
-        _nameplatesColorMigrated = true,
-        _nameplatesTextMigrated = true,
-        supportsText = true,
-        textName = {
-          fontFace = "ROBOTO_SEMICOND_BLACK",
-          size = 8,
-          style = "THICKOUTLINE",
-        },
       },
       objectiveTracker = {
         height = 400,

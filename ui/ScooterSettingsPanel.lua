@@ -6,10 +6,6 @@ local panel = addon.SettingsPanel
 -- Combat guard state: track whether to reopen panel when combat ends
 panel._closedByCombat = false
 
-local function IsPRDEnabled()
-    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
-end
-
 -- Base window background color/opacity for the ScooterMod settings frame.
 -- You can tweak these values to taste:
 --   r,g,b: 0 (black) to 1 (white)
@@ -1989,13 +1985,10 @@ local function BuildCategories()
 	addEntry("trackedBars", addon.SettingsPanel.RenderTrackedBars())
     addEntry("sctDamage", addon.SettingsPanel.RenderSCTDamage())
     addEntry("sctHealing", addon.SettingsPanel.RenderSCTHealing())
-    if IsPRDEnabled() then
-        addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
-        addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
-        addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
-        addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
-    end
-	addEntry("nameplatesUnit", addon.SettingsPanel.RenderNameplatesUnit())
+    addEntry("prdGlobal", addon.SettingsPanel.RenderPRDGlobal())
+    addEntry("prdHealth", addon.SettingsPanel.RenderPRDHealth())
+    addEntry("prdPower", addon.SettingsPanel.RenderPRDPower())
+    addEntry("prdClassResource", addon.SettingsPanel.RenderPRDClassResource())
 
 	-- Action Bars children
 	addEntry("actionBar1", addon.SettingsPanel.RenderActionBar1())
@@ -2078,28 +2071,17 @@ local function BuildCategories()
 			{ type = "child", key = "gfParty", label = "Party Frames" },
 			{ type = "child", key = "gfRaid",  label = "Raid Frames"  },
 		}},
-		{ type = "parent", key = "Nameplates", label = "Nameplates", collapsible = true, children = {
-			{ type = "child", key = "nameplatesUnit", label = "Unit Nameplates" },
-		}},
         { type = "parent", key = "Buffs/Debuffs", label = "Buffs/Debuffs", collapsible = true, children = {
             { type = "child", key = "buffs",   label = "Buffs"   },
             { type = "child", key = "debuffs", label = "Debuffs" },
         }},
+        { type = "parent", key = "Personal Resource", label = "Personal Resource", collapsible = true, children = {
+            { type = "child", key = "prdGlobal", label = "Global" },
+            { type = "child", key = "prdHealth", label = "Health Bar" },
+            { type = "child", key = "prdPower", label = "Power Bar" },
+            { type = "child", key = "prdClassResource", label = "Class Resource" },
+        }},
 	}
-    if IsPRDEnabled() then
-        table.insert(navModel, {
-            type = "parent",
-            key = "Personal Resource Display",
-            label = "Personal Resource Display",
-            collapsible = true,
-            children = {
-                { type = "child", key = "prdGlobal", label = "Global" },
-                { type = "child", key = "prdHealth", label = "Health Bar" },
-                { type = "child", key = "prdPower", label = "Power Bar" },
-                { type = "child", key = "prdClassResource", label = "Class Resource" },
-            },
-        })
-    end
     table.insert(navModel, {
         type = "parent",
         key = "Scrolling Combat Text",

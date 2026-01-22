@@ -481,6 +481,16 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
+-- 12.0 EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
+-- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
+-- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
+-- frame type), the addon code in the execution context can cause UnitInRange() and
+-- similar APIs to return secret values, breaking Blizzard's own code.
+local function isEditModeActive()
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
 function RaidFrames.installHooks()
     if addon._RaidFrameHooksInstalled then return end
     addon._RaidFrameHooksInstalled = true
@@ -488,6 +498,8 @@ function RaidFrames.installHooks()
     -- Hook CompactUnitFrame_UpdateAll
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
         _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if frame and frame.healthBar and Utils.isRaidFrame(frame) then
                 local db = addon and addon.db and addon.db.profile
                 if db and db.groupFrames and db.groupFrames.raid then
@@ -523,6 +535,8 @@ function RaidFrames.installHooks()
     -- Hook CompactUnitFrame_SetUnit
     if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
         _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if frame and frame.healthBar and unit and Utils.isRaidFrame(frame) then
                 local db = addon and addon.db and addon.db.profile
                 if db and db.groupFrames and db.groupFrames.raid then
@@ -1000,6 +1014,8 @@ local function installRaidNameOverlayHooks()
 
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateAll then
         _G.hooksecurefunc("CompactUnitFrame_UpdateAll", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
             local cfg = getCfg()
             if not Utils.hasCustomTextSettings(cfg) then return end
@@ -1027,6 +1043,8 @@ local function installRaidNameOverlayHooks()
 
     if _G.hooksecurefunc and _G.CompactUnitFrame_SetUnit then
         _G.hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not unit then return end
             if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
             local cfg = getCfg()
@@ -1055,6 +1073,8 @@ local function installRaidNameOverlayHooks()
 
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateName then
         _G.hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
             if not (frame and frame.name and Utils.isRaidFrame(frame)) then return end
             local cfg = getCfg()
             if not Utils.hasCustomTextSettings(cfg) then return end
@@ -1207,6 +1227,8 @@ local function installRaidFrameStatusTextHooks()
     addon._RaidFrameStatusTextHooksInstalled = true
 
     local function tryApply(frame)
+        -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+        if isEditModeActive() then return end
         if not frame or not frame.statusText or not Utils.isRaidFrame(frame) then
             return
         end
@@ -1357,6 +1379,8 @@ local function installRaidFrameGroupTitleHooks()
     addon._RaidFrameGroupTitleHooksInstalled = true
 
     local function tryApplyTitle(groupFrame)
+        -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+        if isEditModeActive() then return end
         if not groupFrame or not Utils.isCompactRaidGroupFrame(groupFrame) then
             return
         end

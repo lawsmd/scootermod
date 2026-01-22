@@ -1,7 +1,6 @@
 local addonName, addon = ...
 
 addon.FeatureToggles = addon.FeatureToggles or {}
-addon.FeatureToggles.enablePRD = addon.FeatureToggles.enablePRD or false
 
 function addon:OnInitialize()
     -- 12.0 PTR safety: Settings modules can be renamed/restructured between builds.
@@ -21,10 +20,6 @@ function addon:OnInitialize()
 
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
-    -- Purge disabled PRD components (function lives in personal_resource_display.lua)
-    if addon.PurgeDisabledPRDComponents then
-        addon.PurgeDisabledPRDComponents(self.db)
-    end
 
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
@@ -506,6 +501,25 @@ end
 
 function addon:PLAYER_TARGET_CHANGED()
     -- =========================================================================
+    -- EDIT MODE GUARD: Skip synchronous modifications during Edit Mode
+    -- =========================================================================
+    -- When Edit Mode opens, it calls TargetUnit which fires PLAYER_TARGET_CHANGED.
+    -- Synchronous modifications to TargetFrame elements during this call chain
+    -- taint the execution context, causing Blizzard's UpdateTextStringWithValues
+    -- to fail with "secret value" errors when it tries to compare StatusBar values.
+    -- Skip preemptive hiding when Edit Mode is active or opening.
+    local editModeFrame = _G.EditModeManagerFrame
+    if editModeFrame and (editModeFrame:IsShown() or editModeFrame.editModeActive) then
+        -- Defer all work to avoid taint propagation during Edit Mode
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                self:RefreshOpacityState()
+            end)
+        end
+        return
+    end
+
+    -- =========================================================================
     -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's TargetFrame_Update)
     -- =========================================================================
     -- This is the key to preventing visual "flash" of hidden elements.
@@ -567,6 +581,23 @@ function addon:PLAYER_TARGET_CHANGED()
 end
 
 function addon:PLAYER_FOCUS_CHANGED()
+    -- =========================================================================
+    -- EDIT MODE GUARD: Skip synchronous modifications during Edit Mode
+    -- =========================================================================
+    -- Same rationale as PLAYER_TARGET_CHANGED: Edit Mode triggers FocusUnit
+    -- which fires PLAYER_FOCUS_CHANGED. Skip preemptive hiding to avoid taint.
+    local editModeFrame = _G.EditModeManagerFrame
+    if editModeFrame and (editModeFrame:IsShown() or editModeFrame.editModeActive) then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if addon.ApplyUnitFrameBarTexturesFor then
+                    addon.ApplyUnitFrameBarTexturesFor("Focus")
+                end
+            end)
+        end
+        return
+    end
+
     -- =========================================================================
     -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's FocusFrame_Update)
     -- =========================================================================

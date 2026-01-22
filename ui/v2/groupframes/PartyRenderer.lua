@@ -1,0 +1,633 @@
+-- PartyRenderer.lua - Party Frames TUI renderer
+local addonName, addon = ...
+
+addon.UI = addon.UI or {}
+addon.UI.GroupFrames = addon.UI.GroupFrames or {}
+local GF = addon.UI.GroupFrames
+local SettingsBuilder = addon.UI.SettingsBuilder
+
+local COMPONENT_ID = "gfParty"
+
+--------------------------------------------------------------------------------
+-- Database Access
+--------------------------------------------------------------------------------
+
+local function ensureDB()
+    return GF.ensurePartyDB()
+end
+
+local function ensureTextDB(key)
+    return GF.ensurePartyTextDB(key)
+end
+
+--------------------------------------------------------------------------------
+-- Apply Functions
+--------------------------------------------------------------------------------
+
+local function applyStyles()
+    GF.applyPartyStyles()
+end
+
+local function applyText()
+    GF.applyPartyText()
+end
+
+--------------------------------------------------------------------------------
+-- Edit Mode Helpers
+--------------------------------------------------------------------------------
+
+local function getPartyFrame()
+    return GF.getPartyFrame()
+end
+
+local function getEditModeSetting(settingId)
+    local frame = getPartyFrame()
+    return GF.getEditModeSetting(frame, settingId)
+end
+
+local function setEditModeSetting(settingId, value, options)
+    local frame = getPartyFrame()
+    GF.setEditModeSetting(frame, settingId, value, options)
+end
+
+--------------------------------------------------------------------------------
+-- Shared Tab Builders
+--------------------------------------------------------------------------------
+
+local function buildStyleTab(inner, barPrefix, applyFn)
+    -- Foreground Texture
+    inner:AddBarTextureSelector({
+        label = "Foreground Texture",
+        get = function()
+            local t = ensureDB() or {}
+            return t[barPrefix .. "Texture"] or "default"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "Texture"] = v or "default"
+            applyFn()
+        end,
+    })
+
+    -- Foreground Color
+    inner:AddSelectorColorPicker({
+        label = "Foreground Color",
+        values = GF.healthColorValues,
+        order = GF.healthColorOrder,
+        get = function()
+            local t = ensureDB() or {}
+            return t[barPrefix .. "ColorMode"] or "default"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "ColorMode"] = v or "default"
+            applyFn()
+        end,
+        getColor = function()
+            local t = ensureDB() or {}
+            local c = t[barPrefix .. "Tint"] or {1, 1, 1, 1}
+            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+        end,
+        setColor = function(r, g, b, a)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "Tint"] = {r or 1, g or 1, b or 1, a or 1}
+            applyFn()
+        end,
+        customValue = "custom",
+        hasAlpha = true,
+    })
+
+    inner:AddSpacer(8)
+
+    -- Background Texture
+    inner:AddBarTextureSelector({
+        label = "Background Texture",
+        get = function()
+            local t = ensureDB() or {}
+            return t[barPrefix .. "BackgroundTexture"] or "default"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "BackgroundTexture"] = v or "default"
+            applyFn()
+        end,
+    })
+
+    -- Background Color
+    inner:AddSelectorColorPicker({
+        label = "Background Color",
+        values = GF.bgColorValues,
+        order = GF.bgColorOrder,
+        get = function()
+            local t = ensureDB() or {}
+            return t[barPrefix .. "BackgroundColorMode"] or "default"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "BackgroundColorMode"] = v or "default"
+            applyFn()
+        end,
+        getColor = function()
+            local t = ensureDB() or {}
+            local c = t[barPrefix .. "BackgroundTint"] or {0, 0, 0, 1}
+            return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
+        end,
+        setColor = function(r, g, b, a)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "BackgroundTint"] = {r or 0, g or 0, b or 0, a or 1}
+            applyFn()
+        end,
+        customValue = "custom",
+        hasAlpha = true,
+    })
+
+    -- Background Opacity
+    inner:AddSlider({
+        label = "Background Opacity",
+        min = 0,
+        max = 100,
+        step = 1,
+        get = function()
+            local t = ensureDB() or {}
+            return tonumber(t[barPrefix .. "BackgroundOpacity"]) or 50
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[barPrefix .. "BackgroundOpacity"] = tonumber(v) or 50
+            applyFn()
+        end,
+    })
+
+    inner:Finalize()
+end
+
+local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabel)
+    -- Optional hide toggle (e.g., for Party Title)
+    if includeHideToggle then
+        inner:AddToggle({
+            label = hideLabel or "Hide",
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                return not not s.hide
+            end,
+            set = function(v)
+                local t = ensureDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].hide = v and true or false
+                applyFn()
+            end,
+        })
+    end
+
+    -- Font
+    inner:AddFontSelector({
+        label = "Font",
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            return s.fontFace or "FRIZQT__"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].fontFace = v
+            applyFn()
+        end,
+    })
+
+    -- Style
+    inner:AddSelector({
+        label = "Style",
+        values = GF.fontStyleValues,
+        order = GF.fontStyleOrder,
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            return s.style or "OUTLINE"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].style = v
+            applyFn()
+        end,
+    })
+
+    -- Size
+    inner:AddSlider({
+        label = "Size",
+        min = 6,
+        max = 32,
+        step = 1,
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            return tonumber(s.size) or 12
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].size = tonumber(v) or 12
+            applyFn()
+        end,
+    })
+
+    -- Color
+    inner:AddColorPicker({
+        label = "Color",
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            local c = s.color or {1, 1, 1, 1}
+            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+        end,
+        set = function(r, g, b, a)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].color = {r or 1, g or 1, b or 1, a or 1}
+            applyFn()
+        end,
+        hasAlpha = true,
+    })
+
+    -- Alignment (9-way anchor)
+    inner:AddSelector({
+        label = "Alignment",
+        values = GF.anchorValues,
+        order = GF.anchorOrder,
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            return s.anchor or "TOPLEFT"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].anchor = v or "TOPLEFT"
+            applyFn()
+        end,
+    })
+
+    -- X Offset
+    inner:AddSlider({
+        label = "Offset X",
+        min = -50,
+        max = 50,
+        step = 1,
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            local o = s.offset or {}
+            return tonumber(o.x) or 0
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].offset = t[textKey].offset or {}
+            t[textKey].offset.x = tonumber(v) or 0
+            applyFn()
+        end,
+    })
+
+    -- Y Offset
+    inner:AddSlider({
+        label = "Offset Y",
+        min = -50,
+        max = 50,
+        step = 1,
+        get = function()
+            local s = ensureTextDB(textKey) or {}
+            local o = s.offset or {}
+            return tonumber(o.y) or 0
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].offset = t[textKey].offset or {}
+            t[textKey].offset.y = tonumber(v) or 0
+            applyFn()
+        end,
+    })
+
+    inner:Finalize()
+end
+
+--------------------------------------------------------------------------------
+-- Renderer Function
+--------------------------------------------------------------------------------
+
+function GF.RenderParty(panel, scrollContent)
+    -- Clear existing content
+    panel:ClearContent()
+
+    -- Create builder
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    panel._currentBuilder = builder
+
+    -- Store reference for re-rendering on changes
+    builder:SetOnRefresh(function()
+        GF.RenderParty(panel, scrollContent)
+    end)
+
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+
+    ----------------------------------------------------------------------------
+    -- Parent-Level Edit Mode Settings
+    ----------------------------------------------------------------------------
+
+    -- Use Raid-Style Party Frames
+    builder:AddToggle({
+        label = "Use Raid-Style Party Frames",
+        description = "Uses compact raid-style frames for party. Enables additional customization options.",
+        emphasized = true,
+        get = function()
+            if not EM or not EM.UseRaidStylePartyFrames then return false end
+            local v = getEditModeSetting(EM.UseRaidStylePartyFrames)
+            return v and v ~= 0
+        end,
+        set = function(v)
+            if not EM or not EM.UseRaidStylePartyFrames then return end
+            C_Timer.After(0, function()
+                setEditModeSetting(EM.UseRaidStylePartyFrames, v and 1 or 0, {
+                    updaters = { "UpdateSystemSettingUseRaidStylePartyFrames" },
+                    suspendDuration = 0.25,
+                })
+                -- Re-render to show/hide conditional controls
+                C_Timer.After(0.3, function()
+                    GF.RenderParty(panel, scrollContent)
+                end)
+            end)
+        end,
+        infoIcon = GF.TOOLTIPS.raidStyleParty,
+    })
+
+    -- Show Party Frame Background (Traditional only)
+    local isRaidStyle = GF.isRaidStyleParty()
+    if not isRaidStyle then
+        builder:AddToggle({
+            label = "Show Party Frame Background",
+            get = function()
+                if not EM or not EM.ShowPartyFrameBackground then return true end
+                local v = getEditModeSetting(EM.ShowPartyFrameBackground)
+                return v and v ~= 0
+            end,
+            set = function(v)
+                if not EM or not EM.ShowPartyFrameBackground then return end
+                C_Timer.After(0, function()
+                    setEditModeSetting(EM.ShowPartyFrameBackground, v and 1 or 0, {
+                        updaters = { "UpdateSystemSettingShowPartyFrameBackground" },
+                        suspendDuration = 0.25,
+                    })
+                end)
+            end,
+        })
+    end
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Positioning & Sorting
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Positioning & Sorting",
+        componentId = COMPONENT_ID,
+        sectionKey = "positioning",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            if isRaidStyle then
+                -- Use Horizontal Layout
+                inner:AddToggle({
+                    label = "Use Horizontal Layout",
+                    get = function()
+                        if not EM or not EM.UseHorizontalGroups then return false end
+                        local v = getEditModeSetting(EM.UseHorizontalGroups)
+                        return v and v ~= 0
+                    end,
+                    set = function(v)
+                        if not EM or not EM.UseHorizontalGroups then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.UseHorizontalGroups, v and 1 or 0, {
+                                updaters = { "UpdateSystemSettingUseHorizontalGroups" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                })
+
+                -- Sort By
+                inner:AddSelector({
+                    label = "Sort By",
+                    values = GF.partySortByValues,
+                    order = GF.partySortByOrder,
+                    get = function()
+                        if not EM or not EM.SortPlayersBy then return 0 end
+                        return getEditModeSetting(EM.SortPlayersBy) or 0
+                    end,
+                    set = function(v)
+                        if not EM or not EM.SortPlayersBy then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.SortPlayersBy, v, {
+                                updaters = { "UpdateSystemSettingSortPlayersBy" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                })
+            else
+                inner:AddDescription("Additional positioning options are available when 'Use Raid-Style Party Frames' is enabled.")
+            end
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Sizing
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = COMPONENT_ID,
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            if isRaidStyle then
+                -- Frame Width
+                inner:AddSlider({
+                    label = "Frame Width",
+                    min = 72,
+                    max = 144,
+                    step = 2,
+                    get = function()
+                        if not EM or not EM.FrameWidth then return 72 end
+                        return getEditModeSetting(EM.FrameWidth) or 72
+                    end,
+                    set = function(v)
+                        if not EM or not EM.FrameWidth then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.FrameWidth, v, {
+                                updaters = { "UpdateSystemSettingFrameWidth" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                })
+
+                -- Frame Height
+                inner:AddSlider({
+                    label = "Frame Height",
+                    min = 36,
+                    max = 72,
+                    step = 2,
+                    get = function()
+                        if not EM or not EM.FrameHeight then return 36 end
+                        return getEditModeSetting(EM.FrameHeight) or 36
+                    end,
+                    set = function(v)
+                        if not EM or not EM.FrameHeight then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.FrameHeight, v, {
+                                updaters = { "UpdateSystemSettingFrameHeight" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                })
+            else
+                -- Traditional style: Frame Size (scale)
+                inner:AddSlider({
+                    label = "Frame Size (Scale)",
+                    min = 100,
+                    max = 200,
+                    step = 5,
+                    get = function()
+                        if not EM or not EM.FrameSize then return 100 end
+                        local v = getEditModeSetting(EM.FrameSize)
+                        -- Edit Mode may return index 0..20; normalize to 100..200
+                        if v and v <= 20 then return 100 + (v * 5) end
+                        return math.max(100, math.min(200, v or 100))
+                    end,
+                    set = function(v)
+                        if not EM or not EM.FrameSize then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.FrameSize, v, {
+                                updaters = { "UpdateSystemSettingFrameSize" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                    minLabel = "100%",
+                    maxLabel = "200%",
+                })
+            end
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Border (Raid-Style only)
+    ----------------------------------------------------------------------------
+
+    if isRaidStyle then
+        builder:AddCollapsibleSection({
+            title = "Border",
+            componentId = COMPONENT_ID,
+            sectionKey = "border",
+            defaultExpanded = false,
+            buildContent = function(contentFrame, inner)
+                inner:AddToggle({
+                    label = "Display Border",
+                    description = "Shows Blizzard's default border around the party group.",
+                    get = function()
+                        if not EM or not EM.DisplayBorder then return false end
+                        local v = getEditModeSetting(EM.DisplayBorder)
+                        return v and v ~= 0
+                    end,
+                    set = function(v)
+                        if not EM or not EM.DisplayBorder then return end
+                        C_Timer.After(0, function()
+                            setEditModeSetting(EM.DisplayBorder, v and 1 or 0, {
+                                updaters = { "UpdateSystemSettingDisplayBorder" },
+                                suspendDuration = 0.25,
+                            })
+                        end)
+                    end,
+                    infoIcon = GF.TOOLTIPS.displayBorder,
+                })
+                inner:Finalize()
+            end,
+        })
+    end
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Style
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Style",
+        componentId = COMPONENT_ID,
+        sectionKey = "style",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            buildStyleTab(inner, "healthBar", applyStyles)
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Text
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = COMPONENT_ID,
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "playerName", label = "Player Name" },
+                    { key = "partyTitle", label = "Party Title" },
+                },
+                componentId = COMPONENT_ID,
+                sectionKey = "text_tabs",
+                buildContent = {
+                    playerName = function(cf, tabInner)
+                        buildTextTab(tabInner, "textPlayerName", applyText, false)
+                    end,
+                    partyTitle = function(cf, tabInner)
+                        buildTextTab(tabInner, "textPartyTitle", applyText, true, "Hide Party Title")
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Collapsible Section: Visibility
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Visibility",
+        componentId = COMPONENT_ID,
+        sectionKey = "visibility",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddDescription("Visibility options coming in a future update.")
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Finalize
+    ----------------------------------------------------------------------------
+
+    builder:Finalize()
+end

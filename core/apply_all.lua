@@ -9,15 +9,18 @@ local FONT_KEYS = { fontFace = true }
 -- Bar texture keys vary by system:
 -- - Cooldown Manager/PRD use: styleForegroundTexture, styleBackgroundTexture
 -- - Unit Frames use: healthBarTexture, healthBarBackgroundTexture, powerBarTexture, powerBarBackgroundTexture
+-- - Cast Bars use: castBarTexture, castBarBackgroundTexture
 local FG_TEXTURE_KEYS = {
     styleForegroundTexture = true,
     healthBarTexture = true,
     powerBarTexture = true,
+    castBarTexture = true,
 }
 local BG_TEXTURE_KEYS = {
     styleBackgroundTexture = true,
     healthBarBackgroundTexture = true,
     powerBarBackgroundTexture = true,
+    castBarBackgroundTexture = true,
 }
 
 -- Font settings are stored in deeply nested tables that only get created when
@@ -80,18 +83,32 @@ local UNIT_FRAME_TEXTURE_KEYS = {
     "powerBarBackgroundTexture",
 }
 
+-- Cast bar texture keys (stored inside castBar table)
+local CAST_BAR_TEXTURE_KEYS = {
+    "castBarTexture",
+    "castBarBackgroundTexture",
+}
+
 local function ensureUnitFrameTextureStructures(profile)
     if not profile then return end
     profile.unitFrames = profile.unitFrames or {}
-    
+
     for _, unit in ipairs(UNIT_FRAME_UNITS) do
         profile.unitFrames[unit] = profile.unitFrames[unit] or {}
         local unitCfg = profile.unitFrames[unit]
-        
+
         -- Ensure all bar texture keys exist with default value
         for _, textureKey in ipairs(UNIT_FRAME_TEXTURE_KEYS) do
             if unitCfg[textureKey] == nil then
                 unitCfg[textureKey] = "default"
+            end
+        end
+
+        -- Ensure cast bar texture keys exist (inside castBar table)
+        unitCfg.castBar = unitCfg.castBar or {}
+        for _, textureKey in ipairs(CAST_BAR_TEXTURE_KEYS) do
+            if unitCfg.castBar[textureKey] == nil then
+                unitCfg.castBar[textureKey] = "default"
             end
         end
     end
@@ -124,11 +141,6 @@ local AURA_TEXT_KEYS = {
     "textDuration",
 }
 
--- Nameplates text settings
-local NAMEPLATE_COMPONENT_IDS = {
-    "nameplatesUnit",
-}
-
 local function ensureComponentFontStructures(profile)
     if not profile then return end
     profile.components = profile.components or {}
@@ -156,17 +168,7 @@ local function ensureComponentFontStructures(profile)
             end
         end
     end
-    
-    -- Nameplates component
-    for _, componentId in ipairs(NAMEPLATE_COMPONENT_IDS) do
-        profile.components[componentId] = profile.components[componentId] or {}
-        local cfg = profile.components[componentId]
-        cfg.textName = cfg.textName or {}
-        if cfg.textName.fontFace == nil then
-            cfg.textName.fontFace = "FRIZQT__"
-        end
-    end
-    
+
     -- NOTE: Scrolling Combat Text (sctDamage) is intentionally excluded from Apply All.
     -- SCT font changes require a full game restart (not just /reload), so users must
     -- change SCT fonts directly via the Scrolling Combat Text settings panel to see
@@ -183,6 +185,95 @@ local function ensureComponentFontStructures(profile)
 
     tcfg.textComparison = tcfg.textComparison or {}
     if tcfg.textComparison.fontFace == nil then tcfg.textComparison.fontFace = "FRIZQT__" end
+end
+
+-- Action Bar components: actionBar1-8, petBar, stanceBar
+-- Text keys: textStacks, textCooldown, textHotkey, textMacro
+local ACTION_BAR_COMPONENT_IDS = {
+    "actionBar1", "actionBar2", "actionBar3", "actionBar4",
+    "actionBar5", "actionBar6", "actionBar7", "actionBar8",
+    "petBar", "stanceBar",
+}
+local ACTION_BAR_TEXT_KEYS = {
+    "textStacks",
+    "textCooldown",
+    "textHotkey",
+    "textMacro",
+}
+
+local function ensureActionBarFontStructures(profile)
+    if not profile then return end
+    profile.components = profile.components or {}
+
+    for _, componentId in ipairs(ACTION_BAR_COMPONENT_IDS) do
+        profile.components[componentId] = profile.components[componentId] or {}
+        local cfg = profile.components[componentId]
+        for _, textKey in ipairs(ACTION_BAR_TEXT_KEYS) do
+            cfg[textKey] = cfg[textKey] or {}
+            if cfg[textKey].fontFace == nil then
+                cfg[textKey].fontFace = "FRIZQT__"
+            end
+        end
+    end
+end
+
+-- Objective Tracker component
+-- Text keys: textHeader, textQuestName, textQuestObjective
+local OBJECTIVE_TRACKER_TEXT_KEYS = {
+    "textHeader",
+    "textQuestName",
+    "textQuestObjective",
+}
+
+local function ensureObjectiveTrackerFontStructures(profile)
+    if not profile then return end
+    profile.components = profile.components or {}
+    profile.components.objectiveTracker = profile.components.objectiveTracker or {}
+    local cfg = profile.components.objectiveTracker
+
+    for _, textKey in ipairs(OBJECTIVE_TRACKER_TEXT_KEYS) do
+        cfg[textKey] = cfg[textKey] or {}
+        if cfg[textKey].fontFace == nil then
+            cfg[textKey].fontFace = "FRIZQT__"
+        end
+    end
+end
+
+-- Group Frames (Party and Raid) font structures
+-- Party: textPlayerName
+-- Raid: textPlayerName, textStatusText, textGroupNumbers
+local GROUP_FRAMES_PARTY_TEXT_KEYS = {
+    "textPlayerName",
+}
+local GROUP_FRAMES_RAID_TEXT_KEYS = {
+    "textPlayerName",
+    "textStatusText",
+    "textGroupNumbers",
+}
+
+local function ensureGroupFramesFontStructures(profile)
+    if not profile then return end
+    profile.groupFrames = profile.groupFrames or {}
+
+    -- Party Frames
+    profile.groupFrames.party = profile.groupFrames.party or {}
+    local partyCfg = profile.groupFrames.party
+    for _, textKey in ipairs(GROUP_FRAMES_PARTY_TEXT_KEYS) do
+        partyCfg[textKey] = partyCfg[textKey] or {}
+        if partyCfg[textKey].fontFace == nil then
+            partyCfg[textKey].fontFace = "FRIZQT__"
+        end
+    end
+
+    -- Raid Frames
+    profile.groupFrames.raid = profile.groupFrames.raid or {}
+    local raidCfg = profile.groupFrames.raid
+    for _, textKey in ipairs(GROUP_FRAMES_RAID_TEXT_KEYS) do
+        raidCfg[textKey] = raidCfg[textKey] or {}
+        if raidCfg[textKey].fontFace == nil then
+            raidCfg[textKey].fontFace = "FRIZQT__"
+        end
+    end
 end
 
 local function ensureState()
@@ -319,6 +410,9 @@ function ApplyAll:ApplyFonts(fontKey, opts)
     -- so we must ensure they exist for ApplyAll to find and update them.
     ensureUnitFrameFontStructures(profile)
     ensureComponentFontStructures(profile)
+    ensureActionBarFontStructures(profile)
+    ensureObjectiveTrackerFontStructures(profile)
+    ensureGroupFramesFontStructures(profile)
     
     -- Skip the applyAll state table and sctDamage component.
     -- SCT is excluded because font changes require a full game restart (not /reload),

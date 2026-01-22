@@ -96,6 +96,17 @@ Navigation.NavModel = {
         },
     },
     {
+        key = "prd",
+        label = "Personal Resource",
+        collapsible = true,
+        children = {
+            { key = "prdGeneral", label = "General" },
+            { key = "prdHealthBar", label = "Health Bar" },
+            { key = "prdPowerBar", label = "Power Bar" },
+            { key = "prdClassResource", label = "Class Resource" },
+        },
+    },
+    {
         key = "unitFrames",
         label = "Unit Frames",
         collapsible = true,
@@ -115,14 +126,6 @@ Navigation.NavModel = {
         children = {
             { key = "gfParty", label = "Party Frames" },
             { key = "gfRaid", label = "Raid Frames" },
-        },
-    },
-    {
-        key = "nameplates",
-        label = "Nameplates",
-        collapsible = true,
-        children = {
-            { key = "nameplatesUnit", label = "Unit Nameplates" },
         },
     },
     {

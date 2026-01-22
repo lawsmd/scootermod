@@ -636,10 +636,13 @@ function Controls:CreateBarTextureSelector(options)
     local getValue = options.get or function() return "default" end
     local setValue = options.set or function() end
     local selectorWidth = options.width or BAR_TEXTURE_SELECTOR_WIDTH
+    local selectorHeight = options.selectorHeight or BAR_TEXTURE_SELECTOR_HEIGHT
+    local labelFontSize = options.labelFontSize or 13
     local name = options.name
 
     local hasDesc = description and description ~= ""
-    local rowHeight = hasDesc and BAR_TEXTURE_SELECTOR_ROW_HEIGHT_WITH_DESC or BAR_TEXTURE_SELECTOR_ROW_HEIGHT
+    local defaultRowHeight = hasDesc and BAR_TEXTURE_SELECTOR_ROW_HEIGHT_WITH_DESC or BAR_TEXTURE_SELECTOR_ROW_HEIGHT
+    local rowHeight = options.rowHeight or defaultRowHeight
 
     -- Get theme colors
     local ar, ag, ab = theme:GetAccentColor()
@@ -673,7 +676,7 @@ function Controls:CreateBarTextureSelector(options)
     -- Label text (left side)
     local labelFS = row:CreateFontString(nil, "OVERLAY")
     local labelFont = theme:GetFont("LABEL")
-    labelFS:SetFont(labelFont, 13, "")
+    labelFS:SetFont(labelFont, labelFontSize, "")
     labelFS:SetPoint("LEFT", row, "LEFT", BAR_TEXTURE_SELECTOR_PADDING, hasDesc and 6 or 0)
     labelFS:SetText(label)
     labelFS:SetTextColor(ar, ag, ab, 1)
@@ -695,7 +698,7 @@ function Controls:CreateBarTextureSelector(options)
 
     -- Selector button (right side, clickable to open popup)
     local selector = CreateFrame("Button", nil, row)
-    selector:SetSize(selectorWidth, BAR_TEXTURE_SELECTOR_HEIGHT)
+    selector:SetSize(selectorWidth, selectorHeight)
     selector:SetPoint("RIGHT", row, "RIGHT", -BAR_TEXTURE_SELECTOR_PADDING, 0)
     selector:EnableMouse(true)
     selector:RegisterForClicks("AnyUp")

@@ -536,6 +536,13 @@ Dialogs:Register("SCOOTERMOD_SPEC_PROFILE_RELOAD", {
     height = 200,
 })
 
+Dialogs:Register("SCOOTERMOD_PROFILE_RELOAD", {
+    text = "Switching profiles requires a UI reload so Blizzard can rebuild a clean baseline.\n\nReload now?",
+    acceptText = "Reload",
+    cancelText = CANCEL or "Cancel",
+    height = 200,
+})
+
 Dialogs:Register("SCOOTERMOD_APPLY_PRESET", {
     text = "Enter a name for the new profile/layout based on %s:",
     hasEditBox = true,

@@ -3,10 +3,6 @@ local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
-local function isPRDEnabled()
-    return addon.FeatureToggles and addon.FeatureToggles.enablePRD
-end
-
 local common = panel.common or {}
 local BuildAuraWrapOptions = common and common.BuildAuraWrapOptions
 local BuildAuraDirectionOptions = common and common.BuildAuraDirectionOptions

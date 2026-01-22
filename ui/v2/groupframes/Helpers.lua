@@ -1,0 +1,251 @@
+-- Helpers.lua - Shared helpers for Group Frame TUI renderers
+local addonName, addon = ...
+
+addon.UI = addon.UI or {}
+addon.UI.GroupFrames = addon.UI.GroupFrames or {}
+local GF = addon.UI.GroupFrames
+
+--------------------------------------------------------------------------------
+-- Edit Mode Frame Getters
+--------------------------------------------------------------------------------
+
+function GF.getPartyFrame()
+    local mgr = _G.EditModeManagerFrame
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+    if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+    return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EM.Party)
+end
+
+function GF.getRaidFrame()
+    local mgr = _G.EditModeManagerFrame
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+    if not (mgr and EM and EMSys and mgr.GetRegisteredSystemFrame) then return nil end
+    return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EM.Raid)
+end
+
+--------------------------------------------------------------------------------
+-- Database Access
+--------------------------------------------------------------------------------
+
+function GF.ensurePartyDB()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return nil end
+    db.groupFrames = db.groupFrames or {}
+    db.groupFrames.party = db.groupFrames.party or {}
+    return db.groupFrames.party
+end
+
+function GF.ensureRaidDB()
+    local db = addon and addon.db and addon.db.profile
+    if not db then return nil end
+    db.groupFrames = db.groupFrames or {}
+    db.groupFrames.raid = db.groupFrames.raid or {}
+    return db.groupFrames.raid
+end
+
+function GF.ensurePartyTextDB(textKey)
+    local t = GF.ensurePartyDB()
+    if not t then return nil end
+    t[textKey] = t[textKey] or {}
+    return t[textKey]
+end
+
+function GF.ensureRaidTextDB(textKey)
+    local t = GF.ensureRaidDB()
+    if not t then return nil end
+    t[textKey] = t[textKey] or {}
+    return t[textKey]
+end
+
+--------------------------------------------------------------------------------
+-- Apply Functions
+--------------------------------------------------------------------------------
+
+function GF.applyPartyStyles()
+    if addon and addon.ApplyGroupFrameStylesFor then
+        addon.ApplyGroupFrameStylesFor("party")
+    elseif addon and addon.ApplyStyles then
+        addon:ApplyStyles()
+    end
+end
+
+function GF.applyRaidStyles()
+    if addon and addon.ApplyGroupFrameStylesFor then
+        addon.ApplyGroupFrameStylesFor("raid")
+    elseif addon and addon.ApplyStyles then
+        addon:ApplyStyles()
+    end
+end
+
+function GF.applyPartyText()
+    if addon and addon.ApplyGroupFrameTextFor then
+        addon.ApplyGroupFrameTextFor("party")
+    else
+        GF.applyPartyStyles()
+    end
+end
+
+function GF.applyRaidText()
+    if addon and addon.ApplyGroupFrameTextFor then
+        addon.ApplyGroupFrameTextFor("raid")
+    else
+        GF.applyRaidStyles()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Edit Mode Helpers
+--------------------------------------------------------------------------------
+
+function GF.getEditModeSetting(frame, settingId)
+    if not frame or not settingId then return nil end
+    if addon and addon.EditMode and addon.EditMode.GetSetting then
+        return addon.EditMode.GetSetting(frame, settingId)
+    end
+    return nil
+end
+
+function GF.setEditModeSetting(frame, settingId, value, options)
+    if not frame or not settingId then return end
+    if addon and addon.EditMode and addon.EditMode.WriteSetting then
+        addon.EditMode.WriteSetting(frame, settingId, value, options or {})
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Selector/Dropdown Options
+--------------------------------------------------------------------------------
+
+-- Font style options (same as Unit Frames)
+GF.fontStyleValues = {
+    NONE = "Regular",
+    OUTLINE = "Outline",
+    THICKOUTLINE = "Thick Outline",
+    HEAVYTHICKOUTLINE = "Heavy Thick Outline",
+    SHADOW = "Shadow",
+    SHADOWOUTLINE = "Shadow Outline",
+    SHADOWTHICKOUTLINE = "Shadow Thick Outline",
+    HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
+}
+GF.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+
+-- 9-way alignment anchor options
+GF.anchorValues = {
+    TOPLEFT = "Top-Left",
+    TOP = "Top-Center",
+    TOPRIGHT = "Top-Right",
+    LEFT = "Left",
+    CENTER = "Center",
+    RIGHT = "Right",
+    BOTTOMLEFT = "Bottom-Left",
+    BOTTOM = "Bottom-Center",
+    BOTTOMRIGHT = "Bottom-Right",
+}
+GF.anchorOrder = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+
+-- Health bar color mode options
+GF.healthColorValues = {
+    default = "Default",
+    texture = "Texture Original",
+    class = "Class Color",
+    custom = "Custom",
+}
+GF.healthColorOrder = { "default", "texture", "class", "custom" }
+
+-- Background color mode options
+GF.bgColorValues = {
+    default = "Default",
+    texture = "Texture Original",
+    custom = "Custom",
+}
+GF.bgColorOrder = { "default", "texture", "custom" }
+
+-- Party Frame: Sort By options
+GF.partySortByValues = {
+    [0] = "Role",
+    [1] = "Group",
+    [2] = "Alphabetical",
+}
+GF.partySortByOrder = { 0, 1, 2 }
+
+-- Raid Frame: Groups display type options
+GF.raidGroupsValues = {}
+GF.raidGroupsOrder = {}
+do
+    local RGD = _G.Enum and _G.Enum.RaidGroupDisplayType
+    if RGD then
+        GF.raidGroupsValues = {
+            [RGD.SeparateGroupsVertical] = "Separate Groups (Vertical)",
+            [RGD.SeparateGroupsHorizontal] = "Separate Groups (Horizontal)",
+            [RGD.CombineGroupsVertical] = "Combine Groups (Vertical)",
+            [RGD.CombineGroupsHorizontal] = "Combine Groups (Horizontal)",
+        }
+        GF.raidGroupsOrder = {
+            RGD.SeparateGroupsVertical,
+            RGD.SeparateGroupsHorizontal,
+            RGD.CombineGroupsVertical,
+            RGD.CombineGroupsHorizontal,
+        }
+    end
+end
+
+-- Raid Frame: Sort By options (same values as party)
+GF.raidSortByValues = GF.partySortByValues
+GF.raidSortByOrder = GF.partySortByOrder
+
+--------------------------------------------------------------------------------
+-- Conditional Helpers
+--------------------------------------------------------------------------------
+
+-- Check if party is in Raid-Style mode
+function GF.isRaidStyleParty()
+    local frame = GF.getPartyFrame()
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+    if not (frame and EM and EM.UseRaidStylePartyFrames) then return false end
+    local v = GF.getEditModeSetting(frame, EM.UseRaidStylePartyFrames)
+    return v and v ~= 0
+end
+
+-- Check if raid is in Separate Groups mode
+function GF.isRaidSeparateGroups()
+    local frame = GF.getRaidFrame()
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+    local RGD = _G.Enum and _G.Enum.RaidGroupDisplayType
+    if not (frame and EM and RGD and EM.RaidGroupDisplayType) then return false end
+    local v = GF.getEditModeSetting(frame, EM.RaidGroupDisplayType)
+    return v == RGD.SeparateGroupsVertical or v == RGD.SeparateGroupsHorizontal
+end
+
+-- Check if raid is in Combine Groups mode
+function GF.isRaidCombineGroups()
+    return not GF.isRaidSeparateGroups()
+end
+
+--------------------------------------------------------------------------------
+-- Info Icon Tooltips
+--------------------------------------------------------------------------------
+
+GF.TOOLTIPS = {
+    raidStyleParty = {
+        title = "Raid-Style Party Frames",
+        text = "When enabled, party frames use the compact raid frame style. This enables additional customization options like frame width/height, borders, and sorting.",
+    },
+    displayBorder = {
+        title = "Display Border",
+        text = "Shows Blizzard's default border around each group. Only available when using Separate Groups layout.",
+    },
+    displayBorderRaid = {
+        title = "Display Border",
+        text = "Shows Blizzard's default border around each raid GROUP. Only available when Groups is set to 'Separate Groups'.",
+    },
+    sortBy = {
+        title = "Sort By",
+        text = "Determines how players are sorted within the combined groups view. Only available when Groups is set to 'Combine Groups'.",
+    },
+    columnSize = {
+        title = "Column Size",
+        text = "Number of frames per row or column in the combined groups view. Only available when Groups is set to 'Combine Groups'.",
+    },
+}

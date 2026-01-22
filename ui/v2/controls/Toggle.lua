@@ -26,6 +26,14 @@ local TOGGLE_INDICATOR_WIDTH = 60
 local TOGGLE_INDICATOR_HEIGHT = 22
 local TOGGLE_PADDING = 12
 
+-- Emphasized toggle constants (Hero Toggle styling)
+local EMPHASIZED_HEIGHT = 72
+local EMPHASIZED_HEIGHT_WITH_DESC = 92
+local EMPHASIZED_BORDER_WIDTH = 3
+local EMPHASIZED_LABEL_SIZE = 16
+local EMPHASIZED_INDICATOR_WIDTH = 70
+local EMPHASIZED_INDICATOR_HEIGHT = 26
+
 --------------------------------------------------------------------------------
 -- Toggle: Full-row toggle control with ON/OFF state indicator
 --------------------------------------------------------------------------------
@@ -43,6 +51,8 @@ local TOGGLE_PADDING = 12
 --   parent      : Parent frame (required)
 --   width       : Control width (optional, defaults to parent width)
 --   name        : Global frame name (optional)
+--   emphasized  : Boolean, use "Hero Toggle" styling for master controls
+--   infoIcon    : Optional { tooltipText, tooltipTitle } for inline info icon
 --------------------------------------------------------------------------------
 
 function Controls:CreateToggle(options)
@@ -57,9 +67,22 @@ function Controls:CreateToggle(options)
     local getValue = options.get or function() return false end
     local setValue = options.set or function() end
     local name = options.name
+    local emphasized = options.emphasized or false
+    local infoIconOpts = options.infoIcon
 
     local hasDesc = description and description ~= ""
-    local height = hasDesc and TOGGLE_HEIGHT_WITH_DESC or TOGGLE_HEIGHT
+    local height
+    if emphasized then
+        height = hasDesc and EMPHASIZED_HEIGHT_WITH_DESC or EMPHASIZED_HEIGHT
+    else
+        height = hasDesc and TOGGLE_HEIGHT_WITH_DESC or TOGGLE_HEIGHT
+    end
+
+    -- Use appropriate sizes for emphasized vs normal
+    local indicatorWidth = emphasized and EMPHASIZED_INDICATOR_WIDTH or TOGGLE_INDICATOR_WIDTH
+    local indicatorHeight = emphasized and EMPHASIZED_INDICATOR_HEIGHT or TOGGLE_INDICATOR_HEIGHT
+    local labelFontSize = emphasized and EMPHASIZED_LABEL_SIZE or 13
+    local leftBorderWidth = emphasized and EMPHASIZED_BORDER_WIDTH or 0
 
     -- Create the row frame
     local row = CreateFrame("Button", name, parent)
@@ -84,7 +107,7 @@ function Controls:CreateToggle(options)
     hoverBg:Hide()
     row._hoverBg = hoverBg
 
-    -- Row border (subtle line below only)
+    -- Row border (subtle line below only, plus left accent border for emphasized)
     local rowBorder = {}
     local borderAlpha = 0.2
 
@@ -95,13 +118,34 @@ function Controls:CreateToggle(options)
     bottom:SetColorTexture(ar, ag, ab, borderAlpha)
     rowBorder.BOTTOM = bottom
 
+    -- Add left accent border for emphasized toggles
+    if emphasized and leftBorderWidth > 0 then
+        local leftBorder = row:CreateTexture(nil, "BORDER", nil, -1)
+        leftBorder:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        leftBorder:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+        leftBorder:SetWidth(leftBorderWidth)
+        leftBorder:SetColorTexture(ar, ag, ab, 1)
+        rowBorder.LEFT = leftBorder
+
+        -- Faint background highlight for emphasized
+        local emphBg = row:CreateTexture(nil, "BACKGROUND", nil, -7)
+        emphBg:SetPoint("TOPLEFT", leftBorderWidth, 0)
+        emphBg:SetPoint("BOTTOMRIGHT", 0, 0)
+        emphBg:SetColorTexture(ar, ag, ab, 0.03)
+        row._emphBg = emphBg
+    end
+
     row._rowBorder = rowBorder
+    row._emphasized = emphasized
+
+    -- Calculate label padding (account for left border on emphasized)
+    local labelLeftPad = TOGGLE_PADDING + leftBorderWidth
 
     -- Label text (left side)
     local labelFS = row:CreateFontString(nil, "OVERLAY")
     local labelFont = theme:GetFont("LABEL")
-    labelFS:SetFont(labelFont, 13, "")
-    labelFS:SetPoint("LEFT", row, "LEFT", TOGGLE_PADDING, hasDesc and 6 or 0)
+    labelFS:SetFont(labelFont, labelFontSize, "")
+    labelFS:SetPoint("LEFT", row, "LEFT", labelLeftPad, hasDesc and (emphasized and 12 or 6) or 0)
     labelFS:SetText(label)
     labelFS:SetTextColor(ar, ag, ab, 1)
     row._label = labelFS
@@ -110,9 +154,10 @@ function Controls:CreateToggle(options)
     if hasDesc then
         local descFS = row:CreateFontString(nil, "OVERLAY")
         local descFont = theme:GetFont("VALUE")
-        descFS:SetFont(descFont, 11, "")
-        descFS:SetPoint("TOPLEFT", labelFS, "BOTTOMLEFT", 0, -2)
-        descFS:SetPoint("RIGHT", row, "RIGHT", -(TOGGLE_INDICATOR_WIDTH + TOGGLE_PADDING * 2), 0)
+        local descFontSize = emphasized and 12 or 11
+        descFS:SetFont(descFont, descFontSize, "")
+        descFS:SetPoint("TOPLEFT", labelFS, "BOTTOMLEFT", 0, emphasized and -4 or -2)
+        descFS:SetPoint("RIGHT", row, "RIGHT", -(indicatorWidth + TOGGLE_PADDING * 2), 0)
         descFS:SetText(description)
         descFS:SetTextColor(dimR, dimG, dimB, 1)
         descFS:SetJustifyH("LEFT")
@@ -122,7 +167,7 @@ function Controls:CreateToggle(options)
 
     -- State indicator container (right side)
     local indicator = CreateFrame("Frame", nil, row)
-    indicator:SetSize(TOGGLE_INDICATOR_WIDTH, TOGGLE_INDICATOR_HEIGHT)
+    indicator:SetSize(indicatorWidth, indicatorHeight)
     indicator:SetPoint("RIGHT", row, "RIGHT", -TOGGLE_PADDING, 0)
 
     -- Indicator border (edges inset to avoid corner overlap)
@@ -246,15 +291,39 @@ function Controls:CreateToggle(options)
         if row._hoverBg then
             row._hoverBg:SetColorTexture(r, g, b, 0.08)
         end
-        -- Update row borders
+        -- Update row borders (emphasized left border stays at full alpha)
         if row._rowBorder then
-            for _, tex in pairs(row._rowBorder) do
-                tex:SetColorTexture(r, g, b, 0.2)
+            for side, tex in pairs(row._rowBorder) do
+                if side == "LEFT" and row._emphasized then
+                    tex:SetColorTexture(r, g, b, 1)  -- Full opacity for emphasized left border
+                else
+                    tex:SetColorTexture(r, g, b, 0.2)
+                end
             end
+        end
+        -- Update emphasized background
+        if row._emphBg then
+            row._emphBg:SetColorTexture(r, g, b, 0.03)
         end
         -- Re-run visual update to apply new accent color
         UpdateVisual()
     end)
+
+    -- Add info icon if specified (positioned after label)
+    if infoIconOpts and infoIconOpts.tooltipText then
+        local iconSize = infoIconOpts.size or (emphasized and 14 or 12)
+        local infoIcon = Controls:CreateInfoIcon({
+            parent = row,
+            tooltipText = infoIconOpts.tooltipText,
+            tooltipTitle = infoIconOpts.tooltipTitle,
+            size = iconSize,
+        })
+        if infoIcon then
+            -- Position icon after the label text
+            infoIcon:SetPoint("LEFT", labelFS, "RIGHT", 4, 0)
+            row._infoIcon = infoIcon
+        end
+    end
 
     -- Public methods
     function row:SetValue(newValue)
@@ -281,6 +350,9 @@ function Controls:CreateToggle(options)
     function row:Cleanup()
         if self._subscribeKey then
             theme:Unsubscribe(self._subscribeKey)
+        end
+        if self._infoIcon and self._infoIcon.Cleanup then
+            self._infoIcon:Cleanup()
         end
     end
 

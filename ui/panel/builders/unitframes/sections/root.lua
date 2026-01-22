@@ -310,54 +310,8 @@ local function build(ctx, init)
 				end
 			end
 
-				-- X Position (px)
-				do
-					local label = "X Position (px)"
-					local options = Settings.CreateSliderOptions(-1000, 1000, 1)
-					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
-					local setting = CreateLocalSetting(label, "number",
-						function() local x = readOffsets(); return x end,
-						function(v) writeOffsets(v, nil) end,
-						0)
-					local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
-					row.GetExtent = function() return 34 end
-					-- Present as numeric text input (previous behavior), not a slider
-					if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
-					do
-						local base = row.InitFrame
-						row.InitFrame = function(self, frame)
-							if base then base(self, frame) end
-							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
-							if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
-						end
-					end
-					table.insert(init, row)
-				end
-	
-				-- Y Position (px)
-				do
-					local label = "Y Position (px)"
-					local options = Settings.CreateSliderOptions(-1000, 1000, 1)
-					options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v) return tostring(roundPositionValue(v)) end)
-					local setting = CreateLocalSetting(label, "number",
-						function() local _, y = readOffsets(); return y end,
-						function(v) writeOffsets(nil, v) end,
-						0)
-					local row = Settings.CreateElementInitializer("SettingsSliderControlTemplate", { name = label, setting = setting, options = options, componentId = componentId })
-					row.GetExtent = function() return 34 end
-					-- Present as numeric text input (previous behavior), not a slider
-					if ConvertSliderInitializerToTextInput then ConvertSliderInitializerToTextInput(row) end
-					do
-						local base = row.InitFrame
-						row.InitFrame = function(self, frame)
-							if base then base(self, frame) end
-							if panel and panel.ApplyControlTheme then panel.ApplyControlTheme(frame) end
-							if panel and panel.ApplyRobotoWhite and frame and frame.Text then panel.ApplyRobotoWhite(frame.Text) end
-						end
-					end
-					table.insert(init, row)
-				end
-	
+				-- X/Y Position fields removed - Edit Mode handles positioning
+
 				-- Focus-only: Use Larger Frame
 				if componentId == "ufFocus" then
 					local label = "Use Larger Frame"

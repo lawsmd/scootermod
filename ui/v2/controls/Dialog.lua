@@ -756,6 +756,13 @@ Controls:RegisterDialog("SCOOTERMOD_SPEC_PROFILE_RELOAD", {
     height = 200,
 })
 
+Controls:RegisterDialog("SCOOTERMOD_PROFILE_RELOAD", {
+    text = "Switching profiles requires a UI reload so Blizzard can rebuild a clean baseline.\n\nReload now?",
+    acceptText = "Reload",
+    cancelText = CANCEL or "Cancel",
+    height = 200,
+})
+
 Controls:RegisterDialog("SCOOTERMOD_APPLY_PRESET", {
     text = "Enter a name for the new profile/layout based on %s:",
     hasEditBox = true,
@@ -791,5 +798,21 @@ Controls:RegisterDialog("SCOOTERMOD_EXTERNAL_LAYOUT_DELETED", {
     text = "The Edit Mode layout '%s' was deleted outside of ScooterMod.\n\nA UI reload is required to properly sync your profile state.",
     acceptText = "Reload UI",
     locked = true,
+    height = 180,
+})
+
+Controls:RegisterDialog("SCOOTERMOD_APPLYALL_FONTS", {
+    text = "Apply '%s' to ALL ScooterMod font settings?\n\nThis will overwrite every font face across all components. A UI reload is required to apply the changes.",
+    acceptText = "Apply & Reload",
+    acceptWidth = 130,
+    cancelText = CANCEL or "Cancel",
+    height = 180,
+})
+
+Controls:RegisterDialog("SCOOTERMOD_APPLYALL_TEXTURES", {
+    text = "Apply '%s' to ALL ScooterMod bar textures?\n\nThis will overwrite every bar texture across all components. A UI reload is required to apply the changes.",
+    acceptText = "Apply & Reload",
+    acceptWidth = 130,
+    cancelText = CANCEL or "Cancel",
     height = 180,
 })

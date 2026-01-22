@@ -64,6 +64,7 @@ end
 --   sectionKey    : Section identifier for state storage
 --   defaultTab    : Key of tab to show by default (optional, defaults to first tab)
 --   onTabChange   : Callback function(newTabKey, oldTabKey) (optional)
+--   onHeightChange: Callback function(newHeight) when section height changes (optional)
 --   name          : Global frame name (optional)
 --------------------------------------------------------------------------------
 
@@ -79,6 +80,7 @@ function Controls:CreateTabbedSection(options)
     local sectionKey = options.sectionKey or "tabs"
     local defaultTab = options.defaultTab or tabs[1].key
     local onTabChange = options.onTabChange
+    local onHeightChange = options.onHeightChange
     local name = options.name
 
     -- Get initial selected tab from session storage
@@ -181,11 +183,18 @@ function Controls:CreateTabbedSection(options)
     ----------------------------------------------------------------------------
     -- Create tab buttons and content frames
     ----------------------------------------------------------------------------
+    local INFO_ICON_SIZE = 12
+    local INFO_ICON_SPACING = 4
+
     local function CreateTabButton(tabData, index)
         local tabBtn = CreateFrame("Button", nil, tabBar)
         tabBtn:SetHeight(TAB_HEIGHT)
         tabBtn:EnableMouse(true)
         tabBtn:RegisterForClicks("AnyUp")
+
+        -- Check if this tab has an info icon
+        local hasInfoIcon = tabData.infoIcon and (tabData.infoIcon.tooltipText or tabData.infoIcon.tooltipTitle)
+        local infoIconWidth = hasInfoIcon and (INFO_ICON_SIZE + INFO_ICON_SPACING) or 0
 
         -- Calculate text width for button sizing
         local labelFont = theme:GetFont("LABEL")
@@ -195,7 +204,25 @@ function Controls:CreateTabbedSection(options)
         local textWidth = tempFS:GetStringWidth()
         tempFS:Hide()
 
-        local btnWidth = textWidth + (TAB_PADDING * 2)
+        local btnWidth
+        if textWidth and textWidth > 0 then
+            btnWidth = textWidth + (TAB_PADDING * 2) + infoIconWidth
+        else
+            -- Font not loaded yet (first game launch) - estimate width
+            -- ~7px per character at 12pt, plus padding
+            btnWidth = (#tabData.label * 7) + (TAB_PADDING * 2) + infoIconWidth
+            -- Re-measure after font loads
+            C_Timer.After(0, function()
+                if tabBtn and tempFS then
+                    tempFS:Show()
+                    local actualWidth = tempFS:GetStringWidth()
+                    tempFS:Hide()
+                    if actualWidth and actualWidth > 0 then
+                        tabBtn:SetWidth(actualWidth + (TAB_PADDING * 2) + infoIconWidth)
+                    end
+                end
+            end)
+        end
         tabBtn:SetWidth(btnWidth)
 
         -- Selected fill background (accent color, shown when selected)
@@ -247,13 +274,31 @@ function Controls:CreateTabbedSection(options)
 
         tabBtn._borders = tabBorders
 
-        -- Label
+        -- Label (offset left if info icon present)
         local labelStr = tabBtn:CreateFontString(nil, "OVERLAY")
         labelStr:SetFont(labelFont, 12, "")
-        labelStr:SetPoint("CENTER", 0, 0)
+        if hasInfoIcon then
+            -- Center the label + icon combo by offsetting label left
+            labelStr:SetPoint("CENTER", -infoIconWidth / 2, 0)
+        else
+            labelStr:SetPoint("CENTER", 0, 0)
+        end
         labelStr:SetText(tabData.label)
         labelStr:SetTextColor(ar, ag, ab, 1)
         tabBtn._label = labelStr
+
+        -- Info icon (if specified)
+        if hasInfoIcon and Controls.CreateInfoIcon then
+            local infoBtn = Controls:CreateInfoIcon({
+                parent = tabBtn,
+                tooltipTitle = tabData.infoIcon.tooltipTitle,
+                tooltipText = tabData.infoIcon.tooltipText,
+                size = INFO_ICON_SIZE,
+                iconType = "info",
+            })
+            infoBtn:SetPoint("LEFT", labelStr, "RIGHT", INFO_ICON_SPACING, 0)
+            tabBtn._infoIcon = infoBtn
+        end
 
         -- Store tab key
         tabBtn._tabKey = tabData.key
@@ -377,7 +422,13 @@ function Controls:CreateTabbedSection(options)
         local totalContentHeight = contentHeight + (TABBED_CONTENT_PADDING * 2) + TABBED_BORDER_WIDTH
 
         contentContainer:SetHeight(totalContentHeight)
-        section:SetHeight(tabBarHeight + totalContentHeight)
+        local newHeight = tabBarHeight + totalContentHeight
+        section:SetHeight(newHeight)
+
+        -- Notify parent of height change (for dynamic resizing of parent collapsible)
+        if onHeightChange then
+            onHeightChange(newHeight)
+        end
     end
 
     -- Initialize visual state
@@ -451,6 +502,10 @@ function Controls:CreateTabbedSection(options)
         if tabKey == self._selectedTabKey then
             UpdateSectionHeight()
         end
+    end
+
+    function section:SetOnHeightChange(callback)
+        onHeightChange = callback
     end
 
     function section:GetHeight()

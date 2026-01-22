@@ -134,8 +134,26 @@ function Controls:CreateButton(options)
     if options.width then
         btn:SetWidth(options.width)
     else
-        local textWidth = label:GetStringWidth() or 50
-        btn:SetWidth(textWidth + (DEFAULT_BUTTON_PADDING * 2))
+        -- Set a reasonable initial width immediately (prevents square buttons)
+        local textWidth = label:GetStringWidth()
+        if textWidth and textWidth > 0 then
+            btn:SetWidth(textWidth + (DEFAULT_BUTTON_PADDING * 2))
+        else
+            -- Font not loaded yet (first game launch) - use fallback then re-measure
+            -- Estimate: ~7px per character for JetBrains Mono at 12pt
+            local estimatedWidth = (#text * 7) + (DEFAULT_BUTTON_PADDING * 2)
+            btn:SetWidth(math.max(estimatedWidth, 50))
+
+            -- Re-measure after font loads
+            C_Timer.After(0, function()
+                if btn and btn._label then
+                    local actualWidth = btn._label:GetStringWidth()
+                    if actualWidth and actualWidth > 0 then
+                        btn:SetWidth(actualWidth + (DEFAULT_BUTTON_PADDING * 2))
+                    end
+                end
+            end)
+        end
     end
 
     -- Store original text for reference
@@ -191,8 +209,23 @@ function Controls:CreateButton(options)
         self._label:SetText(newText)
         -- Optionally resize if auto-width
         if not options.width then
-            local textWidth = self._label:GetStringWidth() or 50
-            self:SetWidth(textWidth + (DEFAULT_BUTTON_PADDING * 2))
+            local textWidth = self._label:GetStringWidth()
+            if textWidth and textWidth > 0 then
+                self:SetWidth(textWidth + (DEFAULT_BUTTON_PADDING * 2))
+            else
+                -- Font not loaded yet - estimate then re-measure
+                local estimatedWidth = (#newText * 7) + (DEFAULT_BUTTON_PADDING * 2)
+                self:SetWidth(math.max(estimatedWidth, 50))
+                local selfRef = self
+                C_Timer.After(0, function()
+                    if selfRef and selfRef._label then
+                        local actualWidth = selfRef._label:GetStringWidth()
+                        if actualWidth and actualWidth > 0 then
+                            selfRef:SetWidth(actualWidth + (DEFAULT_BUTTON_PADDING * 2))
+                        end
+                    end
+                end)
+            end
         end
     end
 

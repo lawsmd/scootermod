@@ -1,5 +1,12 @@
 local addonName, addon = ...
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
 -- 12.0+: Blizzard can mark certain UI-derived numbers as "secret", which causes
 -- arithmetic like `x + 1` to hard-error ("attempt to perform arithmetic on a secret value").
 -- We treat those as unreadable offsets and fall back to 0 so styling does not crash.
@@ -206,8 +213,10 @@ do
     -- IMPORTANT: Use hooksecurefunc so we don't replace the method and taint
     -- secure StatusBar instances used by Blizzard (Combat Log, unit frames, etc.).
     local function hookHealthBarUpdateTextString(bar, unit)
-        if not bar or bar._ScooterHealthTextVisibilityHooked then return end
-        bar._ScooterHealthTextVisibilityHooked = true
+        local fs = ensureFS()
+        if not bar or not fs then return end
+        if fs.IsHooked(bar, "healthBarUpdateTextString") then return end
+        fs.MarkHooked(bar, "healthBarUpdateTextString")
         if _G.hooksecurefunc then
             _G.hooksecurefunc(bar, "UpdateTextString", function(self, ...)
                 if addon and addon.ApplyUnitFrameHealthTextVisibilityFor then
@@ -289,63 +298,73 @@ do
         local outline = tostring(styleCfg.style or "OUTLINE")
 
         -- Set flag to prevent our SetFont hook from triggering a reapply loop
-        fs._ScooterApplyingFont = true
+        local fstate = ensureFS()
+        if fstate then fstate.SetProp(fs, "applyingFont", true) end
         if addon.ApplyFontStyle then
             addon.ApplyFontStyle(fs, face, size, outline)
         elseif fs.SetFont then
             pcall(fs.SetFont, fs, face, size, outline)
         end
-        fs._ScooterApplyingFont = nil
+        if fstate then fstate.SetProp(fs, "applyingFont", nil) end
 
         local c = styleCfg.color or { 1, 1, 1, 1 }
         if fs.SetTextColor then
             pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         end
 
-        -- Determine default alignment based on text role
-        -- Check for both :right and -right patterns to handle all unit types (Player:right, Boss1:health-right, etc.)
-        local defaultAlign = "LEFT"
-        if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
-            defaultAlign = "RIGHT"
-        elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
-            defaultAlign = "CENTER"
-        end
-        local alignment = styleCfg.alignment or defaultAlign
+        -- Only modify width/alignment/position if alignment or offset is explicitly configured.
+        -- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+        -- text positioning. Width/alignment changes are only appropriate when the user has
+        -- explicitly configured layout-related settings.
+        local hasLayoutCustomization = styleCfg.alignment ~= nil
+            or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
 
-        -- Set explicit width on FontString to enable alignment (use full parent bar width)
-        local parentBar = fs:GetParent()
-        if parentBar and parentBar.GetWidth then
-            local barWidth = safeGetWidth(parentBar)
-            if barWidth and barWidth > 0 and fs.SetWidth then
-                pcall(fs.SetWidth, fs, barWidth)
+        if hasLayoutCustomization then
+            -- Determine default alignment based on text role
+            -- Check for both :right and -right patterns to handle all unit types (Player:right, Boss1:health-right, etc.)
+            local defaultAlign = "LEFT"
+            if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
+                defaultAlign = "RIGHT"
+            elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
+                defaultAlign = "CENTER"
             end
-        end
+            local alignment = styleCfg.alignment or defaultAlign
 
-        if fs.SetJustifyH then
-            pcall(fs.SetJustifyH, fs, alignment)
-        end
-
-        -- Offset relative to a stable baseline anchor captured at first apply this session
-        local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-        local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-        if fs.ClearAllPoints and fs.SetPoint then
-            local b = ensureBaseline(fs, baselineKey, fallbackFrame or (fs.GetParent and fs:GetParent()))
-            fs:ClearAllPoints()
-            local point = safePointToken(b.point, "CENTER")
-            local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
-            local relPoint = safePointToken(b.relPoint, point)
-            local x = safeOffset(b.x) + ox
-            local y = safeOffset(b.y) + oy
-            local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-            if not ok then
-                -- Fallback: anchor to parent without offsets (best-effort, avoid hard-crash on 12.0).
-                local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
-                pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+            -- Set explicit width on FontString to enable alignment (use full parent bar width)
+            local parentBar = fs:GetParent()
+            if parentBar and parentBar.GetWidth then
+                local barWidth = safeGetWidth(parentBar)
+                if barWidth and barWidth > 0 and fs.SetWidth then
+                    pcall(fs.SetWidth, fs, barWidth)
+                end
             end
-        end
 
-        -- Force redraw to apply alignment visually
-        forceTextRedraw(fs)
+            if fs.SetJustifyH then
+                pcall(fs.SetJustifyH, fs, alignment)
+            end
+
+            -- Offset relative to a stable baseline anchor captured at first apply this session
+            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+            if fs.ClearAllPoints and fs.SetPoint then
+                local b = ensureBaseline(fs, baselineKey, fallbackFrame or (fs.GetParent and fs:GetParent()))
+                fs:ClearAllPoints()
+                local point = safePointToken(b.point, "CENTER")
+                local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+                local relPoint = safePointToken(b.relPoint, point)
+                local x = safeOffset(b.x) + ox
+                local y = safeOffset(b.y) + oy
+                local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+                if not ok then
+                    -- Fallback: anchor to parent without offsets (best-effort, avoid hard-crash on 12.0).
+                    local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
+                    pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+                end
+            end
+
+            -- Force redraw to apply alignment visually
+            forceTextRedraw(fs)
+        end
     end
 
     local function applyForUnit(unit)
@@ -426,8 +445,11 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 AND font styling when Blizzard updates.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
         local function applyHealthTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
+            local fstate = ensureFS()
+            if not fstate then return end
             if hiddenSetting == nil then
                 return
             end
@@ -435,24 +457,27 @@ do
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
-                if not fs._ScooterHealthTextVisibilityHooked then
-                    fs._ScooterHealthTextVisibilityHooked = true
+                if not fstate.IsHooked(fs, "healthTextVisibility") then
+                    fstate.MarkHooked(fs, "healthTextVisibility")
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            if self._ScooterHealthTextHidden and alpha and alpha > 0 then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                                if not self._ScooterHealthTextAlphaDeferred then
-                                    self._ScooterHealthTextAlphaDeferred = true
+                                if not st.GetProp(self, "healthTextAlphaDeferred") then
+                                    st.SetProp(self, "healthTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        self._ScooterHealthTextAlphaDeferred = nil
-                                        if self._ScooterHealthTextHidden and self.SetAlpha then
+                                        local st2 = ensureFS()
+                                        if st2 then st2.SetProp(self, "healthTextAlphaDeferred", nil) end
+                                        if st2 and st2.IsHidden(self, "healthText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
@@ -461,15 +486,16 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                     end
                 end
-                fs._ScooterHealthTextHidden = true
+                fstate.SetHidden(fs, "healthText", true)
             else
-                fs._ScooterHealthTextHidden = false
+                fstate.SetHidden(fs, "healthText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
             end
         end
@@ -479,12 +505,14 @@ do
         applyHealthTextVisibility(rightFS, cfg.healthValueHidden, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
-        if textStringFS and not textStringFS._ScooterHealthTextCenterSetTextHooked then
-            textStringFS._ScooterHealthTextCenterSetTextHooked = true
+        local fstate = ensureFS()
+        if textStringFS and fstate and not fstate.IsHooked(textStringFS, "healthTextCenterSetText") then
+            fstate.MarkHooked(textStringFS, "healthTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
                     -- Enforce hidden state immediately if configured
-                    if self._ScooterHealthTextCenterHidden and self.SetAlpha then
+                    local st = ensureFS()
+                    if st and st.IsHidden(self, "healthTextCenter") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
                 end)
@@ -501,16 +529,16 @@ do
                 local valueHidden = (cfg.healthValueHidden == true)
                 if valueHidden then
                     if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
-                    textStringFS._ScooterHealthTextCenterHidden = true
+                    if fstate then fstate.SetHidden(textStringFS, "healthTextCenter", true) end
                 else
-                    if textStringFS._ScooterHealthTextCenterHidden then
+                    if fstate and fstate.IsHidden(textStringFS, "healthTextCenter") then
                         if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
-                        textStringFS._ScooterHealthTextCenterHidden = nil
+                        fstate.SetHidden(textStringFS, "healthTextCenter", false)
                     end
                 end
             end
             -- Always apply styling (applyTextStyle returns early if no customizations)
-            if not textStringFS._ScooterHealthTextCenterHidden then
+            if not (fstate and fstate.IsHidden(textStringFS, "healthTextCenter")) then
                 applyTextStyle(textStringFS, cfg.textHealthValue or {}, unit .. ":health-center", frame)
             end
         end
@@ -579,8 +607,11 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
+            local fstate = ensureFS()
+            if not fstate then return end
             if hiddenSetting == nil then
                 return
             end
@@ -588,24 +619,27 @@ do
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
-                if not fs._ScooterHealthTextVisibilityHooked then
-                    fs._ScooterHealthTextVisibilityHooked = true
+                if not fstate.IsHooked(fs, "healthTextVisibility") then
+                    fstate.MarkHooked(fs, "healthTextVisibility")
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            if self._ScooterHealthTextHidden and alpha and alpha > 0 then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                                if not self._ScooterHealthTextAlphaDeferred then
-                                    self._ScooterHealthTextAlphaDeferred = true
+                                if not st.GetProp(self, "healthTextAlphaDeferred") then
+                                    st.SetProp(self, "healthTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        self._ScooterHealthTextAlphaDeferred = nil
-                                        if self._ScooterHealthTextHidden and self.SetAlpha then
+                                        local st2 = ensureFS()
+                                        if st2 then st2.SetProp(self, "healthTextAlphaDeferred", nil) end
+                                        if st2 and st2.IsHidden(self, "healthText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
@@ -614,15 +648,16 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            if self._ScooterHealthTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                     end
                 end
-                fs._ScooterHealthTextHidden = true
+                fstate.SetHidden(fs, "healthText", true)
             else
-                fs._ScooterHealthTextHidden = false
+                fstate.SetHidden(fs, "healthText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
             end
         end
@@ -841,8 +876,10 @@ do
 	-- Hook UpdateTextString to reapply visibility after Blizzard's updates.
 	-- Use hooksecurefunc so we don't replace the method and taint secure StatusBars.
 	local function hookPowerBarUpdateTextString(bar, unit)
-		if not bar or bar._ScooterPowerTextVisibilityHooked then return end
-		bar._ScooterPowerTextVisibilityHooked = true
+		local fstate = ensureFS()
+		if not bar or not fstate then return end
+		if fstate.IsHooked(bar, "powerBarUpdateTextString") then return end
+		fstate.MarkHooked(bar, "powerBarUpdateTextString")
 		if _G.hooksecurefunc then
 			_G.hooksecurefunc(bar, "UpdateTextString", function(self, ...)
 				if addon and addon.ApplyUnitFramePowerTextVisibilityFor then
@@ -924,9 +961,10 @@ do
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
 		-- Set flag to prevent our SetFont hook from triggering a reapply loop
-		fs._ScooterApplyingFont = true
+		local fst = ensureFS()
+		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-		fs._ScooterApplyingFont = nil
+		if fst then fst.SetProp(fs, "applyingFont", nil) end
 		-- Determine effective color based on colorMode (for Power Bar text)
 		local c = styleCfg.color or {1,1,1,1}
 		local colorMode = styleCfg.colorMode or "default"
@@ -943,52 +981,61 @@ do
 		-- colorMode == "custom" uses styleCfg.color as-is
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
-		-- Determine default alignment based on whether this is left (%) or right (value) or center text
-		-- Check for both :right and -right patterns to handle all unit types
-		local defaultAlign = "LEFT"
-		if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
-			defaultAlign = "RIGHT"
-		elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
-			defaultAlign = "CENTER"
-		end
-		local alignment = styleCfg.alignment or defaultAlign
+		-- Only modify width/alignment/position if alignment or offset is explicitly configured.
+		-- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+		-- text positioning. Width/alignment changes are only appropriate when the user has
+		-- explicitly configured layout-related settings.
+		local hasLayoutCustomization = styleCfg.alignment ~= nil
+			or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
 
-		-- Set explicit width on FontString to enable alignment (use full parent bar width)
-		local parentBar = fs:GetParent()
-		if parentBar and parentBar.GetWidth then
-			local barWidth = safeGetWidth(parentBar)
-			if barWidth and barWidth > 0 then
-				-- Use full bar width so alignment spans the entire bar
-				if fs.SetWidth then
-					pcall(fs.SetWidth, fs, barWidth)
+		if hasLayoutCustomization then
+			-- Determine default alignment based on whether this is left (%) or right (value) or center text
+			-- Check for both :right and -right patterns to handle all unit types
+			local defaultAlign = "LEFT"
+			if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
+				defaultAlign = "RIGHT"
+			elseif baselineKey and (baselineKey:find(":center", 1, true) or baselineKey:find("-center", 1, true)) then
+				defaultAlign = "CENTER"
+			end
+			local alignment = styleCfg.alignment or defaultAlign
+
+			-- Set explicit width on FontString to enable alignment (use full parent bar width)
+			local parentBar = fs:GetParent()
+			if parentBar and parentBar.GetWidth then
+				local barWidth = safeGetWidth(parentBar)
+				if barWidth and barWidth > 0 then
+					-- Use full bar width so alignment spans the entire bar
+					if fs.SetWidth then
+						pcall(fs.SetWidth, fs, barWidth)
+					end
 				end
 			end
-		end
 
-		-- Apply text alignment
-		if fs.SetJustifyH then
-			pcall(fs.SetJustifyH, fs, alignment)
-		end
-
-		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-		if fs.ClearAllPoints and fs.SetPoint then
-			local b = ensureBaseline(fs, baselineKey, fallbackFrame)
-			fs:ClearAllPoints()
-			local point = safePointToken(b.point, "CENTER")
-			local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
-			local relPoint = safePointToken(b.relPoint, point)
-			local x = safeOffset(b.x) + ox
-			local y = safeOffset(b.y) + oy
-			local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-			if not ok then
-				local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
-				pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+			-- Apply text alignment
+			if fs.SetJustifyH then
+				pcall(fs.SetJustifyH, fs, alignment)
 			end
-		end
 
-		-- Force redraw to apply alignment visually
-		forceTextRedraw(fs)
+			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+			if fs.ClearAllPoints and fs.SetPoint then
+				local b = ensureBaseline(fs, baselineKey, fallbackFrame)
+				fs:ClearAllPoints()
+				local point = safePointToken(b.point, "CENTER")
+				local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
+				local relPoint = safePointToken(b.relPoint, point)
+				local x = safeOffset(b.x) + ox
+				local y = safeOffset(b.y) + oy
+				local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+				if not ok then
+					local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
+					pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+				end
+			end
+
+			-- Force redraw to apply alignment visually
+			forceTextRedraw(fs)
+		end
 	end
 
 	local function applyForUnit(unit)
@@ -1073,8 +1120,11 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
         local function applyPowerTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
+            local fstate = ensureFS()
+            if not fstate then return end
             if hiddenSetting == nil then
                 return
             end
@@ -1082,24 +1132,27 @@ do
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
-                if not fs._ScooterPowerTextVisibilityHooked then
-                    fs._ScooterPowerTextVisibilityHooked = true
+                if not fstate.IsHooked(fs, "powerTextVisibility") then
+                    fstate.MarkHooked(fs, "powerTextVisibility")
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            if self._ScooterPowerTextHidden and alpha and alpha > 0 then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                                if not self._ScooterPowerTextAlphaDeferred then
-                                    self._ScooterPowerTextAlphaDeferred = true
+                                if not st.GetProp(self, "powerTextAlphaDeferred") then
+                                    st.SetProp(self, "powerTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        self._ScooterPowerTextAlphaDeferred = nil
-                                        if self._ScooterPowerTextHidden and self.SetAlpha then
+                                        local st2 = ensureFS()
+                                        if st2 then st2.SetProp(self, "powerTextAlphaDeferred", nil) end
+                                        if st2 and st2.IsHidden(self, "powerText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
@@ -1108,15 +1161,16 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                     end
                 end
-                fs._ScooterPowerTextHidden = true
+                fstate.SetHidden(fs, "powerText", true)
             else
-                fs._ScooterPowerTextHidden = false
+                fstate.SetHidden(fs, "powerText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
             end
         end
@@ -1137,12 +1191,14 @@ do
 		applyPowerTextVisibility(rightFS, rightHiddenSetting, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
-        if textStringFS and not textStringFS._ScooterPowerTextCenterSetTextHooked then
-            textStringFS._ScooterPowerTextCenterSetTextHooked = true
+        local fstate = ensureFS()
+        if textStringFS and fstate and not fstate.IsHooked(textStringFS, "powerTextCenterSetText") then
+            fstate.MarkHooked(textStringFS, "powerTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
                     -- Enforce hidden state immediately if configured
-                    if self._ScooterPowerTextCenterHidden and self.SetAlpha then
+                    local st = ensureFS()
+                    if st and st.IsHidden(self, "powerTextCenter") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
                 end)
@@ -1166,16 +1222,16 @@ do
                 local valueHidden = (centerHiddenSetting == true)
                 if valueHidden then
                     if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
-                    textStringFS._ScooterPowerTextCenterHidden = true
+                    if fstate then fstate.SetHidden(textStringFS, "powerTextCenter", true) end
                 else
-                    if textStringFS._ScooterPowerTextCenterHidden then
+                    if fstate and fstate.IsHidden(textStringFS, "powerTextCenter") then
                         if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
-                        textStringFS._ScooterPowerTextCenterHidden = nil
+                        fstate.SetHidden(textStringFS, "powerTextCenter", false)
                     end
                 end
             end
             -- Always apply styling (applyTextStyle returns early if no customizations)
-            if not textStringFS._ScooterPowerTextCenterHidden then
+            if not (fstate and fstate.IsHidden(textStringFS, "powerTextCenter")) then
                 applyTextStyle(textStringFS, cfg.textPowerValue or {}, unit .. ":power-center", frame)
             end
         end
@@ -1237,8 +1293,11 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
+            local fstate = ensureFS()
+            if not fstate then return end
             if hiddenSetting == nil then
                 return
             end
@@ -1246,24 +1305,27 @@ do
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
-                if not fs._ScooterPowerTextVisibilityHooked then
-                    fs._ScooterPowerTextVisibilityHooked = true
+                if not fstate.IsHooked(fs, "powerTextVisibility") then
+                    fstate.MarkHooked(fs, "powerTextVisibility")
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            if self._ScooterPowerTextHidden and alpha and alpha > 0 then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                                if not self._ScooterPowerTextAlphaDeferred then
-                                    self._ScooterPowerTextAlphaDeferred = true
+                                if not st.GetProp(self, "powerTextAlphaDeferred") then
+                                    st.SetProp(self, "powerTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        self._ScooterPowerTextAlphaDeferred = nil
-                                        if self._ScooterPowerTextHidden and self.SetAlpha then
+                                        local st2 = ensureFS()
+                                        if st2 then st2.SetProp(self, "powerTextAlphaDeferred", nil) end
+                                        if st2 and st2.IsHidden(self, "powerText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
@@ -1272,15 +1334,16 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            if self._ScooterPowerTextHidden and self.SetAlpha then
+                            local st = ensureFS()
+                            if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                     end
                 end
-                fs._ScooterPowerTextHidden = true
+                fstate.SetHidden(fs, "powerText", true)
             else
-                fs._ScooterPowerTextHidden = false
+                fstate.SetHidden(fs, "powerText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
             end
         end
@@ -1632,9 +1695,10 @@ do
 				local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 				local size = tonumber(styleCfg.size) or 14
 				local outline = tostring(styleCfg.style or "OUTLINE")
-				fs._ScooterApplyingFont = true
+				local fst = ensureFS()
+				if fst then fst.SetProp(fs, "applyingFont", true) end
 				if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-				fs._ScooterApplyingFont = nil
+				if fst then fst.SetProp(fs, "applyingFont", nil) end
 
 				-- Boss frames: no class color option. Treat "class" as "default".
 				local colorMode = styleCfg.colorMode or "default"
@@ -2143,9 +2207,10 @@ do
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
 		-- Set flag to prevent our SetFont hook from triggering a reapply loop
-		fs._ScooterApplyingFont = true
+		local fst = ensureFS()
+		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-		fs._ScooterApplyingFont = nil
+		if fst then fst.SetProp(fs, "applyingFont", nil) end
 		-- Determine color based on colorMode
 		local c = nil
 		local colorMode = styleCfg.colorMode or "default"
@@ -2166,20 +2231,27 @@ do
 			c = styleCfg.color or {1.0, 0.82, 0.0, 1}
 		end
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
-		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-		if fs.ClearAllPoints and fs.SetPoint then
-			local b = ensureBaseline(fs, baselineKey)
-			fs:ClearAllPoints()
-			local point = safePointToken(b.point, "CENTER")
-			local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or frame
-			local relPoint = safePointToken(b.relPoint, point)
-			local x = safeOffset(b.x) + ox
-			local y = safeOffset(b.y) + oy
-			local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-			if not ok then
-				local parent = (fs.GetParent and fs:GetParent()) or frame
-				pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+
+		-- Only reposition if offset is explicitly configured.
+		-- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+		-- text positioning.
+		local hasOffsetCustomization = styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil)
+		if hasOffsetCustomization then
+			local ox = tonumber(styleCfg.offset.x) or 0
+			local oy = tonumber(styleCfg.offset.y) or 0
+			if fs.ClearAllPoints and fs.SetPoint then
+				local b = ensureBaseline(fs, baselineKey)
+				fs:ClearAllPoints()
+				local point = safePointToken(b.point, "CENTER")
+				local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or frame
+				local relPoint = safePointToken(b.relPoint, point)
+				local x = safeOffset(b.x) + ox
+				local y = safeOffset(b.y) + oy
+				local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+				if not ok then
+					local parent = (fs.GetParent and fs:GetParent()) or frame
+					pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+				end
 			end
 		end
 	end
@@ -2672,11 +2744,14 @@ do
 
 	-- Also hook CharacterFrameTab1-4 OnClick (the tabs at the bottom of Character Frame)
 	-- These can trigger updates when switching between Character/Reputation/Currency tabs
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
 	local function hookCharacterTabs()
+		local fstate = ensureFS()
+		if not fstate then return end
 		for i = 1, 4 do
 			local tab = _G["CharacterFrameTab" .. i]
-			if tab and tab.HookScript and not tab._ScooterTextHooked then
-				tab._ScooterTextHooked = true
+			if tab and tab.HookScript and not fstate.IsHooked(tab, "textHooked") then
+				fstate.MarkHooked(tab, "textHooked")
 				tab:HookScript("OnClick", function()
 					if _G.C_Timer and _G.C_Timer.After then
 						_G.C_Timer.After(0.15, reapplyPlayerTextStyling)
@@ -2688,9 +2763,11 @@ do
 
 	-- Hook CharacterFrame OnShow as a backup
 	local function hookCharacterFrameOnShow()
+		local fstate = ensureFS()
+		if not fstate then return end
 		local charFrame = _G.CharacterFrame
-		if charFrame and charFrame.HookScript and not charFrame._ScooterTextOnShowHooked then
-			charFrame._ScooterTextOnShowHooked = true
+		if charFrame and charFrame.HookScript and not fstate.IsHooked(charFrame, "textOnShowHooked") then
+			fstate.MarkHooked(charFrame, "textOnShowHooked")
 			charFrame:HookScript("OnShow", function()
 				if _G.C_Timer and _G.C_Timer.After then
 					_G.C_Timer.After(0.15, reapplyPlayerTextStyling)
@@ -2779,29 +2856,33 @@ do
 		end
 
 		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
-		if cfg.nameTextHidden ~= nil then
+		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+		local fstate = ensureFS()
+		if cfg.nameTextHidden ~= nil and fstate then
 			local hidden = (cfg.nameTextHidden == true)
 			if hidden then
 				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 0) end
-				nameFS._ScooterToTNameHidden = true
+				fstate.SetHidden(nameFS, "totName", true)
 				-- Install hook to re-enforce hidden state
-				if not nameFS._ScooterToTNameVisibilityHooked then
-					nameFS._ScooterToTNameVisibilityHooked = true
+				if not fstate.IsHooked(nameFS, "totNameVisibility") then
+					fstate.MarkHooked(nameFS, "totNameVisibility")
 					if _G.hooksecurefunc then
 						_G.hooksecurefunc(nameFS, "SetText", function(self)
-							if self._ScooterToTNameHidden and self.SetAlpha then
+							local st = ensureFS()
+							if st and st.IsHidden(self, "totName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
 						end)
 						_G.hooksecurefunc(nameFS, "Show", function(self)
-							if self._ScooterToTNameHidden and self.SetAlpha then
+							local st = ensureFS()
+							if st and st.IsHidden(self, "totName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
 						end)
 					end
 				end
 			else
-				nameFS._ScooterToTNameHidden = false
+				fstate.SetHidden(nameFS, "totName", false)
 				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 1) end
 			end
 		end
@@ -2890,10 +2971,13 @@ do
 
 	-- Hook TargetofTarget frame updates to reapply styling
 	-- ToT frame is re-shown when target changes, so hook the ToT OnShow
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
 	local function installToTHooks()
+		local fstate = ensureFS()
+		if not fstate then return end
 		local tot = _G.TargetFrameToT
-		if tot and not tot._ScooterNameTextHooked then
-			tot._ScooterNameTextHooked = true
+		if tot and not fstate.IsHooked(tot, "nameTextHooked") then
+			fstate.MarkHooked(tot, "nameTextHooked")
 			if tot.HookScript then
 				tot:HookScript("OnShow", function()
 					if _G.C_Timer and _G.C_Timer.After then

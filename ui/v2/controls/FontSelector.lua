@@ -41,10 +41,13 @@ function Controls:CreateFontSelector(options)
     local getValue = options.get or function() return "FRIZQT__" end
     local setValue = options.set or function() end
     local selectorWidth = options.width or FONT_SELECTOR_WIDTH
+    local selectorHeight = options.selectorHeight or FONT_SELECTOR_HEIGHT
+    local labelFontSize = options.labelFontSize or 13
     local name = options.name
 
     local hasDesc = description and description ~= ""
-    local rowHeight = hasDesc and FONT_SELECTOR_ROW_HEIGHT_WITH_DESC or FONT_SELECTOR_ROW_HEIGHT
+    local defaultRowHeight = hasDesc and FONT_SELECTOR_ROW_HEIGHT_WITH_DESC or FONT_SELECTOR_ROW_HEIGHT
+    local rowHeight = options.rowHeight or defaultRowHeight
 
     -- Get theme colors
     local ar, ag, ab = theme:GetAccentColor()
@@ -78,7 +81,7 @@ function Controls:CreateFontSelector(options)
     -- Label text (left side)
     local labelFS = row:CreateFontString(nil, "OVERLAY")
     local labelFont = theme:GetFont("LABEL")
-    labelFS:SetFont(labelFont, 13, "")
+    labelFS:SetFont(labelFont, labelFontSize, "")
     labelFS:SetPoint("LEFT", row, "LEFT", FONT_SELECTOR_PADDING, hasDesc and 6 or 0)
     labelFS:SetText(label)
     labelFS:SetTextColor(ar, ag, ab, 1)
@@ -100,7 +103,7 @@ function Controls:CreateFontSelector(options)
 
     -- Selector button (right side, clickable to open popup)
     local selector = CreateFrame("Button", nil, row)
-    selector:SetSize(selectorWidth, FONT_SELECTOR_HEIGHT)
+    selector:SetSize(selectorWidth, selectorHeight)
     selector:SetPoint("RIGHT", row, "RIGHT", -FONT_SELECTOR_PADDING, 0)
     selector:EnableMouse(true)
     selector:RegisterForClicks("AnyUp")

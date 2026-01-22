@@ -1,5 +1,5 @@
 -- Legacy stub: logic moved to modular builders (core_renderer, cdm_components,
--- prd_components, nameplates, tooltip). This file is intentionally minimal to
+-- prd_components, tooltip). This file is intentionally minimal to
 -- avoid double-defining renderers after the refactor.
 local addonName, addon = ...
 addon.SettingsPanel = addon.SettingsPanel or {}

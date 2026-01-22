@@ -4,6 +4,13 @@ addon.Components = addon.Components or {}
 addon.ComponentInitializers = addon.ComponentInitializers or {}
 addon.ComponentsUtil = addon.ComponentsUtil or {}
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
 local Util = addon.ComponentsUtil
 local UNIT_FRAME_CATEGORY_TO_UNIT = {
     ufPlayer = "Player",
@@ -1128,12 +1135,16 @@ function addon:ClearFrameLevelState()
     end
     local function clearTextFlags(fs)
         if not fs then return end
-        fs._ScooterHealthTextHidden = nil
-        fs._ScooterPowerTextHidden = nil
-        fs._ScooterHealthTextCenterHidden = nil
-        fs._ScooterPowerTextCenterHidden = nil
-        fs._ScooterToTNameHidden = nil
-        fs._ScooterAltPowerTextHidden = nil
+        -- Clear FrameState hidden flags (uses lookup table instead of writing to frames)
+        local fstate = ensureFS()
+        if fstate then
+            fstate.SetHidden(fs, "healthText", false)
+            fstate.SetHidden(fs, "powerText", false)
+            fstate.SetHidden(fs, "healthTextCenter", false)
+            fstate.SetHidden(fs, "powerTextCenter", false)
+            fstate.SetHidden(fs, "totName", false)
+            fstate.SetHidden(fs, "altPowerText", false)
+        end
         safeAlpha(fs)
     end
 

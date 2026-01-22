@@ -2332,16 +2332,6 @@ Presets:Register({
             positionX = -726,
             positionY = -114,
           },
-          nameplatesUnit = {
-            _nameplatesColorMigrated = true,
-            _nameplatesTextMigrated = true,
-            supportsText = true,
-            textName = {
-              fontFace = "ROBOTO_SEMICOND_BLACK",
-              size = 8,
-              style = "THICKOUTLINE",
-            },
-          },
           objectiveTracker = {
             height = 400,
             opacity = 0,

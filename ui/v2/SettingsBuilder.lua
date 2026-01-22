@@ -43,6 +43,7 @@ function Builder:CreateFor(scrollContent)
         _sections = {},         -- Track section headers
         _inSection = false,     -- Are we inside a section?
         _useLightDim = false,   -- Use lighter dim text (for collapsible section interiors)
+        _parentCollapsible = nil, -- Reference to parent collapsible section (if inside one)
     }
 
     -- Set metatable to use Builder methods on the instance
@@ -169,16 +170,18 @@ end
 --   get         : Function returning current value
 --   set         : Function(newValue) to save value
 --   key         : Optional unique key for dynamic updates (SetLabel, etc.)
---   tooltip     : Optional tooltip text (future)
+--   emphasized  : Optional boolean for "Hero Toggle" styling (master controls)
+--   infoIcon    : Optional { tooltipText, tooltipTitle } for inline info icon
 --------------------------------------------------------------------------------
 
 function Builder:AddToggle(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
+    -- Add item spacing (more for emphasized toggles)
     if #self._controls > 0 then
-        self._currentY = self._currentY - ITEM_SPACING
+        local spacing = options.emphasized and (ITEM_SPACING + 4) or ITEM_SPACING
+        self._currentY = self._currentY - spacing
     end
 
     -- Create toggle using Controls module
@@ -189,6 +192,8 @@ function Builder:AddToggle(options)
         get = options.get,
         set = options.set,
         useLightDim = self._useLightDim,
+        emphasized = options.emphasized,
+        infoIcon = options.infoIcon,
     })
 
     if toggle then
@@ -398,6 +403,9 @@ function Builder:AddCollapsibleSection(options)
 
     if not section then return self end
 
+    -- Store outer refresh callback on section for dynamic height updates from nested controls
+    section._outerOnRefresh = onRefresh
+
     -- Position the section
     section:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
     section:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
@@ -412,6 +420,7 @@ function Builder:AddCollapsibleSection(options)
         -- Create inner builder for the content area
         local innerBuilder = Builder:CreateFor(contentFrame)
         innerBuilder._useLightDim = true  -- Use lighter description text on gray background
+        innerBuilder._parentCollapsible = section  -- Reference for dynamic height updates
 
         -- Call the build function
         options.buildContent(contentFrame, innerBuilder)
@@ -736,6 +745,9 @@ function Builder:AddTabbedSection(options)
     -- Store reference to onRefresh callback if set
     local onRefresh = self._onRefresh
 
+    -- Reference to parent collapsible (if we're inside one)
+    local parentCollapsible = self._parentCollapsible
+
     -- Create the tabbed section control
     local section = Controls:CreateTabbedSection({
         parent = scrollContent,
@@ -749,7 +761,8 @@ function Builder:AddTabbedSection(options)
                 options.onTabChange(newTabKey, oldTabKey)
             end
             -- Trigger page refresh to re-layout if height might change
-            if onRefresh then
+            -- (Only if not inside a collapsible - collapsible handles its own refresh)
+            if onRefresh and not parentCollapsible then
                 onRefresh()
             end
         end,
@@ -800,6 +813,30 @@ function Builder:AddTabbedSection(options)
 
     -- Add gap after section
     self._currentY = self._currentY - ITEM_SPACING
+
+    -- If we're inside a collapsible, set up dynamic height updates
+    -- This must be done AFTER _currentY is updated so we can capture the correct initial height
+    if parentCollapsible and section then
+        -- Track the initial tabbed section height
+        -- We'll compute content height from the current builder state
+        local lastTabbedHeight = section:GetHeight()
+
+        section:SetOnHeightChange(function(newTabbedHeight)
+            -- Calculate the delta from the last known tabbed section height
+            local delta = newTabbedHeight - lastTabbedHeight
+            lastTabbedHeight = newTabbedHeight  -- Update for next change
+
+            -- Get current collapsible content height and apply delta
+            local currentContentHeight = parentCollapsible._contentHeight or 100
+            local newContentHeight = currentContentHeight + delta
+            parentCollapsible:SetContentHeight(newContentHeight)
+
+            -- Trigger outer page refresh to reposition controls below this collapsible
+            if parentCollapsible._outerOnRefresh then
+                parentCollapsible._outerOnRefresh()
+            end
+        end)
+    end
 
     return self
 end

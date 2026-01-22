@@ -1042,7 +1042,12 @@ function Profiles:PromptReloadToProfile(layoutName, meta)
     end
     -- Stash pending activation now; the actual ReloadUI() must come from a hardware event.
     self.db.global.pendingProfileActivation = buildPendingActivation(layoutName, meta)
-    addon.Dialogs:Show("SCOOTERMOD_SPEC_PROFILE_RELOAD", {
+    -- Choose appropriate dialog based on reason
+    local dialogName = "SCOOTERMOD_PROFILE_RELOAD"
+    if meta and meta.reason == "SpecChanged" then
+        dialogName = "SCOOTERMOD_SPEC_PROFILE_RELOAD"
+    end
+    addon.Dialogs:Show(dialogName, {
         data = { layoutName = layoutName },
         onAccept = function()
             -- Persist selection right before reloading (hardware-event-safe click).
