@@ -291,13 +291,14 @@ local function buildBossRoot(ctx, init)
 					addon.EditMode.WriteSetting(frameUF, settingId, val, {
 						updaters        = { "UpdateSystemSettingUseLargerFrame", "UpdateSystemSettingFrameSize" },
 						suspendDuration = 0.25,
+						skipApply       = true,  -- Avoid taint from RequestApplyChanges
 					})
 				elseif addon.EditMode.SetSetting then
 					addon.EditMode.SetSetting(frameUF, settingId, val)
 					if type(frameUF.UpdateSystemSettingUseLargerFrame) == "function" then pcall(frameUF.UpdateSystemSettingUseLargerFrame, frameUF) end
 					if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
 					if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-					if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					-- Skip RequestApplyChanges to avoid taint
 				end
 			end
 
@@ -359,12 +360,13 @@ local function buildBossRoot(ctx, init)
 					addon.EditMode.WriteSetting(frameUF, settingId, val, {
 						updaters        = { "UpdateSystemSettingFrameSize" },
 						suspendDuration = 0.25,
+						skipApply       = true,  -- Avoid taint from RequestApplyChanges
 					})
 				elseif addon.EditMode.SetSetting then
 					addon.EditMode.SetSetting(frameUF, settingId, val)
 					if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
 					if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-					if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+					-- Skip RequestApplyChanges to avoid taint
 				end
 			end
 		end
@@ -2392,12 +2394,13 @@ local function buildBossCast(ctx, init)
 							addon.EditMode.WriteSetting(frameUF, settingId, val, {
 								updaters        = { "UpdateSystemSettingCastBarOnSide" },
 								suspendDuration = 0.25,
+								skipApply       = true,  -- Avoid taint from RequestApplyChanges
 							})
 						elseif addon.EditMode.SetSetting then
 							addon.EditMode.SetSetting(frameUF, settingId, val)
 							if type(frameUF.UpdateSystemSettingCastBarOnSide) == "function" then pcall(frameUF.UpdateSystemSettingCastBarOnSide, frameUF) end
 							if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-							if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+							-- Skip RequestApplyChanges to avoid taint
 						end
 					end
 					-- Refresh the anchor dropdown's enabled state (grayed out when Cast Bar on Side is enabled)

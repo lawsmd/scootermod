@@ -113,13 +113,14 @@ local function build(ctx, init)
 										addon.EditMode.WriteSetting(frameUF, sid, val, {
 											updaters        = { "UpdateSystemSettingBuffsOnTop" },
 											suspendDuration = 0.25,
+											skipApply       = true,  -- Avoid taint from RequestApplyChanges
 										})
 									elseif addon.EditMode.SetSetting then
 										addon.EditMode.SetSetting(frameUF, sid, val)
-										-- Nudge visuals; call specific updater if present, else coalesced apply
+										-- Nudge visuals; call specific updater if present
 										if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
 										if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-										if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+										-- Skip RequestApplyChanges to avoid taint
 									end
 								end
 							end
@@ -725,12 +726,13 @@ local function build(ctx, init)
 										addon.EditMode.WriteSetting(frameUF, sid, val, {
 											updaters        = { "UpdateSystemSettingBuffsOnTop" },
 											suspendDuration = 0.25,
+											skipApply       = true,  -- Avoid taint from RequestApplyChanges
 										})
 									elseif addon.EditMode.SetSetting then
 										addon.EditMode.SetSetting(frameUF, sid, val)
 										if type(frameUF.UpdateSystemSettingBuffsOnTop) == "function" then pcall(frameUF.UpdateSystemSettingBuffsOnTop, frameUF) end
 										if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-										if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+										-- Skip RequestApplyChanges to avoid taint
 									end
 								end
 							end

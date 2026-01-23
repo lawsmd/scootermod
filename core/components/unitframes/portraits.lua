@@ -2,6 +2,18 @@ local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
 -- Unit Frames: Apply Portrait positioning (X/Y offsets)
 do
 	-- Resolve portrait frame for a given unit
@@ -141,11 +153,12 @@ do
 		-- PetAttackModeTexture pulses via SetVertexColor in PetFrame:OnUpdate every frame.
 		-- Deferred enforcement (C_Timer.After(0)) would lose the race and cause visible flashing.
 		-- We only write alpha/vertex alpha (no Hide/Show/SetShown calls) to avoid taint.
-		-- The _ScooterPetOverlayEnforcing flag guards against infinite recursion.
+		-- The pet overlay enforcing flag guards against infinite recursion.
 		local function enforceHiddenNow(tex)
-			if not tex or not tex._ScooterPetOverlayHidden then return end
-			if tex._ScooterPetOverlayEnforcing then return end
-			tex._ScooterPetOverlayEnforcing = true
+			local st = getState(tex)
+			if not tex or not st or not st.petOverlayHidden then return end
+			if st.petOverlayEnforcing then return end
+			st.petOverlayEnforcing = true
 
 			if tex.SetAlpha then
 				pcall(tex.SetAlpha, tex, 0)
@@ -163,26 +176,29 @@ do
 				pcall(tex.SetVertexColor, tex, r, g, b, 0)
 			end
 
-			tex._ScooterPetOverlayEnforcing = nil
+			if st then st.petOverlayEnforcing = nil end
 		end
 
 		-- Install hooks once per texture instance.
-		if not texture._ScooterPetOverlayHooked and _G.hooksecurefunc then
-			texture._ScooterPetOverlayHooked = true
+		local texState = getState(texture)
+		if texState and not texState.petOverlayHooked and _G.hooksecurefunc then
+			texState.petOverlayHooked = true
 
 			-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
 			-- We enforce immediately (not deferred) to prevent any visible flash.
 			-- Our enforcement only calls SetAlpha/SetVertexColor (not Hide/Show), which are
 			-- not protected functions and won't cause taint.
 			_G.hooksecurefunc(texture, "Show", function(self)
-				if not self._ScooterPetOverlayHidden then return end
+				local st = getState(self)
+				if not st or not st.petOverlayHidden then return end
 				enforceHiddenNow(self)
 			end)
 
 			-- If Blizzard uses SetShown(true), treat it like Show().
 			if texture.SetShown then
 				_G.hooksecurefunc(texture, "SetShown", function(self, shown)
-					if not shown or not self._ScooterPetOverlayHidden then return end
+					local st = getState(self)
+					if not shown or not st or not st.petOverlayHidden then return end
 					enforceHiddenNow(self)
 				end)
 			end
@@ -191,7 +207,8 @@ do
 			-- SetAlpha is not a protected function, so immediate enforcement is safe.
 			-- The _ScooterPetOverlayEnforcing flag guards against recursion.
 			_G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
-				if self._ScooterPetOverlayHidden and alpha and alpha > 0 then
+				local st = getState(self)
+				if st and st.petOverlayHidden and alpha and alpha > 0 then
 					enforceHiddenNow(self)
 				end
 			end)
@@ -204,7 +221,8 @@ do
 			-- The _ScooterPetOverlayEnforcing flag guards against infinite recursion.
 			if texture.SetVertexColor then
 				_G.hooksecurefunc(texture, "SetVertexColor", function(self, r, g, b, a)
-					if not self._ScooterPetOverlayHidden then
+					local st = getState(self)
+					if not st or not st.petOverlayHidden then
 						return
 					end
 
@@ -227,10 +245,10 @@ do
 		-- are not protected functions and won't cause taint. This ensures the texture is
 		-- hidden before the frame renders.
 		if hidden then
-			texture._ScooterPetOverlayHidden = true
+			if texState then texState.petOverlayHidden = true end
 			enforceHiddenNow(texture)
 		else
-			texture._ScooterPetOverlayHidden = false
+			if texState then texState.petOverlayHidden = false end
 			-- Restore visible alpha (safe during combat - not a protected operation)
 			if texture.SetAlpha then
 				pcall(texture.SetAlpha, texture, visibleAlpha)
@@ -936,17 +954,19 @@ do
 			-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
 			-- cause taint that spreads through the execution context, blocking protected functions
 			-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
-			-- Store the unit key on the frame so the hook knows which config to read
-			damageTextFrame._scooterUnitKey = unit
-			if not damageTextFrame._scooterSetTextHeightHooked then
-				damageTextFrame._scooterSetTextHeightHooked = true
+			-- Store the unit key in FrameState so the hook knows which config to read
+			local dtState = getState(damageTextFrame)
+			if dtState then dtState.unitKey = unit end
+			if dtState and not dtState.setTextHeightHooked then
+				dtState.setTextHeightHooked = true
 				
 				hooksecurefunc(damageTextFrame, "SetTextHeight", function(self, height)
 					-- Guard against recursion (though we use SetFont, not SetTextHeight, to apply)
-					if self._scooterApplyingTextHeight then return end
+					local st = getState(self)
+					if st and st.applyingTextHeight then return end
 					
 					-- Check if we have custom settings (use stored unit key)
-					local unitKey = self._scooterUnitKey or "Player"
+					local unitKey = (st and st.unitKey) or "Player"
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 						local cfg = db.unitFrames[unitKey].portrait
@@ -956,13 +976,13 @@ do
 							-- Re-apply our custom size using SetFont (overrides what Blizzard just set)
 							local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 							local customStyle = tostring(damageTextCfg.style or "OUTLINE")
-							self._scooterApplyingTextHeight = true
+							if st then st.applyingTextHeight = true end
 							if addon.ApplyFontStyle then
 								addon.ApplyFontStyle(self, customFace, customSize, customStyle)
 							elseif self.SetFont then
 								pcall(self.SetFont, self, customFace, customSize, customStyle)
 							end
-							self._scooterApplyingTextHeight = nil
+							if st then st.applyingTextHeight = nil end
 						end
 					end
 					-- If no custom settings configured, Blizzard's size remains (hook does nothing)

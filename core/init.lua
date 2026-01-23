@@ -508,8 +508,9 @@ function addon:PLAYER_TARGET_CHANGED()
     -- taint the execution context, causing Blizzard's UpdateTextStringWithValues
     -- to fail with "secret value" errors when it tries to compare StatusBar values.
     -- Skip preemptive hiding when Edit Mode is active or opening.
-    local editModeFrame = _G.EditModeManagerFrame
-    if editModeFrame and (editModeFrame:IsShown() or editModeFrame.editModeActive) then
+    local editModeActive = addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+        and addon.EditMode.IsEditModeActiveOrOpening()
+    if editModeActive then
         -- Defer all work to avoid taint propagation during Edit Mode
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function()
@@ -586,8 +587,9 @@ function addon:PLAYER_FOCUS_CHANGED()
     -- =========================================================================
     -- Same rationale as PLAYER_TARGET_CHANGED: Edit Mode triggers FocusUnit
     -- which fires PLAYER_FOCUS_CHANGED. Skip preemptive hiding to avoid taint.
-    local editModeFrame = _G.EditModeManagerFrame
-    if editModeFrame and (editModeFrame:IsShown() or editModeFrame.editModeActive) then
+    local editModeActive = addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+        and addon.EditMode.IsEditModeActiveOrOpening()
+    if editModeActive then
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function()
                 if addon.ApplyUnitFrameBarTexturesFor then

@@ -358,7 +358,7 @@ function GF.RenderParty(panel, scrollContent)
             if not EM or not EM.UseRaidStylePartyFrames then return end
             C_Timer.After(0, function()
                 setEditModeSetting(EM.UseRaidStylePartyFrames, v and 1 or 0, {
-                    updaters = { "UpdateSystemSettingUseRaidStylePartyFrames" },
+                    skipApply = true,
                     suspendDuration = 0.25,
                 })
                 -- Re-render to show/hide conditional controls

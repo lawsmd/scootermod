@@ -12,6 +12,18 @@ local addonName, addon = ...
 local Resolvers = addon.BarsResolvers
 local Alpha = addon.BarsAlpha
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
 -- Create module namespace
 addon.BarsPreemptive = addon.BarsPreemptive or {}
 local Preemptive = addon.BarsPreemptive
@@ -21,6 +33,14 @@ local Preemptive = addon.BarsPreemptive
 --------------------------------------------------------------------------------
 -- Called SYNCHRONOUSLY from PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED
 -- event handlers. Hides elements BEFORE Blizzard's TargetFrame_Update runs.
+
+local function isEditModeActive()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
 
 -- Pre-emptive hide for Target frame elements (ReputationColor, FrameTexture, Flash)
 -- This runs SYNCHRONOUSLY from PLAYER_TARGET_CHANGED, BEFORE Blizzard's TargetFrame_Update.
@@ -185,20 +205,20 @@ function Preemptive.installEarlyAlphaHooks()
         local targetRepColor = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
             and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
             and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-        if targetRepColor and not targetRepColor._ScootAlphaEnforcerHooked then
+        if targetRepColor then
             Alpha.hookAlphaEnforcer(targetRepColor, makeComputeAlpha("Target"))
         end
 
         -- FrameTexture
         local targetFT = Resolvers.resolveUnitFrameFrameTexture("Target")
-        if targetFT and not targetFT._ScootAlphaEnforcerHooked then
+        if targetFT then
             Alpha.hookAlphaEnforcer(targetFT, makeComputeAlphaWithBorder("Target"))
         end
 
         -- Flash (aggro/threat glow)
         local targetFlash = _G.TargetFrame and _G.TargetFrame.TargetFrameContainer
             and _G.TargetFrame.TargetFrameContainer.Flash
-        if targetFlash and not targetFlash._ScootAlphaEnforcerHooked then
+        if targetFlash then
             Alpha.hookAlphaEnforcer(targetFlash, makeComputeAlpha("Target"))
         end
     end
@@ -209,20 +229,20 @@ function Preemptive.installEarlyAlphaHooks()
         local focusRepColor = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
             and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
             and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-        if focusRepColor and not focusRepColor._ScootAlphaEnforcerHooked then
+        if focusRepColor then
             Alpha.hookAlphaEnforcer(focusRepColor, makeComputeAlpha("Focus"))
         end
 
         -- FrameTexture
         local focusFT = Resolvers.resolveUnitFrameFrameTexture("Focus")
-        if focusFT and not focusFT._ScootAlphaEnforcerHooked then
+        if focusFT then
             Alpha.hookAlphaEnforcer(focusFT, makeComputeAlphaWithBorder("Focus"))
         end
 
         -- Flash (aggro/threat glow)
         local focusFlash = _G.FocusFrame and _G.FocusFrame.TargetFrameContainer
             and _G.FocusFrame.TargetFrameContainer.Flash
-        if focusFlash and not focusFlash._ScootAlphaEnforcerHooked then
+        if focusFlash then
             Alpha.hookAlphaEnforcer(focusFlash, makeComputeAlpha("Focus"))
         end
     end
@@ -238,6 +258,7 @@ function Preemptive.installEarlyAlphaHooks()
         if not addon._ScootTargetFrameUpdateHooked then
             addon._ScootTargetFrameUpdateHooked = true
             _G.hooksecurefunc("TargetFrame_Update", function()
+                if isEditModeActive() then return end
                 local db = addon and addon.db and addon.db.profile
                 local unitFrames = db and rawget(db, "unitFrames")
                 local cfg = unitFrames and rawget(unitFrames, "Target")
@@ -261,6 +282,7 @@ function Preemptive.installEarlyAlphaHooks()
         if not addon._ScootFocusFrameUpdateHooked then
             addon._ScootFocusFrameUpdateHooked = true
             _G.hooksecurefunc("FocusFrame_Update", function()
+                if isEditModeActive() then return end
                 local db = addon and addon.db and addon.db.profile
                 local unitFrames = db and rawget(db, "unitFrames")
                 local cfg = unitFrames and rawget(unitFrames, "Focus")
@@ -290,6 +312,7 @@ function Preemptive.installEarlyAlphaHooks()
     -- Helper to re-hide elements after CheckFaction/CheckLevel
     -- This handles ReputationColor, Flash, AND LevelText/NameText
     local function rehideTargetElements()
+        if isEditModeActive() then return end
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames")
         local cfg = unitFrames and rawget(unitFrames, "Target")
@@ -341,6 +364,7 @@ function Preemptive.installEarlyAlphaHooks()
     end
 
     local function rehideFocusElements()
+        if isEditModeActive() then return end
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames")
         local cfg = unitFrames and rawget(unitFrames, "Focus")
@@ -425,9 +449,11 @@ function Preemptive.installEarlyAlphaHooks()
     local targetRepColor = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-    if targetRepColor and targetRepColor.SetVertexColor and not targetRepColor._ScootSetVertexColorHooked then
-        targetRepColor._ScootSetVertexColorHooked = true
+    local targetState = getState(targetRepColor)
+    if targetRepColor and targetRepColor.SetVertexColor and not (targetState and targetState.repColorSetVertexColorHooked) then
+        if targetState then targetState.repColorSetVertexColorHooked = true end
         _G.hooksecurefunc(targetRepColor, "SetVertexColor", function(self)
+            if isEditModeActive() then return end
             local db = addon and addon.db and addon.db.profile
             local unitFrames = db and rawget(db, "unitFrames")
             local cfg = unitFrames and rawget(unitFrames, "Target")
@@ -440,9 +466,11 @@ function Preemptive.installEarlyAlphaHooks()
     local focusRepColor = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
         and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-    if focusRepColor and focusRepColor.SetVertexColor and not focusRepColor._ScootSetVertexColorHooked then
-        focusRepColor._ScootSetVertexColorHooked = true
+    local focusState = getState(focusRepColor)
+    if focusRepColor and focusRepColor.SetVertexColor and not (focusState and focusState.repColorSetVertexColorHooked) then
+        if focusState then focusState.repColorSetVertexColorHooked = true end
         _G.hooksecurefunc(focusRepColor, "SetVertexColor", function(self)
+            if isEditModeActive() then return end
             local db = addon and addon.db and addon.db.profile
             local unitFrames = db and rawget(db, "unitFrames")
             local cfg = unitFrames and rawget(unitFrames, "Focus")
@@ -604,8 +632,9 @@ function Preemptive.installBossFrameHooks()
         local bossFrame = _G["Boss" .. i .. "TargetFrame"]
         if bossFrame then
             -- Hook OnShow to re-hide elements when the frame becomes visible
-            if not bossFrame._ScootBossOnShowHooked then
-                bossFrame._ScootBossOnShowHooked = true
+            local bossState = getState(bossFrame)
+            if bossState and not bossState.bossOnShowHooked then
+                bossState.bossOnShowHooked = true
                 bossFrame:HookScript("OnShow", function()
                     -- Small delay to let Blizzard finish setting up the frame
                     if _G.C_Timer and _G.C_Timer.After then
@@ -617,8 +646,8 @@ function Preemptive.installBossFrameHooks()
             end
 
             -- Hook CheckFaction if it exists (called when faction/reputation updates)
-            if bossFrame.CheckFaction and not bossFrame._ScootBossCheckFactionHooked then
-                bossFrame._ScootBossCheckFactionHooked = true
+            if bossFrame.CheckFaction and bossState and not bossState.bossCheckFactionHooked then
+                bossState.bossCheckFactionHooked = true
                 _G.hooksecurefunc(bossFrame, "CheckFaction", rehideBossElements)
             end
 
@@ -626,9 +655,11 @@ function Preemptive.installBossFrameHooks()
             local repColor = bossFrame.TargetFrameContent
                 and bossFrame.TargetFrameContent.TargetFrameContentMain
                 and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-            if repColor and repColor.SetVertexColor and not repColor._ScootSetVertexColorHooked then
-                repColor._ScootSetVertexColorHooked = true
+            local repState = getState(repColor)
+            if repColor and repColor.SetVertexColor and not (repState and repState.repColorSetVertexColorHooked) then
+                if repState then repState.repColorSetVertexColorHooked = true end
                 _G.hooksecurefunc(repColor, "SetVertexColor", function(self)
+                    if isEditModeActive() then return end
                     local db = addon and addon.db and addon.db.profile
                     local unitFrames = db and rawget(db, "unitFrames")
                     local cfg = unitFrames and rawget(unitFrames, "Boss")
@@ -639,7 +670,7 @@ function Preemptive.installBossFrameHooks()
             end
 
             -- Install early alpha enforcer on ReputationColor
-            if repColor and not repColor._ScootAlphaEnforcerHooked then
+            if repColor then
                 Alpha.hookAlphaEnforcer(repColor, makeComputeAlpha())
             end
         end

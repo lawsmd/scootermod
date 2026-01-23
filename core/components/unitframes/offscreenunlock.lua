@@ -1,5 +1,29 @@
 local addonName, addon = ...
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+	if not FS then FS = addon.FrameState end
+	return FS
+end
+
+local function getState(frame)
+	local fs = ensureFS()
+	return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+	local st = getState(frame)
+	return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+	local st = getState(frame)
+	if st then
+		st[key] = value
+	end
+end
+
 --[[----------------------------------------------------------------------------
     Unit Frame Off-Screen Drag Unlock (Player + Target)
 
@@ -203,8 +227,8 @@ end
 
 local function _InstallOffscreenEnforcementHooks(frame)
 	if not (frame and _G.hooksecurefunc) then return end
-	if frame._ScootOffscreenHooksInstalled then return end
-	frame._ScootOffscreenHooksInstalled = true
+	if getProp(frame, "offscreenHooksInstalled") then return end
+	setProp(frame, "offscreenHooksInstalled", true)
 
 	-- When the setting is enabled, keep clamping OFF even if Blizzard/Edit Mode
 	-- tries to re-enable it after our apply pass.
@@ -213,13 +237,13 @@ local function _InstallOffscreenEnforcementHooks(frame)
 	-- cases, our effective unlock is achieved via expanded clamp rect insets.
 	if frame.SetClampedToScreen and frame.IsClampedToScreen then
 		_G.hooksecurefunc(frame, "SetClampedToScreen", function(self, clamped)
-			if not self._ScootOffscreenEnforceEnabled then return end
-			if self._ScootOffscreenEnforceGuard then return end
+			if not getProp(self, "offscreenEnforceEnabled") then return end
+			if getProp(self, "offscreenEnforceGuard") then return end
 			-- If Blizzard tries to enable clamping, force it back off
 			if clamped then
-				self._ScootOffscreenEnforceGuard = true
+				setProp(self, "offscreenEnforceGuard", true)
 				pcall(self.SetClampedToScreen, self, false)
-				self._ScootOffscreenEnforceGuard = nil
+				setProp(self, "offscreenEnforceGuard", nil)
 			end
 		end)
 	end
@@ -228,13 +252,13 @@ local function _InstallOffscreenEnforcementHooks(frame)
 		_G.hooksecurefunc(frame, "SetClampRectInsets", function(self, l, r, t, b)
 			-- Enforce ALWAYS when checkbox is enabled (not just Edit Mode).
 			-- This prevents Blizzard from reasserting clamp insets when exiting Edit Mode.
-			if not self._ScootOffscreenEnforceEnabled then return end
-			if self._ScootOffscreenEnforceGuard then return end
+			if not getProp(self, "offscreenEnforceEnabled") then return end
+			if getProp(self, "offscreenEnforceGuard") then return end
 			-- Force (0,0,0,0) to prevent snap-back.
 			if (l or 0) ~= CLAMP_ZERO or (r or 0) ~= CLAMP_ZERO or (t or 0) ~= CLAMP_ZERO or (b or 0) ~= CLAMP_ZERO then
-				self._ScootOffscreenEnforceGuard = true
+				setProp(self, "offscreenEnforceGuard", true)
 				pcall(self.SetClampRectInsets, self, CLAMP_ZERO, CLAMP_ZERO, CLAMP_ZERO, CLAMP_ZERO)
-				self._ScootOffscreenEnforceGuard = nil
+				setProp(self, "offscreenEnforceGuard", nil)
 			end
 		end)
 	end
@@ -294,7 +318,7 @@ local function applyFor(unit)
 	for _, frame in ipairs(candidates) do
 		if frame and not (frame.IsForbidden and frame:IsForbidden()) then
 			_InstallOffscreenEnforcementHooks(frame)
-			local prev = frame._ScootOffscreenUnclampActive
+			local prev = getProp(frame, "offscreenUnclampActive")
 
 			-- SetIgnoreFramePositionManager: When checkbox is enabled, always ignore the
 			-- position manager (not just during Edit Mode). This prevents snap-back on exit.
@@ -309,11 +333,11 @@ local function applyFor(unit)
 			-- SetClampedToScreen: When checkbox is enabled, ALWAYS try to disable clamping
 			-- (not just during Edit Mode). This prevents the snap-back when exiting Edit Mode.
 			if frame.IsClampedToScreen and frame.SetClampedToScreen then
-				if frame._ScootOrigClampedToScreen == nil then
+				if getProp(frame, "origClampedToScreen") == nil then
 					local ok, v = pcall(frame.IsClampedToScreen, frame)
-					if ok then frame._ScootOrigClampedToScreen = not not v end
+					if ok then setProp(frame, "origClampedToScreen", not not v) end
 				end
-				local baseClamped = (frame._ScootOrigClampedToScreen ~= nil) and (frame._ScootOrigClampedToScreen == true) or true
+				local baseClamped = (getProp(frame, "origClampedToScreen") ~= nil) and (getProp(frame, "origClampedToScreen") == true) or true
 				
 				if shouldUnclamp then
 					-- Disable clamping when checkbox is enabled (always, not just Edit Mode)
@@ -335,9 +359,9 @@ local function applyFor(unit)
 			end
 
 			if frame.GetClampRectInsets and frame.SetClampRectInsets then
-				if frame._ScootOrigClampInsets == nil then
+				if getProp(frame, "origClampInsets") == nil then
 					local ok, l, r, t, b = pcall(frame.GetClampRectInsets, frame)
-					if ok then frame._ScootOrigClampInsets = { l = l or 0, r = r or 0, t = t or 0, b = b or 0 } end
+					if ok then setProp(frame, "origClampInsets", { l = l or 0, r = r or 0, t = t or 0, b = b or 0 }) end
 				end
 				-- Zero out clamp rect when checkbox is enabled (ALWAYS, not just Edit Mode).
 				-- This is the key fix: prevents snap-back when exiting Edit Mode.
@@ -351,7 +375,7 @@ local function applyFor(unit)
 					end
 				else
 					-- Restore original insets only when checkbox is DISABLED
-					local o = frame._ScootOrigClampInsets
+					local o = getProp(frame, "origClampInsets")
 					if o then
 						local curOk, l, r, t, b = pcall(frame.GetClampRectInsets, frame)
 						local needs = (not curOk) or (l ~= (o.l or 0) or r ~= (o.r or 0) or t ~= (o.t or 0) or b ~= (o.b or 0)) or (prev ~= shouldUnclamp)
@@ -365,9 +389,9 @@ local function applyFor(unit)
 			end
 
 			-- Toggle enforcement flag LAST so hooks can correct post-apply re-clamping.
-			frame._ScootOffscreenEnforceEnabled = shouldUnclamp and true or nil
+			setProp(frame, "offscreenEnforceEnabled", shouldUnclamp and true or nil)
 
-			frame._ScootOffscreenUnclampActive = shouldUnclamp
+			setProp(frame, "offscreenUnclampActive", shouldUnclamp)
 		end
 	end
 

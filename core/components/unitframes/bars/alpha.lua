@@ -8,9 +8,24 @@
 
 local addonName, addon = ...
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
 -- Create module namespace
 addon.BarsAlpha = addon.BarsAlpha or {}
 local Alpha = addon.BarsAlpha
+
+local function isEditModeActive()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
 
 --------------------------------------------------------------------------------
 -- Alpha Application
@@ -31,13 +46,15 @@ end
 -- @param computeAlpha: Function that returns the desired alpha value (0 or 1)
 function Alpha.hookAlphaEnforcer(frameOrTexture, computeAlpha)
     if not frameOrTexture or not _G.hooksecurefunc or type(computeAlpha) ~= "function" then return end
-    if frameOrTexture._ScootAlphaEnforcerHooked then return end
-    frameOrTexture._ScootAlphaEnforcerHooked = true
+    local fs = ensureFS()
+    if fs and fs.IsHooked(frameOrTexture, "alphaEnforcer") then return end
+    if fs then fs.MarkHooked(frameOrTexture, "alphaEnforcer") end
 
     -- IMPORTANT (taint/combat): These enforcers only call SetAlpha, which is safe for visual-only
     -- regions/textures even in combat. Do NOT gate on InCombatLockdown(), otherwise Blizzard can
     -- Show()/SetAlpha() during combat and the element may remain visible after combat.
     local function enforce(obj)
+        if isEditModeActive() then return end
         local desired = computeAlpha()
         if obj and obj.GetAlpha and type(obj.GetAlpha) == "function" then
             local ok, current = pcall(obj.GetAlpha, obj)

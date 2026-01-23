@@ -32,13 +32,15 @@ local BORDER_WIDTH = 2
 --   - Hover effect: filled background with dark text
 --
 -- Options table:
---   text      : Button label (string)
---   width     : Fixed width (number, optional - auto-sizes to text if nil)
---   height    : Button height (number, default 26)
---   fontSize  : Font size (number, default 12)
---   onClick   : Click handler function(button, mouseButton)
---   parent    : Parent frame (required)
---   name      : Global frame name (optional)
+--   text         : Button label (string)
+--   width        : Fixed width (number, optional - auto-sizes to text if nil)
+--   height       : Button height (number, default 26)
+--   fontSize     : Font size (number, default 12)
+--   onClick      : Click handler function(button, mouseButton)
+--   parent       : Parent frame (required)
+--   name         : Global frame name (optional)
+--   template     : Optional frame template (string, e.g. "SecureActionButtonTemplate")
+--   secureAction : Optional table of SecureActionButton attributes
 --------------------------------------------------------------------------------
 
 function Controls:CreateButton(options)
@@ -55,11 +57,19 @@ function Controls:CreateButton(options)
     local borderWidth = options.borderWidth or BORDER_WIDTH
     local borderAlpha = options.borderAlpha or 1
 
-    -- Create the button frame
-    local btn = CreateFrame("Button", name, parent)
+    -- Create the button frame (optionally secure action)
+    local template = options.template
+    if options.secureAction and not template then
+        template = "SecureActionButtonTemplate"
+    end
+    local btn = CreateFrame("Button", name, parent, template)
     btn:SetHeight(height)
     btn:EnableMouse(true)
-    btn:RegisterForClicks("AnyUp", "AnyDown")
+    if options.secureAction then
+        btn:RegisterForClicks("AnyUp")
+    else
+        btn:RegisterForClicks("AnyUp", "AnyDown")
+    end
 
     -- Store border settings for theme updates and SetEnabled
     btn._borderWidth = borderWidth
@@ -173,11 +183,60 @@ function Controls:CreateButton(options)
         self._label:SetTextColor(r, g, b, 1)  -- Accent text on dark bg
     end)
 
-    -- Click handler
+    -- Secure action setup (if requested)
+    if options.secureAction and type(options.secureAction) == "table" then
+        local action = options.secureAction
+        local function applySecureAction()
+            local actionType = action.type
+            if not actionType then
+                if action.macrotext then
+                    actionType = "macro"
+                elseif action.spell then
+                    actionType = "spell"
+                elseif action.item then
+                    actionType = "item"
+                elseif action.action then
+                    actionType = "action"
+                end
+            end
+            if actionType then btn:SetAttribute("type", actionType) end
+            if action.macrotext then btn:SetAttribute("macrotext", action.macrotext) end
+            if action.spell then btn:SetAttribute("spell", action.spell) end
+            if action.item then btn:SetAttribute("item", action.item) end
+            if action.action then btn:SetAttribute("action", action.action) end
+            if action.binding then btn:SetAttribute("binding", action.binding) end
+            if action.unit then btn:SetAttribute("unit", action.unit) end
+        end
+
+        if _G.InCombatLockdown and _G.InCombatLockdown() then
+            btn._pendingSecureAction = applySecureAction
+            btn:RegisterEvent("PLAYER_REGEN_ENABLED")
+            btn:HookScript("OnEvent", function(self, event)
+                if event == "PLAYER_REGEN_ENABLED" then
+                    if self._pendingSecureAction then
+                        self._pendingSecureAction()
+                        self._pendingSecureAction = nil
+                    end
+                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                end
+            end)
+        else
+            applySecureAction()
+        end
+    end
+
+    -- Click handler (avoid overriding secure OnClick)
     if options.onClick then
-        btn:SetScript("OnClick", function(self, mouseButton, down)
-            options.onClick(self, mouseButton)
-        end)
+        if options.secureAction then
+            -- Use PostClick so the secure action fires before we run addon code.
+            btn:HookScript("PostClick", function(self, mouseButton, down)
+                options.onClick(self, mouseButton)
+            end)
+        else
+            btn:SetScript("OnClick", function(self, mouseButton, down)
+                options.onClick(self, mouseButton)
+            end)
+        end
     end
 
     -- Generate unique subscription key

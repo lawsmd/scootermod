@@ -985,26 +985,22 @@ local function createComponentRenderer(componentId)
                                     elseif settingId == "opacity" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                            addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
-                                            safeSaveOnly(); requestApply()
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, "opacity", { skipApply = true })
                                         end
                                     elseif settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            safeSaveOnly(); requestApply()
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                         end
                                     elseif settingId == "visibilityMode" or settingId == "displayMode" then
                                         if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            safeSaveOnly(); requestApply()
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                         end
                                     else
-                                        -- For other Edit Mode settings, write just this setting + SaveOnly, then coalesce ApplyChanges
+                                        -- For other Edit Mode settings, write just this setting + SaveOnly (no ApplyChanges to avoid taint)
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                            safeSaveOnly(); requestApply()
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                         end
                                     end
                                 end
@@ -2681,7 +2677,7 @@ end
         end
         closeBtn:SetScript("OnClick", function() f:Hide() end)
         -- Header buttons (top bar): Edit Mode + Cooldown Manager
-        local headerEditBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate")
+        local headerEditBtn = CreateFrame("Button", nil, headerDrag, "UIPanelButtonTemplate, SecureActionButtonTemplate, SecureHandlerClickTemplate")
         headerEditBtn:SetSize(110, 22)
         headerEditBtn.Text:SetText("Edit Mode")
 
@@ -2704,28 +2700,44 @@ end
         headerCdmBtn:SetFrameLevel((headerDrag:GetFrameLevel() or 0) + 5)
         headerEditBtn:EnableMouse(true)
         headerCdmBtn:EnableMouse(true)
-        headerEditBtn:SetScript("OnClick", function()
-            -- Invariant: never keep ScooterMod's panel open while Edit Mode is open.
-            -- Close first so we don't overlap UIs during Edit Mode initialization.
-            if panel and panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
-                panel.frame:Hide()
+        headerEditBtn:RegisterForClicks("AnyUp")
+        -- Pre-click handler to mark Edit Mode opening state (prevents synchronous taint)
+        headerEditBtn:SetScript("PreClick", function()
+            if addon and addon.EditMode then
+                if addon.EditMode.CancelPendingApplyChanges then
+                    addon.EditMode.CancelPendingApplyChanges()
+                end
+                if addon.EditMode.MarkOpeningEditMode then
+                    addon.EditMode.MarkOpeningEditMode()
+                end
             end
-            -- If we recently changed any Edit Mode-backed setting, there may be a pending
-            -- coalesced ApplyChanges timer. Cancel it so it can't immediately close the
-            -- user's Edit Mode session via LEO's ShowUIPanel/HideUIPanel bounce.
-            if addon and addon.EditMode and addon.EditMode.CancelPendingApplyChanges then
-                addon.EditMode.CancelPendingApplyChanges()
+        end)
+        local function applySecureEditModeAction()
+            if not C_AddOns.IsAddOnLoaded("Blizzard_EditMode") then
+                 C_AddOns.LoadAddOn("Blizzard_EditMode")
             end
-            -- Note: Blizzard allows opening Edit Mode during combat, and ScooterMod's
-            -- edit mode sync system properly handles combat by using SaveOnly() instead
-            -- of ApplyChanges() during combat, then applying changes when combat ends.
-            if SlashCmdList and SlashCmdList["EDITMODE"] then
-                SlashCmdList["EDITMODE"]("")
-            elseif RunBinding then
-                RunBinding("TOGGLE_EDIT_MODE")
-            else
-                addon:Print("Use /editmode to open the layout manager.")
+            if EditModeManagerFrame then
+                 SecureHandlerSetFrameRef(headerEditBtn, "em", EditModeManagerFrame)
+                 headerEditBtn:SetAttribute("_onclick", [[ self:GetFrameRef("em"):Show() ]])
             end
+        end
+        if InCombatLockdown and InCombatLockdown() then
+            headerEditBtn._pendingSecureAction = applySecureEditModeAction
+            headerEditBtn:RegisterEvent("PLAYER_REGEN_ENABLED")
+            headerEditBtn:HookScript("OnEvent", function(self, event)
+                if event == "PLAYER_REGEN_ENABLED" then
+                    if self._pendingSecureAction then
+                        self._pendingSecureAction()
+                        self._pendingSecureAction = nil
+                    end
+                    self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                end
+            end)
+        else
+            applySecureEditModeAction()
+        end
+        headerEditBtn:HookScript("PostClick", function()
+            -- PostClick intentionally left empty to verify if hiding the panel causes issues
         end)
 
         headerCdmBtn:SetScript("OnClick", function()

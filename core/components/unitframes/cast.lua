@@ -2,6 +2,35 @@ local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local ClampOpacity = Util.ClampOpacity
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
+local function getIconBorderContainer(frame)
+    local st = getState(frame)
+    return st and st.ScooterIconBorderContainer or nil
+end
+
 -- Unit Frames: Cast Bar positioning (Target/Focus only, addon-managed offsets)
 do
 	local function resolveCastBarFrame(unit)
@@ -107,32 +136,32 @@ do
 
 		-- Install lightweight hooks once to keep cast bar styling persistent when
 		-- Blizzard updates the bar's texture/color (cast start/stop, etc.).
-		if not frame._ScootCastHooksInstalled and _G.hooksecurefunc then
-			frame._ScootCastHooksInstalled = true
+		if not getProp(frame, "castHooksInstalled") and _G.hooksecurefunc then
+			setProp(frame, "castHooksInstalled", true)
 			local hookUnit = unit
 			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
 				-- Ignore ScooterMod's own internal texture writes
-				if self._ScootUFInternalTextureWrite then return end
+				if getProp(self, "ufInternalTextureWrite") then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
 					-- Mark this as a visual-only refresh so we can safely reapply
 					-- textures/colors in combat without re-anchoring secure frames.
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
 				if addon and addon.ApplyUnitFrameCastBarFor then
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			-- Hook SetPoint to detect when Blizzard re-anchors the cast bar and re-apply
 			-- our custom anchoring if we have a non-default anchor mode active.
 			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
 				-- Ignore our own SetPoint calls (flagged to prevent infinite loops)
-				if self._ScootIgnoreSetPoint then return end
+				if getProp(self, "ignoreSetPoint") then return end
 				-- Only re-apply if we have a custom anchor mode active for this unit
 				local mode = activeAnchorModes[hookUnit]
 				if mode and mode ~= "default" then
@@ -283,7 +312,7 @@ do
 			-- during combat, treat this as a "visual-only" refresh: apply textures/colors
 			-- but avoid re-anchoring secure frames or changing layout, which can taint.
 			local inCombat = InCombatLockdown and InCombatLockdown()
-			local visualOnly = inCombat and frame._ScootCastVisualOnly
+			local visualOnly = inCombat and getProp(frame, "castVisualOnly")
 
 			-- Layout (position/size/icon) is skipped for in-combat visual-only refreshes.
 			if not visualOnly then
@@ -300,7 +329,7 @@ do
 					-- - Target/Focus: anchor based on anchorMode setting (default = stock baseline, or custom anchor to Health/Power bar).
 					if isPlayer then
 						if isLockedToPlayerFrame then
-							frame._ScootIgnoreSetPoint = true
+							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
 							frame:SetPoint(
 								orig.point,
@@ -309,7 +338,7 @@ do
 								(orig.xOfs or 0) + offsetX,
 								(orig.yOfs or 0) + offsetY
 							)
-							frame._ScootIgnoreSetPoint = nil
+							setProp(frame, "ignoreSetPoint", nil)
 						end
 					else
 						-- Target/Focus: check anchorMode for custom anchoring
@@ -344,7 +373,7 @@ do
 								local anchorPoint = (anchorEdge == "top") and "TOP" or "BOTTOM"
 
 								-- Flag to prevent our SetPoint hook from triggering a re-apply loop
-								frame._ScootIgnoreSetPoint = true
+								setProp(frame, "ignoreSetPoint", true)
 								frame:ClearAllPoints()
 								frame:SetPoint(
 									castBarPoint,
@@ -353,14 +382,14 @@ do
 									offsetX,
 									offsetY
 								)
-								frame._ScootIgnoreSetPoint = nil
+								setProp(frame, "ignoreSetPoint", nil)
 								anchorApplied = true
 							end
 						end
 
 						-- Fallback to default (stock baseline) positioning if custom anchor not applied
 						if not anchorApplied then
-							frame._ScootIgnoreSetPoint = true
+							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
 							frame:SetPoint(
 								orig.point,
@@ -369,7 +398,7 @@ do
 								(orig.xOfs or 0) + offsetX,
 								(orig.yOfs or 0) + offsetY
 							)
-							frame._ScootIgnoreSetPoint = nil
+							setProp(frame, "ignoreSetPoint", nil)
 						end
 					end
 
@@ -380,8 +409,9 @@ do
 						-- container-based borders so only the bar remains.
 						if iconDisabled then
 							if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
-							if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
-								addon.Borders.HideAll(icon.ScooterIconBorderContainer)
+							local container = getIconBorderContainer(icon)
+							if container and addon.Borders and addon.Borders.HideAll then
+								addon.Borders.HideAll(container)
 							end
 						else
 							if icon.SetAlpha then pcall(icon.SetAlpha, icon, 1) end
@@ -612,20 +642,20 @@ do
 
 						-- Ensure cast bar borders are parented directly to the StatusBar so they
 						-- inherit its visibility (hidden when no cast is active).
-						frame._ScooterBorderContainerParentRef = nil
+						setProp(frame, "borderContainerParentRef", nil)
 
 						-- Unit-specific per-side pad adjustments for Cast Bar:
 						-- Player: symmetric (no extra nudges; baseInset handles feel).
 						-- Target: top pulled down slightly, left/right pulled in a bit more, bottom unchanged.
 						if enabled and unit == "Target" then
-							frame._ScooterBorderPadAdjust = {
+							setProp(frame, "borderPadAdjust", {
 								left = -2,
 								right = -2,
 								top = -1,
 								bottom = 0,
-							}
+							})
 						else
-							frame._ScooterBorderPadAdjust = nil
+							setProp(frame, "borderPadAdjust", nil)
 						end
 
 						handled = addon.BarBorders.ApplyToBarFrame(frame, styleKey, {
@@ -730,9 +760,10 @@ do
 					else
 						-- Clear any existing icon border container when custom border is disabled
 						-- or when the icon itself is disabled/hidden.
-						if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
-							addon.Borders.HideAll(icon.ScooterIconBorderContainer)
-						elseif addon.Borders and addon.Borders.HideAll then
+					local container = getIconBorderContainer(icon)
+					if container and addon.Borders and addon.Borders.HideAll then
+						addon.Borders.HideAll(container)
+					elseif addon.Borders and addon.Borders.HideAll then
 							addon.Borders.HideAll(icon)
 						end
 					end
@@ -898,7 +929,7 @@ do
 		-- touching secure cast bar anchors during combat and defer until combat ends.
 		-- For visual-only refreshes triggered from SetStatusBarTexture/Color hooks,
 		-- we allow apply() to run in combat so custom textures/colors remain active.
-		if inCombat and not frame._ScootCastVisualOnly then
+		if inCombat and not getProp(frame, "castVisualOnly") then
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()
 					if not (InCombatLockdown and InCombatLockdown()) then
@@ -939,28 +970,28 @@ do
 		if not frame then return end
 
 		-- Reuse the same hook installation block used by applyCastBarForUnit().
-		-- It is guarded by frame._ScootCastHooksInstalled so it is safe to call repeatedly.
-		if not frame._ScootCastHooksInstalled and _G.hooksecurefunc then
-			frame._ScootCastHooksInstalled = true
+		-- It is guarded by frame castHooksInstalled state so it is safe to call repeatedly.
+		if not getProp(frame, "castHooksInstalled") and _G.hooksecurefunc then
+			setProp(frame, "castHooksInstalled", true)
 			local hookUnit = unit
 			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
 				-- Ignore ScooterMod's own internal texture writes
-				if self._ScootUFInternalTextureWrite then return end
+				if getProp(self, "ufInternalTextureWrite") then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
 				if addon and addon.ApplyUnitFrameCastBarFor then
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
-				if self._ScootIgnoreSetPoint then return end
+				if getProp(self, "ignoreSetPoint") then return end
 				local mode = activeAnchorModes[hookUnit]
 				if mode and mode ~= "default" then
 					if not pendingReapply[hookUnit] then
@@ -1026,28 +1057,28 @@ do
 		if not frame then return end
 
 		-- Install lightweight hooks once to keep cast bar styling persistent
-		if not frame._ScootBossCastHooksInstalled and _G.hooksecurefunc then
-			frame._ScootBossCastHooksInstalled = true
+		if not getProp(frame, "bossCastHooksInstalled") and _G.hooksecurefunc then
+			setProp(frame, "bossCastHooksInstalled", true)
 			local hookIndex = index
 			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
-				if self._ScootUFInternalTextureWrite then return end
+				if getProp(self, "ufInternalTextureWrite") then return end
 				if addon and addon.ApplyBossCastBarFor then
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyBossCastBarFor()
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
 				if addon and addon.ApplyBossCastBarFor then
-					self._ScootCastVisualOnly = true
+					setProp(self, "castVisualOnly", true)
 					addon.ApplyBossCastBarFor()
-					self._ScootCastVisualOnly = nil
+					setProp(self, "castVisualOnly", nil)
 				end
 			end)
 			-- Hook SetPoint to re-apply custom anchoring when Blizzard overrides it
 			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
 				-- Ignore our own SetPoint calls (flagged to prevent infinite loops)
-				if self._ScootIgnoreSetPoint then return end
+				if getProp(self, "ignoreSetPoint") then return end
 				-- Only re-apply if we have a custom anchor mode active for this Boss cast bar
 				local mode = bossActiveAnchorModes[hookIndex]
 				if mode and mode ~= "default" then
@@ -1148,7 +1179,7 @@ do
 
 		local function apply()
 			local inCombat = InCombatLockdown and InCombatLockdown()
-			local visualOnly = inCombat and frame._ScootCastVisualOnly
+			local visualOnly = inCombat and getProp(frame, "castVisualOnly")
 
 			-- Layout (size/scale/icon) is skipped for in-combat visual-only refreshes
 			if not visualOnly then
@@ -1182,10 +1213,10 @@ do
 						if manaBar then
 							-- Position cast bar centered under the power bar
 							-- TOP of cast bar anchors to BOTTOM of power bar
-							frame._ScootIgnoreSetPoint = true
+							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
 							frame:SetPoint("TOP", manaBar, "BOTTOM", 0, -2)
-							frame._ScootIgnoreSetPoint = nil
+							setProp(frame, "ignoreSetPoint", nil)
 							anchorApplied = true
 						end
 					end
@@ -1194,7 +1225,7 @@ do
 					if not anchorApplied then
 						local orig = bossOriginalCastBarAnchors[frame]
 						if orig then
-							frame._ScootIgnoreSetPoint = true
+							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
 							frame:SetPoint(
 								orig.point,
@@ -1203,17 +1234,17 @@ do
 								orig.xOfs or 0,
 								orig.yOfs or 0
 							)
-							frame._ScootIgnoreSetPoint = nil
+							setProp(frame, "ignoreSetPoint", nil)
 						end
 					end
 				else
 					-- Restore default positioning (original anchor)
 					-- Only restore if we previously had a custom anchor mode active
 					-- This prevents fighting with Blizzard's layout when user has "default" selected
-					if frame._ScootHadCustomAnchor then
+					if getProp(frame, "hadCustomAnchor") then
 						local orig = bossOriginalCastBarAnchors[frame]
 						if orig then
-							frame._ScootIgnoreSetPoint = true
+							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
 							frame:SetPoint(
 								orig.point,
@@ -1222,15 +1253,15 @@ do
 								orig.xOfs or 0,
 								orig.yOfs or 0
 							)
-							frame._ScootIgnoreSetPoint = nil
+							setProp(frame, "ignoreSetPoint", nil)
 						end
-						frame._ScootHadCustomAnchor = nil
+						setProp(frame, "hadCustomAnchor", nil)
 					end
 				end
 
 				-- Track that we've applied a custom anchor (for restoration when switching back to default)
 				if anchorMode ~= "default" then
-					frame._ScootHadCustomAnchor = true
+					setProp(frame, "hadCustomAnchor", true)
 				end
 
 				-- Apply icon visibility, size, and padding
@@ -1238,8 +1269,17 @@ do
 				if icon then
 					if iconDisabled then
 						if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
-						if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
-							addon.Borders.HideAll(icon.ScooterIconBorderContainer)
+						local container = getIconBorderContainer(icon)
+						if container and addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(container)
+						end
+						local container = getIconBorderContainer(icon)
+						if container and addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(container)
+						end
+						local container = getIconBorderContainer(icon)
+						if container and addon.Borders and addon.Borders.HideAll then
+							addon.Borders.HideAll(container)
 						end
 					else
 						if icon.SetAlpha then pcall(icon.SetAlpha, icon, 1) end
@@ -1388,20 +1428,20 @@ do
 				local handled = false
 				if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
 					if addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
-					frame._ScooterBorderContainerParentRef = nil
+					setProp(frame, "borderContainerParentRef", nil)
 
 				-- Unit-specific per-side pad adjustments for Cast Bar:
 				-- Boss: Similar to Target - StatusBar bounds extend beyond visible bar texture.
 				-- Apply padding adjustments to pull border edges in to match the actual bar visual.
 				if enabled then
-					frame._ScooterBorderPadAdjust = {
+					setProp(frame, "borderPadAdjust", {
 						left = -2,
 						right = -2,
 						top = -1,
 						bottom = -1,
-					}
+					})
 				else
-					frame._ScooterBorderPadAdjust = nil
+					setProp(frame, "borderPadAdjust", nil)
 				end
 
 					handled = addon.BarBorders.ApplyToBarFrame(frame, styleKey, {
@@ -1496,9 +1536,10 @@ do
 							defaultThickness = 1,
 						})
 					else
-						if icon.ScooterIconBorderContainer and addon.Borders and addon.Borders.HideAll then
-							addon.Borders.HideAll(icon.ScooterIconBorderContainer)
-						elseif addon.Borders and addon.Borders.HideAll then
+					local container = getIconBorderContainer(icon)
+					if container and addon.Borders and addon.Borders.HideAll then
+						addon.Borders.HideAll(container)
+					elseif addon.Borders and addon.Borders.HideAll then
 							addon.Borders.HideAll(icon)
 						end
 					end
@@ -1593,7 +1634,7 @@ do
 		end
 
 		local inCombat = InCombatLockdown and InCombatLockdown()
-		if inCombat and not frame._ScootCastVisualOnly then
+		if inCombat and not getProp(frame, "castVisualOnly") then
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()
 					if not (InCombatLockdown and InCombatLockdown()) then

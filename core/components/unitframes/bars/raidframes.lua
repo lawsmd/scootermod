@@ -16,6 +16,29 @@ local Combat = addon.BarsCombat
 addon.BarsRaidFrames = addon.BarsRaidFrames or {}
 local RaidFrames = addon.BarsRaidFrames
 
+--------------------------------------------------------------------------------
+-- 12.0 TAINT PREVENTION: Lookup table for raid frame state
+--------------------------------------------------------------------------------
+-- In 12.0, writing properties directly to CompactRaidFrame/CompactRaidGroup
+-- frames (or their children) can mark them as "addon-touched". This causes
+-- Blizzard field reads (e.g., frame.unit/outOfRange) to return secret values.
+-- Store all ScooterMod state in a separate lookup table keyed by frame.
+--------------------------------------------------------------------------------
+local RaidFrameState = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
+
+local function getState(frame)
+    if not frame then return nil end
+    return RaidFrameState[frame]
+end
+
+local function ensureState(frame)
+    if not frame then return nil end
+    if not RaidFrameState[frame] then
+        RaidFrameState[frame] = {}
+    end
+    return RaidFrameState[frame]
+end
+
 -- 12.0+: Some values can be "secret" and will hard-error on arithmetic/comparisons.
 -- Treat those as unreadable and skip optional overlays rather than crashing.
 local function safeNumber(v)
@@ -72,9 +95,12 @@ function RaidFrames.collectHealthBars()
     for i = 1, 40 do
         local frameName = "CompactRaidFrame" .. i .. "HealthBar"
         local bar = _G[frameName]
-        if bar and not bar._ScootRaidBarCounted then
-            bar._ScootRaidBarCounted = true
-            table.insert(raidHealthBars, bar)
+        if bar then
+            local state = ensureState(bar)
+            if state and not state.raidBarCounted then
+                state.raidBarCounted = true
+                table.insert(raidHealthBars, bar)
+            end
         end
     end
     return raidHealthBars
@@ -112,13 +138,14 @@ end
 
 -- Update overlay width based on health bar value
 local function updateHealthOverlay(bar)
-    if not bar or not bar.ScooterRaidHealthFill then return end
-    if not bar._ScootRaidOverlayActive then
-        bar.ScooterRaidHealthFill:Hide()
+    if not bar then return end
+    local state = getState(bar)
+    local overlay = state and state.healthOverlay or nil
+    if not overlay then return end
+    if not state or not state.overlayActive then
+        overlay:Hide()
         return
     end
-
-    local overlay = bar.ScooterRaidHealthFill
     -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
     local totalWidth = 0
     do
@@ -167,9 +194,10 @@ end
 
 -- Style the overlay texture and color
 local function styleHealthOverlay(bar, cfg)
-    if not bar or not bar.ScooterRaidHealthFill or not cfg then return end
-
-    local overlay = bar.ScooterRaidHealthFill
+    if not bar or not cfg then return end
+    local state = getState(bar)
+    local overlay = state and state.healthOverlay or nil
+    if not overlay then return end
     local texKey = cfg.healthBarTexture or "default"
     local colorMode = cfg.healthBarColorMode or "default"
     local tint = cfg.healthBarTint
@@ -233,16 +261,19 @@ local function hideBlizzardFill(bar)
     local blizzFill = bar:GetStatusBarTexture()
     if not blizzFill then return end
 
-    blizzFill._ScootHidden = true
+    local fillState = ensureState(blizzFill)
+    if fillState then fillState.hidden = true end
     blizzFill:SetAlpha(0)
 
-    if not blizzFill._ScootAlphaHooked and _G.hooksecurefunc then
-        blizzFill._ScootAlphaHooked = true
+    if _G.hooksecurefunc and fillState and not fillState.alphaHooked then
+        fillState.alphaHooked = true
         _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
-            if alpha > 0 and self._ScootHidden then
+            local st = getState(self)
+            if alpha > 0 and st and st.hidden then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
-                        if self._ScootHidden then
+                        local st2 = getState(self)
+                        if st2 and st2.hidden then
                             self:SetAlpha(0)
                         end
                     end)
@@ -257,7 +288,8 @@ local function showBlizzardFill(bar)
     if not bar then return end
     local blizzFill = bar:GetStatusBarTexture()
     if blizzFill then
-        blizzFill._ScootHidden = nil
+        local fillState = getState(blizzFill)
+        if fillState then fillState.hidden = nil end
         blizzFill:SetAlpha(1)
     end
 end
@@ -271,17 +303,18 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
     )
 
-    bar._ScootRaidOverlayActive = hasCustom
+    local state = ensureState(bar)
+    if state then state.overlayActive = hasCustom end
 
     if not hasCustom then
-        if bar.ScooterRaidHealthFill then
-            bar.ScooterRaidHealthFill:Hide()
+        if state and state.healthOverlay then
+            state.healthOverlay:Hide()
         end
         showBlizzardFill(bar)
         return
     end
 
-    if not bar.ScooterRaidHealthFill then
+    if state and not state.healthOverlay then
         -- IMPORTANT: This overlay must NOT be parented to the StatusBar.
         -- WoW draws all parent frame layers first, then all child frame layers.
         -- If we parent to the health bar (child), our overlay can draw *above*
@@ -297,10 +330,10 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         overlay:SetVertTile(false)
         overlay:SetHorizTile(false)
         overlay:SetTexCoord(0, 1, 0, 1)
-        bar.ScooterRaidHealthFill = overlay
+        state.healthOverlay = overlay
 
-        if _G.hooksecurefunc and not bar._ScootRaidOverlayHooksInstalled then
-            bar._ScootRaidOverlayHooksInstalled = true
+        if _G.hooksecurefunc and state and not state.overlayHooksInstalled then
+            state.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
             end)
@@ -315,10 +348,11 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         end
     end
 
-    if not bar._ScootRaidTextureSwapHooked and _G.hooksecurefunc then
-        bar._ScootRaidTextureSwapHooked = true
+    if state and not state.textureSwapHooked and _G.hooksecurefunc then
+        state.textureSwapHooked = true
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
-            if self._ScootRaidOverlayActive then
+            local st = getState(self)
+            if st and st.overlayActive then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)
@@ -335,9 +369,10 @@ end
 
 function RaidFrames.disableHealthOverlay(bar)
     if not bar then return end
-    bar._ScootRaidOverlayActive = false
-    if bar.ScooterRaidHealthFill then
-        bar.ScooterRaidHealthFill:Hide()
+    local state = getState(bar)
+    if state then state.overlayActive = false end
+    if state and state.healthOverlay then
+        state.healthOverlay:Hide()
     end
     showBlizzardFill(bar)
 end
@@ -403,7 +438,8 @@ function addon.ApplyRaidFrameHealthBarStyle()
         RaidFrames.applyToHealthBar(bar, cfg)
     end
     for _, bar in ipairs(raidHealthBars) do
-        bar._ScootRaidBarCounted = nil
+        local state = getState(bar)
+        if state then state.raidBarCounted = nil end
     end
 end
 
@@ -427,9 +463,12 @@ function addon.ApplyRaidFrameHealthOverlays()
             if hasCustom then
                 if not (InCombatLockdown and InCombatLockdown()) then
                     RaidFrames.ensureHealthOverlay(bar, cfg)
-                elseif bar.ScooterRaidHealthFill then
-                    styleHealthOverlay(bar, cfg)
-                    updateHealthOverlay(bar)
+                else
+                    local state = getState(bar)
+                    if state and state.healthOverlay then
+                        styleHealthOverlay(bar, cfg)
+                        updateHealthOverlay(bar)
+                    end
                 end
             else
                 RaidFrames.disableHealthOverlay(bar)
@@ -445,9 +484,12 @@ function addon.ApplyRaidFrameHealthOverlays()
                 if hasCustom then
                     if not (InCombatLockdown and InCombatLockdown()) then
                         RaidFrames.ensureHealthOverlay(bar, cfg)
-                    elseif bar.ScooterRaidHealthFill then
-                        styleHealthOverlay(bar, cfg)
-                        updateHealthOverlay(bar)
+                    else
+                        local state = getState(bar)
+                        if state and state.healthOverlay then
+                            styleHealthOverlay(bar, cfg)
+                            updateHealthOverlay(bar)
+                        end
                     end
                 else
                     RaidFrames.disableHealthOverlay(bar)
@@ -487,6 +529,9 @@ end
 -- frame type), the addon code in the execution context can cause UnitInRange() and
 -- similar APIs to return secret values, breaking Blizzard's own code.
 local function isEditModeActive()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
     local mgr = _G.EditModeManagerFrame
     return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
 end
@@ -628,10 +673,11 @@ local function applyTextToRaidFrame(frame, cfg)
     end
 
     -- Capture baseline position on first application so we can restore later
-    if not nameFS._ScootOriginalPoint then
+    local nameState = ensureState(nameFS)
+    if nameState and not nameState.originalPoint then
         local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
         if point then
-            nameFS._ScootOriginalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            nameState.originalPoint = { point, relativeTo, relativePoint, x or 0, y or 0 }
         end
     end
 
@@ -639,9 +685,9 @@ local function applyTextToRaidFrame(frame, cfg)
     local isDefaultAnchor = (anchor == "TOPLEFT")
     local isZeroOffset = (offsetX == 0 and offsetY == 0)
 
-    if isDefaultAnchor and isZeroOffset and nameFS._ScootOriginalPoint then
+    if isDefaultAnchor and isZeroOffset and nameState and nameState.originalPoint then
         -- Restore baseline (stock position) when user has reset to default
-        local orig = nameFS._ScootOriginalPoint
+        local orig = nameState.originalPoint
         nameFS:ClearAllPoints()
         nameFS:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
         -- Also restore default text alignment
@@ -668,9 +714,12 @@ local function collectRaidNameTexts()
     -- Scan CompactRaidFrame1 through CompactRaidFrame40 (combined layout)
     for i = 1, 40 do
         local frame = _G["CompactRaidFrame" .. i]
-        if frame and frame.name and not frame.name._ScootRaidTextCounted then
-            frame.name._ScootRaidTextCounted = true
-            table.insert(raidNameTexts, frame)
+        if frame and frame.name then
+            local nameState = ensureState(frame.name)
+            if nameState and not nameState.raidTextCounted then
+                nameState.raidTextCounted = true
+                table.insert(raidNameTexts, frame)
+            end
         end
     end
 
@@ -678,9 +727,12 @@ local function collectRaidNameTexts()
     for group = 1, 8 do
         for member = 1, 5 do
             local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
-            if frame and frame.name and not frame.name._ScootRaidTextCounted then
-                frame.name._ScootRaidTextCounted = true
-                table.insert(raidNameTexts, frame)
+            if frame and frame.name then
+                local nameState = ensureState(frame.name)
+                if nameState and not nameState.raidTextCounted then
+                    nameState.raidTextCounted = true
+                    table.insert(raidNameTexts, frame)
+                end
             end
         end
     end
@@ -734,10 +786,12 @@ end
 --------------------------------------------------------------------------------
 
 local function styleRaidNameOverlay(frame, cfg)
-    if not frame or not frame.ScooterRaidNameText or not cfg then return end
+    if not frame or not cfg then return end
+    local state = getState(frame)
+    if not state or not state.nameOverlayText then return end
 
-    local overlay = frame.ScooterRaidNameText
-    local container = frame.ScooterRaidNameContainer or frame
+    local overlay = state.nameOverlayText
+    local container = state.nameOverlayContainer or frame
 
     local fontFace = cfg.fontFace or "FRIZQT__"
     local resolvedFace
@@ -817,7 +871,8 @@ local function hideBlizzardRaidNameText(frame)
     if not frame or not frame.name then return end
     local blizzName = frame.name
 
-    blizzName._ScootHidden = true
+    local nameState = ensureState(blizzName)
+    if nameState then nameState.hidden = true end
     if blizzName.SetAlpha then
         pcall(blizzName.SetAlpha, blizzName, 0)
     end
@@ -825,13 +880,15 @@ local function hideBlizzardRaidNameText(frame)
         pcall(blizzName.Hide, blizzName)
     end
 
-    if not blizzName._ScootAlphaHooked and _G.hooksecurefunc then
-        blizzName._ScootAlphaHooked = true
+    if _G.hooksecurefunc and nameState and not nameState.alphaHooked then
+        nameState.alphaHooked = true
         _G.hooksecurefunc(blizzName, "SetAlpha", function(self, alpha)
-            if alpha > 0 and self._ScootHidden then
+            local st = getState(self)
+            if alpha > 0 and st and st.hidden then
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
-                        if self._ScootHidden then
+                        local st2 = getState(self)
+                        if st2 and st2.hidden then
                             self:SetAlpha(0)
                         end
                     end)
@@ -840,15 +897,17 @@ local function hideBlizzardRaidNameText(frame)
         end)
     end
 
-    if not blizzName._ScootShowHooked and _G.hooksecurefunc then
-        blizzName._ScootShowHooked = true
+    if _G.hooksecurefunc and nameState and not nameState.showHooked then
+        nameState.showHooked = true
         _G.hooksecurefunc(blizzName, "Show", function(self)
-            if not self._ScootHidden then return end
+            local st = getState(self)
+            if not (st and st.hidden) then return end
             -- Kill visibility immediately (avoid flicker), then defer Hide to break chains.
             if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
             if _G.C_Timer and _G.C_Timer.After then
                 _G.C_Timer.After(0, function()
-                    if self and self._ScootHidden then
+                    local st2 = getState(self)
+                    if self and st2 and st2.hidden then
                         if self.SetAlpha then pcall(self.SetAlpha, self, 0) end
                         if self.Hide then pcall(self.Hide, self) end
                     end
@@ -863,7 +922,8 @@ end
 
 local function showBlizzardRaidNameText(frame)
     if not frame or not frame.name then return end
-    frame.name._ScootHidden = nil
+    local nameState = getState(frame.name)
+    if nameState then nameState.hidden = nil end
     if frame.name.SetAlpha then
         pcall(frame.name.SetAlpha, frame.name, 1)
     end
@@ -876,11 +936,12 @@ local function ensureRaidNameOverlay(frame, cfg)
     if not frame then return end
 
     local hasCustom = Utils.hasCustomTextSettings(cfg)
-    frame._ScootRaidNameOverlayActive = hasCustom
+    local frameState = ensureState(frame)
+    if frameState then frameState.nameOverlayActive = hasCustom end
 
     if not hasCustom then
-        if frame.ScooterRaidNameText then
-            frame.ScooterRaidNameText:Hide()
+        if frameState and frameState.nameOverlayText then
+            frameState.nameOverlayText:Hide()
         end
         showBlizzardRaidNameText(frame)
         return
@@ -888,7 +949,7 @@ local function ensureRaidNameOverlay(frame, cfg)
 
     -- Ensure an addon-owned clipping container that spans the FULL unit frame.
     -- This allows 9-way alignment to position text anywhere within the frame.
-    if not frame.ScooterRaidNameContainer then
+    if frameState and not frameState.nameOverlayContainer then
         local container = CreateFrame("Frame", nil, frame)
         container:SetClipsChildren(true)
 
@@ -897,23 +958,23 @@ local function ensureRaidNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
-        frame.ScooterRaidNameContainer = container
+        frameState.nameOverlayContainer = container
     end
 
     -- Create overlay FontString if it doesn't exist (as a child of the clipping container)
-    if not frame.ScooterRaidNameText then
-        local parentForText = frame.ScooterRaidNameContainer or frame
+    if frameState and not frameState.nameOverlayText then
+        local parentForText = frameState.nameOverlayContainer or frame
         local overlay = parentForText:CreateFontString(nil, "OVERLAY", nil)
         overlay:SetDrawLayer("OVERLAY", 7)
-        frame.ScooterRaidNameText = overlay
+        frameState.nameOverlayText = overlay
 
-        if frame.name and not frame.name._ScootTextMirrorHooked and _G.hooksecurefunc then
-            frame.name._ScootTextMirrorHooked = true
-            frame.name._ScootTextMirrorOwner = frame
-            _G.hooksecurefunc(frame.name, "SetText", function(self, text)
-                local owner = self._ScootTextMirrorOwner
-                if owner and owner.ScooterRaidNameText and owner._ScootRaidNameOverlayActive then
-                    owner.ScooterRaidNameText:SetText(text or "")
+        local nameState = frame.name and ensureState(frame.name) or nil
+        if frame.name and _G.hooksecurefunc and nameState and not nameState.textMirrorHooked then
+            nameState.textMirrorHooked = true
+            local ownerState = frameState
+            _G.hooksecurefunc(frame.name, "SetText", function(_, text)
+                if ownerState and ownerState.nameOverlayText and ownerState.nameOverlayActive then
+                    ownerState.nameOverlayText:SetText(text or "")
                 end
             end)
         end
@@ -922,19 +983,26 @@ local function ensureRaidNameOverlay(frame, cfg)
     styleRaidNameOverlay(frame, cfg)
     hideBlizzardRaidNameText(frame)
 
-    if frame.name and frame.name.GetText then
-        local currentText = frame.name:GetText()
-        frame.ScooterRaidNameText:SetText(currentText or "")
+    if frameState and frameState.nameOverlayText and frame.name and frame.name.GetText then
+        local ok, currentText = pcall(frame.name.GetText, frame.name)
+        if ok and currentText then
+            frameState.nameOverlayText:SetText(currentText or "")
+        end
     end
 
-    frame.ScooterRaidNameText:Show()
+    if frameState and frameState.nameOverlayText then
+        frameState.nameOverlayText:Show()
+    end
 end
 
 local function disableRaidNameOverlay(frame)
     if not frame then return end
-    frame._ScootRaidNameOverlayActive = false
-    if frame.ScooterRaidNameText then
-        frame.ScooterRaidNameText:Hide()
+    local frameState = getState(frame)
+    if frameState then
+        frameState.nameOverlayActive = false
+        if frameState.nameOverlayText then
+            frameState.nameOverlayText:Hide()
+        end
     end
     showBlizzardRaidNameText(frame)
 end
@@ -956,8 +1024,11 @@ function addon.ApplyRaidFrameNameOverlays()
             if hasCustom then
                 if not (InCombatLockdown and InCombatLockdown()) then
                     ensureRaidNameOverlay(frame, cfg)
-                elseif frame.ScooterRaidNameText then
-                    styleRaidNameOverlay(frame, cfg)
+                else
+                    local state = getState(frame)
+                    if state and state.nameOverlayText then
+                        styleRaidNameOverlay(frame, cfg)
+                    end
                 end
             else
                 disableRaidNameOverlay(frame)
@@ -973,8 +1044,11 @@ function addon.ApplyRaidFrameNameOverlays()
                 if hasCustom then
                     if not (InCombatLockdown and InCombatLockdown()) then
                         ensureRaidNameOverlay(frame, cfg)
-                    elseif frame.ScooterRaidNameText then
-                        styleRaidNameOverlay(frame, cfg)
+                    else
+                        local state = getState(frame)
+                        if state and state.nameOverlayText then
+                            styleRaidNameOverlay(frame, cfg)
+                        end
                     end
                 else
                     disableRaidNameOverlay(frame)
@@ -1149,19 +1223,20 @@ local function applyTextToFontString_StatusText(fs, ownerFrame, cfg)
     end
 
     -- Capture baseline position on first application so we can restore later
-    if not fs._ScootOriginalPoint_StatusText then
+    local fsState = ensureState(fs)
+    if fsState and not fsState.originalPointStatus then
         local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
         if point then
-            fs._ScootOriginalPoint_StatusText = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            fsState.originalPointStatus = { point, relativeTo, relativePoint, x or 0, y or 0 }
         end
     end
 
     local isDefaultAnchor = (anchor == "TOPLEFT")
     local isZeroOffset = (offsetX == 0 and offsetY == 0)
 
-    if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_StatusText then
+    if isDefaultAnchor and isZeroOffset and fsState and fsState.originalPointStatus then
         -- Restore baseline (stock position) when user has reset to default
-        local orig = fs._ScootOriginalPoint_StatusText
+        local orig = fsState.originalPointStatus
         fs:ClearAllPoints()
         fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
         if fs.SetJustifyH then
@@ -1313,18 +1388,19 @@ local function applyTextToFontString_GroupTitle(fs, ownerFrame, cfg)
         pcall(fs.SetJustifyH, fs, Utils.getJustifyHFromAnchor(anchor))
     end
 
-    if not fs._ScootOriginalPoint_GroupTitle then
+    local fsState = ensureState(fs)
+    if fsState and not fsState.originalPointGroupTitle then
         local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
         if point then
-            fs._ScootOriginalPoint_GroupTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
+            fsState.originalPointGroupTitle = { point, relativeTo, relativePoint, x or 0, y or 0 }
         end
     end
 
     local isDefaultAnchor = (anchor == "TOPLEFT")
     local isZeroOffset = (offsetX == 0 and offsetY == 0)
 
-    if isDefaultAnchor and isZeroOffset and fs._ScootOriginalPoint_GroupTitle then
-        local orig = fs._ScootOriginalPoint_GroupTitle
+    if isDefaultAnchor and isZeroOffset and fsState and fsState.originalPointGroupTitle then
+        local orig = fsState.originalPointGroupTitle
         fs:ClearAllPoints()
         fs:SetPoint(orig[1], orig[2], orig[3], orig[4], orig[5])
         if fs.SetJustifyH then

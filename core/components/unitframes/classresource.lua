@@ -3,6 +3,30 @@ local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local PlayerInCombat = Util and Util.PlayerInCombat or function() return InCombatLockdown and InCombatLockdown() end
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+	if not FS then FS = addon.FrameState end
+	return FS
+end
+
+local function getState(frame)
+	local fs = ensureFS()
+	return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+	local st = getState(frame)
+	return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+	local st = getState(frame)
+	if st then
+		st[key] = value
+	end
+end
+
 local function getUiScale()
 	local parent = UIParent
 	if parent and parent.GetEffectiveScale then
@@ -342,7 +366,7 @@ local function ensureVisibilityHooks(frame, cfg)
 	hookedFrames[frame] = true
 	
 	-- Store reference to config getter for hooks
-	frame._ScooterClassResourceCfg = ensureConfig
+	setProp(frame, "classResourceCfg", ensureConfig)
 	
 	-- Hook Show to enforce hidden state (runs AFTER Blizzard's Show)
 	-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
@@ -350,7 +374,8 @@ local function ensureVisibilityHooks(frame, cfg)
 		hooksecurefunc(frame, "Show", function(self)
 			-- Skip during combat to avoid tainting nameplate operations
 			if InCombatLockdown and InCombatLockdown() then return end
-			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
+			local cfgGetter = getProp(self, "classResourceCfg")
+			local frameCfg = cfgGetter and cfgGetter()
 			if frameCfg and frameCfg.hide then
 				self:SetAlpha(0)
 				debugPrint("Enforcing hidden via Show hook on", self:GetName() or "unnamed")
@@ -366,14 +391,15 @@ local function ensureVisibilityHooks(frame, cfg)
 			-- Skip during combat to avoid tainting nameplate operations
 			if InCombatLockdown and InCombatLockdown() then return end
 			-- Guard against recursion
-			if self._ScooterClassResourceApplyingAlpha then return end
+			if getProp(self, "classResourceApplyingAlpha") then return end
 			
-			local frameCfg = self._ScooterClassResourceCfg and self._ScooterClassResourceCfg()
+			local cfgGetter = getProp(self, "classResourceCfg")
+			local frameCfg = cfgGetter and cfgGetter()
 			if frameCfg and frameCfg.hide and alpha ~= 0 then
 				-- Frame should be hidden but Blizzard set non-zero alpha; correct it
-				self._ScooterClassResourceApplyingAlpha = true
+				setProp(self, "classResourceApplyingAlpha", true)
 				self:SetAlpha(0)
-				self._ScooterClassResourceApplyingAlpha = nil
+				setProp(self, "classResourceApplyingAlpha", nil)
 				debugPrint("Re-enforcing hidden via SetAlpha hook on", self:GetName() or "unnamed")
 			end
 		end)

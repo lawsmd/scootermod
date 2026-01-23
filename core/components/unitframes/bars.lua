@@ -54,6 +54,38 @@ local Preemptive = addon.BarsPreemptive
 local RaidFrames = addon.BarsRaidFrames
 local PartyFrames = addon.BarsPartyFrames
 
+local function isEditModeActive()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Local aliases to extracted module functions
 -- These provide backward compatibility with code in this file
@@ -152,8 +184,8 @@ local function applyCustomPowerBarPosition(unit, pb, cfg)
     -- Feature deprecated - always return false
     -- Clear any legacy flags that may exist on the frame
     if pb then
-        pb._ScootPowerBarCustomActive = nil
-        pb._ScootPowerBarCustomPosEnabled = nil
+        setProp(pb, "powerBarCustomActive", nil)
+        setProp(pb, "powerBarCustomPosEnabled", nil)
     end
     return false
 end
@@ -191,11 +223,11 @@ function addon.DebugPowerBarPosition(simulateReset)
     end
     push("IsIgnoringFramePositionManager=" .. tostring(okIgnore and ignoring or "<n/a>"))
 
-    push("_ScootPowerBarCustomActive=" .. tostring(pb._ScootPowerBarCustomActive and true or false))
-    push("_ScootPowerBarCustomPosEnabled=" .. tostring(pb._ScootPowerBarCustomPosEnabled and true or false))
-    push("_ScootPowerBarCustomPosX=" .. tostring(pb._ScootPowerBarCustomPosX))
-    push("_ScootPowerBarCustomPosY=" .. tostring(pb._ScootPowerBarCustomPosY))
-    push("_ScootPowerBarCustomPosUnit=" .. tostring(pb._ScootPowerBarCustomPosUnit))
+    push("_ScootPowerBarCustomActive=" .. tostring(getProp(pb, "powerBarCustomActive") and true or false))
+    push("_ScootPowerBarCustomPosEnabled=" .. tostring(getProp(pb, "powerBarCustomPosEnabled") and true or false))
+    push("_ScootPowerBarCustomPosX=" .. tostring(getProp(pb, "powerBarCustomPosX")))
+    push("_ScootPowerBarCustomPosY=" .. tostring(getProp(pb, "powerBarCustomPosY")))
+    push("_ScootPowerBarCustomPosUnit=" .. tostring(getProp(pb, "powerBarCustomPosUnit")))
 
     local sx, sy = getFrameScreenOffsets(pb)
     push(string.format("ScreenOffsetFromCenter(px)=%s,%s", tostring(sx), tostring(sy)))
@@ -449,7 +481,7 @@ do
 
                     if hb and hbContainer then
                         -- Get border anchor frame level (if it exists)
-                        local borderAnchor = hb._ScooterBossHealthBorderAnchor
+                        local borderAnchor = getProp(hb, "bossHealthBorderAnchor")
                         local borderLevel = borderAnchor and borderAnchor.GetFrameLevel and borderAnchor:GetFrameLevel() or 0
                         local barLevel = hb.GetFrameLevel and hb:GetFrameLevel() or 0
 
@@ -477,7 +509,7 @@ do
 
                     if pb then
                         -- Get border anchor frame level (if it exists)
-                        local borderAnchor = pb._ScooterBossPowerBorderAnchor
+                        local borderAnchor = getProp(pb, "bossPowerBorderAnchor")
                         local borderLevel = borderAnchor and borderAnchor.GetFrameLevel and borderAnchor:GetFrameLevel() or 0
                         local barLevel = pb.GetFrameLevel and pb:GetFrameLevel() or 0
 
@@ -539,7 +571,7 @@ do
             local hHolder = hb and hb.ScooterStyledBorder or nil
             if hHolder and hHolder.SetFrameLevel then
                 -- Lock desired level so internal size hooks won't raise it above text later
-                hb._ScooterBorderFixedLevel = holderLevel
+                setProp(hb, "borderFixedLevel", holderLevel)
                 pcall(hHolder.SetFrameLevel, hHolder, holderLevel)
             end
             -- Match holder strata to the text container's strata so frame level ordering decides (bar < holder < text)
@@ -552,7 +584,7 @@ do
             end
             local pHolder = pb and pb.ScooterStyledBorder or nil
             if pHolder and pHolder.SetFrameLevel then
-                pb._ScooterBorderFixedLevel = holderLevel
+                setProp(pb, "borderFixedLevel", holderLevel)
                 pcall(pHolder.SetFrameLevel, pHolder, holderLevel)
             end
             if pHolder and pHolder.SetFrameStrata then
@@ -594,13 +626,13 @@ do
     -- when "Hide Blizzard Frame Art & Animations" is enabled (useCustomBorders).
     -- Unlike Target/Focus (which have portrait chips), Boss frames have mask chips caused by frame art overlap.
     local function updateBossRectOverlay(bar, overlayKey)
-        if not bar or not bar[overlayKey] then return end
-        if not bar._ScootRectActive then
-            bar[overlayKey]:Hide()
+        local st = getState(bar)
+        local overlay = st and st[overlayKey] or nil
+        if not bar or not overlay then return end
+        if not (st and st.rectActive) then
+            overlay:Hide()
             return
         end
-
-        local overlay = bar[overlayKey]
 
         -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
         -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
@@ -634,7 +666,9 @@ do
         local shouldActivate = (ufCfg.useCustomBorders == true)
         
         local overlayKey = (barType == "health") and "ScooterRectFillHealth" or "ScooterRectFillPower"
-        bar._ScootRectActive = shouldActivate
+        local st = getState(bar)
+        if not st then return end
+        st.rectActive = shouldActivate
 
         -- CRITICAL: Resolve the correct bounds frame for Boss bars.
         -- For health: HealthBarsContainer (correct bounds - health bar only)
@@ -662,34 +696,37 @@ do
         end
         
         -- Store the correct bounds frame for use in updateBossRectOverlay
-        bar._ScootBossRectBoundsFrame = boundsFrame or bar
+        st.bossRectBoundsFrame = boundsFrame or bar
 
         if not shouldActivate then
-            if bar[overlayKey] then
-                bar[overlayKey]:Hide()
+            if st[overlayKey] then
+                st[overlayKey]:Hide()
             end
             return
         end
 
-        if not bar[overlayKey] then
+        if not st[overlayKey] then
             local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
             overlay:SetVertTile(false)
             overlay:SetHorizTile(false)
             overlay:SetTexCoord(0, 1, 0, 1)
-            bar[overlayKey] = overlay
+            st[overlayKey] = overlay
 
             -- Drive overlay width from the bar's value/size changes
-            local hookKey = (barType == "health") and "_ScootBossHealthRectHooksInstalled" or "_ScootBossPowerRectHooksInstalled"
-            if _G.hooksecurefunc and not bar[hookKey] then
-                bar[hookKey] = true
+            local hookKey = (barType == "health") and "bossHealthRectHooksInstalled" or "bossPowerRectHooksInstalled"
+            if _G.hooksecurefunc and not st[hookKey] then
+                st[hookKey] = true
                 _G.hooksecurefunc(bar, "SetValue", function(self)
+                    if isEditModeActive() then return end
                     updateBossRectOverlay(self, overlayKey)
                 end)
                 _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    if isEditModeActive() then return end
                     updateBossRectOverlay(self, overlayKey)
                 end)
                 if bar.HookScript then
                     bar:HookScript("OnSizeChanged", function(self)
+                        if isEditModeActive() then return end
                         updateBossRectOverlay(self, overlayKey)
                     end)
                 end
@@ -708,9 +745,10 @@ do
             stockAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Mana" -- Boss uses Target-style atlas
         end
 
+        local overlay = st[overlayKey]
         if texPath then
             -- Custom texture configured
-            bar[overlayKey]:SetTexture(texPath)
+            overlay:SetTexture(texPath)
         else
             -- Default texture - try to copy from bar
             local tex = bar:GetStatusBarTexture()
@@ -719,8 +757,8 @@ do
                 -- Try GetAtlas first
                 local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
                 if okAtlas and atlasName and atlasName ~= "" then
-                    if bar[overlayKey].SetAtlas then
-                        pcall(bar[overlayKey].SetAtlas, bar[overlayKey], atlasName, true)
+                    if overlay.SetAtlas then
+                        pcall(overlay.SetAtlas, overlay, atlasName, true)
                         applied = true
                     end
                 end
@@ -730,15 +768,15 @@ do
                     if okTex then
                         if type(pathOrTex) == "string" and pathOrTex ~= "" then
                             local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
-                            if isAtlas and bar[overlayKey].SetAtlas then
-                                pcall(bar[overlayKey].SetAtlas, bar[overlayKey], pathOrTex, true)
+                            if isAtlas and overlay.SetAtlas then
+                                pcall(overlay.SetAtlas, overlay, pathOrTex, true)
                                 applied = true
                             else
-                                bar[overlayKey]:SetTexture(pathOrTex)
+                                overlay:SetTexture(pathOrTex)
                                 applied = true
                             end
                         elseif type(pathOrTex) == "number" and pathOrTex > 0 then
-                            bar[overlayKey]:SetTexture(pathOrTex)
+                            overlay:SetTexture(pathOrTex)
                             applied = true
                         end
                     end
@@ -746,8 +784,8 @@ do
             end
             
             -- Fallback to stock atlas
-            if not applied and stockAtlas and bar[overlayKey].SetAtlas then
-                pcall(bar[overlayKey].SetAtlas, bar[overlayKey], stockAtlas, true)
+            if not applied and stockAtlas and overlay.SetAtlas then
+                pcall(overlay.SetAtlas, overlay, stockAtlas, true)
             end
         end
 
@@ -773,7 +811,7 @@ do
             local hr, hg, hb = addon.GetDefaultHealthColorRGB()
             r, g, b = hr or 0, hg or 1, hb or 0
         end
-        bar[overlayKey]:SetVertexColor(r, g, b, a)
+        overlay:SetVertexColor(r, g, b, a)
 
         -- Initial update to match current bar state
         updateBossRectOverlay(bar, overlayKey)
@@ -783,18 +821,18 @@ do
     -- This is used to visually "fill in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
     local function updateRectHealthOverlay(unit, bar)
-        if not bar or not bar.ScooterRectFill then return end
-        if not bar._ScootRectActive then
-            bar.ScooterRectFill:Hide()
+        local st = getState(bar)
+        local overlay = st and st.rectFill or nil
+        if not bar or not overlay then return end
+        if not (st and st.rectActive) then
+            overlay:Hide()
             return
         end
-
-        local overlay = bar.ScooterRectFill
         -- 12.0 PTR: PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
         -- innocuous StatusBar reads from addon code, and may hard-error due to "secret values" inside
         -- Blizzard_UnitFrame (e.g., myCurrentHealAbsorb comparisons). This overlay is purely cosmetic,
         -- so we disable it for Pet to guarantee preset/profile application can't provoke that path.
-        if bar._ScootRectDisabledForSecretValues then
+        if st and st.rectDisabledForSecretValues then
             -- Important: do not call methods (Hide/Show/SetWidth/etc.) from inside the
             -- bar:SetValue / bar:SetMinMaxValues hook path when we're in a "secret value"
             -- environment. This overlay is cosmetic; we prefer a complete no-op.
@@ -836,69 +874,74 @@ do
         -- - Player/TargetOfTarget: activate when using custom borders (fills top-right corner chip in mask)
         -- - Pet: activate when using custom borders (fills top-right corner chip in mask)
         local shouldActivate = false
+        local st = getState(bar)
+        if not st then return end
 
         -- Reset per-call disable flag unless explicitly re-set below.
-        bar._ScootRectDisabledForSecretValues = nil
+        st.rectDisabledForSecretValues = nil
 
         if unit == "Target" or unit == "Focus" then
             local portraitCfg = rawget(ufCfg, "portrait")
             shouldActivate = (portraitCfg and portraitCfg.hidePortrait == true) or false
             if cfg and cfg.healthBarReverseFill ~= nil then
-                bar._ScootRectReverseFill = not not cfg.healthBarReverseFill
+                st.rectReverseFill = not not cfg.healthBarReverseFill
             end
         elseif unit == "Player" then
             shouldActivate = (ufCfg.useCustomBorders == true)
-            bar._ScootRectReverseFill = false -- Player health bar always fills left-to-right
+            st.rectReverseFill = false -- Player health bar always fills left-to-right
         elseif unit == "TargetOfTarget" then
             shouldActivate = (ufCfg.useCustomBorders == true)
-            bar._ScootRectReverseFill = false -- ToT health bar always fills left-to-right
+            st.rectReverseFill = false -- ToT health bar always fills left-to-right
         elseif type(unit) == "string" and string.lower(unit) == "pet" then
             -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
             -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
             -- 12.0 PTR: disable this optional cosmetic overlay for Pet to avoid triggering
             -- Blizzard heal prediction updates that can error on "secret values".
             shouldActivate = false
-            bar._ScootRectDisabledForSecretValues = true
-            bar._ScootRectReverseFill = false -- Pet health bar always fills left-to-right
+            st.rectDisabledForSecretValues = true
+            st.rectReverseFill = false -- Pet health bar always fills left-to-right
         else
             -- Others: skip
-            if bar.ScooterRectFill then
-                bar._ScootRectActive = false
-                bar.ScooterRectFill:Hide()
+            if st.rectFill then
+                st.rectActive = false
+                st.rectFill:Hide()
             end
             return
         end
 
-        bar._ScootRectActive = shouldActivate
+        st.rectActive = shouldActivate
 
         if not shouldActivate then
-            if bar.ScooterRectFill then
-                bar.ScooterRectFill:Hide()
+            if st.rectFill then
+                st.rectFill:Hide()
             end
             return
         end
 
-        if not bar.ScooterRectFill then
+        if not st.rectFill then
             local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
             overlay:SetVertTile(false)
             overlay:SetHorizTile(false)
             overlay:SetTexCoord(0, 1, 0, 1)
-            bar.ScooterRectFill = overlay
+            st.rectFill = overlay
 
             -- Drive overlay width from the health bar's own value/size changes.
             -- NOTE: No combat guard needed here because updateRectHealthOverlay() only
             -- operates on ScooterRectFill (our own child texture), not Blizzard's
             -- protected StatusBar. Cosmetic operations on our own textures are safe.
-            if _G.hooksecurefunc and not bar._ScootRectHooksInstalled then
-                bar._ScootRectHooksInstalled = true
+            if _G.hooksecurefunc and not st.rectHooksInstalled then
+                st.rectHooksInstalled = true
                 _G.hooksecurefunc(bar, "SetValue", function(self)
+                    if isEditModeActive() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    if isEditModeActive() then return end
                     updateRectHealthOverlay(unit, self)
                 end)
                 if bar.HookScript then
                     bar:HookScript("OnSizeChanged", function(self)
+                        if isEditModeActive() then return end
                         updateRectHealthOverlay(unit, self)
                     end)
                 end
@@ -911,10 +954,13 @@ do
         -- after SetStatusBarTexture(), which caused the overlay to fall back to WHITE.
         local texKey = cfg.healthBarTexture or "default"
         local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+        local overlay = st.rectFill
         
         if resolvedPath then
             -- Custom texture configured - use the resolved path
-            bar.ScooterRectFill:SetTexture(resolvedPath)
+            if overlay and overlay.SetTexture then
+                overlay:SetTexture(resolvedPath)
+            end
         else
             -- Default texture - try to copy from bar, with robust fallback
             -- CRITICAL: GetTexture() can return an atlas token STRING. Passing an atlas token
@@ -926,8 +972,8 @@ do
                 -- First, try GetAtlas() which is the most reliable for atlas-backed textures
                 local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
                 if okAtlas and atlasName and atlasName ~= "" then
-                    if bar.ScooterRectFill.SetAtlas then
-                        pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, atlasName, true)
+                    if overlay and overlay.SetAtlas then
+                        pcall(overlay.SetAtlas, overlay, atlasName, true)
                         applied = true
                     end
                 end
@@ -938,18 +984,18 @@ do
                         if type(pathOrTex) == "string" and pathOrTex ~= "" then
                             -- Check if this string is actually an atlas token
                             local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
-                            if isAtlas and bar.ScooterRectFill.SetAtlas then
+                            if isAtlas and overlay and overlay.SetAtlas then
                                 -- Use SetAtlas to avoid spritesheet rendering
-                                pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, pathOrTex, true)
+                                pcall(overlay.SetAtlas, overlay, pathOrTex, true)
                                 applied = true
                             else
                                 -- It's a file path, safe to use SetTexture
-                                bar.ScooterRectFill:SetTexture(pathOrTex)
+                                if overlay then overlay:SetTexture(pathOrTex) end
                                 applied = true
                             end
                         elseif type(pathOrTex) == "number" and pathOrTex > 0 then
                             -- Texture ID - use it directly
-                            bar.ScooterRectFill:SetTexture(pathOrTex)
+                            if overlay then overlay:SetTexture(pathOrTex) end
                             applied = true
                         end
                     end
@@ -972,11 +1018,11 @@ do
                     -- still handle the real default correctly.
                     stockAtlas = "UI-HUD-UnitFrame-Pet-PortraitOn-Bar-Health"
                 end
-                if stockAtlas and bar.ScooterRectFill.SetAtlas then
-                    pcall(bar.ScooterRectFill.SetAtlas, bar.ScooterRectFill, stockAtlas, true)
-                elseif bar.ScooterRectFill.SetColorTexture then
+                if stockAtlas and overlay and overlay.SetAtlas then
+                    pcall(overlay.SetAtlas, overlay, stockAtlas, true)
+                elseif overlay and overlay.SetColorTexture then
                     -- Last resort: use green health color instead of white
-                    bar.ScooterRectFill:SetColorTexture(0, 0.8, 0, 1)
+                    overlay:SetColorTexture(0, 0.8, 0, 1)
                 end
             end
         end
@@ -1003,8 +1049,8 @@ do
                 end
             end
         end
-        if bar.ScooterRectFill.SetVertexColor then
-            bar.ScooterRectFill:SetVertexColor(r, g, b, a)
+        if overlay and overlay.SetVertexColor then
+            overlay:SetVertexColor(r, g, b, a)
         end
 
         updateRectHealthOverlay(unit, bar)
@@ -1234,9 +1280,11 @@ do
         -- ToT frame's Update() to re-assert our styling shortly after Blizzard updates it.
         if unit == "TargetOfTarget" and _G.hooksecurefunc then
             local tot = _G.TargetFrameToT
-            if tot and not tot._ScootToTUpdateHooked and type(tot.Update) == "function" then
-                tot._ScootToTUpdateHooked = true
+            local totState = getState(tot)
+            if tot and totState and not totState.toTUpdateHooked and type(tot.Update) == "function" then
+                totState.toTUpdateHooked = true
                 _G.hooksecurefunc(tot, "Update", function()
+                    if isEditModeActive() then return end
                     local db2 = addon and addon.db and addon.db.profile
                     if not db2 then return end
                     local unitFrames2 = rawget(db2, "unitFrames")
@@ -1260,18 +1308,20 @@ do
                         return
                     end
 
-                    if tot._ScootToTReapplyPending then
+                    local state = getState(tot)
+                    if state and state.toTReapplyPending then
                         return
                     end
-                    tot._ScootToTReapplyPending = true
+                    if state then state.toTReapplyPending = true end
 
                     if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
                         _G.C_Timer.After(0, function()
-                            tot._ScootToTReapplyPending = nil
+                            local st2 = getState(tot)
+                            if st2 then st2.toTReapplyPending = nil end
                             addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                         end)
                     elseif addon.ApplyUnitFrameBarTexturesFor then
-                        tot._ScootToTReapplyPending = nil
+                        if state then state.toTReapplyPending = nil end
                         addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                     end
                 end)
@@ -1366,11 +1416,11 @@ do
 
                                 -- Create or retrieve the anchor frame for border application
                                 -- This frame matches the HealthBarsContainer bounds, not the oversized StatusBar
-                                local anchorFrame = hb._ScooterBossHealthBorderAnchor
+                                local anchorFrame = getProp(hb, "bossHealthBorderAnchor")
                                 if not anchorFrame then
                                     anchorFrame = CreateFrame("Frame", nil, hb)
                                     anchorFrame:SetFrameLevel((hb:GetFrameLevel() or 0) + 1)
-                                    hb._ScooterBossHealthBorderAnchor = anchorFrame
+                                    setProp(hb, "bossHealthBorderAnchor", anchorFrame)
                                 end
 
                                 -- Anchor to HealthBarsContainer bounds if available, else fall back to StatusBar
@@ -1465,11 +1515,13 @@ do
 
                             -- Boss frames can get refreshed by Blizzard (HealthUpdate, Update) which resets textures.
                             -- Install a hook to re-assert our styling after Blizzard updates.
-                            if _G.hooksecurefunc and not bossFrame._ScootBossHealthUpdateHooked then
+                            local bossState = getState(bossFrame)
+                            if _G.hooksecurefunc and bossState and not bossState.bossHealthUpdateHooked then
                                 local function installBossHealthHook(hookTarget, hookName)
                                     if hookTarget and type(hookTarget[hookName]) == "function" then
-                                        bossFrame._ScootBossHealthUpdateHooked = true
+                                        bossState.bossHealthUpdateHooked = true
                                         _G.hooksecurefunc(hookTarget, hookName, function()
+                                            if isEditModeActive() then return end
                                             local db2 = addon and addon.db and addon.db.profile
                                             if not db2 then return end
                                             local unitFrames2 = rawget(db2, "unitFrames")
@@ -1485,13 +1537,15 @@ do
                                             if not hasCustomTexture and not hasCustomColor then return end
 
                                             -- Throttle: skip if a reapply is already pending for this frame
-                                            if bossFrame._ScootBossReapplyPending then return end
-                                            bossFrame._ScootBossReapplyPending = true
+                                            local st = getState(bossFrame)
+                                            if st and st.bossReapplyPending then return end
+                                            if st then st.bossReapplyPending = true end
 
                                             -- Defer to next frame to let Blizzard finish its updates
                                             if _G.C_Timer and _G.C_Timer.After then
                                                 _G.C_Timer.After(0, function()
-                                                    bossFrame._ScootBossReapplyPending = nil
+                                                    local st2 = getState(bossFrame)
+                                                    if st2 then st2.bossReapplyPending = nil end
                                                     -- Use direct property (most reliable)
                                                     local hbReapply = bossFrame.healthbar
                                                     if hbReapply then
@@ -1536,9 +1590,9 @@ do
                             local powerBarHidden = (cfg.powerBarHidden == true)
                             local powerBarHideTextureOnly = (cfg.powerBarHideTextureOnly == true)
 
-                            if pb.GetAlpha and pb._ScootUFOrigPBAlpha == nil then
+                            if pb.GetAlpha and getProp(pb, "origPBAlpha") == nil then
                                 local ok, a = pcall(pb.GetAlpha, pb)
-                                pb._ScootUFOrigPBAlpha = ok and (a or 1) or 1
+                                setProp(pb, "origPBAlpha", ok and (a or 1) or 1)
                             end
 
                             if powerBarHidden then
@@ -1548,12 +1602,14 @@ do
                                 if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                                 if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, false) end
                             elseif powerBarHideTextureOnly then
-                                if pb._ScootUFOrigPBAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha) end
+                                local origAlpha = getProp(pb, "origPBAlpha")
+                                if origAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, origAlpha) end
                                 if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, true) end
                                 if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                                 if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                             else
-                                if pb._ScootUFOrigPBAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha) end
+                                local origAlpha = getProp(pb, "origPBAlpha")
+                                if origAlpha and pb.SetAlpha then pcall(pb.SetAlpha, pb, origAlpha) end
                                 if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, false) end
                             end
 
@@ -1627,11 +1683,11 @@ do
                                 -- Create or retrieve the anchor frame for border application
                                 -- For consistency with Health Bar, use the same pattern even though ManaBar
                                 -- may already have correct bounds (it's not inside an oversized container)
-                                local anchorFrame = pb._ScooterBossPowerBorderAnchor
+                                local anchorFrame = getProp(pb, "bossPowerBorderAnchor")
                                 if not anchorFrame then
                                     anchorFrame = CreateFrame("Frame", nil, pb)
                                     anchorFrame:SetFrameLevel((pb:GetFrameLevel() or 0) + 1)
-                                    pb._ScooterBossPowerBorderAnchor = anchorFrame
+                                    setProp(pb, "bossPowerBorderAnchor", anchorFrame)
                                 end
 
                                 -- Anchor to resolved ManaBar bounds if available, else fall back to pb
@@ -1717,11 +1773,13 @@ do
 
                             -- Boss power bars can get refreshed by Blizzard which resets textures.
                             -- Install a hook to re-assert our styling after Blizzard updates.
-                            if _G.hooksecurefunc and not bossFrame._ScootBossPowerUpdateHooked then
-                                bossFrame._ScootBossPowerUpdateHooked = true
+                            local bossState = getState(bossFrame)
+                            if _G.hooksecurefunc and bossState and not bossState.bossPowerUpdateHooked then
+                                bossState.bossPowerUpdateHooked = true
                                 -- Hook the power bar's SetValue which is called on every power change
                                 if pb.SetValue and type(pb.SetValue) == "function" then
                                     _G.hooksecurefunc(pb, "SetValue", function()
+                                        if isEditModeActive() then return end
                                         local db2 = addon and addon.db and addon.db.profile
                                         if not db2 then return end
                                         local unitFrames2 = rawget(db2, "unitFrames")
@@ -1737,12 +1795,14 @@ do
                                         if not hasCustomTexture and not hasCustomColor then return end
 
                                         -- Throttle: skip if a reapply is already pending
-                                        if bossFrame._ScootBossPowerReapplyPending then return end
-                                        bossFrame._ScootBossPowerReapplyPending = true
+                                        local st = getState(bossFrame)
+                                        if st and st.bossPowerReapplyPending then return end
+                                        if st then st.bossPowerReapplyPending = true end
 
                                         if _G.C_Timer and _G.C_Timer.After then
                                             _G.C_Timer.After(0, function()
-                                                bossFrame._ScootBossPowerReapplyPending = nil
+                                                local st2 = getState(bossFrame)
+                                                if st2 then st2.bossPowerReapplyPending = nil end
                                                 local pbReapply = bossFrame.manabar
                                                 if pbReapply then
                                                     local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
@@ -1852,7 +1912,7 @@ do
 			ensureRectHealthOverlay(unit, hb, cfg)
             -- If restoring default texture and we lack a captured original, restore to the known stock atlas for this unit
             local isDefaultHB = (texKeyHB == "default" or not addon.Media.ResolveBarTexturePath(texKeyHB))
-            if isDefaultHB and not hb._ScootUFOrigAtlas and not hb._ScootUFOrigPath then
+            if isDefaultHB and not getProp(hb, "ufOrigAtlas") and not getProp(hb, "ufOrigPath") then
 				local stockAtlas
 				if unit == "Player" then
 					stockAtlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health"
@@ -1975,14 +2035,15 @@ do
                             -- Deterministically place border below text and ensure text wins
                             ensureTextAndBorderOrdering(unit)
                             -- Light hook: keep ordering stable on bar resize
-                            if hb and not hb._ScootUFZOrderHooked and hb.HookScript then
+                            if hb and not getProp(hb, "ufZOrderHooked") and hb.HookScript then
                                 hb:HookScript("OnSizeChanged", function()
+                                    if isEditModeActive() then return end
                                     if InCombatLockdown and InCombatLockdown() then
                                         return
                                     end
                                     ensureTextAndBorderOrdering(unit)
                                 end)
-                                hb._ScootUFZOrderHooked = true
+                                setProp(hb, "ufZOrderHooked", true)
                             end
 						end
 					else
@@ -1999,11 +2060,12 @@ do
             -- Color: keep Foreground Color applied if Blizzard calls SetStatusBarColor.
             if unit == "Player" and _G.hooksecurefunc then
                 -- Texture hook: reapply custom texture when Blizzard resets it
-                if not hb._ScootHealthTextureHooked then
-                    hb._ScootHealthTextureHooked = true
+                if not getProp(hb, "healthTextureHooked") then
+                    setProp(hb, "healthTextureHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarTexture", function(self, ...)
+                        if isEditModeActive() then return end
                         -- Ignore ScooterMod's own writes to avoid recursion.
-                        if self._ScootUFInternalTextureWrite then
+                        if getProp(self, "ufInternalTextureWrite") then
                             return
                         end
                         -- Skip during combat to avoid taint on protected StatusBar.
@@ -2024,9 +2086,10 @@ do
                     end)
                 end
                 -- Color hook: reapply custom color when Blizzard resets it
-                if not hb._ScootHealthColorHooked then
-                    hb._ScootHealthColorHooked = true
+                if not getProp(hb, "healthColorHooked") then
+                    setProp(hb, "healthColorHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
+                        if isEditModeActive() then return end
                         -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
                         -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
                         if InCombatLockdown and InCombatLockdown() then return end
@@ -2056,11 +2119,12 @@ do
             -- We re-assert the configured texture/color by writing to the underlying Texture region
             -- (avoids calling SetStatusBarTexture again inside a secure callstack).
             if unit == "TargetOfTarget" and _G.hooksecurefunc then
-                if not hb._ScootToTHealthTextureHooked then
-                    hb._ScootToTHealthTextureHooked = true
+                if not getProp(hb, "toTHealthTextureHooked") then
+                    setProp(hb, "toTHealthTextureHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarTexture", function(self, ...)
+                        if isEditModeActive() then return end
                         -- Ignore ScooterMod's own writes to avoid feedback loops.
-                        if self._ScootUFInternalTextureWrite then
+                        if getProp(self, "ufInternalTextureWrite") then
                             return
                         end
 
@@ -2087,25 +2151,26 @@ do
                         end
 
                         -- Throttle: coalesce rapid refreshes into a single 0s re-apply.
-                        if self._ScootToTReapplyPending then
+                        if getProp(self, "toTReapplyPending") then
                             return
                         end
-                        self._ScootToTReapplyPending = true
+                        setProp(self, "toTReapplyPending", true)
                         if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
                             _G.C_Timer.After(0, function()
-                                self._ScootToTReapplyPending = nil
+                                setProp(self, "toTReapplyPending", nil)
                                 addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                             end)
                         elseif addon.ApplyUnitFrameBarTexturesFor then
-                            self._ScootToTReapplyPending = nil
+                            setProp(self, "toTReapplyPending", nil)
                             addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                         end
                     end)
                 end
 
-                if not hb._ScootToTHealthColorHooked then
-                    hb._ScootToTHealthColorHooked = true
+                if not getProp(hb, "toTHealthColorHooked") then
+                    setProp(hb, "toTHealthColorHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
+                        if isEditModeActive() then return end
                         local db = addon and addon.db and addon.db.profile
                         if not db then return end
                         local unitFrames = rawget(db, "unitFrames")
@@ -2127,17 +2192,17 @@ do
                             return
                         end
 
-                        if self._ScootToTReapplyPending then
+                        if getProp(self, "toTReapplyPending") then
                             return
                         end
-                        self._ScootToTReapplyPending = true
+                        setProp(self, "toTReapplyPending", true)
                         if _G.C_Timer and _G.C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
                             _G.C_Timer.After(0, function()
-                                self._ScootToTReapplyPending = nil
+                                setProp(self, "toTReapplyPending", nil)
                                 addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                             end)
                         elseif addon.ApplyUnitFrameBarTexturesFor then
-                            self._ScootToTReapplyPending = nil
+                            setProp(self, "toTReapplyPending", nil)
                             addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
                         end
                     end)
@@ -2155,9 +2220,9 @@ do
 			local powerBarHideTextureOnly = (cfg.powerBarHideTextureOnly == true)
 
 			-- Capture original alpha once so we can restore when the bar is un-hidden.
-			if pb.GetAlpha and pb._ScootUFOrigPBAlpha == nil then
+			if pb.GetAlpha and getProp(pb, "origPBAlpha") == nil then
 				local ok, a = pcall(pb.GetAlpha, pb)
-				pb._ScootUFOrigPBAlpha = ok and (a or 1) or 1
+				setProp(pb, "origPBAlpha", ok and (a or 1) or 1)
 			end
 
 			-- When the user chooses to hide the Power Bar:
@@ -2184,8 +2249,9 @@ do
 				-- Number-only display: Hide the bar texture/fill while keeping text visible.
 				-- Use the utility function which installs persistent hooks to survive combat.
 				-- Restore bar frame alpha first (in case user toggled from full-hide to texture-only).
-				if pb._ScootUFOrigPBAlpha and pb.SetAlpha then
-					pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha)
+				local origAlpha = getProp(pb, "origPBAlpha")
+				if origAlpha and pb.SetAlpha then
+					pcall(pb.SetAlpha, pb, origAlpha)
 				end
 				
 				-- Use persistent utility to hide textures (installs hooks that survive combat)
@@ -2202,8 +2268,9 @@ do
 				end
 			else
 				-- Restore alpha when coming back from a hidden state so the bar is visible again.
-				if pb._ScootUFOrigPBAlpha and pb.SetAlpha then
-					pcall(pb.SetAlpha, pb, pb._ScootUFOrigPBAlpha)
+				local origAlpha = getProp(pb, "origPBAlpha")
+				if origAlpha and pb.SetAlpha then
+					pcall(pb.SetAlpha, pb, origAlpha)
 				end
 				-- Disable texture-only hiding (restores texture visibility)
 				if Util and Util.SetPowerBarTextureOnlyHidden then
@@ -2289,11 +2356,12 @@ do
             -- Also IMPORTANT: Defer work with C_Timer.After(0) to break Blizzard's execution chain
             -- (see DEBUG.md: global hook taint propagation lessons).
             if unit == "Player" and _G.hooksecurefunc then
-                if not pb._ScootPowerTextureHooked then
-                    pb._ScootPowerTextureHooked = true
+                if not getProp(pb, "powerTextureHooked") then
+                    setProp(pb, "powerTextureHooked", true)
                     _G.hooksecurefunc(pb, "SetStatusBarTexture", function(self, ...)
+                        if isEditModeActive() then return end
                         -- Ignore ScooterMod's own writes to avoid recursion.
-                        if self._ScootUFInternalTextureWrite then
+                        if getProp(self, "ufInternalTextureWrite") then
                             return
                         end
                         if InCombatLockdown and InCombatLockdown() then
@@ -2302,16 +2370,16 @@ do
                         end
 
                         -- Throttle: coalesce rapid texture resets into a single 0s re-apply.
-                        if self._ScootPowerReapplyPending then
+                        if getProp(self, "powerReapplyPending") then
                             return
                         end
-                        self._ScootPowerReapplyPending = true
+                        setProp(self, "powerReapplyPending", true)
 
                         local bar = self
                         if _G.C_Timer and _G.C_Timer.After then
                             _G.C_Timer.After(0, function()
                                 if not bar then return end
-                                bar._ScootPowerReapplyPending = nil
+                                setProp(bar, "powerReapplyPending", nil)
                                 if InCombatLockdown and InCombatLockdown() then
                                     queuePowerBarReapply("Player")
                                     return
@@ -2337,28 +2405,29 @@ do
                                 end
                             end)
                         else
-                            self._ScootPowerReapplyPending = nil
+                            setProp(self, "powerReapplyPending", nil)
                         end
                     end)
                 end
-                if not pb._ScootPowerColorHooked then
-                    pb._ScootPowerColorHooked = true
+                if not getProp(pb, "powerColorHooked") then
+                    setProp(pb, "powerColorHooked", true)
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
+                        if isEditModeActive() then return end
                         if InCombatLockdown and InCombatLockdown() then
                             queuePowerBarReapply("Player")
                             return
                         end
 
-                        if self._ScootPowerReapplyPending then
+                        if getProp(self, "powerReapplyPending") then
                             return
                         end
-                        self._ScootPowerReapplyPending = true
+                        setProp(self, "powerReapplyPending", true)
 
                         local bar = self
                         if _G.C_Timer and _G.C_Timer.After then
                             _G.C_Timer.After(0, function()
                                 if not bar then return end
-                                bar._ScootPowerReapplyPending = nil
+                                setProp(bar, "powerReapplyPending", nil)
                                 if InCombatLockdown and InCombatLockdown() then
                                     queuePowerBarReapply("Player")
                                     return
@@ -2393,7 +2462,7 @@ do
                                 end
                             end)
                         else
-                            self._ScootPowerReapplyPending = nil
+                            setProp(self, "powerReapplyPending", nil)
                         end
                     end)
                 end
@@ -2409,15 +2478,16 @@ do
 
                     -- Optional hide toggle
                     local altHidden = (acfg.hidden == true)
-                    if apb.GetAlpha and apb._ScootUFOrigAltAlpha == nil then
+                    if apb.GetAlpha and getProp(apb, "origAltAlpha") == nil then
                         local ok, a = pcall(apb.GetAlpha, apb)
-                        apb._ScootUFOrigAltAlpha = ok and (a or 1) or 1
+                        setProp(apb, "origAltAlpha", ok and (a or 1) or 1)
                     end
                     if altHidden then
                         if apb.SetAlpha then pcall(apb.SetAlpha, apb, 0) end
                     else
-                        if apb._ScootUFOrigAltAlpha and apb.SetAlpha then
-                            pcall(apb.SetAlpha, apb, apb._ScootUFOrigAltAlpha)
+                        local origAlpha = getProp(apb, "origAltAlpha")
+                        if origAlpha and apb.SetAlpha then
+                            pcall(apb.SetAlpha, apb, origAlpha)
                         end
                     end
 
@@ -2548,27 +2618,34 @@ do
                         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
                         local function applyAltPowerTextVisibility(fs, hidden)
                             if not fs then return end
+                            local st = getState(fs)
+                            if not st then return end
                             if hidden then
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
                                 -- Install hooks once to re-enforce alpha when Blizzard calls Show(), SetAlpha(), or SetText()
-                                if not fs._ScooterAltPowerTextVisibilityHooked then
-                                    fs._ScooterAltPowerTextVisibilityHooked = true
+                                if not st.altPowerTextVisibilityHooked then
+                                    st.altPowerTextVisibilityHooked = true
                                     if _G.hooksecurefunc then
                                         -- Hook Show() to re-enforce alpha=0
                                         _G.hooksecurefunc(fs, "Show", function(self)
-                                            if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                            if isEditModeActive() then return end
+                                            local s = getState(self)
+                                            if s and s.altPowerTextHidden and self.SetAlpha then
                                                 pcall(self.SetAlpha, self, 0)
                                             end
                                         end)
                                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                                            if self._ScooterAltPowerTextHidden and alpha and alpha > 0 then
+                                            if isEditModeActive() then return end
+                                            local s = getState(self)
+                                            if s and s.altPowerTextHidden and alpha and alpha > 0 then
                                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
-                                                if not self._ScooterAltPowerTextAlphaDeferred then
-                                                    self._ScooterAltPowerTextAlphaDeferred = true
+                                                if not s.altPowerTextAlphaDeferred then
+                                                    s.altPowerTextAlphaDeferred = true
                                                     C_Timer.After(0, function()
-                                                        self._ScooterAltPowerTextAlphaDeferred = nil
-                                                        if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                                        local s2 = getState(self)
+                                                        if s2 then s2.altPowerTextAlphaDeferred = nil end
+                                                        if s2 and s2.altPowerTextHidden and self.SetAlpha then
                                                             pcall(self.SetAlpha, self, 0)
                                                         end
                                                     end)
@@ -2577,15 +2654,17 @@ do
                                         end)
                                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                                         _G.hooksecurefunc(fs, "SetText", function(self)
-                                            if self._ScooterAltPowerTextHidden and self.SetAlpha then
+                                            if isEditModeActive() then return end
+                                            local s = getState(self)
+                                            if s and s.altPowerTextHidden and self.SetAlpha then
                                                 pcall(self.SetAlpha, self, 0)
                                             end
                                         end)
                                     end
                                 end
-                                fs._ScooterAltPowerTextHidden = true
+                                st.altPowerTextHidden = true
                             else
-                                fs._ScooterAltPowerTextHidden = false
+                                st.altPowerTextHidden = false
                                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
                             end
                         end
@@ -2601,12 +2680,15 @@ do
                         applyAltPowerTextVisibility(rightFS, altHidden or valueHidden)
 
                         -- Install SetText hook for center TextString to enforce hidden state only
-                        if textStringFS and not textStringFS._ScooterAltPowerTextCenterSetTextHooked then
-                            textStringFS._ScooterAltPowerTextCenterSetTextHooked = true
+                        local tsState = getState(textStringFS)
+                        if textStringFS and tsState and not tsState.altPowerTextCenterSetTextHooked then
+                            tsState.altPowerTextCenterSetTextHooked = true
                             if _G.hooksecurefunc then
                                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
+                                    if isEditModeActive() then return end
                                     -- Enforce hidden state immediately if configured
-                                    if self._ScooterAltPowerTextCenterHidden and self.SetAlpha then
+                                    local s = getState(self)
+                                    if s and s.altPowerTextCenterHidden and self.SetAlpha then
                                         pcall(self.SetAlpha, self, 0)
                                     end
                                 end)
@@ -2666,9 +2748,10 @@ do
                             local size = tonumber(styleCfg.size) or 14
                             local outline = tostring(styleCfg.style or "OUTLINE")
                             -- Set flag to prevent our SetFont hook from triggering a reapply loop
-                            fs._ScooterApplyingFont = true
+                            local fsState = getState(fs)
+                            if fsState then fsState.applyingFont = true end
                             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
-                            fs._ScooterApplyingFont = nil
+                            if fsState then fsState.applyingFont = nil end
                             local c = styleCfg.color or { 1, 1, 1, 1 }
                             if fs.SetTextColor then
                                 pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
@@ -2742,13 +2825,14 @@ do
                         -- If Value text is hidden (or entire bar is hidden), also hide center text
                         if textStringFS then
                             local centerHidden = altHidden or valueHidden
+                            local tsState = getState(textStringFS)
                             if centerHidden then
                                 if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 0) end
-                                textStringFS._ScooterAltPowerTextCenterHidden = true
+                                if tsState then tsState.altPowerTextCenterHidden = true end
                             else
-                                if textStringFS._ScooterAltPowerTextCenterHidden then
+                                if tsState and tsState.altPowerTextCenterHidden then
                                     if textStringFS.SetAlpha then pcall(textStringFS.SetAlpha, textStringFS, 1) end
-                                    textStringFS._ScooterAltPowerTextCenterHidden = nil
+                                    tsState.altPowerTextCenterHidden = nil
                                 end
                                 applyAltTextStyle(textStringFS, acfg.textValue or {}, "Player:altpower-center")
                             end
@@ -2758,27 +2842,29 @@ do
                     -- Width / height scaling (simple frame SetWidth/SetHeight based on %),
                     -- plus additive X/Y offsets applied from the captured baseline points.
                     if not inCombat then
+                        local apbState = getState(apb)
+                        if not apbState then return end
                         -- Capture originals once
-                        if not apb._ScootUFOrigWidth then
+                        if not apbState.ufOrigWidth then
                             if apb.GetWidth then
                                 local ok, w = pcall(apb.GetWidth, apb)
-                                if ok and w then apb._ScootUFOrigWidth = w end
+                                if ok and w then apbState.ufOrigWidth = w end
                             end
                         end
-                        if not apb._ScootUFOrigHeight then
+                        if not apbState.ufOrigHeight then
                             if apb.GetHeight then
                                 local ok, h = pcall(apb.GetHeight, apb)
-                                if ok and h then apb._ScootUFOrigHeight = h end
+                                if ok and h then apbState.ufOrigHeight = h end
                             end
                         end
-                        if not apb._ScootUFOrigPoints then
+                        if not apbState.ufOrigPoints then
                             local pts = {}
                             local n = (apb.GetNumPoints and apb:GetNumPoints()) or 0
                             for i = 1, n do
                                 local p, rel, rp, x, y = apb:GetPoint(i)
                                 table.insert(pts, { p, rel, rp, x or 0, y or 0 })
                             end
-                            apb._ScootUFOrigPoints = pts
+                            apbState.ufOrigPoints = pts
                         end
 
                         local wPct = tonumber(acfg.widthPct) or 100
@@ -2787,33 +2873,33 @@ do
                         local scaleY = math.max(0.5, math.min(2.0, hPct / 100))
 
                         -- Restore baseline first
-                        if apb._ScootUFOrigWidth and apb.SetWidth then
-                            pcall(apb.SetWidth, apb, apb._ScootUFOrigWidth)
+                        if apbState.ufOrigWidth and apb.SetWidth then
+                            pcall(apb.SetWidth, apb, apbState.ufOrigWidth)
                         end
-                        if apb._ScootUFOrigHeight and apb.SetHeight then
-                            pcall(apb.SetHeight, apb, apb._ScootUFOrigHeight)
+                        if apbState.ufOrigHeight and apb.SetHeight then
+                            pcall(apb.SetHeight, apb, apbState.ufOrigHeight)
                         end
-                        if apb._ScootUFOrigPoints and apb.ClearAllPoints and apb.SetPoint then
+                        if apbState.ufOrigPoints and apb.ClearAllPoints and apb.SetPoint then
                             pcall(apb.ClearAllPoints, apb)
-                            for _, pt in ipairs(apb._ScootUFOrigPoints) do
+                            for _, pt in ipairs(apbState.ufOrigPoints) do
                                 pcall(apb.SetPoint, apb, pt[1] or "CENTER", pt[2], pt[3] or pt[1] or "CENTER", pt[4] or 0, pt[5] or 0)
                             end
                         end
 
                         -- Apply width/height scaling (from center)
-                        if apb._ScootUFOrigWidth and apb.SetWidth then
-                            pcall(apb.SetWidth, apb, apb._ScootUFOrigWidth * scaleX)
+                        if apbState.ufOrigWidth and apb.SetWidth then
+                            pcall(apb.SetWidth, apb, apbState.ufOrigWidth * scaleX)
                         end
-                        if apb._ScootUFOrigHeight and apb.SetHeight then
-                            pcall(apb.SetHeight, apb, apb._ScootUFOrigHeight * scaleY)
+                        if apbState.ufOrigHeight and apb.SetHeight then
+                            pcall(apb.SetHeight, apb, apbState.ufOrigHeight * scaleY)
                         end
 
                         -- Apply positioning offsets relative to the original anchor points.
                         local offsetX = tonumber(acfg.offsetX) or 0
                         local offsetY = tonumber(acfg.offsetY) or 0
-                        if apb._ScootUFOrigPoints and apb.ClearAllPoints and apb.SetPoint then
+                        if apbState.ufOrigPoints and apb.ClearAllPoints and apb.SetPoint then
                             pcall(apb.ClearAllPoints, apb)
-                            for _, pt in ipairs(apb._ScootUFOrigPoints) do
+                            for _, pt in ipairs(apbState.ufOrigPoints) do
                                 local baseX = pt[4] or 0
                                 local baseY = pt[5] or 0
                                 local newX = baseX + offsetX
@@ -2839,6 +2925,8 @@ do
                     canScale = true
                 end
 
+                local pbState = getState(pb)
+                if not pbState then return end
                 if canScale and not inCombat then
                     local pct = tonumber(cfg.powerBarWidthPct) or 100
                     local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
@@ -2847,63 +2935,63 @@ do
 					local scaleX = math.min(1.5, math.max(0.5, (pct or 100) / 100))
 
                     -- Capture original PB width once
-                    if pb and not pb._ScootUFOrigWidth then
+                    if pb and not pbState.ufOrigWidth then
                         if pb.GetWidth then
                             local ok, w = pcall(pb.GetWidth, pb)
-                            if ok and w then pb._ScootUFOrigWidth = w end
+                            if ok and w then pbState.ufOrigWidth = w end
                         end
                     end
 
                     -- Capture original PB anchors
-                    if pb and not pb._ScootUFOrigPoints then
+                    if pb and not pbState.ufOrigPoints then
                         local pts = {}
                         local n = (pb.GetNumPoints and pb:GetNumPoints()) or 0
                         for i = 1, n do
                             local p, rel, rp, x, y = pb:GetPoint(i)
                             table.insert(pts, { p, rel, rp, x or 0, y or 0 })
                         end
-                        pb._ScootUFOrigPoints = pts
+                        pbState.ufOrigPoints = pts
                     end
 
                     -- Helper: reanchor PB to grow left
                     local function reapplyPBPointsWithLeftOffset(dx)
-                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not pb._ScootUFOrigPoints then return end
+                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not (pbState and pbState.ufOrigPoints) then return end
                         pcall(pb.ClearAllPoints, pb)
-                        for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                        for _, pt in ipairs(pbState.ufOrigPoints) do
                             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", (pt[4] or 0) - dx, pt[5] or 0)
                         end
                     end
 
                     -- Helper: reanchor PB to grow right
                     local function reapplyPBPointsWithRightOffset(dx)
-                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not pb._ScootUFOrigPoints then return end
+                        if not pb or not pb.ClearAllPoints or not pb.SetPoint or not (pbState and pbState.ufOrigPoints) then return end
                         pcall(pb.ClearAllPoints, pb)
-                        for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                        for _, pt in ipairs(pbState.ufOrigPoints) do
                             pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", (pt[4] or 0) + dx, pt[5] or 0)
                         end
                     end
 
 					-- CRITICAL: Always restore to original state FIRST before applying new width
 					-- Always start from the captured baseline to avoid cumulative offsets.
-					if pb and pb._ScootUFOrigWidth and pb.SetWidth then
-						pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+					if pb and pbState.ufOrigWidth and pb.SetWidth then
+						pcall(pb.SetWidth, pb, pbState.ufOrigWidth)
 					end
-					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+					if pb and pbState.ufOrigPoints and pb.ClearAllPoints and pb.SetPoint then
 						pcall(pb.ClearAllPoints, pb)
-						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+						for _, pt in ipairs(pbState.ufOrigPoints) do
 							pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
 						end
 					end
 
                     if pct > 100 then
                         -- Widen the status bar frame
-                        if pb and pb.SetWidth and pb._ScootUFOrigWidth then
-                            pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth * scaleX)
+                        if pb and pb.SetWidth and pbState.ufOrigWidth then
+                            pcall(pb.SetWidth, pb, pbState.ufOrigWidth * scaleX)
                         end
 
                         -- Reposition the frame to control growth direction
-                        if pb and pb._ScootUFOrigWidth then
-                            local dx = (pb._ScootUFOrigWidth * (scaleX - 1))
+                        if pb and pbState.ufOrigWidth then
+                            local dx = (pbState.ufOrigWidth * (scaleX - 1))
                             if dx and dx ~= 0 then
                                 if unit == "Target" or unit == "Focus" then
                                     reapplyPBPointsWithLeftOffset(dx)
@@ -2923,12 +3011,12 @@ do
                         -- The StatusBar refreshes automatically when its dimensions change.
                     elseif pct < 100 then
 						-- Narrow the status bar frame
-						if pb and pb.SetWidth and pb._ScootUFOrigWidth then
-							pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth * scaleX)
+						if pb and pb.SetWidth and pbState.ufOrigWidth then
+							pcall(pb.SetWidth, pb, pbState.ufOrigWidth * scaleX)
 						end
 						-- Reposition so mirrored bars keep the portrait edge anchored
-						if pb and pb._ScootUFOrigWidth then
-							local shrinkDx = pb._ScootUFOrigWidth * (1 - scaleX)
+						if pb and pbState.ufOrigWidth then
+							local shrinkDx = pbState.ufOrigWidth * (1 - scaleX)
 							if shrinkDx and shrinkDx ~= 0 and isMirroredUnit then
 								reapplyPBPointsWithLeftOffset(-shrinkDx)
 							end
@@ -2939,12 +3027,12 @@ do
 						end
                     else
                         -- Restore power bar frame
-                        if pb and pb._ScootUFOrigWidth and pb.SetWidth then
-                            pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+                        if pb and pbState.ufOrigWidth and pb.SetWidth then
+                            pcall(pb.SetWidth, pb, pbState.ufOrigWidth)
                         end
-                        if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+                        if pb and pbState.ufOrigPoints and pb.ClearAllPoints and pb.SetPoint then
                             pcall(pb.ClearAllPoints, pb)
-                            for _, pt in ipairs(pb._ScootUFOrigPoints) do
+                            for _, pt in ipairs(pbState.ufOrigPoints) do
                                 pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
                             end
                         end
@@ -2958,12 +3046,12 @@ do
 					local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
 					local mask = resolvePowerMask(unit)
 					-- Restore power bar frame
-					if pb and pb._ScootUFOrigWidth and pb.SetWidth then
-						pcall(pb.SetWidth, pb, pb._ScootUFOrigWidth)
+					if pb and pbState.ufOrigWidth and pb.SetWidth then
+						pcall(pb.SetWidth, pb, pbState.ufOrigWidth)
 					end
-					if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+					if pb and pbState.ufOrigPoints and pb.ClearAllPoints and pb.SetPoint then
 						pcall(pb.ClearAllPoints, pb)
-						for _, pt in ipairs(pb._ScootUFOrigPoints) do
+						for _, pt in ipairs(pbState.ufOrigPoints) do
 							pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
 						end
 					end
@@ -2990,46 +3078,50 @@ do
 					    canScale = true
 				    end
 				
+				    local pbState = getState(pb)
+				    if not pbState then return end
 				    if canScale then
 					    local pct = tonumber(cfg.powerBarHeightPct) or 100
 					    local widthPct = tonumber(cfg.powerBarWidthPct) or 100
 					    local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
 					    local mask = resolvePowerMask(unit)
+					    local texState = getState(tex)
+					    local maskState = getState(mask)
 					
 					    -- Capture originals once (height and anchor points)
-					    if tex and not tex._ScootUFOrigCapturedHeight then
+					    if tex and texState and not texState.origCapturedHeight then
 						    if tex.GetHeight then
 							    local ok, h = pcall(tex.GetHeight, tex)
-							    if ok and h then tex._ScootUFOrigHeight = h end
+							    if ok and h then texState.origHeight = h end
 						    end
 						    -- Texture anchor points already captured by width scaling
-						    tex._ScootUFOrigCapturedHeight = true
+						    texState.origCapturedHeight = true
 					    end
-					    if mask and not mask._ScootUFOrigCapturedHeight then
+					    if mask and maskState and not maskState.origCapturedHeight then
 						    if mask.GetHeight then
 							    local ok, h = pcall(mask.GetHeight, mask)
-							    if ok and h then mask._ScootUFOrigHeight = h end
+							    if ok and h then maskState.origHeight = h end
 						    end
 						    -- Mask anchor points already captured by width scaling
-						    mask._ScootUFOrigCapturedHeight = true
+						    maskState.origCapturedHeight = true
 					    end
 					
 					    -- Anchor points should already be captured by width scaling
 					    -- If not, capture them now
-					    if pb and not pb._ScootUFOrigPoints then
+					    if pb and not pbState.ufOrigPoints then
 						    local pts = {}
 						    local n = (pb.GetNumPoints and pb:GetNumPoints()) or 0
 						    for i = 1, n do
 							    local p, rel, rp, x, y = pb:GetPoint(i)
 							    table.insert(pts, { p, rel, rp, x or 0, y or 0 })
 						    end
-						    pb._ScootUFOrigPoints = pts
+						    pbState.ufOrigPoints = pts
 					    end
 					
 					    -- Helper: reanchor PB to grow downward (keep top fixed)
 					    local function reapplyPBPointsWithBottomOffset(dy)
 						    -- Positive dy moves BOTTOM/CENTER anchors downward (keep top edge fixed)
-						    local pts = pb and pb._ScootUFOrigPoints
+						    local pts = pbState and pbState.ufOrigPoints
 						    if not (pb and pts and pb.ClearAllPoints and pb.SetPoint) then return end
 						    pcall(pb.ClearAllPoints, pb)
 						    for _, pt in ipairs(pts) do
@@ -3049,33 +3141,33 @@ do
 					    local scaleY = math.max(0.5, math.min(2.0, pct / 100))
 					
 					    -- Capture original PowerBar height once
-					    if pb and not pb._ScootUFOrigHeight then
+					    if pb and not pbState.ufOrigHeight then
 						    if pb.GetHeight then
 							    local ok, h = pcall(pb.GetHeight, pb)
-							    if ok and h then pb._ScootUFOrigHeight = h end
+							    if ok and h then pbState.ufOrigHeight = h end
 						    end
 					    end
 					
 					    -- CRITICAL: Always restore to original state FIRST
-					    if pb and pb._ScootUFOrigHeight and pb.SetHeight then
-						    pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight)
+					    if pb and pbState.ufOrigHeight and pb.SetHeight then
+						    pcall(pb.SetHeight, pb, pbState.ufOrigHeight)
 					    end
-					    if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+					    if pb and pbState.ufOrigPoints and pb.ClearAllPoints and pb.SetPoint then
 						    pcall(pb.ClearAllPoints, pb)
-						    for _, pt in ipairs(pb._ScootUFOrigPoints) do
+						    for _, pt in ipairs(pbState.ufOrigPoints) do
 							    pcall(pb.SetPoint, pb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
 						    end
 					    end
 					
 					    if pct ~= 100 then
 						    -- Scale the status bar frame height
-						    if pb and pb.SetHeight and pb._ScootUFOrigHeight then
-							    pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight * scaleY)
+						    if pb and pb.SetHeight and pbState.ufOrigHeight then
+							    pcall(pb.SetHeight, pb, pbState.ufOrigHeight * scaleY)
 						    end
 						
 						    -- Reposition the frame to grow downward (keep top fixed)
-						    if pb and pb._ScootUFOrigHeight then
-							    local dy = (pb._ScootUFOrigHeight * (scaleY - 1))
+						    if pb and pbState.ufOrigHeight then
+							    local dy = (pbState.ufOrigHeight * (scaleY - 1))
 							    if dy and dy ~= 0 then
 								    reapplyPBPointsWithBottomOffset(dy)
 							    end
@@ -3108,12 +3200,12 @@ do
 				    else
 					    -- Not scalable (Target/Focus with default fill): ensure we restore any prior height/anchors
 					    -- Restore power bar frame
-					    if pb and pb._ScootUFOrigHeight and pb.SetHeight then
-						    pcall(pb.SetHeight, pb, pb._ScootUFOrigHeight)
+					    if pb and pbState.ufOrigHeight and pb.SetHeight then
+						    pcall(pb.SetHeight, pb, pbState.ufOrigHeight)
 					    end
-					    if pb and pb._ScootUFOrigPoints and pb.ClearAllPoints and pb.SetPoint then
+					    if pb and pbState.ufOrigPoints and pb.ClearAllPoints and pb.SetPoint then
 						    pcall(pb.ClearAllPoints, pb)
-						    for _, pt in ipairs(pb._ScootUFOrigPoints) do
+						    for _, pt in ipairs(pbState.ufOrigPoints) do
 							    pcall(pb.SetPoint, pb, pt[1] or "TOP", pt[2], pt[3] or pt[1] or "TOP", pt[4] or 0, pt[5] or 0)
 						    end
 					    end
@@ -3131,28 +3223,35 @@ do
                     local offsetX = tonumber(cfg.powerBarOffsetX) or 0
                     local offsetY = tonumber(cfg.powerBarOffsetY) or 0
 
-                    if not pb._ScootPowerBarOrigPoints then
-                        pb._ScootPowerBarOrigPoints = {}
+                    local pbState = getState(pb)
+                    if pbState and not pbState.powerBarOrigPoints then
+                        pbState.powerBarOrigPoints = {}
                         for i = 1, pb:GetNumPoints() do
                             local point, relativeTo, relativePoint, xOfs, yOfs = pb:GetPoint(i)
-                            table.insert(pb._ScootPowerBarOrigPoints, { point, relativeTo, relativePoint, xOfs, yOfs })
+                            table.insert(pbState.powerBarOrigPoints, { point, relativeTo, relativePoint, xOfs, yOfs })
                         end
                     end
 
                     if offsetX ~= 0 or offsetY ~= 0 then
                         if pb.ClearAllPoints and pb.SetPoint then
                             pcall(pb.ClearAllPoints, pb)
-                            for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
+                            local origPoints = pbState and pbState.powerBarOrigPoints or nil
+                            if origPoints then
+                                for _, pt in ipairs(origPoints) do
                                 local newX = (pt[4] or 0) + offsetX
                                 local newY = (pt[5] or 0) + offsetY
                                 pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", newX, newY)
+                                end
                             end
                         end
                     else
                         if pb.ClearAllPoints and pb.SetPoint then
                             pcall(pb.ClearAllPoints, pb)
-                            for _, pt in ipairs(pb._ScootPowerBarOrigPoints) do
-                                pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+                            local origPoints = pbState and pbState.powerBarOrigPoints or nil
+                            if origPoints then
+                                for _, pt in ipairs(origPoints) do
+                                    pcall(pb.SetPoint, pb, pt[1] or "LEFT", pt[2], pt[3] or pt[1] or "LEFT", pt[4] or 0, pt[5] or 0)
+                                end
                             end
                         end
                     end
@@ -3229,14 +3328,14 @@ do
                         end
                         -- Keep ordering stable for power bar borders as well
                         ensureTextAndBorderOrdering(unit)
-                        if pb and not pb._ScootUFZOrderHooked and pb.HookScript then
+                        if pb and not getProp(pb, "ufZOrderHooked") and pb.HookScript then
                             pb:HookScript("OnSizeChanged", function()
                                 if InCombatLockdown and InCombatLockdown() then
                                     return
                                 end
                                 ensureTextAndBorderOrdering(unit)
                             end)
-                            pb._ScootUFZOrderHooked = true
+                            setProp(pb, "ufZOrderHooked", true)
                         end
                     end
                 else
@@ -3511,6 +3610,7 @@ do
 
     -- Enforce VehicleFrameTexture visibility based on Use Custom Borders setting
     local function EnforceVehicleFrameTextureVisibility()
+        if isEditModeActive() then return end
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames") or nil
         local cfg = unitFrames and rawget(unitFrames, "Player") or nil
@@ -3526,6 +3626,7 @@ do
 
     -- Enforce AlternatePowerFrameTexture visibility based on Use Custom Borders setting
     local function EnforceAlternatePowerFrameTextureVisibility()
+        if isEditModeActive() then return end
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames") or nil
         local cfg = unitFrames and rawget(unitFrames, "Player") or nil
@@ -3593,8 +3694,8 @@ do
         
         -- VehicleFrameTexture Show() hook
         local vehicleTex = container and container.VehicleFrameTexture
-        if vehicleTex and not vehicleTex._ScootShowHooked then
-            vehicleTex._ScootShowHooked = true
+        if vehicleTex and not getProp(vehicleTex, "showHooked") then
+            setProp(vehicleTex, "showHooked", true)
             hooksecurefunc(vehicleTex, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
                 local unitFrames = db and rawget(db, "unitFrames") or nil
@@ -3607,8 +3708,8 @@ do
 
         -- AlternatePowerFrameTexture Show() hook
         local altTex = container and container.AlternatePowerFrameTexture
-        if altTex and not altTex._ScootShowHooked then
-            altTex._ScootShowHooked = true
+        if altTex and not getProp(altTex, "showHooked") then
+            setProp(altTex, "showHooked", true)
             hooksecurefunc(altTex, "Show", function(self)
                 local db = addon and addon.db and addon.db.profile
                 local unitFrames = db and rawget(db, "unitFrames") or nil

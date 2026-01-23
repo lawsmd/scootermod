@@ -166,7 +166,7 @@ function panel.RenderGFParty()
                             if not (pf and addon and addon.EditMode and addon.EditMode.WriteSetting) then return end
                             local v = enabled and 1 or 0
                             addon.EditMode.WriteSetting(pf, EM.UseRaidStylePartyFrames, v, {
-                                updaters = { "UpdateSystemSettingUseRaidStylePartyFrames" },
+                                skipApply = true,
                                 suspendDuration = 0.25,
                             })
                         end)

@@ -3,6 +3,30 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil or {}
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
 local pendingCombatComponents = {}
 local combatWatcherFrame
 
@@ -97,14 +121,14 @@ local function cleanupOldPRDStyling(oldPlate)
             pcall(addon.Borders.HideAll, healthBar)
         end
         -- Clear stored alpha values so they don't persist
-        healthBar._ScooterPRDHealthAlpha = nil
+        setProp(healthBar, "_ScooterPRDHealthAlpha", nil)
     end
 
     -- Also clean container-level styling
-    container._ScooterPRDHealthAlpha = nil
-    container._ScooterModBaseWidth = nil
-    container._ScooterModBaseHeight = nil
-    container._ScooterModWidthDelta = nil
+    setProp(container, "_ScooterPRDHealthAlpha", nil)
+    setProp(container, "_ScooterModBaseWidth", nil)
+    setProp(container, "_ScooterModBaseHeight", nil)
+    setProp(container, "_ScooterModWidthDelta", nil)
 end
 
 -- Check if the player's PRD has moved to a different nameplate frame,
@@ -335,11 +359,11 @@ local function storeOriginalAlpha(frame, storageKey)
         return
     end
     storageKey = storageKey or "_ScooterPRDOrigAlpha"
-    if frame[storageKey] ~= nil then
+    if getProp(frame, storageKey) ~= nil then
         return
     end
     local ok, alpha = pcall(frame.GetAlpha, frame)
-    frame[storageKey] = ok and (alpha or 1) or 1
+    setProp(frame, storageKey, ok and (alpha or 1) or 1)
 end
 
 local function applyHiddenAlpha(frame, hidden, storageKey)
@@ -351,7 +375,7 @@ local function applyHiddenAlpha(frame, hidden, storageKey)
         storeOriginalAlpha(frame, storageKey)
         pcall(frame.SetAlpha, frame, 0)
     else
-        local original = frame[storageKey]
+        local original = getProp(frame, storageKey)
         if original == nil then
             original = 1
         end
@@ -800,7 +824,7 @@ local function applyScaleToFrame(frame, multiplier, component)
         return
     end
 
-    if not frame._ScooterModBaseScale then
+    if getProp(frame, "_ScooterModBaseScale") == nil then
         local base = 1
         if frame.GetScale then
             local ok, existing = pcall(frame.GetScale, frame)
@@ -808,10 +832,10 @@ local function applyScaleToFrame(frame, multiplier, component)
                 base = existing
             end
         end
-        frame._ScooterModBaseScale = base or 1
+        setProp(frame, "_ScooterModBaseScale", base or 1)
     end
 
-    local baseScale = frame._ScooterModBaseScale or 1
+    local baseScale = getProp(frame, "_ScooterModBaseScale") or 1
     local desired = baseScale * multiplier
 
     local current
@@ -991,7 +1015,7 @@ local function applyHealthOffsets(component)
     end
 
     local baseLeft, baseRight, baseY = 12, -12, 5
-    local baseWidth = container._ScooterModBaseWidth
+    local baseWidth = getProp(container, "_ScooterModBaseWidth")
     if not baseWidth or baseWidth <= 0 then
         baseWidth = (container.GetWidth and container:GetWidth()) or 0
         if (not baseWidth or baseWidth <= 0) and plate.UnitFrame and plate.UnitFrame.GetWidth then
@@ -1003,7 +1027,7 @@ local function applyHealthOffsets(component)
         if not baseWidth or baseWidth <= 0 then
             baseWidth = 200
         end
-        container._ScooterModBaseWidth = baseWidth
+        setProp(container, "_ScooterModBaseWidth", baseWidth)
     end
 
     if component.settings and component.settings.barWidth then
@@ -1023,13 +1047,13 @@ local function applyHealthOffsets(component)
     end
     local widthBase = storedWidth
 
-    local baseHeight = container._ScooterModBaseHeight
+    local baseHeight = getProp(container, "_ScooterModBaseHeight")
     if not baseHeight or baseHeight <= 0 then
         baseHeight = (container.GetHeight and container:GetHeight()) or 0
         if not baseHeight or baseHeight <= 0 then
             baseHeight = 12
         end
-        container._ScooterModBaseHeight = baseHeight
+        setProp(container, "_ScooterModBaseHeight", baseHeight)
     end
 
     if component.settings and component.settings.barHeight then
@@ -1055,7 +1079,7 @@ local function applyHealthOffsets(component)
     local widthDelta = (desiredWidth - baseWidth) * 0.5
     local leftOffset = (baseLeft + offsetX) - widthDelta
     local rightOffset = (baseRight + offsetX) + widthDelta
-    container._ScooterModWidthDelta = widthDelta
+    setProp(container, "_ScooterModWidthDelta", widthDelta)
     local setter = PixelUtil and PixelUtil.SetPoint
     if setter then
         if not safeCall(setter, container, "LEFT", plate.UnitFrame, "LEFT", leftOffset, baseY + offsetY) then

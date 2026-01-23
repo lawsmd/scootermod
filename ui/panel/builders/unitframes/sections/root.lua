@@ -334,12 +334,13 @@ local function build(ctx, init)
 								addon.EditMode.WriteSetting(frameUF, settingId, val, {
 									updaters        = { "UpdateSystemSettingFrameSize" },
 									suspendDuration = 0.25,
+									skipApply       = true,  -- Avoid taint from RequestApplyChanges
 								})
 							elseif addon.EditMode.SetSetting then
 								addon.EditMode.SetSetting(frameUF, settingId, val)
 								if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
 								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								-- Skip RequestApplyChanges to avoid taint
 							end
 						end
 					end
@@ -389,12 +390,13 @@ local function build(ctx, init)
 								addon.EditMode.WriteSetting(frameUF, settingId, val, {
 									updaters        = { "UpdateSystemSettingFrameSize" },
 									suspendDuration = 0.25,
+									skipApply       = true,  -- Avoid taint from RequestApplyChanges
 								})
 							elseif addon.EditMode.SetSetting then
 								addon.EditMode.SetSetting(frameUF, settingId, val)
 								if type(frameUF.UpdateSystemSettingFrameSize) == "function" then pcall(frameUF.UpdateSystemSettingFrameSize, frameUF) end
 								if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-								if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+								-- Skip RequestApplyChanges to avoid taint
 							end
 						end
 						-- Invalidate scale multiplier baselines when Edit Mode scale changes

@@ -7,6 +7,11 @@ local function ensureFS()
     return FS
 end
 
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
 -- 12.0+: Blizzard can mark certain UI-derived numbers as "secret", which causes
 -- arithmetic like `x + 1` to hard-error ("attempt to perform arithmetic on a secret value").
 -- We treat those as unreadable offsets and fall back to 0 so styling does not crash.
@@ -58,6 +63,14 @@ local function safeGetWidth(frame)
     local okArith = pcall(function() return w + 0 end)
     if not okArith then return nil end
     return w
+end
+
+local function isEditModeActive()
+	if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+		return addon.EditMode.IsEditModeActiveOrOpening()
+	end
+	local mgr = _G.EditModeManagerFrame
+	return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
 end
 
 -- Unit Frames: Toggle Health % (LeftText) and Value (RightText) visibility per unit
@@ -462,6 +475,7 @@ do
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
@@ -469,6 +483,7 @@ do
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
@@ -486,6 +501,7 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
@@ -510,6 +526,7 @@ do
             fstate.MarkHooked(textStringFS, "healthTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
+                    if isEditModeActive() then return end
                     -- Enforce hidden state immediately if configured
                     local st = ensureFS()
                     if st and st.IsHidden(self, "healthTextCenter") and self.SetAlpha then
@@ -624,6 +641,7 @@ do
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
@@ -631,6 +649,7 @@ do
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
@@ -648,6 +667,7 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
+                            if isEditModeActive() then return end
                             local st = ensureFS()
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
@@ -1594,8 +1614,9 @@ do
 			-- so we hook the container once to trigger a reapply and install per-frame hooks.
 			if _G and _G.hooksecurefunc then
 				local container = _G.BossTargetFrameContainer
-				if container and not container._ScootBossNameTextContainerHooked then
-					container._ScootBossNameTextContainerHooked = true
+				local cState = getState(container)
+				if container and cState and not cState.bossNameTextContainerHooked then
+					cState.bossNameTextContainerHooked = true
 					if type(container.OnShow) == "function" then
 						_G.hooksecurefunc(container, "OnShow", function()
 							-- IMPORTANT (taint): This hook executes inside Blizzard's boss-frame show/layout flow.
@@ -1734,7 +1755,8 @@ do
 			local function applyBossBackdrop(main, hb, index)
 				-- Reuse the same DB keys as other unit frames (nameBackdrop*).
 				local holderKey = "ScooterNameBackdrop_Boss" .. tostring(index)
-				local existingTex = main and main[holderKey] or nil
+				local mainState = getState(main)
+				local existingTex = mainState and mainState[holderKey] or nil
 
 				local configured = (
 					cfg.nameBackdropEnabled ~= nil
@@ -1761,7 +1783,7 @@ do
 				local tex = existingTex
 				if main and not tex then
 					tex = main:CreateTexture(nil, "BACKGROUND", nil, -8)
-					main[holderKey] = tex
+					if mainState then mainState[holderKey] = tex end
 				end
 				if not tex then return end
 
@@ -1812,7 +1834,8 @@ do
 
 			local function applyBossBackdropBorder(main, hb, index)
 				local borderKey = "ScooterNameBackdropBorder_Boss" .. tostring(index)
-				local existingBorderFrame = main and main[borderKey] or nil
+				local mainState = getState(main)
+				local existingBorderFrame = mainState and mainState[borderKey] or nil
 
 				local configured = (
 					cfg.nameBackdropBorderEnabled ~= nil
@@ -1850,7 +1873,7 @@ do
 				if main and not borderFrame then
 					local template = BackdropTemplateMixin and "BackdropTemplate" or nil
 					borderFrame = CreateFrame("Frame", nil, main, template)
-					main[borderKey] = borderFrame
+					if mainState then mainState[borderKey] = borderFrame end
 				end
 				if not borderFrame then return end
 
@@ -1955,19 +1978,20 @@ do
 				end
 
 				-- Persistence hooks (Boss frames can refresh/overwrite text props).
-				if _G.hooksecurefunc and not bossFrame._ScootBossNameTextHooked then
-					bossFrame._ScootBossNameTextHooked = true
+				local bossState = getState(bossFrame)
+				if _G.hooksecurefunc and bossState and not bossState.bossNameTextHooked then
+					bossState.bossNameTextHooked = true
 					local function safeReapply()
 						-- Throttle per-frame to avoid rapid spam from Update/OnShow.
-						if bossFrame._ScootBossNameTextReapplyPending then return end
-						bossFrame._ScootBossNameTextReapplyPending = true
+						if bossState.bossNameTextReapplyPending then return end
+						bossState.bossNameTextReapplyPending = true
 						if _G.C_Timer and _G.C_Timer.After then
 							_G.C_Timer.After(0, function()
-								bossFrame._ScootBossNameTextReapplyPending = nil
+								bossState.bossNameTextReapplyPending = nil
 								applyBossIndex(i)
 							end)
 						else
-							bossFrame._ScootBossNameTextReapplyPending = nil
+							bossState.bossNameTextReapplyPending = nil
 							applyBossIndex(i)
 						end
 					end
@@ -2271,21 +2295,23 @@ do
 		-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
 		if unit == "Player" and levelFS then
 			-- Install hook once (hooksecurefunc runs AFTER Blizzard's SetVertexColor)
-			if not levelFS._scooterVertexColorHooked then
-				levelFS._scooterVertexColorHooked = true
+			local levelState = getState(levelFS)
+			if levelState and not levelState.vertexColorHooked then
+				levelState.vertexColorHooked = true
 				
 				hooksecurefunc(levelFS, "SetVertexColor", function(self, r, g, b, a)
 					-- Guard against recursion since we call SetVertexColor inside the hook
-					if self._scooterApplyingVertexColor then return end
+					local st = getState(self)
+					if st and st.applyingVertexColor then return end
 					
 					-- Check if we have a custom color configured
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
 						local c = db.unitFrames.Player.textLevel.color
 						-- Re-apply our custom color (overrides what Blizzard just set)
-						self._scooterApplyingVertexColor = true
+						if st then st.applyingVertexColor = true end
 						pcall(self.SetVertexColor, self, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-						self._scooterApplyingVertexColor = nil
+						if st then st.applyingVertexColor = nil end
 					end
 					-- If no custom color configured, Blizzard's color remains (hook does nothing)
 				end)
@@ -2294,9 +2320,10 @@ do
 			-- Apply our color immediately if configured
 			if cfg.textLevel and cfg.textLevel.color then
 				local c = cfg.textLevel.color
-				levelFS._scooterApplyingVertexColor = true
+				local st = getState(levelFS)
+				if st then st.applyingVertexColor = true end
 				pcall(levelFS.SetVertexColor, levelFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-				levelFS._scooterApplyingVertexColor = nil
+				if st then st.applyingVertexColor = nil end
 			end
 		end
 	end
@@ -2305,7 +2332,8 @@ do
 			local main = resolveUFContentMain_NLT(unit)
 			local hb = resolveHealthBar_NLT(unit)
 			local holderKey = "ScooterNameBackdrop_" .. tostring(unit)
-			local existingTex = main and main[holderKey] or nil
+			local mainState = getState(main)
+			local existingTex = mainState and mainState[holderKey] or nil
 
 			-- Zero‑Touch: only create/manage the backdrop texture when this feature has been configured.
 			local configured = (
@@ -2332,7 +2360,7 @@ do
 			local tex = existingTex
 			if main and not tex then
 				tex = main:CreateTexture(nil, "BACKGROUND", nil, -8)
-				main[holderKey] = tex
+				if mainState then mainState[holderKey] = tex end
 			end
 			if tex then
 				if hb and resolvedPath and enabledBackdrop then
@@ -2395,7 +2423,8 @@ do
 			local main = resolveUFContentMain_NLT(unit)
 			local hb = resolveHealthBar_NLT(unit)
 			local borderKey = "ScooterNameBackdropBorder_" .. tostring(unit)
-			local existingBorderFrame = main and main[borderKey] or nil
+			local mainState = getState(main)
+			local existingBorderFrame = mainState and mainState[borderKey] or nil
 
 			-- Zero‑Touch: only create/manage the border when this feature has been configured.
 			local configured = (
@@ -2434,7 +2463,7 @@ do
 			if main and not borderFrame then
 				local template = BackdropTemplateMixin and "BackdropTemplate" or nil
 				borderFrame = CreateFrame("Frame", nil, main, template)
-				main[borderKey] = borderFrame
+				if mainState then mainState[borderKey] = borderFrame end
 			end
 			if borderFrame and hb and useBorders then
 				-- Match border width to the same baseline-derived width as backdrop
@@ -2587,12 +2616,14 @@ do
 
 		if _G.hooksecurefunc and type(_G.TargetFrame_Update) == "function" then
 			_G.hooksecurefunc("TargetFrame_Update", function()
+				if isEditModeActive() then return end
 				reapply("Target")
 			end)
 		end
 
 		if _G.hooksecurefunc and type(_G.FocusFrame_Update) == "function" then
 			_G.hooksecurefunc("FocusFrame_Update", function()
+				if isEditModeActive() then return end
 				reapply("Focus")
 			end)
 		end

@@ -3,6 +3,30 @@ local Util = addon.ComponentsUtil
 local ClampOpacity = Util.ClampOpacity
 local PlayerInCombat = Util.PlayerInCombat
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
 -- Unit Frames: Overall visibility (opacity) per unit
 do
     local function getUnitFrameFor(unit)
@@ -175,10 +199,10 @@ do
                 local miscCfg = unitCfg and rawget(unitCfg, "misc") or nil
                 if miscCfg and miscCfg.hideThreatMeter == true and alpha and alpha > 0 then
                     -- Defer to avoid recursion
-                    if not self._ScootThreatAlphaDeferred then
-                        self._ScootThreatAlphaDeferred = true
+                    if not getProp(self, "threatAlphaDeferred") then
+                        setProp(self, "threatAlphaDeferred", true)
                         C_Timer.After(0, function()
-                            self._ScootThreatAlphaDeferred = nil
+                            setProp(self, "threatAlphaDeferred", nil)
                             if miscCfg and miscCfg.hideThreatMeter == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -296,10 +320,10 @@ do
                 local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
                 local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
                 if miscCfg and miscCfg.hideBossThreatCounter == true and alpha and alpha > 0 then
-                    if not self._ScootBossThreatAlphaDeferred then
-                        self._ScootBossThreatAlphaDeferred = true
+                    if not getProp(self, "bossThreatAlphaDeferred") then
+                        setProp(self, "bossThreatAlphaDeferred", true)
                         C_Timer.After(0, function()
-                            self._ScootBossThreatAlphaDeferred = nil
+                            setProp(self, "bossThreatAlphaDeferred", nil)
                             if miscCfg and miscCfg.hideBossThreatCounter == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -401,10 +425,10 @@ do
                 local targetCfg = unitFrames and rawget(unitFrames, "Target") or nil
                 local miscCfg = targetCfg and rawget(targetCfg, "misc") or nil
                 if miscCfg and miscCfg.hideBossIcon == true and alpha and alpha > 0 then
-                    if not self._ScootBossIconAlphaDeferred then
-                        self._ScootBossIconAlphaDeferred = true
+                    if not getProp(self, "bossIconAlphaDeferred") then
+                        setProp(self, "bossIconAlphaDeferred", true)
                         C_Timer.After(0, function()
-                            self._ScootBossIconAlphaDeferred = nil
+                            setProp(self, "bossIconAlphaDeferred", nil)
                             if miscCfg and miscCfg.hideBossIcon == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -507,10 +531,10 @@ do
                 local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
                 if miscCfg and miscCfg.hideRoleIcon == true and alpha and alpha > 0 then
                     -- Defer to avoid recursion
-                    if not self._ScootRoleIconAlphaDeferred then
-                        self._ScootRoleIconAlphaDeferred = true
+                    if not getProp(self, "roleIconAlphaDeferred") then
+                        setProp(self, "roleIconAlphaDeferred", true)
                         C_Timer.After(0, function()
-                            self._ScootRoleIconAlphaDeferred = nil
+                            setProp(self, "roleIconAlphaDeferred", nil)
                             if miscCfg and miscCfg.hideRoleIcon == true and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -638,10 +662,10 @@ do
                     local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
                     local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
                     if miscCfg and miscCfg.hideGroupNumber == true and alpha and alpha > 0 then
-                        if not self._ScootGroupIndicatorAlphaDeferred then
-                            self._ScootGroupIndicatorAlphaDeferred = true
+                        if not getProp(self, "groupIndicatorAlphaDeferred") then
+                            setProp(self, "groupIndicatorAlphaDeferred", true)
                             C_Timer.After(0, function()
-                                self._ScootGroupIndicatorAlphaDeferred = nil
+                                setProp(self, "groupIndicatorAlphaDeferred", nil)
                                 if miscCfg and miscCfg.hideGroupNumber == true and self.SetAlpha then
                                     pcall(self.SetAlpha, self, 0)
                                 end
@@ -677,10 +701,10 @@ do
                     local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
                     local miscCfg = playerCfg and rawget(playerCfg, "misc") or nil
                     if miscCfg and miscCfg.hideGroupNumber == true and alpha and alpha > 0 then
-                        if not self._ScootGroupIndicatorTextAlphaDeferred then
-                            self._ScootGroupIndicatorTextAlphaDeferred = true
+                        if not getProp(self, "groupIndicatorTextAlphaDeferred") then
+                            setProp(self, "groupIndicatorTextAlphaDeferred", true)
                             C_Timer.After(0, function()
-                                self._ScootGroupIndicatorTextAlphaDeferred = nil
+                                setProp(self, "groupIndicatorTextAlphaDeferred", nil)
                                 if miscCfg and miscCfg.hideGroupNumber == true and self.SetAlpha then
                                     pcall(self.SetAlpha, self, 0)
                                 end

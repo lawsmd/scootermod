@@ -8,6 +8,30 @@ local addonName, addon = ...
 -- Get utilities
 local Utils = addon.BarsUtils
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
 -- Create module namespace
 addon.BarsTextures = addon.BarsTextures or {}
 local Textures = addon.BarsTextures
@@ -70,10 +94,10 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
     
     local tex = bar:GetStatusBarTexture()
     -- Capture original once
-    if not bar._ScootUFOrigCaptured then
+    if not getProp(bar, "ufOrigCaptured") then
         if tex and tex.GetAtlas then
             local ok, atlas = pcall(tex.GetAtlas, tex)
-            if ok and atlas then bar._ScootUFOrigAtlas = atlas end
+            if ok and atlas then setProp(bar, "ufOrigAtlas", atlas) end
         end
         if tex and tex.GetTexture then
             local ok, path = pcall(tex.GetTexture, tex)
@@ -82,17 +106,18 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                 -- Prefer treating such strings as atlases when possible to avoid spritesheet rendering on restore.
                 local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(path) ~= nil
                 if isAtlas then
-                    bar._ScootUFOrigAtlas = bar._ScootUFOrigAtlas or path
+                    local existingAtlas = getProp(bar, "ufOrigAtlas")
+                    if not existingAtlas then setProp(bar, "ufOrigAtlas", path) end
                 else
-                    bar._ScootUFOrigPath = path
+                    setProp(bar, "ufOrigPath", path)
                 end
             end
         end
         if tex and tex.GetVertexColor then
             local ok, r, g, b, a = pcall(tex.GetVertexColor, tex)
-            if ok then bar._ScootUFOrigVertex = { r or 1, g or 1, b or 1, a or 1 } end
+            if ok then setProp(bar, "ufOrigVertex", { r or 1, g or 1, b or 1, a or 1 }) end
         end
-        bar._ScootUFOrigCaptured = true
+        setProp(bar, "ufOrigCaptured", true)
     end
 
     local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
@@ -100,9 +125,9 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
     if isCustom and resolvedPath then
         if bar.SetStatusBarTexture then
             -- Mark this write so any SetStatusBarTexture hook can ignore it (avoid recursion)
-            bar._ScootUFInternalTextureWrite = true
+            setProp(bar, "ufInternalTextureWrite", true)
             pcall(bar.SetStatusBarTexture, bar, resolvedPath)
-            bar._ScootUFInternalTextureWrite = nil
+            setProp(bar, "ufInternalTextureWrite", nil)
         end
         -- Re-fetch the current texture after swapping to ensure subsequent operations target the new texture
         tex = bar:GetStatusBarTexture()
@@ -130,7 +155,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                 local pr, pg, pb = addon.GetPowerColorRGB(unitForPower or unitForClass or "player")
                 r, g, b, a = pr or 1, pg or 1, pb or 1, 1
             else
-                local ov = bar._ScootUFOrigVertex
+                local ov = getProp(bar, "ufOrigVertex")
                 if type(ov) == "table" then r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1 end
             end
         end
@@ -152,23 +177,25 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         else
             -- Default color: restore Blizzard's original fill
             -- Note: Power bars with default texture + default color already returned early above.
-            if bar._ScootUFOrigCaptured then
-                if bar._ScootUFOrigAtlas then
+            if getProp(bar, "ufOrigCaptured") then
+                local origAtlas = getProp(bar, "ufOrigAtlas")
+                local origPath = getProp(bar, "ufOrigPath")
+                if origAtlas then
                     if tex and tex.SetAtlas then
-                        pcall(tex.SetAtlas, tex, bar._ScootUFOrigAtlas, true)
+                        pcall(tex.SetAtlas, tex, origAtlas, true)
                     elseif bar.SetStatusBarTexture then
-                        bar._ScootUFInternalTextureWrite = true
-                        pcall(bar.SetStatusBarTexture, bar, bar._ScootUFOrigAtlas)
-                        bar._ScootUFInternalTextureWrite = nil
+                        setProp(bar, "ufInternalTextureWrite", true)
+                        pcall(bar.SetStatusBarTexture, bar, origAtlas)
+                        setProp(bar, "ufInternalTextureWrite", nil)
                     end
-                elseif bar._ScootUFOrigPath then
-                    local treatAsAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(bar._ScootUFOrigPath) ~= nil
+                elseif origPath then
+                    local treatAsAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(origPath) ~= nil
                     if treatAsAtlas and tex and tex.SetAtlas then
-                        pcall(tex.SetAtlas, tex, bar._ScootUFOrigPath, true)
+                        pcall(tex.SetAtlas, tex, origPath, true)
                     elseif bar.SetStatusBarTexture then
-                        bar._ScootUFInternalTextureWrite = true
-                        pcall(bar.SetStatusBarTexture, bar, bar._ScootUFOrigPath)
-                        bar._ScootUFInternalTextureWrite = nil
+                        setProp(bar, "ufInternalTextureWrite", true)
+                        pcall(bar.SetStatusBarTexture, bar, origPath)
+                        setProp(bar, "ufInternalTextureWrite", nil)
                     end
                 end
             end
@@ -177,7 +204,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                 -- Based on Blizzard_CastingBarFrame.lua (CastingBarFrameMixin).
                 r, g, b, a = 1.0, 0.7, 0.0, 1
             else
-                local ov = bar._ScootUFOrigVertex or {1,1,1,1}
+                local ov = getProp(bar, "ufOrigVertex") or {1,1,1,1}
                 r, g, b, a = ov[1] or 1, ov[2] or 1, ov[3] or 1, ov[4] or 1
             end
         end

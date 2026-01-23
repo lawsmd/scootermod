@@ -165,7 +165,7 @@ function panel.RenderObjectiveTracker()
 				function(v)
 					component.db[settingKey] = tonumber(v)
 					if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-						addon.EditMode.SyncComponentSettingToEditMode(component, settingKey)
+						addon.EditMode.SyncComponentSettingToEditMode(component, settingKey, { skipApply = true })
 					end
 				end,
 				nil

@@ -900,14 +900,13 @@ function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
     if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
         for key, def in pairs(dst.settings or {}) do
             if type(def) == "table" and def.type == "editmode" then
-                pcall(addon.EditMode.SyncComponentSettingToEditMode, dst, key)
+                pcall(addon.EditMode.SyncComponentSettingToEditMode, dst, key, { skipApply = true })
             end
         end
     end
 
-    if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-    -- Note: Skip RequestApplyChanges to avoid taint from opening Edit Mode panel.
-    -- Edit Mode layout changes persist via SaveOnly and take effect on reload.
+    -- Settings persist via SaveOnly inside SyncComponentSettingToEditMode; no need for additional call.
+    -- Edit Mode state syncs when user opens/closes Edit Mode.
     addon:ApplyStyles()
 end
 

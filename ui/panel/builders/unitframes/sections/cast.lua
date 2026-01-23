@@ -1220,6 +1220,7 @@ local function build(ctx, init)
 												addon.EditMode.WriteSetting(frame, sid, val, {
 													updaters        = { "UpdateSystemSettingLockToPlayerFrame", "UpdateSystem", "RefreshLayout" },
 													suspendDuration = 0.4,
+													skipApply       = true,  -- Avoid taint from RequestApplyChanges
 												})
 											elseif addon.EditMode.SetSetting then
 												addon.EditMode.SetSetting(frame, sid, val)
@@ -1244,7 +1245,8 @@ local function build(ctx, init)
 												-- Mirror Player Unit Frame's CastBarUnderneath setting as a normal
 												-- Edit Mode write so both UIs share the same persisted state.
 												addon.EditMode.WriteSetting(frameUF, sidUF, val, {
-													updaters = { "UpdateSystem", "RefreshLayout" },
+													updaters  = { "UpdateSystem", "RefreshLayout" },
+													skipApply = true,  -- Avoid taint from RequestApplyChanges
 												})
 											elseif addon.EditMode.SetSetting then
 												addon.EditMode.SetSetting(frameUF, sidUF, val)
@@ -1387,12 +1389,13 @@ local function build(ctx, init)
 										addon.EditMode.WriteSetting(frame, sid, val, {
 											updaters        = { "UpdateSystemSettingBarSize" },
 											suspendDuration = 0.25,
+											skipApply       = true,  -- Avoid taint from RequestApplyChanges
 										})
 									elseif addon.EditMode.SetSetting then
 										addon.EditMode.SetSetting(frame, sid, val)
 										if type(frame.UpdateSystemSettingBarSize) == "function" then pcall(frame.UpdateSystemSettingBarSize, frame) end
 										if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-										if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+										-- Skip RequestApplyChanges to avoid taint
 									end
 								end
 							end
@@ -1764,12 +1767,13 @@ local function build(ctx, init)
 										addon.EditMode.WriteSetting(frameCB, sid, val, {
 											updaters        = { "UpdateSystemSettingShowCastTime" },
 											suspendDuration = 0.25,
+											skipApply       = true,  -- Avoid taint from RequestApplyChanges
 										})
 									elseif addon.EditMode.SetSetting then
 										addon.EditMode.SetSetting(frameCB, sid, val)
 										if type(frameCB.UpdateSystemSettingShowCastTime) == "function" then pcall(frameCB.UpdateSystemSettingShowCastTime, frameCB) end
 										if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-										if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+										-- Skip RequestApplyChanges to avoid taint
 									end
 									-- Reapply Scooter styling so Cast Time text reflects current settings immediately
 									applyNow()

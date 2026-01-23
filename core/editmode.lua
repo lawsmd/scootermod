@@ -4,9 +4,14 @@ local function _ShouldSuppressWrites()
     if not prof or not prof.IsPostCopySuppressed then return false end
     return prof:IsPostCopySuppressed()
 end
-local function _SafePCall(method, frame)
-    if frame and type(method) == "string" and type(frame[method]) == "function" then
-        pcall(frame[method], frame)
+local function _SafePCall(method, frame, useSecure)
+    if not (frame and type(method) == "string") then return end
+    local fn = frame[method]
+    if type(fn) ~= "function" then return end
+    if useSecure and type(securecallfunction) == "function" then
+        securecallfunction(fn, frame)
+    else
+        pcall(fn, frame)
     end
 end
 local addonName, addon = ...
@@ -365,6 +370,8 @@ function addon.EditMode.ReanchorFrame(frame, point, relativeTo, relativePoint, x
 end
 
 function addon.EditMode.ApplyChanges()
+    -- [LEAD3] Block the entire ApplyChanges path when diagnostic flag is set
+    if addon.EditMode._lead3_skipFrameWrites then return end
     if not LEO or not LEO.ApplyChanges then return end
     if _ShouldSuppressWrites() then return end
     -- If the user is currently in Edit Mode, never call LEO:ApplyChanges().
@@ -399,13 +406,19 @@ local _pendingApplyTimer
 addon.EditMode._deferApplyUntilEditModeExit = addon.EditMode._deferApplyUntilEditModeExit or false
 
 function addon.EditMode.CancelPendingApplyChanges()
+    local hadPending = (_pendingApplyTimer ~= nil)
     if _pendingApplyTimer and _pendingApplyTimer.Cancel then
         _pendingApplyTimer:Cancel()
     end
     _pendingApplyTimer = nil
+    return hadPending  -- Return true if we canceled a pending timer
 end
 
 function addon.EditMode.RequestApplyChanges(delay)
+    -- [LEAD3] Skip ApplyChanges entirely when diagnostic flag is set.
+    -- ApplyChanges calls EditModeManagerFrame:UpdateLayoutInfo() from addon context,
+    -- which is a potential taint source (method call on Blizzard frame).
+    if addon.EditMode._lead3_skipFrameWrites then return end
     local d = tonumber(delay) or 0.2
     -- Cancel any previously scheduled apply
     addon.EditMode.CancelPendingApplyChanges()
@@ -432,6 +445,120 @@ function addon.EditMode.RequestApplyChanges(delay)
     end
 end
 
+-- Edit Mode open/close helpers
+-- Guard flag for exiting Edit Mode (set by EditMode.Exit callback, cleared after delay)
+addon.EditMode._exitingEditMode = addon.EditMode._exitingEditMode or false
+
+function addon.EditMode.IsEditModeActiveOrOpening()
+    -- True during opening, active, or exiting phases to avoid taint during transitions
+    if addon and addon.EditMode then
+        if addon.EditMode._openingEditMode then return true end
+        if addon.EditMode._exitingEditMode then return true end
+    end
+    local mgr = _G.EditModeManagerFrame
+    if not mgr then return false end
+    if mgr.IsEditModeActive then
+        local ok, active = pcall(mgr.IsEditModeActive, mgr)
+        if ok and active then return true end
+    end
+    if mgr.editModeActive then return true end
+    if mgr.IsShown and mgr:IsShown() then return true end
+    return false
+end
+
+function addon.EditMode.MarkOpeningEditMode()
+    addon.EditMode._openingEditMode = true
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(1.0, function()
+            if addon and addon.EditMode then
+                addon.EditMode._openingEditMode = nil
+            end
+        end)
+    end
+end
+
+function addon.EditMode.MarkExitingEditMode()
+    addon.EditMode._exitingEditMode = true
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(1.0, function()
+            if addon and addon.EditMode then
+                addon.EditMode._exitingEditMode = nil
+            end
+        end)
+    end
+end
+
+function addon.EditMode.OpenEditMode()
+    -- Do NOT call ApplyChanges() or UpdateLayoutInfo() here — writing to
+    -- EditModeManagerFrame from addon code permanently taints it, causing
+    -- TargetUnit() and CompactUnitFrame_UpdateAll secret-value errors.
+    -- The layout cache is refreshed by the EnterEditMode post-hook instead
+    -- (after the secure setup completes).
+    if addon and addon.EditMode and addon.EditMode.CancelPendingApplyChanges then
+        addon.EditMode.CancelPendingApplyChanges()
+    end
+
+    if addon and addon.EditMode and addon.EditMode.MarkOpeningEditMode then
+        addon.EditMode.MarkOpeningEditMode()
+    end
+
+    local function doOpen()
+        local mgr = _G.EditModeManagerFrame
+        local canEnter = true
+        if mgr and type(mgr.CanEnterEditMode) == "function" then
+            local ok, can = pcall(mgr.CanEnterEditMode, mgr)
+            if ok and not can then
+                canEnter = false
+            end
+        end
+        if not canEnter then
+            if addon and addon.Print then
+                addon:Print("Edit Mode cannot be entered right now.")
+            end
+            return
+        end
+
+        if _G.securecallfunction then
+            if _G.ShowUIPanel and mgr then
+                securecallfunction(_G.ShowUIPanel, mgr)
+                return
+            end
+            if mgr and type(mgr.EnterEditMode) == "function" then
+                securecallfunction(mgr.EnterEditMode, mgr)
+                return
+            end
+            if _G.RunBinding then
+                securecallfunction(_G.RunBinding, "TOGGLE_EDIT_MODE")
+                return
+            end
+            if _G.SlashCmdList and _G.SlashCmdList["EDITMODE"] then
+                securecallfunction(_G.SlashCmdList["EDITMODE"], "")
+                return
+            end
+        end
+
+        if _G.ShowUIPanel and mgr then
+            _G.ShowUIPanel(mgr)
+        elseif mgr and type(mgr.EnterEditMode) == "function" then
+            mgr:EnterEditMode()
+        elseif _G.RunBinding then
+            _G.RunBinding("TOGGLE_EDIT_MODE")
+        elseif _G.SlashCmdList and _G.SlashCmdList["EDITMODE"] then
+            _G.SlashCmdList["EDITMODE"]("")
+        else
+            if addon and addon.Print then
+                addon:Print("Use /editmode to open the layout manager.")
+            end
+        end
+    end
+
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(0, doOpen)
+    else
+        doOpen()
+    end
+end
+
 -- Helper functions
 function addon.EditMode.LoadLayouts()
     if not LEO or not LEO.LoadLayouts or not LEO.IsReady then return end
@@ -440,10 +567,21 @@ function addon.EditMode.LoadLayouts()
     pcall(LEO.LoadLayouts, LEO)
 end
 
+-- Flag: set when SaveOnly() persists data that EditModeManagerFrame hasn't seen.
+-- The EnterEditMode post-hook reads C_EditMode.GetLayouts() to refresh the cache.
+addon.EditMode._pendingLayoutRefresh = false
+
+-- [LEAD3 DIAGNOSTIC] When true, SyncComponentSettingToEditMode skips all direct writes
+-- to system frames (property writes, method calls). Only LEO layoutInfo + SaveLayouts persist.
+-- This confirms whether frame writes are the sole source of 12.0 taint errors on EM close.
+-- See ADDONCONTEXT/Docs/TAINT.md "Phase 4: Strip Frame Writes" for details.
+addon.EditMode._lead3_skipFrameWrites = true
+
 function addon.EditMode.SaveOnly()
     if not LEO or not LEO.SaveOnly then return end
     if _ShouldSuppressWrites() then return end
     LEO:SaveOnly()
+    addon.EditMode._pendingLayoutRefresh = true
 end
 
 -- Centralized write helper for Edit Mode–controlled settings.
@@ -537,15 +675,20 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
 
     -- Run any requested update methods to nudge visuals immediately
     local updaters = opts.updaters
+    local useSecureUpdaters = opts.secureUpdaters == true
     if type(updaters) == "table" then
         for _, u in ipairs(updaters) do
             if type(u) == "string" then
-                _SafePCall(u, frame)
+                _SafePCall(u, frame, useSecureUpdaters)
             elseif type(u) == "table" then
                 local target = u.frame or frame
                 local method = u.method
                 if target and type(method) == "string" and type(target[method]) == "function" then
-                    pcall(target[method], target)
+                    if useSecureUpdaters and type(securecallfunction) == "function" then
+                        securecallfunction(target[method], target)
+                    else
+                        pcall(target[method], target)
+                    end
                 end
             end
         end
@@ -561,7 +704,7 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
     if not opts.skipSave and addon.EditMode.SaveOnly then
         addon.EditMode.SaveOnly()
     end
-    if not opts.skipApply and addon.EditMode.RequestApplyChanges then
+    if not opts.skipApply and not addon.EditMode._lead3_skipFrameWrites and addon.EditMode.RequestApplyChanges then
         addon.EditMode.RequestApplyChanges(opts.applyDelay or 0.2)
     end
 end
@@ -636,7 +779,8 @@ end
     Full Sync Functions (Addon DB -> Edit Mode)
 ----------------------------------------------------------------------------]]--
 
-function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
+function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opts)
+    opts = opts or {}
     local frame = _G[component.frameName]
     if not frame or not addon.EditMode.HasEditModeSettings(frame) then return false end
 
@@ -785,11 +929,15 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         setting.settingId = setting.settingId or ((settingId == "menuSize") and 2 or 3)
         markBackSyncSkip()
         addon.EditMode.SetSetting(frame, setting.settingId, raw)
-        local updater = (settingId == "menuSize") and frame.UpdateSystemSettingSize or frame.UpdateSystemSettingEyeSize
-        if frame and type(updater) == "function" then pcall(updater, frame) end
-        if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+        if not addon.EditMode._lead3_skipFrameWrites then -- [LEAD3 DIAGNOSTIC]
+            local updater = (settingId == "menuSize") and frame.UpdateSystemSettingSize or frame.UpdateSystemSettingEyeSize
+            if frame and type(updater) == "function" then pcall(updater, frame) end
+            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+        end
         if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-        if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+        if not opts.skipApply then
+            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+        end
         return true
     elseif settingId == "displayMode" then
         -- Map addon values to bar content dropdown: both/icon/name
@@ -825,17 +973,23 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
 
     if editModeValue ~= nil then
         local wrote = false
+        -- [LEAD3] Skip all direct frame writes/method calls when diagnostic flag is set
+        local skipVisual = addon.EditMode._lead3_skipFrameWrites
         local function persist()
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
         end
 
         -- Opacity: unconditionally write, and immediately refresh the system mixin so alpha updates
         if settingId == "opacity" then
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
-                pcall(frame.UpdateSystemSettingOpacity, frame)
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingOpacity) == "function" then
+                    pcall(frame.UpdateSystemSettingOpacity, frame)
+                end
             end
             wrote = true
             persist()
@@ -843,8 +997,10 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "height" then
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingHeight) == "function" then
-                pcall(frame.UpdateSystemSettingHeight, frame)
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingHeight) == "function" then
+                    pcall(frame.UpdateSystemSettingHeight, frame)
+                end
             end
             wrote = true
             persist()
@@ -852,12 +1008,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "textSize" then
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingTextSize) == "function" then
-                pcall(frame.UpdateSystemSettingTextSize, frame)
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingTextSize) == "function" then
+                    pcall(frame.UpdateSystemSettingTextSize, frame)
+                end
+                -- Some clients do not fully recalculate block padding/spacing after text size changes
+                -- unless the tracker modules are explicitly re-laid out.
+                _ForceObjectiveTrackerRelayout(frame, "ScooterWrite:textSize")
             end
-            -- Some clients do not fully recalculate block padding/spacing after text size changes
-            -- unless the tracker modules are explicitly re-laid out.
-            _ForceObjectiveTrackerRelayout(frame, "ScooterWrite:textSize")
             wrote = true
             persist()
             return true
@@ -865,14 +1023,16 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             -- Write and immediately update bar content on the viewer so icon/name hide/show applies without Edit Mode roundtrip
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingBarContent) == "function" then
-                pcall(frame.UpdateSystemSettingBarContent, frame)
-            end
-            -- Nudged relayout to ensure children positions and anchors update
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingBarContent) == "function" then
+                    pcall(frame.UpdateSystemSettingBarContent, frame)
+                end
+                -- Nudged relayout to ensure children positions and anchors update
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             wrote = true
             persist()
@@ -889,23 +1049,25 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local emVal = (component.db.orientation == "H") and 0 or 1
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, emVal)
-            -- For Stance Bar, skip all immediate updaters to avoid taint; rely on deferred ApplyChanges
-            if not (component and component.id == "stanceBar") then
-                if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
-                if frame and type(frame.UpdateSystemSettingOrientation) == "function" then pcall(frame.UpdateSystemSettingOrientation, frame) end
-                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-                if frame and type(frame.GetItemContainerFrame) == "function" then
-                    local ic = frame:GetItemContainerFrame()
-                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                -- For Stance Bar, skip all immediate updaters to avoid taint; rely on deferred ApplyChanges
+                if not (component and component.id == "stanceBar") then
+                    -- Directly set cached orientation property to bypass stale settingMap
+                    -- (UpdateSystemSettingOrientation reads from settingMap which isn't updated until Edit Mode bounces)
+                    frame.orientationSetting = emVal
+                    -- Trigger layout refresh
+                    if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                    if frame and type(frame.GetItemContainerFrame) == "function" then
+                        local ic = frame:GetItemContainerFrame()
+                        if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                    end
                 end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
             return true
         elseif settingId == "columns" and type(component.id) == "string" and (component.id:match("^actionBar%d$") or component.id == "stanceBar") then
             -- Action Bars / Stance Bar: "# Rows/Columns" maps to NumRows setting
@@ -916,23 +1078,21 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_rows") or setting.settingId
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
-            -- Skip all immediate updaters for Stance Bar to avoid taint
-            if not (component and component.id == "stanceBar") then
-                if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
-                if frame and type(frame.UpdateSystemSettingNumRows) == "function" then pcall(frame.UpdateSystemSettingNumRows, frame) end
-                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-                if frame and type(frame.GetItemContainerFrame) == "function" then
-                    local ic = frame:GetItemContainerFrame()
-                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                -- Skip all immediate updaters for Stance Bar to avoid taint
+                if not (component and component.id == "stanceBar") then
+                    -- Directly set cached numRows property for Action Bars
+                    frame.numRows = value
+                    frame.gridLayoutDirty = true
+                    -- Trigger grid layout update
+                    if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
                 end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
             return true
         elseif settingId == "numIcons" then
             local value = tonumber(component.db.numIcons)
@@ -941,27 +1101,30 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_icons") or setting.settingId
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
-            if frame and type(frame.UpdateSettingMap) == "function" then pcall(frame.UpdateSettingMap, frame) end
-            if frame and type(frame.UpdateSystemSettingNumIcons) == "function" then pcall(frame.UpdateSystemSettingNumIcons, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                -- Directly set cached iconLimit property to bypass stale settingMap
+                frame.iconLimit = value
+                -- Trigger layout refresh
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
             return true
         elseif settingId == "visibilityMode" then
             -- Write and immediately update visible state on the viewer
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then
-                pcall(frame.UpdateSystemSettingVisibleSetting, frame)
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then
+                    pcall(frame.UpdateSystemSettingVisibleSetting, frame)
+                end
             end
             wrote = true
             persist()
@@ -970,8 +1133,10 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             -- Write and immediately update ordering for Micro bar
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingOrder) == "function" then pcall(frame.UpdateSystemSettingOrder, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingOrder) == "function" then pcall(frame.UpdateSystemSettingOrder, frame) end
+                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
+            end
             wrote = true
             persist()
             return true
@@ -983,7 +1148,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             if idx == nil then idx = 0 end
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, idx)
-            if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then pcall(frame.UpdateSystemSettingVisibleSetting, frame) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingVisibleSetting) == "function" then pcall(frame.UpdateSystemSettingVisibleSetting, frame) end
+            end
             wrote = true
             persist()
             return true
@@ -992,7 +1159,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local v = not not dbValue
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
-            if frame and type(frame.UpdateSystemSettingHideBarArt) == "function" then pcall(frame.UpdateSystemSettingHideBarArt, frame) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingHideBarArt) == "function" then pcall(frame.UpdateSystemSettingHideBarArt, frame) end
+            end
             wrote = true
             persist()
             return true
@@ -1001,7 +1170,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local v = not not dbValue
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
-            if frame and type(frame.UpdateSystemSettingHideBarScrolling) == "function" then pcall(frame.UpdateSystemSettingHideBarScrolling, frame) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingHideBarScrolling) == "function" then pcall(frame.UpdateSystemSettingHideBarScrolling, frame) end
+            end
             wrote = true
             persist()
             return true
@@ -1010,22 +1181,24 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             local v = not not dbValue
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, v and 1 or 0)
-            if frame and type(frame.UpdateSystemSettingAlwaysShowButtons) == "function" then pcall(frame.UpdateSystemSettingAlwaysShowButtons, frame) end
+            if not skipVisual then
+                if frame and type(frame.UpdateSystemSettingAlwaysShowButtons) == "function" then pcall(frame.UpdateSystemSettingAlwaysShowButtons, frame) end
+            end
             wrote = true
             persist()
             return true
         elseif settingId == "iconLimit" then
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if frame and type(frame.UpdateSystemSettingIconLimit) == "function" then pcall(frame.UpdateSystemSettingIconLimit, frame) end
-            if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-            if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-            if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-            if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-            if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-            if frame and type(frame.GetItemContainerFrame) == "function" then
-                local ic = frame:GetItemContainerFrame()
-                if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                -- Directly set cached iconLimit property to bypass stale settingMap
+                frame.iconLimit = editModeValue
+                -- Trigger layout refresh
+                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                if frame and type(frame.GetItemContainerFrame) == "function" then
+                    local ic = frame:GetItemContainerFrame()
+                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                end
             end
             wrote = true
             persist()
@@ -1033,16 +1206,16 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         elseif settingId == "iconSize" then
             markBackSyncSkip(nil, 2)
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if not (component and component.id == "stanceBar") then
-                if frame and type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
-                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-                if frame and type(frame.GetItemContainerFrame) == "function" then
-                    local ic = frame:GetItemContainerFrame()
-                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                if not (component and component.id == "stanceBar") then
+                    -- Directly set cached iconScale property (iconScale = value / 100)
+                    frame.iconScale = editModeValue / 100
+                    -- Trigger layout refresh
+                    if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                    if frame and type(frame.GetItemContainerFrame) == "function" then
+                        local ic = frame:GetItemContainerFrame()
+                        if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                    end
                 end
             end
             if component and (component.id == "buffs" or component.id == "debuffs") then
@@ -1055,7 +1228,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
             return true
         elseif settingId == "iconPadding" then
             -- Write raw padding value, clamped per system:
@@ -1073,21 +1248,23 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
             end
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
-            if not (component and component.id == "stanceBar") then
-                if frame and type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
-                if frame and type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-                if frame and type(frame.RefreshGridLayout) == "function" then pcall(frame.RefreshGridLayout, frame) end
-                if frame and type(frame.UpdateGridLayout) == "function" then pcall(frame.UpdateGridLayout, frame) end
-                if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
-                if frame and type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-                if frame and type(frame.GetItemContainerFrame) == "function" then
-                    local ic = frame:GetItemContainerFrame()
-                    if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+            if not skipVisual then
+                if not (component and component.id == "stanceBar") then
+                    -- Directly set cached iconPadding property to bypass stale settingMap
+                    frame.iconPadding = pad
+                    -- Trigger layout refresh
+                    if frame and type(frame.RefreshLayout) == "function" then pcall(frame.RefreshLayout, frame) end
+                    if frame and type(frame.GetItemContainerFrame) == "function" then
+                        local ic = frame:GetItemContainerFrame()
+                        if ic and type(ic.Layout) == "function" then pcall(ic.Layout, ic) end
+                    end
                 end
             end
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            if not opts.skipApply then
+                if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            end
             return true
         end
         -- Others: skip write if no change
@@ -1095,8 +1272,10 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
         if current ~= editModeValue then
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
-            if settingId == "hideWhenInactive" and frame and type(frame.UpdateSystemSettingHideWhenInactive) == "function" then
-                pcall(frame.UpdateSystemSettingHideWhenInactive, frame)
+            if not skipVisual then
+                if settingId == "hideWhenInactive" and frame and type(frame.UpdateSystemSettingHideWhenInactive) == "function" then
+                    pcall(frame.UpdateSystemSettingHideWhenInactive, frame)
+                end
             end
             wrote = true
             persist()
@@ -1108,7 +1287,9 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
 end
 
 -- This is the main function for pushing the addon's state to Edit Mode.
-function addon.EditMode.SyncComponentToEditMode(component)
+-- opts.skipApply: if true, skip RequestApplyChanges to avoid taint
+function addon.EditMode.SyncComponentToEditMode(component, opts)
+    opts = opts or {}
     local frame = _G[component.frameName]
     if not frame or not addon.EditMode.HasEditModeSettings(frame) then return end
 
@@ -1123,16 +1304,18 @@ function addon.EditMode.SyncComponentToEditMode(component)
     local y = component.db.positionY or 0
     addon.EditMode.ReanchorFrame(frame, "CENTER", "UIParent", "CENTER", x, y)
 
-    -- 2. Sync all other Edit Mode settings
+    -- 2. Sync all other Edit Mode settings (pass skipApply to avoid taint)
     for settingId, setting in pairs(component.settings) do
         if type(setting) == "table" and setting.type == "editmode" then
-            addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
+            addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
         end
     end
 
-    -- 3. Coalesce apply to avoid per-tick stalls during rapid changes
+    -- 3. Save settings (always) but only ApplyChanges if not skipping
     if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    if not opts.skipApply and not addon.EditMode._lead3_skipFrameWrites then
+        if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    end
 
     -- Hold the syncing guard briefly to avoid back-sync races from SaveLayouts callbacks
     local function clearGuard()
@@ -1171,7 +1354,9 @@ function addon.EditMode.SyncComponentPositionToEditMode(component)
 
     -- Coalesce apply to avoid per-tick stalls during rapid changes
     if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-    if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+    if not addon.EditMode._lead3_skipFrameWrites and addon.EditMode.RequestApplyChanges then
+        addon.EditMode.RequestApplyChanges(0.2)
+    end
 
     -- Clear guard after a brief delay to avoid back-sync races
     local function clearGuard()
@@ -2447,6 +2632,11 @@ function addon.EditMode.Initialize()
         local ER = _G.EventRegistry
         if type(ER.RegisterCallback) == "function" then
             ER:RegisterCallback("EditMode.Enter", function()
+                -- Mark that Edit Mode is entering to suppress addon hooks during the transition
+                -- This prevents taint from propagating during Blizzard's frame setup
+                if addon and addon.EditMode and addon.EditMode.MarkOpeningEditMode then
+                    addon.EditMode.MarkOpeningEditMode()
+                end
                 -- Do not push on enter; it can cause recursion and frame churn as Blizzard initializes widgets.
                 --
                 -- IMPORTANT:
@@ -2459,24 +2649,32 @@ function addon.EditMode.Initialize()
                 -- which represents the real user Edit Mode entry path.
             end, addon)
             ER:RegisterCallback("EditMode.Exit", function()
-                -- If we deferred an ApplyChanges while Edit Mode was open, schedule it now that the user exited.
-                -- (Applying during Edit Mode would immediately close the panel due to the LEO UI bounce.)
+                -- Mark that Edit Mode is exiting to suppress addon hooks during the transition
+                -- This prevents taint from propagating during Blizzard's frame setup
+                if addon and addon.EditMode and addon.EditMode.MarkExitingEditMode then
+                    addon.EditMode.MarkExitingEditMode()
+                end
+                -- If we deferred an ApplyChanges while Edit Mode was open, run it now.
+                -- We call ApplyChanges directly (not via RequestApplyChanges) because:
+                -- 1. We KNOW Edit Mode is exiting - no need to check IsShown again
+                -- 2. RequestApplyChanges would check IsShown which may still be true during exit transition
+                -- 3. That would cause another defer, and the apply would never actually run
                 if addon and addon.EditMode and addon.EditMode._deferApplyUntilEditModeExit then
                     addon.EditMode._deferApplyUntilEditModeExit = false
+                    -- Use a longer delay (0.2s) to ensure the frame is fully hidden
                     if C_Timer and C_Timer.After then
-                        C_Timer.After(0.05, function()
+                        C_Timer.After(0.2, function()
                             if InCombatLockdown and InCombatLockdown() then
-                                -- Combat-safe path: we only persist with SaveOnly. Full ApplyChanges will be
-                                -- requested later by the normal coalescer once combat ends.
                                 if addon.EditMode and addon.EditMode.SaveOnly then pcall(addon.EditMode.SaveOnly) end
                                 return
                             end
-                            if addon.EditMode and addon.EditMode.RequestApplyChanges then
-                                addon.EditMode.RequestApplyChanges(0.05)
+                            -- Call ApplyChanges directly - skip the IsShown check since we know EM exited
+                            if addon.EditMode and addon.EditMode.ApplyChanges then
+                                addon.EditMode.ApplyChanges()
                             end
                         end)
-                    elseif addon.EditMode and addon.EditMode.RequestApplyChanges then
-                        addon.EditMode.RequestApplyChanges(0.05)
+                    elseif addon.EditMode and addon.EditMode.ApplyChanges then
+                        addon.EditMode.ApplyChanges()
                     end
                 end
 
@@ -2487,6 +2685,7 @@ function addon.EditMode.Initialize()
                 -- After Save/Exit, some clients apply the new text size but leave stale block spacing
                 -- until another tracker rebuild. Force one relayout pass shortly after exit.
                 C_Timer.After(0.15, function()
+                    if addon.EditMode._lead3_skipFrameWrites then return end -- [LEAD3 DIAGNOSTIC]
                     if InCombatLockdown and InCombatLockdown() then return end
                     local frame = _G.ObjectiveTrackerFrame
                     if not frame then return end
@@ -2506,12 +2705,31 @@ function addon.EditMode.Initialize()
     -- Fallback hook for clients/builds that don't fire EventRegistry callbacks reliably.
     -- IMPORTANT: Hook EnterEditMode (not OnShow) so we don't accidentally close the panel
     -- during our own "bounce EditModeManagerFrame" taint-clearing work.
+    --
+    -- Also handles per-system settings refresh: when ScooterMod changes Edit Mode
+    -- settings (via SaveOnly/skipApply), the C-side storage is updated but the
+    -- system frames' internal settingMaps are stale. We read fresh data from C-side
+    -- and call UpdateSystem on each registered frame with the correct per-system
+    -- systemInfo, WITHOUT writing to mgr.layoutInfo (which would taint the manager).
     if not addon._editModeClosePanelHooked and type(_G.hooksecurefunc) == "function" then
         local mgr = _G.EditModeManagerFrame
         if mgr and type(mgr.EnterEditMode) == "function" then
             addon._editModeClosePanelHooked = true
             _G.hooksecurefunc(mgr, "EnterEditMode", function()
+                if addon and addon.EditMode then
+                    addon.EditMode._openingEditMode = nil
+                end
                 CloseScooterSettingsPanelForEditMode()
+
+                -- [NO-OP] Clear the pending refresh flag.
+                -- Writing to system frame internals (settingMap, UpdateSystem, etc.)
+                -- from addon context permanently taints the frame, causing
+                -- ExitEditMode → ResetPartyFrames to hit secret-value errors.
+                -- See ADDONCONTEXT/Docs/TAINT.md for the full investigation and
+                -- proposed "dialog-hook" approach for a future fix.
+                if addon and addon.EditMode and addon.EditMode._pendingLayoutRefresh then
+                    addon.EditMode._pendingLayoutRefresh = false
+                end
             end)
         end
     end

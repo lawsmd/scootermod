@@ -130,6 +130,34 @@ function UIPanel:HandleEditModeBackSync(componentId, settingId)
         categoryKey = "buffs"
     elseif componentId == "debuffs" then
         categoryKey = "debuffs"
+    -- Group Frames
+    elseif componentId == "gfParty" then
+        categoryKey = "gfParty"
+    elseif componentId == "gfRaid" then
+        categoryKey = "gfRaid"
+    -- Action Bars (ab1 through ab8)
+    elseif componentId == "ab1" then
+        categoryKey = "ab1"
+    elseif componentId == "ab2" then
+        categoryKey = "ab2"
+    elseif componentId == "ab3" then
+        categoryKey = "ab3"
+    elseif componentId == "ab4" then
+        categoryKey = "ab4"
+    elseif componentId == "ab5" then
+        categoryKey = "ab5"
+    elseif componentId == "ab6" then
+        categoryKey = "ab6"
+    elseif componentId == "ab7" then
+        categoryKey = "ab7"
+    elseif componentId == "ab8" then
+        categoryKey = "ab8"
+    -- Micro/Menu bar
+    elseif componentId == "microBar" then
+        categoryKey = "microBar"
+    -- Objective Tracker
+    elseif componentId == "objectiveTracker" then
+        categoryKey = "objectiveTracker"
     end
 
     -- If currently viewing this category, trigger refresh
@@ -583,27 +611,43 @@ function UIPanel:CreateHeaderButtons()
         text = "Edit Mode",
         height = HEADER_BUTTON_HEIGHT,
         fontSize = 11,
-        onClick = function(btn, mouseButton)
-            -- Close settings panel first
-            if panel and panel.frame and panel.frame:IsShown() then
-                panel.frame:Hide()
-            end
-            -- Cancel any pending Edit Mode apply changes
-            if addon and addon.EditMode and addon.EditMode.CancelPendingApplyChanges then
-                addon.EditMode.CancelPendingApplyChanges()
-            end
-            -- Open Edit Mode
-            if SlashCmdList and SlashCmdList["EDITMODE"] then
-                SlashCmdList["EDITMODE"]("")
-            elseif RunBinding then
-                RunBinding("TOGGLE_EDIT_MODE")
-            else
-                if addon and addon.Print then
-                    addon:Print("Use /editmode to open the layout manager.")
-                end
+        template = "SecureActionButtonTemplate, SecureHandlerClickTemplate",
+        secureAction = {}, -- triggers AnyUp registration in Button.lua
+    })
+
+    local function setupSecureEditMode()
+        if not C_AddOns.IsAddOnLoaded("Blizzard_EditMode") then
+             C_AddOns.LoadAddOn("Blizzard_EditMode")
+        end
+        if EditModeManagerFrame then
+             SecureHandlerSetFrameRef(editModeBtn, "em", EditModeManagerFrame)
+             editModeBtn:SetAttribute("_onclick", [[ self:GetFrameRef("em"):Show() ]])
+        end
+    end
+
+    if InCombatLockdown() then
+        editModeBtn:RegisterEvent("PLAYER_REGEN_ENABLED")
+        editModeBtn:HookScript("OnEvent", function(self, event)
+             if event == "PLAYER_REGEN_ENABLED" then
+                  setupSecureEditMode()
+                  self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+             end
+        end)
+    else
+        setupSecureEditMode()
+    end
+
+    -- Pre-click handler: only set the guard flag for Edit Mode entry.
+    -- Do NOT call ApplyChanges() here — it taints the execution context.
+    -- The EnterEditMode post-hook (core/editmode.lua) handles refreshing
+    -- each system frame's settings from fresh C-side data.
+    editModeBtn:SetScript("PreClick", function()
+        if addon and addon.EditMode then
+            if addon.EditMode.MarkOpeningEditMode then
+                addon.EditMode.MarkOpeningEditMode()
             end
         end
-    })
+    end)
 
     -- Cooldown Manager button
     local cdmBtn = Controls:CreateButton({
@@ -1606,12 +1650,13 @@ function UIPanel:RenderEssentialCooldowns(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
-        -- Fallback to profile if component not loaded
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.essentialCooldowns and profile.essentialCooldowns[key]
+        local components = profile and profile.components
+        return components and components.essentialCooldowns and components.essentialCooldowns[key]
     end
 
     local function setSetting(key, value)
@@ -1623,29 +1668,24 @@ function UIPanel:RenderEssentialCooldowns(scrollContent)
             end
             comp.db[key] = value
         else
-            -- Fallback to profile
+            -- Fallback to profile.components
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.essentialCooldowns = profile.essentialCooldowns or {}
-                profile.essentialCooldowns[key] = value
+                profile.components = profile.components or {}
+                profile.components.essentialCooldowns = profile.components.essentialCooldowns or {}
+                profile.components.essentialCooldowns[key] = value
             end
         end
     end
 
-    -- Helper to sync Edit Mode settings after value change (debounced)
-    -- This is called by onEditModeSync for slider/selector controls
+    -- Helper to sync Edit Mode settings after value change.
+    -- Uses skipApply=true: visual updates happen via updaters inside
+    -- SyncComponentSettingToEditMode; Edit Mode layout cache is refreshed
+    -- by a post-hook on EnterEditMode (see core/editmode.lua).
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            -- Sync to Edit Mode
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            -- Save and apply
-            if addon.EditMode.SaveOnly then
-                addon.EditMode.SaveOnly()
-            end
-            if addon.EditMode.RequestApplyChanges then
-                addon.EditMode.RequestApplyChanges(0.2)
-            end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -2329,12 +2369,13 @@ function UIPanel:RenderUtilityCooldowns(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
-        -- Fallback to profile if component not loaded
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.utilityCooldowns and profile.utilityCooldowns[key]
+        local components = profile and profile.components
+        return components and components.utilityCooldowns and components.utilityCooldowns[key]
     end
 
     local function setSetting(key, value)
@@ -2346,11 +2387,12 @@ function UIPanel:RenderUtilityCooldowns(scrollContent)
             end
             comp.db[key] = value
         else
-            -- Fallback to profile
+            -- Fallback to profile.components
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.utilityCooldowns = profile.utilityCooldowns or {}
-                profile.utilityCooldowns[key] = value
+                profile.components = profile.components or {}
+                profile.components.utilityCooldowns = profile.components.utilityCooldowns or {}
+                profile.components.utilityCooldowns[key] = value
             end
         end
     end
@@ -2359,13 +2401,7 @@ function UIPanel:RenderUtilityCooldowns(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            if addon.EditMode.SaveOnly then
-                addon.EditMode.SaveOnly()
-            end
-            if addon.EditMode.RequestApplyChanges then
-                addon.EditMode.RequestApplyChanges(0.2)
-            end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -2933,9 +2969,13 @@ function UIPanel:RenderTrackedBuffs(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then return comp:GetSetting(key) end
+        if comp and comp.db then
+            return comp.db[key]
+        end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.trackedBuffs and profile.trackedBuffs[key]
+        local components = profile and profile.components
+        return components and components.trackedBuffs and components.trackedBuffs[key]
     end
 
     local function setSetting(key, value)
@@ -2946,8 +2986,9 @@ function UIPanel:RenderTrackedBuffs(scrollContent)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.trackedBuffs = profile.trackedBuffs or {}
-                profile.trackedBuffs[key] = value
+                profile.components = profile.components or {}
+                profile.components.trackedBuffs = profile.components.trackedBuffs or {}
+                profile.components.trackedBuffs[key] = value
             end
         end
     end
@@ -2955,9 +2996,7 @@ function UIPanel:RenderTrackedBuffs(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            if addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-            if addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -3253,11 +3292,13 @@ function UIPanel:RenderTrackedBars(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.trackedBars and profile.trackedBars[key]
+        local components = profile and profile.components
+        return components and components.trackedBars and components.trackedBars[key]
     end
 
     local function setSetting(key, value)
@@ -3268,8 +3309,9 @@ function UIPanel:RenderTrackedBars(scrollContent)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.trackedBars = profile.trackedBars or {}
-                profile.trackedBars[key] = value
+                profile.components = profile.components or {}
+                profile.components.trackedBars = profile.components.trackedBars or {}
+                profile.components.trackedBars[key] = value
             end
         end
         if addon and addon.ApplyStyles then
@@ -3280,7 +3322,7 @@ function UIPanel:RenderTrackedBars(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -3705,11 +3747,13 @@ function UIPanel:RenderActionBar(scrollContent, componentId)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile[componentId] and profile[componentId][key]
+        local components = profile and profile.components
+        return components and components[componentId] and components[componentId][key]
     end
 
     local function setSetting(key, value)
@@ -3720,8 +3764,9 @@ function UIPanel:RenderActionBar(scrollContent, componentId)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile[componentId] = profile[componentId] or {}
-                profile[componentId][key] = value
+                profile.components = profile.components or {}
+                profile.components[componentId] = profile.components[componentId] or {}
+                profile.components[componentId][key] = value
             end
         end
         if addon and addon.ApplyStyles then
@@ -3732,7 +3777,7 @@ function UIPanel:RenderActionBar(scrollContent, componentId)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -4567,11 +4612,13 @@ function UIPanel:RenderMicroBar(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.microBar and profile.microBar[key]
+        local components = profile and profile.components
+        return components and components.microBar and components.microBar[key]
     end
 
     local function setSetting(key, value)
@@ -4582,8 +4629,9 @@ function UIPanel:RenderMicroBar(scrollContent)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.microBar = profile.microBar or {}
-                profile.microBar[key] = value
+                profile.components = profile.components or {}
+                profile.components.microBar = profile.components.microBar or {}
+                profile.components.microBar[key] = value
             end
         end
         if addon and addon.ApplyStyles then
@@ -4594,7 +4642,7 @@ function UIPanel:RenderMicroBar(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -5660,12 +5708,13 @@ function UIPanel:RenderTooltip(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
-        -- Fallback to profile if component not loaded
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.tooltip and profile.tooltip[key]
+        local components = profile and profile.components
+        return components and components.tooltip and components.tooltip[key]
     end
 
     local function setSetting(key, value)
@@ -5677,11 +5726,12 @@ function UIPanel:RenderTooltip(scrollContent)
             end
             comp.db[key] = value
         else
-            -- Fallback to profile
+            -- Fallback to profile.components
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.tooltip = profile.tooltip or {}
-                profile.tooltip[key] = value
+                profile.components = profile.components or {}
+                profile.components.tooltip = profile.components.tooltip or {}
+                profile.components.tooltip[key] = value
             end
         end
         -- Apply styles after setting change
@@ -5911,12 +5961,13 @@ function UIPanel:RenderObjectiveTracker(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
-        -- Fallback to profile if component not loaded
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.objectiveTracker and profile.objectiveTracker[key]
+        local components = profile and profile.components
+        return components and components.objectiveTracker and components.objectiveTracker[key]
     end
 
     local function setSetting(key, value)
@@ -5928,11 +5979,12 @@ function UIPanel:RenderObjectiveTracker(scrollContent)
             end
             comp.db[key] = value
         else
-            -- Fallback to profile
+            -- Fallback to profile.components
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.objectiveTracker = profile.objectiveTracker or {}
-                profile.objectiveTracker[key] = value
+                profile.components = profile.components or {}
+                profile.components.objectiveTracker = profile.components.objectiveTracker or {}
+                profile.components.objectiveTracker[key] = value
             end
         end
         -- Apply styles after setting change
@@ -5949,13 +6001,7 @@ function UIPanel:RenderObjectiveTracker(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            if addon.EditMode.SaveOnly then
-                addon.EditMode.SaveOnly()
-            end
-            if addon.EditMode.RequestApplyChanges then
-                addon.EditMode.RequestApplyChanges(0.2)
-            end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -8750,11 +8796,13 @@ function UIPanel:RenderBuffs(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.buffs and profile.buffs[key]
+        local components = profile and profile.components
+        return components and components.buffs and components.buffs[key]
     end
 
     local function setSetting(key, value)
@@ -8767,8 +8815,9 @@ function UIPanel:RenderBuffs(scrollContent)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.buffs = profile.buffs or {}
-                profile.buffs[key] = value
+                profile.components = profile.components or {}
+                profile.components.buffs = profile.components.buffs or {}
+                profile.components.buffs[key] = value
             end
         end
     end
@@ -8777,13 +8826,7 @@ function UIPanel:RenderBuffs(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            if addon.EditMode.SaveOnly then
-                addon.EditMode.SaveOnly()
-            end
-            if addon.EditMode.RequestApplyChanges then
-                addon.EditMode.RequestApplyChanges(0.2)
-            end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -9369,11 +9412,13 @@ function UIPanel:RenderDebuffs(scrollContent)
 
     local function getSetting(key)
         local comp = getComponent()
-        if comp and comp.GetSetting then
-            return comp:GetSetting(key)
+        if comp and comp.db then
+            return comp.db[key]
         end
+        -- Fallback to profile.components if component not loaded
         local profile = addon.db and addon.db.profile
-        return profile and profile.debuffs and profile.debuffs[key]
+        local components = profile and profile.components
+        return components and components.debuffs and components.debuffs[key]
     end
 
     local function setSetting(key, value)
@@ -9386,8 +9431,9 @@ function UIPanel:RenderDebuffs(scrollContent)
         else
             local profile = addon.db and addon.db.profile
             if profile then
-                profile.debuffs = profile.debuffs or {}
-                profile.debuffs[key] = value
+                profile.components = profile.components or {}
+                profile.components.debuffs = profile.components.debuffs or {}
+                profile.components.debuffs[key] = value
             end
         end
     end
@@ -9396,13 +9442,7 @@ function UIPanel:RenderDebuffs(scrollContent)
     local function syncEditModeSetting(settingId)
         local comp = getComponent()
         if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId)
-            if addon.EditMode.SaveOnly then
-                addon.EditMode.SaveOnly()
-            end
-            if addon.EditMode.RequestApplyChanges then
-                addon.EditMode.RequestApplyChanges(0.2)
-            end
+            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
         end
     end
 
@@ -10244,9 +10284,9 @@ function UIPanel:Toggle()
 
     if self.frame then
         if self.frame:IsShown() then
-            self.frame:Hide()
+            self:Hide()
         else
-            self.frame:Show()
+            self:Show()  -- Use our Show() method to ensure category re-render
         end
     end
 end
@@ -10264,7 +10304,33 @@ function UIPanel:Show()
     end
 
     if self.frame then
+        -- CRITICAL: Sync all Edit Mode values to component.db BEFORE showing/rendering.
+        -- This matches what the old UI does in ShowPanel() via RefreshSyncAndNotify("OpenPanel").
+        -- Without this, the renderer may read stale cached values from component.db even if
+        -- the user waited several seconds after Edit Mode exit (the scheduled back-syncs
+        -- at 0.1s/0.5s/1.0s may not have updated all components correctly).
+        if addon and addon.EditMode and addon.EditMode.RefreshSyncAndNotify then
+            addon.EditMode.RefreshSyncAndNotify("OpenPanel")
+        end
+
         self.frame:Show()
+
+        -- ALWAYS re-render the current category when the panel opens.
+        -- This ensures UI controls show the latest values from Edit Mode.
+        -- Without this, widgets cache old values and only refresh when tabbing away/back.
+        -- Since ScooterMod auto-closes when Edit Mode opens, we know any reopen
+        -- could have stale data if the user changed something in Edit Mode.
+        local currentKey = self._currentCategoryKey
+        if currentKey and currentKey ~= "home" then
+            -- Clear any pending back-sync flags for this category
+            self._pendingBackSync[currentKey] = nil
+            -- Defer the re-render to after the frame is fully shown
+            C_Timer.After(0, function()
+                if self.frame and self.frame:IsShown() then
+                    self:OnNavigationSelect(currentKey, currentKey)
+                end
+            end)
+        end
     end
 end
 

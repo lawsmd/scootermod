@@ -1777,8 +1777,7 @@ local function createComponentRenderer(componentId)
                                     elseif settingId == "opacity" then
                                             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, "opacity")
-                                                safeSaveOnly(); requestApply()
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, "opacity", { skipApply = true })
                                             end
                                         
                                     elseif settingId == "orientation" then
@@ -1842,8 +1841,8 @@ local function createComponentRenderer(componentId)
 
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
                                                 -- Push the remapped values so Edit Mode matches our DB.
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, "iconWrap")
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, "iconWrap", { skipApply = true })
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, "direction", { skipApply = true })
                                             end
                                             if panel and panel.RefreshDynamicSettingWidgets then
                                                 panel:RefreshDynamicSettingWidgets(component)
@@ -1861,7 +1860,7 @@ local function createComponentRenderer(componentId)
                                                 end
                                                 -- Also push direction immediately so Edit Mode reflects valid value during transition
                                                 if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                                    addon.EditMode.SyncComponentSettingToEditMode(component, "direction")
+                                                    addon.EditMode.SyncComponentSettingToEditMode(component, "direction", { skipApply = true })
                                                 end
                                             end
                                             if panel and panel.RefreshDynamicSettingWidgets then
@@ -1874,26 +1873,24 @@ local function createComponentRenderer(componentId)
                                         end
 
                                         if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                            -- ScooterMod -> Edit Mode (orientation) plus coalesced apply.
-                                            addon.EditMode.SyncComponentSettingToEditMode(component, "orientation")
-                                            safeSaveOnly(); requestApply()
+                                            -- ScooterMod -> Edit Mode (orientation) with skipApply to avoid taint.
+                                            -- Visual updates happen via updaters inside SyncComponentSettingToEditMode;
+                                            -- Edit Mode state syncs when user opens/closes Edit Mode.
+                                            addon.EditMode.SyncComponentSettingToEditMode(component, "orientation", { skipApply = true })
                                         end
                                         elseif settingId == "showTimer" or settingId == "showTooltip" or settingId == "hideWhenInactive" then
                                             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                                safeSaveOnly(); requestApply()
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                             end
                                         elseif settingId == "visibilityMode" or settingId == "displayMode" then
                                             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.25) end
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                                safeSaveOnly(); requestApply()
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                             end
                                         else
                                             if addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId)
-                                                safeSaveOnly(); requestApply()
+                                                addon.EditMode.SyncComponentSettingToEditMode(component, settingId, { skipApply = true })
                                             end
                                         end
                                     end

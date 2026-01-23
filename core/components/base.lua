@@ -11,6 +11,35 @@ local function ensureFS()
     return FS
 end
 
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function getProp(frame, key)
+    local st = getState(frame)
+    return st and st[key] or nil
+end
+
+local function setProp(frame, key, value)
+    local st = getState(frame)
+    if st then
+        st[key] = value
+    end
+end
+
+local function getIconBorderContainer(frame)
+    local st = getState(frame)
+    return st and st.ScooterIconBorderContainer or nil
+end
+
+local function setIconBorderContainer(frame, container)
+    local st = getState(frame)
+    if st then
+        st.ScooterIconBorderContainer = container
+    end
+end
+
 local Util = addon.ComponentsUtil
 local UNIT_FRAME_CATEGORY_TO_UNIT = {
     ufPlayer = "Player",
@@ -31,9 +60,10 @@ local function ensureFullPowerFrameCombatWatcher()
     fullPowerFrameCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
     fullPowerFrameCombatWatcher:SetScript("OnEvent", function()
         for frame in pairs(pendingFullPowerFrames) do
-            if frame and frame._ScootFullPowerPendingReapply and frame._ScootFullPowerApplyState then
-                frame._ScootFullPowerPendingReapply = nil
-                frame._ScootFullPowerApplyState()
+            local applyState = frame and getProp(frame, "fullPowerApplyState") or nil
+            if frame and getProp(frame, "fullPowerPendingReapply") and applyState then
+                setProp(frame, "fullPowerPendingReapply", nil)
+                applyState()
             end
             pendingFullPowerFrames[frame] = nil
         end
@@ -149,7 +179,7 @@ local function CleanupIconBorderAttachments(icon)
     end
 
     cleanup(icon)
-    cleanup(icon.ScooterIconBorderContainer)
+    cleanup(getIconBorderContainer(icon))
     cleanup(icon.ScooterAtlasBorderContainer)
     cleanup(icon.ScooterTextureBorderContainer)
 end
@@ -206,34 +236,36 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
         if not target or (target.IsForbidden and target:IsForbidden()) then
             return
         end
-        if not target._ScootFullPowerOrigWidth then
+        local st = getState(target)
+        if not st then return end
+        if not st.fullPowerOrigWidth then
             if target.GetWidth then
                 local ok, w = pcall(target.GetWidth, target)
                 if ok and w and w > 0 then
-                    target._ScootFullPowerOrigWidth = w
+                    st.fullPowerOrigWidth = w
                 end
             end
         end
-        if not target._ScootFullPowerOrigHeight then
+        if not st.fullPowerOrigHeight then
             if target.GetHeight then
                 local ok, h = pcall(target.GetHeight, target)
                 if ok and h and h > 0 then
-                    target._ScootFullPowerOrigHeight = h
+                    st.fullPowerOrigHeight = h
                 end
             end
         end
-        if not target._ScootFullPowerOrigScale then
+        if not st.fullPowerOrigScale then
             if target.GetScale then
                 local ok, s = pcall(target.GetScale, target)
                 if ok and s and s > 0 then
-                    target._ScootFullPowerOrigScale = s
+                    st.fullPowerOrigScale = s
                 end
             end
         end
-        if target._ScootFullPowerOrigAlpha == nil and target.GetAlpha then
+        if st.fullPowerOrigAlpha == nil and target.GetAlpha then
             local ok, a = pcall(target.GetAlpha, target)
             if ok and a ~= nil then
-                target._ScootFullPowerOrigAlpha = a
+                st.fullPowerOrigAlpha = a
             end
         end
     end
@@ -242,9 +274,11 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
         if not target or (target.IsForbidden and target:IsForbidden()) then
             return
         end
-        local baseWidth = target._ScootFullPowerOrigWidth
-        local baseHeight = target._ScootFullPowerOrigHeight
-        local baseScale = target._ScootFullPowerOrigScale
+        local st = getState(target)
+        if not st then return end
+        local baseWidth = st.fullPowerOrigWidth
+        local baseHeight = st.fullPowerOrigHeight
+        local baseScale = st.fullPowerOrigScale
 
         if baseWidth and baseHeight and target.SetSize then
             local newHeight = math.max(1, baseHeight * desiredScale)
@@ -283,7 +317,7 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
             if target.SetAlpha then pcall(target.SetAlpha, target, 0) end
         else
             if target.Show then pcall(target.Show, target) end
-            local restoreAlpha = target._ScootFullPowerOrigAlpha
+            local restoreAlpha = getProp(target, "fullPowerOrigAlpha")
             if restoreAlpha == nil then
                 -- Default baseline: AlertSpikeStay/BigSpikeGlow start at alpha 0.
                 restoreAlpha = 0
@@ -293,10 +327,10 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
     end
 
     local function ensureCaptured()
-        if fullPowerFrame._ScootFullPowerCaptured then
+        if getProp(fullPowerFrame, "fullPowerCaptured") then
             return
         end
-        fullPowerFrame._ScootFullPowerCaptured = true
+        setProp(fullPowerFrame, "fullPowerCaptured", true)
         captureDimensions(fullPowerFrame)
         captureDimensions(spikeFrame)
         if spikeFrame then
@@ -346,29 +380,29 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
 
     local function applyState()
         ensureCaptured()
-        local storedScale = fullPowerFrame._ScootFullPowerLatestScale or 1
-        local hidden = not not fullPowerFrame._ScootFullPowerHidden
+        local storedScale = getProp(fullPowerFrame, "fullPowerLatestScale") or 1
+        local hidden = not not getProp(fullPowerFrame, "fullPowerHidden")
         applyAll(storedScale, hidden)
     end
 
-    fullPowerFrame._ScootFullPowerLatestScale = scaleY
-    if fullPowerFrame._ScootFullPowerHidden == nil then
-        fullPowerFrame._ScootFullPowerHidden = false
+    setProp(fullPowerFrame, "fullPowerLatestScale", scaleY)
+    if getProp(fullPowerFrame, "fullPowerHidden") == nil then
+        setProp(fullPowerFrame, "fullPowerHidden", false)
     end
-    fullPowerFrame._ScootFullPowerApplyState = applyState
+    setProp(fullPowerFrame, "fullPowerApplyState", applyState)
     -- CRITICAL: Guard against combat. If ApplyFullPowerSpikeScale is called during combat
     -- (e.g., via PRD ApplyStyling triggered by form change), calling applyState() would
     -- modify frames (SetSize, SetAlpha, etc.) and taint the execution context, causing
     -- SetTargetClampingInsets() to be blocked. Defer to after combat.
     if InCombatLockdown and InCombatLockdown() then
-        fullPowerFrame._ScootFullPowerPendingReapply = true
+        setProp(fullPowerFrame, "fullPowerPendingReapply", true)
         queueFullPowerFrameReapply(fullPowerFrame)
     else
         applyState()
     end
 
-    if type(hooksecurefunc) == "function" and not fullPowerFrame._ScootFullPowerHooks then
-        fullPowerFrame._ScootFullPowerHooks = true
+    if type(hooksecurefunc) == "function" and not getProp(fullPowerFrame, "fullPowerHooks") then
+        setProp(fullPowerFrame, "fullPowerHooks", true)
         -- CRITICAL: Guard against combat to prevent taint. When these hooks fire during
         -- Blizzard's nameplate setup chain (e.g., druid form change in combat), any frame
         -- modifications (SetSize, SetAlpha, etc.) taint the execution context, causing
@@ -376,7 +410,7 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
         local function reapply()
             if InCombatLockdown and InCombatLockdown() then
                 -- Defer to after combat - queue for PLAYER_REGEN_ENABLED
-                fullPowerFrame._ScootFullPowerPendingReapply = true
+                setProp(fullPowerFrame, "fullPowerPendingReapply", true)
                 queueFullPowerFrameReapply(fullPowerFrame)
                 return
             end
@@ -411,16 +445,16 @@ local function SetFullPowerSpikeHidden(ownerFrame, hidden)
     if not fullPowerFrame or (fullPowerFrame.IsForbidden and fullPowerFrame:IsForbidden()) then
         return
     end
-    fullPowerFrame._ScootFullPowerHidden = not not hidden
+    setProp(fullPowerFrame, "fullPowerHidden", not not hidden)
     -- CRITICAL: Guard against combat. Stopping animations and calling applyState() during combat
     -- would taint the execution context, causing SetTargetClampingInsets() to be blocked.
     if InCombatLockdown and InCombatLockdown() then
         -- Just store the hidden state; it will be applied after combat via queued reapply
-        fullPowerFrame._ScootFullPowerPendingReapply = true
+        setProp(fullPowerFrame, "fullPowerPendingReapply", true)
         queueFullPowerFrameReapply(fullPowerFrame)
         return
     end
-    if fullPowerFrame._ScootFullPowerHidden then
+    if getProp(fullPowerFrame, "fullPowerHidden") then
         if fullPowerFrame.SpikeFrame and fullPowerFrame.SpikeFrame.SpikeAnim and fullPowerFrame.SpikeFrame.SpikeAnim.Stop then
             pcall(fullPowerFrame.SpikeFrame.SpikeAnim.Stop, fullPowerFrame.SpikeFrame.SpikeAnim)
         end
@@ -431,12 +465,14 @@ local function SetFullPowerSpikeHidden(ownerFrame, hidden)
             pcall(fullPowerFrame.FadeoutAnim.Stop, fullPowerFrame.FadeoutAnim)
         end
     end
-    if fullPowerFrame._ScootFullPowerApplyState then
-        fullPowerFrame._ScootFullPowerApplyState()
+    local applyState = getProp(fullPowerFrame, "fullPowerApplyState")
+    if applyState then
+        applyState()
     else
-        Util.ApplyFullPowerSpikeScale(ownerFrame, fullPowerFrame._ScootFullPowerLatestScale or 1)
-        if fullPowerFrame._ScootFullPowerApplyState then
-            fullPowerFrame._ScootFullPowerApplyState()
+        Util.ApplyFullPowerSpikeScale(ownerFrame, getProp(fullPowerFrame, "fullPowerLatestScale") or 1)
+        local applyState2 = getProp(fullPowerFrame, "fullPowerApplyState")
+        if applyState2 then
+            applyState2()
         end
     end
 end
@@ -458,7 +494,7 @@ local function SetPowerFeedbackHidden(ownerFrame, hidden)
         return
     end
 
-    feedbackFrame._ScootPowerFeedbackHidden = not not hidden
+    setProp(feedbackFrame, "powerFeedbackHidden", not not hidden)
 
     if feedbackFrame.SetAlpha then
         feedbackFrame:SetAlpha(hidden and 0 or 1)
@@ -485,18 +521,18 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
     
     if hidden then
         -- Mark as hidden and set alpha to 0
-        sparkFrame._ScootPowerBarSparkHidden = true
+        setProp(sparkFrame, "powerBarSparkHidden", true)
         if sparkFrame.SetAlpha then
             pcall(sparkFrame.SetAlpha, sparkFrame, 0)
         end
         
         -- Install hooks once to re-enforce alpha=0 when Blizzard tries to show the spark
-        if _G.hooksecurefunc and not sparkFrame._ScootSparkVisibilityHooked then
-            sparkFrame._ScootSparkVisibilityHooked = true
+        if _G.hooksecurefunc and not getProp(sparkFrame, "sparkVisibilityHooked") then
+            setProp(sparkFrame, "sparkVisibilityHooked", true)
             
             -- Hook Show() - Blizzard may call this directly
             _G.hooksecurefunc(sparkFrame, "Show", function(self)
-                if self._ScootPowerBarSparkHidden and self.SetAlpha then
+                if getProp(self, "powerBarSparkHidden") and self.SetAlpha then
                     pcall(self.SetAlpha, self, 0)
                 end
             end)
@@ -504,7 +540,7 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
             -- Hook UpdateShown() - Called frequently by Blizzard's spark logic
             if sparkFrame.UpdateShown then
                 _G.hooksecurefunc(sparkFrame, "UpdateShown", function(self)
-                    if self._ScootPowerBarSparkHidden and self.SetAlpha then
+                    if getProp(self, "powerBarSparkHidden") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
                 end)
@@ -514,18 +550,18 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
             -- CRITICAL: Use immediate re-enforcement with recursion guard, NOT C_Timer.After(0)
             -- Deferring causes visible flickering (texture visible for one frame before hiding)
             _G.hooksecurefunc(sparkFrame, "SetAlpha", function(self, alpha)
-                if self._ScootPowerBarSparkHidden and alpha and alpha > 0 then
-                    if not self._ScootSettingAlpha then
-                        self._ScootSettingAlpha = true
+                if getProp(self, "powerBarSparkHidden") and alpha and alpha > 0 then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
-                        self._ScootSettingAlpha = nil
+                        setProp(self, "settingAlpha", nil)
                     end
                 end
             end)
         end
     else
         -- Mark as visible and restore alpha
-        sparkFrame._ScootPowerBarSparkHidden = false
+        setProp(sparkFrame, "powerBarSparkHidden", false)
         if sparkFrame.SetAlpha then
             pcall(sparkFrame.SetAlpha, sparkFrame, 1)
         end
@@ -559,8 +595,12 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
     
     -- Helper to install alpha enforcement hooks on a texture
     local function installAlphaHook(tex, flagName)
-        if not tex or tex[flagName .. "Hooked"] then return end
-        tex[flagName .. "Hooked"] = true
+        if not tex then return end
+        local st = getState(tex)
+        if not st then return end
+        local hookKey = flagName .. "Hooked"
+        if st[hookKey] then return end
+        st[hookKey] = true
         
         -- Hook SetAlpha with immediate re-enforcement using a recursion guard
         -- CRITICAL: Do NOT use C_Timer.After(0, ...) here - that defers to the next frame,
@@ -568,11 +608,11 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
         -- the texture stays hidden within the same Lua execution tick.
         if _G.hooksecurefunc and tex.SetAlpha then
             _G.hooksecurefunc(tex, "SetAlpha", function(self, alpha)
-                if self[flagName] and alpha and alpha > 0 then
-                    if not self._ScootSettingAlpha then
-                        self._ScootSettingAlpha = true
+                if getProp(self, flagName) and alpha and alpha > 0 then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
-                        self._ScootSettingAlpha = nil
+                        setProp(self, "settingAlpha", nil)
                     end
                 end
             end)
@@ -581,11 +621,11 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
         -- Also hook Show() in case Blizzard calls it
         if _G.hooksecurefunc and tex.Show then
             _G.hooksecurefunc(tex, "Show", function(self)
-                if self[flagName] and self.SetAlpha then
-                    if not self._ScootSettingAlpha then
-                        self._ScootSettingAlpha = true
+                if getProp(self, flagName) and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
-                        self._ScootSettingAlpha = nil
+                        setProp(self, "settingAlpha", nil)
                     end
                 end
             end)
@@ -595,54 +635,54 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
     if hidden then
         -- Mark textures as hidden and set alpha to 0
         if fillTex then
-            fillTex._ScootPowerBarFillHidden = true
+            setProp(fillTex, "powerBarFillHidden", true)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
-            installAlphaHook(fillTex, "_ScootPowerBarFillHidden")
+            installAlphaHook(fillTex, "powerBarFillHidden")
         end
         
         if bgTex then
-            bgTex._ScootPowerBarBGHidden = true
+            setProp(bgTex, "powerBarBGHidden", true)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
-            installAlphaHook(bgTex, "_ScootPowerBarBGHidden")
+            installAlphaHook(bgTex, "powerBarBGHidden")
         end
         
         -- Also hide Blizzard's mana cost prediction overlay bar (player only).
         -- We hide the whole overlay frame via alpha=0; parent alpha multiplication keeps all child textures hidden.
         if manaCostPredictionBar then
-            manaCostPredictionBar._ScootPowerBarManaCostPredHidden = true
+            setProp(manaCostPredictionBar, "powerBarManaCostPredHidden", true)
             if manaCostPredictionBar.SetAlpha then
                 pcall(manaCostPredictionBar.SetAlpha, manaCostPredictionBar, 0)
             end
-            installAlphaHook(manaCostPredictionBar, "_ScootPowerBarManaCostPredHidden")
+            installAlphaHook(manaCostPredictionBar, "powerBarManaCostPredHidden")
         end
         
         -- Also hide ScooterMod's custom background if present
         if ownerFrame.ScooterModBG then
-            ownerFrame.ScooterModBG._ScootPowerBarScootBGHidden = true
+            setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", true)
             if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
-            installAlphaHook(ownerFrame.ScooterModBG, "_ScootPowerBarScootBGHidden")
+            installAlphaHook(ownerFrame.ScooterModBG, "powerBarScootBGHidden")
         end
     else
         -- Mark textures as visible and restore alpha
         if fillTex then
-            fillTex._ScootPowerBarFillHidden = false
+            setProp(fillTex, "powerBarFillHidden", false)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
         end
         
         if bgTex then
-            bgTex._ScootPowerBarBGHidden = false
+            setProp(bgTex, "powerBarBGHidden", false)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
         end
         
         if manaCostPredictionBar then
-            manaCostPredictionBar._ScootPowerBarManaCostPredHidden = false
+            setProp(manaCostPredictionBar, "powerBarManaCostPredHidden", false)
             if manaCostPredictionBar.SetAlpha then
                 pcall(manaCostPredictionBar.SetAlpha, manaCostPredictionBar, 1)
             end
         end
         
         if ownerFrame.ScooterModBG then
-            ownerFrame.ScooterModBG._ScootPowerBarScootBGHidden = false
+            setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", false)
             -- Don't restore alpha here - let the background styling code handle it
         end
     end
@@ -662,12 +702,12 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
     if not glowFrame or (glowFrame.IsForbidden and glowFrame:IsForbidden()) then
         return
     end
-    glowFrame._ScootOverAbsorbGlowHidden = not not hidden
+    setProp(glowFrame, "overAbsorbGlowHidden", not not hidden)
 
     -- Capture original alpha once so we can restore it when un-hiding.
-    if glowFrame.GetAlpha and glowFrame._ScootOverAbsorbGlowOrigAlpha == nil then
+    if glowFrame.GetAlpha and getProp(glowFrame, "overAbsorbGlowOrigAlpha") == nil then
         local ok, a = pcall(glowFrame.GetAlpha, glowFrame)
-        glowFrame._ScootOverAbsorbGlowOrigAlpha = ok and (a or 1) or 1
+        setProp(glowFrame, "overAbsorbGlowOrigAlpha", ok and (a or 1) or 1)
     end
 
     -- IMPORTANT: Do NOT call Hide()/Show() on this frame.
@@ -675,30 +715,30 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
     -- calls in unrelated Blizzard code paths (e.g., AlternatePowerBar:Hide()).
     --
     -- Approach: enforce invisibility with SetAlpha(0) and persistent hooks.
-    if glowFrame._ScootOverAbsorbGlowHidden then
+    if getProp(glowFrame, "overAbsorbGlowHidden") then
         if glowFrame.SetAlpha then
             pcall(glowFrame.SetAlpha, glowFrame, 0)
         end
 
-        if _G.hooksecurefunc and not glowFrame._ScootOverAbsorbGlowVisibilityHooked then
-            glowFrame._ScootOverAbsorbGlowVisibilityHooked = true
+        if _G.hooksecurefunc and not getProp(glowFrame, "overAbsorbGlowVisibilityHooked") then
+            setProp(glowFrame, "overAbsorbGlowVisibilityHooked", true)
 
             _G.hooksecurefunc(glowFrame, "Show", function(self)
-                if self._ScootOverAbsorbGlowHidden and self.SetAlpha then
-                    if not self._ScootSettingAlpha then
-                        self._ScootSettingAlpha = true
+                if getProp(self, "overAbsorbGlowHidden") and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
-                        self._ScootSettingAlpha = nil
+                        setProp(self, "settingAlpha", nil)
                     end
                 end
             end)
 
             _G.hooksecurefunc(glowFrame, "SetAlpha", function(self, alpha)
-                if self._ScootOverAbsorbGlowHidden and alpha and alpha > 0 and self.SetAlpha then
-                    if not self._ScootSettingAlpha then
-                        self._ScootSettingAlpha = true
+                if getProp(self, "overAbsorbGlowHidden") and alpha and alpha > 0 and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
-                        self._ScootSettingAlpha = nil
+                        setProp(self, "settingAlpha", nil)
                     end
                 end
             end)
@@ -706,7 +746,7 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
     else
         -- Restore alpha; allow Blizzard's visibility logic to drive Show/Hide naturally.
         if glowFrame.SetAlpha then
-            local restoreAlpha = glowFrame._ScootOverAbsorbGlowOrigAlpha
+            local restoreAlpha = getProp(glowFrame, "overAbsorbGlowOrigAlpha")
             if restoreAlpha == nil then restoreAlpha = 1 end
             pcall(glowFrame.SetAlpha, glowFrame, restoreAlpha)
         end
@@ -722,10 +762,10 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     local targetFrame = frame
     if frame.GetObjectType and frame:GetObjectType() == "Texture" then
         local parent = frame:GetParent() or UIParent
-        local container = frame.ScooterIconBorderContainer
+        local container = getIconBorderContainer(frame)
         if not container then
             container = CreateFrame("Frame", nil, parent)
-            frame.ScooterIconBorderContainer = container
+            setIconBorderContainer(frame, container)
             container:EnableMouse(false)
         end
         container:ClearAllPoints()
@@ -1347,7 +1387,7 @@ function addon:ResetComponentToDefaults(componentOrId)
     end
 
     if self.EditMode and self.EditMode.SyncComponentToEditMode then
-        self.EditMode.SyncComponentToEditMode(component)
+        self.EditMode.SyncComponentToEditMode(component, { skipApply = true })
     end
 
     if self.ApplyStyles then

@@ -3,6 +3,26 @@ local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
 local ClampOpacity = Util.ClampOpacity
 
+-- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
+local FS = nil
+local function ensureFS()
+    if not FS then FS = addon.FrameState end
+    return FS
+end
+
+local function getState(frame)
+    local fs = ensureFS()
+    return fs and fs.Get(frame) or nil
+end
+
+local function isEditModeActive()
+	if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+		return addon.EditMode.IsEditModeActiveOrOpening()
+	end
+	local mgr = _G.EditModeManagerFrame
+	return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
 -- Unit Frames: Buffs & Debuffs positioning and sizing (Target/Focus)
 do
 	-- Store original positions per aura frame so offsets remain relative to stock layout
@@ -188,7 +208,8 @@ do
 							-- before applying a new style to avoid any chance of layered leftovers.
 							if addon.Borders and addon.Borders.HideAll then
 								addon.Borders.HideAll(icon)
-								local container = icon.ScooterIconBorderContainer
+								local iconState = getState(icon)
+								local container = iconState and iconState.ScooterIconBorderContainer
 								if container then
 									addon.Borders.HideAll(container)
 								end
@@ -211,7 +232,8 @@ do
 								addon.Borders.HideAll(icon)
 								-- Also clear any borders attached to the icon's wrapper container created
 								-- by ApplyIconBorderStyle when the icon is a Texture.
-								local container = icon.ScooterIconBorderContainer
+								local iconState = getState(icon)
+								local container = iconState and iconState.ScooterIconBorderContainer
 								if container then
 									addon.Borders.HideAll(container)
 								end
@@ -300,7 +322,8 @@ do
 	local function applyBuffsDebuffsForUnit(unit)
 		-- Check if this call is from a combat hook (visual-only path)
 		local frame = resolveUnitFrame(unit)
-		local visualOnly = frame and frame._ScootBDVisualOnly
+		local frameState = getState(frame)
+		local visualOnly = frameState and frameState.buffsDebuffsVisualOnly
 		applyBuffsDebuffsForUnitInternal(unit, visualOnly)
 	end
 
@@ -318,23 +341,27 @@ do
 	-- while deferring layout operations (container positioning) until combat ends.
 	if _G.TargetFrame and _G.TargetFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.TargetFrame, "UpdateAuras", function(self)
+			if isEditModeActive() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
 				local inCombat = InCombatLockdown and InCombatLockdown()
 				-- Set visual-only flag when in combat so styling skips layout operations
-				self._ScootBDVisualOnly = inCombat
+				local st = getState(self)
+				if st then st.buffsDebuffsVisualOnly = inCombat end
 				addon.ApplyUnitFrameBuffsDebuffsFor("Target")
-				self._ScootBDVisualOnly = nil
+				if st then st.buffsDebuffsVisualOnly = nil end
 			end
 		end)
 	end
 	if _G.FocusFrame and _G.FocusFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.FocusFrame, "UpdateAuras", function(self)
+			if isEditModeActive() then return end
 			if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
 				local inCombat = InCombatLockdown and InCombatLockdown()
 				-- Set visual-only flag when in combat so styling skips layout operations
-				self._ScootBDVisualOnly = inCombat
+				local st = getState(self)
+				if st then st.buffsDebuffsVisualOnly = inCombat end
 				addon.ApplyUnitFrameBuffsDebuffsFor("Focus")
-				self._ScootBDVisualOnly = nil
+				if st then st.buffsDebuffsVisualOnly = nil end
 			end
 		end)
 	end

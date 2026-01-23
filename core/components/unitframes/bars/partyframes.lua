@@ -123,14 +123,14 @@ end
 
 -- Update overlay width based on health bar value
 local function updateHealthOverlay(bar)
-    if not bar or not bar.ScooterPartyHealthFill then return end
+    if not bar then return end
     local state = getState(bar)
+    local overlay = state and state.healthOverlay or nil
+    if not overlay then return end
     if not state or not state.overlayActive then
-        bar.ScooterPartyHealthFill:Hide()
+        overlay:Hide()
         return
     end
-
-    local overlay = bar.ScooterPartyHealthFill
     -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
     local totalWidth = 0
     do
@@ -179,9 +179,10 @@ end
 
 -- Style the overlay texture and color
 local function styleHealthOverlay(bar, cfg)
-    if not bar or not bar.ScooterPartyHealthFill or not cfg then return end
-
-    local overlay = bar.ScooterPartyHealthFill
+    if not bar or not cfg then return end
+    local state = getState(bar)
+    local overlay = state and state.healthOverlay or nil
+    if not overlay then return end
     local texKey = cfg.healthBarTexture or "default"
     local colorMode = cfg.healthBarColorMode or "default"
     local tint = cfg.healthBarTint
@@ -292,14 +293,14 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     if state then state.overlayActive = hasCustom end
 
     if not hasCustom then
-        if bar.ScooterPartyHealthFill then
-            bar.ScooterPartyHealthFill:Hide()
+        if state and state.healthOverlay then
+            state.healthOverlay:Hide()
         end
         showBlizzardFill(bar)
         return
     end
 
-    if not bar.ScooterPartyHealthFill then
+    if state and not state.healthOverlay then
         -- IMPORTANT: This overlay must NOT be parented to the StatusBar.
         -- WoW draws all parent frame layers first, then all child frame layers.
         -- If we parent to the health bar (child), our overlay can draw *above*
@@ -315,7 +316,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         overlay:SetVertTile(false)
         overlay:SetHorizTile(false)
         overlay:SetTexCoord(0, 1, 0, 1)
-        bar.ScooterPartyHealthFill = overlay
+        state.healthOverlay = overlay
 
         local barState = ensureState(bar)
         if _G.hooksecurefunc and barState and not barState.overlayHooksInstalled then
@@ -358,8 +359,8 @@ function PartyFrames.disableHealthOverlay(bar)
     if not bar then return end
     local state = getState(bar)
     if state then state.overlayActive = false end
-    if bar.ScooterPartyHealthFill then
-        bar.ScooterPartyHealthFill:Hide()
+    if state and state.healthOverlay then
+        state.healthOverlay:Hide()
     end
     showBlizzardFill(bar)
 end
@@ -413,9 +414,12 @@ function addon.ApplyPartyFrameHealthOverlays()
             if hasCustom then
                 if not (InCombatLockdown and InCombatLockdown()) then
                     PartyFrames.ensureHealthOverlay(bar, cfg)
-                elseif bar.ScooterPartyHealthFill then
-                    styleHealthOverlay(bar, cfg)
-                    updateHealthOverlay(bar)
+                else
+                    local state = getState(bar)
+                    if state and state.healthOverlay then
+                        styleHealthOverlay(bar, cfg)
+                        updateHealthOverlay(bar)
+                    end
                 end
             else
                 PartyFrames.disableHealthOverlay(bar)
@@ -444,6 +448,9 @@ end
 -- frame type), the addon code in the execution context can cause UnitInRange() and
 -- similar APIs to return secret values, breaking Blizzard's own code.
 local function isEditModeActive()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
     local mgr = _G.EditModeManagerFrame
     return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
 end
