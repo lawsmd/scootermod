@@ -4,8 +4,6 @@
 -- We embed a lightly customized copy of this library. Changes include:
 --  1) A per-setting compatibility flag to force index-based slider semantics
 --     (some client builds appear to store Cooldown Viewer Opacity as index-from-min).
---  2) Post SetFrameSetting immediate refresh for common Cooldown Viewer settings to
---     ensure visible updates without requiring ApplyChanges/UI reopen.
 -- Rationale: In late 2025, the upstream v8 changed slider validation to use real
 -- min/max ranges. That fixed Icon Padding (2..10) and Icon Size (50..200) but exposed
 -- an opacity persistence quirk for certain clients. Our opt-in flag allows select
@@ -15,8 +13,6 @@
 local lib = LibStub:NewLibrary("LibEditModeOverride-1.0", 10)
 
 if not lib then return end
-
-local activeLayoutPending = false
 
 local pointGetter = CreateFrame("Frame", nil, UIParent)
 
@@ -71,10 +67,6 @@ lib._forceIndexBased = lib._forceIndexBased or {}
 -- This keeps ScooterMod and other callers working purely in UI-facing raw values.
 lib._forceDiffFromMin = lib._forceDiffFromMin or {}
 
--- [LEAD3 DIAGNOSTIC] When true, SetFrameSetting skips all visual updater calls on system frames.
--- This prevents addon code from tainting system frames in 12.0's secret-value model.
--- See ADDONCONTEXT/Docs/TAINT.md for full context.
-lib._lead3_disableVisualUpdaters = true
 
 -- SliderIsIndexBased(frame, setting, restrictions)
 -- Determines whether a slider should be treated as index-based for both Set/Get operations.
@@ -225,38 +217,6 @@ function lib:SetFrameSetting(frame, setting, value)
     end
   end
 
-  -- [LEAD3 DIAGNOSTIC] Visual updaters DISABLED to confirm taint source.
-  -- These calls write to the system frame from addon context, permanently tainting it in 12.0.
-  -- See ADDONCONTEXT/Docs/TAINT.md "Phase 4: Strip Frame Writes" for details.
-  -- To re-enable, set lib._lead3_disableVisualUpdaters = false
-  if not lib._lead3_disableVisualUpdaters then
-    -- Proactively refresh the live frame for well-known settings to ensure visible updates without requiring UI reopen.
-    -- Note: immediate calls prevent visual desync and checkbox 'bounce' in external settings UIs.
-    if frame and frame.system == Enum.EditModeSystem.CooldownViewer then
-      if setting == Enum.EditModeCooldownViewerSetting.Opacity and frame.UpdateSystemSettingOpacity then
-        pcall(frame.UpdateSystemSettingOpacity, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.IconSize and frame.UpdateSystemSettingIconSize then
-        pcall(frame.UpdateSystemSettingIconSize, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.IconPadding and frame.UpdateSystemSettingIconPadding then
-        pcall(frame.UpdateSystemSettingIconPadding, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.IconDirection and frame.UpdateSystemSettingIconDirection then
-        pcall(frame.UpdateSystemSettingIconDirection, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.IconLimit and frame.UpdateSystemSettingIconLimit then
-        pcall(frame.UpdateSystemSettingIconLimit, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.Orientation and frame.UpdateSystemSettingOrientation then
-        pcall(frame.UpdateSystemSettingOrientation, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.ShowTimer and frame.UpdateSystemSettingShowTimer then
-        pcall(frame.UpdateSystemSettingShowTimer, frame)
-      elseif setting == Enum.EditModeCooldownViewerSetting.ShowTooltips and frame.UpdateSystemSettingShowTooltips then
-        pcall(frame.UpdateSystemSettingShowTooltips, frame)
-      end
-      if frame.UpdateLayout then pcall(frame.UpdateLayout, frame) end
-      -- Nudge Edit Mode Manager to re-evaluate control values when it's open
-      if _G.EditModeManagerFrame and _G.EditModeManagerFrame:IsShown() and _G.EditModeManagerFrame.RefreshSystems then
-        pcall(_G.EditModeManagerFrame.RefreshSystems, _G.EditModeManagerFrame)
-      end
-    end
-  end
 end
 
 function lib:GetFrameSetting(frame, setting)
@@ -343,59 +303,15 @@ end
 function lib:SaveOnly()
   assert(layoutInfo, LOAD_ERROR)
   C_EditMode.SaveLayouts(layoutInfo)
-  if activeLayoutPending or lib._lead1_alwaysSetActiveLayout then
-    -- [LEAD1 DIAGNOSTIC] Always call SetActiveLayout after saving.
-    -- Hypothesis: SetActiveLayout fires EDIT_MODE_LAYOUTS_UPDATED from C-side,
-    -- which triggers Blizzard's event handler to call UpdateLayoutInfo in a clean
-    -- (untainted) execution context — providing visual updates without taint.
-    C_EditMode.SetActiveLayout(layoutInfo.activeLayout)
-    activeLayoutPending = false
-  end
-  reconciledLayouts = true -- Would have updated for new/old systems in LoadLayouts
-end
-
--- [LEAD1 DIAGNOSTIC] Enable always-set-active-layout after SaveLayouts.
--- When combined with Lead 3 (frame writes disabled), this tests whether
--- SetActiveLayout alone can trigger a clean visual rebuild via C-side events.
-lib._lead1_alwaysSetActiveLayout = true
-
-local function SafeSecureCall(name, func, ...)
-  if type(securecallfunction) == "function" then
-    return securecallfunction(func, ...)
-  end
-  if type(securecall) == "function" then
-    return securecall(name, ...)
-  end
-  return func(...)
-end
-
-function lib:ApplyChanges()
-  assert(not InCombatLockdown(), "Cannot move frames in combat")
-  assert(lib:IsReady(), READY_ERROR)
-  lib:SaveOnly()
-
-  -- Prefer a direct layout refresh without opening Edit Mode. This avoids the
-  -- EditModeFrameSetup path (TargetUnit/CompactUnitFrame updates) that can
-  -- surface secret-value errors when invoked from addon context.
-  if EditModeManagerFrame and type(EditModeManagerFrame.UpdateLayoutInfo) == "function"
-      and C_EditMode and type(C_EditMode.GetLayouts) == "function" then
-    local layoutInfo = C_EditMode.GetLayouts()
-    if layoutInfo then
-      local ok = SafeSecureCall("EditModeManagerFrame_UpdateLayoutInfo",
-        EditModeManagerFrame.UpdateLayoutInfo, EditModeManagerFrame, layoutInfo)
-      if ok ~= false then
-        return
-      end
-    end
-  end
-
-  if not issecurevariable(DropDownList1, "numButtons") then
-    SafeSecureCall("ShowUIPanel", ShowUIPanel, AddonList)
-    SafeSecureCall("HideUIPanel", HideUIPanel, AddonList)
-  end
-
-  SafeSecureCall("ShowUIPanel", ShowUIPanel, EditModeManagerFrame)
-  SafeSecureCall("HideUIPanel", HideUIPanel, EditModeManagerFrame)
+  -- Defer SetActiveLayout to a fresh execution context.
+  -- Calling it synchronously from addon code puts the entire UpdateSystems chain
+  -- in a tainted context where C_Spell.GetSpellCooldown (and similar combat APIs)
+  -- return secret values, permanently tainting CDM item frame fields.
+  local activeLayout = layoutInfo.activeLayout
+  C_Timer.After(0, function()
+    C_EditMode.SetActiveLayout(activeLayout)
+  end)
+  reconciledLayouts = true
 end
 
 function lib:DoesLayoutExist(layoutName)
@@ -476,7 +392,6 @@ function lib:SetActiveLayout(layoutName)
 
   layoutInfo.activeLayout = index
 
-  activeLayoutPending = true
 end
 
 function lib:GetActiveLayout()

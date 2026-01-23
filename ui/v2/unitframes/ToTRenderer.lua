@@ -138,11 +138,9 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
 end
 
 local function buildBorderTab(inner, barPrefix, applyFn)
-    local borderValues, borderOrder = UF.buildBarBorderOptions()
-
-    inner:AddSelector({
+    inner:AddBarBorderSelector({
         label = "Border Style",
-        values = borderValues, order = borderOrder,
+        includeNone = true,
         get = function() local t = ensureToTDB() or {}; return t[barPrefix .. "BorderStyle"] or "square" end,
         set = function(v) local t = ensureToTDB(); if t then t[barPrefix .. "BorderStyle"] = v or "square"; applyFn() end end,
     })

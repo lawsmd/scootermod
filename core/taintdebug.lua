@@ -189,15 +189,6 @@ function TD.Enable()
             TD._origSetSetting = orig
         end
         
-        if EM.ApplyChanges then
-            local orig = EM.ApplyChanges
-            EM.ApplyChanges = function()
-                TD.LogAction("EditMode.ApplyChanges", nil)
-                return orig()
-            end
-            TD._origApplyChanges = orig
-        end
-        
         if EM.SaveOnly then
             local orig = EM.SaveOnly
             EM.SaveOnly = function()
@@ -242,15 +233,6 @@ function TD.Enable()
             TD._origLEOSetFrameSetting = orig
         end
         
-        if LEO.ApplyChanges then
-            local orig = LEO.ApplyChanges
-            LEO.ApplyChanges = function(self)
-                TD.LogAction("LEO:ApplyChanges", nil)
-                return orig(self)
-            end
-            TD._origLEOApplyChanges = orig
-        end
-        
         if LEO.SaveOnly then
             local orig = LEO.SaveOnly
             LEO.SaveOnly = function(self)
@@ -284,7 +266,6 @@ function TD.Disable()
     if TD._wrappedEditMode and addon.EditMode then
         local EM = addon.EditMode
         if TD._origSetSetting then EM.SetSetting = TD._origSetSetting end
-        if TD._origApplyChanges then EM.ApplyChanges = TD._origApplyChanges end
         if TD._origSaveOnly then EM.SaveOnly = TD._origSaveOnly end
         if TD._origLoadLayouts then EM.LoadLayouts = TD._origLoadLayouts end
         if TD._origWriteSetting then EM.WriteSetting = TD._origWriteSetting end
@@ -295,7 +276,6 @@ function TD.Disable()
     local LEO = LibStub and LibStub("LibEditModeOverride-1.0", true)
     if TD._wrappedLEO and LEO then
         if TD._origLEOSetFrameSetting then LEO.SetFrameSetting = TD._origLEOSetFrameSetting end
-        if TD._origLEOApplyChanges then LEO.ApplyChanges = TD._origLEOApplyChanges end
         if TD._origLEOSaveOnly then LEO.SaveOnly = TD._origLEOSaveOnly end
         TD._wrappedLEO = false
     end

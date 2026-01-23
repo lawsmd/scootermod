@@ -191,8 +191,6 @@ local function buildHealthStyleTab(inner)
 end
 
 local function buildHealthBorderTab(inner)
-    local borderValues, borderOrder = UF.buildBarBorderOptions()
-
     -- Check if custom borders are enabled
     local function isEnabled()
         local t = ensureUFDB() or {}
@@ -200,10 +198,9 @@ local function buildHealthBorderTab(inner)
     end
 
     -- Border Style
-    inner:AddSelector({
+    inner:AddBarBorderSelector({
         label = "Border Style",
-        values = borderValues,
-        order = borderOrder,
+        includeNone = true,
         get = function()
             local t = ensureUFDB() or {}
             return t.healthBarBorderStyle or "square"
@@ -749,8 +746,7 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)
-                        local borderValues, borderOrder = UF.buildBarBorderOptions()
-                        tabInner:AddSelector({ label = "Border Style", values = borderValues, order = borderOrder,
+                        tabInner:AddBarBorderSelector({ label = "Border Style", includeNone = true,
                             get = function() local t = ensureUFDB() or {}; return t.powerBarBorderStyle or "square" end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderStyle = v or "square"; applyBarTextures() end end })
                         tabInner:AddToggleColorPicker({ label = "Border Tint",

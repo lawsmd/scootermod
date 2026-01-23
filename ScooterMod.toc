@@ -120,6 +120,7 @@ ui/v2/controls/ToggleColorPicker.lua
 ui/v2/controls/SelectorColorPicker.lua
 ui/v2/controls/Dropdown.lua
 ui/v2/controls/BarTexturePicker.lua
+ui/v2/controls/BarBorderPicker.lua
 ui/v2/controls/Dialog.lua
 ui/v2/Window.lua
 ui/v2/Navigation.lua

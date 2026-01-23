@@ -221,18 +221,6 @@ function UIPanel:Initialize()
     -- Register for ESC to close
     tinsert(UISpecialFrames, "ScooterUISettingsFrame")
 
-    -- Protect against unintended closure during Edit Mode ApplyChanges.
-    -- LibEditModeOverride:ApplyChanges() briefly shows/hides EditModeManagerFrame,
-    -- which can trigger Blizzard's frame management to close other panels.
-    -- If we're inside our own ApplyChanges call, re-show the panel immediately.
-    -- NOTE: Immediate re-show (no defer) matches old panel behavior and avoids visible flicker.
-    frame:HookScript("OnHide", function(f)
-        if addon and addon.EditMode and addon.EditMode._inScooterApplyChanges then
-            if f and not f:IsShown() then
-                f:Show()
-            end
-        end
-    end)
 
     -- Restore saved position if available
     Window:RestorePosition(frame)
@@ -3534,11 +3522,9 @@ function UIPanel:RenderTrackedBars(scrollContent)
                 setColor = function(r, g, b, a) setSetting("borderTintColor", {r, g, b, a}) end,
             })
 
-            local barBorderValues, barBorderOrder = getBarBorderOptions()
-            inner:AddSelector({
+            inner:AddBarBorderSelector({
                 label = "Border Style",
-                values = barBorderValues,
-                order = barBorderOrder,
+                includeNone = false,
                 get = function() return getSetting("borderStyle") or "square" end,
                 set = function(v) setSetting("borderStyle", v) end,
             })
@@ -4938,12 +4924,9 @@ function UIPanel:RenderPRDHealthBar(scrollContent)
         sectionKey = "border",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            local borderValues, borderOrder = getBorderOptions()
-
-            inner:AddSelector({
+            inner:AddBarBorderSelector({
                 label = "Border Style",
-                values = borderValues,
-                order = borderOrder,
+                includeNone = true,
                 get = function() return getSetting("borderStyle") or "square" end,
                 set = function(v) setSetting("borderStyle", v) end,
             })
@@ -5386,12 +5369,9 @@ function UIPanel:RenderPRDPowerBar(scrollContent)
         sectionKey = "border",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            local borderValues, borderOrder = getBorderOptions()
-
-            inner:AddSelector({
+            inner:AddBarBorderSelector({
                 label = "Border Style",
-                values = borderValues,
-                order = borderOrder,
+                includeNone = true,
                 get = function() return getSetting("borderStyle") or "square" end,
                 set = function(v) setSetting("borderStyle", v) end,
             })

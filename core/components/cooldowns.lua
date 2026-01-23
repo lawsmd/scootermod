@@ -59,6 +59,10 @@ local activeOverlays = {}  -- Map from CDM icon frame to overlay frame
 -- that can cause allowAvailableAlert and other fields to become secret values
 local sizedIcons = setmetatable({}, { __mode = "k" })
 
+-- Track cached FontString references per cooldown frame (weak keys for GC)
+-- Using a local table instead of writing _scooterFontString to Blizzard frames avoids taint
+local scooterFontStrings = setmetatable({}, { __mode = "k" })
+
 --------------------------------------------------------------------------------
 -- Overlay Frame Management
 --------------------------------------------------------------------------------
@@ -313,15 +317,15 @@ local function getCooldownFontString(cooldownFrame)
     if not cooldownFrame then return nil end
     
     -- Use cached reference if available
-    if cooldownFrame._scooterFontString then
-        return cooldownFrame._scooterFontString
+    if scooterFontStrings[cooldownFrame] then
+        return scooterFontStrings[cooldownFrame]
     end
-    
+
     -- Search regions for FontString
     if cooldownFrame.GetRegions then
         for _, region in ipairs({cooldownFrame:GetRegions()}) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                cooldownFrame._scooterFontString = region
+                scooterFontStrings[cooldownFrame] = region
                 return region
             end
         end
@@ -479,23 +483,24 @@ local function applyCooldownTextStyle(cooldownFrame)
     
     local componentId = identifyCooldownSource(cooldownFrame)
     if not componentId then return end
-    
+
+    -- Style cooldown timer text (if configured)
     local cfg = getCooldownTextSettings(componentId)
-    if not cfg then return end
-    
-    -- Clear cached FontString reference to force re-scan
-    cooldownFrame._scooterFontString = nil
-    
-    local fontString = getCooldownFontString(cooldownFrame)
-    if fontString then
-        -- Cooldown text uses CENTER anchor by default
-        applyFontStyleDirect(fontString, cfg, { 
-            isChargeText = false,
-            parentFrame = cooldownFrame
-        })
+    if cfg then
+        -- Clear cached FontString reference to force re-scan
+        scooterFontStrings[cooldownFrame] = nil
+
+        local fontString = getCooldownFontString(cooldownFrame)
+        if fontString then
+            -- Cooldown text uses CENTER anchor by default
+            applyFontStyleDirect(fontString, cfg, {
+                isChargeText = false,
+                parentFrame = cooldownFrame
+            })
+        end
     end
-    
-    -- Also try to style charge/stack count
+
+    -- Style charge/stack count text (independent of cooldown text config)
     if parent then
         local chargeCfg = getChargeTextSettings(componentId)
         if chargeCfg then
@@ -504,7 +509,7 @@ local function applyCooldownTextStyle(cooldownFrame)
                 -- Charge/stack text uses BOTTOMRIGHT anchor by default
                 -- Find the icon texture to anchor to (same as Neph UI approach)
                 local iconTexture = parent.Icon or parent.icon
-                applyFontStyleDirect(chargeFS, chargeCfg, { 
+                applyFontStyleDirect(chargeFS, chargeCfg, {
                     isChargeText = true,
                     parentFrame = iconTexture or parent
                 })

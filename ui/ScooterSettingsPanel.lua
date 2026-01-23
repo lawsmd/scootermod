@@ -953,13 +953,6 @@ local function createComponentRenderer(componentId)
                                 component.db[settingId] = finalValue
 
                                 if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                    -- Avoid UI flicker by preferring single-setting writes + SaveOnly and coalesced ApplyChanges
-                                    local function safeSaveOnly()
-                                        if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-                                    end
-                                    local function requestApply()
-                                        if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-                                    end
                                     if settingId == "positionX" or settingId == "positionY" then
                                         -- Use position-only sync to avoid cascade of syncing all Edit Mode settings.
                                         -- The new SyncComponentPositionToEditMode handles Save/Apply internally,
@@ -2704,9 +2697,6 @@ end
         -- Pre-click handler to mark Edit Mode opening state (prevents synchronous taint)
         headerEditBtn:SetScript("PreClick", function()
             if addon and addon.EditMode then
-                if addon.EditMode.CancelPendingApplyChanges then
-                    addon.EditMode.CancelPendingApplyChanges()
-                end
                 if addon.EditMode.MarkOpeningEditMode then
                     addon.EditMode.MarkOpeningEditMode()
                 end
@@ -2911,7 +2901,6 @@ end
 
         panel.frame = f
 
-        -- Prevent unintended closure during Edit Mode ApplyChanges by restoring visibility when protected
         if not f._ScooterProtectHooked then
             f:HookScript("OnHide", function(frame)
                 local pnl = addon and addon.SettingsPanel
@@ -2919,12 +2908,6 @@ end
                 -- during the hide transition. This prevents race conditions where
                 -- RefreshCurrentCategoryDeferred runs after panel starts hiding.
                 if pnl then pnl._panelClosing = true end
-                
-                if pnl and pnl._protectVisibility then
-                    pnl._protectVisibility = false
-                    if pnl then pnl._panelClosing = false end -- Panel is reopening
-                    if pnl and pnl.frame and not pnl.frame:IsShown() then pnl.frame:Show() end
-                end
                 -- Stop any running title reveal animations when panel closes
                 if pnl and pnl.StopTitleAnimation and frame._ScooterTitleRegion then
                     local titleRegion = frame._ScooterTitleRegion

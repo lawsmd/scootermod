@@ -714,6 +714,59 @@ function Builder:AddBarTextureSelector(options)
 end
 
 --------------------------------------------------------------------------------
+-- AddBarBorderSelector: Add a bar border selection dropdown with popup picker
+--------------------------------------------------------------------------------
+-- Options:
+--   label       : Setting label text
+--   description : Optional description below label
+--   get         : Function returning current border key (e.g., "mmtPixel")
+--   set         : Function(borderKey) to save selected border
+--   width       : Selector box width (optional)
+--   includeNone : Whether to show "No Border" option (default true)
+--------------------------------------------------------------------------------
+
+function Builder:AddBarBorderSelector(options)
+    local scrollContent = self._scrollContent
+    if not scrollContent then return self end
+
+    -- Add item spacing
+    if #self._controls > 0 then
+        self._currentY = self._currentY - ITEM_SPACING
+    end
+
+    -- Create bar border selector using Controls module
+    local barBorderSelector = Controls:CreateBarBorderSelector({
+        parent = scrollContent,
+        label = options.label,
+        description = options.description,
+        get = options.get,
+        set = options.set,
+        width = options.width,
+        includeNone = options.includeNone,
+        useLightDim = self._useLightDim,
+    })
+
+    if barBorderSelector then
+        -- Position the bar border selector
+        barBorderSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
+        barBorderSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
+
+        -- Track for cleanup
+        table.insert(self._controls, barBorderSelector)
+
+        -- Register by key for dynamic updates
+        if options.key then
+            self._controlsByKey[options.key] = barBorderSelector
+        end
+
+        -- Update Y position
+        self._currentY = self._currentY - barBorderSelector:GetHeight()
+    end
+
+    return self
+end
+
+--------------------------------------------------------------------------------
 -- AddTabbedSection: Add a horizontal tabbed section for sub-settings
 --------------------------------------------------------------------------------
 -- Creates a tabbed section with multiple tab pages, each with its own content.

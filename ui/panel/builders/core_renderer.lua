@@ -1746,12 +1746,6 @@ local function createComponentRenderer(componentId)
                                     component.db[settingId] = finalValue
 
                                     if changed and (setting.type == "editmode" or settingId == "positionX" or settingId == "positionY") then
-                                        local function safeSaveOnly()
-                                            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
-                                        end
-                                        local function requestApply()
-                                            if addon.EditMode and addon.EditMode.RequestApplyChanges then addon.EditMode.RequestApplyChanges(0.2) end
-                                        end
                                         if settingId == "positionX" or settingId == "positionY" then
                                             -- Use position-only sync to avoid cascade of syncing all Edit Mode settings.
                                             -- The new SyncComponentPositionToEditMode handles Save/Apply internally,
