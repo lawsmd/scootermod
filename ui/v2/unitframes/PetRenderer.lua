@@ -350,20 +350,34 @@ local function buildHealthPercentTextTab(inner)
     })
 
     -- Color
-    inner:AddColorPicker({
+    inner:AddSelectorColorPicker({
         label = "% Text Color",
+        values = UF.fontColorValues,
+        order = UF.fontColorOrder,
         get = function()
+            local s = ensureTextDB("textHealthPercent") or {}
+            return s.colorMode or "default"
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.textHealthPercent = t.textHealthPercent or {}
+            t.textHealthPercent.colorMode = v or "default"
+            applyStyles()
+        end,
+        getColor = function()
             local s = ensureTextDB("textHealthPercent") or {}
             local c = s.color or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
-        set = function(r, g, b, a)
+        setColor = function(r, g, b, a)
             local t = ensureUFDB()
             if not t then return end
             t.textHealthPercent = t.textHealthPercent or {}
             t.textHealthPercent.color = {r or 1, g or 1, b or 1, a or 1}
             applyStyles()
         end,
+        customValue = "custom",
         hasAlpha = true,
     })
 
@@ -500,20 +514,34 @@ local function buildHealthValueTextTab(inner)
     })
 
     -- Color
-    inner:AddColorPicker({
+    inner:AddSelectorColorPicker({
         label = "Value Text Color",
+        values = UF.fontColorValues,
+        order = UF.fontColorOrder,
         get = function()
+            local s = ensureTextDB("textHealthValue") or {}
+            return s.colorMode or "default"
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.textHealthValue = t.textHealthValue or {}
+            t.textHealthValue.colorMode = v or "default"
+            applyStyles()
+        end,
+        getColor = function()
             local s = ensureTextDB("textHealthValue") or {}
             local c = s.color or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
-        set = function(r, g, b, a)
+        setColor = function(r, g, b, a)
             local t = ensureUFDB()
             if not t then return end
             t.textHealthValue = t.textHealthValue or {}
             t.textHealthValue.color = {r or 1, g or 1, b or 1, a or 1}
             applyStyles()
         end,
+        customValue = "custom",
         hasAlpha = true,
     })
 
@@ -782,10 +810,13 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:AddSlider({ label = "% Text Size", min = 6, max = 48, step = 1,
                             get = function() local s = ensureTextDB("textPowerPercent") or {}; return tonumber(s.size) or 14 end,
                             set = function(v) local t = ensureUFDB(); if t then t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.size = tonumber(v) or 14; applyStyles() end end })
-                        tabInner:AddColorPicker({ label = "% Text Color",
-                            get = function() local s = ensureTextDB("textPowerPercent") or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            set = function(r,g,b,a) local t = ensureUFDB(); if t then t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyStyles() end end,
-                            hasAlpha = true })
+                        tabInner:AddSelectorColorPicker({ label = "% Text Color",
+                            values = UF.fontColorValues, order = UF.fontColorOrder,
+                            get = function() local s = ensureTextDB("textPowerPercent") or {}; return s.colorMode or "default" end,
+                            set = function(v) local t = ensureUFDB(); if t then t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.colorMode = v or "default"; applyStyles() end end,
+                            getColor = function() local s = ensureTextDB("textPowerPercent") or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.textPowerPercent = t.textPowerPercent or {}; t.textPowerPercent.color = {r,g,b,a}; applyStyles() end end,
+                            customValue = "custom", hasAlpha = true })
                         tabInner:Finalize()
                     end,
                     valueText = function(cf, tabInner)
@@ -801,10 +832,13 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:AddSlider({ label = "Value Text Size", min = 6, max = 48, step = 1,
                             get = function() local s = ensureTextDB("textPowerValue") or {}; return tonumber(s.size) or 14 end,
                             set = function(v) local t = ensureUFDB(); if t then t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.size = tonumber(v) or 14; applyStyles() end end })
-                        tabInner:AddColorPicker({ label = "Value Text Color",
-                            get = function() local s = ensureTextDB("textPowerValue") or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            set = function(r,g,b,a) local t = ensureUFDB(); if t then t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyStyles() end end,
-                            hasAlpha = true })
+                        tabInner:AddSelectorColorPicker({ label = "Value Text Color",
+                            values = UF.fontColorValues, order = UF.fontColorOrder,
+                            get = function() local s = ensureTextDB("textPowerValue") or {}; return s.colorMode or "default" end,
+                            set = function(v) local t = ensureUFDB(); if t then t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.colorMode = v or "default"; applyStyles() end end,
+                            getColor = function() local s = ensureTextDB("textPowerValue") or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.textPowerValue = t.textPowerValue or {}; t.textPowerValue.color = {r,g,b,a}; applyStyles() end end,
+                            customValue = "custom", hasAlpha = true })
                         tabInner:Finalize()
                     end,
                 },

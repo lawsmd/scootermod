@@ -351,6 +351,9 @@ local function createComponentRenderer(componentId)
             end
 
             local orderedSections = {"Positioning", "Sizing", "Style", "Border", "Backdrop", "Icon", "Text", "Font", "Misc"}
+            if component and component.id == "prdPower" then
+                orderedSections = {"Positioning", "Sizing", "Border", "Style", "Backdrop", "Icon", "Text", "Font", "Misc"}
+            end
             for _, sectionName in ipairs(orderedSections) do
                 if sectionName == "Text" then
                     local supportsText = component and component.settings and component.settings.supportsText

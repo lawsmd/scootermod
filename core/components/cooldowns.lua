@@ -63,6 +63,9 @@ local sizedIcons = setmetatable({}, { __mode = "k" })
 -- Using a local table instead of writing _scooterFontString to Blizzard frames avoids taint
 local scooterFontStrings = setmetatable({}, { __mode = "k" })
 
+-- Forward declaration (defined in Icon Sizing section, used by hookProcGlowResizing)
+local resizeProcGlow
+
 --------------------------------------------------------------------------------
 -- Overlay Frame Management
 --------------------------------------------------------------------------------
@@ -269,24 +272,44 @@ local function getDefaultFontFace()
     return face
 end
 
+local function resolveCDMColor(cfg)
+    local colorMode = cfg and cfg.colorMode
+    -- Backward compat: existing custom color without mode = treat as custom if non-white
+    if not colorMode then
+        local c = cfg and cfg.color
+        if c and (c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or (c[4] or 1) ~= 1) then
+            return c
+        end
+        return {1, 1, 1, 1}
+    end
+    if colorMode == "class" then
+        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        return {cr or 1, cg or 1, cb or 1, 1}
+    elseif colorMode == "custom" then
+        return (cfg and cfg.color) or {1, 1, 1, 1}
+    else
+        return {1, 1, 1, 1}
+    end
+end
+
 local function applyTextStyleToFontString(fontString, cfg, defaultSize)
     if not fontString then return end
-    
+
     local size = tonumber(cfg and cfg.size) or defaultSize or 14
     local style = (cfg and cfg.style) or "OUTLINE"
-    local color = (cfg and cfg.color) or {1, 1, 1, 1}
     local fontFace = getDefaultFontFace()
-    
+
     if cfg and cfg.fontFace and addon.ResolveFontFace then
         fontFace = addon.ResolveFontFace(cfg.fontFace) or fontFace
     end
-    
+
     if addon.ApplyFontStyle then
         addon.ApplyFontStyle(fontString, fontFace, size, style)
     else
         fontString:SetFont(fontFace, size, style)
     end
-    
+
+    local color = resolveCDMColor(cfg)
     local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
     fontString:SetTextColor(r, g, b, a)
 end
@@ -410,22 +433,22 @@ end
 -- opts.parentFrame: the frame to anchor to (defaults to fontString's parent)
 local function applyFontStyleDirect(fontString, cfg, opts)
     if not fontString or not cfg then return end
-    
+
     opts = opts or {}
     local size = tonumber(cfg.size) or 14
     local style = cfg.style or "OUTLINE"
-    local color = cfg.color or {1, 1, 1, 1}
+    local color = resolveCDMColor(cfg)
     local fontFace = getDefaultFontFace()
-    
+
     if cfg.fontFace and addon.ResolveFontFace then
         fontFace = addon.ResolveFontFace(cfg.fontFace) or fontFace
     end
-    
+
     -- Apply font styling directly - this works even on protected frames!
     pcall(function()
         fontString:SetFont(fontFace, size, style)
     end)
-    
+
     pcall(function()
         local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
         fontString:SetTextColor(r, g, b, a)
@@ -556,6 +579,23 @@ local function hookCooldownTextStyling()
     end
     
     directTextStyleHooked = true
+end
+
+-- Hook ActionButtonSpellAlertManager:ShowAlert to resize proc glow on custom-sized icons.
+-- The alert is created lazily on first proc, so ApplyIconSize can't catch it at init time.
+local procGlowHooked = false
+local function hookProcGlowResizing()
+    if procGlowHooked then return end
+    if not ActionButtonSpellAlertManager then return end
+
+    hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
+        local sizeInfo = sizedIcons[actionButton]
+        if not sizeInfo then return end
+        -- Alert was just created by GetAlertFrame (hooksecurefunc runs after original)
+        resizeProcGlow(actionButton, sizeInfo.width, sizeInfo.height)
+    end)
+
+    procGlowHooked = true
 end
 
 -- Exposed function to refresh text styling (called when settings change)
@@ -766,6 +806,21 @@ end
 --   3. Adjust texture coordinates to prevent stretching
 --------------------------------------------------------------------------------
 
+-- Resize SpellActivationAlert and its ProcStartFlipbook to match custom icon dimensions.
+-- ProcStartFlipbook defaults to a fixed 150x150 square (per template XML), which causes
+-- the intro animation to appear as a small/large square instead of matching the icon.
+resizeProcGlow = function(cdmIcon, iconWidth, iconHeight)
+    if not cdmIcon.SpellActivationAlert then return end
+    pcall(function()
+        local alert = cdmIcon.SpellActivationAlert
+        alert:SetSize(iconWidth * 1.4, iconHeight * 1.4)
+        if alert.ProcStartFlipbook then
+            alert.ProcStartFlipbook:ClearAllPoints()
+            alert.ProcStartFlipbook:SetAllPoints(alert)
+        end
+    end)
+end
+
 function Overlays.ApplyIconSize(cdmIcon, opts)
     if not cdmIcon then return end
     if not opts then return end
@@ -841,8 +896,11 @@ function Overlays.ApplyIconSize(cdmIcon, opts)
         iconTexture:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
     end)
 
-    -- Mark as sized so overlays can track (using local table, not writing to Blizzard frame)
-    sizedIcons[cdmIcon] = true
+    -- Fix proc glow if alert already exists (handles re-sizing after first proc)
+    resizeProcGlow(cdmIcon, iconWidth, iconHeight)
+
+    -- Store dimensions so the ShowAlert hook can resize on first proc too
+    sizedIcons[cdmIcon] = { width = iconWidth, height = iconHeight }
 end
 
 function Overlays.ResetIconSize(cdmIcon)
@@ -1108,6 +1166,7 @@ function Overlays.Initialize()
     -- Initialize direct text styling (12.0 compatible approach)
     -- This hooks CooldownFrame_Set to style text directly on Blizzard's FontStrings
     hookCooldownTextStyling()
+    hookProcGlowResizing()
 end
 
 function Overlays.ScheduleRetry()
@@ -1266,7 +1325,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
             end
             startCleanupTicker()
             hookCooldownTextStyling()
-            
+            hookProcGlowResizing()
+
             -- Apply initial viewer opacity based on current state
             updateAllViewerOpacities()
         end)
@@ -1635,7 +1695,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
         pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
         if addon.ApplyFontStyle then addon.ApplyFontStyle(nameFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else nameFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-        local c = cfg.color or {1,1,1,1}
+        local c = resolveCDMColor(cfg)
         if nameFS.SetTextColor then nameFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
         if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
         local ox = (cfg.offset and cfg.offset.x) or 0
@@ -1652,7 +1712,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
         pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
         if addon.ApplyFontStyle then addon.ApplyFontStyle(durFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else durFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-        local c = cfg.color or {1,1,1,1}
+        local c = resolveCDMColor(cfg)
         if durFS.SetTextColor then durFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
         if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
         local ox = (cfg.offset and cfg.offset.x) or 0
@@ -1684,7 +1744,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
         pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
         if addon.ApplyFontStyle then addon.ApplyFontStyle(stacksFS, face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") else stacksFS:SetFont(face, tonumber(cfg.size) or 14, cfg.style or "OUTLINE") end
-        local c = cfg.color or {1,1,1,1}
+        local c = resolveCDMColor(cfg)
         if stacksFS.SetTextColor then stacksFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
         if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
         local ox = (cfg.offset and cfg.offset.x) or 0

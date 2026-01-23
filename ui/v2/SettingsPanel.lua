@@ -28,6 +28,12 @@ local MIN_HEIGHT = 550
 local MAX_WIDTH = 1600
 local MAX_HEIGHT = 1000
 
+-- Text color mode options (used by PRD and CDM SelectorColorPickers)
+local textColorValues = { default = "Default", class = "Class Color", custom = "Custom" }
+local textColorOrder = { "default", "class", "custom" }
+local textColorPowerValues = { default = "Default", class = "Class Color", classPower = "Class Power Color", custom = "Custom" }
+local textColorPowerOrder = { "default", "class", "classPower", "custom" }
+
 -- Animation constants for ASCII art column reveal
 local ASCII_ANIMATION_DURATION = 1.0      -- Total animation time in seconds
 local ASCII_ANIMATION_TICK = 0.016        -- Update rate (~60fps)
@@ -2043,15 +2049,20 @@ function UIPanel:RenderEssentialCooldowns(scrollContent)
                         })
 
                         -- Font Color picker
-                        tabBuilder:AddColorPicker({
+                        tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getStacksSetting("colorMode", "default") end,
+                            set = function(v) setStacksSetting("colorMode", v or "default") end,
+                            getColor = function()
                                 local c = getStacksSetting("color", {1,1,1,1})
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
+                            setColor = function(r, g, b, a)
                                 setStacksSetting("color", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
                         })
 
@@ -2149,15 +2160,20 @@ function UIPanel:RenderEssentialCooldowns(scrollContent)
                         })
 
                         -- Font Color picker
-                        tabBuilder:AddColorPicker({
+                        tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getCooldownSetting("colorMode", "default") end,
+                            set = function(v) setCooldownSetting("colorMode", v or "default") end,
+                            getColor = function()
                                 local c = getCooldownSetting("color", {1,1,1,1})
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
+                            setColor = function(r, g, b, a)
                                 setCooldownSetting("color", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
                         })
 
@@ -2707,14 +2723,17 @@ function UIPanel:RenderUtilityCooldowns(scrollContent)
                             get = function() return getStacksSetting("style", "OUTLINE") end,
                             set = function(v) setStacksSetting("style", v) end,
                         })
-                        tabBuilder:AddColorPicker({
+                        tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
+                            values = textColorValues, order = textColorOrder,
+                            get = function() return getStacksSetting("colorMode", "default") end,
+                            set = function(v) setStacksSetting("colorMode", v or "default") end,
+                            getColor = function()
                                 local c = getStacksSetting("color", {1,1,1,1})
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r,g,b,a) setStacksSetting("color", {r,g,b,a}) end,
-                            hasAlpha = true,
+                            setColor = function(r,g,b,a) setStacksSetting("color", {r,g,b,a}) end,
+                            customValue = "custom", hasAlpha = true,
                         })
                         tabBuilder:AddSlider({
                             label = "Offset X", min = -50, max = 50, step = 1,
@@ -2784,14 +2803,17 @@ function UIPanel:RenderUtilityCooldowns(scrollContent)
                             get = function() return getCooldownSetting("style", "OUTLINE") end,
                             set = function(v) setCooldownSetting("style", v) end,
                         })
-                        tabBuilder:AddColorPicker({
+                        tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
+                            values = textColorValues, order = textColorOrder,
+                            get = function() return getCooldownSetting("colorMode", "default") end,
+                            set = function(v) setCooldownSetting("colorMode", v or "default") end,
+                            getColor = function()
                                 local c = getCooldownSetting("color", {1,1,1,1})
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r,g,b,a) setCooldownSetting("color", {r,g,b,a}) end,
-                            hasAlpha = true,
+                            setColor = function(r,g,b,a) setCooldownSetting("color", {r,g,b,a}) end,
+                            customValue = "custom", hasAlpha = true,
                         })
                         tabBuilder:AddSlider({
                             label = "Offset X", min = -50, max = 50, step = 1,
@@ -5074,46 +5096,68 @@ function UIPanel:RenderPRDHealthBar(scrollContent)
                     valueText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Show Value Text",
-                            get = function() return getSetting("showText") or false end,
-                            set = function(v) setSetting("showText", v) end,
+                            get = function() return getSetting("valueTextShow") or false end,
+                            set = function(v) setSetting("valueTextShow", v) end,
                         })
 
                         tabInner:AddFontSelector({
                             label = "Font",
-                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
-                            set = function(v) setSetting("textFont", v) end,
+                            get = function() return getSetting("valueTextFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("valueTextFont", v) end,
                         })
 
                         tabInner:AddSlider({
                             label = "Font Size",
                             min = 6, max = 24, step = 1,
-                            get = function() return getSetting("textFontSize") or 10 end,
-                            set = function(v) setSetting("textFontSize", v) end,
+                            get = function() return getSetting("valueTextFontSize") or 10 end,
+                            set = function(v) setSetting("valueTextFontSize", v) end,
                             minLabel = "6", maxLabel = "24",
                         })
 
                         tabInner:AddSelector({
                             label = "Font Style",
                             values = {
-                                NONE = "None",
+                                NONE = "Regular",
                                 OUTLINE = "Outline",
                                 THICKOUTLINE = "Thick Outline",
+                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
+                                SHADOW = "Shadow",
+                                SHADOWOUTLINE = "Shadow Outline",
+                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
+                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
-                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
-                            set = function(v) setSetting("textFontFlags", v) end,
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            get = function() return getSetting("valueTextFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("valueTextFontFlags", v) end,
                         })
 
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
-                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getSetting("valueTextColorMode") or "default" end,
+                            set = function(v) setSetting("valueTextColorMode", v or "default") end,
+                            getColor = function()
+                                local c = getSetting("valueTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("textColor", {r, g, b, a})
+                            setColor = function(r, g, b, a)
+                                setSetting("valueTextColor", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Text Alignment",
+                            values = {
+                                LEFT = "Left",
+                                CENTER = "Center",
+                                RIGHT = "Right",
+                            },
+                            order = { "RIGHT", "LEFT", "CENTER" },
+                            get = function() return getSetting("valueTextAlignment") or "RIGHT" end,
+                            set = function(v) setSetting("valueTextAlignment", v) end,
                         })
 
                         tabInner:Finalize()
@@ -5121,46 +5165,68 @@ function UIPanel:RenderPRDHealthBar(scrollContent)
                     percentText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Show % Text",
-                            get = function() return getSetting("showText") or false end,
-                            set = function(v) setSetting("showText", v) end,
+                            get = function() return getSetting("percentTextShow") or false end,
+                            set = function(v) setSetting("percentTextShow", v) end,
                         })
 
                         tabInner:AddFontSelector({
                             label = "Font",
-                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
-                            set = function(v) setSetting("textFont", v) end,
+                            get = function() return getSetting("percentTextFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("percentTextFont", v) end,
                         })
 
                         tabInner:AddSlider({
                             label = "Font Size",
                             min = 6, max = 24, step = 1,
-                            get = function() return getSetting("textFontSize") or 10 end,
-                            set = function(v) setSetting("textFontSize", v) end,
+                            get = function() return getSetting("percentTextFontSize") or 10 end,
+                            set = function(v) setSetting("percentTextFontSize", v) end,
                             minLabel = "6", maxLabel = "24",
                         })
 
                         tabInner:AddSelector({
                             label = "Font Style",
                             values = {
-                                NONE = "None",
+                                NONE = "Regular",
                                 OUTLINE = "Outline",
                                 THICKOUTLINE = "Thick Outline",
+                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
+                                SHADOW = "Shadow",
+                                SHADOWOUTLINE = "Shadow Outline",
+                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
+                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
-                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
-                            set = function(v) setSetting("textFontFlags", v) end,
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            get = function() return getSetting("percentTextFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("percentTextFontFlags", v) end,
                         })
 
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
-                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getSetting("percentTextColorMode") or "default" end,
+                            set = function(v) setSetting("percentTextColorMode", v or "default") end,
+                            getColor = function()
+                                local c = getSetting("percentTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("textColor", {r, g, b, a})
+                            setColor = function(r, g, b, a)
+                                setSetting("percentTextColor", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Text Alignment",
+                            values = {
+                                LEFT = "Left",
+                                CENTER = "Center",
+                                RIGHT = "Right",
+                            },
+                            order = { "LEFT", "RIGHT", "CENTER" },
+                            get = function() return getSetting("percentTextAlignment") or "LEFT" end,
+                            set = function(v) setSetting("percentTextAlignment", v) end,
                         })
 
                         tabInner:Finalize()
@@ -5438,46 +5504,68 @@ function UIPanel:RenderPRDPowerBar(scrollContent)
                     valueText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Show Value Text",
-                            get = function() return getSetting("showText") or false end,
-                            set = function(v) setSetting("showText", v) end,
+                            get = function() return getSetting("valueTextShow") or false end,
+                            set = function(v) setSetting("valueTextShow", v) end,
                         })
 
                         tabInner:AddFontSelector({
                             label = "Font",
-                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
-                            set = function(v) setSetting("textFont", v) end,
+                            get = function() return getSetting("valueTextFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("valueTextFont", v) end,
                         })
 
                         tabInner:AddSlider({
                             label = "Font Size",
                             min = 6, max = 24, step = 1,
-                            get = function() return getSetting("textFontSize") or 10 end,
-                            set = function(v) setSetting("textFontSize", v) end,
+                            get = function() return getSetting("valueTextFontSize") or 10 end,
+                            set = function(v) setSetting("valueTextFontSize", v) end,
                             minLabel = "6", maxLabel = "24",
                         })
 
                         tabInner:AddSelector({
                             label = "Font Style",
                             values = {
-                                NONE = "None",
+                                NONE = "Regular",
                                 OUTLINE = "Outline",
                                 THICKOUTLINE = "Thick Outline",
+                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
+                                SHADOW = "Shadow",
+                                SHADOWOUTLINE = "Shadow Outline",
+                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
+                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
-                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
-                            set = function(v) setSetting("textFontFlags", v) end,
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            get = function() return getSetting("valueTextFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("valueTextFontFlags", v) end,
                         })
 
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
-                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                            values = textColorPowerValues,
+                            order = textColorPowerOrder,
+                            get = function() return getSetting("valueTextColorMode") or "default" end,
+                            set = function(v) setSetting("valueTextColorMode", v or "default") end,
+                            getColor = function()
+                                local c = getSetting("valueTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("textColor", {r, g, b, a})
+                            setColor = function(r, g, b, a)
+                                setSetting("valueTextColor", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Text Alignment",
+                            values = {
+                                LEFT = "Left",
+                                CENTER = "Center",
+                                RIGHT = "Right",
+                            },
+                            order = { "RIGHT", "LEFT", "CENTER" },
+                            get = function() return getSetting("valueTextAlignment") or "RIGHT" end,
+                            set = function(v) setSetting("valueTextAlignment", v) end,
                         })
 
                         tabInner:Finalize()
@@ -5485,46 +5573,68 @@ function UIPanel:RenderPRDPowerBar(scrollContent)
                     percentText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Show % Text",
-                            get = function() return getSetting("showText") or false end,
-                            set = function(v) setSetting("showText", v) end,
+                            get = function() return getSetting("percentTextShow") or false end,
+                            set = function(v) setSetting("percentTextShow", v) end,
                         })
 
                         tabInner:AddFontSelector({
                             label = "Font",
-                            get = function() return getSetting("textFont") or "Friz Quadrata TT" end,
-                            set = function(v) setSetting("textFont", v) end,
+                            get = function() return getSetting("percentTextFont") or "Friz Quadrata TT" end,
+                            set = function(v) setSetting("percentTextFont", v) end,
                         })
 
                         tabInner:AddSlider({
                             label = "Font Size",
                             min = 6, max = 24, step = 1,
-                            get = function() return getSetting("textFontSize") or 10 end,
-                            set = function(v) setSetting("textFontSize", v) end,
+                            get = function() return getSetting("percentTextFontSize") or 10 end,
+                            set = function(v) setSetting("percentTextFontSize", v) end,
                             minLabel = "6", maxLabel = "24",
                         })
 
                         tabInner:AddSelector({
                             label = "Font Style",
                             values = {
-                                NONE = "None",
+                                NONE = "Regular",
                                 OUTLINE = "Outline",
                                 THICKOUTLINE = "Thick Outline",
+                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
+                                SHADOW = "Shadow",
+                                SHADOWOUTLINE = "Shadow Outline",
+                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
+                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE" },
-                            get = function() return getSetting("textFontFlags") or "OUTLINE" end,
-                            set = function(v) setSetting("textFontFlags", v) end,
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            get = function() return getSetting("percentTextFontFlags") or "OUTLINE" end,
+                            set = function(v) setSetting("percentTextFontFlags", v) end,
                         })
 
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Font Color",
-                            get = function()
-                                local c = getSetting("textColor") or {1, 1, 1, 1}
+                            values = textColorPowerValues,
+                            order = textColorPowerOrder,
+                            get = function() return getSetting("percentTextColorMode") or "default" end,
+                            set = function(v) setSetting("percentTextColorMode", v or "default") end,
+                            getColor = function()
+                                local c = getSetting("percentTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("textColor", {r, g, b, a})
+                            setColor = function(r, g, b, a)
+                                setSetting("percentTextColor", {r, g, b, a})
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
+                        })
+
+                        tabInner:AddSelector({
+                            label = "Text Alignment",
+                            values = {
+                                LEFT = "Left",
+                                CENTER = "Center",
+                                RIGHT = "Right",
+                            },
+                            order = { "LEFT", "RIGHT", "CENTER" },
+                            get = function() return getSetting("percentTextAlignment") or "LEFT" end,
+                            set = function(v) setSetting("percentTextAlignment", v) end,
                         })
 
                         tabInner:Finalize()

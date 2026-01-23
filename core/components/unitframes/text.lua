@@ -290,6 +290,9 @@ do
         if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
             return true
         end
+        if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
+            return true
+        end
         if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
             local ox = tonumber(styleCfg.offset.x) or 0
             local oy = tonumber(styleCfg.offset.y) or 0
@@ -320,7 +323,26 @@ do
         end
         if fstate then fstate.SetProp(fs, "applyingFont", nil) end
 
-        local c = styleCfg.color or { 1, 1, 1, 1 }
+        -- Resolve color based on colorMode
+        local colorMode = styleCfg.colorMode or "default"
+        local c
+        if colorMode == "class" then
+            -- Extract unit token from baselineKey (e.g., "Player:left" → "player")
+            local unitToken = baselineKey and baselineKey:match("^(.-):")
+            if unitToken then unitToken = unitToken:lower() end
+            local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB(unitToken or "player")
+            c = {cr or 1, cg or 1, cb or 1, 1}
+        elseif colorMode == "custom" then
+            c = styleCfg.color or {1, 1, 1, 1}
+        else
+            -- "default" or nil: backward compat - use custom color if non-white, else white
+            local raw = styleCfg.color
+            if raw and (raw[1] ~= 1 or raw[2] ~= 1 or raw[3] ~= 1 or (raw[4] or 1) ~= 1) then
+                c = raw
+            else
+                c = {1, 1, 1, 1}
+            end
+        end
         if fs.SetTextColor then
             pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         end
@@ -994,6 +1016,9 @@ do
 				local pr, pg, pb = addon.GetPowerColorRGB("player")
 				c = {pr or 1, pg or 1, pb or 1, 1}
 			end
+		elseif colorMode == "class" then
+			local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+			c = {cr or 1, cg or 1, cb or 1, 1}
 		elseif colorMode == "default" then
 			-- Default white for Blizzard's standard bar text color
 			c = {1, 1, 1, 1}

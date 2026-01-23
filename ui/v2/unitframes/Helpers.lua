@@ -304,6 +304,15 @@ UF.fontColorValues = {
 }
 UF.fontColorOrder = { "default", "class", "custom" }
 
+-- Font color mode options (power bar texts - adds Class Power Color)
+UF.fontColorPowerValues = {
+    default = "Default",
+    class = "Class Color",
+    classPower = "Class Power Color",
+    custom = "Custom",
+}
+UF.fontColorPowerOrder = { "default", "class", "classPower", "custom" }
+
 --------------------------------------------------------------------------------
 -- Build Bar Border Options from addon
 --------------------------------------------------------------------------------

@@ -385,42 +385,38 @@ end
 
 --------------------------------------------------------------------------------
 -- Text Overlay System
+-- Mirrors Player Unit Frame Power/Health Bar text onto the PRD bars via hooks.
+-- No UnitPower/UnitHealth calls, no arithmetic, no secrets issues.
+-- Source: Player UF ManaBar.LeftText/RightText → PRD PowerBar overlay
+-- Source: Player UF HealthBar.LeftText/RightText → PRD HealthBar overlay
 --------------------------------------------------------------------------------
 
--- Storage for text overlay frames
+-- Storage for text overlay state (one per bar type, not per bar instance)
 local textOverlays = {
-    health = {},
-    power = {},
+    health = { lastLeft = nil, lastRight = nil, overlay = nil, leftFS = nil, rightFS = nil },
+    power = { lastLeft = nil, lastRight = nil, overlay = nil, leftFS = nil, rightFS = nil },
 }
 
--- Format number with abbreviation (e.g., 1.5M, 250K)
-local function formatNumber(value)
-    if not value or type(value) ~= "number" then return "0" end
-    if value >= 1000000 then
-        return string.format("%.1fM", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.1fK", value / 1000)
-    else
-        return tostring(math.floor(value))
-    end
-end
+-- Hook installation tracking
+local textHooksInstalled = { power = false, health = false }
 
--- Resolve font path from font name
+-- Resolve font path from font name or font key
 local function resolveFontPath(fontName)
     if not fontName or fontName == "" then
         return "Fonts\\FRIZQT__.TTF"
     end
-    -- Check if it's already a path
     if fontName:match("\\") or fontName:match("/") then
         return fontName
     end
-    -- Use SharedMedia if available
+    -- Check addon.Fonts registry (handles keys like ROBOTO_REG, FIRASANS_BOLD, etc.)
+    if addon.Fonts and addon.Fonts[fontName] then
+        return addon.Fonts[fontName]
+    end
     local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
     if LSM then
         local path = LSM:Fetch("font", fontName)
         if path then return path end
     end
-    -- Common font name mappings
     local fontMap = {
         ["Friz Quadrata TT"] = "Fonts\\FRIZQT__.TTF",
         ["Arial Narrow"] = "Fonts\\ARIALN.TTF",
@@ -430,237 +426,354 @@ local function resolveFontPath(fontName)
     return fontMap[fontName] or "Fonts\\FRIZQT__.TTF"
 end
 
--- Create or get text overlay for a bar
+-- Create overlay FontStrings on a PRD bar (one overlay per bar type)
 local function ensureTextOverlay(bar, overlayType)
     if not bar then return nil, nil end
 
     local storage = textOverlays[overlayType]
     if not storage then return nil, nil end
 
-    -- Check if we already have overlays for this bar
-    if storage[bar] then
-        return storage[bar].left, storage[bar].right
+    -- Already created
+    if storage.overlay then
+        -- Re-anchor in case the bar was recreated
+        pcall(storage.overlay.SetPoint, storage.overlay, "TOPLEFT", bar, "TOPLEFT", 0, 0)
+        pcall(storage.overlay.SetPoint, storage.overlay, "BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+        return storage.leftFS, storage.rightFS
     end
 
-    -- Create left text (percentage)
-    local leftText = bar:CreateFontString(nil, "OVERLAY")
-    leftText:SetPoint("LEFT", bar, "LEFT", 4, 0)
+    -- Create overlay frame parented to UIParent, anchored to PRD bar
+    local overlay = CreateFrame("Frame", nil, UIParent)
+    overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    overlay:SetFrameStrata("HIGH")
+    overlay:SetFrameLevel(100)
+    overlay:Show()
+
+    local leftText = overlay:CreateFontString(nil, "OVERLAY")
+    leftText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    leftText:SetPoint("LEFT", overlay, "LEFT", 4, 0)
     leftText:SetJustifyH("LEFT")
+    leftText:SetTextColor(1, 1, 1, 1)
+    leftText:Show()
 
-    -- Create right text (value)
-    local rightText = bar:CreateFontString(nil, "OVERLAY")
-    rightText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+    local rightText = overlay:CreateFontString(nil, "OVERLAY")
+    rightText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    rightText:SetPoint("RIGHT", overlay, "RIGHT", -4, 0)
     rightText:SetJustifyH("RIGHT")
+    rightText:SetTextColor(1, 1, 1, 1)
+    rightText:Show()
 
-    storage[bar] = {
-        left = leftText,
-        right = rightText,
-    }
+    storage.overlay = overlay
+    storage.leftFS = leftText
+    storage.rightFS = rightText
 
     return leftText, rightText
 end
 
--- Apply text styling from component settings
-local function applyTextStyle(leftText, rightText, component)
+-- Apply text alignment by re-anchoring a FontString within the overlay
+local function applyTextAlignment(fs, overlay, alignment)
+    if not fs or not overlay then return end
+    pcall(fs.ClearAllPoints, fs)
+    if alignment == "LEFT" then
+        pcall(fs.SetPoint, fs, "LEFT", overlay, "LEFT", 4, 0)
+    elseif alignment == "CENTER" then
+        pcall(fs.SetPoint, fs, "CENTER", overlay, "CENTER", 0, 0)
+    else -- "RIGHT"
+        pcall(fs.SetPoint, fs, "RIGHT", overlay, "RIGHT", -4, 0)
+    end
+end
+
+-- Apply text styling from component settings (per-text independent settings)
+local function resolveColorMode(colorMode, rawColor, overlayType)
+    -- Backward compat: existing custom color without mode = treat as custom
+    if not colorMode then
+        local c = rawColor
+        if c and (c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or (c[4] or 1) ~= 1) then
+            colorMode = "custom"
+        else
+            colorMode = "default"
+        end
+    end
+
+    if colorMode == "class" then
+        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        return {cr or 1, cg or 1, cb or 1, 1}
+    elseif colorMode == "classPower" and overlayType == "power" then
+        local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+        return {pr or 1, pg or 1, pb or 1, 1}
+    elseif colorMode == "custom" then
+        return rawColor or {1, 1, 1, 1}
+    else
+        return {1, 1, 1, 1}
+    end
+end
+
+local function applyTextStyle(leftText, rightText, component, overlayType)
     if not component or not component.db then return end
 
     local db = component.db
-    local fontName = db.textFont or "Friz Quadrata TT"
-    local fontSize = tonumber(db.textFontSize) or 10
-    local fontFlags = db.textFontFlags or "OUTLINE"
-    local fontColor = db.textColor or {1, 1, 1, 1}
+    local storage = textOverlays[overlayType]
 
-    local fontPath = resolveFontPath(fontName)
-
-    -- Handle "NONE" font flags
-    if fontFlags == "NONE" then fontFlags = "" end
-
-    local function applyToFS(fs)
-        if not fs then return end
-        pcall(function()
-            fs:SetFont(fontPath, fontSize, fontFlags)
-            fs:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
-        end)
+    -- Left = percent text
+    if leftText then
+        local font = db.percentTextFont or "Friz Quadrata TT"
+        local size = tonumber(db.percentTextFontSize) or 10
+        local flags = db.percentTextFontFlags or "OUTLINE"
+        local color = resolveColorMode(db.percentTextColorMode, db.percentTextColor, overlayType)
+        local align = db.percentTextAlignment or "LEFT"
+        local path = resolveFontPath(font)
+        addon.ApplyFontStyle(leftText, path, size, flags)
+        pcall(leftText.SetTextColor, leftText, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        pcall(leftText.SetJustifyH, leftText, align)
+        if storage then
+            applyTextAlignment(leftText, storage.overlay, align)
+        end
     end
 
-    applyToFS(leftText)
-    applyToFS(rightText)
+    -- Right = value text
+    if rightText then
+        local font = db.valueTextFont or "Friz Quadrata TT"
+        local size = tonumber(db.valueTextFontSize) or 10
+        local flags = db.valueTextFontFlags or "OUTLINE"
+        local color = resolveColorMode(db.valueTextColorMode, db.valueTextColor, overlayType)
+        local align = db.valueTextAlignment or "RIGHT"
+        local path = resolveFontPath(font)
+        addon.ApplyFontStyle(rightText, path, size, flags)
+        pcall(rightText.SetTextColor, rightText, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        pcall(rightText.SetJustifyH, rightText, align)
+        if storage then
+            applyTextAlignment(rightText, storage.overlay, align)
+        end
+    end
 end
 
--- Update health text overlay
-local function updateHealthText(leftText, rightText, format)
-    if not leftText and not rightText then return end
-
-    -- Use C_Timer.After(0) for clean context
-    C_Timer.After(0, function()
-        local health = UnitHealth("player")
-        local maxHealth = UnitHealthMax("player")
-
-        if not maxHealth or maxHealth <= 0 then
-            if leftText then leftText:SetText("") end
-            if rightText then rightText:SetText("") end
-            return
-        end
-
-        local pct = math.floor((health / maxHealth) * 100)
-
-        if format == "percent" then
-            if leftText then leftText:SetText(pct .. "%") end
-            if rightText then rightText:SetText("") end
-        elseif format == "value" then
-            if leftText then leftText:SetText("") end
-            if rightText then rightText:SetText(formatNumber(health)) end
-        else -- "both"
-            if leftText then leftText:SetText(pct .. "%") end
-            if rightText then rightText:SetText(formatNumber(health)) end
-        end
-    end)
-end
-
--- Update power text overlay
-local function updatePowerText(leftText, rightText, format)
-    if not leftText and not rightText then return end
-
-    -- Use C_Timer.After(0) for clean context
-    C_Timer.After(0, function()
-        local powerType = UnitPowerType("player")
-        local power = UnitPower("player", powerType)
-        local maxPower = UnitPowerMax("player", powerType)
-
-        if not maxPower or maxPower <= 0 then
-            if leftText then leftText:SetText("") end
-            if rightText then rightText:SetText("") end
-            return
-        end
-
-        local pct = math.floor((power / maxPower) * 100)
-
-        if format == "percent" then
-            if leftText then leftText:SetText(pct .. "%") end
-            if rightText then rightText:SetText("") end
-        elseif format == "value" then
-            if leftText then leftText:SetText("") end
-            if rightText then rightText:SetText(formatNumber(power)) end
-        else -- "both"
-            if leftText then leftText:SetText(pct .. "%") end
-            if rightText then rightText:SetText(formatNumber(power)) end
-        end
-    end)
+-- Apply cached text values after overlay creation based on per-text show flags
+-- Note: cached values may be secret values (12.0). SetText(secret) is allowed.
+local function applyCachedText(overlayType, db)
+    local storage = textOverlays[overlayType]
+    if not storage then return end
+    if db.percentTextShow and storage.leftFS then
+        local val = storage.lastLeft
+        if type(val) ~= "nil" then pcall(storage.leftFS.SetText, storage.leftFS, val) end
+    end
+    if db.valueTextShow and storage.rightFS then
+        local val = storage.lastRight
+        if type(val) ~= "nil" then pcall(storage.rightFS.SetText, storage.rightFS, val) end
+    end
 end
 
 -- Hide text overlay
-local function hideTextOverlay(bar, overlayType)
+local function hideTextOverlay(overlayType)
     local storage = textOverlays[overlayType]
-    if not storage or not storage[bar] then return end
-
-    local overlay = storage[bar]
-    if overlay.left then
-        pcall(overlay.left.SetText, overlay.left, "")
-        pcall(overlay.left.Hide, overlay.left)
-    end
-    if overlay.right then
-        pcall(overlay.right.SetText, overlay.right, "")
-        pcall(overlay.right.Hide, overlay.right)
-    end
+    if not storage or not storage.overlay then return end
+    pcall(storage.overlay.Hide, storage.overlay)
 end
 
 -- Show text overlay
-local function showTextOverlay(bar, overlayType)
+local function showTextOverlay(overlayType)
     local storage = textOverlays[overlayType]
-    if not storage or not storage[bar] then return end
-
-    local overlay = storage[bar]
-    if overlay.left then pcall(overlay.left.Show, overlay.left) end
-    if overlay.right then pcall(overlay.right.Show, overlay.right) end
+    if not storage or not storage.overlay then return end
+    pcall(storage.overlay.Show, storage.overlay)
 end
 
--- Apply text overlay for health bar
-local function applyHealthTextOverlay(component, healthBar)
-    if not component or not component.db or not healthBar then return end
+-- Helper: update a single overlay FontString from a hook callback
+local function onSourceTextChanged(overlayType, side, text)
+    local storage = textOverlays[overlayType]
+    if not storage then return end
 
-    local db = component.db
-    local showText = db.showText
-    local hideBar = db.hideBar
-
-    if not showText or hideBar then
-        hideTextOverlay(healthBar, "health")
-        return
+    if side == "left" then
+        storage.lastLeft = text
+    else
+        storage.lastRight = text
     end
 
-    local leftText, rightText = ensureTextOverlay(healthBar, "health")
-    if not leftText and not rightText then return end
+    -- Get the component to check per-text show settings
+    local compId = (overlayType == "power") and "prdPower" or "prdHealth"
+    local comp = addon.Components and addon.Components[compId]
+    if not comp or not comp.db then return end
 
-    showTextOverlay(healthBar, "health")
-    applyTextStyle(leftText, rightText, component)
-    updateHealthText(leftText, rightText, db.textFormat or "both")
-end
+    local fs = (side == "left") and storage.leftFS or storage.rightFS
+    if not fs then return end
 
--- Apply text overlay for power bar
-local function applyPowerTextOverlay(component, powerBar)
-    if not component or not component.db or not powerBar then return end
-
-    local db = component.db
-    local showText = db.showText
-    local hideBar = db.hideBar
-
-    if not showText or hideBar then
-        hideTextOverlay(powerBar, "power")
-        return
+    -- text may be a secret value; SetText(secret) is allowed and renders it
+    if side == "left" then
+        if comp.db.percentTextShow then
+            pcall(fs.SetText, fs, text)
+        end
+    else
+        if comp.db.valueTextShow then
+            pcall(fs.SetText, fs, text)
+        end
     end
-
-    local leftText, rightText = ensureTextOverlay(powerBar, "power")
-    if not leftText and not rightText then return end
-
-    showTextOverlay(powerBar, "power")
-    applyTextStyle(leftText, rightText, component)
-    updatePowerText(leftText, rightText, db.textFormat or "both")
 end
 
--- Event frame for text updates
-local textEventFrame = nil
+-- Install hooks on Player UF Power Bar text (ManaBar.LeftText / .RightText)
+local function installPowerTextHooks()
+    if textHooksInstalled.power then return end
 
-local function ensureTextEventFrame()
-    if textEventFrame then return end
+    local manaBar = PlayerFrame
+        and PlayerFrame.PlayerFrameContent
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+    if not manaBar then return end
 
-    textEventFrame = CreateFrame("Frame")
-    textEventFrame:RegisterEvent("UNIT_HEALTH")
-    textEventFrame:RegisterEvent("UNIT_POWER_UPDATE")
-    textEventFrame:RegisterEvent("UNIT_DISPLAYPOWER")
-    textEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    local leftSource = manaBar.LeftText
+    local rightSource = manaBar.RightText
 
-    textEventFrame:SetScript("OnEvent", function(self, event, unit, ...)
-        if unit and unit ~= "player" then return end
-
-        -- Defer updates to next frame
-        C_Timer.After(0, function()
-            -- Update health text
-            local healthComp = addon.Components and addon.Components.prdHealth
-            if healthComp and healthComp.db and healthComp.db.showText then
-                local container = getHealthContainer()
-                if container then
-                    local healthBar = container.healthBar or container.HealthBar
-                    if healthBar then
-                        local storage = textOverlays.health
-                        if storage and storage[healthBar] then
-                            updateHealthText(storage[healthBar].left, storage[healthBar].right, healthComp.db.textFormat or "both")
-                        end
-                    end
-                end
-            end
-
-            -- Update power text
-            local powerComp = addon.Components and addon.Components.prdPower
-            if powerComp and powerComp.db and powerComp.db.showText then
-                local powerFrame = _G.ClassNameplateManaBarFrame or (NamePlateDriverFrame and NamePlateDriverFrame.classNamePlatePowerBar)
-                if powerFrame then
-                    local storage = textOverlays.power
-                    if storage and storage[powerFrame] then
-                        updatePowerText(storage[powerFrame].left, storage[powerFrame].right, powerComp.db.textFormat or "both")
-                    end
-                end
-            end
+    if leftSource then
+        hooksecurefunc(leftSource, "SetText", function(self, text)
+            onSourceTextChanged("power", "left", text)
         end)
-    end)
+        if leftSource.SetFormattedText then
+            hooksecurefunc(leftSource, "SetFormattedText", function(self, ...)
+                local ok, text = pcall(self.GetText, self)
+                if ok then onSourceTextChanged("power", "left", text) end
+            end)
+        end
+        -- Capture initial value
+        local ok, text = pcall(leftSource.GetText, leftSource)
+        if ok and type(text) ~= "nil" then
+            textOverlays.power.lastLeft = text
+        end
+    end
+
+    if rightSource then
+        hooksecurefunc(rightSource, "SetText", function(self, text)
+            onSourceTextChanged("power", "right", text)
+        end)
+        if rightSource.SetFormattedText then
+            hooksecurefunc(rightSource, "SetFormattedText", function(self, ...)
+                local ok, text = pcall(self.GetText, self)
+                if ok then onSourceTextChanged("power", "right", text) end
+            end)
+        end
+        local ok, text = pcall(rightSource.GetText, rightSource)
+        if ok and type(text) ~= "nil" then
+            textOverlays.power.lastRight = text
+        end
+    end
+
+    textHooksInstalled.power = true
+end
+
+-- Install hooks on Player UF Health Bar text (HealthBar.LeftText / .RightText)
+local function installHealthTextHooks()
+    if textHooksInstalled.health then return end
+
+    local healthBar = PlayerFrame
+        and PlayerFrame.PlayerFrameContent
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar
+    if not healthBar then return end
+
+    local leftSource = healthBar.LeftText
+    local rightSource = healthBar.RightText
+
+    if leftSource then
+        hooksecurefunc(leftSource, "SetText", function(self, text)
+            onSourceTextChanged("health", "left", text)
+        end)
+        if leftSource.SetFormattedText then
+            hooksecurefunc(leftSource, "SetFormattedText", function(self, ...)
+                local ok, text = pcall(self.GetText, self)
+                if ok then onSourceTextChanged("health", "left", text) end
+            end)
+        end
+        local ok, text = pcall(leftSource.GetText, leftSource)
+        if ok and type(text) ~= "nil" then
+            textOverlays.health.lastLeft = text
+        end
+    end
+
+    if rightSource then
+        hooksecurefunc(rightSource, "SetText", function(self, text)
+            onSourceTextChanged("health", "right", text)
+        end)
+        if rightSource.SetFormattedText then
+            hooksecurefunc(rightSource, "SetFormattedText", function(self, ...)
+                local ok, text = pcall(self.GetText, self)
+                if ok then onSourceTextChanged("health", "right", text) end
+            end)
+        end
+        local ok, text = pcall(rightSource.GetText, rightSource)
+        if ok and type(text) ~= "nil" then
+            textOverlays.health.lastRight = text
+        end
+    end
+
+    textHooksInstalled.health = true
+end
+
+-- Apply text overlay for power bar (called from power.ApplyStyling)
+local function applyPowerTextOverlay(comp)
+    if not comp or not comp.db then return end
+
+    local db = comp.db
+    local showValue = db.valueTextShow
+    local showPercent = db.percentTextShow
+
+    if (not showValue and not showPercent) or db.hideBar then
+        hideTextOverlay("power")
+        return
+    end
+
+    -- Target: PRD Power Bar
+    local prdPowerBar = PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.PowerBar
+    if not prdPowerBar then return end
+
+    -- Install hooks on Player UF ManaBar text
+    installPowerTextHooks()
+
+    -- Create/get overlay FontStrings anchored to PRD Power Bar
+    local leftText, rightText = ensureTextOverlay(prdPowerBar, "power")
+    if not leftText and not rightText then return end
+
+    showTextOverlay("power")
+    applyTextStyle(leftText, rightText, comp, "power")
+
+    -- Show/hide individual FontStrings
+    if showPercent then pcall(leftText.Show, leftText) else pcall(leftText.Hide, leftText) end
+    if showValue then pcall(rightText.Show, rightText) else pcall(rightText.Hide, rightText) end
+
+    applyCachedText("power", db)
+end
+
+-- Apply text overlay for health bar (called from health.ApplyStyling)
+local function applyHealthTextOverlay(comp)
+    if not comp or not comp.db then return end
+
+    local db = comp.db
+    local showValue = db.valueTextShow
+    local showPercent = db.percentTextShow
+
+    if (not showValue and not showPercent) or db.hideBar then
+        hideTextOverlay("health")
+        return
+    end
+
+    -- Target: PRD Health Bar
+    local prdHealthBar = PersonalResourceDisplayFrame
+        and PersonalResourceDisplayFrame.HealthBarsContainer
+        and PersonalResourceDisplayFrame.HealthBarsContainer.healthBar
+    if not prdHealthBar then return end
+
+    -- Install hooks on Player UF HealthBar text
+    installHealthTextHooks()
+
+    -- Create/get overlay FontStrings anchored to PRD Health Bar
+    local leftText, rightText = ensureTextOverlay(prdHealthBar, "health")
+    if not leftText and not rightText then return end
+
+    showTextOverlay("health")
+    applyTextStyle(leftText, rightText, comp, "health")
+
+    -- Show/hide individual FontStrings
+    if showPercent then pcall(leftText.Show, leftText) else pcall(leftText.Hide, leftText) end
+    if showValue then pcall(rightText.Show, rightText) else pcall(rightText.Hide, rightText) end
+
+    applyCachedText("health", db)
 end
 
 --------------------------------------------------------------------------------
@@ -775,14 +888,12 @@ local function applyPRDHealthVisuals(component, container)
     end
     if hide then
         clearBarBorder(statusBar)
-        hideTextOverlay(statusBar, "health")
+        hideTextOverlay("health")
         return
     end
     applyPRDStatusBarStyle(component, statusBar, "health")
     applyPRDBarBorder(component, statusBar)
-    -- Apply text overlay
-    ensureTextEventFrame()
-    applyHealthTextOverlay(component, statusBar)
+    applyHealthTextOverlay(component)
 end
 
 local function applyPRDPowerVisuals(component, frame)
@@ -797,14 +908,12 @@ local function applyPRDPowerVisuals(component, frame)
     end
     if hide then
         clearBarBorder(frame)
-        hideTextOverlay(frame, "power")
+        hideTextOverlay("power")
         return
     end
     applyPRDStatusBarStyle(component, frame, "power")
     applyPRDBarBorder(component, frame)
-    -- Apply text overlay
-    ensureTextEventFrame()
-    applyPowerTextOverlay(component, frame)
+    applyPowerTextOverlay(component)
 end
 
 local function applyPRDClassResourceVisibility(component, frame)
@@ -1185,10 +1294,11 @@ local function applyPowerOffsets(component)
         end
     end
     
-    -- DISABLED: Direct power bar styling
+    -- DISABLED: Direct power bar styling (causes taint via SetHeight/SetScale/SetAlpha/textures/borders)
     -- local componentScale = resolveClassResourceScale(component)
     -- applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
     -- applyPRDPowerVisuals(component, frame)
+
 end
 
 local function resolveClassMechanicFrame()
@@ -1418,28 +1528,27 @@ addon:RegisterComponentInitializer(function(self)
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Health Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
-            -- Text overlay settings
-            showText = { type = "addon", default = false, ui = {
-                label = "Show Text", widget = "checkbox", section = "Text", order = 1,
-            }},
-            textFormat = { type = "addon", default = "both", ui = {
-                label = "Text Format", widget = "dropdown", section = "Text", order = 2,
-            }},
-            textFont = { type = "addon", default = "Friz Quadrata TT", ui = {
-                label = "Font", widget = "fontSelector", section = "Text", order = 3,
-            }},
-            textFontSize = { type = "addon", default = 10, ui = {
-                label = "Font Size", widget = "slider", min = 6, max = 24, step = 1, section = "Text", order = 4,
-            }},
-            textFontFlags = { type = "addon", default = "OUTLINE", ui = {
-                label = "Font Style", widget = "dropdown", section = "Text", order = 5,
-            }},
-            textColor = { type = "addon", default = {1, 1, 1, 1}, ui = {
-                label = "Font Color", widget = "color", section = "Text", order = 6,
-            }},
+            -- Per-text overlay settings (value = right text, percent = left text)
+            valueTextShow = { type = "addon", default = false, ui = { hidden = true }},
+            valueTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
+            valueTextFontSize = { type = "addon", default = 10, ui = { hidden = true }},
+            valueTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
+            valueTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
+            valueTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            valueTextAlignment = { type = "addon", default = "RIGHT", ui = { hidden = true }},
+            percentTextShow = { type = "addon", default = false, ui = { hidden = true }},
+            percentTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
+            percentTextFontSize = { type = "addon", default = 10, ui = { hidden = true }},
+            percentTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
+            percentTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
+            percentTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            percentTextAlignment = { type = "addon", default = "LEFT", ui = { hidden = true }},
         },
     })
-    health.ApplyStyling = applyHealthOffsets
+    health.ApplyStyling = function(comp)
+        applyHealthOffsets(comp)
+        applyHealthTextOverlay(comp)
+    end
     ensureHooks(health)
     self:RegisterComponent(health)
 
@@ -1487,31 +1596,27 @@ addon:RegisterComponentInitializer(function(self)
             hidePowerFeedback = { type = "addon", default = false, ui = {
                 label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 3,
             }},
-            -- Text overlay settings
-            showText = { type = "addon", default = false, ui = {
-                label = "Show Text", widget = "checkbox", section = "Text", order = 1,
-            }},
-            textFormat = { type = "addon", default = "both", ui = {
-                label = "Text Format", widget = "dropdown", section = "Text", order = 2,
-            }},
-            textFont = { type = "addon", default = "Friz Quadrata TT", ui = {
-                label = "Font", widget = "fontSelector", section = "Text", order = 3,
-            }},
-            textFontSize = { type = "addon", default = 10, ui = {
-                label = "Font Size", widget = "slider", min = 6, max = 24, step = 1, section = "Text", order = 4,
-            }},
-            textFontFlags = { type = "addon", default = "OUTLINE", ui = {
-                label = "Font Style", widget = "dropdown", section = "Text", order = 5,
-            }},
-            textColor = { type = "addon", default = {1, 1, 1, 1}, ui = {
-                label = "Font Color", widget = "color", section = "Text", order = 6,
-            }},
+            -- Per-text overlay settings (value = right text, percent = left text)
+            valueTextShow = { type = "addon", default = false, ui = { hidden = true }},
+            valueTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
+            valueTextFontSize = { type = "addon", default = 10, ui = { hidden = true }},
+            valueTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
+            valueTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
+            valueTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            valueTextAlignment = { type = "addon", default = "RIGHT", ui = { hidden = true }},
+            percentTextShow = { type = "addon", default = false, ui = { hidden = true }},
+            percentTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
+            percentTextFontSize = { type = "addon", default = 10, ui = { hidden = true }},
+            percentTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
+            percentTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
+            percentTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            percentTextAlignment = { type = "addon", default = "LEFT", ui = { hidden = true }},
         },
     })
     power.ApplyStyling = function(comp)
-        -- Ensure power bar hooks are installed on every styling pass (frame may not exist on first pass)
         ensurePowerBarHooks(comp)
         applyPowerOffsets(comp)
+        applyPowerTextOverlay(comp)
     end
     ensureHooks(power)
     self:RegisterComponent(power)

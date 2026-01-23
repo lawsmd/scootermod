@@ -297,8 +297,10 @@ local function buildBorderTab(inner, barPrefix, applyFn)
     inner:Finalize()
 end
 
-local function buildTextTab(inner, textKey, applyFn, defaultAlignment)
+local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValues, colorOrder)
     defaultAlignment = defaultAlignment or "LEFT"
+    colorValues = colorValues or UF.fontColorValues
+    colorOrder = colorOrder or UF.fontColorOrder
     local hiddenKey = textKey:gsub("text", ""):lower() .. "Hidden"
 
     -- Disable toggle
@@ -370,20 +372,34 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment)
     })
 
     -- Color
-    inner:AddColorPicker({
+    inner:AddSelectorColorPicker({
         label = "Color",
+        values = colorValues,
+        order = colorOrder,
         get = function()
+            local s = ensureTextDB(textKey) or {}
+            return s.colorMode or "default"
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].colorMode = v or "default"
+            applyStyles()
+        end,
+        getColor = function()
             local s = ensureTextDB(textKey) or {}
             local c = s.color or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
-        set = function(r, g, b, a)
+        setColor = function(r, g, b, a)
             local t = ensureUFDB()
             if not t then return end
             t[textKey] = t[textKey] or {}
             t[textKey].color = {r or 1, g or 1, b or 1, a or 1}
             applyStyles()
         end,
+        customValue = "custom",
         hasAlpha = true,
     })
 
@@ -694,10 +710,10 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     percentText = function(cf, tabInner)
-                        buildTextTab(tabInner, "textPowerPercent", applyPowerText, "LEFT")
+                        buildTextTab(tabInner, "textPowerPercent", applyPowerText, "LEFT", UF.fontColorPowerValues, UF.fontColorPowerOrder)
                     end,
                     valueText = function(cf, tabInner)
-                        buildTextTab(tabInner, "textPowerValue", applyPowerText, "RIGHT")
+                        buildTextTab(tabInner, "textPowerValue", applyPowerText, "RIGHT", UF.fontColorPowerValues, UF.fontColorPowerOrder)
                     end,
                 },
             })
