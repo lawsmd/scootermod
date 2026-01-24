@@ -143,6 +143,34 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
     Debug("Applied cooldownViewerEnabled from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
 end
 
+local function ApplyPRDEnabledForActiveProfile(reason)
+    local profile = addon and addon.db and addon.db.profile
+    local s = profile and profile.prdSettings
+    local desired = s and s.enablePRD
+    if desired == nil then
+        return  -- Not explicitly set; don't override CVar
+    end
+    local value = (desired and "1") or "0"
+    if C_CVar and C_CVar.SetCVar then
+        pcall(C_CVar.SetCVar, "nameplateShowSelf", value)
+    elseif SetCVar then
+        pcall(SetCVar, "nameplateShowSelf", value)
+    end
+
+    -- If disabling, trigger a re-apply so borders/overlays get cleared
+    if desired == false then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if addon and addon.ApplyStyles then
+                    addon:ApplyStyles()
+                end
+            end)
+        end
+    end
+
+    Debug("Applied nameplateShowSelf from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
+end
+
 local function getLayouts()
     if not C_EditMode or not C_EditMode.GetLayouts then return nil end
     return C_EditMode.GetLayouts()
@@ -1357,6 +1385,7 @@ function Profiles:Initialize()
 
     -- Ensure CDM enable/disable is applied for the active profile on load.
     ApplyCooldownViewerEnabledForActiveProfile("Initialize")
+    ApplyPRDEnabledForActiveProfile("Initialize")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:Initialize")
     end
@@ -1378,6 +1407,7 @@ function Profiles:OnProfileChanged(_, _, newProfileKey)
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileChanged")
+    ApplyPRDEnabledForActiveProfile("OnProfileChanged")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileChanged")
     end
@@ -1389,6 +1419,7 @@ function Profiles:OnProfileCopied(_, _, sourceKey)
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileCopied")
+    ApplyPRDEnabledForActiveProfile("OnProfileCopied")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileCopied")
     end
@@ -1399,6 +1430,7 @@ function Profiles:OnProfileReset()
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileReset")
+    ApplyPRDEnabledForActiveProfile("OnProfileReset")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileReset")
     end
@@ -1702,6 +1734,7 @@ function Profiles:_setActiveProfile(profileKey, opts)
     addon:LinkComponentsToDB()
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("_setActiveProfile")
+    ApplyPRDEnabledForActiveProfile("_setActiveProfile")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:_setActiveProfile")
     end

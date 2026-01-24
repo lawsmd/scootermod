@@ -96,6 +96,10 @@ function addon:GetDefaults()
             cdmQoL = {
                 enableSlashCDM = false,
             },
+            -- PRD per-profile settings
+            -- NOTE: enablePRD is intentionally omitted from defaults so it remains nil
+            -- (inherit Blizzard CVar) until the user explicitly sets it per profile.
+            prdSettings = {},
             minimap = {
                 hide = false,
                 minimapPos = 220,

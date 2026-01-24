@@ -259,10 +259,9 @@ UF.healthColorOrder = { "default", "texture", "class", "custom" }
 UF.powerColorValues = {
     default = "Default",
     texture = "Texture Original",
-    power = "Power Color",
     custom = "Custom",
 }
-UF.powerColorOrder = { "default", "texture", "power", "custom" }
+UF.powerColorOrder = { "default", "texture", "custom" }
 
 -- Background color mode options
 UF.bgColorValues = {

@@ -4841,9 +4841,67 @@ function UIPanel:RenderPRDGeneral(scrollContent)
         panel:RenderPRDGeneral(scrollContent)
     end)
 
-    -- General tab is intentionally empty for now.
-    -- PRD positioning is now handled via Edit Mode (12.0+).
-    -- Future settings may be added here as needed.
+    -- CVar helpers
+    local function getPRDEnabledFromCVar()
+        if GetCVarBool then
+            return GetCVarBool("nameplateShowSelf")
+        end
+        if C_CVar and C_CVar.GetCVar then
+            return C_CVar.GetCVar("nameplateShowSelf") == "1"
+        end
+        return false
+    end
+
+    local function setPRDEnabledCVar(enabled)
+        local value = (enabled and "1") or "0"
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "nameplateShowSelf", value)
+        elseif SetCVar then
+            pcall(SetCVar, "nameplateShowSelf", value)
+        end
+    end
+
+    -- Profile data helpers
+    local function getProfilePRDSettings()
+        local profile = addon and addon.db and addon.db.profile
+        return profile and profile.prdSettings
+    end
+
+    local function ensureProfilePRDSettings()
+        if not (addon and addon.db and addon.db.profile) then return nil end
+        addon.db.profile.prdSettings = addon.db.profile.prdSettings or {}
+        return addon.db.profile.prdSettings
+    end
+
+    builder:AddToggle({
+        label = "Enable the PRD Per-Profile",
+        description = "When enabled, the Personal Resource Display will be active for this profile. This overrides the character-wide Blizzard setting.",
+        get = function()
+            local s = getProfilePRDSettings()
+            if s and s.enablePRD ~= nil then
+                return s.enablePRD
+            end
+            return getPRDEnabledFromCVar()
+        end,
+        set = function(value)
+            local s = ensureProfilePRDSettings()
+            if not s then return end
+            s.enablePRD = value
+            setPRDEnabledCVar(value)
+            -- Re-apply styling so borders/overlays respond to the change
+            if addon and addon.ApplyStyles then
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if addon and addon.ApplyStyles then
+                            addon:ApplyStyles()
+                        end
+                    end)
+                else
+                    addon:ApplyStyles()
+                end
+            end
+        end,
+    })
 
     builder:Finalize()
 end
@@ -5253,6 +5311,16 @@ function UIPanel:RenderPRDHealthBar(scrollContent)
                 set = function(v) setSetting("hideBar", v) end,
             })
 
+            inner:AddToggle({
+                label = "Hide the Bar but not its Text",
+                get = function() return getSetting("hideTextureOnly") or false end,
+                set = function(v) setSetting("hideTextureOnly", v) end,
+                infoIcon = {
+                    tooltipTitle = "Hide the Bar but not its Text",
+                    tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of your health.",
+                },
+            })
+
             inner:Finalize()
         end,
     })
@@ -5659,6 +5727,16 @@ function UIPanel:RenderPRDPowerBar(scrollContent)
                 label = "Hide Power Bar",
                 get = function() return getSetting("hideBar") or false end,
                 set = function(v) setSetting("hideBar", v) end,
+            })
+
+            inner:AddToggle({
+                label = "Hide the Bar but not its Text",
+                get = function() return getSetting("hideTextureOnly") or false end,
+                set = function(v) setSetting("hideTextureOnly", v) end,
+                infoIcon = {
+                    tooltipTitle = "Hide the Bar but not its Text",
+                    tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of your power resource.",
+                },
             })
 
             inner:AddToggle({

@@ -1595,9 +1595,9 @@ local function buildBossPower(ctx, init)
 				y.y = y.y - 34
 			end
 
-			-- Hide only the Bar Texture (number-only display)
+			-- Hide the Bar but not its Text (number-only display)
 			do
-				local label = "Hide only the Bar Texture"
+				local label = "Hide the Bar but not its Text"
 				local function getter()
 					local t = ensureUFDB()
 					return t and not not t.powerBarHideTextureOnly or false

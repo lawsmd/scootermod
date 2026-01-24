@@ -857,6 +857,30 @@ do
         overlay:Show()
     end
 
+    -- Power bar foreground overlay: addon-owned texture that sits above the StatusBar fill.
+    -- Unlike the health overlay (which fills portrait gaps), this overlay exists to persist
+    -- custom textures/colors through combat. Because it's our own texture (not a protected
+    -- StatusBar region), no combat guard is needed.
+    local function updateRectPowerOverlay(unit, bar)
+        local st = getState(bar)
+        local overlay = st and st.powerFill or nil
+        if not bar or not overlay then return end
+        if not (st and st.powerOverlayActive) then
+            overlay:Hide()
+            return
+        end
+
+        local statusBarTex = bar:GetStatusBarTexture()
+        if not statusBarTex then
+            overlay:Hide()
+            return
+        end
+
+        overlay:ClearAllPoints()
+        overlay:SetAllPoints(statusBarTex)
+        overlay:Show()
+    end
+
     local function ensureRectHealthOverlay(unit, bar, cfg)
         if not bar then return end
 
@@ -907,6 +931,11 @@ do
                 st.rectFill:Hide()
             end
             return
+        end
+
+        -- Deactivate overlay if texture-only hiding is active
+        if cfg and cfg.healthBarHideTextureOnly == true then
+            shouldActivate = false
         end
 
         st.rectActive = shouldActivate
@@ -1054,6 +1083,210 @@ do
         end
 
         updateRectHealthOverlay(unit, bar)
+    end
+
+    -- Power bar foreground overlay: ensures a combat-safe addon-owned texture sits above
+    -- the StatusBar fill so custom texture/color persists through combat resets.
+    local function ensureRectPowerOverlay(unit, bar, cfg)
+        if not bar then return end
+        if not cfg then return end
+
+        local texKey = cfg.powerBarTexture or "default"
+        local colorMode = cfg.powerBarColorMode or "default"
+
+        -- Determine whether overlay should be active: only for non-default settings
+        local isDefaultTexture = (texKey == "default" or texKey == "" or texKey == nil)
+        local isDefaultColor = (colorMode == "default" or colorMode == "" or colorMode == nil)
+        local shouldActivate = not (isDefaultTexture and isDefaultColor)
+
+        -- Deactivate overlay if bar is hidden or texture-only-hidden
+        if cfg.powerBarHidden == true or cfg.powerBarHideTextureOnly == true then
+            shouldActivate = false
+        end
+
+        local st = getState(bar)
+        if not st then return end
+
+        st.powerOverlayActive = shouldActivate
+
+        if not shouldActivate then
+            if st.powerFill then
+                st.powerFill:Hide()
+                -- Restore original fill visibility
+                local statusBarTex = bar:GetStatusBarTexture()
+                if statusBarTex then
+                    pcall(statusBarTex.SetAlpha, statusBarTex, 1)
+                end
+            end
+            return
+        end
+
+        -- Create overlay texture once per bar
+        if not st.powerFill then
+            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            overlay:SetVertTile(false)
+            overlay:SetHorizTile(false)
+            overlay:SetTexCoord(0, 1, 0, 1)
+            st.powerFill = overlay
+
+            -- Drive overlay position from bar value/size changes.
+            -- No combat guard needed: only touches addon-owned texture.
+            if _G.hooksecurefunc and not st.powerOverlayHooksInstalled then
+                st.powerOverlayHooksInstalled = true
+                _G.hooksecurefunc(bar, "SetValue", function(self)
+                    if isEditModeActive() then return end
+                    updateRectPowerOverlay(unit, self)
+                end)
+                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                    if isEditModeActive() then return end
+                    updateRectPowerOverlay(unit, self)
+                end)
+                if bar.HookScript then
+                    bar:HookScript("OnSizeChanged", function(self)
+                        if isEditModeActive() then return end
+                        updateRectPowerOverlay(unit, self)
+                    end)
+                end
+            end
+
+            -- Sync hook: SetStatusBarTexture
+            -- When Blizzard swaps the fill texture (e.g., Druid form change), re-anchor overlay
+            -- and re-hide the new fill.
+            if _G.hooksecurefunc and not st.powerOverlayTexSyncHooked then
+                st.powerOverlayTexSyncHooked = true
+                _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self, ...)
+                    if isEditModeActive() then return end
+                    local s = getState(self)
+                    if not (s and s.powerOverlayActive) then return end
+                    -- Ignore ScooterMod's own writes
+                    if getProp(self, "ufInternalTextureWrite") then return end
+                    -- Re-anchor overlay to new fill texture and hide it
+                    local newTex = self:GetStatusBarTexture()
+                    if newTex then
+                        pcall(newTex.SetAlpha, newTex, 0)
+                    end
+                    updateRectPowerOverlay(unit, self)
+                end)
+            end
+
+            -- Sync hook: SetStatusBarColor
+            -- When Blizzard changes the power color (power type change), update overlay
+            -- vertex color if using "default" color mode. Uses GetPowerColorRGB as the
+            -- authoritative source rather than hook parameters, which may be stale/white
+            -- during StatusBarTexture resets.
+            if _G.hooksecurefunc and not st.powerOverlayColorSyncHooked then
+                st.powerOverlayColorSyncHooked = true
+                _G.hooksecurefunc(bar, "SetStatusBarColor", function(self)
+                    if isEditModeActive() then return end
+                    local s = getState(self)
+                    if not (s and s.powerOverlayActive and s.powerFill) then return end
+                    -- Only sync color in "default"/"power" mode
+                    local db = addon and addon.db and addon.db.profile
+                    if not db then return end
+                    local unitFrames = rawget(db, "unitFrames")
+                    local cfgNow = unitFrames and rawget(unitFrames, unit) or nil
+                    if not cfgNow then return end
+                    local cm = cfgNow.powerBarColorMode or "default"
+                    if cm == "default" or cm == "power" then
+                        local uid = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
+                        if addon.GetPowerColorRGB then
+                            local pr, pg, pb = addon.GetPowerColorRGB(uid)
+                            if pr and s.powerFill and s.powerFill.SetVertexColor then
+                                s.powerFill:SetVertexColor(pr, pg, pb, 1)
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+
+        local overlay = st.powerFill
+
+        -- Apply texture to overlay
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+
+        if resolvedPath then
+            -- Custom texture configured
+            if overlay and overlay.SetTexture then
+                overlay:SetTexture(resolvedPath)
+            end
+        else
+            -- Default texture: copy from bar's StatusBarTexture with atlas detection
+            local tex = bar:GetStatusBarTexture()
+            local applied = false
+            if tex then
+                local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
+                if okAtlas and atlasName and atlasName ~= "" then
+                    if overlay and overlay.SetAtlas then
+                        pcall(overlay.SetAtlas, overlay, atlasName, true)
+                        applied = true
+                    end
+                end
+
+                if not applied then
+                    local okTex, pathOrTex = pcall(tex.GetTexture, tex)
+                    if okTex then
+                        if type(pathOrTex) == "string" and pathOrTex ~= "" then
+                            local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
+                            if isAtlas and overlay and overlay.SetAtlas then
+                                pcall(overlay.SetAtlas, overlay, pathOrTex, true)
+                                applied = true
+                            else
+                                if overlay then overlay:SetTexture(pathOrTex) end
+                                applied = true
+                            end
+                        elseif type(pathOrTex) == "number" and pathOrTex > 0 then
+                            if overlay then overlay:SetTexture(pathOrTex) end
+                            applied = true
+                        end
+                    end
+                end
+            end
+
+            if not applied then
+                -- Fallback: use a solid color texture matching power color
+                local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
+                if overlay and overlay.SetColorTexture then
+                    local pr, pg, pb = 0, 0, 1
+                    if addon.GetPowerColorRGB then
+                        pr, pg, pb = addon.GetPowerColorRGB(unitId)
+                    end
+                    overlay:SetColorTexture(pr or 0, pg or 0, pb or 1, 1)
+                end
+            end
+        end
+
+        -- Apply vertex color to overlay based on color mode
+        local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
+        local tint = cfg.powerBarTint
+        local r, g, b, a = 1, 1, 1, 1
+        if colorMode == "custom" and type(tint) == "table" then
+            r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+        elseif colorMode == "class" and addon.GetClassColorRGB then
+            local cr, cg, cb = addon.GetClassColorRGB("player")
+            r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+        elseif colorMode == "texture" then
+            r, g, b, a = 1, 1, 1, 1
+        elseif colorMode == "default" or colorMode == "power" then
+            -- Use the addon's power color API as the authoritative source.
+            -- This avoids issues where the fill texture's vertex color may be stale/white
+            -- after Blizzard resets the StatusBarTexture on combat entry.
+            if addon.GetPowerColorRGB then
+                local pr, pg, pb = addon.GetPowerColorRGB(unitId)
+                if pr then r, g, b = pr, pg, pb end
+            end
+        end
+        if overlay and overlay.SetVertexColor then
+            overlay:SetVertexColor(r, g, b, a)
+        end
+
+        -- Hide the original fill texture via alpha (combat-safe cosmetic operation)
+        local statusBarTex = bar:GetStatusBarTexture()
+        if statusBarTex then
+            pcall(statusBarTex.SetAlpha, statusBarTex, 0)
+        end
+
+        updateRectPowerOverlay(unit, bar)
     end
 
     -- Expose helpers for other modules (Cast Bar styling, etc.)
@@ -1875,6 +2108,23 @@ do
 			if (unit == "Target" or unit == "Focus" or unit == "TargetOfTarget") and _G.UnitExists and not _G.UnitExists(unitId) then
 				return
 			end
+			local healthBarHideTextureOnly = (cfg.healthBarHideTextureOnly == true)
+			if healthBarHideTextureOnly then
+				if Util and Util.SetHealthBarTextureOnlyHidden then
+					Util.SetHealthBarTextureOnlyHidden(hb, true)
+				end
+				-- Clear any custom borders so only text remains
+				if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+					addon.BarBorders.ClearBarFrame(hb)
+				end
+				if addon.Borders and addon.Borders.HideAll then
+					addon.Borders.HideAll(hb)
+				end
+			else
+				if Util and Util.SetHealthBarTextureOnlyHidden then
+					Util.SetHealthBarTextureOnlyHidden(hb, false)
+				end
+			end
             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
             
             -- Apply background texture and color for Health Bar
@@ -1907,6 +2157,14 @@ do
                     applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
                 end
             end
+
+            -- Re-apply texture-only hide after styling (ensures newly created ScooterModBG is also hidden)
+            if healthBarHideTextureOnly then
+                if Util and Util.SetHealthBarTextureOnlyHidden then
+                    Util.SetHealthBarTextureOnlyHidden(hb, true)
+                end
+            end
+
 			-- When Target/Focus portraits are hidden, draw a rectangular overlay that fills the
 			-- right-side "chip" area using the same texture/tint as the health bar.
 			ensureRectHealthOverlay(unit, hb, cfg)
@@ -1963,7 +2221,7 @@ do
             -- 12.0+: PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
             -- on PetFrame's health bar can trigger Blizzard internal updates that error on "secret values".
             -- Skip ALL border operations for Pet to guarantee preset/profile application doesn't provoke that path.
-            if unit ~= "Pet" then
+            if unit ~= "Pet" and not healthBarHideTextureOnly then
             do
 				local styleKey = cfg.healthBarBorderStyle
 				local tintEnabled = not not cfg.healthBarBorderTintEnable
@@ -2245,6 +2503,9 @@ do
 				if Util and Util.SetPowerBarTextureOnlyHidden then
 					Util.SetPowerBarTextureOnlyHidden(pb, false)
 				end
+				-- Also hide the power overlay if present
+				local pbSt = getState(pb)
+				if pbSt and pbSt.powerFill then pbSt.powerFill:Hide() end
 			elseif powerBarHideTextureOnly then
 				-- Number-only display: Hide the bar texture/fill while keeping text visible.
 				-- Use the utility function which installs persistent hooks to survive combat.
@@ -2253,12 +2514,12 @@ do
 				if origAlpha and pb.SetAlpha then
 					pcall(pb.SetAlpha, pb, origAlpha)
 				end
-				
+
 				-- Use persistent utility to hide textures (installs hooks that survive combat)
 				if Util and Util.SetPowerBarTextureOnlyHidden then
 					Util.SetPowerBarTextureOnlyHidden(pb, true)
 				end
-				
+
 				-- Clear any custom borders so only text remains
 				if addon.BarBorders and addon.BarBorders.ClearBarFrame then
 					addon.BarBorders.ClearBarFrame(pb)
@@ -2266,6 +2527,9 @@ do
 				if addon.Borders and addon.Borders.HideAll then
 					addon.Borders.HideAll(pb)
 				end
+				-- Also hide the power overlay if present
+				local pbSt = getState(pb)
+				if pbSt and pbSt.powerFill then pbSt.powerFill:Hide() end
 			else
 				-- Restore alpha when coming back from a hidden state so the bar is visible again.
 				local origAlpha = getProp(pb, "origPBAlpha")
@@ -2280,8 +2544,17 @@ do
             local colorModePB = cfg.powerBarColorMode or "default"
             local texKeyPB = cfg.powerBarTexture or "default"
             local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
-            applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
-            
+
+            -- Use the combat-safe power overlay when non-default settings are configured.
+            -- The overlay is addon-owned and immune to Blizzard's combat texture resets.
+            ensureRectPowerOverlay(unit, pb, cfg)
+
+            local pbSt = getState(pb)
+            if not (pbSt and pbSt.powerOverlayActive) then
+                -- Overlay not active (default+default): use legacy passthrough
+                applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
+            end
+
             -- Apply background texture and color for Power Bar
             do
                 -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
@@ -2364,6 +2637,15 @@ do
                         if getProp(self, "ufInternalTextureWrite") then
                             return
                         end
+                        -- When overlay is active, it handles everything (combat-safe).
+                        -- Just re-anchor and re-hide the new fill texture.
+                        local st = getState(self)
+                        if st and st.powerOverlayActive then
+                            updateRectPowerOverlay("Player", self)
+                            local newTex = self:GetStatusBarTexture()
+                            if newTex then pcall(newTex.SetAlpha, newTex, 0) end
+                            return
+                        end
                         if InCombatLockdown and InCombatLockdown() then
                             queuePowerBarReapply("Player")
                             return
@@ -2413,6 +2695,12 @@ do
                     setProp(pb, "powerColorHooked", true)
                     _G.hooksecurefunc(pb, "SetStatusBarColor", function(self, ...)
                         if isEditModeActive() then return end
+                        -- When overlay is active, it handles color sync directly
+                        -- (the sync hook in ensureRectPowerOverlay updates vertex color).
+                        local st = getState(self)
+                        if st and st.powerOverlayActive then
+                            return
+                        end
                         if InCombatLockdown and InCombatLockdown() then
                             queuePowerBarReapply("Player")
                             return
@@ -3278,7 +3566,8 @@ do
                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
                 local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
                 -- PetFrame is managed/protected: do not create or level custom border frames.
-                if unit ~= "Pet" and cfg.useCustomBorders then
+                -- Skip border application when bar texture is hidden (number-only display).
+                if unit ~= "Pet" and cfg.useCustomBorders and not powerBarHideTextureOnly then
                     if styleKey == "none" or styleKey == nil then
                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end

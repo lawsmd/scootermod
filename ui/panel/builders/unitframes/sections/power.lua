@@ -626,8 +626,8 @@ local function build(ctx, init)
 	
 						y.y = y.y - 34
 
-						-- Hide only the Bar Texture checkbox (number-only display)
-						local texOnlyLabel = "Hide only the Bar Texture"
+						-- Hide the Bar but not its Text checkbox (number-only display)
+						local texOnlyLabel = "Hide the Bar but not its Text"
 						local function texOnlyGetter()
 							local t = ensureUFDB()
 							return t and not not t.powerBarHideTextureOnly or false

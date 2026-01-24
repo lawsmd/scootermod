@@ -283,7 +283,7 @@ local function resolveCDMColor(cfg)
         return {1, 1, 1, 1}
     end
     if colorMode == "class" then
-        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB("player")
         return {cr or 1, cg or 1, cb or 1, 1}
     elseif colorMode == "custom" then
         return (cfg and cfg.color) or {1, 1, 1, 1}

@@ -142,8 +142,9 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         elseif colorMode == "texture" then
             -- Apply white (no tint) to preserve texture's original colors
             r, g, b, a = 1, 1, 1, 1
-        elseif colorMode == "default" then
+        elseif colorMode == "default" or colorMode == "power" then
             -- When using a custom texture, "Default" should tint to the stock bar color
+            -- ("power" is a legacy alias for "default" on power bars)
             if barKind == "cast" then
                 -- Stock cast bar yellow from CastingBarFrame mixin.
                 r, g, b, a = 1.0, 0.7, 0.0, 1

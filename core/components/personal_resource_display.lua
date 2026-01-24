@@ -70,6 +70,16 @@ local function queueAfterCombat(component)
     pendingCombatComponents[component] = true
 end
 
+local function isPRDEnabledByCVar()
+    if GetCVarBool then
+        return GetCVarBool("nameplateShowSelf")
+    end
+    if C_CVar and C_CVar.GetCVar then
+        return C_CVar.GetCVar("nameplateShowSelf") == "1"
+    end
+    return false
+end
+
 -- Forward declarations for bar overlay functions (defined in Bar Overlay System section below).
 local hidePRDBarOverlay
 local showPRDOriginalFill
@@ -439,10 +449,10 @@ local function resolveColorMode(colorMode, rawColor, overlayType)
     end
 
     if colorMode == "class" then
-        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB("player")
         return {cr or 1, cg or 1, cb or 1, 1}
     elseif colorMode == "classPower" and overlayType == "power" then
-        local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+        local pr, pg, pb = addon.GetPowerColorRGB("player")
         return {pr or 1, pg or 1, pb or 1, 1}
     elseif colorMode == "custom" then
         return rawColor or {1, 1, 1, 1}
@@ -888,20 +898,20 @@ local function applyPRDForegroundStyle(bar, barType, component)
     if colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
-        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB("player")
         r, g, b, a = cr or 1, cg or 1, cb or 1, 1
     elseif colorMode == "power" and barType == "power" then
-        local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+        local pr, pg, pb = addon.GetPowerColorRGB("player")
         r, g, b, a = pr or 1, pg or 1, pb or 1, 1
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1  -- Raw texture colors unmodified
     elseif colorMode == "default" then
         -- Blizzard's intended bar color
         if barType == "health" then
-            local hr, hg, hb = addon.GetDefaultHealthColorRGB and addon.GetDefaultHealthColorRGB()
+            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
             r, g, b, a = hr or 0, hg or 1, hb or 0, 1
         elseif barType == "power" then
-            local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+            local pr, pg, pb = addon.GetPowerColorRGB("player")
             r, g, b, a = pr or 1, pg or 1, pb or 1, 1
         end
     end
@@ -1054,6 +1064,73 @@ local function applyPRDBarBorder(component, statusBar)
     end
 end
 
+-- Hide/restore PRD bar fill texture and background, using the same immediate
+-- recursion-guard hook pattern as the Player UF SetPowerBarTextureOnlyHidden.
+local function hidePRDBarTextures(bar, barType, hidden)
+    if not bar or type(bar) ~= "table" then return end
+
+    local fillTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    local bgTex = bar.Background or bar.background
+
+    local fillFlag = "_ScootPRDFillHidden_" .. barType
+    local bgFlag = "_ScootPRDBGHidden_" .. barType
+
+    local function installAlphaHook(tex, flagName)
+        if not tex then return end
+        local st = getState(tex)
+        if not st then return end
+        local hookKey = flagName .. "Hooked"
+        if st[hookKey] then return end
+        st[hookKey] = true
+
+        if _G.hooksecurefunc and tex.SetAlpha then
+            _G.hooksecurefunc(tex, "SetAlpha", function(self, alpha)
+                if getProp(self, flagName) and alpha and alpha > 0 then
+                    if not getProp(self, "_ScootPRDSettingAlpha") then
+                        setProp(self, "_ScootPRDSettingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "_ScootPRDSettingAlpha", nil)
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and tex.Show then
+            _G.hooksecurefunc(tex, "Show", function(self)
+                if getProp(self, flagName) and self.SetAlpha then
+                    if not getProp(self, "_ScootPRDSettingAlpha") then
+                        setProp(self, "_ScootPRDSettingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "_ScootPRDSettingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    end
+
+    if hidden then
+        if fillTex then
+            setProp(fillTex, fillFlag, true)
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
+            installAlphaHook(fillTex, fillFlag)
+        end
+        if bgTex then
+            setProp(bgTex, bgFlag, true)
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
+            installAlphaHook(bgTex, bgFlag)
+        end
+    else
+        if fillTex then
+            setProp(fillTex, fillFlag, false)
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
+        end
+        if bgTex then
+            setProp(bgTex, bgFlag, false)
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
+        end
+    end
+end
+
 local function applyPRDHealthVisuals(component, container)
     if not component or not container then
         return
@@ -1072,6 +1149,16 @@ local function applyPRDHealthVisuals(component, container)
         hideTextOverlay("health")
         return
     end
+    local hideTextureOnly = ensureSettingValue(component, "hideTextureOnly") and true or false
+    if hideTextureOnly then
+        hidePRDBarTextures(statusBar, "health", true)
+        hidePRDBarOverlay("health")
+        clearBarBorder(statusBar)
+        setBlizzardBorderVisible(statusBar, false)
+        applyHealthTextOverlay(component)
+        return
+    end
+    hidePRDBarTextures(statusBar, "health", false)
     applyPRDForegroundStyle(statusBar, "health", component)
     applyPRDBackgroundStyle(statusBar, "health", component)
     applyPRDBarBorder(component, statusBar)
@@ -1091,6 +1178,16 @@ local function applyPRDPowerVisuals(component, frame)
         hideTextOverlay("power")
         return
     end
+    local hideTextureOnly = ensureSettingValue(component, "hideTextureOnly") and true or false
+    if hideTextureOnly then
+        hidePRDBarTextures(frame, "power", true)
+        hidePRDBarOverlay("power")
+        clearBarBorder(frame)
+        setBlizzardBorderVisible(frame, false)
+        applyPowerTextOverlay(component)
+        return
+    end
+    hidePRDBarTextures(frame, "power", false)
     applyPRDForegroundStyle(frame, "power", component)
     applyPRDBackgroundStyle(frame, "power", component)
     applyPRDBarBorder(component, frame)
@@ -1190,6 +1287,18 @@ end
 local function applyHealthOffsets(component)
     -- 12.0: PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
     -- Positioning is handled by Edit Mode; we apply sizing, styling, and visibility.
+    if not isPRDEnabledByCVar() then
+        -- PRD is disabled; clear any existing borders/overlays and bail out
+        local container = getHealthContainer()
+        if container then
+            local statusBar = container.healthBar or container.HealthBar
+            if statusBar then clearBarBorder(statusBar) end
+            hidePRDBarOverlay("health")
+            hideTextOverlay("health")
+        end
+        return
+    end
+
     local container = getHealthContainer()
     if not container then
         return
@@ -1271,6 +1380,16 @@ end
 
 local function applyPowerOffsets(component)
     -- 12.0: PRD power bar is PersonalResourceDisplayFrame.PowerBar (IsProtected: false).
+    if not isPRDEnabledByCVar() then
+        local frame = getPowerBar()
+        if frame then
+            clearBarBorder(frame)
+            hidePRDBarOverlay("power")
+            hideTextOverlay("power")
+        end
+        return
+    end
+
     local frame = getPowerBar()
     if not frame then
         return
@@ -1335,6 +1454,10 @@ end
 local function applyClassResourceOffsets(component)
     -- 12.0: Class resource is inside PersonalResourceDisplayFrame.ClassFrameContainer.
     -- Positioning is handled by Blizzard; we apply scale and visibility.
+    if not isPRDEnabledByCVar() then
+        return
+    end
+
     local prd = PersonalResourceDisplayFrame
     if not prd then
         return
@@ -1475,6 +1598,9 @@ addon:RegisterComponentInitializer(function(self)
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Health Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
+            hideTextureOnly = { type = "addon", default = false, ui = {
+                label = "Hide the Bar but not its Text", widget = "checkbox", section = "Misc", order = 2,
+            }},
             -- Per-text overlay settings (value = right text, percent = left text)
             valueTextShow = { type = "addon", default = false, ui = { hidden = true }},
             valueTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
@@ -1536,11 +1662,14 @@ addon:RegisterComponentInitializer(function(self)
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Power Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
+            hideTextureOnly = { type = "addon", default = false, ui = {
+                label = "Hide the Bar but not its Text", widget = "checkbox", section = "Misc", order = 2,
+            }},
             hideSpikeAnimations = { type = "addon", default = false, ui = {
-                label = "Hide Full Bar Animations", widget = "checkbox", section = "Misc", order = 2,
+                label = "Hide Full Bar Animations", widget = "checkbox", section = "Misc", order = 3,
             }},
             hidePowerFeedback = { type = "addon", default = false, ui = {
-                label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 3,
+                label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 4,
             }},
             -- Per-text overlay settings (value = right text, percent = left text)
             valueTextShow = { type = "addon", default = false, ui = { hidden = true }},

@@ -472,6 +472,24 @@ end
 
 local function buildHealthVisibilityTab(inner)
     inner:AddToggle({
+        label = "Hide the Bar but not its Text",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideTextureOnly
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideTextureOnly = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = {
+            tooltipTitle = "Hide the Bar but not its Text",
+            tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of your health.",
+        },
+    })
+
+    inner:AddToggle({
         label = "Hide Over Absorb Glow",
         description = "Hides the glow effect when absorb shields exceed max health.",
         get = function()
@@ -706,6 +724,74 @@ function UF.RenderPlayer(panel, scrollContent)
                                 t.powerBarHidden = v and true or false
                                 applyBarTextures()
                             end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide the Bar but not its Text",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideTextureOnly
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideTextureOnly = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Hide the Bar but not its Text",
+                                tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of your power resource.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Full Bar Animations",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideFullSpikes
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideFullSpikes = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Full Bar Animations",
+                                tooltipText = "Disables Blizzard's full-bar celebration animations that play when the resource is full. These overlays can't be resized, so hiding them keeps custom bar heights consistent.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Power Feedback",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideFeedback
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideFeedback = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Power Feedback",
+                                tooltipText = "Disables the flash animation that plays when you spend or gain power (energy, mana, rage, etc.). This animation shows a quick highlight on the portion of the bar that changed.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Power Bar Spark",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideSpark
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideSpark = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Power Bar Spark",
+                                tooltipText = "Hides the spark/glow indicator that appears at the current power level on certain classes (e.g., Elemental Shaman).",
+                            },
                         })
                         tabInner:Finalize()
                     end,

@@ -662,32 +662,123 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
             installAlphaHook(ownerFrame.ScooterModBG, "powerBarScootBGHidden")
         end
+
+        -- Also hide the power foreground overlay if present
+        local st = getState(ownerFrame)
+        if st and st.powerFill then
+            st.powerFill:Hide()
+        end
     else
         -- Mark textures as visible and restore alpha
         if fillTex then
             setProp(fillTex, "powerBarFillHidden", false)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
         end
-        
+
         if bgTex then
             setProp(bgTex, "powerBarBGHidden", false)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
         end
-        
+
         if manaCostPredictionBar then
             setProp(manaCostPredictionBar, "powerBarManaCostPredHidden", false)
             if manaCostPredictionBar.SetAlpha then
                 pcall(manaCostPredictionBar.SetAlpha, manaCostPredictionBar, 1)
             end
         end
-        
+
         if ownerFrame.ScooterModBG then
             setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", false)
             -- Don't restore alpha here - let the background styling code handle it
         end
+
+        -- Restore power foreground overlay if it's active
+        local st = getState(ownerFrame)
+        if st and st.powerFill and st.powerOverlayActive then
+            st.powerFill:Show()
+        end
     end
 end
 Util.SetPowerBarTextureOnlyHidden = SetPowerBarTextureOnlyHidden
+
+-- Hide/restore the Health Bar fill texture and background while keeping text overlays visible.
+-- Mirrors SetPowerBarTextureOnlyHidden but uses health-specific flag names.
+local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+
+    local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
+    local bgTex = ownerFrame.Background or ownerFrame.background
+
+    local function installAlphaHook(tex, flagName)
+        if not tex then return end
+        local st = getState(tex)
+        if not st then return end
+        local hookKey = flagName .. "Hooked"
+        if st[hookKey] then return end
+        st[hookKey] = true
+
+        if _G.hooksecurefunc and tex.SetAlpha then
+            _G.hooksecurefunc(tex, "SetAlpha", function(self, alpha)
+                if getProp(self, flagName) and alpha and alpha > 0 then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and tex.Show then
+            _G.hooksecurefunc(tex, "Show", function(self)
+                if getProp(self, flagName) and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    end
+
+    if hidden then
+        if fillTex then
+            setProp(fillTex, "healthBarFillHidden", true)
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
+            installAlphaHook(fillTex, "healthBarFillHidden")
+        end
+
+        if bgTex then
+            setProp(bgTex, "healthBarBGHidden", true)
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
+            installAlphaHook(bgTex, "healthBarBGHidden")
+        end
+
+        if ownerFrame.ScooterModBG then
+            setProp(ownerFrame.ScooterModBG, "healthBarScootBGHidden", true)
+            if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
+            installAlphaHook(ownerFrame.ScooterModBG, "healthBarScootBGHidden")
+        end
+    else
+        if fillTex then
+            setProp(fillTex, "healthBarFillHidden", false)
+            if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
+        end
+
+        if bgTex then
+            setProp(bgTex, "healthBarBGHidden", false)
+            if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
+        end
+
+        if ownerFrame.ScooterModBG then
+            setProp(ownerFrame.ScooterModBG, "healthBarScootBGHidden", false)
+        end
+    end
+end
+Util.SetHealthBarTextureOnlyHidden = SetHealthBarTextureOnlyHidden
 
 -- Hide/show the Over Absorb Glow on the Player Health Bar
 -- This glow appears on the edge of the health bar when absorb shields exceed max health.

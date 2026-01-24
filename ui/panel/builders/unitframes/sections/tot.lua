@@ -686,7 +686,6 @@ local function buildTotPower(ctx, init)
 				local c = Settings.CreateControlTextContainer()
 				c:Add("default", "Default")
 				c:Add("texture", "Texture Original")
-				c:Add("power", "Power Color")
 				c:Add("custom", "Custom")
 				return c:GetData()
 			end

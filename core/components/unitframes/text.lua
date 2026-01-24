@@ -330,7 +330,7 @@ do
             -- Extract unit token from baselineKey (e.g., "Player:left" → "player")
             local unitToken = baselineKey and baselineKey:match("^(.-):")
             if unitToken then unitToken = unitToken:lower() end
-            local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB(unitToken or "player")
+            local cr, cg, cb = addon.GetClassColorRGB(unitToken or "player")
             c = {cr or 1, cg or 1, cb or 1, 1}
         elseif colorMode == "custom" then
             c = styleCfg.color or {1, 1, 1, 1}
@@ -1017,7 +1017,7 @@ do
 				c = {pr or 1, pg or 1, pb or 1, 1}
 			end
 		elseif colorMode == "class" then
-			local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+			local cr, cg, cb = addon.GetClassColorRGB("player")
 			c = {cr or 1, cg or 1, cb or 1, 1}
 		elseif colorMode == "default" then
 			-- Default white for Blizzard's standard bar text color
