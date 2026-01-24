@@ -838,10 +838,6 @@ do
             -- environment. This overlay is cosmetic; we prefer a complete no-op.
             return
         end
-        if type(unit) == "string" and string.lower(unit) == "pet" then
-            return
-        end
-
         -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
         -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
         -- is the actual "fill" portion of the StatusBar and automatically scales with health value.
@@ -870,14 +866,15 @@ do
             return
         end
 
-        local statusBarTex = bar:GetStatusBarTexture()
-        if not statusBarTex then
-            overlay:Hide()
-            return
-        end
+        local okTex, statusBarTex = pcall(bar.GetStatusBarTexture, bar)
+        if not okTex then statusBarTex = nil end
 
         overlay:ClearAllPoints()
-        overlay:SetAllPoints(statusBarTex)
+        if statusBarTex then
+            overlay:SetAllPoints(statusBarTex)
+        else
+            overlay:SetAllPoints(bar)
+        end
         overlay:Show()
     end
 
@@ -919,10 +916,7 @@ do
         elseif type(unit) == "string" and string.lower(unit) == "pet" then
             -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
             -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
-            -- 12.0 PTR: disable this optional cosmetic overlay for Pet to avoid triggering
-            -- Blizzard heal prediction updates that can error on "secret values".
-            shouldActivate = false
-            st.rectDisabledForSecretValues = true
+            shouldActivate = (ufCfg.useCustomBorders == true)
             st.rectReverseFill = false -- Pet health bar always fills left-to-right
         else
             -- Others: skip
@@ -1069,12 +1063,20 @@ do
             -- Preserve texture's original colors
             r, g, b, a = 1, 1, 1, 1
         elseif colorMode == "default" then
-            -- For default color, try to get the bar's current vertex color
-            local tex = bar:GetStatusBarTexture()
-            if tex and tex.GetVertexColor then
-                local ok, vr, vg, vb, va = pcall(tex.GetVertexColor, tex)
-                if ok then
-                    r, g, b, a = vr or 1, vg or 1, vb or 1, va or 1
+            -- Use the addon's static health color API as the authoritative source.
+            -- GetVertexColor on atlas-backed StatusBarTextures (e.g., Pet) returns white
+            -- because the color is baked into the atlas, not applied via vertex color.
+            if addon.GetDefaultHealthColorRGB then
+                local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+                r, g, b = hr or 0, hg or 1, hb or 0
+            else
+                -- Fallback: try to get the bar's current vertex color
+                local tex = bar:GetStatusBarTexture()
+                if tex and tex.GetVertexColor then
+                    local ok, vr, vg, vb, va = pcall(tex.GetVertexColor, tex)
+                    if ok then
+                        r, g, b, a = vr or 1, vg or 1, vb or 1, va or 1
+                    end
                 end
             end
         end
@@ -1113,8 +1115,8 @@ do
             if st.powerFill then
                 st.powerFill:Hide()
                 -- Restore original fill visibility
-                local statusBarTex = bar:GetStatusBarTexture()
-                if statusBarTex then
+                local okTex, statusBarTex = pcall(bar.GetStatusBarTexture, bar)
+                if okTex and statusBarTex then
                     pcall(statusBarTex.SetAlpha, statusBarTex, 1)
                 end
             end
@@ -1123,80 +1125,98 @@ do
 
         -- Create overlay texture once per bar
         if not st.powerFill then
-            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
-            overlay:SetVertTile(false)
-            overlay:SetHorizTile(false)
-            overlay:SetTexCoord(0, 1, 0, 1)
+            local createOk, overlay = pcall(bar.CreateTexture, bar, nil, "OVERLAY", nil, 2)
+            if not createOk or not overlay then return end
+            pcall(overlay.SetVertTile, overlay, false)
+            pcall(overlay.SetHorizTile, overlay, false)
+            pcall(overlay.SetTexCoord, overlay, 0, 1, 0, 1)
             st.powerFill = overlay
 
             -- Drive overlay position from bar value/size changes.
             -- No combat guard needed: only touches addon-owned texture.
             if _G.hooksecurefunc and not st.powerOverlayHooksInstalled then
-                st.powerOverlayHooksInstalled = true
-                _G.hooksecurefunc(bar, "SetValue", function(self)
-                    if isEditModeActive() then return end
-                    updateRectPowerOverlay(unit, self)
-                end)
-                _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
-                    if isEditModeActive() then return end
-                    updateRectPowerOverlay(unit, self)
-                end)
-                if bar.HookScript then
-                    bar:HookScript("OnSizeChanged", function(self)
+                local hookOk = pcall(function()
+                    _G.hooksecurefunc(bar, "SetValue", function(self)
                         if isEditModeActive() then return end
                         updateRectPowerOverlay(unit, self)
                     end)
-                end
+                    _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
+                        if isEditModeActive() then return end
+                        updateRectPowerOverlay(unit, self)
+                    end)
+                    if bar.HookScript then
+                        bar:HookScript("OnSizeChanged", function(self)
+                            if isEditModeActive() then return end
+                            updateRectPowerOverlay(unit, self)
+                        end)
+                    end
+                end)
+                if hookOk then st.powerOverlayHooksInstalled = true end
             end
 
             -- Sync hook: SetStatusBarTexture
-            -- When Blizzard swaps the fill texture (e.g., Druid form change), re-anchor overlay
-            -- and re-hide the new fill.
+            -- When Blizzard swaps the fill texture (e.g., Druid form change), re-anchor overlay,
+            -- re-hide the new fill, and install alpha enforcement on it.
             if _G.hooksecurefunc and not st.powerOverlayTexSyncHooked then
-                st.powerOverlayTexSyncHooked = true
-                _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self, ...)
-                    if isEditModeActive() then return end
-                    local s = getState(self)
-                    if not (s and s.powerOverlayActive) then return end
-                    -- Ignore ScooterMod's own writes
-                    if getProp(self, "ufInternalTextureWrite") then return end
-                    -- Re-anchor overlay to new fill texture and hide it
-                    local newTex = self:GetStatusBarTexture()
-                    if newTex then
-                        pcall(newTex.SetAlpha, newTex, 0)
-                    end
-                    updateRectPowerOverlay(unit, self)
+                local hookOk = pcall(function()
+                    _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self, ...)
+                        if isEditModeActive() then return end
+                        local s = getState(self)
+                        if not (s and s.powerOverlayActive) then return end
+                        if getProp(self, "ufInternalTextureWrite") then return end
+                        local newTex = self:GetStatusBarTexture()
+                        if newTex then
+                            pcall(newTex.SetAlpha, newTex, 0)
+                            -- Install enforcement on new texture if not already hooked
+                            if not getProp(newTex, "powerOverlayAlphaHooked") then
+                                setProp(newTex, "powerOverlayAlphaHooked", true)
+                                pcall(function()
+                                    _G.hooksecurefunc(newTex, "SetAlpha", function(tex, alpha)
+                                        local barState = getState(self)
+                                        if barState and barState.powerOverlayActive and alpha > 0 then
+                                            if not getProp(tex, "powerOverlaySettingAlpha") then
+                                                setProp(tex, "powerOverlaySettingAlpha", true)
+                                                tex:SetAlpha(0)
+                                                setProp(tex, "powerOverlaySettingAlpha", nil)
+                                            end
+                                        end
+                                    end)
+                                end)
+                            end
+                        end
+                        updateRectPowerOverlay(unit, self)
+                    end)
                 end)
+                if hookOk then st.powerOverlayTexSyncHooked = true end
             end
 
             -- Sync hook: SetStatusBarColor
             -- When Blizzard changes the power color (power type change), update overlay
-            -- vertex color if using "default" color mode. Uses GetPowerColorRGB as the
-            -- authoritative source rather than hook parameters, which may be stale/white
-            -- during StatusBarTexture resets.
+            -- vertex color if using "default" color mode.
             if _G.hooksecurefunc and not st.powerOverlayColorSyncHooked then
-                st.powerOverlayColorSyncHooked = true
-                _G.hooksecurefunc(bar, "SetStatusBarColor", function(self)
-                    if isEditModeActive() then return end
-                    local s = getState(self)
-                    if not (s and s.powerOverlayActive and s.powerFill) then return end
-                    -- Only sync color in "default"/"power" mode
-                    local db = addon and addon.db and addon.db.profile
-                    if not db then return end
-                    local unitFrames = rawget(db, "unitFrames")
-                    local cfgNow = unitFrames and rawget(unitFrames, unit) or nil
-                    if not cfgNow then return end
-                    local cm = cfgNow.powerBarColorMode or "default"
-                    if cm == "default" or cm == "power" then
-                        local uid = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
-                        if addon.GetPowerColorRGB then
-                            local pr, pg, pb = addon.GetPowerColorRGB(uid)
-                            if pr and s.powerFill and s.powerFill.SetVertexColor then
-                                s.powerFill:SetVertexColor(pr, pg, pb, 1)
+                local hookOk = pcall(function()
+                    _G.hooksecurefunc(bar, "SetStatusBarColor", function(self)
+                        if isEditModeActive() then return end
+                        local s = getState(self)
+                        if not (s and s.powerOverlayActive and s.powerFill) then return end
+                        local db = addon and addon.db and addon.db.profile
+                        if not db then return end
+                        local unitFrames = rawget(db, "unitFrames")
+                        local cfgNow = unitFrames and rawget(unitFrames, unit) or nil
+                        if not cfgNow then return end
+                        local cm = cfgNow.powerBarColorMode or "default"
+                        if cm == "default" or cm == "power" then
+                            local uid = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or (unit == "TargetOfTarget" and "targettarget") or "player"
+                            if addon.GetPowerColorRGB then
+                                local pr, pg, pb = addon.GetPowerColorRGB(uid)
+                                if pr and s.powerFill and s.powerFill.SetVertexColor then
+                                    s.powerFill:SetVertexColor(pr, pg, pb, 1)
+                                end
                             end
                         end
-                    end
+                    end)
                 end)
+                if hookOk then st.powerOverlayColorSyncHooked = true end
             end
         end
 
@@ -1212,7 +1232,8 @@ do
             end
         else
             -- Default texture: copy from bar's StatusBarTexture with atlas detection
-            local tex = bar:GetStatusBarTexture()
+            local okSBT, tex = pcall(bar.GetStatusBarTexture, bar)
+            if not okSBT then tex = nil end
             local applied = false
             if tex then
                 local okAtlas, atlasName = pcall(tex.GetAtlas, tex)
@@ -1280,10 +1301,28 @@ do
             overlay:SetVertexColor(r, g, b, a)
         end
 
-        -- Hide the original fill texture via alpha (combat-safe cosmetic operation)
-        local statusBarTex = bar:GetStatusBarTexture()
-        if statusBarTex then
+        -- Hide the original fill texture via alpha with persistent enforcement.
+        -- Blizzard resets the fill's alpha during power value updates; without enforcement,
+        -- the fill becomes visible through the semi-transparent overlay at low frame opacity.
+        local okTex, statusBarTex = pcall(bar.GetStatusBarTexture, bar)
+        if okTex and statusBarTex then
             pcall(statusBarTex.SetAlpha, statusBarTex, 0)
+            -- Install enforcement hook (once per texture) using recursion guard pattern
+            if not getProp(statusBarTex, "powerOverlayAlphaHooked") then
+                setProp(statusBarTex, "powerOverlayAlphaHooked", true)
+                pcall(function()
+                    _G.hooksecurefunc(statusBarTex, "SetAlpha", function(self, alpha)
+                        local barState = getState(bar)
+                        if barState and barState.powerOverlayActive and alpha > 0 then
+                            if not getProp(self, "powerOverlaySettingAlpha") then
+                                setProp(self, "powerOverlaySettingAlpha", true)
+                                self:SetAlpha(0)
+                                setProp(self, "powerOverlaySettingAlpha", nil)
+                            end
+                        end
+                    end)
+                end)
+            end
         end
 
         updateRectPowerOverlay(unit, bar)
@@ -1318,6 +1357,7 @@ do
                 "healthBarBackgroundTexture", "healthBarBackgroundColorMode", "healthBarBackgroundTint", "healthBarBackgroundOpacity",
                 "powerBarTexture", "powerBarColorMode", "powerBarTint",
                 "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
+                "powerBarHidden",
                 "borderStyle", "borderThickness", "borderInset", "borderTintEnable", "borderTintColor",
                 "healthBarReverseFill",
             })
@@ -1328,12 +1368,52 @@ do
         local frame = getUnitFrameFor(unit)
         if not frame then return end
 
-        -- 12.0+: PetFrame is a managed/protected unit frame. Even innocuous getters (GetWidth, GetHeight,
-        -- GetMinMaxValues, GetValue) on PetFrame's health/power bars can trigger Blizzard's internal
-        -- heal prediction update callbacks that error on "secret values". Skip ALL bar styling for Pet
-        -- to guarantee preset/profile application doesn't provoke that path. This is a temporary
-        -- workaround until Blizzard stabilizes the 12.0 secret-value implementation.
+        -- 12.0+: PetFrame is a managed/protected unit frame. Direct bar writes (SetStatusBarTexture,
+        -- GetWidth, GetHeight, GetMinMaxValues, GetValue) can trigger Blizzard's internal heal
+        -- prediction update callbacks that error on "secret values". For Pet we only perform safe
+        -- overlay-based operations: alpha hiding of FrameTexture and overlay creation via
+        -- CreateTexture + SetAllPoints (anchored to StatusBarTexture, no value reads).
         if unit == "Pet" then
+            -- Hide PetFrameTexture (art hiding) - same pattern as line 3658+
+            local ft = resolveUnitFrameFrameTexture(unit)
+            if ft then
+                local function compute()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+                    return hide and 0 or 1
+                end
+                applyAlpha(ft, compute())
+                hookAlphaEnforcer(ft, compute)
+            end
+
+            -- Health overlay (fills corner chip when custom borders enabled)
+            local hb = resolveHealthBar(frame, unit)
+            if hb then
+                ensureRectHealthOverlay(unit, hb, cfg)
+            end
+
+            -- Power bar visibility (hide/show via alpha enforcer)
+            local pb = resolvePowerBar(frame, unit)
+            if not pb then
+                pb = frame and frame.PetFrameManaBar
+            end
+            if pb then
+                local function computePBAlpha()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hidden = cfg2 and cfg2.powerBarHidden
+                    return hidden and 0 or 1
+                end
+                applyAlpha(pb, computePBAlpha())
+                hookAlphaEnforcer(pb, computePBAlpha)
+
+                -- Power overlay (custom texture/color on power bar)
+                ensureRectPowerOverlay(unit, pb, cfg)
+            end
+
             return
         end
 

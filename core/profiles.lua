@@ -92,10 +92,24 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
         return
     end
     local value = (desired and "1") or "0"
-    if C_CVar and C_CVar.SetCVar then
-        pcall(C_CVar.SetCVar, "cooldownViewerEnabled", value)
-    elseif SetCVar then
-        pcall(SetCVar, "cooldownViewerEnabled", value)
+
+    local function applyCVar()
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "cooldownViewerEnabled", value)
+        elseif SetCVar then
+            pcall(SetCVar, "cooldownViewerEnabled", value)
+        end
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            applyCVar()
+        end)
+    else
+        applyCVar()
     end
 
     -- Important: setting the CVar does not reliably hide already-visible CDM frames
@@ -151,10 +165,24 @@ local function ApplyPRDEnabledForActiveProfile(reason)
         return  -- Not explicitly set; don't override CVar
     end
     local value = (desired and "1") or "0"
-    if C_CVar and C_CVar.SetCVar then
-        pcall(C_CVar.SetCVar, "nameplateShowSelf", value)
-    elseif SetCVar then
-        pcall(SetCVar, "nameplateShowSelf", value)
+
+    local function applyCVar()
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "nameplateShowSelf", value)
+        elseif SetCVar then
+            pcall(SetCVar, "nameplateShowSelf", value)
+        end
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            applyCVar()
+        end)
+    else
+        applyCVar()
     end
 
     -- If disabling, trigger a re-apply so borders/overlays get cleared

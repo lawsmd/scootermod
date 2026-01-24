@@ -36,8 +36,8 @@ function Window:Create(name, parent, width, height)
     frame:SetClampedToScreen(true)
 
     -- Store dimensions for reference
-    frame._tuiWidth = width or 900
-    frame._tuiHeight = height or 650
+    frame._defaultWidth = width or 900
+    frame._defaultHeight = height or 650
 
     -- Build window layers
     self:CreateBackground(frame)
@@ -52,7 +52,7 @@ function Window:Create(name, parent, width, height)
     end)
 
     -- Store subscription key for cleanup
-    frame._tuiSubscribeKey = subscribeKey
+    frame._themeSubscribeKey = subscribeKey
 
     -- NOTE: Dragging is NOT registered on the main frame.
     -- The SettingsPanel creates a title bar that handles dragging instead,
@@ -60,7 +60,7 @@ function Window:Create(name, parent, width, height)
     -- Position saving is handled by the title bar's OnDragStop in SettingsPanel.lua.
 
     -- Mark as UI window
-    frame._isTUIWindow = true
+    frame._isSettingsWindow = true
 
     return frame
 end
@@ -175,8 +175,8 @@ function Window:Destroy(frame)
     if not frame then return end
 
     -- Unsubscribe from theme
-    if frame._tuiSubscribeKey then
-        Theme:Unsubscribe(frame._tuiSubscribeKey)
+    if frame._themeSubscribeKey then
+        Theme:Unsubscribe(frame._themeSubscribeKey)
     end
 
     -- Hide and clear
@@ -191,7 +191,7 @@ end
 function Window:RestorePosition(frame)
     if not frame or not addon.db or not addon.db.global then return end
 
-    local pos = addon.db.global.tuiWindowPosition
+    local pos = addon.db.global.windowPosition
     if pos and pos.point and pos.x and pos.y then
         frame:ClearAllPoints()
         frame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x, pos.y)

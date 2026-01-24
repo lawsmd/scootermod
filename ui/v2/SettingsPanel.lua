@@ -200,8 +200,8 @@ function UIPanel:Initialize()
 
     -- Restore saved size or use defaults
     local savedWidth, savedHeight = PANEL_WIDTH, PANEL_HEIGHT
-    if addon.db and addon.db.global and addon.db.global.tuiWindowSize then
-        local size = addon.db.global.tuiWindowSize
+    if addon.db and addon.db.global and addon.db.global.windowSize then
+        local size = addon.db.global.windowSize
         savedWidth = size.width or PANEL_WIDTH
         savedHeight = size.height or PANEL_HEIGHT
     end
@@ -389,7 +389,7 @@ function UIPanel:CreateTitleBar()
         frame:StopMovingOrSizing()
         if addon.db and addon.db.global then
             local point, _, relPoint, x, y = frame:GetPoint()
-            addon.db.global.tuiWindowPosition = {
+            addon.db.global.windowPosition = {
                 point = point,
                 relPoint = relPoint,
                 x = x,
@@ -477,7 +477,7 @@ function UIPanel:CreateTitleBar()
         frame:StopMovingOrSizing()
         if addon.db and addon.db.global then
             local point, _, relPoint, x, y = frame:GetPoint()
-            addon.db.global.tuiWindowPosition = {
+            addon.db.global.windowPosition = {
                 point = point,
                 relPoint = relPoint,
                 x = x,
@@ -770,7 +770,7 @@ function UIPanel:CreateResizeHandle()
         -- Save size to AceDB
         if addon.db and addon.db.global then
             local width, height = frame:GetSize()
-            addon.db.global.tuiWindowSize = {
+            addon.db.global.windowSize = {
                 width = width,
                 height = height
             }
@@ -1246,7 +1246,7 @@ UIPanel._currentBuilder = nil
 -- ClearContent() is called before rendering any new section. It must clean up
 -- ALL content types:
 --
--- 1. Builder-based content (_currentBuilder): Most sections use TUISettingsBuilder
+-- 1. Builder-based content (_currentBuilder): Most sections use SettingsBuilder
 --    which tracks controls in builder._controls and cleans them up via Cleanup().
 --
 -- 2. Custom state-based content: Some sections (e.g., Rules) use manual frame
@@ -4827,6 +4827,94 @@ function UIPanel:RenderChat(scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- SCT Damage Numbers Renderer
+--------------------------------------------------------------------------------
+
+function UIPanel:RenderSctDamage(scrollContent)
+    -- Clear any existing content
+    self:ClearContent()
+
+    -- Create builder for this content area
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    self._currentBuilder = builder
+
+    -- Helper to get component settings
+    local function getComponent()
+        return addon.Components and addon.Components["sctDamage"]
+    end
+
+    local function getSetting(key)
+        local comp = getComponent()
+        if comp and comp.db then
+            return comp.db[key]
+        end
+        local profile = addon.db and addon.db.profile
+        local components = profile and profile.components
+        return components and components.sctDamage and components.sctDamage[key]
+    end
+
+    local function setSetting(key, value)
+        local comp = getComponent()
+        if comp and comp.db then
+            if addon.EnsureComponentDB then
+                addon:EnsureComponentDB(comp)
+            end
+            comp.db[key] = value
+        else
+            local profile = addon.db and addon.db.profile
+            if profile then
+                profile.components = profile.components or {}
+                profile.components.sctDamage = profile.components.sctDamage or {}
+                profile.components.sctDamage[key] = value
+            end
+        end
+    end
+
+    builder:AddDescription(
+        "Changes to the damage number font require a full game restart (not just a reload) to take effect. " ..
+        "The scale slider applies immediately."
+    )
+
+    builder:AddFontSelector({
+        label = "Font",
+        description = "The font used for floating combat text damage numbers.",
+        get = function()
+            return getSetting("fontFace") or "FRIZQT__"
+        end,
+        set = function(fontKey)
+            setSetting("fontFace", fontKey or "FRIZQT__")
+            local comp = getComponent()
+            if comp and comp.ApplyStyling then
+                comp:ApplyStyling()
+            end
+        end,
+    })
+
+    builder:AddSlider({
+        label = "Font Scale",
+        description = "Scale of floating combat text numbers (affects all world text).",
+        min = 50,
+        max = 150,
+        step = 1,
+        get = function()
+            return getSetting("fontScale") or 100
+        end,
+        set = function(v)
+            setSetting("fontScale", v)
+            local comp = getComponent()
+            if comp and comp.ApplyStyling then
+                comp:ApplyStyling()
+            end
+        end,
+        minLabel = "50%",
+        maxLabel = "150%",
+    })
+
+    -- Finalize the layout
+    builder:Finalize()
+end
+
+--------------------------------------------------------------------------------
 -- Personal Resource Display Renderers
 --------------------------------------------------------------------------------
 
@@ -6519,19 +6607,19 @@ local RULES_SPEC_BADGE_GAP = 4  -- Horizontal gap between spec badges
 local RULES_BREADCRUMB_HEIGHT = 30  -- Taller dropdowns for long text
 
 --------------------------------------------------------------------------------
--- Rules: TUI Spec Picker Popup
+-- Rules: Spec Picker Popup
 --------------------------------------------------------------------------------
 
 local rulesSpecPickerFrame = nil
 local rulesSpecPickerElements = {}
 
-local function CloseTUISpecPicker()
+local function CloseSpecPicker()
     if rulesSpecPickerFrame then
         rulesSpecPickerFrame:Hide()
     end
 end
 
-local function ShowTUISpecPicker(anchor, rule, callback)
+local function ShowSpecPicker(anchor, rule, callback)
     -- Get theme colors
     local ar, ag, ab = Theme:GetAccentColor()
     local bgR, bgG, bgB, bgA = Theme:GetBackgroundSolidColor()
@@ -6563,7 +6651,7 @@ local function ShowTUISpecPicker(anchor, rule, callback)
 
     -- Create frame if needed
     if not rulesSpecPickerFrame then
-        local frame = CreateFrame("Frame", "ScooterTUISpecPicker", UIParent, "BackdropTemplate")
+        local frame = CreateFrame("Frame", "ScooterSpecPicker", UIParent, "BackdropTemplate")
         frame:SetFrameStrata("FULLSCREEN_DIALOG")
         frame:SetFrameLevel(200)
         frame:SetClampedToScreen(true)
@@ -6576,7 +6664,7 @@ local function ShowTUISpecPicker(anchor, rule, callback)
         frame:SetScript("OnKeyDown", function(self, key)
             if key == "ESCAPE" then
                 self:SetPropagateKeyboardInput(false)
-                CloseTUISpecPicker()
+                CloseSpecPicker()
                 PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE)
             else
                 self:SetPropagateKeyboardInput(true)
@@ -6667,7 +6755,7 @@ local function ShowTUISpecPicker(anchor, rule, callback)
     closeBtn:SetScript("OnEnter", function() closeText:SetTextColor(1, 0.3, 0.3, 1) end)
     closeBtn:SetScript("OnLeave", function() closeText:SetTextColor(dimR, dimG, dimB, 1) end)
     closeBtn:SetScript("OnClick", function()
-        CloseTUISpecPicker()
+        CloseSpecPicker()
         PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE)
     end)
 
@@ -6836,7 +6924,7 @@ local function ShowTUISpecPicker(anchor, rule, callback)
         width = 80,
         height = 26,
         onClick = function()
-            CloseTUISpecPicker()
+            CloseSpecPicker()
             PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE)
         end,
     })
@@ -7102,7 +7190,7 @@ function RenderRulesCardDisplayMode(card, rule, refreshCallback, ar, ag, ab)
     local state = UIPanel._rulesState
 
     -- === HEADER ROW ===
-    -- Enable toggle (using text-based ON/OFF indicator like TUIToggle)
+    -- Enable toggle (using text-based ON/OFF indicator like Toggle)
     local enableLabel = card:CreateFontString(nil, "OVERLAY")
     enableLabel:SetFont(labelFont, 11, "")
     enableLabel:SetPoint("TOPLEFT", card, "TOPLEFT", RULES_CARD_PADDING, -RULES_CARD_PADDING)
@@ -7417,8 +7505,8 @@ function RenderRulesCardEditMode(card, rule, refreshCallback, ar, ag, ab)
             borderWidth = 1,
             borderAlpha = 0.6,
             onClick = function(self)
-                -- Open TUI spec picker
-                ShowTUISpecPicker(self, rule, refreshCallback)
+                -- Open spec picker
+                ShowSpecPicker(self, rule, refreshCallback)
             end,
         })
         addSpecBtn:SetPoint("LEFT", specsLabel, "RIGHT", 8, 0)
@@ -10153,6 +10241,10 @@ UIPanel._renderers = {
     end,
     chat = function(self, scrollContent)
         self:RenderChat(scrollContent)
+    end,
+    -- SCT
+    sctDamage = function(self, scrollContent)
+        self:RenderSctDamage(scrollContent)
     end,
     -- Unit Frames
     ufPlayer = function(self, scrollContent)

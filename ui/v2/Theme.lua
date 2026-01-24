@@ -58,7 +58,7 @@ Theme.Fonts = {
 --------------------------------------------------------------------------------
 
 Theme.Textures = {
-    NOISE_OVERLAY = "Interface\\AddOns\\ScooterMod\\media\\tui\\textures\\noise-overlay",
+    NOISE_OVERLAY = "Interface\\AddOns\\ScooterMod\\media\\textures\\noise-overlay",
 }
 
 --------------------------------------------------------------------------------
@@ -95,8 +95,8 @@ end
 
 function Theme:GetAccentColor()
     local db = addon.db and addon.db.global
-    if db and db.tuiAccentColor then
-        local c = db.tuiAccentColor
+    if db and db.accentColor then
+        local c = db.accentColor
         return c.r or self.DEFAULT_ACCENT.r,
                c.g or self.DEFAULT_ACCENT.g,
                c.b or self.DEFAULT_ACCENT.b,
@@ -109,7 +109,7 @@ function Theme:SetAccentColor(r, g, b, a)
     if not addon.db or not addon.db.global then
         return false
     end
-    addon.db.global.tuiAccentColor = {
+    addon.db.global.accentColor = {
         r = r or self.DEFAULT_ACCENT.r,
         g = g or self.DEFAULT_ACCENT.g,
         b = b or self.DEFAULT_ACCENT.b,

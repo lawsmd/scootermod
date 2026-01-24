@@ -156,10 +156,10 @@ Navigation._selectedKey = nil      -- Currently selected navigation item (nil = 
 Navigation._rows = {}              -- References to created row frames
 
 --------------------------------------------------------------------------------
--- Custom TUI Scrollbar
+-- Custom Scrollbar
 --------------------------------------------------------------------------------
 
-local function CreateTUIScrollbar(parent, scrollFrame)
+local function CreateScrollbar(parent, scrollFrame)
     local ar, ag, ab = Theme:GetAccentColor()
 
     -- Scrollbar container (with margin from right edge)
@@ -330,7 +330,7 @@ local function CreateTUIScrollbar(parent, scrollFrame)
     end)
 
     -- Subscribe to theme updates
-    Theme:Subscribe("TUIScrollbar_" .. tostring(scrollbar), function(r, g, b)
+    Theme:Subscribe("Scrollbar_" .. tostring(scrollbar), function(r, g, b)
         if scrollbar._track then
             scrollbar._track:SetColorTexture(r, g, b, 0.1)
         end
@@ -350,7 +350,7 @@ function Navigation:Create(parent)
     if not parent then return nil end
 
     -- Create main navigation frame (no background - inherits from parent)
-    local navFrame = CreateFrame("Frame", "ScooterTUINavFrame", parent)
+    local navFrame = CreateFrame("Frame", "ScooterNavFrame", parent)
     navFrame:SetWidth(NAV_WIDTH)
     navFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", Theme.BORDER_WIDTH, -(80 + Theme.BORDER_WIDTH))
     navFrame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", Theme.BORDER_WIDTH, Theme.BORDER_WIDTH)
@@ -365,7 +365,7 @@ function Navigation:Create(parent)
     navFrame._separator = separator
 
     -- Create custom scroll frame (no template - we build our own)
-    local scrollFrame = CreateFrame("ScrollFrame", "ScooterTUINavScrollFrame", navFrame)
+    local scrollFrame = CreateFrame("ScrollFrame", "ScooterNavScrollFrame", navFrame)
     scrollFrame:SetPoint("TOPLEFT", navFrame, "TOPLEFT", PADDING_LEFT, -PADDING_TOP)
     scrollFrame:SetPoint("BOTTOMRIGHT", navFrame, "BOTTOMRIGHT", -(SCROLLBAR_RIGHT_MARGIN + SCROLLBAR_WIDTH + 4), PADDING_TOP)
     scrollFrame:EnableMouseWheel(true)
@@ -391,14 +391,14 @@ function Navigation:Create(parent)
     end)
 
     -- Content frame that will hold all nav items
-    local contentFrame = CreateFrame("Frame", "ScooterTUINavContent", scrollFrame)
+    local contentFrame = CreateFrame("Frame", "ScooterNavContent", scrollFrame)
     contentFrame:SetWidth(scrollFrame:GetWidth() or (NAV_WIDTH - PADDING_LEFT - SCROLLBAR_RIGHT_MARGIN - SCROLLBAR_WIDTH - 4))
     scrollFrame:SetScrollChild(contentFrame)
     navFrame._content = contentFrame
     navFrame._scrollFrame = scrollFrame
 
-    -- Create custom TUI scrollbar
-    local scrollbar = CreateTUIScrollbar(navFrame, scrollFrame)
+    -- Create custom scrollbar
+    local scrollbar = CreateScrollbar(navFrame, scrollFrame)
     navFrame._scrollbar = scrollbar
 
     -- Update scrollbar when scroll changes
@@ -425,7 +425,7 @@ function Navigation:Create(parent)
     self._frame = navFrame
 
     -- Subscribe to theme updates
-    Theme:Subscribe("TUINavigation_Frame", function(r, g, b)
+    Theme:Subscribe("Navigation_Frame", function(r, g, b)
         if navFrame._separator then
             navFrame._separator:SetColorTexture(r, g, b, 0.4)
         end
@@ -656,8 +656,8 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
     local horizLine = row:CreateTexture(nil, "ARTWORK")
     horizLine:SetHeight(TREE_LINE_WIDTH)
     horizLine:SetColorTexture(ar, ag, ab, TREE_LINE_COLOR_ALPHA)
-    horizLine:SetPoint("LEFT", row, "LEFT", 10, 0)
-    horizLine:SetWidth(TREE_LINE_HORIZONTAL_LENGTH)
+    horizLine:SetPoint("LEFT", row, "LEFT", 10 + TREE_LINE_WIDTH, 0)
+    horizLine:SetWidth(TREE_LINE_HORIZONTAL_LENGTH - TREE_LINE_WIDTH)
     treeLines.horizontal = horizLine
 
     row._treeLines = treeLines
@@ -857,7 +857,7 @@ end
 --------------------------------------------------------------------------------
 
 function Navigation:Cleanup()
-    Theme:Unsubscribe("TUINavigation_Frame")
+    Theme:Unsubscribe("Navigation_Frame")
 
     for _, row in ipairs(self._rows) do
         if row then

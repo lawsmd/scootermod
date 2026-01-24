@@ -23,8 +23,8 @@ local ScooterLDB = LDB:NewDataObject("ScooterMod", {
     icon = "Interface\\AddOns\\ScooterMod\\Scooter",
     OnClick = function(self, button)
         -- Both left and right click open settings panel
-        if addon.SettingsPanel and addon.SettingsPanel.Toggle then
-            addon.SettingsPanel:Toggle()
+        if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
+            addon.UI.SettingsPanel:Toggle()
         end
     end,
     OnTooltipShow = function(tooltip)

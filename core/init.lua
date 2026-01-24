@@ -21,6 +21,21 @@ function addon:OnInitialize()
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScooterModDB", self:GetDefaults(), true)
 
+    -- Migrate legacy "tui" prefixed global keys to new names (one release cycle)
+    if self.db and self.db.global then
+        local g = self.db.global
+        if g.tuiAccentColor and not g.accentColor then
+            g.accentColor = g.tuiAccentColor
+        end
+        if g.tuiWindowPosition and not g.windowPosition then
+            g.windowPosition = g.tuiWindowPosition
+        end
+        if g.tuiWindowSize and not g.windowSize then
+            g.windowSize = g.tuiWindowSize
+        end
+        -- Keep old keys for one release cycle, then remove in a follow-up
+    end
+
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
     end
@@ -79,9 +94,9 @@ function addon:GetDefaults()
         global = {
             pendingPresetActivation = nil,
             pendingProfileActivation = nil,
-            -- TUI Settings Panel (global accent color, position)
-            tuiAccentColor = { r = 0, g = 1, b = 0.255, a = 1 },  -- Matrix green #00FF41
-            tuiWindowPosition = nil,  -- Saved as { point, relPoint, x, y }
+            -- Settings Panel (global accent color, position, size)
+            accentColor = { r = 0, g = 1, b = 0.255, a = 1 },  -- Matrix green #00FF41
+            windowPosition = nil,  -- Saved as { point, relPoint, x, y }
         },
         profile = {
             applyAll = {

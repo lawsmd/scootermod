@@ -87,8 +87,8 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
 
     msg = trim(msg)
     if msg == "" then
-        if addon.SettingsPanel and addon.SettingsPanel.Toggle then
-            addon.SettingsPanel:Toggle()
+        if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
+            addon.UI.SettingsPanel:Toggle()
         end
         return
     end
@@ -305,9 +305,19 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         return
     end
 
+    -- /scoot legacy - open the old settings panel
+    if cmd == "legacy" then
+        if addon.SettingsPanel and addon.SettingsPanel.Toggle then
+            addon.SettingsPanel:Toggle()
+        else
+            addon:Print("Legacy settings panel not available.")
+        end
+        return
+    end
+
     -- Fallback: open settings
-    if addon.SettingsPanel and addon.SettingsPanel.Toggle then
-        addon.SettingsPanel:Toggle()
+    if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
+        addon.UI.SettingsPanel:Toggle()
     end
 end
 
@@ -325,24 +335,6 @@ function SlashCmdList.SCOOTERCDM(msg, editBox)
     addon:OpenCooldownManagerSettings()
 end
 
--- /scoot2 - TUI Settings Panel (parallel development)
-SLASH_SCOOTERTUI1 = "/scoot2"
-function SlashCmdList.SCOOTERTUI(msg, editBox)
-    if InCombatLockdown and InCombatLockdown() then
-        if addon and addon.Print then
-            addon:Print("Cannot open settings during combat.")
-        end
-        return
-    end
-
-    if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
-        addon.UI.SettingsPanel:Toggle()
-    else
-        if addon and addon.Print then
-            addon:Print("UI Settings Panel not loaded.")
-        end
-    end
-end
 
 -- NOTE: PLAYER_TARGET_CHANGED is handled in core/init.lua via PLAYER_TARGET_CHANGED()
 -- which calls RefreshOpacityState() - this is combat-safe and properly updates opacity
