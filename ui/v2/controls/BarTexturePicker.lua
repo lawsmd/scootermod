@@ -85,7 +85,7 @@ local function GetTextureDisplayName(key, stripBlizzardPrefix)
             name = displayName
         end
     end
-    if key == "default" then return "— Default (Stock)" end
+    if key == "default" then return "Default (Stock)" end
     -- Strip "Blizzard " prefix when requested (for Blizzard tab to avoid redundancy)
     if stripBlizzardPrefix and name:sub(1, 9) == "Blizzard " then
         name = name:sub(10)

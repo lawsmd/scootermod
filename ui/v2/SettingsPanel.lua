@@ -4969,7 +4969,7 @@ function UIPanel:RenderPRDHealthBar(scrollContent)
 
             inner:AddSlider({
                 label = "Border Thickness",
-                min = 1, max = 8, step = 0.2,
+                min = 1, max = 8, step = 0.5, precision = 1,
                 get = function() return getSetting("borderThickness") or 1 end,
                 set = function(v) setSetting("borderThickness", v) end,
                 minLabel = "1", maxLabel = "8",
@@ -5458,7 +5458,7 @@ function UIPanel:RenderPRDPowerBar(scrollContent)
 
             inner:AddSlider({
                 label = "Border Thickness",
-                min = 1, max = 8, step = 0.2,
+                min = 1, max = 8, step = 0.5, precision = 1,
                 get = function() return getSetting("borderThickness") or 1 end,
                 set = function(v) setSetting("borderThickness", v) end,
                 minLabel = "1", maxLabel = "8",

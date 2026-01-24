@@ -226,7 +226,16 @@ local function styleHealthOverlay(bar, cfg)
     if colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
-        r, g, b, a = 0, 1, 0, 1
+        local unit
+        local parentFrame = bar.GetParent and bar:GetParent()
+        if parentFrame then
+            local okU, u = pcall(function() return parentFrame.unit end)
+            if okU and u then unit = u end
+        end
+        if addon.GetClassColorRGB and unit then
+            local cr, cg, cb = addon.GetClassColorRGB(unit)
+            r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+        end
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1
     else

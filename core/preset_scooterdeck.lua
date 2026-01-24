@@ -3019,9 +3019,6 @@ Presets:Register({
               widthPct = 100,
             },
             classResource = {
-              classResourceCustomPositionEnabled = true,
-              classResourcePosX = 0,
-              classResourcePosY = -145,
               hide = true,
               offsetX = 0,
               offsetY = 0,

@@ -70,83 +70,9 @@ local function queueAfterCombat(component)
     pendingCombatComponents[component] = true
 end
 
-local function getPlayerPlate()
-    if not C_NamePlate or not C_NamePlate.GetNamePlateForUnit then
-        return nil
-    end
-    local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, "player", issecure and issecure())
-    if not ok then
-        plate = nil
-    end
-    if plate and plate.IsForbidden and plate:IsForbidden() then
-        return nil
-    end
-    return plate
-end
-
--- Track the last nameplate we applied PRD styling to, so we can clean up
--- when WoW recycles that nameplate frame to a different unit.
-local lastStyledPRDPlate = nil
-
--- Remove PRD styling from a nameplate that is no longer the player's PRD.
--- This handles the case where WoW recycles a nameplate frame from the player
--- to an enemy unit - without cleanup, the enemy would inherit our styling.
-local function cleanupOldPRDStyling(oldPlate)
-    if not oldPlate then
-        return
-    end
-
-    local uf = oldPlate.UnitFrame
-    if not uf then
-        return
-    end
-
-    local container = uf.HealthBarsContainer
-    if not container then
-        return
-    end
-
-    local healthBar = container.healthBar or container.HealthBar
-    if healthBar then
-        -- Remove ScooterModBG
-        if healthBar.ScooterModBG then
-            pcall(healthBar.ScooterModBG.Hide, healthBar.ScooterModBG)
-            pcall(healthBar.ScooterModBG.SetAlpha, healthBar.ScooterModBG, 0)
-        end
-        -- Remove borders
-        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
-            pcall(addon.BarBorders.ClearBarFrame, healthBar)
-        end
-        if addon.Borders and addon.Borders.HideAll then
-            pcall(addon.Borders.HideAll, healthBar)
-        end
-        -- Clear stored alpha values so they don't persist
-        setProp(healthBar, "_ScooterPRDHealthAlpha", nil)
-    end
-
-    -- Also clean container-level styling
-    setProp(container, "_ScooterPRDHealthAlpha", nil)
-    setProp(container, "_ScooterModBaseWidth", nil)
-    setProp(container, "_ScooterModBaseHeight", nil)
-    setProp(container, "_ScooterModWidthDelta", nil)
-end
-
--- Check if the player's PRD has moved to a different nameplate frame,
--- and clean up the old one if so. This prevents styling from leaking
--- to enemy nameplates when WoW recycles nameplate frames.
-local function ensurePRDCleanup()
-    local currentPlayerPlate = getPlayerPlate()
-
-    -- If we previously styled a different plate, clean it up
-    if lastStyledPRDPlate and lastStyledPRDPlate ~= currentPlayerPlate then
-        cleanupOldPRDStyling(lastStyledPRDPlate)
-    end
-
-    -- Update tracking
-    lastStyledPRDPlate = currentPlayerPlate
-
-    return currentPlayerPlate
-end
+-- Forward declarations for bar overlay functions (defined in Bar Overlay System section below).
+local hidePRDBarOverlay
+local showPRDOriginalFill
 
 -- PRD re-application via events.
 --
@@ -227,7 +153,6 @@ local function ensureHooks(component)
     prdRegisteredComponents[component] = true
 end
 
-local MAX_OFFSET = 500
 local MIN_HEALTH_BAR_WIDTH = 60
 local MAX_HEALTH_BAR_WIDTH = 600
 local MIN_HEALTH_BAR_HEIGHT = 4
@@ -264,16 +189,6 @@ local function ensurePowerBarHooks(component)
     -- INTENTIONALLY EMPTY: No hooks are installed to avoid taint.
     -- Height is applied directly in applyPowerOffsets().
     -- See comment block above for explanation.
-end
-
-local function clampOffsetValue(value)
-    local v = tonumber(value) or 0
-    if v < -MAX_OFFSET then
-        v = -MAX_OFFSET
-    elseif v > MAX_OFFSET then
-        v = MAX_OFFSET
-    end
-    return v
 end
 
 local function clampValue(value, minValue, maxValue)
@@ -342,6 +257,32 @@ local function setSettingValue(component, key, value)
     end
 end
 
+-- Find the Blizzard-native border frame for a PRD bar.
+-- Health bar: border is on the parent container (HealthBarsContainer.border)
+-- Power bar: border is directly on the bar (PowerBar.Border)
+local function findBlizzardBorderFrame(bar)
+    if not bar then return nil end
+    local borderFrame = bar.Border or bar.border
+    if not borderFrame then
+        local ok, parent = pcall(bar.GetParent, bar)
+        if ok and parent then
+            borderFrame = parent.border or parent.Border
+        end
+    end
+    return borderFrame
+end
+
+-- Hide or show the Blizzard-native border frame (Left/Right/Top/Bottom edge textures).
+local function setBlizzardBorderVisible(bar, visible)
+    local borderFrame = findBlizzardBorderFrame(bar)
+    if not borderFrame then return end
+    if visible then
+        pcall(borderFrame.Show, borderFrame)
+    else
+        pcall(borderFrame.Hide, borderFrame)
+    end
+end
+
 local function clearBarBorder(bar)
     if not bar then
         return
@@ -352,6 +293,8 @@ local function clearBarBorder(bar)
     if addon.Borders and addon.Borders.HideAll then
         addon.Borders.HideAll(bar)
     end
+    -- Restore Blizzard's native border when our border is cleared
+    setBlizzardBorderVisible(bar, true)
 end
 
 local function storeOriginalAlpha(frame, storageKey)
@@ -777,29 +720,265 @@ local function applyHealthTextOverlay(comp)
 end
 
 --------------------------------------------------------------------------------
--- Bar Style Functions
+-- Bar Overlay System
+-- Uses overlay textures anchored to StatusBarTexture (auto-follows fill level).
+-- Overlay frames are parented to UIParent to avoid taint on nameplate frames.
+-- Pattern matches Boss/Party/Raid frame overlays (12.0-safe, no secret values).
 --------------------------------------------------------------------------------
 
-local function applyPRDStatusBarStyle(component, statusBar, barKind)
-    if not component or not statusBar then
+local prdBarOverlays = {
+    health = { frame = nil, fgTexture = nil, bgFrame = nil, bgTexture = nil, origFillHidden = false, hookedTexture = nil },
+    power = { frame = nil, fgTexture = nil, bgFrame = nil, bgTexture = nil, origFillHidden = false, hookedTexture = nil },
+}
+
+-- Create or re-anchor the foreground overlay for a PRD bar.
+-- The overlay texture is anchored directly to the StatusBarTexture, so it
+-- automatically resizes as bar value changes (no hooks needed for width tracking).
+local function ensurePRDForegroundOverlay(bar, barType)
+    if not bar then return nil end
+    local storage = prdBarOverlays[barType]
+    if not storage then return nil end
+
+    local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not statusBarTex then return nil end
+
+    if not storage.frame then
+        local overlayFrame = CreateFrame("Frame", nil, UIParent)
+        overlayFrame:SetFrameStrata("MEDIUM")
+        overlayFrame:SetFrameLevel(50)
+
+        local fgTexture = overlayFrame:CreateTexture(nil, "ARTWORK")
+        fgTexture:SetVertTile(false)
+        fgTexture:SetHorizTile(false)
+        fgTexture:SetTexCoord(0, 1, 0, 1)
+
+        storage.frame = overlayFrame
+        storage.fgTexture = fgTexture
+    end
+
+    -- Anchor overlay frame to the StatusBarTexture (the fill portion)
+    storage.frame:ClearAllPoints()
+    storage.frame:SetPoint("TOPLEFT", statusBarTex, "TOPLEFT")
+    storage.frame:SetPoint("BOTTOMRIGHT", statusBarTex, "BOTTOMRIGHT")
+
+    -- Foreground texture fills the overlay frame
+    storage.fgTexture:ClearAllPoints()
+    storage.fgTexture:SetAllPoints(storage.frame)
+
+    return storage
+end
+
+-- Create or re-anchor the background overlay for a PRD bar.
+-- Background covers the full bar area (not just the fill portion).
+local function ensurePRDBackgroundOverlay(bar, barType)
+    if not bar then return nil end
+    local storage = prdBarOverlays[barType]
+    if not storage then return nil end
+
+    if not storage.bgFrame then
+        local bgFrame = CreateFrame("Frame", nil, UIParent)
+        bgFrame:SetFrameStrata("MEDIUM")
+        bgFrame:SetFrameLevel(49)
+
+        local bgTexture = bgFrame:CreateTexture(nil, "BACKGROUND")
+        bgTexture:SetAllPoints(bgFrame)
+
+        storage.bgFrame = bgFrame
+        storage.bgTexture = bgTexture
+    end
+
+    -- Anchor background to the full bar bounds
+    storage.bgFrame:ClearAllPoints()
+    storage.bgFrame:SetPoint("TOPLEFT", bar, "TOPLEFT")
+    storage.bgFrame:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+
+    return storage
+end
+
+-- Hide the original StatusBarTexture fill and hook SetAlpha to keep it hidden.
+-- Tracks which texture instance was hooked; re-hooks if the bar gets a new instance.
+local function hidePRDOriginalFill(bar, barType)
+    local storage = prdBarOverlays[barType]
+    if not storage then return end
+
+    local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not statusBarTex then return end
+
+    pcall(statusBarTex.SetAlpha, statusBarTex, 0)
+    storage.origFillHidden = true
+
+    -- Only hook if this is a new/different StatusBarTexture instance
+    if hooksecurefunc and storage.hookedTexture ~= statusBarTex then
+        storage.hookedTexture = statusBarTex
+        hooksecurefunc(statusBarTex, "SetAlpha", function(self, alpha)
+            if storage.origFillHidden and storage.hookedTexture == self and alpha > 0 then
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if storage.origFillHidden and storage.hookedTexture == self then
+                            pcall(self.SetAlpha, self, 0)
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end
+
+-- Restore the original StatusBarTexture fill visibility.
+-- (Assigns to forward-declared local)
+showPRDOriginalFill = function(bar, barType)
+    local storage = prdBarOverlays[barType]
+    if not storage then return end
+
+    storage.origFillHidden = false
+    if not bar then return end
+    local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if statusBarTex then
+        pcall(statusBarTex.SetAlpha, statusBarTex, 1)
+    end
+end
+
+-- Apply foreground texture overlay to a PRD bar.
+local function applyPRDForegroundStyle(bar, barType, component)
+    if not bar or not component then return end
+
+    local textureKey = ensureSettingValue(component, "styleForegroundTexture") or "default"
+    local colorMode = ensureSettingValue(component, "styleForegroundColorMode") or "default"
+    local tint = ensureColorSetting(component, "styleForegroundTint", {1, 1, 1, 1})
+
+    local isDefaultTex = (textureKey == nil or textureKey == "" or textureKey == "default")
+    local isDefaultColor = (colorMode == nil or colorMode == "" or colorMode == "default")
+
+    if isDefaultTex and isDefaultColor then
+        -- No customization: hide overlay, restore original fill
+        local storage = prdBarOverlays[barType]
+        if storage and storage.frame then
+            storage.frame:Hide()
+        end
+        showPRDOriginalFill(bar, barType)
         return
     end
-    if addon._ApplyToStatusBar then
-        local textureKey = ensureSettingValue(component, "styleForegroundTexture") or "default"
-        local colorMode = ensureSettingValue(component, "styleForegroundColorMode") or "default"
-        local tint = ensureColorSetting(component, "styleForegroundTint", {1, 1, 1, 1})
-        addon._ApplyToStatusBar(statusBar, textureKey, colorMode, tint, "player", barKind, "player")
+
+    -- Ensure overlay exists and is anchored
+    local storage = ensurePRDForegroundOverlay(bar, barType)
+    if not storage then return end
+
+    -- Apply texture
+    local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
+    if resolvedPath then
+        pcall(storage.fgTexture.SetTexture, storage.fgTexture, resolvedPath)
+    else
+        -- Copy from bar's current StatusBarTexture (atlas or file path)
+        local statusBarTex = bar:GetStatusBarTexture()
+        if statusBarTex then
+            local okAtlas, atlasName = pcall(statusBarTex.GetAtlas, statusBarTex)
+            if okAtlas and atlasName and atlasName ~= "" then
+                pcall(storage.fgTexture.SetAtlas, storage.fgTexture, atlasName, true)
+            else
+                local okTex, texPath = pcall(statusBarTex.GetTexture, statusBarTex)
+                if okTex and texPath then
+                    pcall(storage.fgTexture.SetTexture, storage.fgTexture, texPath)
+                end
+            end
+        end
     end
-    if addon._ApplyBackgroundToStatusBar then
-        local bgTexture = ensureSettingValue(component, "styleBackgroundTexture") or "default"
-        local colorMode = ensureSettingValue(component, "styleBackgroundColorMode") or "default"
-        local tint = ensureColorSetting(component, "styleBackgroundTint", {0, 0, 0, 1})
-        local opacity = ensureSettingValue(component, "styleBackgroundOpacity")
-        opacity = tonumber(opacity) or 50
-        opacity = clampValue(math.floor(opacity + 0.5), 0, 100)
-        setSettingValue(component, "styleBackgroundOpacity", opacity)
-        addon._ApplyBackgroundToStatusBar(statusBar, bgTexture, colorMode, tint, opacity, "player", barKind)
+
+    -- Apply color
+    local r, g, b, a = 1, 1, 1, 1
+    if colorMode == "custom" and type(tint) == "table" then
+        r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+    elseif colorMode == "class" then
+        local cr, cg, cb = addon.GetClassColorRGB and addon.GetClassColorRGB("player")
+        r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+    elseif colorMode == "power" and barType == "power" then
+        local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+        r, g, b, a = pr or 1, pg or 1, pb or 1, 1
+    elseif colorMode == "texture" then
+        r, g, b, a = 1, 1, 1, 1  -- Raw texture colors unmodified
+    elseif colorMode == "default" then
+        -- Blizzard's intended bar color
+        if barType == "health" then
+            local hr, hg, hb = addon.GetDefaultHealthColorRGB and addon.GetDefaultHealthColorRGB()
+            r, g, b, a = hr or 0, hg or 1, hb or 0, 1
+        elseif barType == "power" then
+            local pr, pg, pb = addon.GetPowerColorRGB and addon.GetPowerColorRGB("player")
+            r, g, b, a = pr or 1, pg or 1, pb or 1, 1
+        end
     end
+    pcall(storage.fgTexture.SetVertexColor, storage.fgTexture, r, g, b, a)
+
+    -- Show overlay, hide original fill
+    storage.frame:Show()
+    storage.fgTexture:Show()
+    hidePRDOriginalFill(bar, barType)
+end
+
+-- Apply background texture overlay to a PRD bar.
+local function applyPRDBackgroundStyle(bar, barType, component)
+    if not bar or not component then return end
+
+    local bgTextureKey = ensureSettingValue(component, "styleBackgroundTexture") or "default"
+    local colorMode = ensureSettingValue(component, "styleBackgroundColorMode") or "default"
+    local tint = ensureColorSetting(component, "styleBackgroundTint", {0, 0, 0, 1})
+    local opacity = ensureSettingValue(component, "styleBackgroundOpacity")
+    opacity = tonumber(opacity) or 50
+    opacity = clampValue(math.floor(opacity + 0.5), 0, 100)
+    setSettingValue(component, "styleBackgroundOpacity", opacity)
+
+    local isDefaultTex = (bgTextureKey == nil or bgTextureKey == "" or bgTextureKey == "default")
+    local isDefaultColor = (colorMode == nil or colorMode == "" or colorMode == "default")
+
+    if isDefaultTex and isDefaultColor then
+        local storage = prdBarOverlays[barType]
+        if storage and storage.bgFrame then
+            storage.bgFrame:Hide()
+        end
+        return
+    end
+
+    -- Ensure background overlay exists
+    local storage = ensurePRDBackgroundOverlay(bar, barType)
+    if not storage then return end
+
+    -- Apply texture
+    local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(bgTextureKey)
+    if resolvedPath then
+        pcall(storage.bgTexture.SetTexture, storage.bgTexture, resolvedPath)
+    else
+        -- Default: solid color fill
+        if storage.bgTexture.SetColorTexture then
+            pcall(storage.bgTexture.SetColorTexture, storage.bgTexture, 0, 0, 0, 1)
+        end
+    end
+
+    -- Apply color
+    local r, g, b, a = 0, 0, 0, 1
+    if colorMode == "custom" and type(tint) == "table" then
+        r, g, b, a = tint[1] or 0, tint[2] or 0, tint[3] or 0, tint[4] or 1
+    end
+    pcall(storage.bgTexture.SetVertexColor, storage.bgTexture, r, g, b, a)
+
+    -- Apply opacity
+    local alphaValue = opacity / 100
+    pcall(storage.bgFrame.SetAlpha, storage.bgFrame, alphaValue)
+
+    storage.bgFrame:Show()
+    storage.bgTexture:Show()
+end
+
+-- Hide all PRD bar overlays (used during cleanup or when bar is hidden).
+-- (Assigns to forward-declared local)
+hidePRDBarOverlay = function(barType)
+    local storage = prdBarOverlays[barType]
+    if not storage then return end
+    if storage.frame then
+        pcall(storage.frame.Hide, storage.frame)
+    end
+    if storage.bgFrame then
+        pcall(storage.bgFrame.Hide, storage.bgFrame)
+    end
+    storage.origFillHidden = false
+    storage.hookedTexture = nil
 end
 
 local function applyPRDBarBorder(component, statusBar)
@@ -812,10 +991,13 @@ local function applyPRDBarBorder(component, statusBar)
         clearBarBorder(statusBar)
         return
     end
+    -- Hide Blizzard's native border edges (Left/Right/Top/Bottom textures)
+    -- since we are applying our own border to this bar.
+    setBlizzardBorderVisible(statusBar, false)
     local tintEnabled = db.borderTintEnable and true or false
     local tintColor = ensureColorSetting(component, "borderTintColor", {1, 1, 1, 1})
     local thickness = tonumber(db.borderThickness) or 1
-    thickness = clampValue(math.floor(thickness + 0.5), 1, 16)
+    thickness = clampValue(math.floor(thickness * 2 + 0.5) / 2, 1, 16)
     local inset = tonumber(db.borderInset) or 0
     inset = clampValue(math.floor(inset + 0.5), -4, 4)
     setSettingValue(component, "borderThickness", thickness)
@@ -838,7 +1020,7 @@ local function applyPRDBarBorder(component, statusBar)
         local handled = addon.BarBorders.ApplyToBarFrame(statusBar, styleKey, {
             color = color,
             thickness = thickness,
-            levelOffset = 1,
+            levelOffset = 51,
             inset = inset,
         })
         if handled then
@@ -865,6 +1047,7 @@ local function applyPRDBarBorder(component, statusBar)
             color = fallbackColor,
             layer = "OVERLAY",
             layerSublevel = 3,
+            levelOffset = 51,
             expandX = expandX,
             expandY = expandY,
         })
@@ -883,15 +1066,14 @@ local function applyPRDHealthVisuals(component, container)
     setSettingValue(component, "hideBar", hide)
     applyHiddenAlpha(container, hide, "_ScooterPRDHealthAlpha")
     applyHiddenAlpha(statusBar, hide, "_ScooterPRDHealthAlpha")
-    if statusBar.ScooterModBG then
-        applyHiddenAlpha(statusBar.ScooterModBG, hide, "_ScooterPRDHealthAlpha")
-    end
     if hide then
         clearBarBorder(statusBar)
+        hidePRDBarOverlay("health")
         hideTextOverlay("health")
         return
     end
-    applyPRDStatusBarStyle(component, statusBar, "health")
+    applyPRDForegroundStyle(statusBar, "health", component)
+    applyPRDBackgroundStyle(statusBar, "health", component)
     applyPRDBarBorder(component, statusBar)
     applyHealthTextOverlay(component)
 end
@@ -903,15 +1085,14 @@ local function applyPRDPowerVisuals(component, frame)
     local hide = ensureSettingValue(component, "hideBar") and true or false
     setSettingValue(component, "hideBar", hide)
     applyHiddenAlpha(frame, hide, "_ScooterPRDPowerAlpha")
-    if frame.ScooterModBG then
-        applyHiddenAlpha(frame.ScooterModBG, hide, "_ScooterPRDPowerAlpha")
-    end
     if hide then
         clearBarBorder(frame)
+        hidePRDBarOverlay("power")
         hideTextOverlay("power")
         return
     end
-    applyPRDStatusBarStyle(component, frame, "power")
+    applyPRDForegroundStyle(frame, "power", component)
+    applyPRDBackgroundStyle(frame, "power", component)
     applyPRDBarBorder(component, frame)
     applyPowerTextOverlay(component)
 end
@@ -964,47 +1145,6 @@ local function applyScaleToFrame(frame, multiplier, component)
     end
 end
 
-local function getGlobalComponent()
-    if not addon or not addon.Components then
-        return nil
-    end
-    return addon.Components.prdGlobal
-end
-
-local function resolveGlobalOffsets()
-    local component = getGlobalComponent()
-    if not component then
-        return 0, 0
-    end
-
-    local db = component.db or {}
-    local settings = component.settings or {}
-
-    local function readAndClamp(key)
-        local value = db[key]
-        if value == nil and settings[key] then
-            value = settings[key].default
-        end
-        value = clampOffsetValue(value or 0)
-        if component.db then
-            component.db[key] = value
-        end
-        return value
-    end
-
-    local x = readAndClamp("positionX")
-    local y = readAndClamp("positionY")
-    return x, y
-end
-
-local function resolveGlobalScaleMultiplier()
-    local component = getGlobalComponent()
-    if component and component.db then
-        component.db.scale = 100
-    end
-    return 1
-end
-
 local function resolveClassResourceScale(component)
     if not component then
         return 1
@@ -1023,119 +1163,58 @@ local function resolveClassResourceScale(component)
     return value / 100
 end
 
-local function getComponentOffsets(componentId)
-    if componentId == "prdHealth" or componentId == "prdPower" or componentId == "prdClassResource" then
-        return 0, 0
-    end
-    if not addon or not addon.Components then
-        return 0, 0
-    end
-    local component = addon.Components[componentId]
-    local db = component and component.db
-    if not db then
-        return 0, 0
-    end
-    local x = db.positionX
-    if x == nil and db.offsetX ~= nil then
-        x = db.offsetX
-    end
-    local y = db.positionY
-    if y == nil and db.offsetY ~= nil then
-        y = db.offsetY
-    end
-    return clampOffsetValue(x or 0), clampOffsetValue(y or 0)
-end
-
 local function getHealthContainer()
-    local plate = getPlayerPlate()
-    if not plate or not plate.UnitFrame then
+    local prd = PersonalResourceDisplayFrame
+    if not prd then
         return nil
     end
-    local container = plate.UnitFrame.HealthBarsContainer
+    local container = prd.HealthBarsContainer
     if not container or (container.IsForbidden and container:IsForbidden()) then
         return nil
     end
     return container
 end
 
-local function getAggregateOffsetsForFrame(frame)
-    if not frame then
-        return 0, 0
+local function getPowerBar()
+    local prd = PersonalResourceDisplayFrame
+    if not prd then
+        return nil
     end
-
-    local globalX, globalY = resolveGlobalOffsets()
-    local hx, hy = getComponentOffsets("prdHealth")
-    local px, py = getComponentOffsets("prdPower")
-
-    local container = getHealthContainer()
-    if container and frame == container then
-        return hx + globalX, hy + globalY
+    local bar = prd.PowerBar
+    if not bar or (bar.IsForbidden and bar:IsForbidden()) then
+        return nil
     end
-
-    local powerFrame = NamePlateDriverFrame and NamePlateDriverFrame.GetClassNameplateManaBar and NamePlateDriverFrame:GetClassNameplateManaBar()
-    if powerFrame and frame == powerFrame then
-        return px + globalX, py + globalY
-    end
-
-    local altFrame = NamePlateDriverFrame and NamePlateDriverFrame.GetClassNameplateAlternatePowerBar and NamePlateDriverFrame:GetClassNameplateAlternatePowerBar()
-    if altFrame and frame == altFrame then
-        local point, relativeTo = altFrame:GetPoint(1)
-        if relativeTo == powerFrame then
-            return px + globalX, py + globalY
-        elseif relativeTo == container then
-            return hx + globalX, hy + globalY
-        end
-        return 0, 0
-    end
-
-    return 0, 0
+    return bar
 end
 
 local function applyHealthOffsets(component)
-    -- Clean up any old PRD styling before applying to current plate
-    local plate = ensurePRDCleanup()
-    if not plate or not plate.UnitFrame then
+    -- 12.0: PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
+    -- Positioning is handled by Edit Mode; we apply sizing, styling, and visibility.
+    local container = getHealthContainer()
+    if not container then
         return
     end
 
-    local container = plate.UnitFrame.HealthBarsContainer
-    if not container or (container.IsForbidden and container:IsForbidden()) then
-        return
-    end
-
-    local unitFrame = plate.UnitFrame
-    if unitFrame then
-        unitFrame.customOptions = unitFrame.customOptions or {}
-        unitFrame.customOptions.ignoreBarPoints = true
-    end
-    local offsetX, offsetY = resolveGlobalOffsets()
-    local scaleMultiplier = resolveGlobalScaleMultiplier()
-
-    local function safeCall(func, ...)
-        local ok = pcall(func, ...)
-        if not ok then
-            queueAfterCombat(component)
+    -- Hide bar via Hide()/Show() — frame is IsProtected: false
+    local hide = ensureSettingValue(component, "hideBar") and true or false
+    if hide then
+        pcall(container.Hide, container)
+        local statusBar = container.healthBar or container.HealthBar
+        if statusBar then
+            clearBarBorder(statusBar)
         end
-        return ok
-    end
-
-    if not safeCall(container.ClearAllPoints, container) then
+        hidePRDBarOverlay("health")
+        hideTextOverlay("health")
         return
+    else
+        pcall(container.Show, container)
     end
 
-    local baseLeft, baseRight, baseY = 12, -12, 5
+    -- Sizing: apply barWidth/barHeight
     local baseWidth = getProp(container, "_ScooterModBaseWidth")
     if not baseWidth or baseWidth <= 0 then
-        baseWidth = (container.GetWidth and container:GetWidth()) or 0
-        if (not baseWidth or baseWidth <= 0) and plate.UnitFrame and plate.UnitFrame.GetWidth then
-            local parentWidth = plate.UnitFrame:GetWidth()
-            if parentWidth and parentWidth > 0 then
-                baseWidth = parentWidth - (baseLeft - baseRight)
-            end
-        end
-        if not baseWidth or baseWidth <= 0 then
-            baseWidth = 200
-        end
+        local ok, w = pcall(container.GetWidth, container)
+        baseWidth = (ok and w and w > 0) and w or 200
         setProp(container, "_ScooterModBaseWidth", baseWidth)
     end
 
@@ -1147,21 +1226,14 @@ local function applyHealthOffsets(component)
     end
 
     local storedWidth = component.db and component.db.barWidth
-    if not storedWidth or storedWidth < MIN_HEALTH_BAR_WIDTH then
-        storedWidth = component.settings and component.settings.barWidth and component.settings.barWidth.default or baseWidth
+    if storedWidth then
+        storedWidth = clampValue(math.floor(storedWidth + 0.5), MIN_HEALTH_BAR_WIDTH, MAX_HEALTH_BAR_WIDTH)
     end
-    storedWidth = clampValue(math.floor((storedWidth or baseWidth) + 0.5), MIN_HEALTH_BAR_WIDTH, MAX_HEALTH_BAR_WIDTH)
-    if component.db then
-        component.db.barWidth = storedWidth
-    end
-    local widthBase = storedWidth
 
     local baseHeight = getProp(container, "_ScooterModBaseHeight")
     if not baseHeight or baseHeight <= 0 then
-        baseHeight = (container.GetHeight and container:GetHeight()) or 0
-        if not baseHeight or baseHeight <= 0 then
-            baseHeight = 12
-        end
+        local ok, h = pcall(container.GetHeight, container)
+        baseHeight = (ok and h and h > 0) and h or 12
         setProp(container, "_ScooterModBaseHeight", baseHeight)
     end
 
@@ -1173,77 +1245,110 @@ local function applyHealthOffsets(component)
     end
 
     local storedHeight = component.db and component.db.barHeight
-    if not storedHeight or storedHeight < MIN_HEALTH_BAR_HEIGHT then
-        storedHeight = component.settings and component.settings.barHeight and component.settings.barHeight.default or baseHeight
-    end
-    storedHeight = clampValue(math.floor((storedHeight or baseHeight) + 0.5), MIN_HEALTH_BAR_HEIGHT, MAX_HEALTH_BAR_HEIGHT)
-    if component.db then
-        component.db.barHeight = storedHeight
-    end
-    local heightBase = storedHeight
-
-    local desiredWidth = clampValue(widthBase, MIN_HEALTH_BAR_WIDTH, MAX_HEALTH_BAR_WIDTH)
-    local desiredHeight = clampValue(heightBase, MIN_HEALTH_BAR_HEIGHT, MAX_HEALTH_BAR_HEIGHT)
-
-    local widthDelta = (desiredWidth - baseWidth) * 0.5
-    local leftOffset = (baseLeft + offsetX) - widthDelta
-    local rightOffset = (baseRight + offsetX) + widthDelta
-    setProp(container, "_ScooterModWidthDelta", widthDelta)
-    local setter = PixelUtil and PixelUtil.SetPoint
-    if setter then
-        if not safeCall(setter, container, "LEFT", plate.UnitFrame, "LEFT", leftOffset, baseY + offsetY) then
-            return
-        end
-        if not safeCall(setter, container, "RIGHT", plate.UnitFrame, "RIGHT", rightOffset, baseY + offsetY) then
-            return
-        end
-    else
-        if not safeCall(container.SetPoint, container, "LEFT", plate.UnitFrame, "LEFT", leftOffset, baseY + offsetY) then
-            return
-        end
-        if not safeCall(container.SetPoint, container, "RIGHT", plate.UnitFrame, "RIGHT", rightOffset, baseY + offsetY) then
-            return
-        end
+    if storedHeight then
+        storedHeight = clampValue(math.floor(storedHeight + 0.5), MIN_HEALTH_BAR_HEIGHT, MAX_HEALTH_BAR_HEIGHT)
     end
 
-    safeCall(container.SetHeight, container, desiredHeight)
+    local desiredWidth = storedWidth or baseWidth
+    local desiredHeight = storedHeight or baseHeight
+
+    -- Apply sizing
+    if desiredWidth ~= baseWidth then
+        pcall(container.SetWidth, container, desiredWidth)
+    end
+    if desiredHeight ~= baseHeight then
+        pcall(container.SetHeight, container, desiredHeight)
+    end
 
     local statusBar = container.healthBar or container.HealthBar
     if statusBar then
-        if statusBar.SetHeight then
-            safeCall(statusBar.SetHeight, statusBar, desiredHeight)
-        end
-        if statusBar.SetAllPoints then
-            safeCall(statusBar.SetAllPoints, statusBar, container)
-        end
+        pcall(statusBar.SetAllPoints, statusBar, container)
     end
 
-    local mask = container.healthBarMask or container.HealthBarMask or container.mask or container.Mask
-    if mask and mask.SetAllPoints then
-        safeCall(mask.SetAllPoints, mask, container)
-    end
-
-    local background = container.background or container.Background
-    if background and background.SetAllPoints then
-        safeCall(background.SetAllPoints, background, container)
-    end
-
-    applyScaleToFrame(container, scaleMultiplier, component)
+    -- Apply visuals (styling, borders, text overlays)
     applyPRDHealthVisuals(component, container)
 end
 
 local function applyPowerOffsets(component)
-    local plate = getPlayerPlate()
-    if not plate or not plate.UnitFrame then
+    -- 12.0: PRD power bar is PersonalResourceDisplayFrame.PowerBar (IsProtected: false).
+    local frame = getPowerBar()
+    if not frame then
         return
     end
 
-    local container = plate.UnitFrame.HealthBarsContainer
-    if not container or (container.IsForbidden and container:IsForbidden()) then
+    -- Hide bar via Hide()/Show()
+    local hide = ensureSettingValue(component, "hideBar") and true or false
+    if hide then
+        pcall(frame.Hide, frame)
+    else
+        pcall(frame.Show, frame)
+    end
+
+    -- Child frame features (operates on child frames: FullPowerFrame, FeedbackFrame)
+    if Util then
+        if Util.SetFullPowerSpikeHidden then
+            local hideSpikes = (component.db and component.db.hideSpikeAnimations) or hide
+            Util.SetFullPowerSpikeHidden(frame, hideSpikes)
+        end
+        if Util.SetPowerFeedbackHidden then
+            local hideFeedback = (component.db and component.db.hidePowerFeedback) or hide
+            Util.SetPowerFeedbackHidden(frame, hideFeedback)
+        end
+    end
+
+    if hide then
+        clearBarBorder(frame)
+        hidePRDBarOverlay("power")
+        hideTextOverlay("power")
         return
     end
 
-    local frame = _G.ClassNameplateManaBarFrame or (NamePlateDriverFrame and NamePlateDriverFrame.classNamePlatePowerBar)
+    -- Sizing: apply barHeight
+    local baseHeight = getProp(frame, "_ScooterModBaseHeight")
+    if not baseHeight or baseHeight <= 0 then
+        local ok, h = pcall(frame.GetHeight, frame)
+        baseHeight = (ok and h and h > 0) and h or 8
+        setProp(frame, "_ScooterModBaseHeight", baseHeight)
+    end
+
+    if component.settings and component.settings.barHeight then
+        local defaultHeight = math.floor(baseHeight + 0.5)
+        if component.settings.barHeight.default ~= defaultHeight then
+            component.settings.barHeight.default = defaultHeight
+        end
+    end
+
+    local storedHeight = component.db and component.db.barHeight
+    if storedHeight then
+        storedHeight = clampValue(math.floor(storedHeight + 0.5), MIN_POWER_BAR_HEIGHT, MAX_POWER_BAR_HEIGHT)
+        if storedHeight ~= baseHeight then
+            pcall(frame.SetHeight, frame, storedHeight)
+        end
+    end
+
+    -- Apply visuals (styling, text overlays)
+    if frame.GetStatusBarTexture then
+        applyPRDPowerVisuals(component, frame)
+    end
+end
+
+local function applyClassResourceOffsets(component)
+    -- 12.0: Class resource is inside PersonalResourceDisplayFrame.ClassFrameContainer.
+    -- Positioning is handled by Blizzard; we apply scale and visibility.
+    local prd = PersonalResourceDisplayFrame
+    if not prd then
+        return
+    end
+    local classContainer = prd.ClassFrameContainer
+    if not classContainer then
+        return
+    end
+
+    -- The class resource frame is a child of ClassFrameContainer (e.g., prdClassFrame)
+    local frame
+    if classContainer.GetChildren then
+        frame = classContainer:GetChildren()
+    end
     if not frame then
         return
     end
@@ -1251,166 +1356,8 @@ local function applyPowerOffsets(component)
         return
     end
 
-    local scaleMultiplier = resolveGlobalScaleMultiplier()
-
-    local function safeCall(func, ...)
-        local ok = pcall(func, ...)
-        if not ok then
-            queueAfterCombat(component)
-        end
-        return ok
-    end
-
-    -- TAINT INVESTIGATION: We're testing which modifications cause the SetTargetClampingInsets taint.
-    -- 
-    -- HYPOTHESIS: Direct modifications to ClassNameplateManaBarFrame (SetHeight, SetScale, SetAlpha,
-    -- textures, borders, custom properties) may cause taint that propagates to NamePlateDriverFrame.
-    -- Child frame modifications (FullPowerFrame, FeedbackFrame) might be safe.
-    --
-    -- TEST: Skip all direct power bar modifications, but keep child frame features.
-    -- If this fixes the taint, we know which features are safe to keep.
-    
-    -- ========== DISABLED FOR TAINT TESTING ==========
-    -- The following direct power bar modifications are disabled:
-    -- - SetHeight
-    -- - SetScale  
-    -- - Setting custom properties (_ScooterModBaseHeight, _ScooterModBaseScale)
-    -- - Texture/color styling (applyPRDStatusBarStyle)
-    -- - Border styling (applyPRDBarBorder)
-    -- - Alpha changes for hiding (applyHiddenAlpha)
-    -- ================================================
-    
-    -- KEPT: Child frame features only (these MIGHT be safe)
-    if Util then
-        -- Hide Full Power Spike animations (operates on frame.FullPowerFrame, not frame itself)
-        if Util.SetFullPowerSpikeHidden then
-            local hideSpikes = (component.db and component.db.hideSpikeAnimations) or (component.db and component.db.hideBar)
-            Util.SetFullPowerSpikeHidden(frame, hideSpikes)
-        end
-        -- Hide power feedback animation (operates on frame.FeedbackFrame, not frame itself)
-        if Util.SetPowerFeedbackHidden then
-            local hideFeedback = (component.db and component.db.hidePowerFeedback) or (component.db and component.db.hideBar)
-            Util.SetPowerFeedbackHidden(frame, hideFeedback)
-        end
-    end
-    
-    -- DISABLED: Direct power bar styling (causes taint via SetHeight/SetScale/SetAlpha/textures/borders)
-    -- local componentScale = resolveClassResourceScale(component)
-    -- applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
-    -- applyPRDPowerVisuals(component, frame)
-
-end
-
-local function resolveClassMechanicFrame()
-    if not NamePlateDriverFrame or not NamePlateDriverFrame.GetClassNameplateBar then
-        return nil
-    end
-    local frame = NamePlateDriverFrame:GetClassNameplateBar()
-    if frame and frame.IsForbidden and frame:IsForbidden() then
-        return nil
-    end
-    return frame
-end
-
-local function getBottomMostPlayerAttachment()
-    if not NamePlateDriverFrame then
-        return nil
-    end
-    local plate = getPlayerPlate()
-    if not plate or not plate.UnitFrame then
-        return nil
-    end
-
-    local altPower = NamePlateDriverFrame.GetClassNameplateAlternatePowerBar and NamePlateDriverFrame:GetClassNameplateAlternatePowerBar()
-    if altPower and altPower:IsShown() and altPower.GetParent and altPower:GetParent() == plate then
-        return altPower
-    end
-
-    local power = NamePlateDriverFrame.GetClassNameplateManaBar and NamePlateDriverFrame:GetClassNameplateManaBar()
-    if power and power:IsShown() and power.GetParent and power:GetParent() == plate then
-        return power
-    end
-
-    return plate.UnitFrame.HealthBarsContainer
-end
-
-local function applyClassResourceOffsets(component)
-    local frame = resolveClassMechanicFrame()
-    if not frame then
-        return
-    end
-
-    local parent = frame:GetParent()
-    if not parent or (parent.IsForbidden and parent:IsForbidden()) then
-        return
-    end
-
-    local offsetX, offsetY = resolveGlobalOffsets()
-    local scaleMultiplier = resolveGlobalScaleMultiplier()
-
-    local function safeCall(func, ...)
-        local ok = pcall(func, ...)
-        if not ok then
-            queueAfterCombat(component)
-        end
-        return ok
-    end
-
-    local setter = PixelUtil and PixelUtil.SetPoint
-    local point, relativeTo, relativePoint, baseX, baseY
-
-    local playerPlate = getPlayerPlate()
-    if parent == playerPlate then
-        relativeTo = getBottomMostPlayerAttachment()
-        if not relativeTo then
-            return
-        end
-        point = "TOP"
-        relativePoint = "BOTTOM"
-        baseX = 0
-        baseY = frame.paddingOverride or -4
-    else
-        local targetPlate = (C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit("target", issecure and issecure())) or nil
-        if targetPlate and targetPlate.UnitFrame and parent == targetPlate then
-            relativeTo = targetPlate.UnitFrame.name or targetPlate.UnitFrame
-            point = "BOTTOM"
-            relativePoint = "TOP"
-            baseX = 0
-            baseY = 4
-        else
-            return
-        end
-    end
-
-    if not relativeTo then
-        return
-    end
-
-    if relativeTo.IsForbidden and relativeTo:IsForbidden() then
-        return
-    end
-
-    do
-        local relX, relY = getAggregateOffsetsForFrame(relativeTo)
-        baseX = (baseX or 0) - relX
-        baseY = (baseY or 0) - relY
-    end
-
-    if not safeCall(frame.ClearAllPoints, frame) then
-        return
-    end
-
-    local finalX = (baseX or 0) + offsetX
-    local finalY = (baseY or 0) + offsetY
-
-    if setter then
-        safeCall(setter, frame, point, relativeTo, relativePoint, finalX, finalY)
-    else
-        safeCall(frame.SetPoint, frame, point, relativeTo, relativePoint, finalX, finalY)
-    end
-
     local componentScale = resolveClassResourceScale(component)
-    applyScaleToFrame(frame, scaleMultiplier * componentScale, component)
+    applyScaleToFrame(frame, componentScale, component)
     applyPRDClassResourceVisibility(component, frame)
 end
 
@@ -1496,11 +1443,11 @@ addon:RegisterComponentInitializer(function(self)
         supportsEmptyStyleSection = true,
         supportsEmptyVisibilitySection = true,
         settings = {
-            barWidth = { type = "addon", default = MIN_HEALTH_BAR_WIDTH, ui = {
+            barWidth = { type = "addon", default = nil, ui = {
                 label = "Bar Width", widget = "slider", min = MIN_HEALTH_BAR_WIDTH, max = MAX_HEALTH_BAR_WIDTH, step = 1, section = "Sizing", order = 1, disableTextInput = true,
                 tooltip = "Adjusts the health bar width."
             }},
-            barHeight = { type = "addon", default = MIN_HEALTH_BAR_HEIGHT, ui = {
+            barHeight = { type = "addon", default = nil, ui = {
                 label = "Bar Height", widget = "slider", min = MIN_HEALTH_BAR_HEIGHT, max = MAX_HEALTH_BAR_HEIGHT, step = 1, section = "Sizing", order = 2, disableTextInput = true,
                 tooltip = "Adjusts the health bar height."
             }},
@@ -1522,7 +1469,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {
@@ -1547,7 +1494,6 @@ addon:RegisterComponentInitializer(function(self)
     })
     health.ApplyStyling = function(comp)
         applyHealthOffsets(comp)
-        applyHealthTextOverlay(comp)
     end
     ensureHooks(health)
     self:RegisterComponent(health)
@@ -1555,14 +1501,14 @@ addon:RegisterComponentInitializer(function(self)
     local power = Component:New({
         id = "prdPower",
         name = "PRD — Power Bar",
-        frameName = "ClassNameplateManaBarFrame",
+        frameName = nil,
         supportsEmptyStyleSection = true,
         supportsEmptyVisibilitySection = true,
         settings = {
             -- NOTE: Bar Width was removed because Blizzard's SetupClassNameplateBars() continuously
             -- re-applies dual anchors (TOPLEFT+TOPRIGHT) which override any custom width. This caused
             -- visible flickering during combat transitions. Width is now controlled by Health Bar width.
-            barHeight = { type = "addon", default = MIN_POWER_BAR_HEIGHT, ui = {
+            barHeight = { type = "addon", default = nil, ui = {
                 label = "Bar Height", widget = "slider", min = MIN_POWER_BAR_HEIGHT, max = MAX_POWER_BAR_HEIGHT, step = 1, section = "Sizing", order = 1, disableTextInput = true,
                 tooltip = "Adjusts the power bar height."
             }},
@@ -1584,7 +1530,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Tint Color", widget = "color", section = "Border", order = 3,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 4,
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             hideBar = { type = "addon", default = false, ui = {
@@ -1616,7 +1562,6 @@ addon:RegisterComponentInitializer(function(self)
     power.ApplyStyling = function(comp)
         ensurePowerBarHooks(comp)
         applyPowerOffsets(comp)
-        applyPowerTextOverlay(comp)
     end
     ensureHooks(power)
     self:RegisterComponent(power)
