@@ -896,34 +896,53 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             if v < 0 then v = 0 elseif v > 2 then v = 2 end
             editModeValue = v
         elseif settingId == "frameWidth" then
-            -- Frame Width slider: 300-600
+            -- Frame Width slider: 300-600, step 10
             setting.settingId = setting.settingId or ResolveSettingId(frame, "frame_width") or setting.settingId
             local v = tonumber(dbValue) or 300
+            v = math.floor((v - 300) / 10 + 0.5) * 10 + 300
             if v < 300 then v = 300 elseif v > 600 then v = 600 end
             editModeValue = v
         elseif settingId == "frameHeight" then
-            -- Frame Height slider: 120-400
+            -- Frame Height slider: 120-400, step 10
             setting.settingId = setting.settingId or ResolveSettingId(frame, "frame_height") or setting.settingId
             local v = tonumber(dbValue) or 200
+            v = math.floor((v - 120) / 10 + 0.5) * 10 + 120
             if v < 120 then v = 120 elseif v > 400 then v = 400 end
             editModeValue = v
         elseif settingId == "barHeight" then
-            -- Bar Height slider: 15-40
+            -- Bar Height slider: 18-40, step 1
             setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_height") or setting.settingId
             local v = tonumber(dbValue) or 20
-            if v < 15 then v = 15 elseif v > 40 then v = 40 end
+            v = math.floor(v + 0.5)
+            if v < 18 then v = 18 elseif v > 40 then v = 40 end
             editModeValue = v
         elseif settingId == "padding" then
-            -- Padding slider: 2-10
+            -- Padding slider: 2-10, step 1
             setting.settingId = setting.settingId or ResolveSettingId(frame, "padding") or setting.settingId
             local v = tonumber(dbValue) or 4
+            v = math.floor(v + 0.5)
             if v < 2 then v = 2 elseif v > 10 then v = 10 end
             editModeValue = v
         elseif settingId == "background" then
-            -- Background transparency slider: 0-100%
+            -- Background transparency slider: 0-100%, step 5
             setting.settingId = setting.settingId or ResolveSettingId(frame, "background") or setting.settingId
             local v = tonumber(dbValue) or 80
+            v = math.floor(v / 5 + 0.5) * 5
             if v < 0 then v = 0 elseif v > 100 then v = 100 end
+            editModeValue = v
+        elseif settingId == "opacity" then
+            -- Opacity slider: 50-100, step 5
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "opacity") or setting.settingId
+            local v = tonumber(dbValue) or 100
+            v = math.floor((v - 50) / 5 + 0.5) * 5 + 50
+            if v < 50 then v = 50 elseif v > 100 then v = 100 end
+            editModeValue = v
+        elseif settingId == "textSize" then
+            -- Text Size slider: 50-150, step 10
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "text_size") or setting.settingId
+            local v = tonumber(dbValue) or 100
+            v = math.floor((v - 50) / 10 + 0.5) * 10 + 50
+            if v < 50 then v = 50 elseif v > 150 then v = 150 end
             editModeValue = v
         elseif settingId == "visibility" then
             -- Visibility dropdown: 0=Always, 1=InCombat, 2=Hidden
@@ -932,7 +951,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             if v < 0 then v = 0 elseif v > 2 then v = 2 end
             editModeValue = v
         else
-            -- Default numeric handling for other DamageMeter settings (opacity, textSize)
+            -- Default numeric handling for other DamageMeter settings
             editModeValue = tonumber(dbValue) or 0
         end
     else
@@ -1643,6 +1662,61 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         if v == 1 then dbValue = "icon" elseif v == 2 then dbValue = "name" else dbValue = "both" end
         if component.db[settingId] ~= dbValue then component.db[settingId] = dbValue return true end
         return false
+    elseif component and component.id == "damageMeter" then
+        -- DamageMeter-specific back-sync handling
+        if settingId == "showSpecIcon" or settingId == "showClassColor" then
+            -- Checkbox: 1/0 -> boolean
+            dbValue = (tonumber(editModeValue) or 0) == 1
+        elseif settingId == "frameWidth" then
+            -- Frame Width slider: snap to step 10, range 300-600
+            local v = tonumber(editModeValue) or 300
+            v = math.floor((v - 300) / 10 + 0.5) * 10 + 300
+            if v < 300 then v = 300 elseif v > 600 then v = 600 end
+            dbValue = v
+        elseif settingId == "frameHeight" then
+            -- Frame Height slider: snap to step 10, range 120-400
+            local v = tonumber(editModeValue) or 200
+            v = math.floor((v - 120) / 10 + 0.5) * 10 + 120
+            if v < 120 then v = 120 elseif v > 400 then v = 400 end
+            dbValue = v
+        elseif settingId == "barHeight" then
+            -- Bar Height slider: snap to step 1, range 18-40
+            local v = tonumber(editModeValue) or 20
+            v = math.floor(v + 0.5)
+            if v < 18 then v = 18 elseif v > 40 then v = 40 end
+            dbValue = v
+        elseif settingId == "padding" then
+            -- Padding slider: snap to step 1, range 2-10
+            local v = tonumber(editModeValue) or 4
+            v = math.floor(v + 0.5)
+            if v < 2 then v = 2 elseif v > 10 then v = 10 end
+            dbValue = v
+        elseif settingId == "opacity" then
+            -- Opacity slider: snap to step 5, range 50-100
+            local v = tonumber(editModeValue) or 100
+            v = math.floor((v - 50) / 5 + 0.5) * 5 + 50
+            if v < 50 then v = 50 elseif v > 100 then v = 100 end
+            dbValue = v
+        elseif settingId == "background" then
+            -- Background Opacity slider: snap to step 5, range 0-100
+            local v = tonumber(editModeValue) or 80
+            v = math.floor(v / 5 + 0.5) * 5
+            if v < 0 then v = 0 elseif v > 100 then v = 100 end
+            dbValue = v
+        elseif settingId == "textSize" then
+            -- Text Size slider: snap to step 10, range 50-150
+            local v = tonumber(editModeValue) or 100
+            v = math.floor((v - 50) / 10 + 0.5) * 10 + 50
+            if v < 50 then v = 50 elseif v > 150 then v = 150 end
+            dbValue = v
+        elseif settingId == "style" or settingId == "visibility" then
+            -- Dropdowns: 0, 1, 2
+            local v = tonumber(editModeValue) or 0
+            if v < 0 then v = 0 elseif v > 2 then v = 2 end
+            dbValue = v
+        else
+            dbValue = tonumber(editModeValue) or 0
+        end
     else
         dbValue = tonumber(editModeValue) or 0
     end
@@ -2584,6 +2658,24 @@ function addon.EditMode.Initialize()
             LEO_flag2._forceIndexBased = LEO_flag2._forceIndexBased or {}
             LEO_flag2._forceIndexBased[sysCB] = LEO_flag2._forceIndexBased[sysCB] or {}
             LEO_flag2._forceIndexBased[sysCB][settingBS] = true
+        end
+    end
+
+    -- Register DamageMeter sliders as index-based for proper value conversion
+    do
+        local LEO = LibStub and LibStub("LibEditModeOverride-1.0")
+        if LEO and _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeDamageMeterSetting then
+            local sysDM = _G.Enum.EditModeSystem.DamageMeter
+            local EM = _G.Enum.EditModeDamageMeterSetting
+            LEO._forceIndexBased = LEO._forceIndexBased or {}
+            LEO._forceIndexBased[sysDM] = LEO._forceIndexBased[sysDM] or {}
+            if EM.FrameWidth then LEO._forceIndexBased[sysDM][EM.FrameWidth] = true end
+            if EM.FrameHeight then LEO._forceIndexBased[sysDM][EM.FrameHeight] = true end
+            if EM.BarHeight then LEO._forceIndexBased[sysDM][EM.BarHeight] = true end
+            if EM.Padding then LEO._forceIndexBased[sysDM][EM.Padding] = true end
+            if EM.Transparency then LEO._forceIndexBased[sysDM][EM.Transparency] = true end
+            if EM.BackgroundTransparency then LEO._forceIndexBased[sysDM][EM.BackgroundTransparency] = true end
+            if EM.TextSize then LEO._forceIndexBased[sysDM][EM.TextSize] = true end
         end
     end
 end

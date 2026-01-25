@@ -6247,7 +6247,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
     builder:AddSelector({
         label = "Style",
         description = "Choose the visual style for the damage meter frame. This setting syncs with Edit Mode.",
-        values = { [0] = "Default", [1] = "Bordered", [2] = "Thin" },
+        values = { [0] = "Default", [1] = "Thin", [2] = "Bordered" },
         order = { 0, 1, 2 },
         emphasized = true,
         get = function() return getSetting("style") or 0 end,
@@ -6283,15 +6283,6 @@ function UIPanel:RenderDamageMeter(scrollContent)
                 end,
             })
             inner:AddSlider({
-                label = "Bar Height",
-                min = 15, max = 40, step = 1,
-                get = function() return getSetting("barHeight") or 20 end,
-                set = function(value)
-                    setSetting("barHeight", value)
-                    syncEditModeSetting("barHeight")
-                end,
-            })
-            inner:AddSlider({
                 label = "Padding",
                 min = 2, max = 10, step = 1,
                 get = function() return getSetting("padding") or 4 end,
@@ -6314,28 +6305,29 @@ function UIPanel:RenderDamageMeter(scrollContent)
                 componentId = "damageMeter",
                 sectionKey = "barsTabs",
                 tabs = {
+                    { key = "sizing", label = "Sizing" },
                     { key = "style", label = "Style" },
                     { key = "border", label = "Border" },
                 },
                 buildContent = {
+                    sizing = function(tabContent, tabInner)
+                        tabInner:AddSlider({
+                            label = "Bar Height",
+                            min = 18, max = 40, step = 1,
+                            get = function() return getSetting("barHeight") or 20 end,
+                            set = function(value)
+                                setSetting("barHeight", value)
+                                syncEditModeSetting("barHeight")
+                            end,
+                        })
+                        tabInner:Finalize()
+                    end,
                     style = function(tabContent, tabInner)
                         tabInner:AddBarTextureSelector({
                             label = "Bar Texture",
                             get = function() return getSetting("barTexture") or "pointed" end,
                             set = function(value)
                                 setSetting("barTexture", value)
-                            end,
-                        })
-                        tabInner:AddColorPicker({
-                            label = "Foreground Color",
-                            description = "Bar fill color (disabled when using class colors).",
-                            get = function()
-                                local c = getSetting("barForegroundColor")
-                                if c then return c.r, c.g, c.b, c.a end
-                                return 0.8, 0.2, 0.2, 1
-                            end,
-                            set = function(r, g, b, a)
-                                setSetting("barForegroundColor", { r = r, g = g, b = b, a = a or 1 })
                             end,
                         })
                         tabInner:AddToggle({
@@ -6345,7 +6337,25 @@ function UIPanel:RenderDamageMeter(scrollContent)
                             set = function(value)
                                 setSetting("showClassColor", value)
                                 syncEditModeSetting("showClassColor")
+                                -- Refresh the Foreground Color disabled state
+                                if inner and inner.RefreshWidgetState then
+                                    inner:RefreshWidgetState("barForegroundColor")
+                                end
                             end,
+                        })
+                        tabInner:AddColorPicker({
+                            label = "Foreground Color",
+                            description = "Bar fill color (disabled when using class colors).",
+                            widgetKey = "barForegroundColor",
+                            get = function()
+                                local c = getSetting("barForegroundColor")
+                                if c then return c.r, c.g, c.b, c.a end
+                                return 0.8, 0.2, 0.2, 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("barForegroundColor", { r = r, g = g, b = b, a = a or 1 })
+                            end,
+                            disabled = function() return getSetting("showClassColor") end,
                         })
                         tabInner:AddColorPicker({
                             label = "Background Color",
@@ -6359,6 +6369,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
                             end,
                             hasAlpha = true,
                         })
+                        tabInner:Finalize()
                     end,
                     border = function(tabContent, tabInner)
                         tabInner:AddToggle({
@@ -6400,6 +6411,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
                                 setSetting("barBorderThickness", value)
                             end,
                         })
+                        tabInner:Finalize()
                     end,
                 },
             })
@@ -6478,16 +6490,6 @@ function UIPanel:RenderDamageMeter(scrollContent)
                 },
                 buildContent = {
                     title = function(tabContent, tabInner)
-                        tabInner:AddSlider({
-                            label = "Text Size",
-                            description = "Scale for header/dropdown text. Syncs with Edit Mode.",
-                            min = 50, max = 150, step = 5,
-                            get = function() return getSetting("textSize") or 100 end,
-                            set = function(value)
-                                setSetting("textSize", value)
-                                syncEditModeSetting("textSize")
-                            end,
-                        })
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function() return getSetting("titleFont") or "default" end,
@@ -6515,8 +6517,21 @@ function UIPanel:RenderDamageMeter(scrollContent)
                                 setSetting("titleColor", { r = r, g = g, b = b, a = a or 1 })
                             end,
                         })
+                        tabInner:Finalize()
                     end,
                     names = function(tabContent, tabInner)
+                        tabInner:AddSlider({
+                            label = "Text Size",
+                            description = "Scale for header/dropdown text. Syncs with Edit Mode.",
+                            min = 50, max = 150, step = 10,
+                            get = function() return getSetting("textSize") or 100 end,
+                            set = function(value) setSetting("textSize", value) end,
+                            debounceKey = "UI_damageMeter_textSize",
+                            debounceDelay = 0.2,
+                            onEditModeSync = function(newValue)
+                                syncEditModeSetting("textSize")
+                            end,
+                        })
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function() return getSetting("namesFont") or "default" end,
@@ -6552,8 +6567,21 @@ function UIPanel:RenderDamageMeter(scrollContent)
                                 setSetting("namesColor", { r = r, g = g, b = b, a = a or 1 })
                             end,
                         })
+                        tabInner:Finalize()
                     end,
                     numbers = function(tabContent, tabInner)
+                        tabInner:AddSlider({
+                            label = "Text Size",
+                            description = "Scale for header/dropdown text. Syncs with Edit Mode.",
+                            min = 50, max = 150, step = 10,
+                            get = function() return getSetting("textSize") or 100 end,
+                            set = function(value) setSetting("textSize", value) end,
+                            debounceKey = "UI_damageMeter_textSize",
+                            debounceDelay = 0.2,
+                            onEditModeSync = function(newValue)
+                                syncEditModeSetting("textSize")
+                            end,
+                        })
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function() return getSetting("numbersFont") or "default" end,
@@ -6589,6 +6617,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
                                 setSetting("numbersColor", { r = r, g = g, b = b, a = a or 1 })
                             end,
                         })
+                        tabInner:Finalize()
                     end,
                 },
             })
@@ -6645,6 +6674,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
                                 setSetting("windowBorderThickness", value)
                             end,
                         })
+                        tabInner:Finalize()
                     end,
                     background = function(tabContent, tabInner)
                         tabInner:AddSlider({
@@ -6684,6 +6714,7 @@ function UIPanel:RenderDamageMeter(scrollContent)
                             end,
                             hasAlpha = true,
                         })
+                        tabInner:Finalize()
                     end,
                 },
             })
