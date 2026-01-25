@@ -26,6 +26,12 @@ local SELECTOR_ROW_HEIGHT_WITH_DESC = 80
 local SELECTOR_PADDING = 12
 local SELECTOR_BORDER_ALPHA = 0.5
 
+-- Emphasized (hero) styling constants
+local EMPHASIZED_ROW_HEIGHT = 48
+local EMPHASIZED_ROW_HEIGHT_WITH_DESC = 90
+local EMPHASIZED_LABEL_SIZE = 14
+local EMPHASIZED_BORDER_WIDTH = 3
+
 --------------------------------------------------------------------------------
 -- Selector: Dropdown/selector with arrow buttons on each side
 --------------------------------------------------------------------------------
@@ -48,6 +54,7 @@ local SELECTOR_BORDER_ALPHA = 0.5
 --   syncCooldown: Optional cooldown in seconds (e.g., 0.4) to prevent rapid changes
 --                 during Edit Mode sync. When set, arrows are locked after each
 --                 change until the cooldown expires.
+--   emphasized  : Boolean, use "Hero" styling for master controls
 --------------------------------------------------------------------------------
 
 function Controls:CreateSelector(options)
@@ -66,9 +73,19 @@ function Controls:CreateSelector(options)
     local selectorWidth = options.width or SELECTOR_DEFAULT_WIDTH
     local name = options.name
     local syncCooldown = options.syncCooldown  -- Optional cooldown for Edit Mode sync
+    local emphasized = options.emphasized or false
 
     local hasDesc = description and description ~= ""
-    local rowHeight = hasDesc and SELECTOR_ROW_HEIGHT_WITH_DESC or SELECTOR_ROW_HEIGHT
+    local rowHeight
+    if emphasized then
+        rowHeight = hasDesc and EMPHASIZED_ROW_HEIGHT_WITH_DESC or EMPHASIZED_ROW_HEIGHT
+    else
+        rowHeight = hasDesc and SELECTOR_ROW_HEIGHT_WITH_DESC or SELECTOR_ROW_HEIGHT
+    end
+
+    -- Use appropriate sizes for emphasized vs normal
+    local labelFontSize = emphasized and EMPHASIZED_LABEL_SIZE or 13
+    local leftBorderWidth = emphasized and EMPHASIZED_BORDER_WIDTH or 0
 
     -- Build ordered key list
     local keyList = {}
@@ -106,19 +123,44 @@ function Controls:CreateSelector(options)
     hoverBg:Hide()
     row._hoverBg = hoverBg
 
-    -- Row border (subtle line below)
-    local rowBorder = row:CreateTexture(nil, "BORDER", nil, -1)
-    rowBorder:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-    rowBorder:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
-    rowBorder:SetHeight(1)
-    rowBorder:SetColorTexture(ar, ag, ab, 0.2)
+    -- Row border (subtle line below, plus left accent border for emphasized)
+    local rowBorder = {}
+    row._emphasized = emphasized
+
+    local bottom = row:CreateTexture(nil, "BORDER", nil, -1)
+    bottom:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+    bottom:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    bottom:SetHeight(1)
+    bottom:SetColorTexture(ar, ag, ab, 0.2)
+    rowBorder.BOTTOM = bottom
+
+    -- Add left accent border for emphasized selectors
+    if emphasized and leftBorderWidth > 0 then
+        local leftBorder = row:CreateTexture(nil, "BORDER", nil, -1)
+        leftBorder:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        leftBorder:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+        leftBorder:SetWidth(leftBorderWidth)
+        leftBorder:SetColorTexture(ar, ag, ab, 1)
+        rowBorder.LEFT = leftBorder
+
+        -- Faint background highlight for emphasized
+        local emphBg = row:CreateTexture(nil, "BACKGROUND", nil, -7)
+        emphBg:SetPoint("TOPLEFT", leftBorderWidth, 0)
+        emphBg:SetPoint("BOTTOMRIGHT", 0, 0)
+        emphBg:SetColorTexture(ar, ag, ab, 0.03)
+        row._emphBg = emphBg
+    end
+
     row._rowBorder = rowBorder
+
+    -- Calculate label padding (account for left border on emphasized)
+    local labelLeftPad = SELECTOR_PADDING + leftBorderWidth
 
     -- Label text (left side)
     local labelFS = row:CreateFontString(nil, "OVERLAY")
     local labelFont = theme:GetFont("LABEL")
-    labelFS:SetFont(labelFont, 13, "")
-    labelFS:SetPoint("LEFT", row, "LEFT", SELECTOR_PADDING, hasDesc and 6 or 0)
+    labelFS:SetFont(labelFont, labelFontSize, "")
+    labelFS:SetPoint("LEFT", row, "LEFT", labelLeftPad, hasDesc and (emphasized and 12 or 6) or 0)
     labelFS:SetText(label)
     labelFS:SetTextColor(ar, ag, ab, 1)
     row._label = labelFS
@@ -127,8 +169,9 @@ function Controls:CreateSelector(options)
     if hasDesc then
         local descFS = row:CreateFontString(nil, "OVERLAY")
         local descFont = theme:GetFont("VALUE")
-        descFS:SetFont(descFont, 11, "")
-        descFS:SetPoint("TOPLEFT", labelFS, "BOTTOMLEFT", 0, -2)
+        local descFontSize = emphasized and 12 or 11
+        descFS:SetFont(descFont, descFontSize, "")
+        descFS:SetPoint("TOPLEFT", labelFS, "BOTTOMLEFT", 0, emphasized and -4 or -2)
         descFS:SetPoint("RIGHT", row, "RIGHT", -(selectorWidth + SELECTOR_PADDING * 2), 0)
         descFS:SetText(description)
         descFS:SetTextColor(dimR, dimG, dimB, 1)

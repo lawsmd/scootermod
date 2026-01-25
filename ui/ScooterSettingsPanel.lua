@@ -2006,6 +2006,7 @@ local function BuildCategories()
 	addEntry("microBar", addon.SettingsPanel.RenderMicroBar())
 
 	-- Interface children
+	addEntry("damageMeter", addon.SettingsPanel.RenderDamageMeter())
 	addEntry("tooltip", addon.SettingsPanel.RenderTooltip())
     addEntry("minimap", addon.SettingsPanel.RenderMinimap())
     addEntry("objectiveTracker", addon.SettingsPanel.RenderObjectiveTracker())
@@ -2023,6 +2024,7 @@ local function BuildCategories()
 			{ type = "child", key = "applyAllTextures", label = "Bar Textures" },
 		}},
         { type = "parent", key = "Interface", label = "Interface", collapsible = true, children = {
+            { type = "child", key = "damageMeter", label = "Damage Meters" },
             { type = "child", key = "tooltip", label = "Tooltip" },
             { type = "child", key = "objectiveTracker", label = "Objective Tracker" },
             { type = "child", key = "minimap", label = "Minimap" },

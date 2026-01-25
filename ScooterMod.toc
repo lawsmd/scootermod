@@ -61,6 +61,7 @@ core/components/unitframes/scalemult.lua
 core/components/unitframes/offscreenunlock.lua
 core/components/tooltip.lua
 core/components/objectivetracker.lua
+core/components/damagemeters.lua
 core/debug.lua
 core/taintdebug.lua
 
@@ -81,6 +82,7 @@ ui/panel/builders/cdm_components.lua
 ui/panel/builders/prd_components.lua
 ui/panel/builders/tooltip.lua
 ui/panel/builders/objectivetracker.lua
+ui/panel/builders/damagemeters.lua
 ui/panel/builders/generic_components.lua
 ui/panel/builders/actionbars.lua
 ui/panel/builders/unitframes/shared.lua

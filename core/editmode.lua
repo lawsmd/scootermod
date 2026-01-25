@@ -171,6 +171,26 @@ local function ResolveSettingId(frame, logicalKey)
         if lk == "text_size" or lk == "textsize" then return 2 end
     end
 
+    -- Damage Meter: Use enum-based IDs if available, otherwise fall through to dynamic scanner.
+    local dmSys = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.DamageMeter
+    if dmSys and sys == dmSys then
+        local lk = _lower(logicalKey)
+        local EM = _G.Enum and _G.Enum.EditModeDamageMeterSetting
+        if EM then
+            if lk == "style" then return EM.Style end
+            if lk == "frame_width" or lk == "framewidth" then return EM.FrameWidth end
+            if lk == "frame_height" or lk == "frameheight" then return EM.FrameHeight end
+            if lk == "bar_height" or lk == "barheight" then return EM.BarHeight end
+            if lk == "padding" then return EM.Padding end
+            if lk == "opacity" or lk == "transparency" then return EM.Transparency end
+            if lk == "background" or lk == "backgroundtransparency" then return EM.BackgroundTransparency end
+            if lk == "text_size" or lk == "textsize" then return EM.TextSize end
+            if lk == "visibility" then return EM.Visibility end
+            if lk == "show_spec_icon" or lk == "showspecicon" then return EM.ShowSpecIcon end
+            if lk == "show_class_color" or lk == "showclasscolor" then return EM.ShowClassColor end
+        end
+    end
+
     local auraSystem = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.AuraFrame
     local cacheKey = logicalKey
     if sys == auraSystem then
@@ -862,6 +882,59 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
         setting.settingId = setting.settingId or ResolveSettingId(frame, "hide_when_inactive") or setting.settingId
         local v = not not dbValue
         editModeValue = v and 1 or 0
+    -- Damage Meter settings
+    elseif component and component.id == "damageMeter" then
+        -- DamageMeter-specific handling
+        if settingId == "showSpecIcon" or settingId == "showClassColor" then
+            -- Checkbox settings: boolean -> 0/1
+            setting.settingId = setting.settingId or ResolveSettingId(frame, settingId) or setting.settingId
+            editModeValue = (dbValue and true or false) and 1 or 0
+        elseif settingId == "style" then
+            -- Style dropdown: 0=Default, 1=Bordered, 2=Thin
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "style") or setting.settingId
+            local v = tonumber(dbValue) or 0
+            if v < 0 then v = 0 elseif v > 2 then v = 2 end
+            editModeValue = v
+        elseif settingId == "frameWidth" then
+            -- Frame Width slider: 300-600
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "frame_width") or setting.settingId
+            local v = tonumber(dbValue) or 300
+            if v < 300 then v = 300 elseif v > 600 then v = 600 end
+            editModeValue = v
+        elseif settingId == "frameHeight" then
+            -- Frame Height slider: 120-400
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "frame_height") or setting.settingId
+            local v = tonumber(dbValue) or 200
+            if v < 120 then v = 120 elseif v > 400 then v = 400 end
+            editModeValue = v
+        elseif settingId == "barHeight" then
+            -- Bar Height slider: 15-40
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_height") or setting.settingId
+            local v = tonumber(dbValue) or 20
+            if v < 15 then v = 15 elseif v > 40 then v = 40 end
+            editModeValue = v
+        elseif settingId == "padding" then
+            -- Padding slider: 2-10
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "padding") or setting.settingId
+            local v = tonumber(dbValue) or 4
+            if v < 2 then v = 2 elseif v > 10 then v = 10 end
+            editModeValue = v
+        elseif settingId == "background" then
+            -- Background transparency slider: 0-100%
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "background") or setting.settingId
+            local v = tonumber(dbValue) or 80
+            if v < 0 then v = 0 elseif v > 100 then v = 100 end
+            editModeValue = v
+        elseif settingId == "visibility" then
+            -- Visibility dropdown: 0=Always, 1=InCombat, 2=Hidden
+            setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
+            local v = tonumber(dbValue) or 0
+            if v < 0 then v = 0 elseif v > 2 then v = 2 end
+            editModeValue = v
+        else
+            -- Default numeric handling for other DamageMeter settings (opacity, textSize)
+            editModeValue = tonumber(dbValue) or 0
+        end
     else
         editModeValue = tonumber(dbValue) or 0
     end
@@ -1011,6 +1084,13 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
             if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            return true
+        -- Damage Meter write handling
+        elseif component and component.id == "damageMeter" then
+            markBackSyncSkip()
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
+            wrote = true
+            persist()
             return true
         end
         -- Others: skip write if no change

@@ -59,6 +59,7 @@ Navigation.NavModel = {
         label = "Interface",
         collapsible = true,
         children = {
+            { key = "damageMeter", label = "Damage Meters" },
             { key = "tooltip", label = "Tooltip" },
             { key = "objectiveTracker", label = "Objective Tracker" },
             { key = "minimap", label = "Minimap" },

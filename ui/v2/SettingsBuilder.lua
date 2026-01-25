@@ -474,15 +474,17 @@ end
 --   set         : Function(newKey) to save value
 --   width       : Selector width (optional)
 --   key         : Optional unique key for dynamic updates (SetLabel, SetOptions)
+--   emphasized  : Optional boolean for "Hero" styling (master controls)
 --------------------------------------------------------------------------------
 
 function Builder:AddSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
+    -- Add item spacing (more for emphasized selectors)
     if #self._controls > 0 then
-        self._currentY = self._currentY - ITEM_SPACING
+        local spacing = options.emphasized and (ITEM_SPACING + 4) or ITEM_SPACING
+        self._currentY = self._currentY - spacing
     end
 
     -- Create selector using Controls module
@@ -496,6 +498,7 @@ function Builder:AddSelector(options)
         set = options.set,
         width = options.width,
         useLightDim = self._useLightDim,
+        emphasized = options.emphasized,
     })
 
     if selector then
