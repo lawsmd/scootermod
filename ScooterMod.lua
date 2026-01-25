@@ -96,6 +96,18 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
     local args = parseQuotedArgs(msg)
     local cmd = string.lower(args[1] or "")
 
+    -- /scoot debugmenu
+    if cmd == "debugmenu" then
+        if not (addon.db and addon.db.profile) then
+            addon:Print("Profile not loaded yet. Try again after login completes.")
+            return
+        end
+        addon.db.profile.debugMenuEnabled = not addon.db.profile.debugMenuEnabled
+        local status = addon.db.profile.debugMenuEnabled and "ENABLED" or "DISABLED"
+        addon:Print("Debug menu " .. status .. ". Reopen settings to see changes.")
+        return
+    end
+
     -- /scoot del "Layout Name"
     if cmd == "del" or cmd == "delete" then
         local target = args[2]

@@ -170,6 +170,19 @@ function RightPane:Init(ownerFrame, container)
     scrollFrame:SetScrollChild(content)
     self.Content = content
 
+    -- Home page container (for RenderHome content)
+    -- Using separate containers prevents content bleeding between Home and List pages.
+    local homeContainer = CreateFrame("Frame", nil, content)
+    homeContainer:SetAllPoints(content)
+    homeContainer:Hide()  -- Hidden by default
+    self.HomeContainer = homeContainer
+
+    -- List page container (for Display() rows)
+    local listContainer = CreateFrame("Frame", nil, content)
+    listContainer:SetAllPoints(content)
+    listContainer:Hide()  -- Hidden by default
+    self.ListContainer = listContainer
+
     -- Keep the scroll child width in sync with the visible scroll area so rows
     -- fill the pane correctly and scrolling/clipping behave like a normal
     -- Settings list.
@@ -272,14 +285,14 @@ local function AcquireRow(self, index, template, reuseKey)
         row = nil
     end
     if not row then
-        -- Parent rows to the ScrollFrame's scroll child; the ScrollFrame
+        -- Parent rows to the ListContainer (or Content as fallback); the ScrollFrame
         -- handles clipping while we control layout and scrolling behavior.
-        row = CreateFrame("Frame", nil, self.Content, template or "Frame")
+        row = CreateFrame("Frame", nil, self.ListContainer or self.Content, template or "Frame")
         self.rows[index] = row
         row._template = template
         row._reuseKey = reuseKey
     else
-        row:SetParent(self.Content)
+        row:SetParent(self.ListContainer or self.Content)
         row._template = template
         row._reuseKey = reuseKey
     end
@@ -294,6 +307,23 @@ function RightPane:Invalidate()
     for _, row in ipairs(self.rows) do
         if row then
             row:Hide()
+            -- Explicitly hide all child regions (FontStrings, textures) and frames
+            -- to prevent custom elements from persisting visually after orphaning.
+            -- This fixes issues like Apply All text appearing on the Home page.
+            if row.GetRegions then
+                for _, region in pairs({row:GetRegions()}) do
+                    if region and type(region.Hide) == "function" then
+                        region:Hide()
+                    end
+                end
+            end
+            if row.GetChildren then
+                for _, child in pairs({row:GetChildren()}) do
+                    if child and type(child.Hide) == "function" then
+                        child:Hide()
+                    end
+                end
+            end
             row:SetParent(nil)
         end
     end
@@ -312,6 +342,10 @@ end
 function RightPane:Display(initializers)
     if not self.initialized or not self.frame or not self.Content then return end
     if type(initializers) ~= "table" then return end
+
+    -- Show list container, hide home container (atomic page switch)
+    if self.HomeContainer then self.HomeContainer:Hide() end
+    if self.ListContainer then self.ListContainer:Show() end
 
     -- Footer is opt-in per page. Default to hidden on each render so it cannot
     -- "stick" when switching categories.
@@ -333,6 +367,7 @@ function RightPane:Display(initializers)
     end
 
     local content = self.Content
+    local listContainer = self.ListContainer or content  -- Use ListContainer for row layout
     local y = -8
     -- Base vertical gap between consecutive rows (non-tabbed sections).
     -- This intentionally provides generous breathing room now that we own
@@ -461,8 +496,8 @@ function RightPane:Display(initializers)
                 end
 
                 y = y - topPad
-                row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
-                row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, y)
+                row:SetPoint("TOPLEFT", listContainer, "TOPLEFT", 0, y)
+                row:SetPoint("TOPRIGHT", listContainer, "TOPRIGHT", 0, y)
 
                 -- Initialize the row via the initializer, guarding against errors.
                 if type(init.InitFrame) == "function" then
@@ -500,7 +535,11 @@ function RightPane:Display(initializers)
         end
     end
 
-    content:SetHeight(math.max(0, -y + 8))
+    local containerHeight = math.max(0, -y + 8)
+    if self.ListContainer then
+        self.ListContainer:SetHeight(containerHeight)
+    end
+    content:SetHeight(containerHeight)
     if self.ScrollFrame and self.ScrollFrame.UpdateScrollChildRect then
         self.ScrollFrame:UpdateScrollChildRect()
     end

@@ -9,8 +9,7 @@ addon.UI.Settings.ApplyAll.Fonts = {}
 local Fonts = addon.UI.Settings.ApplyAll.Fonts
 local SettingsBuilder = addon.UI.SettingsBuilder
 
--- State management for this renderer
-Fonts._controls = {}
+-- Note: Controls are now stored on panel._applyAllFontsControls for ClearContent() compatibility
 
 function Fonts.Render(panel, scrollContent)
     panel:ClearContent()
@@ -18,14 +17,15 @@ function Fonts.Render(panel, scrollContent)
     local Controls = addon.UI.Controls
     local Theme = addon.UI.Theme
 
-    -- Track controls for cleanup
-    Fonts._controls = Fonts._controls or {}
-    for _, ctrl in ipairs(Fonts._controls) do
+    -- Track controls for cleanup on the PANEL (not module) so ClearContent() can find them
+    -- ClearContent() looks for panel._applyAllFontsControls
+    panel._applyAllFontsControls = panel._applyAllFontsControls or {}
+    for _, ctrl in ipairs(panel._applyAllFontsControls) do
         if ctrl.Cleanup then ctrl:Cleanup() end
         if ctrl.Hide then ctrl:Hide() end
         if ctrl.SetParent then ctrl:SetParent(nil) end
     end
-    Fonts._controls = {}
+    panel._applyAllFontsControls = {}
 
     local ar, ag, ab = Theme:GetAccentColor()
 
@@ -35,7 +35,7 @@ function Fonts.Render(panel, scrollContent)
     container:SetPoint("TOP", scrollContent, "TOP", 0, -60)
     container:SetPoint("LEFT", scrollContent, "LEFT", 40, 0)
     container:SetPoint("RIGHT", scrollContent, "RIGHT", -40, 0)
-    table.insert(Fonts._controls, container)
+    table.insert(panel._applyAllFontsControls, container)
 
     -- Info text (centered, dimmed)
     local info = container:CreateFontString(nil, "OVERLAY")
@@ -66,7 +66,7 @@ function Fonts.Render(panel, scrollContent)
     if fontSelector then
         fontSelector:SetPoint("TOPLEFT", container, "TOPLEFT", 20, -120)
         fontSelector:SetPoint("TOPRIGHT", container, "TOPRIGHT", -20, -120)
-        table.insert(Fonts._controls, fontSelector)
+        table.insert(panel._applyAllFontsControls, fontSelector)
     end
 
     -- Apply button
@@ -116,7 +116,7 @@ function Fonts.Render(panel, scrollContent)
         end,
     })
     applyBtn:SetPoint("TOP", container, "TOP", 0, -200)
-    table.insert(Fonts._controls, applyBtn)
+    table.insert(panel._applyAllFontsControls, applyBtn)
 
     -- Set scroll content height
     scrollContent:SetHeight(400)

@@ -38,6 +38,7 @@ local textColorPowerOrder = { "default", "class", "classPower", "custom" }
 local ASCII_ANIMATION_DURATION = 1.0      -- Total animation time in seconds
 local ASCII_ANIMATION_TICK = 0.016        -- Update rate (~60fps)
 
+
 --------------------------------------------------------------------------------
 -- UTF-8 String Helpers (for column-by-column ASCII animation)
 --------------------------------------------------------------------------------
@@ -248,6 +249,35 @@ local ASCII_LOGO = [[
  ╚═══██╗██║  ██╗██║  ██║██║  ██║   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║  ██║██║  ██║
 ██████╔╝╚█████╔╝╚█████╔╝╚█████╔╝   ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚█████╔╝██████╔╝
 ╚═════╝  ╚════╝  ╚════╝  ╚════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚════╝ ╚═════╝ ]]
+
+-- ASCII Art Mascot (54 chars wide) for homepage
+local ASCII_MASCOT = [[
+                             ***
+         .==.              **====*
+         ..==            *==========
+          .==          **======....-==
+          .==-        ***=====...   .==
+          .==:       **=======....   =*
+          .==:     .*******==-....
+          .==:  ***..========-***..
+           ==. .--..@@@@%@@@@*@==..-==
+           ==:    .     -    :@@@=%=..=
+            =:    *%   %%%   #@@===+
+            =:     %%*@@@@@@%@@@==%
+            =:      @@=====@@@@@...
+           %+=##= *@@@@@@@@@@@@.-==-..
+          %%%%===.+@@@@@@@@@@@@..====..
+          %%%%=%===.@@@@@@@@@*....====..
+           %%+.=..=..=@@@@@@.==....*===..
+             :...... ===@..=====...**===.
+             -:-..  ......===..   .#****-
+             -=.    ...............=%%%%*
+             -=.    ***==========..:=====
+              =.   **=============..=
+              =.. ***==============.==
+              =-. *+================-:=*
+              ==..==....=========..==...*
+              .=.=====...........======.-=*]]
 
 -- Pre-parse ASCII logo into lines and character arrays for animation
 local ASCII_LINES = {}
@@ -1138,45 +1168,61 @@ function UIPanel:CreateContentPane()
     local homeContent = CreateFrame("Frame", "ScooterUIHomeContent", contentPane)
     homeContent:SetAllPoints(contentPane)
 
-    -- Container for centering (holds welcome text + ASCII art)
+    -- Container for centering (holds ASCII title + ASCII mascot)
     local homeContainer = CreateFrame("Frame", nil, homeContent)
     homeContainer:SetPoint("CENTER", homeContent, "CENTER", 0, 20)  -- Slightly above center
 
-    -- "Welcome to" text
-    local welcomeText = homeContainer:CreateFontString(nil, "OVERLAY")
     local labelFont = Theme:GetFont("LABEL")
-    welcomeText:SetFont(labelFont, 16, "")
-    welcomeText:SetText("Welcome to")
-    welcomeText:SetTextColor(1, 1, 1, 1)  -- White
-    welcomeText:SetPoint("BOTTOM", homeContainer, "CENTER", 0, 30)  -- Position above ASCII
 
-    -- Large ASCII art logo
+    -- Large ASCII art title (anchor point for other elements)
     local homeAscii = homeContainer:CreateFontString(nil, "OVERLAY")
     homeAscii:SetFont(labelFont, 10, "")  -- Larger than title bar (6pt -> 10pt)
     homeAscii:SetText(ASCII_LOGO)
     homeAscii:SetJustifyH("CENTER")
     homeAscii:SetTextColor(ar, ag, ab, 1)  -- Accent color
-    homeAscii:SetPoint("TOP", welcomeText, "BOTTOM", 0, -8)
+    homeAscii:SetPoint("LEFT", homeContainer, "LEFT", 0, 0)
 
-    -- Size the container based on ASCII dimensions (deferred for accurate measurement)
+    -- ASCII mascot (above the title, slightly right)
+    local homeMascot = homeContainer:CreateFontString(nil, "OVERLAY")
+    homeMascot:SetFont(labelFont, 7.5, "")  -- 25% larger than 6pt
+    homeMascot:SetText(ASCII_MASCOT)
+    homeMascot:SetJustifyH("LEFT")  -- Must be LEFT to keep ASCII art internally aligned
+    homeMascot:SetTextColor(ar, ag, ab, 1)  -- Accent color
+    homeMascot:SetPoint("BOTTOM", homeAscii, "TOP", 65, 8)  -- Above title, offset right 65px
+
+    -- "Welcome to" text (above-left of ASCII title)
+    local welcomeText = homeContainer:CreateFontString(nil, "OVERLAY")
+    welcomeText:SetFont(labelFont, 16, "")
+    welcomeText:SetText("Welcome to")
+    welcomeText:SetTextColor(1, 1, 1, 1)  -- White
+    welcomeText:SetPoint("BOTTOMLEFT", homeAscii, "TOPLEFT", 65, 8)  -- Above-left of ASCII, offset right 65px
+
+    -- Size the container based on combined dimensions (deferred for accurate measurement)
     C_Timer.After(0.05, function()
-        if homeAscii and homeContainer then
-            local w = homeAscii:GetStringWidth() or 600
-            local h = homeAscii:GetStringHeight() or 80
-            homeContainer:SetSize(w, h + 60)  -- Extra height for welcome text
+        if homeAscii and homeMascot and homeContainer then
+            local titleW = homeAscii:GetStringWidth() or 600
+            local titleH = homeAscii:GetStringHeight() or 80
+            local mascotW = homeMascot:GetStringWidth() or 200
+            local mascotH = homeMascot:GetStringHeight() or 150
+            -- Container width = max of title or mascot, height = title + mascot + welcome text
+            homeContainer:SetSize(math.max(titleW, mascotW), titleH + mascotH + 50)
         end
     end)
     -- Fallback size
-    homeContainer:SetSize(700, 120)
+    homeContainer:SetSize(700, 300)
 
     homeContent._welcomeText = welcomeText
     homeContent._asciiLogo = homeAscii
+    homeContent._asciiMascot = homeMascot
     contentPane._homeContent = homeContent
 
-    -- Subscribe to theme updates for home ASCII
+    -- Subscribe to theme updates for home ASCII elements
     Theme:Subscribe("UIPanel_HomeContent", function(r, g, b)
         if homeAscii then
             homeAscii:SetTextColor(r, g, b, 1)
+        end
+        if homeMascot then
+            homeMascot:SetTextColor(r, g, b, 1)
         end
     end)
 
@@ -1346,6 +1392,22 @@ function UIPanel:ClearContent()
             end
         end
         self._applyAllTexturesControls = {}
+    end
+
+    -- 7. Clean up Debug Menu state-based content
+    if self._debugMenuControls then
+        for _, control in ipairs(self._debugMenuControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._debugMenuControls = {}
     end
 end
 
@@ -1729,6 +1791,77 @@ UIPanel._renderers = {
         local M = addon.UI.Settings.Auras and addon.UI.Settings.Auras.Debuffs
         if M and M.Render then M.Render(self, scrollContent) end
     end,
+    -- Debug Menu (hidden by default)
+    debugMenu = function(self, scrollContent)
+        local Controls = addon.UI.Controls
+        local Theme = addon.UI.Theme
+
+        -- Track controls for cleanup on the PANEL so ClearContent() can find them
+        self._debugMenuControls = self._debugMenuControls or {}
+        for _, ctrl in ipairs(self._debugMenuControls) do
+            if ctrl.Cleanup then ctrl:Cleanup() end
+            if ctrl.Hide then ctrl:Hide() end
+            if ctrl.SetParent then ctrl:SetParent(nil) end
+        end
+        self._debugMenuControls = {}
+
+        -- Section header
+        local headerLabel = scrollContent:CreateFontString(nil, "OVERLAY")
+        Theme:ApplyLabelFont(headerLabel, 14)
+        headerLabel:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, 0)
+        headerLabel:SetText("Developer Testing Tools")
+        local ar, ag, ab = Theme:GetAccentColor()
+        headerLabel:SetTextColor(ar, ag, ab, 1)
+        table.insert(self._debugMenuControls, headerLabel)
+
+        local yOffset = -30
+
+        -- Description
+        local descLabel = scrollContent:CreateFontString(nil, "OVERLAY")
+        Theme:ApplyValueFont(descLabel, 11)
+        descLabel:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
+        descLabel:SetPoint("RIGHT", scrollContent, "RIGHT", -20, 0)
+        descLabel:SetText("These options are for addon development and testing. Use with caution.")
+        descLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+        descLabel:SetJustifyH("LEFT")
+        descLabel:SetWordWrap(true)
+        table.insert(self._debugMenuControls, descLabel)
+
+        yOffset = yOffset - 50
+
+        -- Force Secret Restrictions toggle
+        local secretCVars = {
+            "secretCombatRestrictionsForced",
+            "secretChallengeModeRestrictionsForced",
+            "secretEncounterRestrictionsForced",
+            "secretMapRestrictionsForced",
+            "secretPvPMatchRestrictionsForced",
+        }
+
+        local toggle = Controls:CreateToggle({
+            parent = scrollContent,
+            label = "Force Secret Restrictions",
+            description = "Enables all secret restriction CVars to simulate combat/instance restrictions for testing taint behavior.",
+            get = function()
+                local val = GetCVar("secretCombatRestrictionsForced")
+                return val == "1"
+            end,
+            set = function(enabled)
+                local newVal = enabled and "1" or "0"
+                for _, cvar in ipairs(secretCVars) do
+                    pcall(SetCVar, cvar, newVal)
+                end
+            end,
+        })
+        toggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
+        toggle:SetPoint("RIGHT", scrollContent, "RIGHT", 0, 0)
+        table.insert(self._debugMenuControls, toggle)
+
+        yOffset = yOffset - 70
+
+        -- Set content height
+        scrollContent:SetHeight(math.abs(yOffset) + 20)
+    end,
 }
 
 --------------------------------------------------------------------------------
@@ -1984,6 +2117,11 @@ function UIPanel:Show()
         end
 
         self.frame:Show()
+
+        -- Rebuild navigation to reflect dynamic visibility (e.g., debug menu)
+        if Navigation and Navigation.Rebuild then
+            Navigation:Rebuild()
+        end
 
         -- ALWAYS re-render the current category when the panel opens.
         -- This ensures UI controls show the latest values from Edit Mode.

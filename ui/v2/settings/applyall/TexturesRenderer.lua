@@ -9,8 +9,7 @@ addon.UI.Settings.ApplyAll.Textures = {}
 local Textures = addon.UI.Settings.ApplyAll.Textures
 local SettingsBuilder = addon.UI.SettingsBuilder
 
--- State management for this renderer
-Textures._controls = {}
+-- Note: Controls are now stored on panel._applyAllTexturesControls for ClearContent() compatibility
 
 function Textures.Render(panel, scrollContent)
     panel:ClearContent()
@@ -18,14 +17,15 @@ function Textures.Render(panel, scrollContent)
     local Controls = addon.UI.Controls
     local Theme = addon.UI.Theme
 
-    -- Track controls for cleanup
-    Textures._controls = Textures._controls or {}
-    for _, ctrl in ipairs(Textures._controls) do
+    -- Track controls for cleanup on the PANEL (not module) so ClearContent() can find them
+    -- ClearContent() looks for panel._applyAllTexturesControls
+    panel._applyAllTexturesControls = panel._applyAllTexturesControls or {}
+    for _, ctrl in ipairs(panel._applyAllTexturesControls) do
         if ctrl.Cleanup then ctrl:Cleanup() end
         if ctrl.Hide then ctrl:Hide() end
         if ctrl.SetParent then ctrl:SetParent(nil) end
     end
-    Textures._controls = {}
+    panel._applyAllTexturesControls = {}
 
     local ar, ag, ab = Theme:GetAccentColor()
 
@@ -35,7 +35,7 @@ function Textures.Render(panel, scrollContent)
     container:SetPoint("TOP", scrollContent, "TOP", 0, -60)
     container:SetPoint("LEFT", scrollContent, "LEFT", 40, 0)
     container:SetPoint("RIGHT", scrollContent, "RIGHT", -40, 0)
-    table.insert(Textures._controls, container)
+    table.insert(panel._applyAllTexturesControls, container)
 
     -- Info text (centered, dimmed)
     local info = container:CreateFontString(nil, "OVERLAY")
@@ -66,7 +66,7 @@ function Textures.Render(panel, scrollContent)
     if textureSelector then
         textureSelector:SetPoint("TOPLEFT", container, "TOPLEFT", 20, -100)
         textureSelector:SetPoint("TOPRIGHT", container, "TOPRIGHT", -20, -100)
-        table.insert(Textures._controls, textureSelector)
+        table.insert(panel._applyAllTexturesControls, textureSelector)
     end
 
     -- Apply button
@@ -117,7 +117,7 @@ function Textures.Render(panel, scrollContent)
         end,
     })
     applyBtn:SetPoint("TOP", container, "TOP", 0, -180)
-    table.insert(Textures._controls, applyBtn)
+    table.insert(panel._applyAllTexturesControls, applyBtn)
 
     -- Set scroll content height
     scrollContent:SetHeight(400)

@@ -1406,16 +1406,43 @@ function panel.RenderHome()
             local content = panel.RightPane.Content
             if not content then return end
 
+            -- Show home container, hide list container (atomic page switch)
+            local homeContainer = panel.RightPane.HomeContainer
+            local listContainer = panel.RightPane.ListContainer
+            if listContainer then listContainer:Hide() end
+            if homeContainer then homeContainer:Show() end
+
             -- Clear any existing rows from other categories
             panel.RightPane:Invalidate()
 
-            -- Create home content container if needed
-            local homeFrame = content._ScooterHomeContent
-            if not homeFrame then
-                homeFrame = CreateFrame("Frame", nil, content)
-                content._ScooterHomeContent = homeFrame
+            -- AGGRESSIVE CLEANUP: Hide ALL children of content except the containers
+            -- This catches any orphan frames that might have been created directly on content
+            if content.GetChildren then
+                for _, child in pairs({content:GetChildren()}) do
+                    if child and child ~= homeContainer and child ~= listContainer then
+                        if type(child.Hide) == "function" then
+                            child:Hide()
+                        end
+                        -- Also hide all regions (FontStrings, textures) on orphan frames
+                        if child.GetRegions then
+                            for _, region in pairs({child:GetRegions()}) do
+                                if region and type(region.Hide) == "function" then
+                                    region:Hide()
+                                end
+                            end
+                        end
+                    end
+                end
             end
-            homeFrame:SetAllPoints(content)
+
+            -- Create home content in HomeContainer (not Content directly)
+            local parent = homeContainer or content
+            local homeFrame = parent._ScooterHomeContent
+            if not homeFrame then
+                homeFrame = CreateFrame("Frame", nil, parent)
+                parent._ScooterHomeContent = homeFrame
+            end
+            homeFrame:SetAllPoints(parent)
             homeFrame:Show()
 
             -- Calculate center positioning based on content size
@@ -1519,6 +1546,9 @@ function panel.RenderHome()
             end
 
             -- Set content height for scrolling (though home page doesn't need scrolling)
+            if homeContainer then
+                homeContainer:SetHeight(400)
+            end
             content:SetHeight(400)
         end,
     }
@@ -1942,6 +1972,137 @@ function panel.RenderCdmQoL()
     return { mode = "list", render = render, componentId = "cdmQoL" }
 end
 
+-- Debug -> Debug Menu
+function panel.RenderDebugMenu()
+    local function render()
+        local f = panel.frame
+        local right = f and f.RightPane
+        if not f or not right or not right.Display then
+            return
+        end
+
+        if right.SetTitle then
+            right:SetTitle("Debug Menu")
+        end
+        if right.SetSubtitle then
+            right:SetSubtitle("Developer testing tools")
+        end
+
+        -- Flat checkbox page theme (same as Chat/CDM QoL)
+        local function ApplyFlatCheckboxRowTheme(frame, opts)
+            if not frame then return end
+            opts = opts or {}
+
+            local cb = frame.Checkbox or frame.CheckBox or frame.Control
+            local label = frame.Text or frame.Label
+
+            local function layout()
+                if not label or not cb then return end
+                if cb.ClearAllPoints and cb.SetPoint then
+                    cb:ClearAllPoints()
+                    cb:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+                end
+                label:ClearAllPoints()
+                label:SetPoint("LEFT", frame, "LEFT", 36.5, 0)
+                label:SetPoint("RIGHT", cb, "LEFT", -10, 0)
+                label:SetJustifyH("LEFT")
+                label:SetJustifyV("MIDDLE")
+                label:SetWordWrap(true)
+                if label.SetMaxLines then
+                    label:SetMaxLines(3)
+                end
+            end
+
+            if panel and panel.ApplyRobotoWhite and label then
+                panel.ApplyRobotoWhite(label, 17, "")
+            end
+
+            layout()
+
+            if not frame._ScooterDebugLayoutHooked then
+                frame._ScooterDebugLayoutHooked = true
+                frame:HookScript("OnSizeChanged", function()
+                    layout()
+                end)
+            end
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    layout()
+                end)
+            end
+
+            -- Info icon (left of label)
+            if opts.tooltipText and opts.tooltipText ~= "" and panel and panel.CreateInfoIcon then
+                local icon = frame.ScooterDebugInfoIcon
+                if not icon then
+                    icon = panel.CreateInfoIcon(frame, opts.tooltipText, "RIGHT", "LEFT", -6, 0, 32)
+                    frame.ScooterDebugInfoIcon = icon
+                else
+                    icon.TooltipText = opts.tooltipText
+                    icon:Show()
+                end
+                if icon and icon.ClearAllPoints and icon.SetPoint and label then
+                    icon:ClearAllPoints()
+                    icon:SetPoint("RIGHT", label, "LEFT", -8, 0)
+                end
+            else
+                if frame.ScooterDebugInfoIcon then
+                    frame.ScooterDebugInfoIcon:Hide()
+                end
+            end
+        end
+
+        local init = {}
+
+        -- Force Secret Restrictions toggle
+        do
+            local tooltipText = "Enables all secret restriction CVars to test addon behavior under combat restrictions. This simulates the restricted environment that occurs during combat, challenge modes, encounters, and PvP matches."
+            local secretCVars = {
+                "secretCombatRestrictionsForced",
+                "secretChallengeModeRestrictionsForced",
+                "secretEncounterRestrictionsForced",
+                "secretMapRestrictionsForced",
+                "secretPvPMatchRestrictionsForced",
+            }
+
+            local setting = CreateLocalSetting("Force Secret Restrictions", "boolean",
+                function()
+                    -- Check if the primary CVar is set to "1"
+                    local val = GetCVar("secretCombatRestrictionsForced")
+                    return val == "1"
+                end,
+                function(v)
+                    local newVal = v and "1" or "0"
+                    for _, cvar in ipairs(secretCVars) do
+                        pcall(SetCVar, cvar, newVal)
+                    end
+                end,
+                false
+            )
+            local row = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", {
+                name = "Force Secret Restrictions",
+                setting = setting,
+                options = {},
+                componentId = "debugMenu",
+                settingId = "forceSecretRestrictions",
+            })
+            row.GetExtent = function() return 62 end
+            do
+                local baseInit = row.InitFrame
+                row.InitFrame = function(self, frame)
+                    if baseInit then baseInit(self, frame) end
+                    ApplyFlatCheckboxRowTheme(frame, { tooltipText = tooltipText })
+                end
+            end
+            table.insert(init, row)
+        end
+
+        right:Display(init)
+    end
+
+    return { mode = "list", render = render, componentId = "debugMenu" }
+end
+
 local function BuildCategories()
 	local f = panel.frame
 	if f.CategoriesBuilt then return end
@@ -2012,6 +2173,9 @@ local function BuildCategories()
     addEntry("objectiveTracker", addon.SettingsPanel.RenderObjectiveTracker())
     addEntry("chat", addon.SettingsPanel.RenderChat())
 
+    -- Debug menu (hidden by default, enabled via /scoot debugmenu)
+    addEntry("debugMenu", addon.SettingsPanel.RenderDebugMenu())
+
 	-- Build nav model (parents + children). Parents: Profiles, CDM, Action Bars, Unit Frames
 	local navModel = {
 		{ type = "parent", key = "Profiles", label = "Profiles", collapsible = true, children = {
@@ -2080,6 +2244,17 @@ local function BuildCategories()
         collapsible = true,
         children = {
             { type = "child", key = "sctDamage", label = "Damage Numbers" },
+        },
+    })
+
+    -- Debug section (hidden by default, enabled via /scoot debugmenu)
+    table.insert(navModel, {
+        type = "parent",
+        key = "Debug",
+        label = "Debug",
+        collapsible = false,
+        children = {
+            { type = "child", key = "debugMenu", label = "Debug Menu" },
         },
     })
 
@@ -2207,36 +2382,40 @@ local function BuildCategories()
 		end
 		-- Lay out parents and visible children
 		for _, parent in ipairs(navModel) do
-			local slot = acquireRow()
-			if not slot.Parent then slot.Parent = createParentRow(container, parent) end
-			-- Reinitialize parent row properties on reuse
-			slot.Parent.NodeKey = parent.key
-			slot.Parent.Collapsible = parent.collapsible and true or false
-			slot.Parent.Label:SetText(parent.label or parent.key)
-			slot.Parent:ClearAllPoints(); slot.Parent:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
-			slot.Parent:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
-			slot.Parent:Show(); slot.Parent:UpdateState()
-			y = y - (panel.NavLayout.parentRowHeight or 24)
-			local expanded = panel._sidebarExpanded[parent.key]
-			if expanded then
-				-- Optional gap between header and first child
-				y = y - (panel.NavLayout.headerToFirstChildGap or 6)
-				for _, child in ipairs(parent.children or {}) do
-					local cslot = acquireRow()
-					if not cslot.Child then cslot.Child = createChildRow(container, child) end
-					-- Reinitialize child row properties on reuse
-					cslot.Child.NodeKey = child.key
-					cslot.Child.Label:SetText(child.label or child.key)
-					cslot.Child:ClearAllPoints(); cslot.Child:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
-					cslot.Child:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
-					cslot.Child:Show(); cslot.Child:UpdateSelected()
-					y = y - (panel.NavLayout.childRowHeight or 20)
+			-- Skip Debug section if not enabled
+			local shouldShow = not (parent.key == "Debug" and not addon.debugMenuEnabled)
+			if shouldShow then
+				local slot = acquireRow()
+				if not slot.Parent then slot.Parent = createParentRow(container, parent) end
+				-- Reinitialize parent row properties on reuse
+				slot.Parent.NodeKey = parent.key
+				slot.Parent.Collapsible = parent.collapsible and true or false
+				slot.Parent.Label:SetText(parent.label or parent.key)
+				slot.Parent:ClearAllPoints(); slot.Parent:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
+				slot.Parent:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
+				slot.Parent:Show(); slot.Parent:UpdateState()
+				y = y - (panel.NavLayout.parentRowHeight or 24)
+				local expanded = panel._sidebarExpanded[parent.key]
+				if expanded then
+					-- Optional gap between header and first child
+					y = y - (panel.NavLayout.headerToFirstChildGap or 6)
+					for _, child in ipairs(parent.children or {}) do
+						local cslot = acquireRow()
+						if not cslot.Child then cslot.Child = createChildRow(container, child) end
+						-- Reinitialize child row properties on reuse
+						cslot.Child.NodeKey = child.key
+						cslot.Child.Label:SetText(child.label or child.key)
+						cslot.Child:ClearAllPoints(); cslot.Child:SetPoint("TOPLEFT", container, "TOPLEFT", 0, y)
+						cslot.Child:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, y)
+						cslot.Child:Show(); cslot.Child:UpdateSelected()
+						y = y - (panel.NavLayout.childRowHeight or 20)
+					end
 				end
+				-- Spacer under each parent to control gaps; adjustable via NavLayout
+				local gapExp = panel.NavLayout.gapAfterExpanded or 10
+				local gapCol = panel.NavLayout.gapAfterCollapsed or 4
+				y = y - (expanded and gapExp or gapCol)
 			end
-			-- Spacer under each parent to control gaps; adjustable via NavLayout
-			local gapExp = panel.NavLayout.gapAfterExpanded or 10
-			local gapCol = panel.NavLayout.gapAfterCollapsed or 4
-			y = y - (expanded and gapExp or gapCol)
 		end
 		container:SetHeight(math.max(0, -y + 4))
 		-- No heavy rebuild; the scroll frame will just update content extents
@@ -3015,6 +3194,11 @@ end
         -- For Buffs/Debuffs tabs, skip the immediate render and let the delayed SelectCategory handle it below
     end
     panel.frame:Show()
+
+    -- Rebuild navigation on every open to reflect dynamic visibility (e.g., debug menu)
+    if panel.RebuildNav then
+        panel.RebuildNav()
+    end
 
     -- CRITICAL: Force a fresh row acquisition on every open.
     -- Some builder modules cache Edit Mode-backed values on row frames to keep

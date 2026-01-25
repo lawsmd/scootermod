@@ -3,7 +3,7 @@
 ## Notes: A modern, cosmetic-only UI addon.
 ## Author: Scooter
 ## Version: 0.1.0
-## IconTexture: Interface\AddOns\ScooterMod\Scooter
+## IconTexture: Interface\AddOns\ScooterMod\ScooterSprite
 ## OptionalDeps: Blizzard_Settings, Blizzard_Settings_Shared
 ## SavedVariables: ScooterModDB
 ## SlashCmd: /scoot

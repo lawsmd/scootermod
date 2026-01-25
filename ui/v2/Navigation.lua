@@ -146,6 +146,15 @@ Navigation.NavModel = {
             { key = "sctDamage", label = "Damage Numbers" },
         },
     },
+    {
+        key = "debug",
+        label = "Debug",
+        collapsible = true,
+        hidden = true,  -- Hidden by default, shown via /scoot debugmenu
+        children = {
+            { key = "debugMenu", label = "Debug Menu" },
+        },
+    },
 }
 
 --------------------------------------------------------------------------------
@@ -468,6 +477,11 @@ function Navigation:BuildRows(contentFrame)
     local rowIndex = 0
 
     for parentIdx, parent in ipairs(self.NavModel) do
+        -- Skip hidden sections (e.g., Debug) unless explicitly enabled in profile
+        local debugEnabled = addon.db and addon.db.profile and addon.db.profile.debugMenuEnabled
+        if parent.hidden and not debugEnabled then
+            -- Skip this parent and its children entirely
+        else
         rowIndex = rowIndex + 1
 
         -- Create parent row
@@ -498,6 +512,7 @@ function Navigation:BuildRows(contentFrame)
                 end
             end
         end
+        end  -- end else (skip hidden sections)
     end
 
     -- Set content frame height
@@ -851,6 +866,16 @@ end
 
 function Navigation:GetFrame()
     return self._frame
+end
+
+--------------------------------------------------------------------------------
+-- Rebuild Navigation (e.g., when debug menu visibility changes)
+--------------------------------------------------------------------------------
+
+function Navigation:Rebuild()
+    if self._frame and self._frame._content then
+        self:BuildRows(self._frame._content)
+    end
 end
 
 --------------------------------------------------------------------------------
