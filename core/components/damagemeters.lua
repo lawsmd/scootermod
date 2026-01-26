@@ -861,15 +861,15 @@ local function GetOrCreateButtonOverlays(sessionWindow)
 
     -- Button 1: DamageMeterTypeDropdown.Arrow
     -- Replace the full button with just a simple downward arrow (no background)
-    -- Atlas: common-dropdown-c-button-hover-arrow (just the chevron/arrow icon)
+    -- Atlas: friendslist-categorybutton-arrow-down (icon-only, no button backdrop)
     local typeDropdown = sessionWindow.DamageMeterTypeDropdown
     if typeDropdown and typeDropdown.Arrow then
         st.buttonOverlays.typeArrow = CreateButtonIconOverlay(
             typeDropdown,
-            "common-dropdown-c-button-hover-arrow",
+            "friendslist-categorybutton-arrow-down",
             typeDropdown.Arrow,
-            { 12, 8 },  -- Small arrow size
-            3           -- Nudge up 3 pixels
+            { 13, 13 },  -- Small arrow size (10% bigger)
+            2            -- Nudge up 2 pixels
         )
     end
 
