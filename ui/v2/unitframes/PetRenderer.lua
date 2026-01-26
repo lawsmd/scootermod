@@ -972,8 +972,178 @@ function UF.RenderPet(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
-    -- Collapsible Section: Portrait (Pet has 5 tabs - no Positioning, has Personal Text)
+    -- Collapsible Section: Portrait
     --------------------------------------------------------------------------------
+
+    -- Portrait tab builders
+    local function buildPortraitSizingTab(inner)
+        -- Portrait Scale slider (50-200%)
+        inner:AddSlider({
+            label = "Portrait Size (Scale)",
+            min = 50,
+            max = 200,
+            step = 1,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return tonumber(t.scale) or 100
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.scale = tonumber(v) or 100; applyPortrait() end
+            end,
+            minLabel = "50%",
+            maxLabel = "200%",
+        })
+        inner:Finalize()
+    end
+
+    local function buildPortraitZoomTab(inner)
+        -- Portrait Zoom slider (100-200%)
+        inner:AddSlider({
+            label = "Portrait Zoom",
+            min = 100,
+            max = 200,
+            step = 1,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return tonumber(t.zoom) or 100
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.zoom = tonumber(v) or 100; applyPortrait() end
+            end,
+            minLabel = "100%",
+            maxLabel = "200%",
+        })
+        inner:Finalize()
+    end
+
+    local function buildPortraitBorderTab(inner)
+        -- Enable Custom Border toggle
+        inner:AddToggle({
+            label = "Use Custom Border",
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return not not t.portraitBorderEnable
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.portraitBorderEnable = not not v; applyPortrait() end
+            end,
+        })
+
+        -- Border Style selector
+        local borderStyleValues = {
+            texture_c = "Circle",
+            texture_s = "Circle with Corner",
+            rare_c = "Rare (Circle)",
+        }
+        local borderStyleOrder = { "texture_c", "texture_s", "rare_c" }
+
+        inner:AddSelector({
+            label = "Border Style",
+            values = borderStyleValues,
+            order = borderStyleOrder,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                local current = t.portraitBorderStyle or "texture_c"
+                if current == "default" then return "texture_c" end
+                return current
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then
+                    t.portraitBorderStyle = v or "texture_c"
+                    applyPortrait()
+                end
+            end,
+        })
+
+        -- Border Inset slider
+        inner:AddSlider({
+            label = "Border Inset",
+            min = 1,
+            max = 8,
+            step = 0.2,
+            precision = 1,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return tonumber(t.portraitBorderThickness) or 1
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.portraitBorderThickness = tonumber(v) or 1; applyPortrait() end
+            end,
+        })
+
+        -- Border Color selector + picker
+        local colorModeValues = {
+            texture = "Texture Original",
+            class = "Class Color",
+            custom = "Custom",
+        }
+        local colorModeOrder = { "texture", "class", "custom" }
+
+        inner:AddSelectorColorPicker({
+            label = "Border Color",
+            values = colorModeValues,
+            order = colorModeOrder,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return t.portraitBorderColorMode or "texture"
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.portraitBorderColorMode = v or "texture"; applyPortrait() end
+            end,
+            getColor = function()
+                local t = ensurePortraitDB() or {}
+                local c = t.portraitBorderTintColor or {1, 1, 1, 1}
+                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+            end,
+            setColor = function(r, g, b, a)
+                local t = ensurePortraitDB()
+                if t then t.portraitBorderTintColor = {r or 1, g or 1, b or 1, a or 1}; applyPortrait() end
+            end,
+            customValue = "custom",
+            hasAlpha = true,
+        })
+
+        inner:Finalize()
+    end
+
+    local function buildPortraitVisibilityTab(inner)
+        -- Hide Portrait toggle
+        inner:AddToggle({
+            label = "Hide Portrait",
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return not not t.hidePortrait
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.hidePortrait = v and true or false; applyPortrait() end
+            end,
+        })
+
+        -- Portrait Opacity slider
+        inner:AddSlider({
+            label = "Portrait Opacity",
+            min = 1,
+            max = 100,
+            step = 1,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return tonumber(t.opacity) or 100
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.opacity = tonumber(v) or 100; applyPortrait() end
+            end,
+        })
+
+        inner:Finalize()
+    end
 
     builder:AddCollapsibleSection({
         title = "Portrait",
@@ -984,69 +1154,17 @@ function UF.RenderPet(panel, scrollContent)
             inner:AddTabbedSection({
                 tabs = {
                     { key = "sizing", label = "Sizing" },
-                    { key = "mask", label = "Mask" },
+                    { key = "zoom", label = "Zoom" },
                     { key = "border", label = "Border" },
-                    { key = "personalText", label = "Personal Text" },
                     { key = "visibility", label = "Visibility" },
                 },
                 componentId = COMPONENT_ID,
                 sectionKey = "portrait_tabs",
                 buildContent = {
-                    sizing = function(cf, tabInner)
-                        tabInner:AddSlider({ label = "Portrait Size (Scale)", min = 50, max = 200, step = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.scale) or 100 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.scale = tonumber(v) or 100; applyPortrait() end end })
-                        tabInner:Finalize()
-                    end,
-                    mask = function(cf, tabInner)
-                        tabInner:AddSlider({ label = "Portrait Zoom", min = 100, max = 200, step = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.zoom) or 100 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.zoom = tonumber(v) or 100; applyPortrait() end end })
-                        tabInner:Finalize()
-                    end,
-                    border = function(cf, tabInner)
-                        tabInner:AddToggle({ label = "Use Custom Border",
-                            get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderEnable == true end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderEnable = (v == true); applyPortrait() end end })
-                        tabInner:AddSelector({ label = "Border Style", values = UF.portraitBorderValues, order = UF.portraitBorderOrder,
-                            get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderStyle or "texture_c" end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderStyle = v or "texture_c"; applyPortrait() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.portraitBorderThickness) or 1 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderThickness = tonumber(v) or 1; applyPortrait() end end })
-                        tabInner:AddSelectorColorPicker({ label = "Border Color", values = UF.portraitBorderColorValues, order = UF.portraitBorderColorOrder,
-                            get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderColorMode or "texture" end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderColorMode = v or "texture"; applyPortrait() end end,
-                            getColor = function() local t = ensurePortraitDB() or {}; local c = t.portraitBorderTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensurePortraitDB(); if t then t.portraitBorderTint = {r,g,b,a}; applyPortrait() end end,
-                            customValue = "custom", hasAlpha = true })
-                        tabInner:Finalize()
-                    end,
-                    personalText = function(cf, tabInner)
-                        tabInner:AddToggle({ label = "Hide Personal Text",
-                            get = function() local t = ensurePortraitDB() or {}; return not not t.personalTextHidden end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.personalTextHidden = v and true or false; applyPortrait() end end })
-                        tabInner:AddFontSelector({ label = "Personal Text Font",
-                            get = function() local t = ensurePortraitDB() or {}; local s = t.personalText or {}; return s.fontFace or "FRIZQT__" end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.personalText = t.personalText or {}; t.personalText.fontFace = v; applyPortrait() end end })
-                        tabInner:AddSelector({ label = "Personal Text Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
-                            get = function() local t = ensurePortraitDB() or {}; local s = t.personalText or {}; return s.style or "OUTLINE" end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.personalText = t.personalText or {}; t.personalText.style = v; applyPortrait() end end })
-                        tabInner:AddSlider({ label = "Personal Text Size", min = 6, max = 48, step = 1,
-                            get = function() local t = ensurePortraitDB() or {}; local s = t.personalText or {}; return tonumber(s.size) or 14 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.personalText = t.personalText or {}; t.personalText.size = tonumber(v) or 14; applyPortrait() end end })
-                        tabInner:AddColorPicker({ label = "Personal Text Color",
-                            get = function() local t = ensurePortraitDB() or {}; local s = t.personalText or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            set = function(r,g,b,a) local t = ensurePortraitDB(); if t then t.personalText = t.personalText or {}; t.personalText.color = {r,g,b,a}; applyPortrait() end end,
-                            hasAlpha = true })
-                        tabInner:Finalize()
-                    end,
-                    visibility = function(cf, tabInner)
-                        tabInner:AddToggle({ label = "Hide Portrait",
-                            get = function() local t = ensurePortraitDB() or {}; return not not t.hidden end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.hidden = v and true or false; applyPortrait() end end })
-                        tabInner:Finalize()
-                    end,
+                    sizing = function(cf, tabInner) buildPortraitSizingTab(tabInner) end,
+                    zoom = function(cf, tabInner) buildPortraitZoomTab(tabInner) end,
+                    border = function(cf, tabInner) buildPortraitBorderTab(tabInner) end,
+                    visibility = function(cf, tabInner) buildPortraitVisibilityTab(tabInner) end,
                 },
             })
             inner:Finalize()

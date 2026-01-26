@@ -59,17 +59,20 @@ local function ApplySingleEntryStyle(entry, db)
     if not statusBar then return end
 
     -- Bar texture
-    if db.barTexture and addon and addon.ResolveBarTexture then
-        local texturePath = addon.ResolveBarTexture(db.barTexture)
+    if db.barTexture and db.barTexture ~= "default" then
+        local texturePath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(db.barTexture)
         if texturePath and statusBar.SetStatusBarTexture then
             pcall(statusBar.SetStatusBarTexture, statusBar, texturePath)
         end
     end
 
-    -- Bar foreground color (or class color)
+    -- Bar foreground color
+    -- Priority: showClassColor (Edit Mode) > barForegroundColorMode
     local showClassColor = db.showClassColor
+    local colorMode = db.barForegroundColorMode or "default"
+
     if showClassColor then
-        -- Get class token from entry data
+        -- Edit Mode class color setting takes priority
         local classToken = entry.classToken or entry.class or (entry.data and entry.data.classToken)
         if classToken then
             local r, g, b = GetClassColor(classToken)
@@ -77,44 +80,171 @@ local function ApplySingleEntryStyle(entry, db)
                 pcall(statusBar.SetStatusBarColor, statusBar, r, g, b, 1)
             end
         end
-    elseif db.barForegroundColor then
-        local c = db.barForegroundColor
+    elseif colorMode == "custom" and db.barForegroundTint then
+        -- Custom color from addon settings
+        local c = db.barForegroundTint
+        local r = c.r or c[1] or 1
+        local g = c.g or c[2] or 0.8
+        local b = c.b or c[3] or 0
+        local a = c.a or c[4] or 1
         if statusBar.SetStatusBarColor then
-            pcall(statusBar.SetStatusBarColor, statusBar, c[1] or 1, c[2] or 0.8, c[3] or 0, c[4] or 1)
+            pcall(statusBar.SetStatusBarColor, statusBar, r, g, b, a)
         end
     end
+    -- "default" mode: don't override Blizzard's color
 
     -- Bar background color
-    if db.barBackgroundColor then
+    local bgColorMode = db.barBackgroundColorMode or "default"
+    if bgColorMode == "custom" and db.barBackgroundTint then
         local bg = statusBar.Background or statusBar.bg or statusBar.background
         if bg and bg.SetVertexColor then
-            local c = db.barBackgroundColor
-            pcall(bg.SetVertexColor, bg, c[1] or 0.1, c[2] or 0.1, c[3] or 0.1, c[4] or 0.8)
+            local c = db.barBackgroundTint
+            local r = c.r or c[1] or 0.1
+            local g = c.g or c[2] or 0.1
+            local b = c.b or c[3] or 0.1
+            local a = c.a or c[4] or 0.8
+            pcall(bg.SetVertexColor, bg, r, g, b, a)
         end
     end
+    -- "default" mode: don't override Blizzard's background color
 
     -- Custom bar border
-    if db.barUseCustomBorder and db.barBorderStyle then
+    -- "default" = Blizzard's stock border; "none" = no border; "square" = solid square; other = textured
+    local borderStyle = db.barBorderStyle or "default"
+
+    -- Get border color and thickness (used for both square and textured borders)
+    local thickness = db.barBorderThickness or 1
+    local r, g, b, a = 0, 0, 0, 1  -- Default black
+    if db.barBorderTintEnabled and db.barBorderTintColor then
+        local c = db.barBorderTintColor
+        r = c.r or c[1] or 0
+        g = c.g or c[2] or 0
+        b = c.b or c[3] or 0
+        a = c.a or c[4] or 1
+    end
+
+    if borderStyle == "default" then
+        -- Use Blizzard's stock border - restore it and clear any custom borders
+        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
+        if blizzBorder then
+            SafeSetAlpha(blizzBorder, 1)
+        end
+
+        -- Clear textured border if it exists
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(statusBar)
+        end
+
+        -- Hide square border overlay if it exists
+        if statusBar._scooterSquareBorderOverlay then
+            statusBar._scooterSquareBorderOverlay:Hide()
+        end
+
+    elseif borderStyle == "none" then
+        -- No border at all - hide everything
+        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
+        if blizzBorder then
+            SafeSetAlpha(blizzBorder, 0)
+        end
+
+        -- Clear textured border if it exists
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(statusBar)
+        end
+
+        -- Hide square border overlay if it exists
+        if statusBar._scooterSquareBorderOverlay then
+            statusBar._scooterSquareBorderOverlay:Hide()
+        end
+
+    elseif borderStyle == "square" then
+        -- Simple solid-color square border using 4-edge textures
         -- Hide Blizzard's default border
         local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
         if blizzBorder then
             SafeSetAlpha(blizzBorder, 0)
         end
 
-        -- Apply custom border (implementation depends on available border system)
-        if addon and addon.ApplyBarBorder then
-            local borderOpts = {
-                style = db.barBorderStyle,
-                thickness = db.barBorderThickness or 1,
-                color = db.barBorderTintEnabled and db.barBorderTintColor or nil,
-            }
-            addon.ApplyBarBorder(statusBar, borderOpts)
+        -- Clear any textured border
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(statusBar)
         end
+
+        -- Get or create square border overlay
+        local borderOverlay = statusBar._scooterSquareBorderOverlay
+        if not borderOverlay then
+            borderOverlay = CreateFrame("Frame", nil, statusBar)
+            borderOverlay:SetFrameLevel((statusBar:GetFrameLevel() or 0) + 2)
+            statusBar._scooterSquareBorderOverlay = borderOverlay
+
+            -- Create 4 edge textures
+            borderOverlay.edges = {
+                top = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                bottom = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                left = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                right = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+            }
+        end
+
+        -- Position overlay to cover status bar
+        borderOverlay:ClearAllPoints()
+        borderOverlay:SetAllPoints(statusBar)
+
+        local edges = borderOverlay.edges
+
+        -- Top edge
+        edges.top:ClearAllPoints()
+        edges.top:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, 0)
+        edges.top:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, 0)
+        edges.top:SetHeight(thickness)
+        edges.top:SetColorTexture(r, g, b, a)
+        edges.top:Show()
+
+        -- Bottom edge
+        edges.bottom:ClearAllPoints()
+        edges.bottom:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, 0)
+        edges.bottom:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, 0)
+        edges.bottom:SetHeight(thickness)
+        edges.bottom:SetColorTexture(r, g, b, a)
+        edges.bottom:Show()
+
+        -- Left edge
+        edges.left:ClearAllPoints()
+        edges.left:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, -thickness)
+        edges.left:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, thickness)
+        edges.left:SetWidth(thickness)
+        edges.left:SetColorTexture(r, g, b, a)
+        edges.left:Show()
+
+        -- Right edge
+        edges.right:ClearAllPoints()
+        edges.right:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, -thickness)
+        edges.right:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, thickness)
+        edges.right:SetWidth(thickness)
+        edges.right:SetColorTexture(r, g, b, a)
+        edges.right:Show()
+
+        borderOverlay:Show()
+
     else
-        -- Restore Blizzard's border
+        -- Textured border - use BarBorders system
+        -- Hide Blizzard's default border
         local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
         if blizzBorder then
-            SafeSetAlpha(blizzBorder, 1)
+            SafeSetAlpha(blizzBorder, 0)
+        end
+
+        -- Hide square border overlay if it exists
+        if statusBar._scooterSquareBorderOverlay then
+            statusBar._scooterSquareBorderOverlay:Hide()
+        end
+
+        -- Apply textured border
+        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+            addon.BarBorders.ApplyToBarFrame(statusBar, borderStyle, {
+                thickness = thickness,
+                color = { r, g, b, a },
+            })
         end
     end
 
@@ -124,15 +254,26 @@ local function ApplySingleEntryStyle(entry, db)
         local cfg = db.textNames
         if cfg.fontFace and addon and addon.ResolveFontFace then
             local face = addon.ResolveFontFace(cfg.fontFace)
-            local size = cfg.fontSize or 12
+            -- Calculate effective font size: baseFontSize * (editModeTextSize/100) * scaleMultiplier
+            local baseFontSize = cfg.fontSize or 12
+            local editModeScale = (db.textSize or 100) / 100
+            local addonScale = cfg.scaleMultiplier or 1.0
+            local effectiveSize = baseFontSize * editModeScale * addonScale
             local flags = cfg.fontStyle or "OUTLINE"
             if nameFS.SetFont then
-                pcall(nameFS.SetFont, nameFS, face, size, flags)
+                pcall(nameFS.SetFont, nameFS, face, effectiveSize, flags)
             end
         end
-        if cfg.color and nameFS.SetTextColor then
+        -- Apply color (only if colorMode is "custom")
+        local colorMode = cfg.colorMode or "default"
+        if colorMode == "custom" and cfg.color and nameFS.SetTextColor then
             local c = cfg.color
             pcall(nameFS.SetTextColor, nameFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        end
+        -- Note: "default" uses Blizzard's default white (1,1,1,1) which is already the default
+        -- Promote draw layer to render above bar borders
+        if nameFS.SetDrawLayer then
+            pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 7)
         end
     end
 
@@ -142,48 +283,124 @@ local function ApplySingleEntryStyle(entry, db)
         local cfg = db.textNumbers
         if cfg.fontFace and addon and addon.ResolveFontFace then
             local face = addon.ResolveFontFace(cfg.fontFace)
-            local size = cfg.fontSize or 12
+            -- Calculate effective font size: baseFontSize * (editModeTextSize/100) * scaleMultiplier
+            local baseFontSize = cfg.fontSize or 12
+            local editModeScale = (db.textSize or 100) / 100
+            local addonScale = cfg.scaleMultiplier or 1.0
+            local effectiveSize = baseFontSize * editModeScale * addonScale
             local flags = cfg.fontStyle or "OUTLINE"
             if valueFS.SetFont then
-                pcall(valueFS.SetFont, valueFS, face, size, flags)
+                pcall(valueFS.SetFont, valueFS, face, effectiveSize, flags)
             end
         end
-        if cfg.color and valueFS.SetTextColor then
+        -- Apply color (only if colorMode is "custom")
+        local colorMode = cfg.colorMode or "default"
+        if colorMode == "custom" and cfg.color and valueFS.SetTextColor then
             local c = cfg.color
             pcall(valueFS.SetTextColor, valueFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        end
+        -- Note: "default" uses Blizzard's default white (1,1,1,1) which is already the default
+        -- Promote draw layer to render above bar borders
+        if valueFS.SetDrawLayer then
+            pcall(valueFS.SetDrawLayer, valueFS, "OVERLAY", 7)
         end
     end
 
     -- Spec icon styling
-    local iconFrame = entry.IconFrame or entry.icon or entry.SpecIcon
+    -- Frame hierarchy from fstack: entry.Icon (frame) > entry.Icon.Icon (texture)
+    local iconFrame = entry.Icon
     if iconFrame then
         if db.showSpecIcon == false then
             SafeSetShown(iconFrame, false)
         else
             SafeSetShown(iconFrame, true)
 
-            -- Icon border
-            if db.iconBorderEnabled and db.iconBorderColor then
-                local border = iconFrame.Border or iconFrame.border
-                if border then
-                    SafeSetShown(border, true)
-                    if border.SetVertexColor then
-                        local c = db.iconBorderColor
-                        pcall(border.SetVertexColor, border, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-                    end
-                end
-            end
+            -- Icon border - custom overlay approach for damage meter icons
+            -- Blizzard's spec icons use TexCoords (0.0625 inset) creating a rectangular visible area
+            -- We create our own border overlay to handle this properly
+            if db.iconBorderEnable then
+                local thickness = db.iconBorderThickness or 1
+                local insetH = db.iconBorderInsetH or 0  -- Horizontal inset (left/right)
+                local insetV = db.iconBorderInsetV or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
 
-            -- Icon background
-            if db.iconBackgroundColor then
-                local bg = iconFrame.Background or iconFrame.bg
-                if bg and bg.SetVertexColor then
-                    local c = db.iconBackgroundColor
-                    pcall(bg.SetVertexColor, bg, c[1] or 0.1, c[2] or 0.1, c[3] or 0.1, c[4] or 0.8)
+                -- Get or create our border overlay frame
+                local borderOverlay = iconFrame._scooterBorderOverlay
+                if not borderOverlay then
+                    borderOverlay = CreateFrame("Frame", nil, iconFrame)
+                    borderOverlay:SetFrameLevel((iconFrame:GetFrameLevel() or 0) + 2)
+                    iconFrame._scooterBorderOverlay = borderOverlay
+
+                    -- Create 4 edge textures for the border
+                    borderOverlay.edges = {
+                        top = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                        bottom = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                        left = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                        right = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
+                    }
+                end
+
+                -- Position the overlay with separate horizontal and vertical insets
+                -- Positive inset = move inward, negative inset = move outward
+                borderOverlay:ClearAllPoints()
+                borderOverlay:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", insetH, -insetV)
+                borderOverlay:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -insetH, insetV)
+
+                -- Get border color
+                local r, g, b, a = 0, 0, 0, 1  -- Default black
+                if db.iconBorderTintEnable and db.iconBorderTintColor then
+                    local c = db.iconBorderTintColor
+                    r = c.r or c[1] or 0
+                    g = c.g or c[2] or 0
+                    b = c.b or c[3] or 0
+                    a = c.a or c[4] or 1
+                end
+
+                -- Configure edges
+                local edges = borderOverlay.edges
+
+                -- Top edge
+                edges.top:ClearAllPoints()
+                edges.top:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, 0)
+                edges.top:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, 0)
+                edges.top:SetHeight(thickness)
+                edges.top:SetColorTexture(r, g, b, a)
+                edges.top:Show()
+
+                -- Bottom edge
+                edges.bottom:ClearAllPoints()
+                edges.bottom:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, 0)
+                edges.bottom:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, 0)
+                edges.bottom:SetHeight(thickness)
+                edges.bottom:SetColorTexture(r, g, b, a)
+                edges.bottom:Show()
+
+                -- Left edge (between top and bottom)
+                edges.left:ClearAllPoints()
+                edges.left:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, -thickness)
+                edges.left:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, thickness)
+                edges.left:SetWidth(thickness)
+                edges.left:SetColorTexture(r, g, b, a)
+                edges.left:Show()
+
+                -- Right edge (between top and bottom)
+                edges.right:ClearAllPoints()
+                edges.right:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, -thickness)
+                edges.right:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, thickness)
+                edges.right:SetWidth(thickness)
+                edges.right:SetColorTexture(r, g, b, a)
+                edges.right:Show()
+
+                borderOverlay:Show()
+            else
+                -- Hide custom border overlay
+                local borderOverlay = iconFrame._scooterBorderOverlay
+                if borderOverlay then
+                    borderOverlay:Hide()
                 end
             end
         end
     end
+
 end
 
 -- Apply window-level styling (border, background)
@@ -275,7 +492,101 @@ local function ApplyTitleStyling(dmFrame, db)
     end
 end
 
+-- Find all damage meter session windows
+local function GetAllSessionWindows()
+    local windows = {}
+
+    -- Try numbered session windows (DamageMeterSessionWindow1, DamageMeterSessionWindow2, etc.)
+    for i = 1, 10 do
+        local windowName = "DamageMeterSessionWindow" .. i
+        local window = _G[windowName]
+        if window then
+            table.insert(windows, window)
+        end
+    end
+
+    -- Also check DamageMeter.sessionWindows array if it exists
+    local dmFrame = _G.DamageMeter
+    if dmFrame and dmFrame.sessionWindows then
+        for _, window in ipairs(dmFrame.sessionWindows) do
+            -- Avoid duplicates
+            local found = false
+            for _, existing in ipairs(windows) do
+                if existing == window then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                table.insert(windows, window)
+            end
+        end
+    end
+
+    return windows
+end
+
+-- Iterate all visible entries in a session window's ScrollBox
+local function ForEachVisibleEntry(sessionWindow, callback)
+    if not sessionWindow then return end
+
+    local scrollBox = sessionWindow.ScrollBox
+    if not scrollBox then return end
+
+    -- Method 1: ForEachFrame (standard ScrollBox API)
+    if scrollBox.ForEachFrame then
+        pcall(scrollBox.ForEachFrame, scrollBox, callback)
+        return
+    end
+
+    -- Method 2: GetFrames (alternative API)
+    if scrollBox.GetFrames then
+        local frames = scrollBox:GetFrames()
+        if frames then
+            for _, frame in ipairs(frames) do
+                pcall(callback, frame)
+            end
+        end
+        return
+    end
+
+    -- Method 3: Iterate ScrollTarget children directly
+    local scrollTarget = scrollBox.ScrollTarget
+    if scrollTarget and scrollTarget.GetChildren then
+        local children = { scrollTarget:GetChildren() }
+        for _, child in ipairs(children) do
+            if child and child.StatusBar then
+                pcall(callback, child)
+            end
+        end
+    end
+end
+
+-- Hook ScrollBox for a single session window (if not already hooked)
+-- Returns true if a new hook was installed, false if already hooked or no ScrollBox
+local function HookSessionWindowScrollBox(sessionWindow, component)
+    if not sessionWindow or not sessionWindow.ScrollBox then
+        return false
+    end
+    if sessionWindow._ScooterScrollHooked then
+        return false
+    end
+    sessionWindow._ScooterScrollHooked = true
+
+    hooksecurefunc(sessionWindow.ScrollBox, "Update", function(scrollBox)
+        _G.C_Timer.After(0, function()
+            if not component.db then return end
+            ForEachVisibleEntry(sessionWindow, function(entryFrame)
+                ApplySingleEntryStyle(entryFrame, component.db)
+            end)
+        end)
+    end)
+    return true
+end
+
 -- Hook entry acquisition to style new entries
+-- This handles one-time hooks on the main DamageMeter frame (Update/Refresh/UpdateData)
+-- ScrollBox hooks for individual windows are handled by HookSessionWindowScrollBox
 local function HookEntryAcquisition(component)
     local dmFrame = _G.DamageMeter
     if not dmFrame or dmFrame._ScooterDMHooked then return end
@@ -293,22 +604,7 @@ local function HookEntryAcquisition(component)
         end)
     end
 
-    -- Hook ScrollBox Update for entry styling
-    local sessionWindow = dmFrame.SessionWindow or dmFrame
-    if sessionWindow and sessionWindow.ScrollBox then
-        hooksecurefunc(sessionWindow.ScrollBox, "Update", function(scrollBox)
-            _G.C_Timer.After(0, function()
-                if not component.db then return end
-                if scrollBox.ForEachFrame then
-                    pcall(scrollBox.ForEachFrame, scrollBox, function(entryFrame)
-                        ApplySingleEntryStyle(entryFrame, component.db)
-                    end)
-                end
-            end)
-        end)
-    end
-
-    -- Hook Update/Refresh methods
+    -- Hook Update/Refresh methods on main DamageMeter frame
     if type(dmFrame.Update) == "function" then
         hooksecurefunc(dmFrame, "Update", requestApply)
     end
@@ -344,13 +640,17 @@ local function ApplyDamageMeterStyling(self)
     -- Apply title/header styling
     ApplyTitleStyling(dmFrame, db)
 
-    -- Apply window styling
-    ApplyWindowStyling(dmFrame, db)
+    -- Style all session windows and their entries
+    local windows = GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        -- Hook new windows' ScrollBoxes (no-op if already hooked)
+        HookSessionWindowScrollBox(sessionWindow, self)
 
-    -- Style all visible entries
-    local sessionWindow = dmFrame.SessionWindow or dmFrame
-    if sessionWindow and sessionWindow.ScrollBox and sessionWindow.ScrollBox.ForEachFrame then
-        pcall(sessionWindow.ScrollBox.ForEachFrame, sessionWindow.ScrollBox, function(entryFrame)
+        -- Apply window styling
+        ApplyWindowStyling(sessionWindow, db)
+
+        -- Style all visible entries in this window
+        ForEachVisibleEntry(sessionWindow, function(entryFrame)
             ApplySingleEntryStyle(entryFrame, db)
         end)
     end
@@ -385,20 +685,29 @@ addon:RegisterComponentInitializer(function(self)
 
             -- Addon-only settings (bar styling)
             barTexture = { type = "addon", default = "default", ui = { hidden = true } },
+            -- Foreground color: mode ("default", "class", "custom") + tint for custom
+            barForegroundColorMode = { type = "addon", default = "default", ui = { hidden = true } },
+            barForegroundTint = { type = "addon", default = { r = 1, g = 0.8, b = 0, a = 1 }, ui = { hidden = true } },
+            -- Background color: mode ("default", "custom") + tint for custom
+            barBackgroundColorMode = { type = "addon", default = "default", ui = { hidden = true } },
+            barBackgroundTint = { type = "addon", default = { r = 0.1, g = 0.1, b = 0.1, a = 0.8 }, ui = { hidden = true } },
+            -- Legacy settings (kept for backwards compatibility)
             barForegroundColor = { type = "addon", default = { 1, 0.8, 0, 1 }, ui = { hidden = true } },
             barBackgroundColor = { type = "addon", default = { 0.1, 0.1, 0.1, 0.8 }, ui = { hidden = true } },
 
             -- Bar border settings
-            barUseCustomBorder = { type = "addon", default = false, ui = { hidden = true } },
             barBorderStyle = { type = "addon", default = "default", ui = { hidden = true } },
             barBorderTintEnabled = { type = "addon", default = false, ui = { hidden = true } },
             barBorderTintColor = { type = "addon", default = { 1, 1, 1, 1 }, ui = { hidden = true } },
             barBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
 
-            -- Icon settings
-            iconBorderEnabled = { type = "addon", default = false, ui = { hidden = true } },
-            iconBorderColor = { type = "addon", default = { 1, 1, 1, 1 }, ui = { hidden = true } },
-            iconBackgroundColor = { type = "addon", default = { 0.1, 0.1, 0.1, 0.8 }, ui = { hidden = true } },
+            -- Icon settings (matching Essential Cooldowns Border pattern)
+            iconBorderEnable = { type = "addon", default = false, ui = { hidden = true } },
+            iconBorderTintEnable = { type = "addon", default = false, ui = { hidden = true } },
+            iconBorderTintColor = { type = "addon", default = { r = 1, g = 1, b = 1, a = 1 }, ui = { hidden = true } },
+            iconBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
+            iconBorderInsetH = { type = "addon", default = 0, ui = { hidden = true } },  -- Horizontal (left/right)
+            iconBorderInsetV = { type = "addon", default = 2, ui = { hidden = true } },  -- Vertical (top/bottom) - default 2 for clipped icons
 
             -- Text settings - Title (header/dropdown)
             textTitle = { type = "addon", default = {
@@ -414,6 +723,8 @@ addon:RegisterComponentInitializer(function(self)
                 fontStyle = "OUTLINE",
                 fontSize = 12,
                 color = { 1, 1, 1, 1 },
+                colorMode = "default",
+                scaleMultiplier = 1.0,
             }, ui = { hidden = true }},
 
             -- Text settings - Numbers (DPS/HPS values)
@@ -422,6 +733,8 @@ addon:RegisterComponentInitializer(function(self)
                 fontStyle = "OUTLINE",
                 fontSize = 12,
                 color = { 1, 1, 1, 1 },
+                colorMode = "default",
+                scaleMultiplier = 1.0,
             }, ui = { hidden = true }},
 
             -- Window border settings

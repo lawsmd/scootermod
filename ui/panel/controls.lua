@@ -1,9 +1,34 @@
 local addonName, addon = ...
 
+--[[============================================================================
+    ██╗     ███████╗ ██████╗  █████╗  ██████╗██╗   ██╗
+    ██║     ██╔════╝██╔════╝ ██╔══██╗██╔════╝╚██╗ ██╔╝
+    ██║     █████╗  ██║  ███╗███████║██║      ╚████╔╝
+    ██║     ██╔══╝  ██║   ██║██╔══██║██║       ╚██╔╝
+    ███████╗███████╗╚██████╔╝██║  ██║╚██████╗   ██║
+    ╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝   ╚═╝
+
+    ⚠️  WARNING: THIS IS LEGACY CODE - DO NOT MODIFY ⚠️
+
+    This entire directory (ui/panel/) is the LEGACY UI system.
+
+    The NEW UI is located in: ui/v2/
+
+    This legacy code is kept only for backwards compatibility and will
+    eventually be removed. ALL new development should happen in ui/v2/.
+
+    If you are an AI assistant or developer reading this:
+    - DO NOT add new features to files in ui/panel/
+    - DO NOT modify files in ui/panel/ for new functionality
+    - GO TO ui/v2/ for all UI work
+
+============================================================================]]--
+
 addon.SettingsPanel = addon.SettingsPanel or {}
 local panel = addon.SettingsPanel
 
--- Expose helpers globally for builder modules
+-- LEGACY: Expose helpers globally for builder modules
+-- ⚠️ DO NOT MODIFY - Use ui/v2/ instead
 function CreateLocalSetting(name, varType, getValue, setValue, defaultValue)
     local setting = {}
     function setting:GetName() return name end

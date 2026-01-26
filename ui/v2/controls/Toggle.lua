@@ -69,6 +69,7 @@ function Controls:CreateToggle(options)
     local name = options.name
     local emphasized = options.emphasized or false
     local infoIconOpts = options.infoIcon
+    local isDisabledFn = options.disabled or options.isDisabled
 
     local hasDesc = description and description ~= ""
     local height
@@ -228,33 +229,55 @@ function Controls:CreateToggle(options)
 
     -- State tracking
     row._value = false
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
 
     -- Update visual state
     local function UpdateVisual()
         local isOn = row._value
+        local isDisabled = row._isDisabled
         local r, g, b = theme:GetAccentColor()
         local dR, dG, dB = theme:GetDimTextColor()
 
-        -- Label always uses accent color for consistency
-        labelFS:SetTextColor(r, g, b, 1)
-
-        if isOn then
-            -- ON state: lit indicator
-            indicator._bg:Show()
-            indicator._text:SetText("ON")
-            indicator._text:SetTextColor(0, 0, 0, 1)  -- Dark text on accent bg
-            -- Bright border on indicator
+        if isDisabled then
+            -- Disabled state: everything grayed out
+            local disabledAlpha = 0.35
+            labelFS:SetTextColor(dR, dG, dB, disabledAlpha)
+            if row._description then
+                row._description:SetAlpha(disabledAlpha)
+            end
+            indicator._bg:Hide()
+            indicator._text:SetText(isOn and "ON" or "OFF")
+            indicator._text:SetTextColor(dR, dG, dB, disabledAlpha)
             for _, tex in pairs(indicator._border) do
-                tex:SetColorTexture(r, g, b, 1)
+                tex:SetColorTexture(dR, dG, dB, disabledAlpha * 0.5)
             end
         else
-            -- OFF state: dim indicator
-            indicator._bg:Hide()
-            indicator._text:SetText("OFF")
-            indicator._text:SetTextColor(dR, dG, dB, 1)
-            -- Dimmer border on indicator
-            for _, tex in pairs(indicator._border) do
-                tex:SetColorTexture(r, g, b, 0.4)
+            -- Restore description alpha
+            if row._description then
+                row._description:SetAlpha(1)
+            end
+            -- Label always uses accent color for consistency
+            labelFS:SetTextColor(r, g, b, 1)
+
+            if isOn then
+                -- ON state: lit indicator
+                indicator._bg:Show()
+                indicator._text:SetText("ON")
+                indicator._text:SetTextColor(0, 0, 0, 1)  -- Dark text on accent bg
+                -- Bright border on indicator
+                for _, tex in pairs(indicator._border) do
+                    tex:SetColorTexture(r, g, b, 1)
+                end
+            else
+                -- OFF state: dim indicator
+                indicator._bg:Hide()
+                indicator._text:SetText("OFF")
+                indicator._text:SetTextColor(dR, dG, dB, 1)
+                -- Dimmer border on indicator
+                for _, tex in pairs(indicator._border) do
+                    tex:SetColorTexture(r, g, b, 0.4)
+                end
             end
         end
     end
@@ -262,6 +285,10 @@ function Controls:CreateToggle(options)
 
     -- Initialize from getter
     row._value = getValue() or false
+    -- Initialize disabled state from function
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+    end
     UpdateVisual()
 
     -- Hover handlers
@@ -275,6 +302,10 @@ function Controls:CreateToggle(options)
 
     -- Click to toggle
     row:SetScript("OnClick", function(self, mouseButton)
+        -- Don't respond to clicks when disabled
+        if self._isDisabled then
+            return
+        end
         self._value = not self._value
         setValue(self._value)
         UpdateVisual()
@@ -337,7 +368,21 @@ function Controls:CreateToggle(options)
 
     function row:Refresh()
         self._value = getValue() or false
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local wasDisabled = self._isDisabled
+            self._isDisabled = self._isDisabledFn() and true or false
+        end
         self._updateVisual()
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        self._updateVisual()
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     -- Dynamic label update (for orientation-dependent labels)

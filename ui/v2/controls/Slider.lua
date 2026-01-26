@@ -112,6 +112,7 @@ function Controls:CreateSlider(options)
     local inputWidth = options.inputWidth or SLIDER_INPUT_WIDTH
     local precision = options.precision or 0
     local name = options.name
+    local isDisabledFn = options.disabled or options.isDisabled
 
     -- Edit Mode sync support: debounced callback for expensive operations
     local onEditModeSync = options.onEditModeSync
@@ -406,6 +407,13 @@ function Controls:CreateSlider(options)
     sliderContainer._rightArrow = rightArrow
     sliderContainer._trackFrame = trackFrame
     row._sliderContainer = sliderContainer
+    -- Store references for disabled state
+    row._leftArrow = leftArrow
+    row._rightArrow = rightArrow
+    row._trackFrame = trackFrame
+    row._inputFrame = inputFrame
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
 
     -- State tracking
     row._currentValue = minVal
@@ -461,6 +469,14 @@ function Controls:CreateSlider(options)
         row._currentValue = ClampValue(getValue() or minVal)
     end
     UpdateDisplay()
+
+    -- Initialize disabled state from function
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+        if row._isDisabled then
+            row:SetDisabled(true)
+        end
+    end
 
     -- Sync lock state for Edit Mode sync protection
     row._syncLocked = false  -- Only used for non-debounceKey sliders
@@ -541,7 +557,7 @@ function Controls:CreateSlider(options)
 
     -- Left arrow click (decrement)
     leftArrow:SetScript("OnClick", function(btn)
-        if IsSyncLocked() then return end
+        if row._isDisabled or IsSyncLocked() then return end
         row._currentValue = ClampValue(row._currentValue - step)
         setValue(row._currentValue)
         UpdateDisplay()
@@ -551,7 +567,7 @@ function Controls:CreateSlider(options)
 
     -- Right arrow click (increment)
     rightArrow:SetScript("OnClick", function(btn)
-        if IsSyncLocked() then return end
+        if row._isDisabled or IsSyncLocked() then return end
         row._currentValue = ClampValue(row._currentValue + step)
         setValue(row._currentValue)
         UpdateDisplay()
@@ -563,7 +579,7 @@ function Controls:CreateSlider(options)
     local dragStartX, dragStartValue
 
     thumb:SetScript("OnDragStart", function(btn)
-        if IsSyncLocked() then return end
+        if row._isDisabled or IsSyncLocked() then return end
         btn._isDragging = true
         local r, g, b = theme:GetAccentColor()
         btn._bg:SetColorTexture(r, g, b, 0.6)
@@ -604,7 +620,7 @@ function Controls:CreateSlider(options)
     trackFrame:EnableMouse(true)
     trackFrame:SetScript("OnMouseDown", function(frame, button)
         if button ~= "LeftButton" then return end
-        if IsSyncLocked() then return end
+        if row._isDisabled or IsSyncLocked() then return end
 
         local cursorX = GetCursorPosition()
         local scale = frame:GetEffectiveScale()
@@ -746,7 +762,49 @@ function Controls:CreateSlider(options)
 
     function row:Refresh()
         self._currentValue = ClampValue(getValue() or self._minVal)
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local newDisabled = self._isDisabledFn() and true or false
+            if newDisabled ~= self._isDisabled then
+                self:SetDisabled(newDisabled)
+            end
+        end
         self._updateDisplay()
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        local disabledAlpha = 0.35
+        local ar, ag, ab = theme:GetAccentColor()
+        local dR, dG, dB = theme:GetDimTextColor()
+
+        if self._isDisabled then
+            -- Gray out all elements
+            if self._label then self._label:SetTextColor(dR, dG, dB, disabledAlpha) end
+            if self._description then self._description:SetAlpha(disabledAlpha) end
+            if self._leftArrow then self._leftArrow:SetAlpha(disabledAlpha) end
+            if self._rightArrow then self._rightArrow:SetAlpha(disabledAlpha) end
+            if self._trackFrame then self._trackFrame:SetAlpha(disabledAlpha) end
+            if self._inputFrame then
+                self._inputFrame:SetAlpha(disabledAlpha)
+                self._inputFrame:EnableMouse(false)
+            end
+        else
+            -- Restore normal appearance
+            if self._label then self._label:SetTextColor(ar, ag, ab, 1) end
+            if self._description then self._description:SetAlpha(1) end
+            if self._leftArrow then self._leftArrow:SetAlpha(1) end
+            if self._rightArrow then self._rightArrow:SetAlpha(1) end
+            if self._trackFrame then self._trackFrame:SetAlpha(1) end
+            if self._inputFrame then
+                self._inputFrame:SetAlpha(1)
+                self._inputFrame:EnableMouse(true)
+            end
+        end
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     function row:SetMinMax(newMin, newMax)

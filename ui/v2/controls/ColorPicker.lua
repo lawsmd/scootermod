@@ -44,6 +44,7 @@ function Controls:CreateColorPicker(options)
     local swatchWidth = options.swatchWidth or COLOR_SWATCH_WIDTH
     local swatchHeight = options.swatchHeight or COLOR_SWATCH_HEIGHT
     local name = options.name
+    local isDisabledFn = options.disabled or options.isDisabled
 
     local hasDesc = description and description ~= ""
     local height = hasDesc and COLOR_ROW_HEIGHT_WITH_DESC or COLOR_ROW_HEIGHT
@@ -176,8 +177,26 @@ function Controls:CreateColorPicker(options)
     end
     row._updateSwatchColor = UpdateSwatchColor
 
+    -- State tracking for disabled
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
+
     -- Initialize color
     UpdateSwatchColor()
+
+    -- Initialize disabled state from function
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+        if row._isDisabled then
+            local dR, dG, dB = theme:GetDimTextColor()
+            local disabledAlpha = 0.35
+            labelFS:SetTextColor(dR, dG, dB, disabledAlpha)
+            if row._description then
+                row._description:SetAlpha(disabledAlpha)
+            end
+            swatch:SetAlpha(disabledAlpha)
+        end
+    end
 
     -- Hover handlers for row
     row:SetScript("OnEnter", function(self)
@@ -210,6 +229,10 @@ function Controls:CreateColorPicker(options)
 
     -- Click to open color picker
     swatch:SetScript("OnClick", function()
+        -- Don't respond to clicks when disabled
+        if row._isDisabled then
+            return
+        end
         local curR, curG, curB, curA = ReadColor()
 
         ColorPickerFrame:SetupColorPickerAndShow({
@@ -268,7 +291,37 @@ function Controls:CreateColorPicker(options)
     end
 
     function row:Refresh()
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local newDisabled = self._isDisabledFn() and true or false
+            if newDisabled ~= self._isDisabled then
+                self:SetDisabled(newDisabled)
+            end
+        end
         self._updateSwatchColor()
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        local disabledAlpha = 0.35
+        local ar, ag, ab = theme:GetAccentColor()
+        local dR, dG, dB = theme:GetDimTextColor()
+
+        if self._isDisabled then
+            -- Gray out all elements
+            if self._label then self._label:SetTextColor(dR, dG, dB, disabledAlpha) end
+            if self._description then self._description:SetAlpha(disabledAlpha) end
+            if self._swatch then self._swatch:SetAlpha(disabledAlpha) end
+        else
+            -- Restore normal appearance
+            if self._label then self._label:SetTextColor(ar, ag, ab, 1) end
+            if self._description then self._description:SetAlpha(1) end
+            if self._swatch then self._swatch:SetAlpha(1) end
+        end
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     function row:Cleanup()

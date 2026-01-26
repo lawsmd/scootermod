@@ -52,6 +52,7 @@ function Controls:CreateToggleColorPicker(options)
     local swatchWidth = options.swatchWidth or TOGGLE_COLOR_SWATCH_WIDTH
     local swatchHeight = options.swatchHeight or TOGGLE_COLOR_SWATCH_HEIGHT
     local name = options.name
+    local isDisabledFn = options.disabled or options.isDisabled
 
     local hasDesc = description and description ~= ""
     local height = hasDesc and TOGGLE_HEIGHT_WITH_DESC or TOGGLE_HEIGHT
@@ -246,43 +247,70 @@ function Controls:CreateToggleColorPicker(options)
 
     -- State tracking
     row._value = false
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
 
     -- Update visual state for toggle and swatch visibility
     local function UpdateVisual()
         local isOn = row._value
+        local isDisabled = row._isDisabled
         local r, g, b = theme:GetAccentColor()
         local dR, dG, dB = theme:GetDimTextColor()
 
-        -- Label always uses accent color
-        labelFS:SetTextColor(r, g, b, 1)
-
-        if isOn then
-            -- ON state
-            indicator._bg:Show()
-            indicator._text:SetText("ON")
-            indicator._text:SetTextColor(0, 0, 0, 1)
-            for _, tex in pairs(indicator._border) do
-                tex:SetColorTexture(r, g, b, 1)
+        if isDisabled then
+            -- Disabled state: everything grayed out
+            local disabledAlpha = 0.35
+            labelFS:SetTextColor(dR, dG, dB, disabledAlpha)
+            if row._description then
+                row._description:SetAlpha(disabledAlpha)
             end
-            -- Show color swatch
-            swatch:Show()
-            UpdateSwatchColor()
-        else
-            -- OFF state
             indicator._bg:Hide()
-            indicator._text:SetText("OFF")
-            indicator._text:SetTextColor(dR, dG, dB, 1)
+            indicator._text:SetText(isOn and "ON" or "OFF")
+            indicator._text:SetTextColor(dR, dG, dB, disabledAlpha)
             for _, tex in pairs(indicator._border) do
-                tex:SetColorTexture(r, g, b, 0.4)
+                tex:SetColorTexture(dR, dG, dB, disabledAlpha * 0.5)
             end
-            -- Hide color swatch
             swatch:Hide()
+        else
+            -- Restore description alpha
+            if row._description then
+                row._description:SetAlpha(1)
+            end
+            -- Label always uses accent color
+            labelFS:SetTextColor(r, g, b, 1)
+
+            if isOn then
+                -- ON state
+                indicator._bg:Show()
+                indicator._text:SetText("ON")
+                indicator._text:SetTextColor(0, 0, 0, 1)
+                for _, tex in pairs(indicator._border) do
+                    tex:SetColorTexture(r, g, b, 1)
+                end
+                -- Show color swatch
+                swatch:Show()
+                UpdateSwatchColor()
+            else
+                -- OFF state
+                indicator._bg:Hide()
+                indicator._text:SetText("OFF")
+                indicator._text:SetTextColor(dR, dG, dB, 1)
+                for _, tex in pairs(indicator._border) do
+                    tex:SetColorTexture(r, g, b, 0.4)
+                end
+                -- Hide color swatch
+                swatch:Hide()
+            end
         end
     end
     row._updateVisual = UpdateVisual
 
     -- Initialize
     row._value = getValue() or false
+    -- Initialize disabled state from function
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+    end
     UpdateVisual()
 
     -- Row hover handlers
@@ -295,8 +323,12 @@ function Controls:CreateToggleColorPicker(options)
         end
     end)
 
-    -- Row click toggles state (but not if clicking swatch)
+    -- Row click toggles state (but not if clicking swatch or disabled)
     row:SetScript("OnClick", function(self, mouseButton)
+        -- Don't respond to clicks when disabled
+        if self._isDisabled then
+            return
+        end
         self._value = not self._value
         setValue(self._value)
         UpdateVisual()
@@ -389,8 +421,22 @@ function Controls:CreateToggleColorPicker(options)
 
     function row:Refresh()
         self._value = getValue() or false
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local wasDisabled = self._isDisabled
+            self._isDisabled = self._isDisabledFn() and true or false
+        end
         self._updateVisual()
         self._updateSwatchColor()
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        self._updateVisual()
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     function row:Cleanup()

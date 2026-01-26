@@ -290,10 +290,18 @@ do
 		if opacityPct < 1 then opacityPct = 1 elseif opacityPct > 100 then opacityPct = 100 end
 		local opacityValue = opacityPct / 100.0
 
+		local petPortrait = _G.PetPortrait
+		local petPortraitMask = _G.PetPortraitMask
 		local petAttackModeTexture = _G.PetAttackModeTexture
 		local petFrameFlash = _G.PetFrameFlash
 
 		-- Capture original alpha for newly created texture instances (frame recreation).
+		if petPortrait and not originalAlphas[petPortrait] then
+			originalAlphas[petPortrait] = petPortrait:GetAlpha() or 1.0
+		end
+		if petPortraitMask and not originalAlphas[petPortraitMask] then
+			originalAlphas[petPortraitMask] = petPortraitMask:GetAlpha() or 1.0
+		end
 		if petAttackModeTexture and not originalAlphas[petAttackModeTexture] then
 			originalAlphas[petAttackModeTexture] = petAttackModeTexture:GetAlpha() or 1.0
 		end
@@ -301,6 +309,19 @@ do
 			originalAlphas[petFrameFlash] = petFrameFlash:GetAlpha() or 1.0
 		end
 
+		-- Apply visibility/opacity to the actual pet portrait and mask using sticky alpha
+		-- (safe technique that avoids taint by only using SetAlpha, not Hide/Show)
+		if petPortrait then
+			local visibleAlpha = hidePortrait and 0.0 or ((originalAlphas[petPortrait] or 1.0) * opacityValue)
+			applyStickyOverlayAlpha(petPortrait, hidePortrait, visibleAlpha)
+		end
+
+		if petPortraitMask then
+			local visibleAlpha = hidePortrait and 0.0 or ((originalAlphas[petPortraitMask] or 1.0) * opacityValue)
+			applyStickyOverlayAlpha(petPortraitMask, hidePortrait, visibleAlpha)
+		end
+
+		-- Apply to overlay textures (attack mode indicator and damage flash)
 		if petAttackModeTexture then
 			local hidden = hidePortrait or useCustomBorders
 			local visibleAlpha = (originalAlphas[petAttackModeTexture] or 1.0) * opacityValue
@@ -331,6 +352,105 @@ do
 	-- Expose a public helper so init.lua event handlers can re-enforce sticky pet overlays.
 	function addon.UnitFrames_EnforcePetOverlays()
 		EnforcePetOverlays()
+	end
+
+	-- Install enforcement hooks on portrait/mask frames to keep them hidden when Blizzard code re-shows them.
+	-- This is similar to the Pet overlay pattern but for Player/Target/Focus portraits.
+	-- Uses hooksecurefunc to re-enforce hidden state after Show/SetShown/SetAlpha calls.
+	local function installPortraitHideEnforcement(portraitFrame, maskFrame, unit)
+		if not portraitFrame then return end
+		local st = getState(portraitFrame)
+		if not st then return end
+		if st.hideEnforcementHooked then return end
+
+		-- Helper to enforce hidden state immediately
+		local function enforceHiddenNow(frame)
+			if not frame then return end
+			local fs = getState(frame)
+			if not fs or not fs.portraitHiddenByScooter then return end
+			if fs.portraitEnforcing then return end
+			fs.portraitEnforcing = true
+
+			if frame.SetAlpha then
+				pcall(frame.SetAlpha, frame, 0)
+			end
+			if frame.Hide then
+				pcall(frame.Hide, frame)
+			end
+
+			fs.portraitEnforcing = nil
+		end
+
+		-- Hook Show to re-hide
+		if portraitFrame.Show then
+			_G.hooksecurefunc(portraitFrame, "Show", function(self)
+				local fs = getState(self)
+				if fs and fs.portraitHiddenByScooter then
+					enforceHiddenNow(self)
+				end
+			end)
+		end
+
+		-- Hook SetShown to re-hide
+		if portraitFrame.SetShown then
+			_G.hooksecurefunc(portraitFrame, "SetShown", function(self, shown)
+				if not shown then return end
+				local fs = getState(self)
+				if fs and fs.portraitHiddenByScooter then
+					enforceHiddenNow(self)
+				end
+			end)
+		end
+
+		-- Hook SetAlpha to force 0
+		if portraitFrame.SetAlpha then
+			_G.hooksecurefunc(portraitFrame, "SetAlpha", function(self, alpha)
+				if alpha == 0 then return end
+				local fs = getState(self)
+				if fs and fs.portraitHiddenByScooter then
+					pcall(self.SetAlpha, self, 0)
+				end
+			end)
+		end
+
+		st.hideEnforcementHooked = true
+
+		-- Also hook the mask frame if it exists
+		if maskFrame then
+			local mst = getState(maskFrame)
+			if mst and not mst.hideEnforcementHooked then
+				if maskFrame.Show then
+					_G.hooksecurefunc(maskFrame, "Show", function(self)
+						local fs = getState(self)
+						if fs and fs.portraitHiddenByScooter then
+							enforceHiddenNow(self)
+						end
+					end)
+				end
+
+				if maskFrame.SetShown then
+					_G.hooksecurefunc(maskFrame, "SetShown", function(self, shown)
+						if not shown then return end
+						local fs = getState(self)
+						if fs and fs.portraitHiddenByScooter then
+							enforceHiddenNow(self)
+						end
+					end)
+				end
+
+				if maskFrame.SetAlpha then
+					_G.hooksecurefunc(maskFrame, "SetAlpha", function(self, alpha)
+						if alpha == 0 then return end
+						local fs = getState(self)
+						if fs and fs.portraitHiddenByScooter then
+							pcall(self.SetAlpha, self, 0)
+						end
+					end)
+				end
+
+				mst.hideEnforcementHooked = true
+			end
+		end
 	end
 
 	local function applyForUnit(unit)
@@ -573,19 +693,22 @@ do
 		-- Apply scaling to portrait, mask, and corner icon frames
 		-- Baseline is always 1.0 for portraits (no Edit Mode scale setting)
 		local function applyScale()
-			-- PetFrame is an Edit Mode managed/protected frame. Calling SetScale on its children
-			-- can taint the frame and later cause protected Edit Mode methods (e.g., ClearAllPointsBase)
-			-- to be blocked. Do not perform any scale operations for Pet.
-			if unit == "Pet" then
-				return
-			end
 			if not InCombatLockdown() then
 				-- Scale portrait frame (baseline 1.0 × multiplier)
-				portraitFrame:SetScale(scaleMultiplier)
+				-- Use pcall for Pet as PetFrame is Edit Mode managed (SetScale is C-side safe, but guard anyway)
+				if unit == "Pet" then
+					pcall(portraitFrame.SetScale, portraitFrame, scaleMultiplier)
+				else
+					portraitFrame:SetScale(scaleMultiplier)
+				end
 
 				-- Scale mask frame if it exists
 				if maskFrame then
-					maskFrame:SetScale(scaleMultiplier)
+					if unit == "Pet" then
+						pcall(maskFrame.SetScale, maskFrame, scaleMultiplier)
+					else
+						maskFrame:SetScale(scaleMultiplier)
+					end
 				end
 
 				-- Scale corner icon frame if it exists (Player only)
@@ -596,13 +719,8 @@ do
 		end
 
 		-- Apply zoom to portrait texture via SetTexCoord
+		-- SetTexCoord is a C-side widget operation - safe for all frames including Pet
 		local function applyZoom()
-			-- PetFrame is an Edit Mode managed/protected frame. Calling SetTexCoord on its children
-			-- can taint the frame and later cause protected Edit Mode methods (e.g., ClearAllPointsBase)
-			-- to be blocked. Do not perform any zoom operations for Pet.
-			if unit == "Pet" then
-				return
-			end
 			if not portraitTexture then
 				-- Debug: log if texture not found
 				if addon.debug then
@@ -717,14 +835,8 @@ do
 		end
 
 		-- Apply portrait border using custom textures
+		-- CreateTexture and texture styling are C-side operations - safe for all frames including Pet
 		local function applyBorder()
-			-- PetFrame is an Edit Mode managed/protected frame. Creating textures on PetFrame
-			-- or calling Show/Hide on PetFrame children can taint the frame and later cause
-			-- protected Edit Mode methods (e.g., ClearAllPointsBase) to be blocked.
-			-- Do not perform any border operations for Pet.
-			if unit == "Pet" then
-				return
-			end
 			if not portraitFrame then return end
 
 			-- Get parent frame for creating border texture (portrait is a Texture, not a Frame)
@@ -764,9 +876,20 @@ do
 			if not texturePath then return end
 			
 			-- Create border texture if it doesn't exist
+			-- Use pcall for Pet as PetFrame parent is Edit Mode managed (CreateTexture is C-side safe, but guard anyway)
 			if not borderTexture then
-				borderTexture = parentFrame:CreateTexture(nil, "OVERLAY")
-				parentFrame[borderKey] = borderTexture
+				if unit == "Pet" then
+					local ok, tex = pcall(parentFrame.CreateTexture, parentFrame, nil, "OVERLAY")
+					if ok and tex then
+						borderTexture = tex
+						parentFrame[borderKey] = borderTexture
+					else
+						return -- Failed to create texture, bail out
+					end
+				else
+					borderTexture = parentFrame:CreateTexture(nil, "OVERLAY")
+					parentFrame[borderKey] = borderTexture
+				end
 			end
 			
 			-- Set texture
@@ -832,22 +955,58 @@ do
 				local portraitHidden = hidePortrait
 				local finalAlpha = portraitHidden and 0.0 or (origPortraitAlpha * opacityValue)
 
-				if portraitFrame.SetAlpha then
-					portraitFrame:SetAlpha(finalAlpha)
+				-- Set the hidden flag in FrameState for enforcement hooks
+				local pfState = getState(portraitFrame)
+				if pfState then
+					pfState.portraitHiddenByScooter = portraitHidden
 				end
-				if portraitHidden and portraitFrame.Hide then
-					portraitFrame:Hide()
+
+				if portraitHidden then
+					-- Install enforcement hooks to keep portrait hidden when Blizzard re-shows it
+					installPortraitHideEnforcement(portraitFrame, maskFrame, unit)
+
+					if portraitFrame.SetAlpha then
+						portraitFrame:SetAlpha(0)
+					end
+					if portraitFrame.Hide then
+						portraitFrame:Hide()
+					end
+				else
+					-- Restore visibility
+					if portraitFrame.SetAlpha then
+						portraitFrame:SetAlpha(finalAlpha)
+					end
+					if portraitFrame.Show then
+						portraitFrame:Show()
+					end
 				end
 
 				-- Mask frame: hidden if "Hide Portrait" is checked
 				if maskFrame then
 					local maskHidden = hidePortrait
 					local maskAlpha = maskHidden and 0.0 or (origMaskAlpha * opacityValue)
-					if maskFrame.SetAlpha then
-						maskFrame:SetAlpha(maskAlpha)
+
+					-- Set the hidden flag in FrameState for enforcement hooks
+					local mfState = getState(maskFrame)
+					if mfState then
+						mfState.portraitHiddenByScooter = maskHidden
 					end
-					if maskHidden and maskFrame.Hide then
-						maskFrame:Hide()
+
+					if maskHidden then
+						if maskFrame.SetAlpha then
+							maskFrame:SetAlpha(0)
+						end
+						if maskFrame.Hide then
+							maskFrame:Hide()
+						end
+					else
+						-- Restore visibility
+						if maskFrame.SetAlpha then
+							maskFrame:SetAlpha(maskAlpha)
+						end
+						if maskFrame.Show then
+							maskFrame:Show()
+						end
 					end
 				end
 			end
@@ -1072,6 +1231,10 @@ do
 				end)
 			end
 		else
+			-- Pet overlays use a separate enforcement path due to Edit Mode taint restrictions
+			if unit == "Pet" then
+				EnforcePetOverlays()
+			end
 			applyPosition()
 			applyScale()
 			applyZoom()

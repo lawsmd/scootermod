@@ -194,6 +194,8 @@ function Builder:AddToggle(options)
         useLightDim = self._useLightDim,
         emphasized = options.emphasized,
         infoIcon = options.infoIcon,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if toggle then
@@ -499,6 +501,8 @@ function Builder:AddSelector(options)
         width = options.width,
         useLightDim = self._useLightDim,
         emphasized = options.emphasized,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if selector then
@@ -573,6 +577,9 @@ function Builder:AddSlider(options)
         debounceDelay = options.debounceDelay,
         debounceKey = options.debounceKey,
         useLightDim = self._useLightDim,
+        -- Disabled state support
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if slider then
@@ -930,6 +937,8 @@ function Builder:AddColorPicker(options)
         swatchWidth = options.swatchWidth,
         swatchHeight = options.swatchHeight,
         useLightDim = self._useLightDim,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if colorPicker then
@@ -989,6 +998,8 @@ function Builder:AddToggleColorPicker(options)
         swatchWidth = options.swatchWidth,
         swatchHeight = options.swatchHeight,
         useLightDim = self._useLightDim,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if toggleColor then
@@ -1052,6 +1063,8 @@ function Builder:AddSelectorColorPicker(options)
         hasAlpha = options.hasAlpha,
         width = options.width,
         useLightDim = self._useLightDim,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
     })
 
     if selectorColor then

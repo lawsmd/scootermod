@@ -74,6 +74,7 @@ function Controls:CreateSelector(options)
     local name = options.name
     local syncCooldown = options.syncCooldown  -- Optional cooldown for Edit Mode sync
     local emphasized = options.emphasized or false
+    local isDisabledFn = options.disabled or options.isDisabled
 
     local hasDesc = description and description ~= ""
     local rowHeight
@@ -320,6 +321,9 @@ function Controls:CreateSelector(options)
     row._syncLocked = false
     row._syncCooldown = syncCooldown
     row._syncLockTimer = nil
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
+    row._selectorContainer = selectorContainer
 
     -- Find index of key in keyList (uses row._keyList for dynamic updates)
     local function getKeyIndex(key)
@@ -342,6 +346,18 @@ function Controls:CreateSelector(options)
     -- Initialize from getter
     row._currentKey = getValue()
     UpdateDisplay()
+
+    -- Initialize disabled state from function
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+        if row._isDisabled then
+            C_Timer.After(0, function()
+                if row and row.SetDisabled then
+                    row:SetDisabled(true)
+                end
+            end)
+        end
+    end
 
     -- Sync lock helper functions (for Edit Mode sync protection)
     -- When locked, arrow clicks are ignored to prevent rapid changes from causing state desync
@@ -423,8 +439,8 @@ function Controls:CreateSelector(options)
 
     -- Left arrow click (previous)
     leftArrow:SetScript("OnClick", function(btn)
-        -- Check sync lock (prevents rapid changes during Edit Mode sync)
-        if row._syncLocked then
+        -- Check disabled or sync lock
+        if row._isDisabled or row._syncLocked then
             return
         end
         local kList = row._keyList
@@ -440,8 +456,8 @@ function Controls:CreateSelector(options)
 
     -- Right arrow click (next)
     rightArrow:SetScript("OnClick", function(btn)
-        -- Check sync lock (prevents rapid changes during Edit Mode sync)
-        if row._syncLocked then
+        -- Check disabled or sync lock
+        if row._isDisabled or row._syncLocked then
             return
         end
         local kList = row._keyList
@@ -698,7 +714,37 @@ function Controls:CreateSelector(options)
 
     function row:Refresh()
         self._currentKey = getValue()
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local newDisabled = self._isDisabledFn() and true or false
+            if newDisabled ~= self._isDisabled then
+                self:SetDisabled(newDisabled)
+            end
+        end
         self._updateDisplay()
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        local disabledAlpha = 0.35
+        local ar, ag, ab = theme:GetAccentColor()
+        local dR, dG, dB = theme:GetDimTextColor()
+
+        if self._isDisabled then
+            -- Gray out all elements
+            if self._label then self._label:SetTextColor(dR, dG, dB, disabledAlpha) end
+            if self._description then self._description:SetAlpha(disabledAlpha) end
+            if self._selectorContainer then self._selectorContainer:SetAlpha(disabledAlpha) end
+        else
+            -- Restore normal appearance
+            if self._label then self._label:SetTextColor(ar, ag, ab, 1) end
+            if self._description then self._description:SetAlpha(1) end
+            if self._selectorContainer then self._selectorContainer:SetAlpha(1) end
+        end
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     -- Dynamic label update (for orientation-dependent labels like "# Rows" vs "# Columns")

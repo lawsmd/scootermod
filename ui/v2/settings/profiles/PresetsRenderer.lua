@@ -8,6 +8,8 @@ addon.UI.Settings.Profiles.Presets = {}
 
 local Presets = addon.UI.Settings.Profiles.Presets
 local SettingsBuilder = addon.UI.SettingsBuilder
+local Theme = addon.UI.Theme
+local Controls = addon.UI.Controls
 
 -- State management for this renderer
 Presets._state = {
@@ -16,6 +18,7 @@ Presets._state = {
 }
 
 function Presets.Render(panel, scrollContent)
+    panel._presetsState = Presets._state
     panel:ClearContent()
 
     -- Clean up previous controls

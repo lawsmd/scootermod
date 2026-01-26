@@ -8,6 +8,8 @@ addon.UI.Settings.Profiles.Manage = {}
 
 local Manage = addon.UI.Settings.Profiles.Manage
 local SettingsBuilder = addon.UI.SettingsBuilder
+local Theme = addon.UI.Theme
+local Controls = addon.UI.Controls
 
 -- State management for this renderer
 Manage._state = {
@@ -15,6 +17,7 @@ Manage._state = {
 }
 
 function Manage.Render(panel, scrollContent)
+    panel._profilesManageState = Manage._state
     panel:ClearContent()
 
     -- Clean up previous Profiles Manage controls

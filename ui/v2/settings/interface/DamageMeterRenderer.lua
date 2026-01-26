@@ -123,6 +123,19 @@ function DamageMeter.Render(panel, scrollContent)
         end,
     })
 
+    -- Font style values used by multiple sections
+    local fontStyleValues = {
+        ["NONE"] = "Regular",
+        ["OUTLINE"] = "Outline",
+        ["THICKOUTLINE"] = "Thick Outline",
+        ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+        ["SHADOW"] = "Shadow",
+        ["SHADOWOUTLINE"] = "Shadow Outline",
+        ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+        ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
+    }
+    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+
     -- Bars section (collapsible with tabs inside)
     builder:AddCollapsibleSection({
         title = "Bars",
@@ -137,6 +150,8 @@ function DamageMeter.Render(panel, scrollContent)
                     { key = "sizing", label = "Sizing" },
                     { key = "style", label = "Style" },
                     { key = "border", label = "Border" },
+                    { key = "namesText", label = "Names Text" },
+                    { key = "numbersText", label = "Numbers Text" },
                 },
                 buildContent = {
                     sizing = function(tabContent, tabInner)
@@ -166,52 +181,77 @@ function DamageMeter.Render(panel, scrollContent)
                             set = function(value)
                                 setSetting("showClassColor", value)
                                 syncEditModeSetting("showClassColor")
-                                -- Refresh the Foreground Color disabled state
-                                if inner and inner.RefreshWidgetState then
-                                    inner:RefreshWidgetState("barForegroundColor")
+                                -- Refresh the Foreground Color selector disabled state
+                                local fgColorControl = tabInner:GetControl("barForegroundColor")
+                                if fgColorControl and fgColorControl.Refresh then
+                                    fgColorControl:Refresh()
                                 end
                             end,
                         })
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Foreground Color",
-                            description = "Bar fill color (disabled when using class colors).",
-                            widgetKey = "barForegroundColor",
+                            description = "Bar fill color when 'Show Class Color' is disabled. Disabled when class colors are enabled above.",
+                            key = "barForegroundColor",
+                            values = {
+                                ["default"] = "Default",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
                             get = function()
-                                local c = getSetting("barForegroundColor")
-                                if c then return c.r, c.g, c.b, c.a end
-                                return 0.8, 0.2, 0.2, 1
+                                return getSetting("barForegroundColorMode") or "default"
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("barForegroundColor", { r = r, g = g, b = b, a = a or 1 })
+                            set = function(value)
+                                setSetting("barForegroundColorMode", value)
                             end,
+                            getColor = function()
+                                local c = getSetting("barForegroundTint")
+                                if c then
+                                    return c.r or c[1] or 1, c.g or c[2] or 0.8, c.b or c[3] or 0, c.a or c[4] or 1
+                                end
+                                return 1, 0.8, 0, 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setSetting("barForegroundTint", { r = r, g = g, b = b, a = a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = false,
                             disabled = function() return getSetting("showClassColor") end,
                         })
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Background Color",
+                            description = "Bar background color mode.",
+                            values = {
+                                ["default"] = "Default",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
                             get = function()
-                                local c = getSetting("barBackgroundColor")
-                                if c then return c.r, c.g, c.b, c.a end
+                                return getSetting("barBackgroundColorMode") or "default"
+                            end,
+                            set = function(value)
+                                setSetting("barBackgroundColorMode", value)
+                            end,
+                            getColor = function()
+                                local c = getSetting("barBackgroundTint")
+                                if c then
+                                    return c.r or c[1] or 0.1, c.g or c[2] or 0.1, c.b or c[3] or 0.1, c.a or c[4] or 0.8
+                                end
                                 return 0.1, 0.1, 0.1, 0.8
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("barBackgroundColor", { r = r, g = g, b = b, a = a or 1 })
+                            setColor = function(r, g, b, a)
+                                setSetting("barBackgroundTint", { r = r, g = g, b = b, a = a or 1 })
                             end,
+                            customValue = "custom",
                             hasAlpha = true,
                         })
                         tabInner:Finalize()
                     end,
                     border = function(tabContent, tabInner)
-                        tabInner:AddToggle({
-                            label = "Use Custom Border",
-                            description = "Override Blizzard's default bar borders with a custom style.",
-                            get = function() return getSetting("useCustomBarBorder") end,
-                            set = function(value)
-                                setSetting("useCustomBarBorder", value)
-                            end,
-                        })
                         tabInner:AddBarBorderSelector({
                             label = "Border Style",
-                            get = function() return getSetting("barBorderStyle") or "pointed" end,
+                            description = "Select 'No Border' to use Blizzard's default, or choose a custom border style.",
+                            includeNone = true,
+                            get = function() return getSetting("barBorderStyle") or "none" end,
                             set = function(value)
                                 setSetting("barBorderStyle", value)
                             end,
@@ -234,11 +274,199 @@ function DamageMeter.Render(panel, scrollContent)
                         })
                         tabInner:AddSlider({
                             label = "Border Thickness",
-                            min = 1, max = 4, step = 1,
-                            get = function() return getSetting("barBorderThickness") or 2 end,
+                            min = 0.5, max = 4, step = 0.5,
+                            get = function() return getSetting("barBorderThickness") or 1 end,
                             set = function(value)
                                 setSetting("barBorderThickness", value)
                             end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    namesText = function(tabContent, tabInner)
+                        -- Helper to get/set textNames sub-table
+                        local function getTextNames()
+                            local t = getSetting("textNames")
+                            return t or {}
+                        end
+                        local function setTextNamesProp(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textNames = comp.db.textNames or {}
+                                comp.db.textNames[key] = value
+                            end
+                            if addon and addon.ApplyStyles then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                end)
+                            end
+                        end
+
+                        tabInner:AddSlider({
+                            label = "Text Size",
+                            description = "Scale for bar text. Syncs with Edit Mode.",
+                            min = 50, max = 150, step = 10,
+                            get = function() return getSetting("textSize") or 100 end,
+                            set = function(value) setSetting("textSize", value) end,
+                            debounceKey = "UI_damageMeter_textSize",
+                            debounceDelay = 0.2,
+                            onEditModeSync = function(newValue)
+                                syncEditModeSetting("textSize")
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Scale Multiplier",
+                            description = "Multiplies the Edit Mode 'Text Size' setting.",
+                            min = 0.5, max = 1.5, step = 0.05,
+                            precision = 2,
+                            get = function()
+                                local t = getTextNames()
+                                return t.scaleMultiplier or 1.0
+                            end,
+                            set = function(value)
+                                setTextNamesProp("scaleMultiplier", value)
+                            end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function()
+                                local t = getTextNames()
+                                return t.fontFace or "FRIZQT__"
+                            end,
+                            set = function(value)
+                                setTextNamesProp("fontFace", value)
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function()
+                                local t = getTextNames()
+                                return t.fontStyle or "OUTLINE"
+                            end,
+                            set = function(value)
+                                setTextNamesProp("fontStyle", value)
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Color",
+                            values = {
+                                ["default"] = "Default",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
+                            get = function()
+                                local t = getTextNames()
+                                return t.colorMode or "default"
+                            end,
+                            set = function(value)
+                                setTextNamesProp("colorMode", value)
+                            end,
+                            getColor = function()
+                                local t = getTextNames()
+                                local c = t.color
+                                if c then return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end
+                                return 1, 1, 1, 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setTextNamesProp("color", { r, g, b, a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    numbersText = function(tabContent, tabInner)
+                        -- Helper to get/set textNumbers sub-table
+                        local function getTextNumbers()
+                            local t = getSetting("textNumbers")
+                            return t or {}
+                        end
+                        local function setTextNumbersProp(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textNumbers = comp.db.textNumbers or {}
+                                comp.db.textNumbers[key] = value
+                            end
+                            if addon and addon.ApplyStyles then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                end)
+                            end
+                        end
+
+                        tabInner:AddSlider({
+                            label = "Text Size",
+                            description = "Scale for bar text. Syncs with Edit Mode.",
+                            min = 50, max = 150, step = 10,
+                            get = function() return getSetting("textSize") or 100 end,
+                            set = function(value) setSetting("textSize", value) end,
+                            debounceKey = "UI_damageMeter_textSize",
+                            debounceDelay = 0.2,
+                            onEditModeSync = function(newValue)
+                                syncEditModeSetting("textSize")
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Scale Multiplier",
+                            description = "Multiplies the Edit Mode 'Text Size' setting.",
+                            min = 0.5, max = 1.5, step = 0.05,
+                            precision = 2,
+                            get = function()
+                                local t = getTextNumbers()
+                                return t.scaleMultiplier or 1.0
+                            end,
+                            set = function(value)
+                                setTextNumbersProp("scaleMultiplier", value)
+                            end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function()
+                                local t = getTextNumbers()
+                                return t.fontFace or "FRIZQT__"
+                            end,
+                            set = function(value)
+                                setTextNumbersProp("fontFace", value)
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function()
+                                local t = getTextNumbers()
+                                return t.fontStyle or "OUTLINE"
+                            end,
+                            set = function(value)
+                                setTextNumbersProp("fontStyle", value)
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Color",
+                            values = {
+                                ["default"] = "Default",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
+                            get = function()
+                                local t = getTextNumbers()
+                                return t.colorMode or "default"
+                            end,
+                            set = function(value)
+                                setTextNumbersProp("colorMode", value)
+                            end,
+                            getColor = function()
+                                local t = getTextNumbers()
+                                local c = t.color
+                                if c then return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end
+                                return 1, 1, 1, 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setTextNumbersProp("color", { r, g, b, a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
                         })
                         tabInner:Finalize()
                     end,
@@ -247,78 +475,23 @@ function DamageMeter.Render(panel, scrollContent)
         end,
     })
 
-    -- Icons section
+    -- Title Bar section (collapsible with tabs inside)
     builder:AddCollapsibleSection({
-        title = "Icons",
+        title = "Title Bar",
         componentId = "damageMeter",
-        sectionKey = "icons",
-        defaultExpanded = false,
-        buildContent = function(contentFrame, inner)
-            inner:AddToggle({
-                label = "Show Spec Icon",
-                description = "Display specialization icons next to player names. Syncs with Edit Mode.",
-                get = function() return getSetting("showSpecIcon") end,
-                set = function(value)
-                    setSetting("showSpecIcon", value)
-                    syncEditModeSetting("showSpecIcon")
-                end,
-            })
-            inner:AddToggleColorPicker({
-                label = "Icon Border",
-                description = "Show a colored border around spec icons.",
-                get = function() return getSetting("iconBorderEnabled") end,
-                set = function(value)
-                    setSetting("iconBorderEnabled", value)
-                end,
-                getColor = function()
-                    local c = getSetting("iconBorderColor")
-                    if c then return c.r, c.g, c.b, c.a end
-                    return 0.3, 0.3, 0.3, 1
-                end,
-                setColor = function(r, g, b, a)
-                    setSetting("iconBorderColor", { r = r, g = g, b = b, a = a or 1 })
-                end,
-            })
-            inner:AddColorPicker({
-                label = "Icon Background",
-                get = function()
-                    local c = getSetting("iconBackgroundColor")
-                    if c then return c.r, c.g, c.b, c.a end
-                    return 0, 0, 0, 0.5
-                end,
-                set = function(r, g, b, a)
-                    setSetting("iconBackgroundColor", { r = r, g = g, b = b, a = a or 1 })
-                end,
-                hasAlpha = true,
-            })
-        end,
-    })
-
-    -- Text section (collapsible with tabs inside)
-    local fontStyleValues = {
-        ["NONE"] = "None",
-        ["OUTLINE"] = "Outline",
-        ["THICKOUTLINE"] = "Thick Outline",
-        ["MONOCHROME"] = "Monochrome",
-    }
-    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROME" }
-
-    builder:AddCollapsibleSection({
-        title = "Text",
-        componentId = "damageMeter",
-        sectionKey = "text",
+        sectionKey = "titleBar",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddTabbedSection({
                 componentId = "damageMeter",
-                sectionKey = "textTabs",
+                sectionKey = "titleBarTabs",
                 tabs = {
-                    { key = "title", label = "Title" },
-                    { key = "names", label = "Names" },
-                    { key = "numbers", label = "Numbers" },
+                    { key = "titleText", label = "Title Text" },
+                    { key = "buttons", label = "Buttons" },
+                    { key = "backdrop", label = "Backdrop" },
                 },
                 buildContent = {
-                    title = function(tabContent, tabInner)
+                    titleText = function(tabContent, tabInner)
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function() return getSetting("titleFont") or "default" end,
@@ -348,107 +521,134 @@ function DamageMeter.Render(panel, scrollContent)
                         })
                         tabInner:Finalize()
                     end,
-                    names = function(tabContent, tabInner)
-                        tabInner:AddSlider({
-                            label = "Text Size",
-                            description = "Scale for header/dropdown text. Syncs with Edit Mode.",
-                            min = 50, max = 150, step = 10,
-                            get = function() return getSetting("textSize") or 100 end,
-                            set = function(value) setSetting("textSize", value) end,
-                            debounceKey = "UI_damageMeter_textSize",
-                            debounceDelay = 0.2,
-                            onEditModeSync = function(newValue)
-                                syncEditModeSetting("textSize")
-                            end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Font",
-                            get = function() return getSetting("namesFont") or "default" end,
-                            set = function(value)
-                                setSetting("namesFont", value)
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Font Style",
-                            values = fontStyleValues,
-                            order = fontStyleOrder,
-                            get = function() return getSetting("namesFontStyle") or "OUTLINE" end,
-                            set = function(value)
-                                setSetting("namesFontStyle", value)
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Font Size",
-                            min = 8, max = 18, step = 1,
-                            get = function() return getSetting("namesFontSize") or 12 end,
-                            set = function(value)
-                                setSetting("namesFontSize", value)
-                            end,
-                        })
-                        tabInner:AddColorPicker({
-                            label = "Color",
-                            get = function()
-                                local c = getSetting("namesColor")
-                                if c then return c.r, c.g, c.b, c.a end
-                                return 1, 1, 1, 1
-                            end,
-                            set = function(r, g, b, a)
-                                setSetting("namesColor", { r = r, g = g, b = b, a = a or 1 })
-                            end,
-                        })
+                    buttons = function(tabContent, tabInner)
+                        tabInner:AddDescription("Coming soon")
                         tabInner:Finalize()
                     end,
-                    numbers = function(tabContent, tabInner)
-                        tabInner:AddSlider({
-                            label = "Text Size",
-                            description = "Scale for header/dropdown text. Syncs with Edit Mode.",
-                            min = 50, max = 150, step = 10,
-                            get = function() return getSetting("textSize") or 100 end,
-                            set = function(value) setSetting("textSize", value) end,
-                            debounceKey = "UI_damageMeter_textSize",
-                            debounceDelay = 0.2,
-                            onEditModeSync = function(newValue)
-                                syncEditModeSetting("textSize")
-                            end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Font",
-                            get = function() return getSetting("numbersFont") or "default" end,
-                            set = function(value)
-                                setSetting("numbersFont", value)
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Font Style",
-                            values = fontStyleValues,
-                            order = fontStyleOrder,
-                            get = function() return getSetting("numbersFontStyle") or "OUTLINE" end,
-                            set = function(value)
-                                setSetting("numbersFontStyle", value)
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Font Size",
-                            min = 8, max = 18, step = 1,
-                            get = function() return getSetting("numbersFontSize") or 12 end,
-                            set = function(value)
-                                setSetting("numbersFontSize", value)
-                            end,
-                        })
-                        tabInner:AddColorPicker({
-                            label = "Color",
-                            get = function()
-                                local c = getSetting("numbersColor")
-                                if c then return c.r, c.g, c.b, c.a end
-                                return 1, 0.82, 0, 1
-                            end,
-                            set = function(r, g, b, a)
-                                setSetting("numbersColor", { r = r, g = g, b = b, a = a or 1 })
-                            end,
-                        })
+                    backdrop = function(tabContent, tabInner)
+                        tabInner:AddDescription("Coming soon")
                         tabInner:Finalize()
                     end,
                 },
+            })
+        end,
+    })
+
+    -- Icons section
+    builder:AddCollapsibleSection({
+        title = "Icons",
+        componentId = "damageMeter",
+        sectionKey = "icons",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Helper to check if icons are disabled (showSpecIcon is off)
+            local function iconsDisabled()
+                return not getSetting("showSpecIcon")
+            end
+
+            inner:AddToggle({
+                label = "Show Spec Icon",
+                description = "Display specialization icons next to player names. Syncs with Edit Mode.",
+                get = function() return getSetting("showSpecIcon") end,
+                set = function(value)
+                    setSetting("showSpecIcon", value)
+                    syncEditModeSetting("showSpecIcon")
+                    -- Refresh all controls in this section to update disabled states
+                    C_Timer.After(0, function()
+                        if inner and inner._controls then
+                            for _, control in ipairs(inner._controls) do
+                                if control and control.Refresh then
+                                    pcall(control.Refresh, control)
+                                end
+                            end
+                        end
+                    end)
+                end,
+            })
+
+            -- Use Custom Border toggle
+            inner:AddToggle({
+                key = "iconBorderEnable",
+                label = "Use Custom Border",
+                description = "Enable custom border styling for spec icons.",
+                get = function() return getSetting("iconBorderEnable") or false end,
+                set = function(val)
+                    setSetting("iconBorderEnable", val)
+                end,
+                disabled = iconsDisabled,
+            })
+
+            -- Border Tint toggle+color
+            inner:AddToggleColorPicker({
+                label = "Border Tint",
+                description = "Apply a custom tint color to the icon border.",
+                get = function()
+                    return getSetting("iconBorderTintEnable") or false
+                end,
+                set = function(val)
+                    setSetting("iconBorderTintEnable", val)
+                end,
+                getColor = function()
+                    local c = getSetting("iconBorderTintColor")
+                    if c then
+                        return c.r or c[1] or 1, c.g or c[2] or 1, c.b or c[3] or 1, c.a or c[4] or 1
+                    end
+                    return 1, 1, 1, 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("iconBorderTintColor", { r = r, g = g, b = b, a = a })
+                end,
+                hasAlpha = true,
+                disabled = iconsDisabled,
+            })
+
+            -- Border Thickness slider
+            inner:AddSlider({
+                label = "Border Thickness",
+                description = "Thickness of the border in pixels.",
+                min = 1,
+                max = 8,
+                step = 0.5,
+                precision = 1,
+                get = function() return getSetting("iconBorderThickness") or 1 end,
+                set = function(v)
+                    setSetting("iconBorderThickness", v)
+                end,
+                minLabel = "1",
+                maxLabel = "8",
+                disabled = iconsDisabled,
+            })
+
+            -- Horizontal Inset slider (left/right edges)
+            inner:AddSlider({
+                label = "Horizontal Inset",
+                description = "Move left/right edges inward (positive) or outward (negative).",
+                min = -4,
+                max = 4,
+                step = 1,
+                get = function() return getSetting("iconBorderInsetH") or 0 end,
+                set = function(v)
+                    setSetting("iconBorderInsetH", v)
+                end,
+                minLabel = "-4",
+                maxLabel = "+4",
+                disabled = iconsDisabled,
+            })
+
+            -- Vertical Inset slider (top/bottom edges)
+            inner:AddSlider({
+                label = "Vertical Inset",
+                description = "Move top/bottom edges inward (positive) or outward (negative).",
+                min = -4,
+                max = 4,
+                step = 1,
+                get = function() return getSetting("iconBorderInsetV") or 2 end,
+                set = function(v)
+                    setSetting("iconBorderInsetV", v)
+                end,
+                minLabel = "-4",
+                maxLabel = "+4",
+                disabled = iconsDisabled,
             })
         end,
     })

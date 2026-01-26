@@ -41,17 +41,18 @@ local BRAND_R, BRAND_G, BRAND_B = 0.20, 0.90, 0.30
 -- Border Categories
 --------------------------------------------------------------------------------
 
-local CLEAN_BORDERS = {
-    "none",     -- No border at all
-    "square",   -- Default (Square) - clears custom border
-    "mmtPixel", "mmtRound", "mmtSquares", "mmtCorners",
-    "mmtPencil", "mmtPencilMono", "mmtWood",
-}
-
 local TRADITIONAL_BORDERS = {
+    "default",  -- Blizzard's stock border
+    "none",     -- No border at all
+    "square",   -- Simple solid-color square border
     "mmtBorder1", "mmtBorder2",
     "mmtYBorder", "mmtYBorder2",
     "mmtYuluSwitch", "mmtYuluXI",
+}
+
+local CLEAN_BORDERS = {
+    "mmtPixel", "mmtRound", "mmtSquares", "mmtCorners",
+    "mmtPencil", "mmtPencilMono", "mmtWood",
 }
 
 local TABS = {
@@ -75,6 +76,7 @@ local selectedTab = "standard"
 --------------------------------------------------------------------------------
 
 local function GetBorderDisplayName(key, stripPrefix)
+    if key == "default" then return "Default" end
     if key == "none" then return "No Border" end
     if key == "square" then return "Square" end
 
@@ -95,7 +97,7 @@ local function GetBorderDisplayName(key, stripPrefix)
 end
 
 local function GetBorderTexturePath(key)
-    if key == "none" or key == "square" then return nil end
+    if key == "default" or key == "none" or key == "square" then return nil end
 
     if addon.BarBorders and addon.BarBorders.GetStyle then
         local style = addon.BarBorders.GetStyle(key)
@@ -117,11 +119,11 @@ local function GetBorderEdgeSize(key)
 end
 
 local function GetCategoryForBorder(borderKey)
-    for _, key in ipairs(CLEAN_BORDERS) do
-        if key == borderKey then return "clean" end
-    end
     for _, key in ipairs(TRADITIONAL_BORDERS) do
         if key == borderKey then return "standard" end
+    end
+    for _, key in ipairs(CLEAN_BORDERS) do
+        if key == borderKey then return "clean" end
     end
     return "standard"  -- Default fallback
 end

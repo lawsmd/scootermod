@@ -77,6 +77,7 @@ function Controls:CreateSelectorColorPicker(options)
     local selectorWidth = options.width or SELECTOR_DEFAULT_WIDTH
     local name = options.name
     local syncCooldown = options.syncCooldown
+    local isDisabledFn = options.isDisabled or options.disabled or function() return false end
 
     local hasDesc = description and description ~= ""
     local rowHeight = hasDesc and SELECTOR_ROW_HEIGHT_WITH_DESC or SELECTOR_ROW_HEIGHT
@@ -345,6 +346,8 @@ function Controls:CreateSelectorColorPicker(options)
     row._syncLocked = false
     row._syncCooldown = syncCooldown
     row._syncLockTimer = nil
+    row._isDisabled = false
+    row._isDisabledFn = isDisabledFn
 
     -- Helper to read color
     local function ReadColor()
@@ -406,8 +409,83 @@ function Controls:CreateSelectorColorPicker(options)
     row._currentKey = getValue()
     UpdateDisplay()
 
+    -- Disabled state visual update
+    local function UpdateDisabledState()
+        local isDisabled = row._isDisabled
+        local ar, ag, ab = theme:GetAccentColor()
+        local dimR, dimG, dimB = theme:GetDimTextColor()
+
+        if isDisabled then
+            -- Gray out label
+            if row._label then
+                row._label:SetTextColor(dimR, dimG, dimB, 0.5)
+            end
+            -- Gray out description
+            if row._description then
+                row._description:SetTextColor(dimR, dimG, dimB, 0.4)
+            end
+            -- Disable arrows visually
+            if leftArrow._text then
+                leftArrow._text:SetTextColor(dimR, dimG, dimB, 0.3)
+            end
+            if rightArrow._text then
+                rightArrow._text:SetTextColor(dimR, dimG, dimB, 0.3)
+            end
+            -- Gray out value text
+            if valueText then
+                valueText:SetTextColor(dimR, dimG, dimB, 0.5)
+            end
+            -- Dim the selector border
+            if selector._border then
+                for _, tex in pairs(selector._border) do
+                    tex:SetColorTexture(dimR, dimG, dimB, 0.3)
+                end
+            end
+            -- Disable mouse on interactive elements
+            leftArrow:EnableMouse(false)
+            rightArrow:EnableMouse(false)
+            valueBtn:EnableMouse(false)
+            swatch:EnableMouse(false)
+        else
+            -- Restore label
+            if row._label then
+                row._label:SetTextColor(ar, ag, ab, 1)
+            end
+            -- Restore description
+            if row._description then
+                row._description:SetTextColor(dimR, dimG, dimB, 1)
+            end
+            -- Restore arrows (respecting sync lock)
+            if not row._syncLocked then
+                if leftArrow._text then
+                    leftArrow._text:SetTextColor(ar, ag, ab, 1)
+                end
+                if rightArrow._text then
+                    rightArrow._text:SetTextColor(ar, ag, ab, 1)
+                end
+            end
+            -- Restore value text
+            if valueText then
+                valueText:SetTextColor(1, 1, 1, 1)
+            end
+            -- Restore selector border
+            if selector._border then
+                for _, tex in pairs(selector._border) do
+                    tex:SetColorTexture(ar, ag, ab, SELECTOR_BORDER_ALPHA)
+                end
+            end
+            -- Enable mouse on interactive elements
+            leftArrow:EnableMouse(true)
+            rightArrow:EnableMouse(true)
+            valueBtn:EnableMouse(true)
+            swatch:EnableMouse(true)
+        end
+    end
+    row._updateDisabledState = UpdateDisabledState
+
     -- Sync lock helper functions
     local function UpdateArrowVisuals()
+        if row._isDisabled then return end -- Skip if disabled
         local r, g, b = theme:GetAccentColor()
         local dR, dG, dB = theme:GetDimTextColor()
         if row._syncLocked then
@@ -804,6 +882,23 @@ function Controls:CreateSelectorColorPicker(options)
         self._currentKey = getValue()
         self._updateDisplay()
         self._updateSwatchColor()
+        -- Check disabled state from function
+        if self._isDisabledFn then
+            local newDisabled = self._isDisabledFn() and true or false
+            if newDisabled ~= self._isDisabled then
+                self._isDisabled = newDisabled
+                self._updateDisabledState()
+            end
+        end
+    end
+
+    function row:SetDisabled(disabled)
+        self._isDisabled = disabled and true or false
+        self._updateDisabledState()
+    end
+
+    function row:IsDisabled()
+        return self._isDisabled
     end
 
     function row:SetLabel(newLabel)
@@ -872,6 +967,14 @@ function Controls:CreateSelectorColorPicker(options)
             end
             self._dropdown:Hide()
             self._dropdown:SetParent(nil)
+        end
+    end
+
+    -- Initialize disabled state
+    if row._isDisabledFn then
+        row._isDisabled = row._isDisabledFn() and true or false
+        if row._isDisabled then
+            row._updateDisabledState()
         end
     end
 
