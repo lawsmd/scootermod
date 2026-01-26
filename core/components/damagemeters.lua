@@ -51,6 +51,223 @@ local function GetClassColor(classToken)
     return 1, 1, 1, 1
 end
 
+-- JiberishIcons Integration Helpers
+local function GetJiberishIcons()
+    local JIGlobal = _G.ElvUI_JiberishIcons
+    if not JIGlobal or type(JIGlobal) ~= "table" then return nil end
+    local JI = JIGlobal[1]
+    if not JI then return nil end
+    return JI
+end
+
+local function IsJiberishIconsAvailable()
+    local JI = GetJiberishIcons()
+    if not JI then return false end
+    if not JI.dataHelper or not JI.dataHelper.class then return false end
+    if not JI.mergedStylePacks or not JI.mergedStylePacks.class then return false end
+    return true
+end
+
+local function GetJiberishIconsStyles()
+    local JI = GetJiberishIcons()
+    if not JI or not JI.mergedStylePacks or not JI.mergedStylePacks.class then return {} end
+    local styles = {}
+    for key, data in pairs(JI.mergedStylePacks.class.styles or {}) do
+        styles[key] = data.name or key
+    end
+    return styles
+end
+
+-- Export to addon namespace for UI access
+addon.IsJiberishIconsAvailable = IsJiberishIconsAvailable
+addon.GetJiberishIconsStyles = GetJiberishIconsStyles
+
+--------------------------------------------------------------------------------
+-- Enhanced Title Feature: Display session type alongside meter type
+-- e.g., "DPS (Current)", "HPS (Overall)", "Interrupts (Segment 3)"
+--------------------------------------------------------------------------------
+
+-- Lookup tables for meter type and session type display names
+-- Uses Blizzard's global strings with fallbacks
+local METER_TYPE_NAMES = {
+    [Enum.DamageMeterType.DamageDone] = DAMAGE_METER_DAMAGE_DONE or "Damage Done",
+    [Enum.DamageMeterType.Dps] = DAMAGE_METER_DPS or "DPS",
+    [Enum.DamageMeterType.HealingDone] = DAMAGE_METER_HEALING_DONE or "Healing Done",
+    [Enum.DamageMeterType.Hps] = DAMAGE_METER_HPS or "HPS",
+    [Enum.DamageMeterType.Absorbs] = DAMAGE_METER_ABSORBS or "Absorbs",
+    [Enum.DamageMeterType.Interrupts] = DAMAGE_METER_INTERRUPTS or "Interrupts",
+    [Enum.DamageMeterType.Dispels] = DAMAGE_METER_DISPELS or "Dispels",
+    [Enum.DamageMeterType.DamageTaken] = DAMAGE_METER_DAMAGE_TAKEN or "Damage Taken",
+    [Enum.DamageMeterType.AvoidableDamageTaken] = DAMAGE_METER_AVOIDABLE_DAMAGE_TAKEN or "Avoidable Damage",
+}
+
+local SESSION_TYPE_NAMES = {
+    [Enum.DamageMeterSessionType.Overall] = "Overall",
+    [Enum.DamageMeterSessionType.Current] = "Current",
+}
+
+-- Build enhanced title string combining meter type and session info
+-- @param sessionWindow - The DamageMeterSessionWindow frame
+-- @return string - Enhanced title like "DPS (Current)" or "HPS (Segment 3)"
+local function GetEnhancedTitle(sessionWindow)
+    if not sessionWindow then return nil end
+
+    local meterType = sessionWindow.damageMeterType
+    local sessionType = sessionWindow.sessionType
+    local sessionID = sessionWindow.sessionID
+
+    -- Get meter type name
+    local typeName = METER_TYPE_NAMES[meterType] or "Unknown"
+
+    -- Get session name based on type or ID
+    local sessionName
+    if sessionType then
+        sessionName = SESSION_TYPE_NAMES[sessionType] or "Unknown"
+    elseif sessionID then
+        sessionName = "Segment " .. sessionID
+    else
+        sessionName = "Unknown"
+    end
+
+    return typeName .. " (" .. sessionName .. ")"
+end
+
+-- Update a single session window's title with enhanced text
+-- @param sessionWindow - The DamageMeterSessionWindow frame
+local function UpdateEnhancedTitle(sessionWindow)
+    if not sessionWindow then return end
+
+    -- Get the component's db to check setting
+    local comp = addon.Components and addon.Components["damageMeter"]
+    if not comp or not comp.db or not comp.db.showSessionInTitle then return end
+
+    -- Get the TypeName FontString
+    local typeNameFS = sessionWindow.DamageMeterTypeDropdown and sessionWindow.DamageMeterTypeDropdown.TypeName
+    if not typeNameFS or not typeNameFS.SetText then return end
+
+    local enhancedTitle = GetEnhancedTitle(sessionWindow)
+    if enhancedTitle then
+        pcall(typeNameFS.SetText, typeNameFS, enhancedTitle)
+    end
+end
+
+-- Restore a single session window's title to the original (meter type only)
+-- @param sessionWindow - The DamageMeterSessionWindow frame
+local function RestoreOriginalTitle(sessionWindow)
+    if not sessionWindow then return end
+
+    local typeNameFS = sessionWindow.DamageMeterTypeDropdown and sessionWindow.DamageMeterTypeDropdown.TypeName
+    if not typeNameFS or not typeNameFS.SetText then return end
+
+    local meterType = sessionWindow.damageMeterType
+    local typeName = METER_TYPE_NAMES[meterType] or ""
+    pcall(typeNameFS.SetText, typeNameFS, typeName)
+end
+
+-- Refresh all visible window titles (enhanced or original based on setting)
+local function RefreshAllWindowTitles()
+    if not DamageMeter then return end
+
+    local comp = addon.Components and addon.Components["damageMeter"]
+    if not comp or not comp.db then return end
+
+    local showEnhanced = comp.db.showSessionInTitle
+
+    -- Iterate through numbered windows
+    for i = 1, 10 do
+        local windowName = "DamageMeterSessionWindow" .. i
+        local window = _G[windowName]
+        if window and window:IsShown() then
+            if showEnhanced then
+                UpdateEnhancedTitle(window)
+            else
+                RestoreOriginalTitle(window)
+            end
+        end
+    end
+
+    -- Also check DamageMeter.sessionWindows array
+    if DamageMeter.sessionWindows then
+        for _, window in ipairs(DamageMeter.sessionWindows) do
+            if window and window:IsShown() then
+                if showEnhanced then
+                    UpdateEnhancedTitle(window)
+                else
+                    RestoreOriginalTitle(window)
+                end
+            end
+        end
+    end
+end
+
+-- Hook a single session window's methods for enhanced title updates
+-- @param sessionWindow - The DamageMeterSessionWindow frame to hook
+-- @return boolean - true if hooks were newly installed, false if already hooked
+local function HookSessionWindowTitleUpdates(sessionWindow)
+    if not sessionWindow then return false end
+    if sessionWindow._ScooterTitleHooked then return false end
+    sessionWindow._ScooterTitleHooked = true
+
+    -- Hook SetDamageMeterType - fires when user changes meter type (DPS, HPS, etc.)
+    if sessionWindow.SetDamageMeterType then
+        hooksecurefunc(sessionWindow, "SetDamageMeterType", function(self, damageMeterType)
+            C_Timer.After(0, function()
+                if self and self:IsShown() then
+                    UpdateEnhancedTitle(self)
+                end
+            end)
+        end)
+    end
+
+    -- Hook SetSession - fires when user changes session (Current, Overall, Segment N)
+    if sessionWindow.SetSession then
+        hooksecurefunc(sessionWindow, "SetSession", function(self, sessionType, sessionID)
+            C_Timer.After(0, function()
+                if self and self:IsShown() then
+                    UpdateEnhancedTitle(self)
+                end
+            end)
+        end)
+    end
+
+    return true
+end
+
+-- Apply JiberishIcons class icon to replace spec icon
+local function ApplyJiberishIconsStyle(entry, db)
+    if not entry or not db then return end
+    if not db.jiberishIconsEnabled then return end
+    if db.showSpecIcon == false then return end  -- Icons hidden entirely
+
+    local JI = GetJiberishIcons()
+    if not JI then return end
+
+    -- Get class token from entry
+    local classToken = entry.classToken or entry.class or entry.classFilename
+    if not classToken then return end
+
+    -- Get texCoords for this class
+    local classData = JI.dataHelper and JI.dataHelper.class and JI.dataHelper.class[classToken]
+    if not classData or not classData.texCoords then return end
+
+    -- Get texture path for selected style
+    local styleName = db.jiberishIconsStyle or "fabled"
+    local mergedStyles = JI.mergedStylePacks and JI.mergedStylePacks.class
+    if not mergedStyles then return end
+
+    local styleData = mergedStyles.styles and mergedStyles.styles[styleName]
+    local basePath = (styleData and styleData.path) or mergedStyles.path
+    local fullPath = basePath .. styleName
+
+    -- Apply to the icon texture (entry.Icon.Icon)
+    local iconTexture = entry.Icon and entry.Icon.Icon
+    if iconTexture then
+        pcall(iconTexture.SetTexture, iconTexture, fullPath)
+        -- JiberishIcons uses 8-value texCoords (corner format)
+        pcall(iconTexture.SetTexCoord, iconTexture, unpack(classData.texCoords))
+    end
+end
+
 -- Apply styling to a single entry (bar) in the damage meter
 local function ApplySingleEntryStyle(entry, db)
     if not entry or not db then return end
@@ -398,6 +615,9 @@ local function ApplySingleEntryStyle(entry, db)
                     borderOverlay:Hide()
                 end
             end
+
+            -- Apply JiberishIcons class icon replacement (after border handling)
+            ApplyJiberishIconsStyle(entry, db)
         end
     end
 
@@ -498,6 +718,13 @@ local function ApplyTitleStyling(sessionWindow, db)
                 pcall(typeNameFS.SetTextColor, typeNameFS, TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4])
             end
         end
+    end
+
+    -- Apply enhanced title if enabled (e.g., "DPS (Current)" instead of just "DPS")
+    if db.showSessionInTitle then
+        UpdateEnhancedTitle(sessionWindow)
+    else
+        RestoreOriginalTitle(sessionWindow)
     end
 end
 
@@ -946,6 +1173,9 @@ local function ApplyDamageMeterStyling(self)
         -- Hook new windows' ScrollBoxes (no-op if already hooked)
         HookSessionWindowScrollBox(sessionWindow, self)
 
+        -- Hook new windows for enhanced title updates (no-op if already hooked)
+        HookSessionWindowTitleUpdates(sessionWindow)
+
         -- Apply window styling
         ApplyWindowStyling(sessionWindow, db)
 
@@ -1039,6 +1269,10 @@ addon:RegisterComponentInitializer(function(self)
             iconBorderInsetH = { type = "addon", default = 0, ui = { hidden = true } },  -- Horizontal (left/right)
             iconBorderInsetV = { type = "addon", default = 2, ui = { hidden = true } },  -- Vertical (top/bottom) - default 2 for clipped icons
 
+            -- JiberishIcons integration (class icons to replace spec icons)
+            jiberishIconsEnabled = { type = "addon", default = false, ui = { hidden = true } },
+            jiberishIconsStyle = { type = "addon", default = "fabled", ui = { hidden = true } },
+
             -- Text settings - Title (header/dropdown)
             -- Default color is Blizzard's GameFontNormalMed1 gold: r=1.0, g=0.82, b=0
             textTitle = { type = "addon", default = {
@@ -1059,6 +1293,9 @@ addon:RegisterComponentInitializer(function(self)
             -- Header backdrop settings
             headerBackdropShow = { type = "addon", default = true, ui = { hidden = true }},
             headerBackdropTint = { type = "addon", default = { r = 1, g = 1, b = 1, a = 1 }, ui = { hidden = true }},
+
+            -- Enhanced title: show session type alongside meter type (e.g., "DPS (Current)")
+            showSessionInTitle = { type = "addon", default = false, ui = { hidden = true }},
 
             -- Text settings - Names (player names on bars)
             textNames = { type = "addon", default = {

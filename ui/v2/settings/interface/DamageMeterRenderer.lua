@@ -580,6 +580,18 @@ function DamageMeter.Render(panel, scrollContent)
                             customValue = "custom",
                             hasAlpha = true,
                         })
+
+                        -- Show Session in Title toggle
+                        tabInner:AddToggle({
+                            label = "Show Session in Title",
+                            description = "Display the session type alongside the meter type (e.g., 'DPS (Current)', 'HPS (Overall)', 'Interrupts (Segment 3)').",
+                            get = function()
+                                return getSetting("showSessionInTitle") or false
+                            end,
+                            set = function(value)
+                                setSetting("showSessionInTitle", value)
+                            end,
+                        })
                         tabInner:Finalize()
                     end,
                     buttons = function(tabContent, tabInner)
@@ -772,6 +784,38 @@ function DamageMeter.Render(panel, scrollContent)
                 maxLabel = "+4",
                 disabled = iconsDisabled,
             })
+
+            -- JiberishIcons Integration
+            inner:AddDescription("JiberishIcons Integration")
+
+            local jiAvailable = addon.IsJiberishIconsAvailable and addon.IsJiberishIconsAvailable()
+
+            if not jiAvailable then
+                inner:AddDescription("Install ElvUI_JiberishIcons to enable custom class icons.")
+            else
+                inner:AddToggle({
+                    label = "Use JiberishIcons Class Icons",
+                    description = "Replace spec icons with styled class icons from ElvUI_JiberishIcons.",
+                    get = function() return getSetting("jiberishIconsEnabled") or false end,
+                    set = function(value)
+                        setSetting("jiberishIconsEnabled", value)
+                    end,
+                    disabled = iconsDisabled,
+                })
+
+                inner:AddSelector({
+                    label = "Icon Style",
+                    description = "Choose the JiberishIcons style for class icons.",
+                    values = addon.GetJiberishIconsStyles and addon.GetJiberishIconsStyles() or {},
+                    get = function() return getSetting("jiberishIconsStyle") or "fabled" end,
+                    set = function(value)
+                        setSetting("jiberishIconsStyle", value)
+                    end,
+                    disabled = function()
+                        return iconsDisabled() or not getSetting("jiberishIconsEnabled")
+                    end,
+                })
+            end
         end,
     })
 
