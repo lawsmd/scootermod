@@ -445,50 +445,353 @@ local function ApplyWindowStyling(window, db)
     end
 end
 
--- Apply title/header text styling
-local function ApplyTitleStyling(dmFrame, db)
-    if not dmFrame or not db then return end
+-- Default color for GameFontNormalMed1 (from Blizzard FontStyles.xml)
+-- This is the gold/yellow color used by default for damage meter title text
+local TITLE_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
+
+-- Apply title/header text styling to a session window
+-- Note: Font styling applies to both TypeName and SessionName
+-- Color styling only applies to TypeName (SessionName color is controlled by Button Tint)
+local function ApplyTitleStyling(sessionWindow, db)
+    if not sessionWindow or not db then return end
 
     local titleCfg = db.textTitle
-    if not titleCfg then return end
 
-    -- Find title text elements
-    local titleTargets = {}
+    -- Collect ALL title FontStrings for font styling (font face, size, style)
+    local allTitleTargets = {}
 
-    -- Common title locations
-    if dmFrame.Header and dmFrame.Header.Text then
-        table.insert(titleTargets, dmFrame.Header.Text)
-    end
-    if dmFrame.Title then
-        table.insert(titleTargets, dmFrame.Title)
-    end
-    if dmFrame.TitleText then
-        table.insert(titleTargets, dmFrame.TitleText)
+    -- DamageMeterTypeDropdown.TypeName (meter type: "Damage Done", "DPS", etc.)
+    local typeNameFS = sessionWindow.DamageMeterTypeDropdown and sessionWindow.DamageMeterTypeDropdown.TypeName
+    if typeNameFS then
+        table.insert(allTitleTargets, typeNameFS)
     end
 
-    -- Dropdown text (mode selector)
-    if dmFrame.ModeDropdown then
-        local dropdown = dmFrame.ModeDropdown
-        if dropdown.Text then
-            table.insert(titleTargets, dropdown.Text)
-        end
+    -- SessionDropdown.SessionName (session letter in button - font only, color via Button Tint)
+    local sessionNameFS = sessionWindow.SessionDropdown and sessionWindow.SessionDropdown.SessionName
+    if sessionNameFS then
+        table.insert(allTitleTargets, sessionNameFS)
     end
 
-    for _, fs in ipairs(titleTargets) do
-        if fs and fs.SetFont then
-            if titleCfg.fontFace and addon and addon.ResolveFontFace then
-                local face = addon.ResolveFontFace(titleCfg.fontFace)
-                local baseSize = 12
-                local scale = (titleCfg.textSize or 100) / 100
-                local size = baseSize * scale
-                local flags = titleCfg.fontStyle or "OUTLINE"
-                pcall(fs.SetFont, fs, face, size, flags)
+    -- Apply font styling (font face, size, style) to ALL title FontStrings
+    if titleCfg then
+        for _, fs in ipairs(allTitleTargets) do
+            if fs and fs.SetFont then
+                if titleCfg.fontFace and addon and addon.ResolveFontFace then
+                    local face = addon.ResolveFontFace(titleCfg.fontFace)
+                    local baseSize = 12
+                    local scale = titleCfg.scaleMultiplier or 1.0
+                    local size = baseSize * scale
+                    local flags = titleCfg.fontStyle or "OUTLINE"
+                    pcall(fs.SetFont, fs, face, size, flags)
+                end
             end
-            if titleCfg.color and fs.SetTextColor then
+        end
+
+        -- Apply color ONLY to TypeName (SessionName color is controlled by Button Tint)
+        if typeNameFS and typeNameFS.SetTextColor then
+            local colorMode = titleCfg.colorMode or "default"
+            if colorMode == "custom" and titleCfg.color then
                 local c = titleCfg.color
-                pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+                pcall(typeNameFS.SetTextColor, typeNameFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+            elseif colorMode == "default" then
+                -- Restore Blizzard's default gold color
+                pcall(typeNameFS.SetTextColor, typeNameFS, TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4])
             end
         end
+    end
+end
+
+-- Apply button tint styling to a session window
+-- This tints all button visuals consistently:
+-- - DamageMeterTypeDropdown.Arrow (the arrow IS the button)
+-- - SessionDropdown.Background + Arrow + SessionName (separate background + icons)
+-- - SettingsDropdown.Icon (the gear IS the button)
+local function ApplyButtonTintStyling(sessionWindow, db)
+    if not sessionWindow or not db then return end
+
+    -- Check if tint mode is custom; if default, restore original colors
+    local tintMode = db.buttonTintMode or "default"
+
+    -- Collect ALL button textures (icons and backgrounds)
+    local buttonTextures = {}
+
+    -- DamageMeterTypeDropdown.Arrow (the arrow IS the entire button visual)
+    if sessionWindow.DamageMeterTypeDropdown and sessionWindow.DamageMeterTypeDropdown.Arrow then
+        table.insert(buttonTextures, sessionWindow.DamageMeterTypeDropdown.Arrow)
+    end
+
+    -- SessionDropdown - has separate Background + Arrow + SessionName
+    if sessionWindow.SessionDropdown then
+        -- Background (the circular button background)
+        if sessionWindow.SessionDropdown.Background then
+            table.insert(buttonTextures, sessionWindow.SessionDropdown.Background)
+        end
+        -- Arrow (the small arrow below the letter)
+        if sessionWindow.SessionDropdown.Arrow then
+            table.insert(buttonTextures, sessionWindow.SessionDropdown.Arrow)
+        end
+    end
+
+    -- SettingsDropdown.Icon (the gear IS the entire button visual)
+    if sessionWindow.SettingsDropdown and sessionWindow.SettingsDropdown.Icon then
+        table.insert(buttonTextures, sessionWindow.SettingsDropdown.Icon)
+    end
+
+    -- SessionDropdown.SessionName (the C/O letter - uses SetTextColor, not SetVertexColor)
+    local sessionNameFS = sessionWindow.SessionDropdown and sessionWindow.SessionDropdown.SessionName
+
+    if tintMode == "custom" then
+        local tint = db.buttonTint
+        if not tint then return end
+
+        local r = tint.r or tint[1] or 1
+        local g = tint.g or tint[2] or 1
+        local b = tint.b or tint[3] or 1
+        local a = tint.a or tint[4] or 1
+
+        -- Apply tint to all button textures
+        -- Desaturate first to convert to grayscale, then SetVertexColor tints uniformly
+        for _, tex in ipairs(buttonTextures) do
+            if tex then
+                if tex.SetDesaturated then
+                    pcall(tex.SetDesaturated, tex, true)
+                end
+                if tex.SetVertexColor then
+                    pcall(tex.SetVertexColor, tex, r, g, b, a)
+                end
+            end
+        end
+
+        -- Apply same tint color to SessionName text (SetTextColor - absolute)
+        if sessionNameFS and sessionNameFS.SetTextColor then
+            pcall(sessionNameFS.SetTextColor, sessionNameFS, r, g, b, a)
+        end
+    else
+        -- Default mode: restore original colors and disable desaturation
+        for _, tex in ipairs(buttonTextures) do
+            if tex then
+                if tex.SetDesaturated then
+                    pcall(tex.SetDesaturated, tex, false)
+                end
+                if tex.SetVertexColor then
+                    pcall(tex.SetVertexColor, tex, 1, 1, 1, 1)
+                end
+            end
+        end
+
+        -- Restore SessionName to default gold color
+        if sessionNameFS and sessionNameFS.SetTextColor then
+            pcall(sessionNameFS.SetTextColor, sessionNameFS, TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4])
+        end
+    end
+end
+
+-- Per-window state storage for button overlays (avoids tainting Blizzard frames)
+local windowState = setmetatable({}, { __mode = "k" })  -- Weak keys for GC
+
+local function getWindowState(sessionWindow)
+    if not windowState[sessionWindow] then
+        windowState[sessionWindow] = {}
+    end
+    return windowState[sessionWindow]
+end
+
+-- Create a ScooterMod-owned overlay texture for a button icon
+-- Uses SetAtlas with built-in WoW graphics for consistent styling
+-- @param parent - The frame to create the texture on
+-- @param atlasName - The atlas to use
+-- @param anchorTo - The Blizzard texture to anchor/size match
+-- @param size - {w, h} size for the overlay
+-- @param yOffset - Optional vertical offset (positive = up)
+local function CreateButtonIconOverlay(parent, atlasName, anchorTo, size, yOffset)
+    local overlay = parent:CreateTexture(nil, "OVERLAY", nil, 7)
+
+    -- Position at the same location as the anchor, with optional Y offset
+    overlay:ClearAllPoints()
+    overlay:SetPoint("CENTER", anchorTo, "CENTER", 0, yOffset or 0)
+
+    -- Set size
+    overlay:SetSize(size[1], size[2])
+
+    -- Set the atlas
+    overlay:SetAtlas(atlasName, false)  -- false = don't use atlas size, we set it manually
+
+    overlay._scooterOverlay = true
+    overlay:Hide()  -- Start hidden
+    return overlay
+end
+
+-- Get or create button overlays for a session window
+-- Only creates overlays for Button 1 (type dropdown arrow) and Button 3 (settings gear)
+-- Button 2 just needs its background hidden, no overlay replacement
+local function GetOrCreateButtonOverlays(sessionWindow)
+    local st = getWindowState(sessionWindow)
+    if st.buttonOverlays then
+        return st.buttonOverlays
+    end
+
+    st.buttonOverlays = {}
+
+    -- Button 1: DamageMeterTypeDropdown.Arrow
+    -- Replace the full button with just a simple downward arrow (no background)
+    -- Atlas: common-dropdown-c-button-hover-arrow (just the chevron/arrow icon)
+    local typeDropdown = sessionWindow.DamageMeterTypeDropdown
+    if typeDropdown and typeDropdown.Arrow then
+        st.buttonOverlays.typeArrow = CreateButtonIconOverlay(
+            typeDropdown,
+            "common-dropdown-c-button-hover-arrow",
+            typeDropdown.Arrow,
+            { 12, 8 },  -- Small arrow size
+            3           -- Nudge up 3 pixels
+        )
+    end
+
+    -- Button 3: SettingsDropdown.Icon
+    -- Replace the full button with just a gear icon (no background)
+    -- Atlas: GM-icon-settings (simple gear icon used in raid frames)
+    local settingsDropdown = sessionWindow.SettingsDropdown
+    if settingsDropdown and settingsDropdown.Icon then
+        st.buttonOverlays.settingsIcon = CreateButtonIconOverlay(
+            settingsDropdown,
+            "GM-icon-settings",
+            settingsDropdown.Icon,
+            { 25, 25 },  -- Gear icon size (25% bigger than before)
+            3            -- Nudge up 3 pixels
+        )
+    end
+
+    return st.buttonOverlays
+end
+
+-- Apply button icon overlay styling
+-- When enabled:
+--   Button 1: Hide Blizzard arrow, show our overlay arrow
+--   Button 2: Just hide the background (keep letter visible)
+--   Button 3: Hide Blizzard gear, show our overlay gear
+-- When disabled:
+--   Restore all Blizzard visuals
+local function ApplyButtonIconOverlays(sessionWindow, db)
+    if not sessionWindow or not db then return end
+
+    local overlaysEnabled = db.buttonIconOverlaysEnabled
+    local overlays = GetOrCreateButtonOverlays(sessionWindow)
+
+    -- Get tint settings (used for overlays when enabled)
+    local tintMode = db.buttonTintMode or "default"
+    local r, g, b, a = 1, 1, 1, 1
+
+    if tintMode == "custom" and db.buttonTint then
+        local c = db.buttonTint
+        r = c.r or c[1] or 1
+        g = c.g or c[2] or 1
+        b = c.b or c[3] or 1
+        a = c.a or c[4] or 1
+    end
+
+    if overlaysEnabled then
+        -- === Button 1: DamageMeterTypeDropdown ===
+        -- Hide Blizzard's arrow, show our overlay
+        local typeDropdown = sessionWindow.DamageMeterTypeDropdown
+        if typeDropdown and typeDropdown.Arrow then
+            pcall(typeDropdown.Arrow.SetAlpha, typeDropdown.Arrow, 0)
+
+            local overlay = overlays.typeArrow
+            if overlay then
+                overlay:Show()
+                -- Always desaturate the arrow to make it solid color
+                pcall(overlay.SetDesaturated, overlay, true)
+                if tintMode == "custom" then
+                    pcall(overlay.SetVertexColor, overlay, r, g, b, a)
+                else
+                    -- Default: use white for solid appearance
+                    pcall(overlay.SetVertexColor, overlay, 1, 1, 1, 1)
+                end
+            end
+        end
+
+        -- === Button 2: SessionDropdown ===
+        -- Just hide the background, keep the letter/arrow visible
+        local sessionDropdown = sessionWindow.SessionDropdown
+        if sessionDropdown and sessionDropdown.Background then
+            pcall(sessionDropdown.Background.SetAlpha, sessionDropdown.Background, 0)
+        end
+
+        -- === Button 3: SettingsDropdown ===
+        -- Hide Blizzard's gear icon, show our overlay
+        local settingsDropdown = sessionWindow.SettingsDropdown
+        if settingsDropdown and settingsDropdown.Icon then
+            pcall(settingsDropdown.Icon.SetAlpha, settingsDropdown.Icon, 0)
+
+            local overlay = overlays.settingsIcon
+            if overlay then
+                overlay:Show()
+                -- Always desaturate the gear to make it solid color
+                pcall(overlay.SetDesaturated, overlay, true)
+                if tintMode == "custom" then
+                    pcall(overlay.SetVertexColor, overlay, r, g, b, a)
+                else
+                    -- Default: use white for solid appearance
+                    pcall(overlay.SetVertexColor, overlay, 1, 1, 1, 1)
+                end
+            end
+        end
+
+        return true  -- Signal that we handled button styling
+    else
+        -- === Restore all Blizzard visuals ===
+
+        -- Button 1: Restore arrow
+        local typeDropdown = sessionWindow.DamageMeterTypeDropdown
+        if typeDropdown and typeDropdown.Arrow then
+            pcall(typeDropdown.Arrow.SetAlpha, typeDropdown.Arrow, 1)
+        end
+        if overlays.typeArrow then
+            overlays.typeArrow:Hide()
+        end
+
+        -- Button 2: Restore background
+        local sessionDropdown = sessionWindow.SessionDropdown
+        if sessionDropdown and sessionDropdown.Background then
+            pcall(sessionDropdown.Background.SetAlpha, sessionDropdown.Background, 1)
+        end
+
+        -- Button 3: Restore gear icon
+        local settingsDropdown = sessionWindow.SettingsDropdown
+        if settingsDropdown and settingsDropdown.Icon then
+            pcall(settingsDropdown.Icon.SetAlpha, settingsDropdown.Icon, 1)
+        end
+        if overlays.settingsIcon then
+            overlays.settingsIcon:Hide()
+        end
+
+        return false  -- Signal that ApplyButtonTintStyling should handle it
+    end
+end
+
+-- Apply header backdrop styling to a session window
+local function ApplyHeaderBackdropStyling(sessionWindow, db)
+    if not sessionWindow or not db then return end
+
+    local header = sessionWindow.Header
+    if not header then return end
+
+    -- Show/hide control
+    local show = db.headerBackdropShow
+    if show == false then
+        SafeSetShown(header, false)
+        return
+    else
+        SafeSetShown(header, true)
+    end
+
+    -- Apply tint color
+    local tint = db.headerBackdropTint
+    if tint and header.SetVertexColor then
+        local r = tint.r or tint[1] or 1
+        local g = tint.g or tint[2] or 1
+        local b = tint.b or tint[3] or 1
+        local a = tint.a or tint[4] or 1
+        pcall(header.SetVertexColor, header, r, g, b, a)
     end
 end
 
@@ -637,9 +940,6 @@ local function ApplyDamageMeterStyling(self)
         return
     end
 
-    -- Apply title/header styling
-    ApplyTitleStyling(dmFrame, db)
-
     -- Style all session windows and their entries
     local windows = GetAllSessionWindows()
     for _, sessionWindow in ipairs(windows) do
@@ -648,6 +948,36 @@ local function ApplyDamageMeterStyling(self)
 
         -- Apply window styling
         ApplyWindowStyling(sessionWindow, db)
+
+        -- Apply title bar styling (title text, buttons, backdrop)
+        ApplyTitleStyling(sessionWindow, db)
+
+        -- Apply button icon overlays (if enabled) - must come before button tint
+        local overlaysHandledButtons = ApplyButtonIconOverlays(sessionWindow, db)
+
+        -- Apply button tint styling (only affects Blizzard textures when overlays disabled)
+        -- When overlays enabled, this only affects SessionName text color
+        if not overlaysHandledButtons then
+            ApplyButtonTintStyling(sessionWindow, db)
+        else
+            -- When overlays are enabled, still need to tint SessionName text
+            local tintMode = db.buttonTintMode or "default"
+            local sessionNameFS = sessionWindow.SessionDropdown and sessionWindow.SessionDropdown.SessionName
+            if sessionNameFS and sessionNameFS.SetTextColor then
+                if tintMode == "custom" and db.buttonTint then
+                    local c = db.buttonTint
+                    local r = c.r or c[1] or 1
+                    local g = c.g or c[2] or 1
+                    local b = c.b or c[3] or 1
+                    local a = c.a or c[4] or 1
+                    pcall(sessionNameFS.SetTextColor, sessionNameFS, r, g, b, a)
+                else
+                    pcall(sessionNameFS.SetTextColor, sessionNameFS, TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4])
+                end
+            end
+        end
+
+        ApplyHeaderBackdropStyling(sessionWindow, db)
 
         -- Style all visible entries in this window
         ForEachVisibleEntry(sessionWindow, function(entryFrame)
@@ -710,12 +1040,25 @@ addon:RegisterComponentInitializer(function(self)
             iconBorderInsetV = { type = "addon", default = 2, ui = { hidden = true } },  -- Vertical (top/bottom) - default 2 for clipped icons
 
             -- Text settings - Title (header/dropdown)
+            -- Default color is Blizzard's GameFontNormalMed1 gold: r=1.0, g=0.82, b=0
             textTitle = { type = "addon", default = {
                 fontFace = "FRIZQT__",
                 fontStyle = "OUTLINE",
-                textSize = 100,
-                color = { 1, 1, 1, 1 },
+                scaleMultiplier = 1.0,
+                colorMode = "default",
+                color = { 1.0, 0.82, 0, 1 },
             }, ui = { hidden = true }},
+
+            -- Button tint (header dropdown arrows, settings icon, session name text)
+            buttonTintMode = { type = "addon", default = "default", ui = { hidden = true }},
+            buttonTint = { type = "addon", default = { r = 1, g = 0.82, b = 0, a = 1 }, ui = { hidden = true }},
+
+            -- Button icon overlays (custom atlas-based icons for uniform styling)
+            buttonIconOverlaysEnabled = { type = "addon", default = false, ui = { hidden = true }},
+
+            -- Header backdrop settings
+            headerBackdropShow = { type = "addon", default = true, ui = { hidden = true }},
+            headerBackdropTint = { type = "addon", default = { r = 1, g = 1, b = 1, a = 1 }, ui = { hidden = true }},
 
             -- Text settings - Names (player names on bars)
             textNames = { type = "addon", default = {

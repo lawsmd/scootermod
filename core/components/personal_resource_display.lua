@@ -84,6 +84,16 @@ end
 local hidePRDBarOverlay
 local showPRDOriginalFill
 
+-- Forward declarations for PRD frame getters (defined later, called by opacity system).
+local getHealthContainer
+local getPowerBar
+
+-- Forward declaration for text overlay storage (defined in Text Overlay System section).
+local textOverlays
+
+-- Forward declarations for opacity system.
+local updateAllPRDOpacities
+
 -- PRD re-application via events.
 --
 -- CRITICAL: We cannot use hooksecurefunc on any nameplate-related functions because
@@ -124,6 +134,8 @@ local function onPRDEvent(self, event, ...)
                     component:ApplyStyling()
                 end
             end
+            -- Always update opacity after styling (handles initial load and state changes)
+            updateAllPRDOpacities()
         end)
     end
 end
@@ -307,6 +319,122 @@ local function clearBarBorder(bar)
     setBlizzardBorderVisible(bar, true)
 end
 
+--------------------------------------------------------------------------------
+-- PRD Opacity System
+-- Implements state-based opacity (combat > target > out-of-combat).
+-- SetAlpha on PRD frames is safe in 12.0 (not protected).
+--------------------------------------------------------------------------------
+
+-- Get opacity value based on current combat/target state
+local function getPRDOpacityForState(componentId)
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return 1.0 end
+
+    local db = component.db
+    local inCombat = InCombatLockdown and InCombatLockdown()
+    local hasTarget = UnitExists("target")
+
+    -- Priority: combat > target > out-of-combat
+    local opacityValue
+    if inCombat then
+        opacityValue = tonumber(db.opacityInCombat) or 100
+    elseif hasTarget then
+        opacityValue = tonumber(db.opacityWithTarget) or 100
+    else
+        opacityValue = tonumber(db.opacityOutOfCombat) or 100
+    end
+
+    -- Convert from percentage (1-100) to alpha (0.01-1.0)
+    return math.max(0.01, math.min(1.0, opacityValue / 100))
+end
+
+-- Apply opacity to prdHealth component
+local function applyPRDHealthOpacity()
+    local component = addon.Components and addon.Components.prdHealth
+    if not component or not component.db then return end
+
+    -- Skip if bar is hidden
+    if component.db.hideBar then return end
+
+    local container = getHealthContainer()
+    if not container then return end
+
+    local alpha = getPRDOpacityForState("prdHealth")
+    pcall(container.SetAlpha, container, alpha)
+
+    -- Also apply to the text overlay if it exists
+    local storage = textOverlays.health
+    if storage and storage.overlay then
+        pcall(storage.overlay.SetAlpha, storage.overlay, alpha)
+    end
+end
+
+-- Apply opacity to prdPower component
+local function applyPRDPowerOpacity()
+    local component = addon.Components and addon.Components.prdPower
+    if not component or not component.db then return end
+
+    -- Skip if bar is hidden
+    if component.db.hideBar then return end
+
+    local frame = getPowerBar()
+    if not frame then return end
+
+    local alpha = getPRDOpacityForState("prdPower")
+    pcall(frame.SetAlpha, frame, alpha)
+
+    -- Also apply to the text overlay if it exists
+    local storage = textOverlays.power
+    if storage and storage.overlay then
+        pcall(storage.overlay.SetAlpha, storage.overlay, alpha)
+    end
+end
+
+-- Apply opacity to prdClassResource component
+local function applyPRDClassResourceOpacity()
+    local component = addon.Components and addon.Components.prdClassResource
+    if not component or not component.db then return end
+
+    -- Skip if bar is hidden
+    if component.db.hideBar then return end
+
+    local prd = PersonalResourceDisplayFrame
+    if not prd then return end
+    local classContainer = prd.ClassFrameContainer
+    if not classContainer then return end
+
+    local frame
+    if classContainer.GetChildren then
+        frame = classContainer:GetChildren()
+    end
+    if not frame then return end
+    if frame.IsForbidden and frame:IsForbidden() then return end
+
+    local alpha = getPRDOpacityForState("prdClassResource")
+    pcall(frame.SetAlpha, frame, alpha)
+end
+
+-- Update all PRD component opacities based on current state
+-- (Assigns to forward-declared local)
+updateAllPRDOpacities = function()
+    applyPRDHealthOpacity()
+    applyPRDPowerOpacity()
+    applyPRDClassResourceOpacity()
+end
+
+-- Exposed function for settings changes (immediate slider feedback)
+function addon.RefreshPRDOpacity(componentId)
+    if componentId == "prdHealth" then
+        applyPRDHealthOpacity()
+    elseif componentId == "prdPower" then
+        applyPRDPowerOpacity()
+    elseif componentId == "prdClassResource" then
+        applyPRDClassResourceOpacity()
+    else
+        updateAllPRDOpacities()
+    end
+end
+
 local function storeOriginalAlpha(frame, storageKey)
     if not frame or not frame.GetAlpha then
         return
@@ -345,7 +473,8 @@ end
 --------------------------------------------------------------------------------
 
 -- Storage for text overlay state (one per bar type, not per bar instance)
-local textOverlays = {
+-- (Assigns to forward-declared local)
+textOverlays = {
     health = { lastLeft = nil, lastRight = nil, overlay = nil, leftFS = nil, rightFS = nil },
     power = { lastLeft = nil, lastRight = nil, overlay = nil, leftFS = nil, rightFS = nil },
 }
@@ -506,12 +635,10 @@ local function applyCachedText(overlayType, db)
     local storage = textOverlays[overlayType]
     if not storage then return end
     if db.percentTextShow and storage.leftFS then
-        local val = storage.lastLeft
-        if type(val) ~= "nil" then pcall(storage.leftFS.SetText, storage.leftFS, val) end
+        pcall(storage.leftFS.SetText, storage.leftFS, storage.lastLeft)
     end
     if db.valueTextShow and storage.rightFS then
-        local val = storage.lastRight
-        if type(val) ~= "nil" then pcall(storage.rightFS.SetText, storage.rightFS, val) end
+        pcall(storage.rightFS.SetText, storage.rightFS, storage.lastRight)
     end
 end
 
@@ -584,9 +711,9 @@ local function installPowerTextHooks()
                 if ok then onSourceTextChanged("power", "left", text) end
             end)
         end
-        -- Capture initial value
+        -- Capture initial value (may be secret value in 12.0; SetText(secret) is allowed)
         local ok, text = pcall(leftSource.GetText, leftSource)
-        if ok and type(text) ~= "nil" then
+        if ok then
             textOverlays.power.lastLeft = text
         end
     end
@@ -602,7 +729,7 @@ local function installPowerTextHooks()
             end)
         end
         local ok, text = pcall(rightSource.GetText, rightSource)
-        if ok and type(text) ~= "nil" then
+        if ok then
             textOverlays.power.lastRight = text
         end
     end
@@ -635,7 +762,7 @@ local function installHealthTextHooks()
             end)
         end
         local ok, text = pcall(leftSource.GetText, leftSource)
-        if ok and type(text) ~= "nil" then
+        if ok then
             textOverlays.health.lastLeft = text
         end
     end
@@ -651,7 +778,7 @@ local function installHealthTextHooks()
             end)
         end
         local ok, text = pcall(rightSource.GetText, rightSource)
-        if ok and type(text) ~= "nil" then
+        if ok then
             textOverlays.health.lastRight = text
         end
     end
@@ -1141,8 +1268,15 @@ local function applyPRDHealthVisuals(component, container)
     end
     local hide = ensureSettingValue(component, "hideBar") and true or false
     setSettingValue(component, "hideBar", hide)
-    applyHiddenAlpha(container, hide, "_ScooterPRDHealthAlpha")
-    applyHiddenAlpha(statusBar, hide, "_ScooterPRDHealthAlpha")
+    if hide then
+        pcall(container.SetAlpha, container, 0)
+        pcall(statusBar.SetAlpha, statusBar, 0)
+    else
+        -- Apply state-based opacity instead of restoring to 1
+        local alpha = getPRDOpacityForState("prdHealth")
+        pcall(container.SetAlpha, container, alpha)
+        pcall(statusBar.SetAlpha, statusBar, alpha)
+    end
     if hide then
         clearBarBorder(statusBar)
         hidePRDBarOverlay("health")
@@ -1171,7 +1305,13 @@ local function applyPRDPowerVisuals(component, frame)
     end
     local hide = ensureSettingValue(component, "hideBar") and true or false
     setSettingValue(component, "hideBar", hide)
-    applyHiddenAlpha(frame, hide, "_ScooterPRDPowerAlpha")
+    if hide then
+        pcall(frame.SetAlpha, frame, 0)
+    else
+        -- Apply state-based opacity instead of restoring to 1
+        local alpha = getPRDOpacityForState("prdPower")
+        pcall(frame.SetAlpha, frame, alpha)
+    end
     if hide then
         clearBarBorder(frame)
         hidePRDBarOverlay("power")
@@ -1200,7 +1340,13 @@ local function applyPRDClassResourceVisibility(component, frame)
     end
     local hide = ensureSettingValue(component, "hideBar") and true or false
     setSettingValue(component, "hideBar", hide)
-    applyHiddenAlpha(frame, hide, "_ScooterPRDClassResourceAlpha")
+    if hide then
+        pcall(frame.SetAlpha, frame, 0)
+    else
+        -- Apply state-based opacity instead of restoring to 1
+        local alpha = getPRDOpacityForState("prdClassResource")
+        pcall(frame.SetAlpha, frame, alpha)
+    end
 end
 
 local function applyScaleToFrame(frame, multiplier, component)
@@ -1260,7 +1406,8 @@ local function resolveClassResourceScale(component)
     return value / 100
 end
 
-local function getHealthContainer()
+-- (Assigns to forward-declared local)
+getHealthContainer = function()
     local prd = PersonalResourceDisplayFrame
     if not prd then
         return nil
@@ -1272,7 +1419,8 @@ local function getHealthContainer()
     return container
 end
 
-local function getPowerBar()
+-- (Assigns to forward-declared local)
+getPowerBar = function()
     local prd = PersonalResourceDisplayFrame
     if not prd then
         return nil
@@ -1601,6 +1749,10 @@ addon:RegisterComponentInitializer(function(self)
             hideTextureOnly = { type = "addon", default = false, ui = {
                 label = "Hide the Bar but not its Text", widget = "checkbox", section = "Misc", order = 2,
             }},
+            -- Opacity settings (addon-only, 1-100 percentage)
+            opacityInCombat = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityWithTarget = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = { hidden = true }},
             -- Per-text overlay settings (value = right text, percent = left text)
             valueTextShow = { type = "addon", default = false, ui = { hidden = true }},
             valueTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
@@ -1671,6 +1823,10 @@ addon:RegisterComponentInitializer(function(self)
             hidePowerFeedback = { type = "addon", default = false, ui = {
                 label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 4,
             }},
+            -- Opacity settings (addon-only, 1-100 percentage)
+            opacityInCombat = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityWithTarget = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = { hidden = true }},
             -- Per-text overlay settings (value = right text, percent = left text)
             valueTextShow = { type = "addon", default = false, ui = { hidden = true }},
             valueTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
@@ -1708,6 +1864,10 @@ addon:RegisterComponentInitializer(function(self)
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Class Resource", widget = "checkbox", section = "Misc", order = 1,
             }},
+            -- Opacity settings (addon-only, 1-100 percentage)
+            opacityInCombat = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityWithTarget = { type = "addon", default = 100, ui = { hidden = true }},
+            opacityOutOfCombat = { type = "addon", default = 100, ui = { hidden = true }},
         },
     })
     classRes.ApplyStyling = applyClassResourceOffsets

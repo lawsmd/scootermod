@@ -200,6 +200,18 @@ local function applyActionValue(actionId, value, reason)
     if not handler or not handler.set then
         return
     end
+
+    -- Log if rulesLogging is enabled in profile
+    local profile = addon and addon.db and addon.db.profile
+    if profile and profile.rulesLogging then
+        local label = handler.path and table.concat(handler.path, " > ") or actionId
+        local displayValue = tostring(value)
+        if handler.valueType == "boolean" then
+            displayValue = value and "ON" or "OFF"
+        end
+        addon:Print(string.format("[Rules] %s = %s (%s)", label, displayValue, reason or ""))
+    end
+
     local ok, changed = pcall(handler.set, value, reason)
     if not ok then
         if addon and addon.Print then
@@ -575,15 +587,34 @@ function Rules:DeleteRule(ruleId)
         return
     end
     local rules = getRulesTable()
+    local deletedActionId = nil
     local changed = false
+
     for index = #rules, 1, -1 do
         if rules[index].id == ruleId then
+            -- Capture the action this rule targeted before deleting
+            deletedActionId = rules[index].action and rules[index].action.id
             table.remove(rules, index)
             changed = true
             break
         end
     end
+
     if changed then
+        -- If no remaining rules target this action, clear its baseline
+        if deletedActionId then
+            local stillTargeted = false
+            for _, rule in ipairs(rules) do
+                if rule.action and rule.action.id == deletedActionId then
+                    stillTargeted = true
+                    break
+                end
+            end
+            if not stillTargeted then
+                clearBaseline(deletedActionId)
+            end
+        end
+
         self:ApplyAll("DeleteRule")
     end
 end

@@ -492,41 +492,163 @@ function DamageMeter.Render(panel, scrollContent)
                 },
                 buildContent = {
                     titleText = function(tabContent, tabInner)
-                        tabInner:AddFontSelector({
-                            label = "Font",
-                            get = function() return getSetting("titleFont") or "default" end,
+                        -- Helper to get/set textTitle sub-table
+                        local function getTextTitle()
+                            local t = getSetting("textTitle")
+                            return t or {}
+                        end
+                        local function setTextTitleProp(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textTitle = comp.db.textTitle or {}
+                                comp.db.textTitle[key] = value
+                            end
+                            if addon and addon.ApplyStyles then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                end)
+                            end
+                        end
+
+                        -- Scale Multiplier slider (0.5-1.5)
+                        tabInner:AddSlider({
+                            label = "Scale Multiplier",
+                            description = "Adjusts the size of title text.",
+                            min = 0.5, max = 1.5, step = 0.05,
+                            precision = 2,
+                            get = function()
+                                local t = getTextTitle()
+                                return t.scaleMultiplier or 1.0
+                            end,
                             set = function(value)
-                                setSetting("titleFont", value)
+                                setTextTitleProp("scaleMultiplier", value)
                             end,
                         })
+
+                        -- Font selector
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function()
+                                local t = getTextTitle()
+                                return t.fontFace or "FRIZQT__"
+                            end,
+                            set = function(value)
+                                setTextTitleProp("fontFace", value)
+                            end,
+                        })
+
+                        -- Font Style selector
                         tabInner:AddSelector({
                             label = "Font Style",
                             values = fontStyleValues,
                             order = fontStyleOrder,
-                            get = function() return getSetting("titleFontStyle") or "OUTLINE" end,
+                            get = function()
+                                local t = getTextTitle()
+                                return t.fontStyle or "OUTLINE"
+                            end,
                             set = function(value)
-                                setSetting("titleFontStyle", value)
+                                setTextTitleProp("fontStyle", value)
                             end,
                         })
-                        tabInner:AddColorPicker({
+
+                        -- Color with default/custom mode
+                        -- Blizzard default is GameFontNormalMed1 gold: r=1.0, g=0.82, b=0
+                        local TITLE_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
+                        tabInner:AddSelectorColorPicker({
                             label = "Color",
+                            values = {
+                                ["default"] = "Default (Gold)",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
                             get = function()
-                                local c = getSetting("titleColor")
-                                if c then return c.r, c.g, c.b, c.a end
-                                return 1, 1, 1, 1
+                                local t = getTextTitle()
+                                return t.colorMode or "default"
                             end,
-                            set = function(r, g, b, a)
-                                setSetting("titleColor", { r = r, g = g, b = b, a = a or 1 })
+                            set = function(value)
+                                setTextTitleProp("colorMode", value)
                             end,
+                            getColor = function()
+                                local t = getTextTitle()
+                                local c = t.color
+                                if c then return c[1] or TITLE_DEFAULT_COLOR[1], c[2] or TITLE_DEFAULT_COLOR[2], c[3] or TITLE_DEFAULT_COLOR[3], c[4] or TITLE_DEFAULT_COLOR[4] end
+                                return TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4]
+                            end,
+                            setColor = function(r, g, b, a)
+                                setTextTitleProp("color", { r, g, b, a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
                         })
                         tabInner:Finalize()
                     end,
                     buttons = function(tabContent, tabInner)
-                        tabInner:AddDescription("Coming soon")
+                        tabInner:AddToggle({
+                            label = "Use Custom Icons",
+                            description = "Removes button backgrounds for a cleaner look. Replaces the dropdown arrow and gear icons with tintable overlays, hides the session button background.",
+                            get = function()
+                                return getSetting("buttonIconOverlaysEnabled") or false
+                            end,
+                            set = function(value)
+                                setSetting("buttonIconOverlaysEnabled", value)
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Icon Tint",
+                            description = "Apply a color tint to all buttons. Works best with 'Use Custom Icons' enabled for uniform results.",
+                            values = {
+                                ["default"] = "Default",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
+                            get = function()
+                                return getSetting("buttonTintMode") or "default"
+                            end,
+                            set = function(value)
+                                setSetting("buttonTintMode", value)
+                            end,
+                            getColor = function()
+                                local c = getSetting("buttonTint")
+                                if c then return c.r or c[1] or 1, c.g or c[2] or 0.82, c.b or c[3] or 0, c.a or c[4] or 1 end
+                                return 1, 0.82, 0, 1  -- Default to gold like title text
+                            end,
+                            setColor = function(r, g, b, a)
+                                setSetting("buttonTint", { r = r, g = g, b = b, a = a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
                         tabInner:Finalize()
                     end,
                     backdrop = function(tabContent, tabInner)
-                        tabInner:AddDescription("Coming soon")
+                        tabInner:AddToggle({
+                            label = "Show Header Backdrop",
+                            description = "Show or hide the header bar background texture.",
+                            get = function()
+                                local v = getSetting("headerBackdropShow")
+                                return v == nil or v  -- Default to true
+                            end,
+                            set = function(value)
+                                setSetting("headerBackdropShow", value)
+                            end,
+                        })
+                        tabInner:AddColorPicker({
+                            label = "Backdrop Tint",
+                            description = "Apply a color tint to the header backdrop.",
+                            get = function()
+                                local c = getSetting("headerBackdropTint")
+                                if c then return c.r or c[1] or 1, c.g or c[2] or 1, c.b or c[3] or 1, c.a or c[4] or 1 end
+                                return 1, 1, 1, 1
+                            end,
+                            set = function(r, g, b, a)
+                                setSetting("headerBackdropTint", { r = r, g = g, b = b, a = a or 1 })
+                            end,
+                            hasAlpha = true,
+                            disabled = function()
+                                local show = getSetting("headerBackdropShow")
+                                return show == false
+                            end,
+                        })
                         tabInner:Finalize()
                     end,
                 },

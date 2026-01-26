@@ -138,23 +138,22 @@ local function build(ctx, init)
 								y)
 						end
 	
-						-- PageC: Visibility (placeholder)
+						-- PageC: Visibility
 						do
 							local y = { y = -50 }
 							local function label()
 								return string.format("Hide %s", getClassResourceTitle())
 							end
-							local setting = CreateLocalSetting(label(), "boolean",
-								function()
-									local cfg = ensureCRDB() or {}
-									return cfg.hide == true
-								end,
-								function(v)
-									local cfg = ensureCRDB(); if not cfg then return end
-									cfg.hide = (v == true)
-									applyNow()
-								end,
-								false)
+							local function getter()
+								local cfg = ensureCRDB() or {}
+								return cfg.hide == true
+							end
+							local function setter(v)
+								local cfg = ensureCRDB(); if not cfg then return end
+								cfg.hide = (v == true)
+								applyNow()
+							end
+							local setting = CreateLocalSetting(label(), "boolean", getter, setter, getter())
 							local initCb = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = label(), setting = setting, options = {} })
 							local row = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
 							row.GetElementData = function() return initCb end

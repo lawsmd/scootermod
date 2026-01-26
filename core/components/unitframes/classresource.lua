@@ -127,10 +127,12 @@ end
 local function ensureConfig()
 	local db = addon and addon.db and addon.db.profile
 	if not db then return nil end
+
 	db.unitFrames = db.unitFrames or {}
 	db.unitFrames.Player = db.unitFrames.Player or {}
 	db.unitFrames.Player.classResource = db.unitFrames.Player.classResource or {}
 	local cfg = db.unitFrames.Player.classResource
+
 	-- Clean up removed custom position keys (feature retired in 12.0)
 	cfg.classResourceCustomPositionEnabled = nil
 	cfg.classResourcePosX = nil

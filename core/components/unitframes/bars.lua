@@ -1369,10 +1369,10 @@ do
         if not frame then return end
 
         -- 12.0+: PetFrame is a managed/protected unit frame. Direct bar writes (SetStatusBarTexture,
-        -- GetWidth, GetHeight, GetMinMaxValues, GetValue) can trigger Blizzard's internal heal
-        -- prediction update callbacks that error on "secret values". For Pet we only perform safe
-        -- overlay-based operations: alpha hiding of FrameTexture and overlay creation via
-        -- CreateTexture + SetAllPoints (anchored to StatusBarTexture, no value reads).
+        -- GetWidth, GetHeight, GetMinMaxValues, GetValue) AND overlay operations (ensureRectHealthOverlay,
+        -- ensureRectPowerOverlay) can trigger Blizzard's internal heal prediction update callbacks
+        -- (UnitFrameHealPredictionBars_Update) that error on "secret values" like myCurrentHealAbsorb.
+        -- For Pet we ONLY perform truly safe alpha-based operations - no overlays whatsoever.
         if unit == "Pet" then
             -- Hide PetFrameTexture (art hiding) - same pattern as line 3658+
             local ft = resolveUnitFrameFrameTexture(unit)
@@ -1388,13 +1388,10 @@ do
                 hookAlphaEnforcer(ft, compute)
             end
 
-            -- Health overlay (fills corner chip when custom borders enabled)
-            local hb = resolveHealthBar(frame, unit)
-            if hb then
-                ensureRectHealthOverlay(unit, hb, cfg)
-            end
+            -- NOTE: Health overlay removed - ensureRectHealthOverlay triggers Blizzard's heal
+            -- prediction update chain which errors on secret values during Edit Mode entry.
 
-            -- Power bar visibility (hide/show via alpha enforcer)
+            -- Power bar visibility (hide/show via alpha enforcer only - no overlay)
             local pb = resolvePowerBar(frame, unit)
             if not pb then
                 pb = frame and frame.PetFrameManaBar
@@ -1410,8 +1407,8 @@ do
                 applyAlpha(pb, computePBAlpha())
                 hookAlphaEnforcer(pb, computePBAlpha)
 
-                -- Power overlay (custom texture/color on power bar)
-                ensureRectPowerOverlay(unit, pb, cfg)
+                -- NOTE: Power overlay removed - ensureRectPowerOverlay can also trigger secret
+                -- value errors through similar Blizzard internal update chains.
             end
 
             return
