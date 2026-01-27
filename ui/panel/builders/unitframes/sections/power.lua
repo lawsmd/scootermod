@@ -845,11 +845,11 @@ local function build(ctx, init)
 
 							-- Apply initial disabled state for all 3 visual checkboxes
 							updateVisualCheckboxState()
-	
+
 	                        y.y = y.y - 34
 						end
 					end
-	
+
 					-- PageF: % Text (Power Percent)
 					do
 						local function applyNow()

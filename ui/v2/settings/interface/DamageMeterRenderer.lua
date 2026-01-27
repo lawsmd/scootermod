@@ -86,6 +86,67 @@ function DamageMeter.Render(panel, scrollContent)
         end,
     })
 
+    -- CVar helpers for per-profile damage meter enable
+    local function getDamageMeterEnabledFromCVar()
+        local v
+        if C_CVar and C_CVar.GetCVar then
+            v = C_CVar.GetCVar("damageMeterEnabled")
+        elseif GetCVar then
+            v = GetCVar("damageMeterEnabled")
+        end
+        return (v == "1") or false
+    end
+
+    local function setDamageMeterEnabledCVar(enabled)
+        local value = (enabled and "1") or "0"
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "damageMeterEnabled", value)
+        elseif SetCVar then
+            pcall(SetCVar, "damageMeterEnabled", value)
+        end
+    end
+
+    local function getProfileDamageMeterSettings()
+        local profile = addon and addon.db and addon.db.profile
+        return profile and profile.damageMeterSettings
+    end
+
+    local function ensureProfileDamageMeterSettings()
+        if not (addon and addon.db and addon.db.profile) then return nil end
+        addon.db.profile.damageMeterSettings = addon.db.profile.damageMeterSettings or {}
+        return addon.db.profile.damageMeterSettings
+    end
+
+    builder:AddToggle({
+        label = "Enable Damage Meters Per-Profile",
+        description = "When enabled, the Damage Meter will be active for this profile. This overrides the character-wide Blizzard setting.",
+        get = function()
+            local s = getProfileDamageMeterSettings()
+            if s and s.enableDamageMeter ~= nil then
+                return s.enableDamageMeter
+            end
+            return getDamageMeterEnabledFromCVar()
+        end,
+        set = function(value)
+            local s = ensureProfileDamageMeterSettings()
+            if not s then return end
+            s.enableDamageMeter = value
+            setDamageMeterEnabledCVar(value)
+            -- Re-apply styling if enabling
+            if value and addon and addon.ApplyStyles then
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if addon and addon.ApplyStyles then
+                            addon:ApplyStyles()
+                        end
+                    end)
+                else
+                    addon:ApplyStyles()
+                end
+            end
+        end,
+    })
+
     -- Layout section
     builder:AddCollapsibleSection({
         title = "Layout",
@@ -590,6 +651,18 @@ function DamageMeter.Render(panel, scrollContent)
                             end,
                             set = function(value)
                                 setSetting("showSessionInTitle", value)
+                            end,
+                        })
+
+                        -- Right-click title to open meter type menu
+                        tabInner:AddToggle({
+                            label = "Right-Click to Switch Meter Type",
+                            description = "Right-click the title text to open the meter type menu (DPS, HPS, Interrupts, etc.).",
+                            get = function()
+                                return getSetting("titleTextRightClickMeterType") or false
+                            end,
+                            set = function(value)
+                                setSetting("titleTextRightClickMeterType", value)
                             end,
                         })
                         tabInner:Finalize()

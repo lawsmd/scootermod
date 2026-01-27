@@ -1062,6 +1062,14 @@ do
 			-- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
 			if addon.GetPowerColorRGB then
 				local pr, pg, pb = addon.GetPowerColorRGB("player")
+				-- Lighten mana blue for text readability (mana = powerType 0)
+				local powerType = UnitPowerType("player")
+				if powerType == 0 then -- MANA
+					local lightenFactor = 0.25
+					pr = (pr or 0) + (1 - (pr or 0)) * lightenFactor
+					pg = (pg or 0) + (1 - (pg or 0)) * lightenFactor
+					pb = (pb or 0) + (1 - (pb or 0)) * lightenFactor
+				end
 				c = {pr or 1, pg or 1, pb or 1, 1}
 			end
 		elseif colorMode == "class" then

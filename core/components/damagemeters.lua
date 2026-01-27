@@ -233,6 +233,46 @@ local function HookSessionWindowTitleUpdates(sessionWindow)
     return true
 end
 
+-- Hook right-click on title text to open meter type dropdown
+-- @param sessionWindow - The DamageMeterSessionWindow frame to hook
+-- @return boolean - true if hooks were newly installed, false if already hooked
+local function HookSessionWindowTitleRightClick(sessionWindow)
+    if not sessionWindow then return false end
+    if sessionWindow._ScooterTitleRightClickHooked then return false end
+
+    local dropdown = sessionWindow.DamageMeterTypeDropdown
+    local typeNameFS = dropdown and dropdown.TypeName
+    if not typeNameFS then return false end
+
+    sessionWindow._ScooterTitleRightClickHooked = true
+
+    -- Create invisible overlay button covering the TypeName FontString
+    -- Only intercepts right-clicks; left-clicks pass through to dropdown
+    local overlay = CreateFrame("Button", nil, dropdown)
+    overlay:SetAllPoints(typeNameFS)
+    overlay:SetFrameLevel((dropdown:GetFrameLevel() or 0) + 10)
+    overlay:RegisterForClicks("RightButtonUp")  -- Only right-click
+    overlay:EnableMouse(false)  -- Disabled by default
+
+    sessionWindow._ScooterTitleRightClickOverlay = overlay
+
+    overlay:SetScript("OnClick", function(self, button)
+        if button == "RightButton" and dropdown.OpenMenu then
+            dropdown:OpenMenu()
+        end
+    end)
+
+    return true
+end
+
+-- Enable/disable the right-click overlay based on setting
+local function UpdateTitleRightClickState(sessionWindow, enabled)
+    local overlay = sessionWindow and sessionWindow._ScooterTitleRightClickOverlay
+    if overlay then
+        overlay:EnableMouse(enabled)
+    end
+end
+
 -- Apply JiberishIcons class icon to replace spec icon
 local function ApplyJiberishIconsStyle(entry, db)
     if not entry or not db then return end
@@ -726,6 +766,10 @@ local function ApplyTitleStyling(sessionWindow, db)
     else
         RestoreOriginalTitle(sessionWindow)
     end
+
+    -- Hook and update right-click behavior
+    HookSessionWindowTitleRightClick(sessionWindow)
+    UpdateTitleRightClickState(sessionWindow, db.titleTextRightClickMeterType or false)
 end
 
 -- Apply button tint styling to a session window
@@ -1144,6 +1188,10 @@ local function HookEntryAcquisition(component)
     if type(dmFrame.UpdateData) == "function" then
         hooksecurefunc(dmFrame, "UpdateData", requestApply)
     end
+    -- Hook SetupSessionWindow for newly created windows (e.g., via "Create New Window" dropdown)
+    if type(dmFrame.SetupSessionWindow) == "function" then
+        hooksecurefunc(dmFrame, "SetupSessionWindow", requestApply)
+    end
 end
 
 -- Main styling function
@@ -1296,6 +1344,9 @@ addon:RegisterComponentInitializer(function(self)
 
             -- Enhanced title: show session type alongside meter type (e.g., "DPS (Current)")
             showSessionInTitle = { type = "addon", default = false, ui = { hidden = true }},
+
+            -- Right-click title text to open meter type dropdown
+            titleTextRightClickMeterType = { type = "addon", default = false, ui = { hidden = true }},
 
             -- Text settings - Names (player names on bars)
             textNames = { type = "addon", default = {

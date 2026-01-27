@@ -199,6 +199,63 @@ local function ApplyPRDEnabledForActiveProfile(reason)
     Debug("Applied nameplateShowSelf from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
 end
 
+local function ApplyDamageMeterEnabledForActiveProfile(reason)
+    local profile = addon and addon.db and addon.db.profile
+    local s = profile and profile.damageMeterSettings
+    local desired = s and s.enableDamageMeter
+    if desired == nil then
+        return  -- Not explicitly set; don't override CVar
+    end
+    local value = (desired and "1") or "0"
+
+    local function applyCVar()
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "damageMeterEnabled", value)
+        elseif SetCVar then
+            pcall(SetCVar, "damageMeterEnabled", value)
+        end
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            applyCVar()
+        end)
+    else
+        applyCVar()
+    end
+
+    -- Hide damage meter if disabling (same pattern as CDM)
+    if desired == false then
+        local function hideDamageMeter()
+            local frame = _G and _G["DamageMeter"]
+            if frame then
+                if frame.SetShown then
+                    pcall(frame.SetShown, frame, false)
+                elseif frame.Hide then
+                    pcall(frame.Hide, frame)
+                end
+            end
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, function()
+                    if not (InCombatLockdown and InCombatLockdown()) then
+                        hideDamageMeter()
+                    end
+                end)
+            end
+        else
+            hideDamageMeter()
+        end
+    end
+
+    Debug("Applied damageMeterEnabled from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
+end
+
 local function getLayouts()
     if not C_EditMode or not C_EditMode.GetLayouts then return nil end
     return C_EditMode.GetLayouts()
@@ -1414,6 +1471,7 @@ function Profiles:Initialize()
     -- Ensure CDM enable/disable is applied for the active profile on load.
     ApplyCooldownViewerEnabledForActiveProfile("Initialize")
     ApplyPRDEnabledForActiveProfile("Initialize")
+    ApplyDamageMeterEnabledForActiveProfile("Initialize")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:Initialize")
     end
@@ -1436,6 +1494,7 @@ function Profiles:OnProfileChanged(_, _, newProfileKey)
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileChanged")
     ApplyPRDEnabledForActiveProfile("OnProfileChanged")
+    ApplyDamageMeterEnabledForActiveProfile("OnProfileChanged")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileChanged")
     end
@@ -1448,6 +1507,7 @@ function Profiles:OnProfileCopied(_, _, sourceKey)
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileCopied")
     ApplyPRDEnabledForActiveProfile("OnProfileCopied")
+    ApplyDamageMeterEnabledForActiveProfile("OnProfileCopied")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileCopied")
     end
@@ -1459,6 +1519,7 @@ function Profiles:OnProfileReset()
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileReset")
     ApplyPRDEnabledForActiveProfile("OnProfileReset")
+    ApplyDamageMeterEnabledForActiveProfile("OnProfileReset")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileReset")
     end
@@ -1763,6 +1824,7 @@ function Profiles:_setActiveProfile(profileKey, opts)
     addon:ApplyStyles()
     ApplyCooldownViewerEnabledForActiveProfile("_setActiveProfile")
     ApplyPRDEnabledForActiveProfile("_setActiveProfile")
+    ApplyDamageMeterEnabledForActiveProfile("_setActiveProfile")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:_setActiveProfile")
     end

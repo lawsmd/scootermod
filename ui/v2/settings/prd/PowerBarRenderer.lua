@@ -443,6 +443,16 @@ function PowerBar.Render(panel, scrollContent)
                 },
             })
 
+            inner:AddToggle({
+                label = "Hide Mana Cost Predictions",
+                get = function() return getSetting("hideManaCostPrediction") or false end,
+                set = function(v) setSetting("hideManaCostPrediction", v) end,
+                infoIcon = {
+                    tooltipTitle = "Hide Mana Cost Predictions",
+                    tooltipText = "Hides the mana cost prediction bar that appears when casting spells. This blue overlay shows how much power will be consumed by the current cast.",
+                },
+            })
+
             inner:AddSpacer(12)
 
             inner:AddSlider({

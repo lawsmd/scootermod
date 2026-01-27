@@ -95,6 +95,15 @@ local function ensureSquare(frame, layer, sublevel, container)
             Left = parent:CreateTexture(nil, layer or "ARTWORK"),
             Right = parent:CreateTexture(nil, layer or "ARTWORK"),
         }
+        -- Enable pixel grid snapping for crisp borders at any UI scale
+        for _, tex in pairs(edges) do
+            if tex.SetSnapToPixelGrid then
+                tex:SetSnapToPixelGrid(true)
+            end
+            if tex.SetTexelSnappingBias then
+                tex:SetTexelSnappingBias(0)
+            end
+        end
         parent.ScootSquareBorderEdges = edges
     end
     -- Ensure desired draw layer

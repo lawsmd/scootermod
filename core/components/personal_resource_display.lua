@@ -1191,6 +1191,58 @@ local function applyPRDBarBorder(component, statusBar)
     end
 end
 
+-- Hide/restore ManaCostPredictionBar on the PRD power bar.
+-- Uses the same recursion-guard hook pattern as hidePRDBarTextures.
+local function hidePRDManaCostPrediction(powerBar, hidden)
+    if not powerBar then return end
+    local manaCostBar = powerBar.ManaCostPredictionBar
+    if not manaCostBar then return end
+
+    local flagName = "_ScootPRDManaCostHidden"
+
+    local function installAlphaHook(tex, flag)
+        if not tex then return end
+        local st = getState(tex)
+        if not st then return end
+        local hookKey = flag .. "Hooked"
+        if st[hookKey] then return end
+        st[hookKey] = true
+
+        if _G.hooksecurefunc and tex.SetAlpha then
+            _G.hooksecurefunc(tex, "SetAlpha", function(self, alpha)
+                if getProp(self, flag) and alpha and alpha > 0 then
+                    if not getProp(self, "_ScootPRDSettingAlpha") then
+                        setProp(self, "_ScootPRDSettingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "_ScootPRDSettingAlpha", nil)
+                    end
+                end
+            end)
+        end
+
+        if _G.hooksecurefunc and tex.Show then
+            _G.hooksecurefunc(tex, "Show", function(self)
+                if getProp(self, flag) and self.SetAlpha then
+                    if not getProp(self, "_ScootPRDSettingAlpha") then
+                        setProp(self, "_ScootPRDSettingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "_ScootPRDSettingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    end
+
+    if hidden then
+        setProp(manaCostBar, flagName, true)
+        if manaCostBar.SetAlpha then pcall(manaCostBar.SetAlpha, manaCostBar, 0) end
+        installAlphaHook(manaCostBar, flagName)
+    else
+        setProp(manaCostBar, flagName, false)
+        if manaCostBar.SetAlpha then pcall(manaCostBar.SetAlpha, manaCostBar, 1) end
+    end
+end
+
 -- Hide/restore PRD bar fill texture and background, using the same immediate
 -- recursion-guard hook pattern as the Player UF SetPowerBarTextureOnlyHidden.
 local function hidePRDBarTextures(bar, barType, hidden)
@@ -1314,6 +1366,8 @@ local function applyPRDPowerVisuals(component, frame)
     end
     if hide then
         clearBarBorder(frame)
+        setBlizzardBorderVisible(frame, false)
+        hidePRDManaCostPrediction(frame, true)
         hidePRDBarOverlay("power")
         hideTextOverlay("power")
         return
@@ -1321,12 +1375,16 @@ local function applyPRDPowerVisuals(component, frame)
     local hideTextureOnly = ensureSettingValue(component, "hideTextureOnly") and true or false
     if hideTextureOnly then
         hidePRDBarTextures(frame, "power", true)
+        hidePRDManaCostPrediction(frame, true)
         hidePRDBarOverlay("power")
         clearBarBorder(frame)
         setBlizzardBorderVisible(frame, false)
         applyPowerTextOverlay(component)
         return
     end
+    -- Apply mana cost prediction hiding based on setting (when bar is visible)
+    local hideManaCost = component.db and component.db.hideManaCostPrediction
+    hidePRDManaCostPrediction(frame, hideManaCost)
     hidePRDBarTextures(frame, "power", false)
     applyPRDForegroundStyle(frame, "power", component)
     applyPRDBackgroundStyle(frame, "power", component)
@@ -1565,6 +1623,8 @@ local function applyPowerOffsets(component)
 
     if hide then
         clearBarBorder(frame)
+        setBlizzardBorderVisible(frame, false)
+        hidePRDManaCostPrediction(frame, true)
         hidePRDBarOverlay("power")
         hideTextOverlay("power")
         return
@@ -1822,6 +1882,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             hidePowerFeedback = { type = "addon", default = false, ui = {
                 label = "Hide Power Feedback", widget = "checkbox", section = "Misc", order = 4,
+            }},
+            hideManaCostPrediction = { type = "addon", default = false, ui = {
+                label = "Hide Mana Cost Predictions", widget = "checkbox", section = "Misc", order = 5,
             }},
             -- Opacity settings (addon-only, 1-100 percentage)
             opacityInCombat = { type = "addon", default = 100, ui = { hidden = true }},

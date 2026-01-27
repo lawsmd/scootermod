@@ -42,7 +42,6 @@ local BRAND_R, BRAND_G, BRAND_B = 0.20, 0.90, 0.30
 --------------------------------------------------------------------------------
 
 local TRADITIONAL_BORDERS = {
-    "default",  -- Blizzard's stock border
     "none",     -- No border at all
     "square",   -- Simple solid-color square border
     "mmtBorder1", "mmtBorder2",

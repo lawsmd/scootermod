@@ -573,6 +573,64 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
 end
 Util.SetPowerBarSparkHidden = SetPowerBarSparkHidden
 
+-- Hide/show the Mana Cost Prediction overlay bar (Player only)
+-- This bar shows the predicted mana/power cost of the currently casting spell.
+-- Frame: ManaBar.ManaCostPredictionBar
+-- ownerFrame: the ManaBar frame that contains the ManaCostPredictionBar child
+-- hidden: boolean - true to hide the prediction bar, false to restore it
+--
+-- IMPORTANT: Uses SetAlpha(0) instead of Hide() to persist through combat.
+-- SetAlpha is a purely cosmetic operation that doesn't taint.
+local function SetManaCostPredictionHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local predictionBar = ownerFrame.ManaCostPredictionBar
+    if not predictionBar or (predictionBar.IsForbidden and predictionBar:IsForbidden()) then
+        return
+    end
+
+    if hidden then
+        -- Mark as hidden and set alpha to 0
+        setProp(predictionBar, "manaCostPredictionHidden", true)
+        if predictionBar.SetAlpha then
+            pcall(predictionBar.SetAlpha, predictionBar, 0)
+        end
+
+        -- Install hooks once to re-enforce alpha=0 when Blizzard tries to show the prediction bar
+        if _G.hooksecurefunc and not getProp(predictionBar, "manaCostPredictionHooked") then
+            setProp(predictionBar, "manaCostPredictionHooked", true)
+
+            -- Hook Show() - Blizzard may call this directly
+            _G.hooksecurefunc(predictionBar, "Show", function(self)
+                if getProp(self, "manaCostPredictionHidden") and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+
+            -- Hook SetAlpha() - Re-enforce alpha=0 when Blizzard tries to change it
+            -- CRITICAL: Use immediate re-enforcement with recursion guard, NOT C_Timer.After(0)
+            -- Deferring causes visible flickering (texture visible for one frame before hiding)
+            _G.hooksecurefunc(predictionBar, "SetAlpha", function(self, alpha)
+                if getProp(self, "manaCostPredictionHidden") and alpha and alpha > 0 then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    else
+        -- Mark as visible and restore alpha
+        setProp(predictionBar, "manaCostPredictionHidden", false)
+        if predictionBar.SetAlpha then
+            pcall(predictionBar.SetAlpha, predictionBar, 1)
+        end
+    end
+end
+Util.SetManaCostPredictionHidden = SetManaCostPredictionHidden
+
 -- Hide/show only the Power Bar textures (fill + background) while keeping text visible
 -- This enables a "number-only" display mode like WeakAuras used to provide.
 -- ownerFrame: the ManaBar/PowerBar frame

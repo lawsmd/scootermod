@@ -321,6 +321,8 @@ do
             "powerBarBackgroundOpacity",
             "powerBarHideFullSpikes",
             "powerBarHideFeedback",
+            "powerBarHideSpark",
+            "powerBarHideManaCostPrediction",
             "powerBarHidden",
         }
         for _, k in ipairs(keys) do
@@ -2091,7 +2093,8 @@ do
                                 end
 
                                 -- Apply border to anchor frame
-                                if cfg.useCustomBorders then
+                                -- Skip border application when power bar is fully hidden.
+                                if cfg.useCustomBorders and not powerBarHidden then
                                     if styleKey == "none" or styleKey == nil then
                                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
                                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
@@ -2771,6 +2774,11 @@ do
             -- Hide power bar spark (e.g., Elemental Shaman Maelstrom indicator)
             if unit == "Player" and Util and Util.SetPowerBarSparkHidden then
                 Util.SetPowerBarSparkHidden(pb, cfg.powerBarHideSpark == true or hideAllVisuals)
+            end
+
+            -- Hide mana cost prediction overlay (shows predicted power cost of current spell)
+            if unit == "Player" and Util and Util.SetManaCostPredictionHidden then
+                Util.SetManaCostPredictionHidden(pb, cfg.powerBarHideManaCostPrediction == true or hideAllVisuals)
             end
 
             -- Apply reverse fill for Target/Focus if configured
@@ -3728,7 +3736,8 @@ do
                 local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
                 -- PetFrame is managed/protected: do not create or level custom border frames.
                 -- Skip border application when bar texture is hidden (number-only display).
-                if unit ~= "Pet" and cfg.useCustomBorders and not powerBarHideTextureOnly then
+                -- Skip border application when power bar is fully hidden.
+                if unit ~= "Pet" and cfg.useCustomBorders and not powerBarHideTextureOnly and not powerBarHidden then
                     if styleKey == "none" or styleKey == nil then
                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end

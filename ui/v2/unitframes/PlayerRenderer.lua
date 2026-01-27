@@ -812,6 +812,23 @@ function UF.RenderPlayer(panel, scrollContent)
                                 tooltipText = "Hides the spark/glow indicator that appears at the current power level on certain classes (e.g., Elemental Shaman).",
                             },
                         })
+                        tabInner:AddToggle({
+                            label = "Hide Mana Cost Predictions",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideManaCostPrediction
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideManaCostPrediction = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Mana Cost Predictions",
+                                tooltipText = "Hides the mana/power cost prediction overlay that appears on the power bar when casting a spell. This blue overlay shows how much power will be consumed by the current cast.",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     percentText = function(cf, tabInner)
