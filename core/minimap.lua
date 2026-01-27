@@ -20,7 +20,7 @@ end
 local ScooterLDB = LDB:NewDataObject("ScooterMod", {
     type = "launcher",
     text = "ScooterMod",
-    icon = "Interface\\AddOns\\ScooterMod\\ScooterSprite",
+    icon = "Interface\\AddOns\\ScooterMod\\ScooterModIcon",
     OnClick = function(self, button)
         -- Both left and right click open settings panel
         if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then

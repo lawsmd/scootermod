@@ -3841,6 +3841,48 @@ do
             end
         end
 
+        -- Target-specific prestige elements (PvP badge/portrait)
+        if unit == "Target" then
+            local contextual = _G.TargetFrame
+                and _G.TargetFrame.TargetFrameContent
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentContextual
+            if contextual then
+                local prestigePortrait = contextual.PrestigePortrait
+                if prestigePortrait then
+                    local function computePrestigeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfg2 = unitFrames2 and rawget(unitFrames2, "Target") or nil
+                        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+                    end
+                    applyAlpha(prestigePortrait, computePrestigeAlpha())
+                    hookAlphaEnforcer(prestigePortrait, computePrestigeAlpha)
+                end
+                local prestigeBadge = contextual.PrestigeBadge
+                if prestigeBadge then
+                    local function computePrestigeAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfg2 = unitFrames2 and rawget(unitFrames2, "Target") or nil
+                        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+                    end
+                    applyAlpha(prestigeBadge, computePrestigeAlpha())
+                    hookAlphaEnforcer(prestigeBadge, computePrestigeAlpha)
+                end
+                local pvpIcon = contextual.PvpIcon
+                if pvpIcon then
+                    local function computePvpIconAlpha()
+                        local db2 = addon and addon.db and addon.db.profile
+                        local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                        local cfg2 = unitFrames2 and rawget(unitFrames2, "Target") or nil
+                        return (cfg2 and cfg2.useCustomBorders) and 0 or 1
+                    end
+                    applyAlpha(pvpIcon, computePvpIconAlpha())
+                    hookAlphaEnforcer(pvpIcon, computePvpIconAlpha)
+                end
+            end
+        end
+
         -- Boss-specific frame art: Handle all 5 Boss frames (Boss1TargetFrame through Boss5TargetFrame)
         -- Unlike other unit frames where there's a single frame per unit, Boss frames have 5 individual frames
         -- that all share the same config (db.unitFrames.Boss). We must apply hiding to each one.
