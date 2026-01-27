@@ -233,7 +233,7 @@ local function registerDefaultActions()
             componentId = "prdPower",      -- For resolving component reference
             settingId = "hideBar",         -- For resolving setting within component
             defaultValue = false,
-            path = { "Personal Resource Display", "Power Bar", "Visibility", "Hide Power Bar" },
+            path = { "Personal Resource", "Power Bar", "Visibility", "Hide Power Bar" },
             -- uiMeta: Additional metadata for control rendering (sliders need min/max/step, dropdowns need values)
             -- For checkbox, no additional uiMeta needed
             get = function()
@@ -265,6 +265,84 @@ local function registerDefaultActions()
                 return true
             end,
         }
+
+    -- PRD Health Bar: Hide Health Bar action
+    ACTIONS["prdHealth.hideBar"] = {
+        id = "prdHealth.hideBar",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "prdHealth",
+        settingId = "hideBar",
+        defaultValue = false,
+        path = { "Personal Resource", "Health Bar", "Visibility", "Hide Health Bar" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local comp = profile and profile.components and profile.components.prdHealth
+            if comp and comp.hideBar ~= nil then
+                return comp.hideBar
+            end
+            return false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then
+                return false
+            end
+            profile.components = profile.components or {}
+            profile.components.prdHealth = profile.components.prdHealth or {}
+            local comp = profile.components.prdHealth
+            if comp.hideBar == value then
+                return false
+            end
+            comp.hideBar = value and true or false
+            local component = addon.Components and addon.Components.prdHealth
+            if component and component.ApplyStyling then
+                pcall(component.ApplyStyling, component)
+            elseif addon.ApplyStyles then
+                addon:ApplyStyles()
+            end
+            return true
+        end,
+    }
+
+    -- PRD Class Resource: Hide Class Resource action
+    ACTIONS["prdClassResource.hideBar"] = {
+        id = "prdClassResource.hideBar",
+        valueType = "boolean",
+        widget = "checkbox",
+        componentId = "prdClassResource",
+        settingId = "hideBar",
+        defaultValue = false,
+        path = { "Personal Resource", "Class Resource", "Visibility", "Hide Class Resource" },
+        get = function()
+            local profile = addon.db and addon.db.profile
+            local comp = profile and profile.components and profile.components.prdClassResource
+            if comp and comp.hideBar ~= nil then
+                return comp.hideBar
+            end
+            return false
+        end,
+        set = function(value)
+            local profile = addon.db and addon.db.profile
+            if not profile then
+                return false
+            end
+            profile.components = profile.components or {}
+            profile.components.prdClassResource = profile.components.prdClassResource or {}
+            local comp = profile.components.prdClassResource
+            if comp.hideBar == value then
+                return false
+            end
+            comp.hideBar = value and true or false
+            local component = addon.Components and addon.Components.prdClassResource
+            if component and component.ApplyStyling then
+                pcall(component.ApplyStyling, component)
+            elseif addon.ApplyStyles then
+                addon:ApplyStyles()
+            end
+            return true
+        end,
+    }
 
     -- Target/Focus Unit Frames: Hide Level Text (applies to both Target and Focus frames)
     ACTIONS["ufTargetFocus.levelTextHidden"] = {

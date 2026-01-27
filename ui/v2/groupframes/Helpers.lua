@@ -150,9 +150,10 @@ GF.healthColorValues = {
     default = "Default",
     texture = "Texture Original",
     class = "Class Color",
+    value = "Color by Value",
     custom = "Custom",
 }
-GF.healthColorOrder = { "default", "texture", "class", "custom" }
+GF.healthColorOrder = { "default", "texture", "class", "value", "custom" }
 
 -- Background color mode options
 GF.bgColorValues = {

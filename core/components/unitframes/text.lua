@@ -65,6 +65,47 @@ local function safeGetWidth(frame)
     return w
 end
 
+-- Helper to get a usable width for FontString alignment.
+-- StatusBars return nil from safeGetWidth (to avoid secret value issues), so we need
+-- alternative strategies: try the FontString itself, try the grandparent (which is
+-- typically NOT a StatusBar), or fall back to a reasonable default.
+local function getBarWidthForAlignment(fs)
+    if not fs then return 120 end
+
+    -- Check if this FontString is part of a unit frame hierarchy FIRST.
+    -- If so, avoid ALL GetWidth calls as they can trigger internal updates
+    -- (like heal prediction) that fail on secret values in 12.0.
+    local parent = fs.GetParent and fs:GetParent()
+    if parent then
+        local grandparent = parent.GetParent and parent:GetParent()
+        if grandparent and (grandparent.unit or grandparent.healthbar) then
+            -- Part of a unit frame hierarchy - use safe fallback immediately
+            return 120
+        end
+    end
+
+    -- Not part of a unit frame - safe to try GetWidth calls
+    -- Try FontString's own width first (if it was already sized)
+    local fsWidth = safeGetWidth(fs)
+    if fsWidth and fsWidth > 10 then
+        return fsWidth
+    end
+
+    -- Try parent's parent if it's a simple container
+    if parent then
+        local grandparent = parent.GetParent and parent:GetParent()
+        if grandparent then
+            local gpWidth = safeGetWidth(grandparent)
+            if gpWidth and gpWidth > 10 then
+                return gpWidth
+            end
+        end
+    end
+
+    -- Fallback: use a known reasonable width for unit frame bars
+    return 120
+end
+
 local function isEditModeActive()
 	if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
 		return addon.EditMode.IsEditModeActiveOrOpening()
@@ -269,13 +310,20 @@ do
         return b
     end
 
-    -- Helper to force FontString redraw after alignment change
+    -- Helper to force FontString redraw after alignment change (secret-value safe)
     local function forceTextRedraw(fs)
         if fs and fs.GetText and fs.SetText then
-            local txt = fs:GetText()
-            if txt then
+            local ok, txt = pcall(fs.GetText, fs)
+            if ok and txt and type(txt) == "string" then
                 fs:SetText("")
                 fs:SetText(txt)
+            else
+                -- Fallback: toggle alpha to force redraw without needing text value
+                local okAlpha, alpha = pcall(function() return fs.GetAlpha and fs:GetAlpha() end)
+                if okAlpha and alpha then
+                    pcall(fs.SetAlpha, fs, 0)
+                    pcall(fs.SetAlpha, fs, alpha)
+                end
             end
         end
     end
@@ -365,36 +413,29 @@ do
             end
             local alignment = styleCfg.alignment or defaultAlign
 
-            -- Set explicit width on FontString to enable alignment (use full parent bar width)
-            local parentBar = fs:GetParent()
-            if parentBar and parentBar.GetWidth then
-                local barWidth = safeGetWidth(parentBar)
-                if barWidth and barWidth > 0 and fs.SetWidth then
-                    pcall(fs.SetWidth, fs, barWidth)
-                end
+            local parentBar = fs.GetParent and fs:GetParent()
+
+            -- Get baseline Y position and user offsets
+            local b = ensureBaseline(fs, baselineKey, fallbackFrame or parentBar)
+            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+            local yOffset = safeOffset(b.y) + oy
+
+            -- Use two-point anchoring to span the parent bar width.
+            -- This makes JustifyH work correctly without needing GetWidth() (which can
+            -- trigger secret value errors on unit frame StatusBars in 12.0).
+            if fs.ClearAllPoints and fs.SetPoint and parentBar then
+                fs:ClearAllPoints()
+                -- Anchor both left and right edges to span the bar
+                -- Apply small padding (2px) plus user X offset for text inset
+                local leftPad = 2 + ox
+                local rightPad = -2 + ox
+                pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
+                pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
             end
 
             if fs.SetJustifyH then
                 pcall(fs.SetJustifyH, fs, alignment)
-            end
-
-            -- Offset relative to a stable baseline anchor captured at first apply this session
-            local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-            local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-            if fs.ClearAllPoints and fs.SetPoint then
-                local b = ensureBaseline(fs, baselineKey, fallbackFrame or (fs.GetParent and fs:GetParent()))
-                fs:ClearAllPoints()
-                local point = safePointToken(b.point, "CENTER")
-                local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
-                local relPoint = safePointToken(b.relPoint, point)
-                local x = safeOffset(b.x) + ox
-                local y = safeOffset(b.y) + oy
-                local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-                if not ok then
-                    -- Fallback: anchor to parent without offsets (best-effort, avoid hard-crash on 12.0).
-                    local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
-                    pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
-                end
             end
 
             -- Force redraw to apply alignment visually
@@ -959,13 +1000,20 @@ do
 		return b
 	end
 
-	-- Helper to force FontString redraw after alignment change
+	-- Helper to force FontString redraw after alignment change (secret-value safe)
 	local function forceTextRedraw(fs)
 		if fs and fs.GetText and fs.SetText then
-			local txt = fs:GetText()
-			if txt then
+			local ok, txt = pcall(fs.GetText, fs)
+			if ok and txt and type(txt) == "string" then
 				fs:SetText("")
 				fs:SetText(txt)
+			else
+				-- Fallback: toggle alpha to force redraw without needing text value
+				local okAlpha, alpha = pcall(function() return fs.GetAlpha and fs:GetAlpha() end)
+				if okAlpha and alpha then
+					pcall(fs.SetAlpha, fs, 0)
+					pcall(fs.SetAlpha, fs, alpha)
+				end
 			end
 		end
 	end
@@ -1044,38 +1092,30 @@ do
 			end
 			local alignment = styleCfg.alignment or defaultAlign
 
-			-- Set explicit width on FontString to enable alignment (use full parent bar width)
-			local parentBar = fs:GetParent()
-			if parentBar and parentBar.GetWidth then
-				local barWidth = safeGetWidth(parentBar)
-				if barWidth and barWidth > 0 then
-					-- Use full bar width so alignment spans the entire bar
-					if fs.SetWidth then
-						pcall(fs.SetWidth, fs, barWidth)
-					end
-				end
+			local parentBar = fs.GetParent and fs:GetParent()
+
+			-- Get baseline Y position and user offsets
+			local b = ensureBaseline(fs, baselineKey, fallbackFrame or parentBar)
+			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+			local yOffset = safeOffset(b.y) + oy
+
+			-- Use two-point anchoring to span the parent bar width.
+			-- This makes JustifyH work correctly without needing GetWidth() (which can
+			-- trigger secret value errors on unit frame StatusBars in 12.0).
+			if fs.ClearAllPoints and fs.SetPoint and parentBar then
+				fs:ClearAllPoints()
+				-- Anchor both left and right edges to span the bar
+				-- Apply small padding (2px) plus user X offset for text inset
+				local leftPad = 2 + ox
+				local rightPad = -2 + ox
+				pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
+				pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
 			end
 
 			-- Apply text alignment
 			if fs.SetJustifyH then
 				pcall(fs.SetJustifyH, fs, alignment)
-			end
-
-			local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
-			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-			if fs.ClearAllPoints and fs.SetPoint then
-				local b = ensureBaseline(fs, baselineKey, fallbackFrame)
-				fs:ClearAllPoints()
-				local point = safePointToken(b.point, "CENTER")
-				local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or fallbackFrame
-				local relPoint = safePointToken(b.relPoint, point)
-				local x = safeOffset(b.x) + ox
-				local y = safeOffset(b.y) + oy
-				local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-				if not ok then
-					local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
-					pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
-				end
 			end
 
 			-- Force redraw to apply alignment visually

@@ -820,12 +820,23 @@ do
     -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
     -- This is used to visually "fill in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
+    -- Also used for "Color by Value" mode to avoid modifying Blizzard's protected textures.
     local function updateRectHealthOverlay(unit, bar)
         local st = getState(bar)
         local overlay = st and st.rectFill or nil
         if not bar or not overlay then return end
+
+        local statusBarTex = bar:GetStatusBarTexture()
+
         if not (st and st.rectActive) then
             overlay:Hide()
+            -- Restore Blizzard's native texture visibility when overlay is inactive
+            if statusBarTex and statusBarTex.SetAlpha then
+                pcall(statusBarTex.SetAlpha, statusBarTex, 1)
+            end
+            if bar.HealthBarTexture and bar.HealthBarTexture.SetAlpha then
+                pcall(bar.HealthBarTexture.SetAlpha, bar.HealthBarTexture, 1)
+            end
             return
         end
         -- 12.0 PTR: PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
@@ -842,7 +853,6 @@ do
         -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
         -- is the actual "fill" portion of the StatusBar and automatically scales with health value.
         -- This follows the 12.0 paradigm: anchor to existing elements, don't read values.
-        local statusBarTex = bar:GetStatusBarTexture()
         if not statusBarTex then
             overlay:Hide()
             return
@@ -851,6 +861,18 @@ do
         overlay:ClearAllPoints()
         overlay:SetAllPoints(statusBarTex)
         overlay:Show()
+
+        -- CRITICAL: Hide Blizzard's native texture(s) so they don't show through as white.
+        -- The overlay is our controlled texture that receives the value-based color.
+        -- Without hiding the native texture, you see "white mixed with color" at low alpha
+        -- and "pure white" at full alpha.
+        if statusBarTex and statusBarTex.SetAlpha then
+            pcall(statusBarTex.SetAlpha, statusBarTex, 0)
+        end
+        -- Also hide the named HealthBarTexture if it's a different object
+        if bar.HealthBarTexture and bar.HealthBarTexture ~= statusBarTex and bar.HealthBarTexture.SetAlpha then
+            pcall(bar.HealthBarTexture.SetAlpha, bar.HealthBarTexture, 0)
+        end
     end
 
     -- Power bar foreground overlay: addon-owned texture that sits above the StatusBar fill.
@@ -890,10 +912,12 @@ do
             return
         end
 
-        -- Determine whether overlay should be active based on unit type:
+        -- Determine whether overlay should be active based on unit type and settings:
         -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
-        -- - Player/TargetOfTarget: activate when using custom borders (fills top-right corner chip in mask)
-        -- - Pet: activate when using custom borders (fills top-right corner chip in mask)
+        -- - Player/TargetOfTarget/Pet: activate when using custom borders (fills top-right corner chip in mask)
+        -- - ANY unit: activate when using non-default color mode (custom, class, value, texture)
+        --   This ensures the overlay system handles "Color by Value" instead of trying to modify
+        --   Blizzard's protected textures directly.
         local shouldActivate = false
         local st = getState(bar)
         if not st then return end
@@ -901,22 +925,30 @@ do
         -- Reset per-call disable flag unless explicitly re-set below.
         st.rectDisabledForSecretValues = nil
 
+        -- Check if non-default color or texture settings require overlay
+        local colorMode = cfg and cfg.healthBarColorMode or "default"
+        local texKey = cfg and cfg.healthBarTexture or "default"
+        local hasNonDefaultColor = (colorMode ~= "default" and colorMode ~= "" and colorMode ~= nil)
+        local hasNonDefaultTexture = (texKey ~= "default" and texKey ~= "" and texKey ~= nil)
+        local needsOverlayForStyling = hasNonDefaultColor or hasNonDefaultTexture
+
         if unit == "Target" or unit == "Focus" then
             local portraitCfg = rawget(ufCfg, "portrait")
-            shouldActivate = (portraitCfg and portraitCfg.hidePortrait == true) or false
+            local portraitHidden = (portraitCfg and portraitCfg.hidePortrait == true) or false
+            shouldActivate = portraitHidden or needsOverlayForStyling
             if cfg and cfg.healthBarReverseFill ~= nil then
                 st.rectReverseFill = not not cfg.healthBarReverseFill
             end
         elseif unit == "Player" then
-            shouldActivate = (ufCfg.useCustomBorders == true)
+            shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
             st.rectReverseFill = false -- Player health bar always fills left-to-right
         elseif unit == "TargetOfTarget" then
-            shouldActivate = (ufCfg.useCustomBorders == true)
+            shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
             st.rectReverseFill = false -- ToT health bar always fills left-to-right
         elseif type(unit) == "string" and string.lower(unit) == "pet" then
             -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
             -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
-            shouldActivate = (ufCfg.useCustomBorders == true)
+            shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
             st.rectReverseFill = false -- Pet health bar always fills left-to-right
         else
             -- Others: skip
@@ -1054,14 +1086,42 @@ do
         local colorMode = cfg.healthBarColorMode or "default"
         local tint = cfg.healthBarTint
         local r, g, b, a = 1, 1, 1, 1
-        if colorMode == "custom" and type(tint) == "table" then
+
+        -- Map unit config key to unit token for API calls
+        local unitToken = unit
+        if unit == "Player" then unitToken = "player"
+        elseif unit == "Target" then unitToken = "target"
+        elseif unit == "Focus" then unitToken = "focus"
+        elseif unit == "Pet" then unitToken = "pet"
+        elseif unit == "TargetOfTarget" then unitToken = "targettarget"
+        end
+
+        if colorMode == "value" then
+            -- "Color by Value" mode: use UnitHealthPercent with color curve
+            -- Apply initial color now; dynamic updates handled by hooks below
+            if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                -- Pass the overlay as the texture to color
+                addon.BarsTextures.applyValueBasedColor(bar, unitToken, overlay)
+            end
+            -- Store reference so dynamic updates can find the overlay
+            st.valueColorOverlay = overlay
+        elseif colorMode == "custom" and type(tint) == "table" then
             r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+            if overlay and overlay.SetVertexColor then
+                overlay:SetVertexColor(r, g, b, a)
+            end
         elseif colorMode == "class" and addon.GetClassColorRGB then
             local cr, cg, cb = addon.GetClassColorRGB("player")
             r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+            if overlay and overlay.SetVertexColor then
+                overlay:SetVertexColor(r, g, b, a)
+            end
         elseif colorMode == "texture" then
             -- Preserve texture's original colors
             r, g, b, a = 1, 1, 1, 1
+            if overlay and overlay.SetVertexColor then
+                overlay:SetVertexColor(r, g, b, a)
+            end
         elseif colorMode == "default" then
             -- Use the addon's static health color API as the authoritative source.
             -- GetVertexColor on atlas-backed StatusBarTextures (e.g., Pet) returns white
@@ -1079,9 +1139,9 @@ do
                     end
                 end
             end
-        end
-        if overlay and overlay.SetVertexColor then
-            overlay:SetVertexColor(r, g, b, a)
+            if overlay and overlay.SetVertexColor then
+                overlay:SetVertexColor(r, g, b, a)
+            end
         end
 
         updateRectHealthOverlay(unit, bar)
@@ -2278,6 +2338,10 @@ do
 						end
 						if maskAtlas then pcall(mask.SetAtlas, mask, maskAtlas) end
 					end
+                    -- Re-apply value-based color after SetAtlas (which resets vertex color to white)
+                    if colorModeHB == "value" and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(hb, unitId)
+                    end
 				end
 			end
 			ensureMaskOnBarTexture(hb, resolveHealthMask(unit))
@@ -2293,7 +2357,13 @@ do
             if unit == "Player" and hb and Util and Util.SetOverAbsorbGlowHidden then
                 Util.SetOverAbsorbGlowHidden(hb, cfg.healthBarHideOverAbsorbGlow == true)
             end
-            
+
+            -- Hide/Show Heal Prediction (Player only)
+            -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.MyHealPredictionBar
+            if unit == "Player" and hb and Util and Util.SetHealPredictionHidden then
+                Util.SetHealPredictionHidden(hb, cfg.healthBarHideHealPrediction == true)
+            end
+
             -- Health Bar custom border (Health Bar only)
             -- 12.0+: PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
             -- on PetFrame's health bar can trigger Blizzard internal updates that error on "secret values".
@@ -2413,11 +2483,23 @@ do
                         local texKey = cfgP.healthBarTexture or "default"
                         local colorMode = cfgP.healthBarColorMode or "default"
                         local tint = cfgP.healthBarTint
-                        -- Only re-apply if the user has configured a non-default texture.
-                        if not (type(texKey) == "string" and texKey ~= "" and texKey ~= "default") then
+                        -- Re-apply if custom texture OR "value" color mode (Blizzard's new texture needs coloring)
+                        local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
+                        local needsValueColor = (colorMode == "value")
+                        if not hasCustomTexture and not needsValueColor then
                             return
                         end
-                        applyToBar(self, texKey, colorMode, tint, "player", "health", "player")
+                        -- For value mode with default texture, just re-apply color to the new texture
+                        -- Use small delay to ensure color is applied AFTER Blizzard's code completes
+                        if needsValueColor and not hasCustomTexture then
+                            C_Timer.After(0, function()
+                                if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                    addon.BarsTextures.applyValueBasedColor(self, "player")
+                                end
+                            end)
+                        else
+                            applyToBar(self, texKey, colorMode, tint, "player", "health", "player")
+                        end
                     end)
                 end
                 -- Color hook: reapply custom color when Blizzard resets it
@@ -2425,6 +2507,8 @@ do
                     setProp(hb, "healthColorHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
                         if isEditModeActive() then return end
+                        -- Skip if we're the ones calling SetStatusBarColor (from applyValueBasedColor)
+                        if getProp(self, "applyingValueBasedColor") then return end
                         -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
                         -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
                         if InCombatLockdown and InCombatLockdown() then return end
@@ -2440,7 +2524,7 @@ do
                         -- Only do work when the user has customized either texture or color;
                         -- default settings can safely follow Blizzard's behavior.
                         local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
-                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class")
+                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "value")
                         if not hasCustomTexture and not hasCustomColor then
                             return
                         end
@@ -4154,5 +4238,214 @@ function addon.RestoreAllRaidFrameOverlays()
     if addon.RestoreRaidFrameNameOverlays then
         addon.RestoreRaidFrameNameOverlays()
     end
+end
+
+--------------------------------------------------------------------------------
+-- Unit Frame "Color by Value" Dynamic Update System
+--------------------------------------------------------------------------------
+-- For unit frames (Player, Target, Focus, Boss), we use a UNIT_HEALTH event
+-- handler to update value-based health bar colors. This is separate from
+-- party/raid frames which use CompactUnitFrame_UpdateHealthColor hooks.
+--
+-- The applyValueBasedColor function uses the 12.0 secret-safe pattern:
+-- UnitHealthPercent(unit, false, colorCurve) returns a non-secret color
+-- by having Blizzard internally evaluate the secret health percentage.
+--------------------------------------------------------------------------------
+
+do
+    -- Map unit tokens to their health bar frames
+    local function getHealthBarForUnit(unit)
+        local db = addon and addon.db and addon.db.profile
+        local unitFrames = db and rawget(db, "unitFrames") or nil
+
+        if unit == "player" then
+            local cfg = unitFrames and rawget(unitFrames, "Player") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local hb = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContent
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+                and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar
+            return hb
+        elseif unit == "target" then
+            local cfg = unitFrames and rawget(unitFrames, "Target") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local hb = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+            return hb
+        elseif unit == "focus" then
+            local cfg = unitFrames and rawget(unitFrames, "Focus") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local hb = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+            return hb
+        elseif unit:match("^boss%d$") then
+            local cfg = unitFrames and rawget(unitFrames, "Boss") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local bossIndex = tonumber(unit:match("^boss(%d)$"))
+            if bossIndex and bossIndex >= 1 and bossIndex <= 5 then
+                local bossFrame = _G["Boss" .. bossIndex .. "TargetFrame"]
+                local hb = bossFrame and bossFrame.TargetFrameContent
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                    and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+                return hb
+            end
+        end
+        return nil
+    end
+
+    -- Helper to get the value color overlay for a bar (if active)
+    local function getValueColorOverlay(bar)
+        local st = bar and addon.FrameState and addon.FrameState.Get(bar)
+        if st and st.rectActive and st.valueColorOverlay then
+            return st.valueColorOverlay
+        end
+        return nil
+    end
+
+    -- UNIT_HEALTH event handler for value-based coloring
+    local healthColorEventFrame = CreateFrame("Frame")
+    healthColorEventFrame:RegisterEvent("UNIT_HEALTH")
+    healthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
+        if event ~= "UNIT_HEALTH" or not unit then return end
+
+        local bar = getHealthBarForUnit(unit)
+        if not bar then return end
+
+        -- Apply value-based color using the color curve
+        -- Use the overlay texture if available (cleaner than modifying Blizzard's textures)
+        if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+            local overlay = getValueColorOverlay(bar)
+            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+        end
+    end)
+
+    -- Also register for PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED
+    -- to apply initial color when target/focus changes
+    healthColorEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+    healthColorEventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    healthColorEventFrame:HookScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_TARGET_CHANGED" then
+            local bar = getHealthBarForUnit("target")
+            if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                local overlay = getValueColorOverlay(bar)
+                addon.BarsTextures.applyValueBasedColor(bar, "target", overlay)
+            end
+        elseif event == "PLAYER_FOCUS_CHANGED" then
+            local bar = getHealthBarForUnit("focus")
+            if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                local overlay = getValueColorOverlay(bar)
+                addon.BarsTextures.applyValueBasedColor(bar, "focus", overlay)
+            end
+        end
+    end)
+
+    -- SetValue hooks for instant color updates (bypasses UNIT_HEALTH event delay)
+    -- SetValue fires immediately when health changes, providing zero-delay response.
+    local function hookSetValueForValueColor(bar, unitKey, unitToken)
+        if not bar or not bar.SetValue then return end
+        local barState = addon.FrameState and addon.FrameState.Get(bar)
+        if barState and barState.valueColorSetValueHooked then return end
+        if barState then barState.valueColorSetValueHooked = true end
+
+        hooksecurefunc(bar, "SetValue", function(self)
+            local cfg = addon.db and addon.db.profile
+            cfg = cfg and cfg.unitFrames and cfg.unitFrames[unitKey]
+            if cfg and cfg.healthBarColorMode == "value" then
+                if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                    local overlay = getValueColorOverlay(self)
+                    addon.BarsTextures.applyValueBasedColor(self, unitToken, overlay)
+                end
+            end
+        end)
+    end
+
+    -- Apply SetValue hooks after a short delay to ensure frames exist
+    C_Timer.After(1, function()
+        -- Player
+        local playerHB = PlayerFrame and PlayerFrame.PlayerFrameContent
+            and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+            and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+            and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar
+        if playerHB then
+            hookSetValueForValueColor(playerHB, "Player", "player")
+        end
+
+        -- Target
+        local targetHB = TargetFrame and TargetFrame.TargetFrameContent
+            and TargetFrame.TargetFrameContent.TargetFrameContentMain
+            and TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+            and TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+        if targetHB then
+            hookSetValueForValueColor(targetHB, "Target", "target")
+        end
+
+        -- Focus
+        local focusHB = FocusFrame and FocusFrame.TargetFrameContent
+            and FocusFrame.TargetFrameContent.TargetFrameContentMain
+            and FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+            and FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+        if focusHB then
+            hookSetValueForValueColor(focusHB, "Focus", "focus")
+        end
+
+        -- Boss frames (1-5)
+        for i = 1, 5 do
+            local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+            local bossHB = bossFrame and bossFrame.TargetFrameContent
+                and bossFrame.TargetFrameContent.TargetFrameContentMain
+                and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
+            if bossHB then
+                hookSetValueForValueColor(bossHB, "Boss", "boss" .. i)
+            end
+        end
+
+        -- Hook RefreshOpacityState to re-apply value-based colors after opacity changes.
+        -- This ensures color persists through opacity transitions (e.g., 20% -> 100% when target acquired).
+        if addon.RefreshOpacityState and not addon._valueColorOpacityHooked then
+            addon._valueColorOpacityHooked = true
+            hooksecurefunc(addon, "RefreshOpacityState", function()
+                -- Slightly defer to ensure opacity change is complete
+                C_Timer.After(0.01, function()
+                    local unitMappings = {
+                        { key = "Player", token = "player" },
+                        { key = "Target", token = "target" },
+                        { key = "Focus", token = "focus" },
+                    }
+                    for _, mapping in ipairs(unitMappings) do
+                        local cfg = addon.db and addon.db.profile
+                            and addon.db.profile.unitFrames
+                            and addon.db.profile.unitFrames[mapping.key]
+                        if cfg and cfg.healthBarColorMode == "value" then
+                            local bar = getHealthBarForUnit(mapping.token)
+                            if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                local overlay = getValueColorOverlay(bar)
+                                addon.BarsTextures.applyValueBasedColor(bar, mapping.token, overlay)
+                            end
+                        end
+                    end
+                    -- Boss frames
+                    local bossCfg = addon.db and addon.db.profile
+                        and addon.db.profile.unitFrames
+                        and addon.db.profile.unitFrames.Boss
+                    if bossCfg and bossCfg.healthBarColorMode == "value" then
+                        for i = 1, 5 do
+                            local bar = getHealthBarForUnit("boss" .. i)
+                            if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                local overlay = getValueColorOverlay(bar)
+                                addon.BarsTextures.applyValueBasedColor(bar, "boss" .. i, overlay)
+                            end
+                        end
+                    end
+                end)
+            end)
+        end
+
+    end)
 end
 

@@ -505,6 +505,25 @@ local function buildHealthVisibilityTab(inner)
         infoIcon = UF.TOOLTIPS.hideOverAbsorbGlow,
     })
 
+    inner:AddToggle({
+        label = "Hide Heal Prediction",
+        description = "Hides the green heal prediction bar when healing is incoming.",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideHealPrediction
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideHealPrediction = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = {
+            tooltipTitle = "Hide Heal Prediction",
+            tooltipText = "Hides the green heal prediction bar that appears on your health bar when you or a party member is casting a heal on you.",
+        },
+    })
+
     inner:Finalize()
 end
 

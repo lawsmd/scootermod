@@ -797,6 +797,58 @@ local function build(ctx, init)
 							end
 	
 							y.y = y.y - 34
+
+						-- Hide Heal Prediction checkbox
+						local labelHP = "Hide Heal Prediction"
+						local function getterHP()
+							local t = ensureUFDB()
+							return t and not not t.healthBarHideHealPrediction or false
+						end
+						local function setterHP(v)
+							local t = ensureUFDB(); if not t then return end
+							t.healthBarHideHealPrediction = (v and true) or false
+							applyNow()
+						end
+
+						local settingHP = CreateLocalSetting(labelHP, "boolean", getterHP, setterHP, getterHP())
+						local initCbHP = Settings.CreateSettingInitializer("SettingsCheckboxControlTemplate", { name = labelHP, setting = settingHP, options = {} })
+						local rowHP = CreateFrame("Frame", nil, frame.PageC, "SettingsCheckboxControlTemplate")
+						rowHP.GetElementData = function() return initCbHP end
+						rowHP:SetPoint("TOPLEFT", 4, y.y)
+						rowHP:SetPoint("TOPRIGHT", -16, y.y)
+						initCbHP:InitFrame(rowHP)
+						if panel and panel.ApplyRobotoWhite then
+							if rowHP.Text then panel.ApplyRobotoWhite(rowHP.Text) end
+							local cbHP = rowHP.Checkbox or rowHP.CheckBox or (rowHP.Control and rowHP.Control.Checkbox)
+							if cbHP and cbHP.Text then panel.ApplyRobotoWhite(cbHP.Text) end
+							if cbHP and panel.ThemeCheckbox then panel.ThemeCheckbox(cbHP) end
+						end
+
+						-- Add info icon to the LEFT of the checkbox label
+						if panel and panel.CreateInfoIconForLabel then
+							local tooltipTextHP = "Hides the green heal prediction bar that appears on your health bar when you or a party member is casting a heal on you."
+							local targetLabelHP = rowHP.Text or (rowHP.Checkbox and rowHP.Checkbox.Text)
+							if targetLabelHP and not rowHP.ScooterHealPredictionInfoIcon then
+								rowHP.ScooterHealPredictionInfoIcon = panel.CreateInfoIconForLabel(targetLabelHP, tooltipTextHP, 5, 0, 32)
+								if rowHP.ScooterHealPredictionInfoIcon then
+									local function repositionHP()
+										local icon = rowHP.ScooterHealPredictionInfoIcon
+										local lbl = rowHP.Text or (rowHP.Checkbox and rowHP.Checkbox.Text)
+										if icon and lbl then
+											icon:ClearAllPoints()
+											icon:SetPoint("RIGHT", lbl, "LEFT", -6, 0)
+										end
+									end
+									if C_Timer and C_Timer.After then
+										C_Timer.After(0, repositionHP)
+									else
+										repositionHP()
+									end
+								end
+							end
+						end
+
+						y.y = y.y - 34
 						end
 					end
 	

@@ -37,6 +37,155 @@ addon.BarsTextures = addon.BarsTextures or {}
 local Textures = addon.BarsTextures
 
 --------------------------------------------------------------------------------
+-- Health Value Color Curve (12.0 "Color by Value" Feature)
+--------------------------------------------------------------------------------
+-- Uses C_CurveUtil.CreateColorCurve() with UnitHealthPercent() to safely color
+-- health bars based on remaining health percentage. This pattern is secret-safe
+-- because Blizzard evaluates the secret health percentage internally and returns
+-- a non-secret color object.
+--
+-- Gradient: Green (100%) -> Yellow (50%) -> Red (0%)
+--------------------------------------------------------------------------------
+
+local healthValueCurve = nil
+
+local function getHealthValueCurve()
+    if not healthValueCurve then
+        if not _G.C_CurveUtil then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueCurve: C_CurveUtil not available") end
+            return nil
+        end
+        if not _G.C_CurveUtil.CreateColorCurve then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueCurve: CreateColorCurve not available") end
+            return nil
+        end
+
+        healthValueCurve = C_CurveUtil.CreateColorCurve()
+        if not healthValueCurve then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueCurve: CreateColorCurve returned nil") end
+            return nil
+        end
+
+        -- Linear interpolation between color points
+        if healthValueCurve.SetType and _G.Enum and _G.Enum.LuaCurveType then
+            local ok, err = pcall(healthValueCurve.SetType, healthValueCurve, Enum.LuaCurveType.Linear)
+            if not ok and addon.DebugPrint then addon.DebugPrint("getHealthValueCurve: SetType failed - " .. tostring(err)) end
+        end
+
+        -- Add color points: Red at 0%, Yellow at 50%, Green at 100%
+        -- UnitHealthPercent returns 0-1 range (normalized), so use 0.0, 0.5, 1.0 as x values
+        if healthValueCurve.AddPoint and _G.CreateColor then
+            local ok1, err1 = pcall(healthValueCurve.AddPoint, healthValueCurve, 0.0, CreateColor(1, 0, 0, 1))    -- Red at 0%
+            local ok2, err2 = pcall(healthValueCurve.AddPoint, healthValueCurve, 0.5, CreateColor(1, 1, 0, 1))    -- Yellow at 50%
+            local ok3, err3 = pcall(healthValueCurve.AddPoint, healthValueCurve, 1.0, CreateColor(0, 1, 0, 1))    -- Green at 100%
+            if addon.DebugPrint then
+                if not ok1 then addon.DebugPrint("getHealthValueCurve: AddPoint(0) failed - " .. tostring(err1)) end
+                if not ok2 then addon.DebugPrint("getHealthValueCurve: AddPoint(50) failed - " .. tostring(err2)) end
+                if not ok3 then addon.DebugPrint("getHealthValueCurve: AddPoint(100) failed - " .. tostring(err3)) end
+            end
+        end
+
+        if addon.DebugPrint then addon.DebugPrint("getHealthValueCurve: created curve with " .. (healthValueCurve.GetPointCount and healthValueCurve:GetPointCount() or "?") .. " points") end
+    end
+    return healthValueCurve
+end
+
+-- Expose getter for other modules
+function Textures.getHealthValueCurve()
+    return getHealthValueCurve()
+end
+
+-- Apply value-based color to a health bar texture using UnitHealthPercent
+-- @param bar: The StatusBar frame
+-- @param unit: Unit token ("player", "target", "party1", etc.)
+-- @param overlay: Optional overlay texture to color instead of bar texture
+function Textures.applyValueBasedColor(bar, unit, overlay)
+    if not bar or not unit then return end
+
+    -- Get the health value color curve
+    local curve = getHealthValueCurve()
+    if not curve then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: curve is nil") end
+        return
+    end
+
+    -- Use UnitHealthPercent with the curve to get a color
+    -- This is secret-safe because Blizzard evaluates the secret percentage internally
+    if not _G.UnitHealthPercent then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: UnitHealthPercent not found") end
+        return
+    end
+
+    local ok, color = pcall(UnitHealthPercent, unit, false, curve)
+    if not ok then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: pcall failed - " .. tostring(color)) end
+        return
+    end
+
+    if not color then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: UnitHealthPercent returned nil") end
+        return
+    end
+
+    -- Check if we got a color object or a number
+    if type(color) == "number" then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: got number " .. color .. " instead of color") end
+        return
+    end
+
+    if not color.GetRGB then
+        if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: color has no GetRGB method, type=" .. type(color)) end
+        return
+    end
+
+    local r, g, b = color:GetRGB()
+
+    -- Color ALL relevant textures to handle cases where HealthBarTexture and
+    -- GetStatusBarTexture() are different objects, or where multiple textures
+    -- need coloring. This fixes the "white layer on top" issue at full opacity.
+    local texturesColored = 0
+
+    -- Use FrameState to prevent recursion (SetStatusBarColor triggers hooks that call back here)
+    local barState = ensureFS() and ensureFS().Get(bar)
+    if barState and barState.applyingValueBasedColor then
+        return -- Already applying, prevent recursion
+    end
+    if barState then barState.applyingValueBasedColor = true end
+
+    -- 1. Color the overlay if provided
+    if overlay and overlay.SetVertexColor then
+        pcall(overlay.SetVertexColor, overlay, r, g, b, 1)
+        texturesColored = texturesColored + 1
+    end
+
+    -- 2. Color GetStatusBarTexture() result
+    local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if statusBarTex and statusBarTex.SetVertexColor and statusBarTex ~= overlay then
+        pcall(statusBarTex.SetVertexColor, statusBarTex, r, g, b, 1)
+        texturesColored = texturesColored + 1
+    end
+
+    -- 3. Color bar.HealthBarTexture if it's a different object (Blizzard's named child)
+    local namedTex = bar.HealthBarTexture
+    if namedTex and namedTex.SetVertexColor and namedTex ~= overlay and namedTex ~= statusBarTex then
+        pcall(namedTex.SetVertexColor, namedTex, r, g, b, 1)
+        texturesColored = texturesColored + 1
+    end
+
+    -- 4. Also set the StatusBar's color directly (affects how it renders the fill)
+    if bar.SetStatusBarColor then
+        pcall(bar.SetStatusBarColor, bar, r, g, b)
+        texturesColored = texturesColored + 1
+    end
+
+    if barState then barState.applyingValueBasedColor = nil end
+
+    if addon.DebugPrint and texturesColored > 0 then
+        addon.DebugPrint(string.format("applyValueBasedColor: colored %d textures for %s (r=%.2f g=%.2f b=%.2f)", texturesColored, unit, r, g, b))
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Mask Enforcement
 --------------------------------------------------------------------------------
 
@@ -61,7 +210,7 @@ end
 -- Apply texture and color to a status bar (health/power/cast)
 -- @param bar: The StatusBar frame
 -- @param textureKey: Texture key from settings (or "default")
--- @param colorMode: "default", "custom", "class", "texture"
+-- @param colorMode: "default", "custom", "class", "texture", "value"
 -- @param tint: Color table {r, g, b, a} for custom color mode
 -- @param unitForClass: Unit to get class color from
 -- @param barKind: "health", "power", "altpower", or "cast"
@@ -78,6 +227,26 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
     -- cosmetic texture/color changes during combat to keep styling persistent while avoiding
     -- combat-unsafe layout operations. Those callers may pass combatSafe=true.
     if not combatSafe and InCombatLockdown and InCombatLockdown() then
+        return
+    end
+
+    -- "value" mode uses dynamic updates via hooks, not static color.
+    -- Apply custom texture if selected, then apply initial value-based color.
+    if colorMode == "value" then
+        local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
+        local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
+        if isCustom and resolvedPath then
+            if bar.SetStatusBarTexture then
+                setProp(bar, "ufInternalTextureWrite", true)
+                pcall(bar.SetStatusBarTexture, bar, resolvedPath)
+                setProp(bar, "ufInternalTextureWrite", nil)
+            end
+        end
+        -- Apply initial value-based color using the unit token (unitForClass parameter)
+        -- This ensures the bar isn't left white when the setting is first enabled
+        if unitForClass then
+            Textures.applyValueBasedColor(bar, unitForClass)
+        end
         return
     end
     

@@ -845,6 +845,71 @@ local function SetOverAbsorbGlowHidden(ownerFrame, hidden)
 end
 Util.SetOverAbsorbGlowHidden = SetOverAbsorbGlowHidden
 
+-- Hide/show the Heal Prediction bar on the Player Health Bar
+-- This bar appears when you or a party member is casting a heal on you.
+-- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.MyHealPredictionBar
+-- ownerFrame: the HealthBar frame that contains the MyHealPredictionBar child
+-- hidden: boolean - true to hide the bar, false to restore it
+local function SetHealPredictionHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    local predictionFrame = ownerFrame.MyHealPredictionBar
+    if not predictionFrame or (predictionFrame.IsForbidden and predictionFrame:IsForbidden()) then
+        return
+    end
+    setProp(predictionFrame, "healPredictionHidden", not not hidden)
+
+    -- Capture original alpha once so we can restore it when un-hiding.
+    if predictionFrame.GetAlpha and getProp(predictionFrame, "healPredictionOrigAlpha") == nil then
+        local ok, a = pcall(predictionFrame.GetAlpha, predictionFrame)
+        setProp(predictionFrame, "healPredictionOrigAlpha", ok and (a or 1) or 1)
+    end
+
+    -- IMPORTANT: Do NOT call Hide()/Show() on this frame.
+    -- Hide/Show on protected unitframe children is taint-prone and can later surface as blocked
+    -- calls in unrelated Blizzard code paths.
+    --
+    -- Approach: enforce invisibility with SetAlpha(0) and persistent hooks.
+    if getProp(predictionFrame, "healPredictionHidden") then
+        if predictionFrame.SetAlpha then
+            pcall(predictionFrame.SetAlpha, predictionFrame, 0)
+        end
+
+        if _G.hooksecurefunc and not getProp(predictionFrame, "healPredictionVisibilityHooked") then
+            setProp(predictionFrame, "healPredictionVisibilityHooked", true)
+
+            _G.hooksecurefunc(predictionFrame, "Show", function(self)
+                if getProp(self, "healPredictionHidden") and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+
+            _G.hooksecurefunc(predictionFrame, "SetAlpha", function(self, alpha)
+                if getProp(self, "healPredictionHidden") and alpha and alpha > 0 and self.SetAlpha then
+                    if not getProp(self, "settingAlpha") then
+                        setProp(self, "settingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    else
+        -- Restore alpha; allow Blizzard's visibility logic to drive Show/Hide naturally.
+        if predictionFrame.SetAlpha then
+            local restoreAlpha = getProp(predictionFrame, "healPredictionOrigAlpha")
+            if restoreAlpha == nil then restoreAlpha = 1 end
+            pcall(predictionFrame.SetAlpha, predictionFrame, restoreAlpha)
+        end
+    end
+end
+Util.SetHealPredictionHidden = SetHealPredictionHidden
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 

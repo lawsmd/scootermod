@@ -35,7 +35,7 @@ local RULES_CARD_LEFT_MARGIN = 44  -- Space for index badge
 local RULES_CARD_RIGHT_MARGIN = 8
 local RULES_CARD_PADDING = 12
 local RULES_MAX_DISPLAY_BADGES = 3
-local RULES_SPEC_BADGE_GAP = 4  -- Horizontal gap between spec badges
+local RULES_SPEC_BADGE_GAP = 12  -- Horizontal gap between spec badges
 local RULES_BREADCRUMB_HEIGHT = 30  -- Taller dropdowns for long text
 
 --------------------------------------------------------------------------------

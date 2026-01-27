@@ -223,7 +223,19 @@ local function styleHealthOverlay(bar, cfg)
     end
 
     local r, g, b, a = 1, 1, 1, 1
-    if colorMode == "custom" and type(tint) == "table" then
+    if colorMode == "value" then
+        -- "Color by Value" mode: use UnitHealthPercent with color curve
+        local unit
+        local parentFrame = bar.GetParent and bar:GetParent()
+        if parentFrame then
+            local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+            if okU and u then unit = u end
+        end
+        if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+        end
+        return -- Color applied by applyValueBasedColor, skip SetVertexColor below
+    elseif colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
         local unit
@@ -539,6 +551,42 @@ function PartyFrames.installHooks()
                     end
                 end
             end
+        end)
+    end
+
+    -- Hook CompactUnitFrame_UpdateHealthColor for "Color by Value" mode
+    -- This hook fires after every health update, allowing us to update dynamic colors
+    if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealthColor then
+        _G.hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(frame)
+            -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
+            if isEditModeActive() then return end
+            if not frame or not frame.healthBar then return end
+            if frame.IsForbidden and frame:IsForbidden() then return end
+
+            -- Only process party frames (not raid frames or nameplates)
+            if not Utils.isPartyFrame(frame) then return end
+
+            local db = addon and addon.db and addon.db.profile
+            local cfg = db and db.groupFrames and db.groupFrames.party or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return end
+
+            -- Get unit token from the frame
+            local unit
+            local okU, u = pcall(function() return frame.displayedUnit or frame.unit end)
+            if okU and u then unit = u end
+            if not unit then return end
+
+            -- Defer to avoid taint (same pattern as existing hooks)
+            C_Timer.After(0, function()
+                local state = getState(frame.healthBar)
+                local overlay = state and state.healthOverlay or nil
+                if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit, overlay)
+                elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                    -- No overlay, apply to status bar texture directly
+                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit)
+                end
+            end)
         end)
     end
 end
