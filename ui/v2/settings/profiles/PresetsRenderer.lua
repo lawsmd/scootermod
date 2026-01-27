@@ -293,32 +293,9 @@ function Presets.Render(panel, scrollContent)
         height = BUTTON_HEIGHT,
         onClick = function()
             if not actionable then return end
-            -- Use the same apply logic as the old panel
-            if addon.SettingsPanel and addon.SettingsPanel.ApplyPresetFromUI then
-                addon.SettingsPanel:ApplyPresetFromUI(currentPreset)
-            elseif addon.Presets and addon.Presets.ApplyPreset then
-                -- Fallback: show the apply preset dialog directly
-                if addon.Dialogs and addon.Dialogs.Show then
-                    local presetName = currentPreset.name or currentPreset.id or "Preset"
-                    addon.Dialogs:Show("SCOOTERMOD_APPLY_PRESET", {
-                        formatArgs = { presetName },
-                        editBoxText = presetName,
-                        data = { preset = currentPreset },
-                        onAccept = function(d, newName)
-                            local ok, err = addon.Presets:ApplyPreset(d.preset.id, {
-                                targetName = newName,
-                            })
-                            if not ok then
-                                if err and addon.Print then addon:Print(err) end
-                                return
-                            end
-                            addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
-                            if type(ReloadUI) == "function" then
-                                ReloadUI()
-                            end
-                        end,
-                    })
-                end
+            -- Use the core Presets module's ApplyPresetFromUI method
+            if addon.Presets and addon.Presets.ApplyPresetFromUI then
+                addon.Presets:ApplyPresetFromUI(currentPreset)
             end
         end,
     })

@@ -317,16 +317,6 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
         return
     end
 
-    -- /scoot legacy - open the old settings panel
-    if cmd == "legacy" then
-        if addon.SettingsPanel and addon.SettingsPanel.Toggle then
-            addon.SettingsPanel:Toggle()
-        else
-            addon:Print("Legacy settings panel not available.")
-        end
-        return
-    end
-
     -- Fallback: open settings
     if addon.UI and addon.UI.SettingsPanel and addon.UI.SettingsPanel.Toggle then
         addon.UI.SettingsPanel:Toggle()

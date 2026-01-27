@@ -219,9 +219,6 @@ local function applyActionValue(actionId, value, reason)
         end
         return
     end
-    if changed and addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-    end
 end
 
 local function registerDefaultActions()
@@ -1069,10 +1066,6 @@ function Rules:OnProfileChanged()
     ACTIVE_OVERRIDES = {}
     buildSpecCache()
     self:ApplyAll("ProfileChanged")
-    -- Refresh UI to show the new profile's rules list
-    if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-    end
 end
 
 function Rules:OnPlayerSpecChanged()

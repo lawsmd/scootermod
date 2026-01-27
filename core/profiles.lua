@@ -276,9 +276,6 @@ function Profiles:RestoreDropdownSelection(dropdown, key, displayText)
     if not dropdown then return end
     UIDropDownMenu_SetSelectedValue(dropdown, key)
     UIDropDownMenu_SetText(dropdown, displayText or key or "Select a layout")
-    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-        addon.SettingsPanel.UpdateProfileActionButtons()
-    end
 end
 
 local function addLayoutToCache(self, layoutName)
@@ -829,13 +826,6 @@ function Profiles:ClonePresetLayout(data, rawName)
             if dropdown then
                 self:RestoreDropdownSelection(dropdown, newName, self:GetLayoutDisplayText(newName))
             end
-            if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-                addon.SettingsPanel.UpdateProfileActionButtons()
-            end
-            if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-                local current = self.db:GetCurrentProfile()
-                self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-            end
             notifyUI()
         end)
     else
@@ -932,13 +922,6 @@ function Profiles:PerformRenameLayout(oldName, rawNewName)
         if C_Timer and C_Timer.After then
             C_Timer.After(0.1, function()
                 self:SwitchToProfile(newName, { reason = "DeferredRenameSwitch", force = true })
-                if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-                    addon.SettingsPanel.UpdateProfileActionButtons()
-                end
-                if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-                    local current = self.db:GetCurrentProfile()
-                    self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-                end
                 notifyUI()
             end)
         else
@@ -948,13 +931,6 @@ function Profiles:PerformRenameLayout(oldName, rawNewName)
         self:RequestSync("RenameLayout")
     end
 
-    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-        addon.SettingsPanel.UpdateProfileActionButtons()
-    end
-    if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-        local current = self.db:GetCurrentProfile()
-        self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-    end
     notifyUI()
     return true
 end
@@ -1082,13 +1058,10 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
 
     -- Update our internal caches
     addLayoutToCache(self, newName)
-    
+
     -- Copy does NOT switch profiles (no reload needed). Just refresh UI/state.
-    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-        addon.SettingsPanel.UpdateProfileActionButtons()
-    end
     notifyUI()
-    
+
     return true
 end
 
@@ -1314,7 +1287,7 @@ function Profiles:PerformDeleteLayout(layoutName)
                 suffix = suffix + 1
                 tempName = "New Layout " .. suffix
             end
-            local success = self:ClonePresetLayout({ presetName = "Modern", dropdown = addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown }, tempName)
+            local success = self:ClonePresetLayout({ presetName = "Modern" }, tempName)
             if success then
                 fallback = tempName
             end
@@ -1382,13 +1355,6 @@ function Profiles:PerformDeleteLayout(layoutName)
     end
 
     self:RequestSync("DeleteLayout")
-    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-        addon.SettingsPanel.UpdateProfileActionButtons()
-    end
-    if addon and addon.SettingsPanel and addon.SettingsPanel._profileDropdown then
-        local current = self.db:GetCurrentProfile()
-        self:RestoreDropdownSelection(addon.SettingsPanel._profileDropdown, current, self:GetLayoutDisplayText(current))
-    end
     notifyUI()
     if addon and addon.EditMode and addon.EditMode.RefreshSyncAndNotify then
         addon.EditMode.RefreshSyncAndNotify("DeleteLayout")
@@ -1788,10 +1754,6 @@ function Profiles:_setActiveProfile(profileKey, opts)
         return
     end
     opts = opts or {}
-    -- If switching due to a live spec change, briefly suppress settings panel refresh to avoid flicker
-    if opts.reason == "SpecChanged" and addon and addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then
-        addon.SettingsPanel.SuspendRefresh(0.4)
-    end
     local current = self.db:GetCurrentProfile()
     Debug("_setActiveProfile", profileKey, "current=" .. tostring(current), opts.skipLayout and "[skipLayout]" or "", opts.force and "[force]" or "")
 
@@ -1929,9 +1891,6 @@ function Profiles:SwitchToProfile(profileKey, opts)
     end
     self:_setActiveProfile(profileKey, opts)
     self:PruneSpecAssignments()
-    if addon and addon.SettingsPanel and addon.SettingsPanel.UpdateProfileActionButtons then
-        addon.SettingsPanel.UpdateProfileActionButtons()
-    end
 end
 
 function Profiles:RefreshFromEditMode(origin)
@@ -2009,9 +1968,6 @@ function Profiles:RefreshFromEditMode(origin)
         else
             Debug("Suppressed EM re-apply during post-copy window", pending)
         end
-        if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-            addon.SettingsPanel.RefreshCurrentCategoryDeferred()
-        end
         return
     end
 
@@ -2039,10 +1995,6 @@ function Profiles:RefreshFromEditMode(origin)
     if activeLayout and self._pendingActiveLayout == activeLayout then
         self._pendingActiveLayout = nil
         Debug("Cleared pending flag; layout now active", activeLayout)
-    end
-
-    if addon and addon.SettingsPanel and addon.SettingsPanel.RefreshCurrentCategoryDeferred then
-        addon.SettingsPanel.RefreshCurrentCategoryDeferred()
     end
 end
 

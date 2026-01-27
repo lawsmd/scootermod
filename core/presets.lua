@@ -124,4 +124,247 @@ function Presets:GetDefaultPresetId()
     return order[1]
 end
 
+--[[----------------------------------------------------------------------------
+    ApplyPresetFromUI - UI flow for applying a preset with dialogs
+    Moved from legacy panel to core so both UI versions can use it.
+----------------------------------------------------------------------------]]--
+
+-- Helper to get editable (non-Blizzard-preset) layouts for the "Apply to Existing" flow
+local function getEditableLayoutsForPresetTarget()
+    local layouts = {}
+    if addon.Profiles and addon.Profiles.GetAvailableLayouts then
+        local editable, _ = addon.Profiles:GetAvailableLayouts()
+        for _, name in ipairs(editable or {}) do
+            -- Exclude Blizzard presets (Modern, Classic) - they cannot be overwritten
+            if name ~= "Modern" and name ~= "Classic" then
+                table.insert(layouts, name)
+            end
+        end
+    end
+    return layouts
+end
+
+-- Show a custom dropdown dialog for selecting existing layout
+-- This creates a temporary dialog frame with a dropdown
+local function showExistingLayoutSelector(preset, onSelect, onCancel)
+    local presetName = preset.name or preset.id or "Preset"
+    local layouts = getEditableLayoutsForPresetTarget()
+
+    if #layouts == 0 then
+        addon:Print("No existing editable layouts found. Please create a new profile instead.")
+        if onCancel then onCancel() end
+        return
+    end
+
+    -- Create or reuse the layout selector frame
+    local selectorFrame = _G["ScooterModLayoutSelector"]
+    if not selectorFrame then
+        selectorFrame = CreateFrame("Frame", "ScooterModLayoutSelector", UIParent, "BasicFrameTemplateWithInset")
+        selectorFrame:SetSize(400, 200)
+        selectorFrame:SetPoint("CENTER")
+        selectorFrame:SetFrameStrata("DIALOG")
+        selectorFrame:SetFrameLevel(110)
+        selectorFrame:EnableMouse(true)
+        selectorFrame:SetMovable(true)
+        selectorFrame:RegisterForDrag("LeftButton")
+        selectorFrame:SetScript("OnDragStart", selectorFrame.StartMoving)
+        selectorFrame:SetScript("OnDragStop", selectorFrame.StopMovingOrSizing)
+        selectorFrame:SetClampedToScreen(true)
+
+        -- Title
+        if selectorFrame.TitleText then
+            selectorFrame.TitleText:SetText("Select Existing Layout")
+        end
+
+        -- Instructions text
+        local text = selectorFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        text:SetPoint("TOP", selectorFrame, "TOP", 0, -35)
+        text:SetPoint("LEFT", selectorFrame, "LEFT", 20, 0)
+        text:SetPoint("RIGHT", selectorFrame, "RIGHT", -20, 0)
+        text:SetJustifyH("CENTER")
+        text:SetWordWrap(true)
+        selectorFrame.Text = text
+
+        -- Dropdown frame
+        local dropdownFrame = CreateFrame("Frame", "ScooterModLayoutSelectorDropdown", selectorFrame, "UIDropDownMenuTemplate")
+        dropdownFrame:SetPoint("CENTER", selectorFrame, "CENTER", 0, 10)
+        UIDropDownMenu_SetWidth(dropdownFrame, 250)
+        selectorFrame.Dropdown = dropdownFrame
+
+        -- Apply button
+        local applyBtn = CreateFrame("Button", nil, selectorFrame, "UIPanelButtonTemplate")
+        applyBtn:SetSize(100, 24)
+        applyBtn:SetPoint("BOTTOMRIGHT", selectorFrame, "BOTTOM", -5, 15)
+        applyBtn:SetText("Apply")
+        selectorFrame.ApplyButton = applyBtn
+
+        -- Cancel button
+        local cancelBtn = CreateFrame("Button", nil, selectorFrame, "UIPanelButtonTemplate")
+        cancelBtn:SetSize(100, 24)
+        cancelBtn:SetPoint("BOTTOMLEFT", selectorFrame, "BOTTOM", 5, 15)
+        cancelBtn:SetText(CANCEL or "Cancel")
+        selectorFrame.CancelButton = cancelBtn
+    end
+
+    -- Update instruction text
+    selectorFrame.Text:SetText(string.format("Select an existing layout to apply the %s preset to:", presetName))
+
+    -- Store selected layout
+    selectorFrame._selectedLayout = layouts[1]
+
+    -- Initialize dropdown
+    UIDropDownMenu_Initialize(selectorFrame.Dropdown, function(self, level)
+        for _, layoutName in ipairs(layouts) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = layoutName
+            info.value = layoutName
+            info.func = function()
+                selectorFrame._selectedLayout = layoutName
+                UIDropDownMenu_SetText(selectorFrame.Dropdown, layoutName)
+                CloseDropDownMenus()
+            end
+            info.checked = (layoutName == selectorFrame._selectedLayout)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetText(selectorFrame.Dropdown, selectorFrame._selectedLayout)
+
+    -- Wire up buttons
+    selectorFrame.ApplyButton:SetScript("OnClick", function()
+        local selected = selectorFrame._selectedLayout
+        selectorFrame:Hide()
+        if onSelect and selected then
+            onSelect(selected)
+        end
+    end)
+
+    selectorFrame.CancelButton:SetScript("OnClick", function()
+        selectorFrame:Hide()
+        if onCancel then onCancel() end
+    end)
+
+    if selectorFrame.CloseButton then
+        selectorFrame.CloseButton:SetScript("OnClick", function()
+            selectorFrame:Hide()
+            if onCancel then onCancel() end
+        end)
+    end
+
+    selectorFrame:Show()
+    selectorFrame:Raise()
+end
+
+function Presets:ApplyPresetFromUI(preset)
+    if not preset then return end
+    if not self.ApplyPreset then
+        addon:Print("Preset system not initialized.")
+        return
+    end
+
+    if not addon.Dialogs or not addon.Dialogs.Show then
+        addon:Print("Dialogs system not initialized.")
+        return
+    end
+
+    local presetName = preset.name or preset.id or "Preset"
+    local defaultName = presetName
+
+    -- Flow for creating a NEW profile (existing behavior)
+    local function promptCreateNew(nameSuggestion)
+        addon.Dialogs:Show("SCOOTERMOD_APPLY_PRESET", {
+            formatArgs = { presetName },
+            editBoxText = nameSuggestion or defaultName,
+            data = { preset = preset },
+            onAccept = function(d, newName)
+                local function apply(importConsolePort)
+                    local ok, err = Presets:ApplyPreset(d.preset.id, {
+                        targetName = newName,
+                        importConsolePort = importConsolePort and true or false,
+                    })
+                    if not ok then
+                        if err and addon.Print then addon:Print(err) end
+                        C_Timer.After(0, function()
+                            promptCreateNew(newName)
+                        end)
+                        return
+                    end
+                    addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
+                    if type(ReloadUI) == "function" then
+                        -- If ReloadUI is blocked on this client, the user will see Blizzard's yellow warning.
+                        -- The preset activation is still queued and will apply on the next successful reload/login.
+                        ReloadUI()
+                        C_Timer.After(1.0, function()
+                            addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
+                        end)
+                    else
+                        addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
+                    end
+                end
+
+                local wantsConsolePortPrompt = (d.preset and d.preset.consolePortProfile ~= nil) or (d.preset and d.preset.requiresConsolePort)
+                if wantsConsolePortPrompt then
+                    addon.Dialogs:Show("SCOOTERMOD_IMPORT_CONSOLEPORT", {
+                        onAccept = function() apply(true) end,
+                        onCancel = function() apply(false) end,
+                    })
+                    return
+                end
+
+                apply(false)
+            end,
+        })
+    end
+
+    -- Flow for applying to EXISTING profile
+    local function promptApplyToExisting()
+        showExistingLayoutSelector(preset, function(selectedLayout)
+            -- Show overwrite confirmation
+            addon.Dialogs:Show("SCOOTERMOD_PRESET_OVERWRITE_CONFIRM", {
+                formatArgs = { selectedLayout, presetName },
+                data = { preset = preset, targetLayout = selectedLayout },
+                onAccept = function(d)
+                    local ok, err = Presets:ApplyPreset(d.preset.id, { targetExisting = d.targetLayout })
+                    if not ok then
+                        if err and addon.Print then addon:Print(err) end
+                        return
+                    end
+                    addon:Print(("Preset '%s' applied to '%s'. Reloading UI to activate..."):format(presetName, d.targetLayout))
+                    if type(ReloadUI) == "function" then
+                        ReloadUI()
+                        C_Timer.After(1.0, function()
+                            addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
+                        end)
+                    else
+                        addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
+                    end
+                end,
+            })
+        end, nil)
+    end
+
+    -- Check if there are existing editable layouts to offer the choice
+    local editableLayouts = getEditableLayoutsForPresetTarget()
+
+    if #editableLayouts == 0 then
+        -- No existing layouts - go straight to "Create New" flow
+        promptCreateNew(defaultName)
+        return
+    end
+
+    -- Show the target selection dialog
+    -- Accept = Create New, Cancel = Apply to Existing (Cancel button repurposed)
+    addon.Dialogs:Show("SCOOTERMOD_PRESET_TARGET_CHOICE", {
+        formatArgs = { presetName },
+        data = { preset = preset },
+        onAccept = function()
+            -- User chose "Create New Profile"
+            promptCreateNew(defaultName)
+        end,
+        onCancel = function()
+            -- User chose "Apply to Existing" (the Cancel button in this dialog)
+            promptApplyToExisting()
+        end,
+    })
+end
+
 return Presets

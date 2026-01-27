@@ -620,12 +620,6 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
         end
     end
 
-    -- Optionally suspend Settings panel refresh while Edit Mode churn settles
-    local suspendDuration = tonumber(opts.suspendDuration)
-    if suspendDuration and suspendDuration > 0 and addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then
-        addon.SettingsPanel.SuspendRefresh(suspendDuration)
-    end
-
     -- Persist layout changes
     if not opts.skipSave and addon.EditMode.SaveOnly then
         addon.EditMode.SaveOnly()
@@ -999,7 +993,6 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             local emVal = (component.db.orientation == "H") and 0 or 1
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, emVal)
-            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "columns" and type(component.id) == "string" and (component.id:match("^actionBar%d$") or component.id == "stanceBar") then
@@ -1009,7 +1002,6 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_rows") or setting.settingId
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
-            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "numIcons" then
@@ -1019,7 +1011,6 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             setting.settingId = setting.settingId or ResolveSettingId(frame, "num_icons") or setting.settingId
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, value)
-            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "visibilityMode" then
@@ -1085,7 +1076,6 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
                     component._pendingAuraIconSizeExpiry = os and os.time and (os.time() + 2) or nil
                 end
             end
-            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "iconPadding" then
@@ -1101,7 +1091,6 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
             end
             markBackSyncSkip()
             addon.EditMode.SetSetting(frame, setting.settingId, pad)
-            if addon.SettingsPanel and addon.SettingsPanel.SuspendRefresh then addon.SettingsPanel.SuspendRefresh(0.15) end
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         -- Damage Meter write handling
@@ -1290,32 +1279,7 @@ function addon.EditMode.QueueAuraIconSizeBackfill(componentId, opts)
         end
 
         local function refreshPanelIfVisible()
-            local panel = addon and addon.SettingsPanel
-            if not panel then return end
-            local frame = panel.frame
-            if not frame or not frame:IsShown() then return end
-            if frame.CurrentCategory ~= componentId then return end
-
-            -- Force-clear CurrentCategory to ensure SelectCategory treats this as a fresh selection,
-            -- bypassing any potential same-category optimizations.
-            frame.CurrentCategory = nil
-
-            -- Invalidate the right pane so the next render rebuilds controls with fresh bindings.
-            local rightPane = panel.RightPane
-            if not (rightPane and rightPane.Invalidate) and frame.RightPane and frame.RightPane.Invalidate then
-                rightPane = frame.RightPane
-            end
-            if rightPane and rightPane.Invalidate then
-                rightPane:Invalidate()
-            end
-
-            -- Use SelectCategory to force a full re-bind of settings controls, mirroring the "tab switch"
-            -- behavior that reliably updates stale sliders on panel open.
-            if panel.SelectCategory then
-                panel.SelectCategory(componentId)
-            elseif panel.RefreshCurrentCategoryDeferred then
-                panel.RefreshCurrentCategoryDeferred()
-            end
+            -- v2 panel handles its own refresh via HandleEditModeBackSync; nothing needed here
         end
 
         if addon.EditMode and addon.EditMode._syncingEM then
@@ -1733,15 +1697,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
                 component._pendingAuraIconSizeExpiry = nil
             end
         end
-        if addon and addon.SettingsPanel and type(addon.SettingsPanel.RefreshDynamicSettingWidgets) == "function" then
-            if settingId == "orientation" or settingId == "direction" or settingId == "iconWrap" then
-                addon.SettingsPanel:RefreshDynamicSettingWidgets(component)
-            end
-        end
-        if addon and addon.SettingsPanel and type(addon.SettingsPanel.HandleEditModeBackSync) == "function" then
-            addon.SettingsPanel:HandleEditModeBackSync(component.id, settingId)
-        end
-        -- Also notify UI panel if available (new UI accessed via /scoot2)
+        -- Notify v2 UI panel if available
         if addon and addon.UI and addon.UI.SettingsPanel and type(addon.UI.SettingsPanel.HandleEditModeBackSync) == "function" then
             addon.UI.SettingsPanel:HandleEditModeBackSync(component.id, settingId)
         end
@@ -2427,20 +2383,11 @@ function addon.EditMode.Initialize()
     local function CloseScooterSettingsPanelForEditMode()
         -- Invariant: ScooterMod's settings panel must not remain open while Edit Mode is open.
         -- Keeping both UIs visible creates sync churn (recycled Settings rows, back-sync passes, etc.).
-        -- Close old settings panel if open
-        local panel = addon and addon.SettingsPanel
+        local panel = addon and addon.UI and addon.UI.SettingsPanel
         if panel then
             panel._closedByEditMode = true
             if panel.frame and panel.frame.IsShown and panel.frame:IsShown() then
                 pcall(panel.frame.Hide, panel.frame)
-            end
-        end
-        -- Close UI panel if open (new UI)
-        local uiPanel = addon and addon.UI and addon.UI.SettingsPanel
-        if uiPanel then
-            uiPanel._closedByEditMode = true
-            if uiPanel.frame and uiPanel.frame.IsShown and uiPanel.frame:IsShown() then
-                pcall(uiPanel.frame.Hide, uiPanel.frame)
             end
         end
     end
