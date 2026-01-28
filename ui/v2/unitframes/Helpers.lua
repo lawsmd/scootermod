@@ -153,7 +153,6 @@ function UF.setEditModeFrameSize(componentId, value)
     local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.FrameSize
     if frame and settingId and addon and addon.EditMode and addon.EditMode.WriteSetting then
         addon.EditMode.WriteSetting(frame, settingId, value, {
-            updaters = { "UpdateSystemSettingFrameSize" },
             suspendDuration = 0.25,
         })
     end
@@ -184,7 +183,6 @@ function UF.setUseLargerFrame(componentId, value)
     local val = (value and true) and 1 or 0
     if frame and settingId and addon and addon.EditMode and addon.EditMode.WriteSetting then
         addon.EditMode.WriteSetting(frame, settingId, val, {
-            updaters = { "UpdateSystemSettingFrameSize" },
             suspendDuration = 0.25,
         })
     end

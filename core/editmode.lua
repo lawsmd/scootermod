@@ -616,6 +616,13 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
 
     opts = opts or {}
 
+    -- 12.0+ DEPRECATION WARNING: 'updaters' causes taint by calling methods on system frames.
+    -- Visual updates happen via deferred SetActiveLayout() in SaveOnly().
+    if opts.updaters and addon._dbgEditMode then
+        print("|cFFFF0000[EM.WriteSetting] WARNING: 'updaters' option is deprecated in 12.0+|r")
+        print("|cFFFF0000  Causes taint - remove updaters and rely on deferred SetActiveLayout()|r")
+    end
+
     -- Never attempt Edit Mode writes during combat.
     if _G.InCombatLockdown and _G.InCombatLockdown() then
         addon.EditMode._pendingWrites = addon.EditMode._pendingWrites or {}

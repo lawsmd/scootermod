@@ -363,7 +363,6 @@ function GF.RenderRaid(panel, scrollContent)
                     set = function(v)
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.RaidGroupDisplayType, v, {
-                                updaters = { "UpdateSystemSettingRaidGroupDisplayType" },
                                 suspendDuration = 0.25,
                             })
                             -- Re-render to show/hide conditional controls
@@ -388,7 +387,6 @@ function GF.RenderRaid(panel, scrollContent)
                         set = function(v)
                             C_Timer.After(0, function()
                                 setEditModeSetting(EM.SortPlayersBy, v, {
-                                    updaters = { "UpdateSystemSettingSortPlayersBy" },
                                     suspendDuration = 0.25,
                                 })
                             end)
@@ -411,7 +409,6 @@ function GF.RenderRaid(panel, scrollContent)
                         set = function(v)
                             C_Timer.After(0, function()
                                 setEditModeSetting(EM.RowSize, v, {
-                                    updaters = { "UpdateSystemSettingRowSize" },
                                     suspendDuration = 0.25,
                                 })
                             end)
@@ -450,7 +447,6 @@ function GF.RenderRaid(panel, scrollContent)
                     set = function(v)
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.FrameWidth, v, {
-                                updaters = { "UpdateSystemSettingFrameWidth" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -471,7 +467,6 @@ function GF.RenderRaid(panel, scrollContent)
                     set = function(v)
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.FrameHeight, v, {
-                                updaters = { "UpdateSystemSettingFrameHeight" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -505,7 +500,6 @@ function GF.RenderRaid(panel, scrollContent)
                         set = function(v)
                             C_Timer.After(0, function()
                                 setEditModeSetting(EM.DisplayBorder, v and 1 or 0, {
-                                    updaters = { "UpdateSystemSettingDisplayBorder" },
                                     suspendDuration = 0.25,
                                 })
                             end)

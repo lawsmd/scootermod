@@ -398,7 +398,6 @@ function GF.RenderParty(panel, scrollContent)
                 if not EM or not EM.ShowPartyFrameBackground then return end
                 C_Timer.After(0, function()
                     setEditModeSetting(EM.ShowPartyFrameBackground, v and 1 or 0, {
-                        updaters = { "UpdateSystemSettingShowPartyFrameBackground" },
                         suspendDuration = 0.25,
                     })
                 end)
@@ -429,7 +428,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.UseHorizontalGroups then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.UseHorizontalGroups, v and 1 or 0, {
-                                updaters = { "UpdateSystemSettingUseHorizontalGroups" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -449,7 +447,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.SortPlayersBy then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.SortPlayersBy, v, {
-                                updaters = { "UpdateSystemSettingSortPlayersBy" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -487,7 +484,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.FrameWidth then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.FrameWidth, v, {
-                                updaters = { "UpdateSystemSettingFrameWidth" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -508,7 +504,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.FrameHeight then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.FrameHeight, v, {
-                                updaters = { "UpdateSystemSettingFrameHeight" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -532,7 +527,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.FrameSize then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.FrameSize, v, {
-                                updaters = { "UpdateSystemSettingFrameSize" },
                                 suspendDuration = 0.25,
                             })
                         end)
@@ -568,7 +562,6 @@ function GF.RenderParty(panel, scrollContent)
                         if not EM or not EM.DisplayBorder then return end
                         C_Timer.After(0, function()
                             setEditModeSetting(EM.DisplayBorder, v and 1 or 0, {
-                                updaters = { "UpdateSystemSettingDisplayBorder" },
                                 suspendDuration = 0.25,
                             })
                         end)
