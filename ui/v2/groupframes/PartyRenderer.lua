@@ -241,20 +241,34 @@ local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabe
     })
 
     -- Color
-    inner:AddColorPicker({
+    inner:AddSelectorColorPicker({
         label = "Color",
+        values = GF.fontColorValues,
+        order = GF.fontColorOrder,
         get = function()
+            local s = ensureTextDB(textKey) or {}
+            return s.colorMode or "default"
+        end,
+        set = function(v)
+            local t = ensureDB()
+            if not t then return end
+            t[textKey] = t[textKey] or {}
+            t[textKey].colorMode = v or "default"
+            applyFn()
+        end,
+        getColor = function()
             local s = ensureTextDB(textKey) or {}
             local c = s.color or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
-        set = function(r, g, b, a)
+        setColor = function(r, g, b, a)
             local t = ensureDB()
             if not t then return end
             t[textKey] = t[textKey] or {}
             t[textKey].color = {r or 1, g or 1, b or 1, a or 1}
             applyFn()
         end,
+        customValue = "custom",
         hasAlpha = true,
     })
 
@@ -620,7 +634,21 @@ function GF.RenderParty(panel, scrollContent)
         sectionKey = "visibility",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddDescription("Visibility options coming in a future update.")
+            inner:AddToggle({
+                label = "Hide Over Absorb Glow",
+                description = "Hides the glow effect when absorb shields exceed health bar width.",
+                get = function()
+                    local db = GF.ensurePartyDB()
+                    return db and db.hideOverAbsorbGlow or false
+                end,
+                set = function(v)
+                    local db = GF.ensurePartyDB()
+                    if db then
+                        db.hideOverAbsorbGlow = v
+                    end
+                    GF.applyPartyStyles()
+                end,
+            })
             inner:Finalize()
         end,
     })

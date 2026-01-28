@@ -125,6 +125,10 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyPartyFrameNameOverlays then
                 addon.ApplyPartyFrameNameOverlays()
             end
+            -- Apply visibility settings (over absorb glow, etc.)
+            if addon.ApplyPartyOverAbsorbGlowVisibility then
+                addon.ApplyPartyOverAbsorbGlowVisibility()
+            end
         end
     end)
 end

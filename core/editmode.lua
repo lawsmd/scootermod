@@ -143,6 +143,14 @@ local function ResolveSettingId(frame, logicalKey)
         if addon and addon.EditMode and addon.EditMode.LoadLayouts then addon.EditMode.LoadLayouts() end
     end
     -- Prefer stable enum constants only for Cooldown Viewer systems
+    --
+    -- CRITICAL NAMING CONVENTION (January 2026 bug fix):
+    -- Callers use BOTH snake_case ("icon_size") and camelCase ("iconSize") for logical keys.
+    -- If you only match one convention, the other will silently fail - settings will appear
+    -- to save but won't apply visually until Edit Mode is manually toggled.
+    -- ALWAYS add BOTH variants when adding new keys. See ADDONCONTEXT/Docs/EDITMODE.md
+    -- → "CRITICAL: ResolveSettingId logical key naming conventions" for details.
+    --
     local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
     if EM and frame and frame.system == (_G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.CooldownViewer) then
         if logicalKey == "visibility" then return EM.VisibleSetting end
@@ -152,8 +160,9 @@ local function ResolveSettingId(frame, logicalKey)
         if logicalKey == "orientation" then return EM.Orientation end
         if logicalKey == "columns" then return EM.IconLimit end
         if logicalKey == "direction" then return EM.IconDirection end
-        if logicalKey == "iconSize" then return EM.IconSize end
-        if logicalKey == "iconPadding" then return EM.IconPadding end
+        -- NOTE: Both snake_case and camelCase are required - callers use both conventions
+        if logicalKey == "iconSize" or logicalKey == "icon_size" then return EM.IconSize end
+        if logicalKey == "iconPadding" or logicalKey == "icon_padding" then return EM.IconPadding end
         if logicalKey == "opacity" then return EM.Opacity end
         -- Tracked Bars specific (bar content/display mode)
         if logicalKey == "bar_content" then return EM.BarContent end
@@ -369,16 +378,33 @@ function addon.EditMode.GetSetting(frame, settingId)
     return LEO:GetFrameSetting(frame, settingId)
 end
 
+-- Write a setting to Edit Mode via LibEditModeOverride.
+-- Debug logging: Enable with `/run ScooterMod._dbgEditMode = true` to trace writes.
+-- See ADDONCONTEXT/Docs/EDITMODE.md → "Edit Mode sync debug logging" for usage.
 function addon.EditMode.SetSetting(frame, settingId, value)
-    if not LEO or not LEO.SetFrameSetting then return nil end
-    if not (LEO.IsReady and LEO:IsReady()) then return nil end
+    if not LEO or not LEO.SetFrameSetting then
+        if addon._dbgEditMode then print("|cFFFF0000[EM.SetSetting]|r LEO not available") end
+        return nil
+    end
+    if not (LEO.IsReady and LEO:IsReady()) then
+        if addon._dbgEditMode then print("|cFFFF0000[EM.SetSetting]|r LEO not ready") end
+        return nil
+    end
     if LEO.AreLayoutsLoaded and not LEO:AreLayoutsLoaded() then
         if LEO.LoadLayouts then
             local ok = pcall(LEO.LoadLayouts, LEO)
-            if not ok then return nil end
+            if not ok then
+                if addon._dbgEditMode then print("|cFFFF0000[EM.SetSetting]|r LoadLayouts failed") end
+                return nil
+            end
         else
+            if addon._dbgEditMode then print("|cFFFF0000[EM.SetSetting]|r LoadLayouts unavailable") end
             return nil
         end
+    end
+    if addon._dbgEditMode then
+        local frameName = frame and frame:GetName() or "?"
+        print("|cFF00FF00[EM.SetSetting]|r frame=" .. tostring(frameName) .. " settingId=" .. tostring(settingId) .. " value=" .. tostring(value))
     end
     LEO:SetFrameSetting(frame, settingId, value)
 end
@@ -506,9 +532,26 @@ function addon.EditMode.LoadLayouts()
     pcall(LEO.LoadLayouts, LEO)
 end
 
+-- Persist Edit Mode settings and trigger visual refresh via deferred SetActiveLayout.
+-- This is the primary "apply settings visually" entry point for ScooterMod writes.
+-- Debug logging: Enable with `/run ScooterMod._dbgEditMode = true` to trace save calls.
+-- See ADDONCONTEXT/Docs/EDITMODE.md → "Edit Mode sync debug logging" for usage.
+--
+-- IMPORTANT: The visual refresh depends on LEO:SaveOnly() calling SetActiveLayout in a
+-- deferred context. If settings save but don't apply visually, check:
+-- 1. That LEO:SaveOnly() is actually being called (not suppressed)
+-- 2. That layoutInfo.activeLayout is valid (not nil, must be >= 1)
+-- 3. That the deferred C_Timer.After callback executes
 function addon.EditMode.SaveOnly()
-    if not LEO or not LEO.SaveOnly then return end
-    if _ShouldSuppressWrites() then return end
+    if not LEO or not LEO.SaveOnly then
+        if addon._dbgEditMode then print("|cFFFF0000[EM.SaveOnly]|r LEO not available") end
+        return
+    end
+    if _ShouldSuppressWrites() then
+        if addon._dbgEditMode then print("|cFFFF0000[EM.SaveOnly]|r Suppressed by _ShouldSuppressWrites") end
+        return
+    end
+    if addon._dbgEditMode then print("|cFF00FF00[EM.SaveOnly]|r Calling LEO:SaveOnly()") end
     LEO:SaveOnly()
 end
 

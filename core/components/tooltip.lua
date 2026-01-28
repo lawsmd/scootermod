@@ -228,6 +228,26 @@ local function RegisterTooltipPostProcessor()
 
         if tooltip == GameTooltip then
             ApplyGameTooltipText(db)
+
+            -- Apply class color to player names if enabled
+            if db.classColorPlayerNames then
+                -- GetUnit() and UnitIsPlayer() can return/receive secret values in 12.0
+                -- Wrap everything in pcall to handle secrets safely
+                local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
+                if ok and unitToken then
+                    local isPlayerOk, isPlayer = pcall(UnitIsPlayer, unitToken)
+                    if isPlayerOk and isPlayer then
+                        local classOk, _, classToken = pcall(UnitClass, unitToken)
+                        if classOk and classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken] then
+                            local classColor = RAID_CLASS_COLORS[classToken]
+                            local titleFS = _G["GameTooltipTextLeft1"]
+                            if titleFS and titleFS.SetTextColor then
+                                pcall(titleFS.SetTextColor, titleFS, classColor.r, classColor.g, classColor.b, 1)
+                            end
+                        end
+                    end
+                end
+            end
         elseif tooltipName and COMPARISON_TOOLTIP_NAMES[tooltipName] then
             ApplyComparisonTooltipText(tooltip, db)
         else
@@ -317,6 +337,9 @@ addon:RegisterComponentInitializer(function(self)
             hideHealthBar = { type = "addon", default = false, ui = {
                 label = "Hide Tooltip Health Bar", widget = "checkbox", section = "Visibility", order = 1
             }},
+
+            -- Class color settings
+            classColorPlayerNames = { type = "addon", default = false },
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

@@ -1545,6 +1545,10 @@ function addon:ApplyStyles()
     if addon.ApplyPartyFrameNameOverlays then
         addon.ApplyPartyFrameNameOverlays()
     end
+    -- Group Frames: Apply party frame visibility settings (over absorb glow, etc.)
+    if addon.ApplyPartyOverAbsorbGlowVisibility then
+        addon.ApplyPartyOverAbsorbGlowVisibility()
+    end
 end
 
 function addon:ApplyEarlyComponentStyles()

@@ -2357,6 +2357,80 @@ do
 		applyTextStyle(nameFS, cfg.textName or {}, unit .. ":name")
 		-- Apply optional name container width adjustment (Target/Focus only).
 		applyNameContainerWidth(unit, nameFS)
+
+		-- For Target/Focus name text with class color, Blizzard resets the color on target change.
+		-- Install hooks to immediately re-apply our class color, preventing visible flash.
+		if (unit == "Target" or unit == "Focus") and cfg.textName and cfg.textName.colorMode == "class" then
+			local nameState = getState(nameFS)
+			local unitFrame = unit == "Target" and _G.TargetFrame or _G.FocusFrame
+
+			-- Hook SetTextColor on the FontString to catch color changes during target switches
+			if nameState and not nameState.textColorHooked then
+				nameState.textColorHooked = true
+
+				hooksecurefunc(nameFS, "SetTextColor", function(self, r, g, b, a)
+					-- Guard against recursion since we call SetTextColor inside the hook
+					local st = getState(self)
+					if st and st.applyingTextColor then return end
+
+					-- Check if we have class color configured for this unit
+					local db = addon and addon.db and addon.db.profile
+					local unitKey = unit -- captured from outer scope
+					local unitCfg = db and db.unitFrames and db.unitFrames[unitKey]
+					local textNameCfg = unitCfg and unitCfg.textName
+
+					if textNameCfg and textNameCfg.colorMode == "class" and addon.GetClassColorRGB then
+						local unitToken = unitKey == "Target" and "target" or "focus"
+						local cr, cg, cb = addon.GetClassColorRGB(unitToken)
+						if cr and cg and cb then
+							-- Re-apply our class color (overrides what Blizzard just set)
+							if st then st.applyingTextColor = true end
+							pcall(self.SetTextColor, self, cr, cg, cb, 1)
+							if st then st.applyingTextColor = nil end
+						end
+					end
+					-- If class color not configured, Blizzard's color remains (hook does nothing)
+				end)
+			end
+
+			-- Hook the unit frame's OnShow to catch the "frame freshly drawn" case.
+			-- When going from no target to having a target, the frame shows and unit data
+			-- may not be available during the initial SetTextColor call.
+			-- Strategy: Hide the name text immediately on show, apply our color, then reveal it.
+			-- This prevents any flash of the wrong color.
+			local frameState = getState(unitFrame)
+			if unitFrame and frameState and not frameState.onShowClassColorHooked then
+				frameState.onShowClassColorHooked = true
+
+				unitFrame:HookScript("OnShow", function(self)
+					local db = addon and addon.db and addon.db.profile
+					local unitKey = unit
+					local unitCfg = db and db.unitFrames and db.unitFrames[unitKey]
+					local textNameCfg = unitCfg and unitCfg.textName
+
+					if textNameCfg and textNameCfg.colorMode == "class" and nameFS then
+						-- Hide the name text immediately to prevent flash
+						pcall(nameFS.SetAlpha, nameFS, 0)
+
+						-- Defer to next frame to ensure unit data is available, then apply color and reveal
+						C_Timer.After(0, function()
+							if addon.GetClassColorRGB then
+								local unitToken = unitKey == "Target" and "target" or "focus"
+								local cr, cg, cb = addon.GetClassColorRGB(unitToken)
+								if cr and cg and cb and nameFS.SetTextColor then
+									local st = getState(nameFS)
+									if st then st.applyingTextColor = true end
+									pcall(nameFS.SetTextColor, nameFS, cr, cg, cb, 1)
+									if st then st.applyingTextColor = nil end
+								end
+							end
+							-- Reveal the name text with correct color
+							pcall(nameFS.SetAlpha, nameFS, 1)
+						end)
+					end
+				end)
+			end
+		end
 	end
 	if levelFS then 
 		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
@@ -3106,5 +3180,240 @@ do
 			end
 		end
 	end)
+end
+
+--------------------------------------------------------------------------------
+-- Focus Target: Name Text Styling
+-- The FoT frame only has a Name FontString, no health/power/level text.
+-- Uses identical template to ToT (TargetofTargetFrameTemplate).
+--------------------------------------------------------------------------------
+do
+	local function resolveFoTNameFS()
+		local fot = _G.FocusFrameToT
+		return fot and fot.Name or nil
+	end
+
+	addon._ufFoTNameTextBaseline = addon._ufFoTNameTextBaseline or {}
+
+	local function applyFoTNameText()
+		local db = addon and addon.db and addon.db.profile
+		if not db then return end
+		db.unitFrames = db.unitFrames or {}
+		db.unitFrames.FocusTarget = db.unitFrames.FocusTarget or {}
+		local cfg = db.unitFrames.FocusTarget
+		cfg.textName = cfg.textName or {}
+		local styleCfg = cfg.textName
+
+		local nameFS = resolveFoTNameFS()
+		if not nameFS then return end
+
+		-- Zero‑Touch: if neither visibility nor style is configured, do nothing.
+		local function hasAnyOffset(tbl)
+			local off = tbl and tbl.offset
+			return off and (off.x ~= nil or off.y ~= nil) or false
+		end
+		local function hasTextCustomization(tbl)
+			if not tbl then return false end
+			if tbl.fontFace ~= nil and tbl.fontFace ~= "" and tbl.fontFace ~= "FRIZQT__" then return true end
+			if tbl.size ~= nil or tbl.style ~= nil or tbl.colorMode ~= nil or tbl.color ~= nil or tbl.alignment ~= nil then return true end
+			if hasAnyOffset(tbl) then return true end
+			return false
+		end
+		local hasVisibilitySetting = (cfg.nameTextHidden ~= nil)
+		local hasStyleSetting = hasTextCustomization(styleCfg)
+		if not hasVisibilitySetting and not hasStyleSetting then
+			return
+		end
+
+		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
+		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+		local fstate = ensureFS()
+		if cfg.nameTextHidden ~= nil and fstate then
+			local hidden = (cfg.nameTextHidden == true)
+			if hidden then
+				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 0) end
+				fstate.SetHidden(nameFS, "fotName", true)
+				-- Install hook to re-enforce hidden state
+				if not fstate.IsHooked(nameFS, "fotNameVisibility") then
+					fstate.MarkHooked(nameFS, "fotNameVisibility")
+					if _G.hooksecurefunc then
+						_G.hooksecurefunc(nameFS, "SetText", function(self)
+							local st = ensureFS()
+							if st and st.IsHidden(self, "fotName") and self.SetAlpha then
+								pcall(self.SetAlpha, self, 0)
+							end
+						end)
+						_G.hooksecurefunc(nameFS, "Show", function(self)
+							local st = ensureFS()
+							if st and st.IsHidden(self, "fotName") and self.SetAlpha then
+								pcall(self.SetAlpha, self, 0)
+							end
+						end)
+					end
+				end
+			else
+				fstate.SetHidden(nameFS, "fotName", false)
+				if nameFS.SetAlpha then pcall(nameFS.SetAlpha, nameFS, 1) end
+			end
+		end
+
+		-- Skip styling if hidden
+		if cfg.nameTextHidden == true then return end
+		-- Zero‑Touch: only apply font/position/style if explicitly customized.
+		if not hasStyleSetting then
+			return
+		end
+
+		-- Capture baseline position once
+		local function ensureBaseline()
+			if not addon._ufFoTNameTextBaseline.point then
+				if nameFS and nameFS.GetPoint then
+					local p, relTo, rp, x, y = nameFS:GetPoint(1)
+					addon._ufFoTNameTextBaseline.point = p or "TOPLEFT"
+					addon._ufFoTNameTextBaseline.relTo = relTo or (nameFS.GetParent and nameFS:GetParent())
+					addon._ufFoTNameTextBaseline.relPoint = rp or addon._ufFoTNameTextBaseline.point
+					addon._ufFoTNameTextBaseline.x = safeOffset(x)
+					addon._ufFoTNameTextBaseline.y = safeOffset(y)
+				else
+					addon._ufFoTNameTextBaseline.point = "TOPLEFT"
+					addon._ufFoTNameTextBaseline.relTo = nameFS and nameFS.GetParent and nameFS:GetParent()
+					addon._ufFoTNameTextBaseline.relPoint = "TOPLEFT"
+					addon._ufFoTNameTextBaseline.x = 0
+					addon._ufFoTNameTextBaseline.y = 0
+				end
+			end
+			return addon._ufFoTNameTextBaseline
+		end
+
+		-- Apply font styling
+		local face = addon.ResolveFontFace and addon.ResolveFontFace((styleCfg and styleCfg.fontFace) or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
+		local size = tonumber(styleCfg and styleCfg.size) or 10
+		local outline = tostring((styleCfg and styleCfg.style) or "OUTLINE")
+		if addon.ApplyFontStyle then
+			addon.ApplyFontStyle(nameFS, face, size, outline)
+		elseif nameFS.SetFont then
+			pcall(nameFS.SetFont, nameFS, face, size, outline)
+		end
+
+		-- Apply color based on colorMode
+		local colorMode = (styleCfg and styleCfg.colorMode) or "default"
+		local r, g, b, a = 1, 1, 1, 1
+		if colorMode == "class" then
+			-- Class color: use focus-target's class color
+			if addon.GetClassColorRGB then
+				local cr, cg, cb = addon.GetClassColorRGB("focustarget")
+				r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+			end
+		elseif colorMode == "custom" then
+			local c = (styleCfg and styleCfg.color) or {1, 1, 1, 1}
+			r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+		else
+			-- Default: use Blizzard default (white for FoT name)
+			r, g, b, a = 1, 1, 1, 1
+		end
+		if nameFS.SetTextColor then pcall(nameFS.SetTextColor, nameFS, r, g, b, a) end
+
+		-- Apply alignment
+		local alignment = (styleCfg and styleCfg.alignment) or "LEFT"
+		if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, alignment) end
+
+		-- Apply offset relative to baseline
+		local ox = tonumber(styleCfg and styleCfg.offset and styleCfg.offset.x) or 0
+		local oy = tonumber(styleCfg and styleCfg.offset and styleCfg.offset.y) or 0
+		if nameFS.ClearAllPoints and nameFS.SetPoint then
+			local b = ensureBaseline()
+			nameFS:ClearAllPoints()
+			local point = safePointToken(b.point, "TOPLEFT")
+			local relTo = b.relTo or (nameFS.GetParent and nameFS:GetParent())
+			local relPoint = safePointToken(b.relPoint, point)
+			local x = safeOffset(b.x) + ox
+			local y = safeOffset(b.y) + oy
+			local ok = pcall(nameFS.SetPoint, nameFS, point, relTo, relPoint, x, y)
+			if not ok then
+				local parent = (nameFS.GetParent and nameFS:GetParent())
+				pcall(nameFS.SetPoint, nameFS, point, parent, relPoint, 0, 0)
+			end
+		end
+	end
+
+	-- Expose for UI and Copy From
+	addon.ApplyFoTNameText = applyFoTNameText
+
+	-- Hook FocusFrameToT frame updates to reapply styling
+	-- FoT frame is re-shown when focus target changes, so hook the FoT OnShow
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+	local function installFoTHooks()
+		local fstate = ensureFS()
+		if not fstate then return end
+		local fot = _G.FocusFrameToT
+		if fot and not fstate.IsHooked(fot, "fotNameTextHooked") then
+			fstate.MarkHooked(fot, "fotNameTextHooked")
+			if fot.HookScript then
+				fot:HookScript("OnShow", function()
+					if _G.C_Timer and _G.C_Timer.After then
+						_G.C_Timer.After(0, applyFoTNameText)
+					end
+				end)
+			end
+		end
+	end
+
+	-- Install hooks after PLAYER_ENTERING_WORLD
+	local fotHookFrame = CreateFrame("Frame")
+	fotHookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+	fotHookFrame:SetScript("OnEvent", function(self, event)
+		if event == "PLAYER_ENTERING_WORLD" then
+			if _G.C_Timer and _G.C_Timer.After then
+				_G.C_Timer.After(0.5, function()
+					installFoTHooks()
+					-- Apply initial styling
+					applyFoTNameText()
+				end)
+			end
+		end
+	end)
+end
+
+--------------------------------------------------------------------------------
+-- Edit Mode Exit Hook: Reapply text visibility when Edit Mode closes
+--------------------------------------------------------------------------------
+-- The SetAlpha visibility hooks skip enforcement during Edit Mode to avoid taint.
+-- When Edit Mode closes, Blizzard may have shown text elements that should be hidden.
+-- This hook re-enforces visibility settings after Edit Mode exits.
+--------------------------------------------------------------------------------
+do
+	local function reapplyAllTextVisibility()
+		if addon.ApplyAllUnitFrameHealthTextVisibility then
+			addon.ApplyAllUnitFrameHealthTextVisibility()
+		end
+		if addon.ApplyAllUnitFramePowerTextVisibility then
+			addon.ApplyAllUnitFramePowerTextVisibility()
+		end
+	end
+
+	local mgr = _G.EditModeManagerFrame
+	if mgr and _G.hooksecurefunc and type(mgr.ExitEditMode) == "function" then
+		_G.hooksecurefunc(mgr, "ExitEditMode", function()
+			if _G.C_Timer and _G.C_Timer.After then
+				-- Immediate reapply
+				_G.C_Timer.After(0, function()
+					if _G.InCombatLockdown and _G.InCombatLockdown() then return end
+					reapplyAllTextVisibility()
+				end)
+				-- Short delay to catch deferred Blizzard processing
+				_G.C_Timer.After(0.1, function()
+					if _G.InCombatLockdown and _G.InCombatLockdown() then return end
+					reapplyAllTextVisibility()
+				end)
+				-- Longer delay as safety net
+				_G.C_Timer.After(0.3, function()
+					if _G.InCombatLockdown and _G.InCombatLockdown() then return end
+					reapplyAllTextVisibility()
+				end)
+			else
+				reapplyAllTextVisibility()
+			end
+		end)
+	end
 end
 

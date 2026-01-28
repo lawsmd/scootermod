@@ -63,6 +63,7 @@ local function canonicalUnit(unit)
     if lower == "focus"  then return "Focus"  end
     if lower == "pet"    then return "Pet"    end
     if lower == "targetoftarget" then return "TargetOfTarget" end
+    if lower == "focustarget" then return "FocusTarget" end
     return nil
 end
 
@@ -123,7 +124,7 @@ local unitCaps = {
         supportsDamageText = false,
         supportsIconPadding = false,
     },
-    -- ToT is destination-only (cannot be a source for Copy From)
+    -- ToT is destination-only for full unit frames (can only copy to/from FoT)
     TargetOfTarget = {
         orientation = "right",
         hasCastBar = false,
@@ -140,12 +141,32 @@ local unitCaps = {
         -- ToT has limited settings: only bar style/border and name text
         isToT = true,
     },
+    -- FoT has same capabilities as ToT (identical template)
+    FocusTarget = {
+        orientation = "right",
+        hasCastBar = false,
+        supportsSpellNameText = false,
+        supportsCastTimeText = false,
+        supportsShowCastTime = false,
+        supportsPortraitOffset = true,
+        supportsPortraitRestLoop = false,
+        supportsPortraitStatusTexture = false,
+        supportsPortraitCornerIcon = false,
+        supportsFullCircleMask = false,
+        supportsDamageText = false,
+        supportsIconPadding = false,
+        -- FoT has same limited settings as ToT
+        isToT = true,
+    },
 }
 
 local copyKeysRoot = {
     "scaleMult",
     "useCustomBorders",
+    -- Health Bar
     "healthBarTexture",
+    "healthBarColorMode",
+    "healthBarTint",
     "healthBarBackgroundTexture",
     "healthBarBackgroundColorMode",
     "healthBarBackgroundTint",
@@ -155,15 +176,23 @@ local copyKeysRoot = {
     "healthBarBorderTintColor",
     "healthBarBorderThickness",
     "healthBarBorderInset",
+    "healthBarHideBorder",
+    "healthBarHideTextureOnly",
+    "healthBarHideOverAbsorbGlow",
+    "healthBarHideHealPrediction",
     "healthPercentHidden",
     "healthValueHidden",
     "textHealthPercent",
     "textHealthValue",
+    -- Power Bar
+    "powerBarHidden",
     "powerBarOffsetX",
     "powerBarOffsetY",
     "powerBarWidthPct",
     "powerBarHeightPct",
     "powerBarTexture",
+    "powerBarColorMode",
+    "powerBarTint",
     "powerBarBackgroundTexture",
     "powerBarBackgroundColorMode",
     "powerBarBackgroundTint",
@@ -173,12 +202,20 @@ local copyKeysRoot = {
     "powerBarBorderTintColor",
     "powerBarBorderThickness",
     "powerBarBorderInset",
+    "powerBarHideTextureOnly",
+    "powerBarHideFullSpikes",
+    "powerBarHideFeedback",
+    "powerBarHideSpark",
+    "powerBarHideManaCostPrediction",
     "powerPercentHidden",
     "powerValueHidden",
     "textPowerPercent",
     "textPowerValue",
+    -- Name Backdrop
     "nameBackdropEnabled",
     "nameBackdropTexture",
+    "nameBackdropColorMode",
+    "nameBackdropTint",
     "nameBackdropWidthPct",
     "nameBackdropOpacity",
     "nameBackdropBorderEnabled",
@@ -187,14 +224,19 @@ local copyKeysRoot = {
     "nameBackdropBorderTintColor",
     "nameBackdropBorderThickness",
     "nameBackdropBorderInset",
+    -- Name/Level Text
     "nameTextHidden",
     "textName",
     "levelTextHidden",
     "textLevel",
     -- Visibility (opacity sliders)
     "opacity",
+    "opacityInCombat",
     "opacityWithTarget",
     "opacityOutOfCombat",
+    -- Misc
+    "hideRoleIcon",
+    "hideGroupNumber",
 }
 
 local preserveXOffsetKeys = {
@@ -235,7 +277,8 @@ local totCopyKeysRoot = {
     "healthBarBorderTintColor",
     "healthBarBorderThickness",
     "healthBarBorderInset",
-    -- Power Bar style/border only (no text)
+    -- Power Bar style/border/visibility (no text)
+    "powerBarHidden",
     "powerBarTexture",
     "powerBarColorMode",
     "powerBarTint",
@@ -266,8 +309,8 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
         return false, "invalid_unit"
     end
 
-    -- ToT cannot be a source for Copy From
-    if srcCap.isToT then
+    -- ToT/FoT can only copy to each other, not to full unit frames
+    if srcCap.isToT and not dstCap.isToT then
         return false, "invalid_unit"
     end
 
@@ -322,15 +365,18 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
         -- Preserve ToT-specific offsets (separate from source)
         -- dstPortrait.offsetX and dstPortrait.offsetY are NOT copied
 
-        -- Apply ToT styling
+        -- Apply styling (works for both ToT and FoT destinations)
         if addon.ApplyUnitFrameBarTexturesFor then
-            addon.ApplyUnitFrameBarTexturesFor("TargetOfTarget")
+            addon.ApplyUnitFrameBarTexturesFor(dst)
         end
         if addon.ApplyUnitFramePortraitFor then
-            addon.ApplyUnitFramePortraitFor("TargetOfTarget")
+            addon.ApplyUnitFramePortraitFor(dst)
         end
-        if addon.ApplyToTNameText then
+        -- Apply name text based on destination
+        if dst == "TargetOfTarget" and addon.ApplyToTNameText then
             addon.ApplyToTNameText()
+        elseif dst == "FocusTarget" and addon.ApplyFoTNameText then
+            addon.ApplyFoTNameText()
         end
         if addon.ApplyStyles then
             addon:ApplyStyles()

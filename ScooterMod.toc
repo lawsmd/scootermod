@@ -53,6 +53,7 @@ core/components/unitframes/bars/partyframes.lua
 core/components/unitframes/bars.lua
 core/components/unitframes/portraits.lua
 core/components/unitframes/classresource.lua
+core/components/unitframes/totembar.lua
 core/components/unitframes/cast.lua
 core/components/unitframes/buffs.lua
 core/components/unitframes/visibility.lua
@@ -64,6 +65,7 @@ core/components/objectivetracker.lua
 core/components/damagemeters.lua
 core/debug.lua
 core/taintdebug.lua
+core/dialogs.lua
 
 ui/v2/Theme.lua
 ui/v2/controls/Utils.lua
@@ -112,6 +114,7 @@ ui/v2/settings/auras/BuffsRenderer.lua
 ui/v2/settings/auras/DebuffsRenderer.lua
 ui/v2/unitframes/Helpers.lua
 ui/v2/unitframes/ToTRenderer.lua
+ui/v2/unitframes/FocusTargetRenderer.lua
 ui/v2/unitframes/PetRenderer.lua
 ui/v2/unitframes/PlayerRenderer.lua
 ui/v2/unitframes/TargetRenderer.lua

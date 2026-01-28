@@ -134,12 +134,10 @@ local function updateHealthOverlay(bar)
     -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
     local totalWidth = 0
     do
-        -- Avoid StatusBar:GetWidth(); prefer StatusBarTexture width.
-        local tex = (bar.GetStatusBarTexture and bar:GetStatusBarTexture()) or nil
-        if tex and tex.GetWidth then
-            local okW, w = pcall(tex.GetWidth, tex)
-            totalWidth = safeNumber(okW and w) or 0
-        end
+        -- Use the StatusBar frame width (not the fill texture width).
+        -- The fill texture width varies with health %, but we need the full bar width.
+        local okW, w = pcall(bar.GetWidth, bar)
+        totalWidth = safeNumber(okW and w) or 0
     end
     local minVal, maxVal
     do
@@ -233,8 +231,10 @@ local function styleHealthOverlay(bar, cfg)
         end
         if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
             addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+            return -- Color applied by applyValueBasedColor, skip SetVertexColor below
         end
-        return -- Color applied by applyValueBasedColor, skip SetVertexColor below
+        -- Fallback: if unit not available yet, use default green (will update on first health change)
+        r, g, b, a = 0, 1, 0, 1
     elseif colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
@@ -251,11 +251,13 @@ local function styleHealthOverlay(bar, cfg)
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1
     else
-        local barR, barG, barB = bar:GetStatusBarColor()
-        if barR then
-            r, g, b = barR, barG, barB
+        -- "default" mode: Use known health default color instead of reading from
+        -- Blizzard's bar (GetStatusBarColor can return uninitialized/secret values)
+        if addon.GetDefaultHealthColorRGB then
+            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+            r, g, b = hr or 0, hg or 1, hb or 0
         else
-            r, g, b = 0, 1, 0
+            r, g, b = 0, 1, 0  -- Fallback green
         end
     end
     overlay:SetVertexColor(r, g, b, a)
@@ -344,6 +346,30 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             barState.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
+                -- Also update color for "value" mode to eliminate flicker.
+                -- By updating color in the same hook as width, both changes happen
+                -- atomically in the same frame (no timing gap = no flicker).
+                local st = getState(self)
+                if not st or not st.overlayActive then return end
+                local db = addon and addon.db and addon.db.profile
+                local groupFrames = db and rawget(db, "groupFrames") or nil
+                local cfg = groupFrames and rawget(groupFrames, "party") or nil
+                if cfg and cfg.healthBarColorMode == "value" then
+                    local overlay = st.healthOverlay
+                    local parentFrame = self.GetParent and self:GetParent()
+                    local unit
+                    if parentFrame then
+                        local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                        if okU and u then unit = u end
+                    end
+                    if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                        -- Schedule validation to catch timing edge cases (stuck colors at 100%)
+                        if addon.BarsTextures.scheduleColorValidation then
+                            addon.BarsTextures.scheduleColorValidation(self, unit, overlay)
+                        end
+                    end
+                end
             end)
             _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
                 updateHealthOverlay(self)
@@ -353,6 +379,33 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                     updateHealthOverlay(self)
                 end)
             end
+            -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
+            -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
+            -- calls SetStatusBarColor(green), our hook fires IMMEDIATELY after and re-applies
+            -- our value-based color. No frame gap = no blink.
+            _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
+                local st = getState(self)
+                if not st or not st.overlayActive then return end
+                -- Recursion guard: Check the SAME flag that applyValueBasedColor uses in addon.FrameState
+                -- to prevent infinite loops when we call SetStatusBarColor from applyValueBasedColor.
+                local fs = addon.FrameState and addon.FrameState.Get(self)
+                if fs and fs.applyingValueBasedColor then return end
+                local db = addon and addon.db and addon.db.profile
+                local groupFrames = db and rawget(db, "groupFrames") or nil
+                local cfg = groupFrames and rawget(groupFrames, "party") or nil
+                if cfg and cfg.healthBarColorMode == "value" then
+                    local overlay = st.healthOverlay
+                    local parentFrame = self.GetParent and self:GetParent()
+                    local unit
+                    if parentFrame then
+                        local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                        if okU and u then unit = u end
+                    end
+                    if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                    end
+                end
+            end)
         end
     end
 
@@ -374,6 +427,31 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     styleHealthOverlay(bar, cfg)
     hideBlizzardFill(bar)
     updateHealthOverlay(bar)
+    -- Queue repeating updates to handle cases where bar dimensions aren't ready
+    -- immediately (e.g., on UI reload at 100% health where no SetValue fires).
+    -- Keep trying until the overlay is successfully shown.
+    -- See GROUPFRAMES.md "Health Bar Overlay Initialization" for details.
+    if _G.C_Timer and _G.C_Timer.After then
+        local attempts = 0
+        local maxAttempts = 5  -- Reduced from 10: 5 attempts at 100ms = 500ms total (same time, fewer operations)
+        local function tryUpdate()
+            attempts = attempts + 1
+            local st = getState(bar)
+            local overlay = st and st.healthOverlay
+            -- Check if overlay is visible and has width > 0
+            if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
+                return -- Success, stop trying
+            end
+            -- Try to update
+            updateHealthOverlay(bar)
+            styleHealthOverlay(bar, cfg)
+            -- If still not working and under max attempts, try again
+            if attempts < maxAttempts then
+                C_Timer.After(0.1, tryUpdate)  -- Increased from 0.05 to maintain 500ms total
+            end
+        end
+        C_Timer.After(0.1, tryUpdate)  -- Increased from 0.05
+    end
 end
 
 function PartyFrames.disableHealthOverlay(bar)
@@ -503,6 +581,8 @@ function PartyFrames.installHooks()
                                     return
                                 end
                                 PartyFrames.applyToHealthBar(bar, cfgRef)
+                                -- Also ensure overlay exists (handles party formed mid-session)
+                                PartyFrames.ensureHealthOverlay(bar, cfgRef)
                             end)
                         else
                             if InCombatLockdown and InCombatLockdown() then
@@ -510,6 +590,7 @@ function PartyFrames.installHooks()
                                 return
                             end
                             PartyFrames.applyToHealthBar(bar, cfgRef)
+                            PartyFrames.ensureHealthOverlay(bar, cfgRef)
                         end
                     end
                 end
@@ -540,6 +621,8 @@ function PartyFrames.installHooks()
                                     return
                                 end
                                 PartyFrames.applyToHealthBar(bar, cfgRef)
+                                -- Also ensure overlay exists (handles party formed mid-session)
+                                PartyFrames.ensureHealthOverlay(bar, cfgRef)
                             end)
                         else
                             if InCombatLockdown and InCombatLockdown() then
@@ -547,6 +630,7 @@ function PartyFrames.installHooks()
                                 return
                             end
                             PartyFrames.applyToHealthBar(bar, cfgRef)
+                            PartyFrames.ensureHealthOverlay(bar, cfgRef)
                         end
                     end
                 end
@@ -576,23 +660,125 @@ function PartyFrames.installHooks()
             if okU and u then unit = u end
             if not unit then return end
 
-            -- Defer to avoid taint (same pattern as existing hooks)
-            C_Timer.After(0, function()
-                local state = getState(frame.healthBar)
-                local overlay = state and state.healthOverlay or nil
-                if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit, overlay)
-                elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                    -- No overlay, apply to status bar texture directly
-                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit)
+            -- FIX 1: Conditional deferral to prevent blinking during health regen.
+            -- The blink occurs because:
+            --   1. SetValue hook applies our color
+            --   2. Blizzard's CompactUnitFrame_UpdateHealthColor resets to default green
+            --   3. Our deferred callback re-applies our color (1 frame later = visible flicker)
+            --
+            -- Solution: Only defer when overlay doesn't exist yet (initialization).
+            -- When overlay is ready and shown, apply immediately (synchronously).
+            local healthBar = frame.healthBar
+            local state = getState(healthBar)
+            local overlay = state and state.healthOverlay or nil
+
+            if overlay and overlay:IsShown() then
+                -- Overlay exists and is shown - apply immediately (no defer)
+                -- This prevents the 1-frame blink where Blizzard's color shows
+                if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                    addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay)
+                    -- Schedule validation to catch timing edge cases (stuck colors at 100%)
+                    if addon.BarsTextures.scheduleColorValidation then
+                        addon.BarsTextures.scheduleColorValidation(healthBar, unit, overlay)
+                    end
                 end
-            end)
+            else
+                -- Overlay not ready - defer to ensure initialization completes
+                C_Timer.After(0, function()
+                    local st = getState(healthBar)
+                    local ov = st and st.healthOverlay or nil
+                    if ov and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit, ov)
+                        -- Schedule validation for deferred case too
+                        if addon.BarsTextures.scheduleColorValidation then
+                            addon.BarsTextures.scheduleColorValidation(healthBar, unit, ov)
+                        end
+                    elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        -- No overlay, apply to status bar texture directly
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit)
+                    end
+                end)
+            end
         end)
     end
 end
 
 -- Install hooks on load
 PartyFrames.installHooks()
+
+--------------------------------------------------------------------------------
+-- Event-Based Color Updates for Party Frames (Value Mode)
+--------------------------------------------------------------------------------
+-- The SetValue hook handles most color updates, but some edge cases require
+-- explicit event handling:
+-- - UNIT_MAXHEALTH: When max health changes (buffs, potions that heal to cap)
+-- - UNIT_HEAL_PREDICTION: Incoming heal updates
+-- - UNIT_HEALTH: Backup for any health changes the SetValue hook might miss
+--
+-- This fixes "stuck colors" when healing to exactly 100% where no subsequent
+-- SetValue call might occur.
+--------------------------------------------------------------------------------
+
+local function isPartyUnit(unit)
+    if not unit then return false end
+    -- Include player since they can appear in party frames too
+    return unit == "player" or unit == "party1" or unit == "party2" or unit == "party3" or unit == "party4"
+end
+
+local function getPartyHealthBarForUnit(unit)
+    if not unit or not isPartyUnit(unit) then return nil end
+
+    local db = addon and addon.db and addon.db.profile
+    local groupFrames = db and rawget(db, "groupFrames") or nil
+    local cfg = groupFrames and rawget(groupFrames, "party") or nil
+    if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+
+    -- Party frames are dynamically assigned - check each frame's unit property
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame and frame.healthBar then
+            local frameUnit
+            local ok, u = pcall(function() return frame.displayedUnit or frame.unit end)
+            if ok and u then frameUnit = u end
+            -- Check if this frame is displaying the unit we're looking for
+            if frameUnit and UnitIsUnit(frameUnit, unit) then
+                return frame.healthBar, frame
+            end
+        end
+    end
+
+    return nil
+end
+
+local partyHealthColorEventFrame = CreateFrame("Frame")
+partyHealthColorEventFrame:RegisterEvent("UNIT_HEALTH")
+partyHealthColorEventFrame:RegisterEvent("UNIT_MAXHEALTH")
+partyHealthColorEventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
+partyHealthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
+    if not unit or not isPartyUnit(unit) then return end
+
+    local bar, frame = getPartyHealthBarForUnit(unit)
+    if not bar then return end
+
+    -- Use the frame's actual unit token for color calculation
+    local actualUnit = unit
+    if frame then
+        local ok, u = pcall(function() return frame.displayedUnit or frame.unit end)
+        if ok and u then actualUnit = u end
+    end
+
+    local state = getState(bar)
+    local overlay = state and state.healthOverlay or nil
+    if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+        addon.BarsTextures.applyValueBasedColor(bar, actualUnit, overlay)
+        -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
+        if addon.BarsTextures.scheduleColorValidation then
+            addon.BarsTextures.scheduleColorValidation(bar, actualUnit, overlay)
+        end
+    elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+        addon.BarsTextures.applyValueBasedColor(bar, actualUnit)
+    end
+end)
 
 --------------------------------------------------------------------------------
 -- Text Styling (Player Name)
@@ -771,7 +957,6 @@ local function stylePartyNameOverlay(frame, cfg)
 
     local fontSize = tonumber(cfg.size) or 12
     local fontStyle = cfg.style or "OUTLINE"
-    local color = cfg.color or { 1, 1, 1, 1 }
     local anchor = cfg.anchor or "TOPLEFT"
     local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
     local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
@@ -785,8 +970,26 @@ local function stylePartyNameOverlay(frame, cfg)
         end
     end
 
+    -- Determine color based on colorMode
+    local colorMode = cfg.colorMode or "default"
+    local r, g, b, a = 1, 1, 1, 1
+    if colorMode == "class" then
+        -- Use the party member's class color
+        local unit = frame.unit
+        if addon.GetClassColorRGB and unit then
+            local cr, cg, cb = addon.GetClassColorRGB(unit)
+            r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+        end
+    elseif colorMode == "custom" then
+        local color = cfg.color or { 1, 1, 1, 1 }
+        r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+    else
+        -- "default" - use white
+        r, g, b, a = 1, 1, 1, 1
+    end
+
     -- Apply color
-    pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    pcall(overlay.SetTextColor, overlay, r, g, b, a)
 
     -- Always use LEFT justify so truncation only happens on the right side.
     -- This ensures player names always show the beginning of the name.
@@ -1363,6 +1566,74 @@ local function installPartyTitleHooks()
         end
     end
 end
+
+--------------------------------------------------------------------------------
+-- Over Absorb Glow Visibility
+--------------------------------------------------------------------------------
+-- Hides or shows the OverAbsorbGlow texture on party frame health bars.
+-- This glow appears when absorb shields exceed the health bar width.
+-- Frame: CompactPartyFrameMember[1-5].healthBar.overAbsorbGlow
+--
+-- Uses alpha hiding with persistent hooks (same pattern as player frame OverAbsorbGlow).
+--------------------------------------------------------------------------------
+
+local function applyOverAbsorbGlowVisibility(frame, shouldHide)
+    if not frame or not frame.healthBar then return end
+    local glow = frame.healthBar.overAbsorbGlow
+    if not glow then return end
+
+    local state = ensureState(glow)
+    if not state then return end
+
+    if shouldHide then
+        state.glowHidden = true
+        if glow.SetAlpha then pcall(glow.SetAlpha, glow, 0) end
+
+        -- Install persistence hooks (only once)
+        if not state.glowHooked and _G.hooksecurefunc then
+            state.glowHooked = true
+            _G.hooksecurefunc(glow, "SetAlpha", function(self, alpha)
+                local st = getState(self)
+                if alpha and alpha > 0 and st and st.glowHidden then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            local st2 = getState(self)
+                            if st2 and st2.glowHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+            _G.hooksecurefunc(glow, "Show", function(self)
+                local st = getState(self)
+                if st and st.glowHidden and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+        end
+    else
+        state.glowHidden = false
+        -- Restore visibility (let Blizzard control alpha)
+        if glow.SetAlpha then pcall(glow.SetAlpha, glow, 1) end
+    end
+end
+
+function PartyFrames.ApplyOverAbsorbGlowVisibility()
+    local db = addon.db and addon.db.profile
+    local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+    local shouldHide = partyCfg and partyCfg.hideOverAbsorbGlow or false
+
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame then
+            applyOverAbsorbGlowVisibility(frame, shouldHide)
+        end
+    end
+end
+
+-- Export to addon namespace
+addon.ApplyPartyOverAbsorbGlowVisibility = PartyFrames.ApplyOverAbsorbGlowVisibility
 
 --------------------------------------------------------------------------------
 -- Text Hook Installation

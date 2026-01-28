@@ -826,7 +826,7 @@ function UF.RenderTarget(panel, scrollContent)
                         })
                         tabInner:AddSelectorColorPicker({
                             label = "Name Text Color",
-                            values = { default = "Default", custom = "Custom" }, order = { "default", "custom" },
+                            values = UF.fontColorValues, order = UF.fontColorOrder,
                             get = function() local s = ensureNameLevelDB("textName") or {}; return s.colorMode or "default" end,
                             set = function(v) local t = ensureNameLevelDB("textName"); if t then t.colorMode = v or "default"; applyNameLevelText() end end,
                             getColor = function() local s = ensureNameLevelDB("textName") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,

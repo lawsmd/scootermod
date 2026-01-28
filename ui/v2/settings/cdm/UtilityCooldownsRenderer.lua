@@ -250,7 +250,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                     return 1, 1, 1, 1
                 end,
                 setColor = function(r, g, b, a)
-                    setSetting("borderTintColor", { r = r, g = g, b = b, a = a })
+                    setSetting("borderTintColor", {r, g, b, a})
                     if addon and addon.ApplyStyles then
                         C_Timer.After(0, function() addon:ApplyStyles() end)
                     end

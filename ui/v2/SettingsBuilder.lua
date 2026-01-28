@@ -391,6 +391,7 @@ function Builder:AddCollapsibleSection(options)
         sectionKey = options.sectionKey,
         defaultExpanded = options.defaultExpanded,
         contentHeight = 100,  -- Placeholder, will be updated by inner builder
+        infoIcon = options.infoIcon,  -- Pass through info icon options
         onToggle = function(expanded)
             -- Call user callback if provided
             if options.onToggle then

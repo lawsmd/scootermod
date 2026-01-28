@@ -23,6 +23,10 @@ function Resolvers.getUnitFrameFor(unit)
     if unit == "TargetOfTarget" then
         return _G.TargetFrameToT
     end
+    -- FocusTarget is not an Edit Mode frame - resolve directly from FocusFrame
+    if unit == "FocusTarget" then
+        return _G.FocusFrameToT
+    end
     local mgr = _G.EditModeManagerFrame
     local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
     local EMSys = _G.Enum and _G.Enum.EditModeSystem
@@ -115,6 +119,10 @@ function Resolvers.resolveHealthBar(frame, unit)
         local tot = _G.TargetFrameToT
         return tot and tot.HealthBar or nil
     end
+    if unit == "FocusTarget" then
+        local fot = _G.FocusFrameToT
+        return fot and fot.HealthBar or nil
+    end
     if unit == "Player" then
         local root = _G.PlayerFrame
         local hb = getNested(root, "PlayerFrameContent", "PlayerFrameContentMain", "HealthBarsContainer", "HealthBar")
@@ -178,6 +186,10 @@ function Resolvers.resolvePowerBar(frame, unit)
     if unit == "TargetOfTarget" then
         local tot = _G.TargetFrameToT
         return tot and tot.ManaBar or nil
+    end
+    if unit == "FocusTarget" then
+        local fot = _G.FocusFrameToT
+        return fot and fot.ManaBar or nil
     end
     if unit == "Player" then
         local root = _G.PlayerFrame
@@ -247,6 +259,9 @@ function Resolvers.resolveHealthMask(unit)
     elseif unit == "TargetOfTarget" then
         local tot = _G.TargetFrameToT
         return tot and tot.HealthBar and tot.HealthBar.HealthBarMask or nil
+    elseif unit == "FocusTarget" then
+        local fot = _G.FocusFrameToT
+        return fot and fot.HealthBar and fot.HealthBar.HealthBarMask or nil
     end
     return nil
 end
@@ -273,6 +288,9 @@ function Resolvers.resolvePowerMask(unit)
     elseif unit == "TargetOfTarget" then
         local tot = _G.TargetFrameToT
         return tot and tot.ManaBar and tot.ManaBar.ManaBarMask or nil
+    elseif unit == "FocusTarget" then
+        local fot = _G.FocusFrameToT
+        return fot and fot.ManaBar and fot.ManaBar.ManaBarMask or nil
     end
     return nil
 end
@@ -296,6 +314,8 @@ function Resolvers.resolveUFContentMain(unit)
         return _G.PetFrame
     elseif unit == "TargetOfTarget" then
         return _G.TargetFrameToT
+    elseif unit == "FocusTarget" then
+        return _G.FocusFrameToT
     end
     return nil
 end
@@ -323,6 +343,9 @@ function Resolvers.resolveUnitFrameFrameTexture(unit)
     elseif unit == "TargetOfTarget" then
         local tot = _G.TargetFrameToT
         return tot and tot.FrameTexture or nil
+    elseif unit == "FocusTarget" then
+        local fot = _G.FocusFrameToT
+        return fot and fot.FrameTexture or nil
     end
     return nil
 end

@@ -10,7 +10,7 @@
 -- settings (Opacity) to be handled as index-based while leaving others raw.
 -- Maintenance: Treat this as a local fork. Updating the library from upstream will
 -- overwrite these helpers; consider a git-managed fork if further divergence is needed.
-local lib = LibStub:NewLibrary("LibEditModeOverride-1.0", 10)
+local lib = LibStub:NewLibrary("LibEditModeOverride-1.0", 11)
 
 if not lib then return end
 
@@ -300,16 +300,75 @@ function lib:LoadLayouts()
   layoutInfo.layouts = tmp
 end
 
+-- SaveOnly: Persist layouts and trigger visual refresh via deferred SetActiveLayout.
+--
+-- This function is CRITICAL for Edit Mode visual updates. The flow is:
+-- 1. C_EditMode.SaveLayouts(layoutInfo) - persists settings to C-side storage
+-- 2. C_Timer.After(0, ...) - defers SetActiveLayout to next frame (clean context)
+-- 3. C_EditMode.SetActiveLayout(activeLayout) - triggers Blizzard's visual rebuild
+--
+-- If settings save but don't apply visually, the issue is likely:
+-- - activeLayout is nil/invalid (guard added January 2026)
+-- - The deferred callback isn't executing
+-- - Blizzard's SetActiveLayout no longer triggers refresh (would need alternative approach)
+--
+-- Debug logging: Enable with `/run ScooterMod._dbgEditMode = true` to trace the full flow.
+-- ScooterMod-specific modification.
 function lib:SaveOnly()
   assert(layoutInfo, LOAD_ERROR)
+
+  -- DEBUG: Log entry (when ScooterMod debug is enabled)
+  local dbgEM = _G.ScooterMod and _G.ScooterMod._dbgEditMode
+  if dbgEM then
+    print("|cFF00FF00[LEO:SaveOnly]|r Called")
+  end
+
   C_EditMode.SaveLayouts(layoutInfo)
+
   -- Defer SetActiveLayout to a fresh execution context.
   -- Calling it synchronously from addon code puts the entire UpdateSystems chain
   -- in a tainted context where C_Spell.GetSpellCooldown (and similar combat APIs)
   -- return secret values, permanently tainting CDM item frame fields.
   local activeLayout = layoutInfo.activeLayout
+
+  -- DEBUG: Log activeLayout value
+  if dbgEM then
+    print("|cFF00FF00[LEO:SaveOnly]|r activeLayout =", tostring(activeLayout), "type:", type(activeLayout))
+  end
+
+  -- Guard against nil/invalid activeLayout (January 2026 fix)
+  -- Without this guard, an invalid activeLayout would cause SetActiveLayout to fail silently,
+  -- resulting in settings that save but don't apply visually.
+  if not activeLayout or type(activeLayout) ~= "number" or activeLayout < 1 then
+    if dbgEM then
+      print("|cFFFF0000[LEO:SaveOnly]|r SKIPPING SetActiveLayout - invalid activeLayout!")
+    end
+    reconciledLayouts = true
+    return
+  end
+
   C_Timer.After(0, function()
-    C_EditMode.SetActiveLayout(activeLayout)
+    -- DEBUG: Log deferred callback execution
+    local dbg = _G.ScooterMod and _G.ScooterMod._dbgEditMode
+    if dbg then
+      print("|cFF00FF00[LEO:SaveOnly]|r Deferred callback executing, calling SetActiveLayout(", activeLayout, ")")
+    end
+    -- Handle 12.0 secret value errors in SetActiveLayout.
+    -- Some Edit Mode systems (notably CompactUnitFrame/Party Frames) perform boolean tests
+    -- on values that become secrets when SetActiveLayout is called from addon context.
+    -- The error occurs inside secureexecuterange (C code) which logs to WoW's error handler
+    -- BEFORE pcall can catch it. We temporarily suppress the error handler to prevent spam.
+    -- The settings are already persisted via SaveLayouts above; this refresh is best-effort.
+    local oldHandler = geterrorhandler()
+    local suppressedErr
+    seterrorhandler(function(err)
+      suppressedErr = err
+    end)
+    local ok, err = pcall(C_EditMode.SetActiveLayout, activeLayout)
+    seterrorhandler(oldHandler)
+    if (not ok or suppressedErr) and dbg then
+      print("|cFFFF6600[LEO:SaveOnly]|r SetActiveLayout error (suppressed):", tostring(err or suppressedErr))
+    end
   end)
   reconciledLayouts = true
 end

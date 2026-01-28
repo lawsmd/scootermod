@@ -509,10 +509,10 @@ function addon.BuildBarBorderOptionsContainer()
     end
     local create = _G.Settings and _G.Settings.CreateControlTextContainer
     if not create then
-        return { { value = "square", text = "Default (Square)" } }
+        return { { value = "square", text = "Square" } }
     end
     local c = create()
-    c:Add("square", "Default (Square)")
+    c:Add("square", "Square")
     return c:GetData()
 end
 
@@ -523,12 +523,12 @@ function addon.BuildIconBorderOptionsContainer()
     local create = Settings and Settings.CreateControlTextContainer
     if create then
         local container = create()
-        container:Add("square", "Default")
+        container:Add("square", "Square")
         container:Add("blizzard", "Blizzard Default")
         return container:GetData()
     end
     return {
-        { value = "square", text = "Default" },
+        { value = "square", text = "Square" },
         { value = "blizzard", text = "Blizzard Default" },
     }
 end

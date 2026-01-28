@@ -66,6 +66,7 @@ end
 --   parent        : Parent frame (required)
 --   name          : Global frame name (optional)
 --   onToggle      : Callback when expanded state changes (optional)
+--   infoIcon      : Optional { tooltipTitle, tooltipText } for header info icon
 --------------------------------------------------------------------------------
 
 function Controls:CreateCollapsibleSection(options)
@@ -180,6 +181,21 @@ function Controls:CreateCollapsibleSection(options)
     titleFS:SetText(title)
     titleFS:SetTextColor(1, 1, 1, 1)
     header._title = titleFS
+
+    -- Optional info icon (positioned after title text)
+    if options.infoIcon and options.infoIcon.tooltipText then
+        local infoIcon = Controls:CreateInfoIcon({
+            parent = header,
+            tooltipTitle = options.infoIcon.tooltipTitle,
+            tooltipText = options.infoIcon.tooltipText,
+            size = 14,
+        })
+        if infoIcon then
+            -- Position to the right of the title with a small gap
+            infoIcon:SetPoint("LEFT", titleFS, "RIGHT", 6, 0)
+            section._infoIcon = infoIcon
+        end
+    end
 
     section._header = header
 
@@ -345,6 +361,9 @@ function Controls:CreateCollapsibleSection(options)
     function section:Cleanup()
         if self._subscribeKey then
             theme:Unsubscribe(self._subscribeKey)
+        end
+        if self._infoIcon and self._infoIcon.Cleanup then
+            self._infoIcon:Cleanup()
         end
     end
 

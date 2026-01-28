@@ -940,6 +940,191 @@ function UF.RenderPlayer(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
+    -- Collapsible Section: Totem Bar (conditional visibility)
+    --------------------------------------------------------------------------------
+    -- Only shown for classes that use TotemFrame: Shaman, Death Knight, Druid, Monk
+
+    if addon.UnitFrames_TotemBar_ShouldShow and addon.UnitFrames_TotemBar_ShouldShow() then
+        local function ensureTotemBarDB()
+            local t = UF.ensureUFDB(UNIT_KEY)
+            if not t then return nil end
+            t.totemBar = t.totemBar or {}
+            return t.totemBar
+        end
+
+        local function ensureTotemBarIconBordersDB()
+            local tb = ensureTotemBarDB()
+            if not tb then return nil end
+            tb.iconBorders = tb.iconBorders or {}
+            return tb.iconBorders
+        end
+
+        local function ensureTotemBarTimerTextDB()
+            local tb = ensureTotemBarDB()
+            if not tb then return nil end
+            tb.timerText = tb.timerText or {}
+            return tb.timerText
+        end
+
+        local function applyTotemBar()
+            if addon.ApplyTotemBarStyling then
+                addon.ApplyTotemBarStyling()
+            end
+        end
+
+        builder:AddCollapsibleSection({
+            title = "Totem Bar",
+            componentId = COMPONENT_ID,
+            sectionKey = "totemBar",
+            defaultExpanded = false,
+            infoIcon = {
+                tooltipTitle = "Totem Bar",
+                tooltipText = "Displays temporary summons: Shaman totems, DK ghouls/Abomination Limb, Druid Grove Guardians/Efflorescence, and Monk statues.",
+            },
+            buildContent = function(contentFrame, inner)
+                inner:AddTabbedSection({
+                    tabs = {
+                        { key = "icons", label = "Icons" },
+                        { key = "iconBorders", label = "Icon Borders" },
+                        { key = "timerText", label = "Timer Text" },
+                    },
+                    componentId = COMPONENT_ID,
+                    sectionKey = "totemBar_tabs",
+                    buildContent = {
+                        icons = function(cf, tabInner)
+                            -- Placeholder for future icon styling options
+                            tabInner:AddDescription("Icon styling options coming soon.")
+                            tabInner:Finalize()
+                        end,
+                        iconBorders = function(cf, tabInner)
+                            tabInner:AddToggle({
+                                label = "Hide Icon Borders",
+                                get = function()
+                                    local cfg = ensureTotemBarIconBordersDB() or {}
+                                    return cfg.hidden == true
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarIconBordersDB()
+                                    if not cfg then return end
+                                    cfg.hidden = (v == true)
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:Finalize()
+                        end,
+                        timerText = function(cf, tabInner)
+                            tabInner:AddToggle({
+                                label = "Hide Timer Text",
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    return cfg.hidden == true
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.hidden = (v == true)
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddFontSelector({
+                                label = "Font Face",
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    return cfg.fontFace or "FRIZQT__"
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.fontFace = v or "FRIZQT__"
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddSlider({
+                                label = "Font Size",
+                                min = 6, max = 24, step = 1,
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    return tonumber(cfg.size) or 12
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.size = tonumber(v) or 12
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddSelector({
+                                label = "Font Style",
+                                values = UF.fontStyleValues,
+                                order = UF.fontStyleOrder,
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    return cfg.style or "OUTLINE"
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.style = v or "OUTLINE"
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddColorPicker({
+                                label = "Font Color",
+                                hasAlpha = true,
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    local c = cfg.color or { 1, 1, 1, 1 }
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                set = function(r, g, b, a)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.color = { r or 1, g or 1, b or 1, a or 1 }
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddSlider({
+                                label = "X Offset",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    local o = cfg.offset or {}
+                                    return tonumber(o.x) or 0
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.offset = cfg.offset or {}
+                                    cfg.offset.x = tonumber(v) or 0
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:AddSlider({
+                                label = "Y Offset",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    local o = cfg.offset or {}
+                                    return tonumber(o.y) or 0
+                                end,
+                                set = function(v)
+                                    local cfg = ensureTotemBarTimerTextDB()
+                                    if not cfg then return end
+                                    cfg.offset = cfg.offset or {}
+                                    cfg.offset.y = tonumber(v) or 0
+                                    applyTotemBar()
+                                end,
+                            })
+                            tabInner:Finalize()
+                        end,
+                    },
+                })
+                inner:Finalize()
+            end,
+        })
+    end
+
+    --------------------------------------------------------------------------------
     -- Collapsible Section: Name & Level Text
     --------------------------------------------------------------------------------
 

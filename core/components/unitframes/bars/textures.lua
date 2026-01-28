@@ -186,6 +186,58 @@ function Textures.applyValueBasedColor(bar, unit, overlay)
 end
 
 --------------------------------------------------------------------------------
+-- Color Reapply Loop (Fix for Stuck Colors at 100%)
+--------------------------------------------------------------------------------
+-- Schedules multiple unconditional color reapplies at staggered intervals.
+-- This brute-force approach catches timing edge cases where UnitHealthPercent()
+-- doesn't reflect the new health value immediately (API timing lag).
+--
+-- Why brute-force instead of smart validation:
+-- In 12.0, GetVertexColor() returns "secret values" that error on arithmetic,
+-- making color comparison impossible. Unconditional reapply avoids reading colors.
+--
+-- Intervals: 50ms, 100ms, 200ms, 350ms, 500ms - ensures at least one reapply
+-- occurs after UnitHealthPercent has updated to the correct value.
+--------------------------------------------------------------------------------
+
+local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
+
+-- Schedule a color validation loop for a health bar
+-- @param bar: The StatusBar frame
+-- @param unit: Unit token ("player", "target", "party1", etc.)
+-- @param overlay: Optional overlay texture to validate/color
+function Textures.scheduleColorValidation(bar, unit, overlay)
+    if not bar or not unit then return end
+
+    -- Prevent duplicate validations for the same bar
+    if pendingValidations[bar] then return end
+    pendingValidations[bar] = true
+
+    -- SIMPLIFIED APPROACH: Due to 12.0 secret value issues, color comparison is unreliable.
+    -- Instead of smart validation, use a brute-force approach:
+    -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
+    -- This ensures we eventually apply the correct color even if UnitHealthPercent
+    -- is initially stale (e.g., when healing to exactly 100%).
+    -- Use longer delays to ensure UnitHealthPercent has time to update.
+    local delays = { 0.05, 0.1, 0.2, 0.35, 0.5 }  -- 50ms, 100ms, 200ms, 350ms, 500ms
+    local completed = 0
+
+    for _, delay in ipairs(delays) do
+        C_Timer.After(delay, function()
+            completed = completed + 1
+            -- Only clear pending flag after all attempts complete
+            if completed >= #delays then
+                pendingValidations[bar] = nil
+            end
+            -- Unconditionally reapply - let applyValueBasedColor handle everything
+            if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+            end
+        end)
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Mask Enforcement
 --------------------------------------------------------------------------------
 

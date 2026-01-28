@@ -273,11 +273,27 @@ local function UpdateTitleRightClickState(sessionWindow, enabled)
     end
 end
 
--- Apply JiberishIcons class icon to replace spec icon
+-- Apply JiberishIcons class icon to replace spec icon using overlay approach
+-- Uses our own overlay texture to prevent flickering from Blizzard's icon resets
 local function ApplyJiberishIconsStyle(entry, db)
     if not entry or not db then return end
-    if not db.jiberishIconsEnabled then return end
-    if db.showSpecIcon == false then return end  -- Icons hidden entirely
+
+    local iconFrame = entry.Icon
+    local blizzardIcon = iconFrame and iconFrame.Icon
+
+    -- If JiberishIcons disabled or icons hidden, restore Blizzard's icon
+    if not db.jiberishIconsEnabled or db.showSpecIcon == false then
+        -- Show Blizzard's icon
+        if blizzardIcon then
+            pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
+        end
+        -- Hide our overlay
+        local overlay = iconFrame and iconFrame._scooterJiberishOverlay
+        if overlay then
+            overlay:Hide()
+        end
+        return
+    end
 
     local JI = GetJiberishIcons()
     if not JI then return end
@@ -299,13 +315,23 @@ local function ApplyJiberishIconsStyle(entry, db)
     local basePath = (styleData and styleData.path) or mergedStyles.path
     local fullPath = basePath .. styleName
 
-    -- Apply to the icon texture (entry.Icon.Icon)
-    local iconTexture = entry.Icon and entry.Icon.Icon
-    if iconTexture then
-        pcall(iconTexture.SetTexture, iconTexture, fullPath)
-        -- JiberishIcons uses 8-value texCoords (corner format)
-        pcall(iconTexture.SetTexCoord, iconTexture, unpack(classData.texCoords))
+    -- HIDE Blizzard's icon texture (prevents flicker)
+    if blizzardIcon then
+        pcall(blizzardIcon.SetAlpha, blizzardIcon, 0)
     end
+
+    -- CREATE/UPDATE our overlay texture
+    local overlay = iconFrame._scooterJiberishOverlay
+    if not overlay then
+        overlay = iconFrame:CreateTexture(nil, "ARTWORK", nil, 1)
+        overlay:SetAllPoints(iconFrame)  -- Match icon frame size
+        iconFrame._scooterJiberishOverlay = overlay
+    end
+
+    -- Apply JiberishIcons to OUR overlay (not Blizzard's)
+    pcall(overlay.SetTexture, overlay, fullPath)
+    pcall(overlay.SetTexCoord, overlay, unpack(classData.texCoords))
+    overlay:Show()
 end
 
 -- Apply styling to a single entry (bar) in the damage meter

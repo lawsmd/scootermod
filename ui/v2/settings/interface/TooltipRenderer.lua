@@ -182,11 +182,83 @@ function Tooltip.Render(panel, scrollContent)
                 sectionKey = "textTabs",
                 buildContent = {
                     nameTitle = function(tabContent, tabBuilder)
-                        buildTextTabContent(tabBuilder, "textTitle", {
-                            fontFace = "FRIZQT__",
-                            size = 12,
-                            style = "NONE",
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for this text element.",
+                            get = function()
+                                local t = getTextConfig("textTitle")
+                                return (t and t.fontFace) or "FRIZQT__"
+                            end,
+                            set = function(fontKey)
+                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                if t then
+                                    t.fontFace = fontKey or "FRIZQT__"
+                                    if addon and addon.ApplyStyles then
+                                        addon:ApplyStyles()
+                                    end
+                                end
+                            end,
                         })
+
+                        -- Font size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            description = "The size of this text element.",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function()
+                                local t = getTextConfig("textTitle")
+                                return (t and t.size) or 12
+                            end,
+                            set = function(v)
+                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                if t then
+                                    t.size = v or 12
+                                    if addon and addon.ApplyStyles then
+                                        addon:ApplyStyles()
+                                    end
+                                end
+                            end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            description = "The outline style for this text.",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function()
+                                local t = getTextConfig("textTitle")
+                                return (t and t.style) or "NONE"
+                            end,
+                            set = function(v)
+                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                if t then
+                                    t.style = v or "NONE"
+                                    if addon and addon.ApplyStyles then
+                                        addon:ApplyStyles()
+                                    end
+                                end
+                            end,
+                        })
+
+                        -- Class color toggle for player names
+                        tabBuilder:AddToggle({
+                            label = "Class Color Player Names",
+                            description = "Color player character names by their class color. Does not affect NPCs.",
+                            get = function()
+                                return getSetting("classColorPlayerNames") or false
+                            end,
+                            set = function(val)
+                                setSetting("classColorPlayerNames", val)
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
                     end,
                     everythingElse = function(tabContent, tabBuilder)
                         buildTextTabContent(tabBuilder, "textEverythingElse", {

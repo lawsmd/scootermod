@@ -117,6 +117,7 @@ Navigation.NavModel = {
             { key = "ufFocus", label = "Focus" },
             { key = "ufPet", label = "Pet" },
             { key = "ufToT", label = "Target of Target" },
+            { key = "ufFocusTarget", label = "Target of Focus" },
             { key = "ufBoss", label = "Boss" },
         },
     },

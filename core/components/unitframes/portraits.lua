@@ -32,6 +32,9 @@ do
 		elseif unit == "TargetOfTarget" then
 			local tot = _G.TargetFrameToT
 			return tot and tot.Portrait or nil
+		elseif unit == "FocusTarget" then
+			local fot = _G.FocusFrameToT
+			return fot and fot.Portrait or nil
 		end
 		return nil
 	end
@@ -53,6 +56,9 @@ do
 		elseif unit == "TargetOfTarget" then
 			local tot = _G.TargetFrameToT
 			return tot and tot.PortraitMask or nil
+		elseif unit == "FocusTarget" then
+			local fot = _G.FocusFrameToT
+			return fot and fot.PortraitMask or nil
 		end
 		return nil
 	end
@@ -1255,6 +1261,7 @@ do
 		applyForUnit("Focus")
 		applyForUnit("Pet")
 		applyForUnit("TargetOfTarget")
+		applyForUnit("FocusTarget")
 	end
 
 	-- Hook portrait updates to reapply zoom when Blizzard updates portraits

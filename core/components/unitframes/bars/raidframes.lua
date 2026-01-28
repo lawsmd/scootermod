@@ -149,12 +149,10 @@ local function updateHealthOverlay(bar)
     -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
     local totalWidth = 0
     do
-        -- Avoid StatusBar:GetWidth(); prefer StatusBarTexture width.
-        local tex = (bar.GetStatusBarTexture and bar:GetStatusBarTexture()) or nil
-        if tex and tex.GetWidth then
-            local okW, w = pcall(tex.GetWidth, tex)
-            totalWidth = safeNumber(okW and w) or 0
-        end
+        -- Use the StatusBar frame width (not the fill texture width).
+        -- The fill texture width varies with health %, but we need the full bar width.
+        local okW, w = pcall(bar.GetWidth, bar)
+        totalWidth = safeNumber(okW and w) or 0
     end
     local minVal, maxVal
     do
@@ -248,8 +246,10 @@ local function styleHealthOverlay(bar, cfg)
         end
         if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
             addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+            return -- Color applied by applyValueBasedColor, skip SetVertexColor below
         end
-        return -- Color applied by applyValueBasedColor, skip SetVertexColor below
+        -- Fallback: if unit not available yet, use default green (will update on first health change)
+        r, g, b, a = 0, 1, 0, 1
     elseif colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
@@ -266,11 +266,13 @@ local function styleHealthOverlay(bar, cfg)
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1
     else
-        local barR, barG, barB = bar:GetStatusBarColor()
-        if barR then
-            r, g, b = barR, barG, barB
+        -- "default" mode: Use known health default color instead of reading from
+        -- Blizzard's bar (GetStatusBarColor can return uninitialized/secret values)
+        if addon.GetDefaultHealthColorRGB then
+            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+            r, g, b = hr or 0, hg or 1, hb or 0
         else
-            r, g, b = 0, 1, 0
+            r, g, b = 0, 1, 0  -- Fallback green
         end
     end
     overlay:SetVertexColor(r, g, b, a)
@@ -357,6 +359,26 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
             state.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
+                -- Also update color for "value" mode to eliminate flicker.
+                -- By updating color in the same hook as width, both changes happen
+                -- atomically in the same frame (no timing gap = no flicker).
+                local st = getState(self)
+                if not st or not st.overlayActive then return end
+                local db = addon and addon.db and addon.db.profile
+                local groupFrames = db and rawget(db, "groupFrames") or nil
+                local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+                if cfg and cfg.healthBarColorMode == "value" then
+                    local overlay = st.healthOverlay
+                    local parentFrame = self.GetParent and self:GetParent()
+                    local unit
+                    if parentFrame then
+                        local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                        if okU and u then unit = u end
+                    end
+                    if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                    end
+                end
             end)
             _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
                 updateHealthOverlay(self)
@@ -386,6 +408,31 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     styleHealthOverlay(bar, cfg)
     hideBlizzardFill(bar)
     updateHealthOverlay(bar)
+    -- Queue repeating updates to handle cases where bar dimensions aren't ready
+    -- immediately (e.g., on UI reload at 100% health where no SetValue fires).
+    -- Keep trying until the overlay is successfully shown.
+    -- See GROUPFRAMES.md "Health Bar Overlay Initialization" for details.
+    if _G.C_Timer and _G.C_Timer.After then
+        local attempts = 0
+        local maxAttempts = 10
+        local function tryUpdate()
+            attempts = attempts + 1
+            local st = getState(bar)
+            local overlay = st and st.healthOverlay
+            -- Check if overlay is visible and has width > 0
+            if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
+                return -- Success, stop trying
+            end
+            -- Try to update
+            updateHealthOverlay(bar)
+            styleHealthOverlay(bar, cfg)
+            -- If still not working and under max attempts, try again
+            if attempts < maxAttempts then
+                C_Timer.After(0.05, tryUpdate)
+            end
+        end
+        C_Timer.After(0.05, tryUpdate)
+    end
 end
 
 function RaidFrames.disableHealthOverlay(bar)
@@ -584,6 +631,8 @@ function RaidFrames.installHooks()
                                     return
                                 end
                                 RaidFrames.applyToHealthBar(bar, cfgRef)
+                                -- Also ensure overlay exists (handles raid formed mid-session)
+                                RaidFrames.ensureHealthOverlay(bar, cfgRef)
                             end)
                         else
                             if InCombatLockdown and InCombatLockdown() then
@@ -591,6 +640,7 @@ function RaidFrames.installHooks()
                                 return
                             end
                             RaidFrames.applyToHealthBar(bar, cfgRef)
+                            RaidFrames.ensureHealthOverlay(bar, cfgRef)
                         end
                     end
                 end
@@ -621,6 +671,8 @@ function RaidFrames.installHooks()
                                     return
                                 end
                                 RaidFrames.applyToHealthBar(bar, cfgRef)
+                                -- Also ensure overlay exists (handles raid formed mid-session)
+                                RaidFrames.ensureHealthOverlay(bar, cfgRef)
                             end)
                         else
                             if InCombatLockdown and InCombatLockdown() then
@@ -628,6 +680,7 @@ function RaidFrames.installHooks()
                                 return
                             end
                             RaidFrames.applyToHealthBar(bar, cfgRef)
+                            RaidFrames.ensureHealthOverlay(bar, cfgRef)
                         end
                     end
                 end
@@ -861,7 +914,6 @@ local function styleRaidNameOverlay(frame, cfg)
 
     local fontSize = tonumber(cfg.size) or 12
     local fontStyle = cfg.style or "OUTLINE"
-    local color = cfg.color or { 1, 1, 1, 1 }
     local anchor = cfg.anchor or "TOPLEFT"
     local offsetX = cfg.offset and tonumber(cfg.offset.x) or 0
     local offsetY = cfg.offset and tonumber(cfg.offset.y) or 0
@@ -874,7 +926,25 @@ local function styleRaidNameOverlay(frame, cfg)
         end
     end
 
-    pcall(overlay.SetTextColor, overlay, color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    -- Determine color based on colorMode
+    local colorMode = cfg.colorMode or "default"
+    local r, g, b, a = 1, 1, 1, 1
+    if colorMode == "class" then
+        -- Use the raid member's class color
+        local unit = frame.unit
+        if addon.GetClassColorRGB and unit then
+            local cr, cg, cb = addon.GetClassColorRGB(unit)
+            r, g, b, a = cr or 1, cg or 1, cb or 1, 1
+        end
+    elseif colorMode == "custom" then
+        local color = cfg.color or { 1, 1, 1, 1 }
+        r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+    else
+        -- "default" - use white
+        r, g, b, a = 1, 1, 1, 1
+    end
+
+    pcall(overlay.SetTextColor, overlay, r, g, b, a)
 
     -- Always use LEFT justify so truncation only happens on the right side.
     -- This ensures player names always show the beginning of the name.

@@ -40,7 +40,15 @@ local function ShowDebugCopyWindow(title, text)
     if f.title then f.title:SetText(title or "Scooter Debug") end
     if f.EditBox then f.EditBox:SetText(text or "") end
     f:Show()
-    if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
+    -- Defer focus/highlight to avoid scroll system taint in 12.0
+    -- These operations trigger Blizzard's scroll callbacks which can
+    -- encounter secret values if called synchronously from addon context
+    C_Timer.After(0, function()
+        if f.EditBox and f:IsShown() then
+            f.EditBox:HighlightText()
+            f.EditBox:SetFocus()
+        end
+    end)
 end
 
 function addon.DebugShowWindow(title, payload)
@@ -1076,7 +1084,13 @@ local function ShowTableInspectorCopyWindow(title, text)
     if f.title then f.title:SetText(title or "Copied Output") end
     if f.EditBox then f.EditBox:SetText(text or "") end
     f:Show()
-    if f.EditBox then f.EditBox:HighlightText(); f.EditBox:SetFocus() end
+    -- Defer focus/highlight to avoid scroll system taint in 12.0
+    C_Timer.After(0, function()
+        if f.EditBox and f:IsShown() then
+            f.EditBox:HighlightText()
+            f.EditBox:SetFocus()
+        end
+    end)
 end
 
 -- Extract text directly from FrameStackTooltip's displayed lines
@@ -1148,41 +1162,34 @@ local function ExtractFrameStackTooltipText()
     return nil
 end
 
+-- Track if button is attached
+local tableInspectorCopyButtonAttached = false
+
 local function AttachTableInspectorCopyButton()
+    if tableInspectorCopyButtonAttached then return end
+
     local parent = _G.TableAttributeDisplay
-    if not parent or parent.ScooterCopyButton then return end
+    if not parent then return end
+
+    tableInspectorCopyButtonAttached = true
+
     local btn = CreateFrame("Button", "ScooterAttrCopyButton", parent, "UIPanelButtonTemplate")
-    btn:SetSize(80, 20)
+    btn:SetSize(60, 22)
     btn:SetText("Copy")
-    -- Place just beneath the window, slightly offset
-    btn:ClearAllPoints()
-    btn:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -6)
+    btn:SetPoint("TOPRIGHT", parent, "BOTTOMRIGHT", 0, -2)
+
     btn:SetScript("OnClick", function()
         local focused = parent.focusedTable
-        -- If framestack is active, prioritize extracting its visible text
-        local fs = _G.FrameStackTooltip
-        local frameStackText = (fs and fs:IsShown()) and ExtractFrameStackTooltipText() or nil
+        if not focused then return end
 
-        local dump
-        if frameStackText then
-            -- Combine framestack text with table dump
-            local tableDump = TableInspectorBuildDump(focused)
-            dump = "=== FrameStack Visible Text ===\n" .. frameStackText .. "\n\n" .. tableDump
-        else
-            dump = TableInspectorBuildDump(focused)
-        end
+        local dump = TableInspectorBuildDump(focused)
         ShowTableInspectorCopyWindow("Table Attributes", dump)
     end)
-    parent.ScooterCopyButton = btn
 end
 
--- Called from init.lua ADDON_LOADED handler
 function addon.AttachTableInspectorCopyButton()
     AttachTableInspectorCopyButton()
 end
-
--- NOTE: FrameStackTooltip copy button removed - can't hover and click simultaneously.
--- Use TableAttributeDisplay copy button instead: /fstack -> Alt to select -> Ctrl to inspect -> Copy
 
 -- Expose the attribute dump logic for the slash command (/scoot attr)
 function addon.DumpTableAttributes()

@@ -170,7 +170,7 @@ function addon:RegisterEvents()
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     -- 12.0 PTR safety: Edit Mode event names have historically changed between major patches.
     safeRegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
-	self:RegisterEvent("ADDON_LOADED")
+    self:RegisterEvent("ADDON_LOADED")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     -- Ensure Unit Frame styling is re-applied when target/focus units change
     self:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -774,14 +774,13 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
     end
 end
 
--- ADDON_LOADED handler for attaching copy buttons to debug tools (implementation in debug.lua)
+-- Attach copy button to TableAttributeDisplay when debug tools load
 function addon:ADDON_LOADED(event, name)
     if name == "Blizzard_DebugTools" then
         C_Timer.After(0, function()
             if addon.AttachTableInspectorCopyButton then
                 addon.AttachTableInspectorCopyButton()
             end
-            -- NOTE: FrameStackTooltip copy button removed - can't hover and click simultaneously
         end)
     end
 end

@@ -1072,16 +1072,16 @@ function UIPanel:CreateContentPane()
     collapseAllBtn:Hide()  -- Hidden by default, shown when collapsible sections exist
     contentPane._collapseAllBtn = collapseAllBtn
 
-    -- "Copy From" dropdown for Action Bars (to the left of Collapse All button)
+    -- "Copy From" dropdown for Action Bars and Unit Frames (to the left of Collapse All button)
     local copyFromDropdown = Controls:CreateDropdown({
         parent = header,
         name = "ScooterUICopyFromDropdown",
         values = {},  -- Will be populated dynamically
-        placeholder = "Select a bar...",
+        placeholder = "Select...",
         width = 140,
         height = 22,
         fontSize = 11,
-        onSelect = function(sourceKey, displayText)
+        set = function(sourceKey)
             -- Handle copy operation
             panel:HandleCopyFrom(sourceKey)
         end,
@@ -1509,6 +1509,46 @@ local ACTION_BAR_ORDER = {
     "actionBar5", "actionBar6", "actionBar7", "actionBar8",
 }
 
+-- Map of Unit Frame keys that support Copy From functionality
+local UNIT_FRAME_COPY_TARGETS = {
+    ufPlayer = true,
+    ufTarget = true,
+    ufFocus = true,
+    ufPet = true,
+    ufToT = true,
+    ufFocusTarget = true,
+    -- ufBoss excluded (no copy support)
+}
+
+-- Unit Frame display names
+local UNIT_FRAME_NAMES = {
+    ufPlayer = "Player",
+    ufTarget = "Target",
+    ufFocus = "Focus",
+    ufPet = "Pet",
+    ufToT = "Target of Target",
+    ufFocusTarget = "Target of Focus",
+}
+
+-- Unit key for CopyUnitFrameSettings (maps category key to unit name)
+local UNIT_FRAME_KEYS = {
+    ufPlayer = "Player",
+    ufTarget = "Target",
+    ufFocus = "Focus",
+    ufPet = "Pet",
+    ufToT = "TargetOfTarget",
+    ufFocusTarget = "FocusTarget",
+}
+
+-- Full unit frames that can copy from each other
+local FULL_UNIT_FRAME_ORDER = { "ufPlayer", "ufTarget", "ufFocus", "ufPet" }
+
+-- ToT/FoT can only copy from each other
+local TOT_FOT_SOURCES = {
+    ufToT = { "ufFocusTarget" },
+    ufFocusTarget = { "ufToT" },
+}
+
 function UIPanel:UpdateCopyFromDropdown()
     local frame = self.frame
     if not frame or not frame._contentPane then return end
@@ -1520,7 +1560,7 @@ function UIPanel:UpdateCopyFromDropdown()
 
     local key = self._currentCategoryKey
 
-    -- Check if this category supports Copy From
+    -- Check if this is an Action Bar category
     if key and ACTION_BAR_COPY_TARGETS[key] then
         -- Build options: all Action Bars 1-8 except the current one
         local values = {}
@@ -1539,8 +1579,34 @@ function UIPanel:UpdateCopyFromDropdown()
         -- Show dropdown and label
         dropdown:Show()
         if label then label:Show() end
+
+    -- Check if this is a Unit Frame category
+    elseif key and UNIT_FRAME_COPY_TARGETS[key] then
+        local values = {}
+        local order = {}
+
+        -- ToT/FoT have restricted sources
+        if TOT_FOT_SOURCES[key] then
+            for _, sourceKey in ipairs(TOT_FOT_SOURCES[key]) do
+                values[sourceKey] = UNIT_FRAME_NAMES[sourceKey]
+                table.insert(order, sourceKey)
+            end
+        else
+            -- Full unit frames can copy from other full unit frames
+            for _, ufKey in ipairs(FULL_UNIT_FRAME_ORDER) do
+                if ufKey ~= key then
+                    values[ufKey] = UNIT_FRAME_NAMES[ufKey]
+                    table.insert(order, ufKey)
+                end
+            end
+        end
+
+        dropdown:SetOptions(values, order)
+        dropdown:ClearSelection()
+        dropdown:Show()
+        if label then label:Show() end
     else
-        -- Hide dropdown and label
+        -- Hide for unsupported categories
         dropdown:Hide()
         if label then label:Hide() end
     end
@@ -1550,45 +1616,90 @@ function UIPanel:HandleCopyFrom(sourceKey)
     local destKey = self._currentCategoryKey
     if not sourceKey or not destKey then return end
 
-    -- Get display names for the confirmation dialog
-    local sourceName = ACTION_BAR_NAMES[sourceKey] or sourceKey
-    local destName = ACTION_BAR_NAMES[destKey] or self:GetCategoryTitle(destKey)
+    -- Determine if this is Action Bar or Unit Frame
+    local isActionBar = ACTION_BAR_COPY_TARGETS[destKey]
+    local isUnitFrame = UNIT_FRAME_COPY_TARGETS[destKey]
+
+    local sourceName, destName
+
+    if isActionBar then
+        sourceName = ACTION_BAR_NAMES[sourceKey] or sourceKey
+        destName = ACTION_BAR_NAMES[destKey] or self:GetCategoryTitle(destKey)
+    elseif isUnitFrame then
+        sourceName = UNIT_FRAME_NAMES[sourceKey] or sourceKey
+        destName = UNIT_FRAME_NAMES[destKey] or self:GetCategoryTitle(destKey)
+    else
+        return
+    end
 
     -- Use ScooterMod custom dialog to avoid tainting StaticPopupDialogs
     if addon.Dialogs and addon.Dialogs.Show then
         local panel = self
-        addon.Dialogs:Show("SCOOTERMOD_COPY_ACTIONBAR_CONFIRM", {
+        local dialogKey = isUnitFrame and "SCOOTERMOD_COPY_UF_CONFIRM"
+                                       or "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
+        addon.Dialogs:Show(dialogKey, {
             formatArgs = { sourceName, destName },
             data = {
                 sourceId = sourceKey,
                 destId = destKey,
                 sourceName = sourceName,
                 destName = destName,
+                isUnitFrame = isUnitFrame,
             },
             onAccept = function()
-                panel:ExecuteCopyFrom(sourceKey, destKey)
+                panel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
             end,
         })
     else
         -- Fallback if dialogs not loaded
-        self:ExecuteCopyFrom(sourceKey, destKey)
+        self:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
     end
 end
 
-function UIPanel:ExecuteCopyFrom(sourceKey, destKey)
-    if addon and addon.CopyActionBarSettings then
-        addon.CopyActionBarSettings(sourceKey, destKey)
+function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
+    if isUnitFrame then
+        -- Unit Frame copy
+        if addon and addon.CopyUnitFrameSettings then
+            local sourceUnit = UNIT_FRAME_KEYS[sourceKey]
+            local destUnit = UNIT_FRAME_KEYS[destKey]
+            local ok, err = addon.CopyUnitFrameSettings(sourceUnit, destUnit)
 
-        -- Refresh the current category to show the copied settings
-        C_Timer.After(0.1, function()
-            local panel = addon.UI and addon.UI.SettingsPanel
-            if panel and panel._currentCategoryKey == destKey then
-                panel:OnNavigationSelect(destKey, destKey)
+            if ok then
+                -- Refresh the current category
+                C_Timer.After(0.1, function()
+                    local panel = addon.UI and addon.UI.SettingsPanel
+                    if panel and panel._currentCategoryKey == destKey then
+                        panel:OnNavigationSelect(destKey, destKey)
+                    end
+                end)
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            else
+                -- Show error dialog
+                if addon.Dialogs and addon.Dialogs.Show then
+                    addon.Dialogs:Show("SCOOTERMOD_COPY_UF_ERROR", {
+                        formatArgs = { err or "Unknown error" },
+                    })
+                elseif addon.Print then
+                    addon:Print("Copy failed: " .. (err or "unknown error"))
+                end
             end
-        end)
+        end
+    else
+        -- Action Bar copy
+        if addon and addon.CopyActionBarSettings then
+            addon.CopyActionBarSettings(sourceKey, destKey)
 
-        -- Play success sound
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            -- Refresh the current category to show the copied settings
+            C_Timer.After(0.1, function()
+                local panel = addon.UI and addon.UI.SettingsPanel
+                if panel and panel._currentCategoryKey == destKey then
+                    panel:OnNavigationSelect(destKey, destKey)
+                end
+            end)
+
+            -- Play success sound
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
     end
 end
 
@@ -1739,6 +1850,12 @@ UIPanel._renderers = {
         local UF = addon.UI and addon.UI.UnitFrames
         if UF and UF.RenderToT then
             UF.RenderToT(self, scrollContent)
+        end
+    end,
+    ufFocusTarget = function(self, scrollContent)
+        local UF = addon.UI and addon.UI.UnitFrames
+        if UF and UF.RenderFocusTarget then
+            UF.RenderFocusTarget(self, scrollContent)
         end
     end,
     ufBoss = function(self, scrollContent)
@@ -2058,6 +2175,7 @@ function UIPanel:GetCategoryTitle(key)
         ufFocus = "Unit Frames: Focus",
         ufPet = "Unit Frames: Pet",
         ufToT = "Unit Frames: Target of Target",
+        ufFocusTarget = "Unit Frames: Target of Focus",
         ufBoss = "Unit Frames: Boss",
         gfParty = "Party Frames",
         gfRaid = "Raid Frames",

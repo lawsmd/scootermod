@@ -89,8 +89,13 @@ local function ensureBorderFrame(barFrame)
 end
 
 local function computeEdgeSize(barFrame, style, thickness)
-    local frameHeight = (barFrame and barFrame.GetHeight and barFrame:GetHeight()) or DEFAULT_REFERENCE_HEIGHT
-    if frameHeight < 1 then frameHeight = DEFAULT_REFERENCE_HEIGHT end
+    local frameHeight = DEFAULT_REFERENCE_HEIGHT
+    if barFrame and barFrame.GetHeight then
+        local ok, height = pcall(barFrame.GetHeight, barFrame)
+        if ok and not issecretvalue(height) and type(height) == "number" and height >= 1 then
+            frameHeight = height
+        end
+    end
     local scale = frameHeight / DEFAULT_REFERENCE_HEIGHT
     local multiplier = (style and style.thicknessScale) or 1
     local edgeSize = thickness * DEFAULT_THICKNESS_MULTIPLIER * multiplier * scale

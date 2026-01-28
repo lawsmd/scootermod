@@ -111,6 +111,7 @@ function Utils.hasCustomTextSettings(cfg)
     if cfg.fontFace and cfg.fontFace ~= "FRIZQT__" then return true end
     if cfg.size and cfg.size ~= 12 then return true end
     if cfg.style and cfg.style ~= "OUTLINE" then return true end
+    if cfg.colorMode and cfg.colorMode ~= "default" then return true end
     if cfg.color then
         local c = cfg.color
         if c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or c[4] ~= 1 then return true end

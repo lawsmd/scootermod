@@ -163,6 +163,14 @@ GF.bgColorValues = {
 }
 GF.bgColorOrder = { "default", "texture", "custom" }
 
+-- Font/text color mode options
+GF.fontColorValues = {
+    default = "Default",
+    class = "Class Color",
+    custom = "Custom",
+}
+GF.fontColorOrder = { "default", "class", "custom" }
+
 -- Party Frame: Sort By options
 GF.partySortByValues = {
     [0] = "Role",

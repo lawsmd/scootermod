@@ -21,7 +21,7 @@ end
 
 local ICON_BORDER_DEFINITIONS = {
     -- Scooter defaults
-    { key = "square", label = "Default", type = "square", order = 10, defaultColor = {0, 0, 0, 1} },
+    { key = "square", label = "Square", type = "square", order = 10, defaultColor = {0, 0, 0, 1} },
 
     -- Blizzard atlas selections (always available)
     { key = "blizzard", label = "Blizzard Default", type = "atlas", atlas = "UI-HUD-ActionBar-IconFrame", order = 100, expandX = 0, expandY = 0, defaultColor = {1, 1, 1, 1}, allowThicknessInset = true, insetStep = 0.2, insetCenter = 8, defaultThickness = 8 },
