@@ -467,6 +467,10 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         local sublevel = -8
         if barKind == "cast" then
             sublevel = 3
+        elseif unit == "Party" or unit == "Raid" then
+            -- CompactUnitFrame health bars: parent's background is at sublevel 0.
+            -- Use sublevel 1 to draw above it (combined with hiding parent bg).
+            sublevel = 1
         end
         bar.ScooterModBG = bar:CreateTexture(nil, layer, nil, sublevel)
         bar.ScooterModBG:SetAllPoints(bar)
@@ -476,6 +480,12 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         local _, currentSub = bar.ScooterModBG:GetDrawLayer()
         if currentSub == nil or currentSub < 3 then
             bar.ScooterModBG:SetDrawLayer("BACKGROUND", 3)
+        end
+    elseif unit == "Party" or unit == "Raid" then
+        -- Ensure party/raid frames use the correct sublevel
+        local _, currentSub = bar.ScooterModBG:GetDrawLayer()
+        if currentSub == nil or currentSub < 1 then
+            bar.ScooterModBG:SetDrawLayer("BACKGROUND", 1)
         end
     end
     
@@ -502,12 +512,10 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
             r, g, b, a = Utils.getDefaultBackgroundColor(unit, barKind)
         end
         
+        -- Multiply tint alpha by opacity for correct transparency
+        local finalAlpha = (a or 1) * opacity
         if bar.ScooterModBG.SetVertexColor then
-            pcall(bar.ScooterModBG.SetVertexColor, bar.ScooterModBG, r, g, b, a)
-        end
-        -- Apply opacity
-        if bar.ScooterModBG.SetAlpha then
-            pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
+            pcall(bar.ScooterModBG.SetVertexColor, bar.ScooterModBG, r, g, b, finalAlpha)
         end
         bar.ScooterModBG:Show()
         
@@ -519,6 +527,13 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         if bar.Background and bar.Background.SetAlpha then
             pcall(bar.Background.SetAlpha, bar.Background, 0)
         end
+        -- CompactUnitFrame-style health bars (party/raid frames) have the background
+        -- on the PARENT frame (frame.background), not on the health bar itself.
+        -- We need to hide that too, otherwise it covers our ScooterModBG.
+        local parentFrame = bar.GetParent and bar:GetParent()
+        if parentFrame and parentFrame.background and parentFrame.background.SetAlpha then
+            pcall(parentFrame.background.SetAlpha, parentFrame.background, 0)
+        end
     else
         -- Default: always show our background with default black color
         -- We don't rely on Blizzard's stock Background texture since it's hidden by default
@@ -529,19 +544,25 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
             r, g, b, a = backgroundTint[1] or 1, backgroundTint[2] or 1, backgroundTint[3] or 1, backgroundTint[4] or 1
         end
         
+        -- Multiply tint alpha by opacity for correct transparency
+        local finalAlpha = (a or 1) * opacity
         if bar.ScooterModBG.SetColorTexture then
-            pcall(bar.ScooterModBG.SetColorTexture, bar.ScooterModBG, r, g, b, a)
-        end
-        -- Apply opacity
-        if bar.ScooterModBG.SetAlpha then
-            pcall(bar.ScooterModBG.SetAlpha, bar.ScooterModBG, opacity)
+            pcall(bar.ScooterModBG.SetColorTexture, bar.ScooterModBG, r, g, b, finalAlpha)
         end
         bar.ScooterModBG:Show()
-        
-        -- Restore Blizzard's stock Background texture visibility when using default.
-        -- This ensures toggling back to "Default" restores the original look.
+
+        -- Hide Blizzard's stock Background textures when applying custom opacity.
+        -- Even with "default" texture, our ScooterModBG provides the background with
+        -- the user's configured opacity - we can't let Blizzard's opaque backgrounds
+        -- cover it.
         if bar.Background and bar.Background.SetAlpha then
-            pcall(bar.Background.SetAlpha, bar.Background, 1)
+            pcall(bar.Background.SetAlpha, bar.Background, 0)
+        end
+        -- CompactUnitFrame-style health bars (party/raid frames) have the background
+        -- on the PARENT frame (frame.background), not on the health bar itself.
+        local parentFrame = bar.GetParent and bar:GetParent()
+        if parentFrame and parentFrame.background and parentFrame.background.SetAlpha then
+            pcall(parentFrame.background.SetAlpha, parentFrame.background, 0)
         end
     end
 end

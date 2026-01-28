@@ -66,6 +66,22 @@ local scooterFontStrings = setmetatable({}, { __mode = "k" })
 -- Forward declaration (defined in Icon Sizing section, used by hookProcGlowResizing)
 local resizeProcGlow
 
+-- Check if Blizzard's DebuffBorder is present and visible on a CDM icon
+-- Used to avoid drawing ScooterMod borders over Blizzard's debuff-type borders
+-- (Magic, Poison, Bleed, Curse, Disease) which have special colored atlases and
+-- pandemic timer animations. Only affects trackedBuffs (BuffIconCooldownViewer).
+local function hasBlizzardDebuffBorder(itemFrame)
+    if not itemFrame then return false end
+    local debuffBorder = itemFrame.DebuffBorder
+    -- Check if the Texture child is shown, not the frame itself
+    -- The DebuffBorder frame is always present, but Texture is only shown for harmful auras
+    -- (see AuraUtil.SetAuraBorderAtlasFromAura in wow-ui-source)
+    if debuffBorder and debuffBorder.Texture and debuffBorder.Texture.IsShown and debuffBorder.Texture:IsShown() then
+        return true
+    end
+    return false
+end
+
 --------------------------------------------------------------------------------
 -- Overlay Frame Management
 --------------------------------------------------------------------------------
@@ -963,7 +979,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                     Overlays.ResetIconSize(child)
                 end
 
-                if borderEnabled then
+                if borderEnabled and not hasBlizzardDebuffBorder(child) then
                     Overlays.ApplyBorder(child, {
                         enable = true,
                         style = db.borderStyle or "square",
@@ -973,6 +989,9 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                         tintEnabled = db.borderTintEnable,
                         tintColor = db.borderTintColor,
                     })
+                elseif hasBlizzardDebuffBorder(child) then
+                    -- Hide ScooterMod border when Blizzard's DebuffBorder is visible
+                    Overlays.HideBorder(child)
                 else
                     Overlays.HideBorder(child)
                 end
@@ -1033,7 +1052,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                         })
                     end
 
-                    if component.db.borderEnable then
+                    if component.db.borderEnable and not hasBlizzardDebuffBorder(itemFrame) then
                         Overlays.ApplyBorder(itemFrame, {
                             enable = true,
                             style = component.db.borderStyle or "square",
@@ -1043,6 +1062,9 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                             tintEnabled = component.db.borderTintEnable,
                             tintColor = component.db.borderTintColor,
                         })
+                    elseif hasBlizzardDebuffBorder(itemFrame) then
+                        -- Hide ScooterMod border when Blizzard's DebuffBorder is visible
+                        Overlays.HideBorder(itemFrame)
                     end
 
                     local hasTextConfig = component.db.textCooldown or component.db.textStacks
@@ -1303,7 +1325,7 @@ local function throttledRefresh(viewerName, componentId)
         return
     end
     lastRefreshTime[viewerName] = now
-    
+
     C_Timer.After(0.05, function()
         Overlays.ApplyToViewer(viewerName, componentId)
     end)
@@ -1347,7 +1369,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "PLAYER_TARGET_CHANGED" then
         -- Update opacity for target state change
         updateAllViewerOpacities()
-        
+
         for viewerName, componentId in pairs(CDM_VIEWERS) do
             throttledRefresh(viewerName, componentId)
         end

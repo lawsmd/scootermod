@@ -1465,6 +1465,17 @@ do
                 ensureRectHealthOverlay(unit, hb, cfg)
             end
 
+            -- Apply background texture (overlay approach only handles foreground)
+            if hb then
+                local bgTexKeyHB = cfg.healthBarBackgroundTexture
+                local bgColorModeHB = cfg.healthBarBackgroundColorMode
+                local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
+                local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
+                if hasBackgroundCustomization then
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                end
+            end
+
             -- 12.0 BORDER APPROACH: BarBorders.ApplyToBarFrame uses GetFrameLevel/GetHeight
             -- without pcall wrappers (barborders.lua lines 79, 84, 92), which can trigger
             -- secret value errors on Pet. Use an addon-owned anchor frame like Boss frames do.
@@ -1545,6 +1556,258 @@ do
             if not pb then
                 pb = frame and frame.PetFrameManaBar
             end
+            if pb then
+                local function computePBAlpha()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hidden = cfg2 and cfg2.powerBarHidden
+                    return hidden and 0 or 1
+                end
+                applyAlpha(pb, computePBAlpha())
+                hookAlphaEnforcer(pb, computePBAlpha)
+            end
+
+            return
+        end
+
+        -- 12.0+: TargetOfTarget uses the party frame template (like Pet) and is a protected frame.
+        -- Direct bar writes and getters can trigger secret value errors. Use the same overlay+anchor
+        -- pattern as Pet for safe border handling.
+        if unit == "TargetOfTarget" then
+            -- Hide FrameTexture (art hiding) - same pattern as Pet
+            local ft = resolveUnitFrameFrameTexture(unit)
+            if ft then
+                local function compute()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+                    return hide and 0 or 1
+                end
+                applyAlpha(ft, compute())
+                hookAlphaEnforcer(ft, compute)
+            end
+
+            -- 12.0 OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
+            -- overlay texture using SetAllPoints anchoring (12.0-safe).
+            local hb = resolveHealthBar(frame, unit)
+            if hb then
+                ensureRectHealthOverlay(unit, hb, cfg)
+            end
+
+            -- Apply background texture (overlay approach only handles foreground)
+            if hb then
+                local bgTexKeyHB = cfg.healthBarBackgroundTexture
+                local bgColorModeHB = cfg.healthBarBackgroundColorMode
+                local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
+                local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
+                if hasBackgroundCustomization then
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                end
+            end
+
+            -- 12.0 BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
+            if hb and cfg.useCustomBorders then
+                local styleKey = cfg.healthBarBorderStyle
+                if styleKey == "none" or styleKey == nil then
+                    -- Clear any existing border
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                        local anchor = getProp(hb, "totHealthBorderAnchor")
+                        if anchor then addon.BarBorders.ClearBarFrame(anchor) end
+                    end
+                    if addon.Borders and addon.Borders.HideAll then
+                        local anchor = getProp(hb, "totHealthBorderAnchor")
+                        if anchor then addon.Borders.HideAll(anchor) end
+                    end
+                else
+                    -- Create or retrieve ToT border anchor frame
+                    local anchorFrame = getProp(hb, "totHealthBorderAnchor")
+                    if not anchorFrame then
+                        anchorFrame = CreateFrame("Frame", nil, hb)
+                        setProp(hb, "totHealthBorderAnchor", anchorFrame)
+                    end
+                    -- Anchor to health bar bounds (safe SetAllPoints)
+                    anchorFrame:ClearAllPoints()
+                    anchorFrame:SetAllPoints(hb)
+                    -- Set frame level above the health bar so borders draw on top
+                    local parentLevel = 10 -- fallback if GetFrameLevel returns secret
+                    local ok, level = pcall(function() return hb:GetFrameLevel() end)
+                    if ok and type(level) == "number" then
+                        parentLevel = level
+                    end
+                    anchorFrame:SetFrameLevel(parentLevel + 5)
+                    anchorFrame:Show()
+
+                    -- Apply border settings
+                    local tintEnabled = not not cfg.healthBarBorderTintEnable
+                    local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
+                        cfg.healthBarBorderTintColor[1] or 1,
+                        cfg.healthBarBorderTintColor[2] or 1,
+                        cfg.healthBarBorderTintColor[3] or 1,
+                        cfg.healthBarBorderTintColor[4] or 1,
+                    } or {1, 1, 1, 1}
+                    local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+                    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                    local inset = tonumber(cfg.healthBarBorderInset) or 0
+
+                    -- Clear old borders first
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                        addon.BarBorders.ClearBarFrame(anchorFrame)
+                    end
+                    if addon.Borders and addon.Borders.HideAll then
+                        addon.Borders.HideAll(anchorFrame)
+                    end
+
+                    -- Use Borders.ApplySquare with skipDimensionCheck (anchor dimensions are inherited via SetAllPoints)
+                    if addon.Borders and addon.Borders.ApplySquare then
+                        local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                        local baseOffset = 1
+                        local expandX = baseOffset - inset
+                        local expandY = baseOffset - inset
+                        if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                        if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                        addon.Borders.ApplySquare(anchorFrame, {
+                            size = thickness,
+                            color = sqColor,
+                            layer = "OVERLAY",
+                            layerSublevel = 3,
+                            expandX = expandX,
+                            expandY = expandY,
+                            skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
+                        })
+                    end
+                end
+            end
+
+            -- Power bar visibility (hide/show via alpha enforcer only)
+            local pb = resolvePowerBar(frame, unit)
+            if pb then
+                local function computePBAlpha()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hidden = cfg2 and cfg2.powerBarHidden
+                    return hidden and 0 or 1
+                end
+                applyAlpha(pb, computePBAlpha())
+                hookAlphaEnforcer(pb, computePBAlpha)
+            end
+
+            return
+        end
+
+        -- 12.0+: FocusTarget uses the party frame template (like Pet) and is a protected frame.
+        -- Direct bar writes and getters can trigger secret value errors. Use the same overlay+anchor
+        -- pattern as Pet for safe border handling.
+        if unit == "FocusTarget" then
+            -- Hide FrameTexture (art hiding) - same pattern as Pet
+            local ft = resolveUnitFrameFrameTexture(unit)
+            if ft then
+                local function compute()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local unitFrames2 = db2 and rawget(db2, "unitFrames") or nil
+                    local cfg2 = unitFrames2 and rawget(unitFrames2, unit) or nil
+                    local hide = cfg2 and (cfg2.useCustomBorders or cfg2.healthBarHideBorder)
+                    return hide and 0 or 1
+                end
+                applyAlpha(ft, compute())
+                hookAlphaEnforcer(ft, compute)
+            end
+
+            -- 12.0 OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
+            -- overlay texture using SetAllPoints anchoring (12.0-safe).
+            local hb = resolveHealthBar(frame, unit)
+            if hb then
+                ensureRectHealthOverlay(unit, hb, cfg)
+            end
+
+            -- Apply background texture (overlay approach only handles foreground)
+            if hb then
+                local bgTexKeyHB = cfg.healthBarBackgroundTexture
+                local bgColorModeHB = cfg.healthBarBackgroundColorMode
+                local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
+                local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
+                if hasBackgroundCustomization then
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                end
+            end
+
+            -- 12.0 BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
+            if hb and cfg.useCustomBorders then
+                local styleKey = cfg.healthBarBorderStyle
+                if styleKey == "none" or styleKey == nil then
+                    -- Clear any existing border
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                        local anchor = getProp(hb, "fotHealthBorderAnchor")
+                        if anchor then addon.BarBorders.ClearBarFrame(anchor) end
+                    end
+                    if addon.Borders and addon.Borders.HideAll then
+                        local anchor = getProp(hb, "fotHealthBorderAnchor")
+                        if anchor then addon.Borders.HideAll(anchor) end
+                    end
+                else
+                    -- Create or retrieve FoT border anchor frame
+                    local anchorFrame = getProp(hb, "fotHealthBorderAnchor")
+                    if not anchorFrame then
+                        anchorFrame = CreateFrame("Frame", nil, hb)
+                        setProp(hb, "fotHealthBorderAnchor", anchorFrame)
+                    end
+                    -- Anchor to health bar bounds (safe SetAllPoints)
+                    anchorFrame:ClearAllPoints()
+                    anchorFrame:SetAllPoints(hb)
+                    -- Set frame level above the health bar so borders draw on top
+                    local parentLevel = 10 -- fallback if GetFrameLevel returns secret
+                    local ok, level = pcall(function() return hb:GetFrameLevel() end)
+                    if ok and type(level) == "number" then
+                        parentLevel = level
+                    end
+                    anchorFrame:SetFrameLevel(parentLevel + 5)
+                    anchorFrame:Show()
+
+                    -- Apply border settings
+                    local tintEnabled = not not cfg.healthBarBorderTintEnable
+                    local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
+                        cfg.healthBarBorderTintColor[1] or 1,
+                        cfg.healthBarBorderTintColor[2] or 1,
+                        cfg.healthBarBorderTintColor[3] or 1,
+                        cfg.healthBarBorderTintColor[4] or 1,
+                    } or {1, 1, 1, 1}
+                    local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+                    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+                    local inset = tonumber(cfg.healthBarBorderInset) or 0
+
+                    -- Clear old borders first
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                        addon.BarBorders.ClearBarFrame(anchorFrame)
+                    end
+                    if addon.Borders and addon.Borders.HideAll then
+                        addon.Borders.HideAll(anchorFrame)
+                    end
+
+                    -- Use Borders.ApplySquare with skipDimensionCheck (anchor dimensions are inherited via SetAllPoints)
+                    if addon.Borders and addon.Borders.ApplySquare then
+                        local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
+                        local baseOffset = 1
+                        local expandX = baseOffset - inset
+                        local expandY = baseOffset - inset
+                        if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
+                        if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                        addon.Borders.ApplySquare(anchorFrame, {
+                            size = thickness,
+                            color = sqColor,
+                            layer = "OVERLAY",
+                            layerSublevel = 3,
+                            expandX = expandX,
+                            expandY = expandY,
+                            skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
+                        })
+                    end
+                end
+            end
+
+            -- Power bar visibility (hide/show via alpha enforcer only)
+            local pb = resolvePowerBar(frame, unit)
             if pb then
                 local function computePBAlpha()
                     local db2 = addon and addon.db and addon.db.profile
@@ -2512,7 +2775,7 @@ do
             -- 12.0+: PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
             -- on PetFrame's health bar can trigger Blizzard internal updates that error on "secret values".
             -- Skip ALL border operations for Pet to guarantee preset/profile application doesn't provoke that path.
-            if unit ~= "Pet" and not healthBarHideTextureOnly then
+            if unit ~= "Pet" and unit ~= "TargetOfTarget" and unit ~= "FocusTarget" and not healthBarHideTextureOnly then
             do
 				local styleKey = cfg.healthBarBorderStyle
 				local tintEnabled = not not cfg.healthBarBorderTintEnable

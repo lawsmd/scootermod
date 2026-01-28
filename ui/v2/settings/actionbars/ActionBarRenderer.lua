@@ -686,8 +686,8 @@ function ActionBar.Render(panel, scrollContent, componentId)
 
                 inner:AddToggleColorPicker({
                     label = "Border Tint",
-                    getToggle = function() return getSetting("borderTintEnable") or false end,
-                    setToggle = function(v) setSetting("borderTintEnable", v) end,
+                    get = function() return getSetting("borderTintEnable") or false end,
+                    set = function(v) setSetting("borderTintEnable", v) end,
                     getColor = function()
                         local c = getSetting("borderTintColor")
                         return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1

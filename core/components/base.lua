@@ -1511,6 +1511,13 @@ function addon:ApplyStyles()
     if addon.ApplyAllUnitFrameScaleMults then
         addon.ApplyAllUnitFrameScaleMults()
     end
+    -- ToT/FocusTarget: Apply scale and position (not Edit Mode managed)
+    if addon.ApplyAllToTSettings then
+        addon.ApplyAllToTSettings()
+    end
+    if addon.ApplyAllFocusTargetSettings then
+        addon.ApplyAllFocusTargetSettings()
+    end
     -- Group Frames: Apply raid frame health bar styling
     if addon.ApplyRaidFrameHealthBarStyle then
         addon.ApplyRaidFrameHealthBarStyle()
