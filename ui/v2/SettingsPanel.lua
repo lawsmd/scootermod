@@ -1778,6 +1778,10 @@ UIPanel._renderers = {
         local M = addon.UI.Settings.MicroBar
         if M and M.Render then M.Render(self, scrollContent) end
     end,
+    extraAbilities = function(self, scrollContent)
+        local M = addon.UI.Settings.ExtraAbilities
+        if M and M.Render then M.Render(self, scrollContent) end
+    end,
     -- Personal Resource Display (external modules)
     prdGeneral = function(self, scrollContent)
         local M = addon.UI.Settings.PRD and addon.UI.Settings.PRD.General
@@ -2166,6 +2170,7 @@ function UIPanel:GetCategoryTitle(key)
         petBar = "Pet Bar",
         stanceBar = "Stance Bar",
         microBar = "Micro Bar",
+        extraAbilities = "Extra Abilities",
         prdGeneral = "Personal Resource: General",
         prdHealthBar = "Personal Resource: Health Bar",
         prdPowerBar = "Personal Resource: Power Bar",

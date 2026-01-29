@@ -446,6 +446,201 @@ function RaidFrames.disableHealthOverlay(bar)
 end
 
 --------------------------------------------------------------------------------
+-- Health Bar Borders
+--------------------------------------------------------------------------------
+-- Applies ScooterMod bar borders to raid frame health bars.
+-- Uses addon-owned anchor frames to avoid taint.
+--------------------------------------------------------------------------------
+
+-- Clear health bar border for a single bar
+local function clearHealthBarBorder(bar)
+    if not bar then return end
+    local state = getState(bar)
+    if state and state.borderAnchor then
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(state.borderAnchor)
+        end
+        state.borderAnchor:Hide()
+    end
+end
+
+-- Apply health bar border to a single bar
+local function applyHealthBarBorder(bar, cfg)
+    if not bar then return end
+
+    local styleKey = cfg and cfg.healthBarBorderStyle
+    if not styleKey or styleKey == "none" then
+        clearHealthBarBorder(bar)
+        return
+    end
+
+    local state = ensureState(bar)
+
+    -- Create addon-owned anchor frame (avoid taint by not writing to Blizzard's bar)
+    if not state.borderAnchor then
+        local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+        -- Parent to bar's parent (the CompactUnitFrame) to avoid strata issues
+        local unitFrame = (bar.GetParent and bar:GetParent()) or nil
+        local anchorParent = unitFrame or bar:GetParent() or bar
+        local anchor = CreateFrame("Frame", nil, anchorParent, template)
+        anchor:SetAllPoints(bar)
+        state.borderAnchor = anchor
+    end
+
+    local anchor = state.borderAnchor
+
+    -- Set frame level above the health bar but below overlay elements
+    local barLevel = 0
+    local okL, lvl = pcall(bar.GetFrameLevel, bar)
+    if okL and type(lvl) == "number" then
+        barLevel = lvl
+    end
+    anchor:SetFrameLevel(barLevel + 10)
+    anchor:Show()
+
+    -- Apply border via BarBorders
+    local tintEnabled = cfg.healthBarBorderTintEnable
+    local tintColor = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
+    local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+    local inset = tonumber(cfg.healthBarBorderInset) or 0
+
+    if addon.BarBorders then
+        anchor:ClearAllPoints()
+        anchor:SetAllPoints(bar)
+
+        -- Get the style definition
+        local style = addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+        if style and style.texture and anchor.SetBackdrop then
+            local edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
+            local paddingMult = style.paddingMultiplier or 0.5
+            local pad = math.floor(edgeSize * paddingMult + 0.5)
+            local padAdj = pad - inset
+            if padAdj < 0 then padAdj = 0 end
+
+            anchor:ClearAllPoints()
+            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -padAdj, padAdj)
+            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padAdj, -padAdj)
+
+            local insetMult = style.insetMultiplier or 0.65
+            local backdropInset = math.floor(edgeSize * insetMult + 0.5)
+            if backdropInset < 0 then backdropInset = 0 end
+
+            local ok = pcall(anchor.SetBackdrop, anchor, {
+                bgFile = nil,
+                edgeFile = style.texture,
+                tile = false,
+                edgeSize = edgeSize,
+                insets = { left = backdropInset, right = backdropInset, top = backdropInset, bottom = backdropInset },
+            })
+
+            if ok then
+                if anchor.SetBackdropBorderColor then
+                    if tintEnabled then
+                        anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
+                    else
+                        anchor:SetBackdropBorderColor(1, 1, 1, 1)
+                    end
+                end
+                if anchor.SetBackdropColor then
+                    anchor:SetBackdropColor(0, 0, 0, 0)
+                end
+            end
+        elseif styleKey == "square" and anchor.SetBackdrop then
+            -- Simple square border
+            local edgeSize = math.max(1, math.floor(thickness + 0.5))
+            anchor:ClearAllPoints()
+            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
+            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+
+            pcall(anchor.SetBackdrop, anchor, {
+                bgFile = nil,
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                tile = false,
+                edgeSize = edgeSize,
+                insets = { left = 0, right = 0, top = 0, bottom = 0 },
+            })
+
+            if anchor.SetBackdropBorderColor then
+                if tintEnabled then
+                    anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
+                else
+                    anchor:SetBackdropBorderColor(0, 0, 0, 1)
+                end
+            end
+            if anchor.SetBackdropColor then
+                anchor:SetBackdropColor(0, 0, 0, 0)
+            end
+        else
+            -- Unknown style, hide border
+            clearHealthBarBorder(bar)
+        end
+    end
+end
+
+-- 12.0 EDIT MODE GUARD: Skip processing when Edit Mode is active
+local function isEditModeActiveForBorders()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
+-- Apply health bar borders to all raid frames
+function addon.ApplyRaidFrameHealthBarBorders()
+    if isEditModeActiveForBorders() then return end
+
+    if InCombatLockdown and InCombatLockdown() then
+        Combat.queueRaidFrameReapply()
+        return
+    end
+
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    local groupFrames = rawget(db, "groupFrames")
+    local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+
+    -- Zero-Touch: if no border style set or set to "none", clear all borders
+    local styleKey = cfg and cfg.healthBarBorderStyle
+    local clearMode = (not styleKey or styleKey == "none")
+
+    -- Combined layout: CompactRaidFrame1..40
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame and frame.healthBar then
+            if clearMode then
+                clearHealthBarBorder(frame.healthBar)
+            else
+                C_Timer.After(0, function()
+                    if frame and frame.healthBar then
+                        applyHealthBarBorder(frame.healthBar, cfg)
+                    end
+                end)
+            end
+        end
+    end
+
+    -- Group layout: CompactRaidGroup1..8 Member1..5
+    for g = 1, 8 do
+        for m = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. g .. "Member" .. m]
+            if frame and frame.healthBar then
+                if clearMode then
+                    clearHealthBarBorder(frame.healthBar)
+                else
+                    C_Timer.After(0, function()
+                        if frame and frame.healthBar then
+                            applyHealthBarBorder(frame.healthBar, cfg)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Text Overlay (Name Text)
 --------------------------------------------------------------------------------
 
@@ -1101,7 +1296,17 @@ local function ensureRaidNameOverlay(frame, cfg)
             local ownerState = frameState
             _G.hooksecurefunc(frame.name, "SetText", function(_, text)
                 if ownerState and ownerState.nameOverlayText and ownerState.nameOverlayActive then
-                    ownerState.nameOverlayText:SetText(text or "")
+                    local displayText = text or ""
+                    -- Check for realm stripping setting
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames")
+                    local raid = gf and rawget(gf, "raid")
+                    local textCfg = raid and rawget(raid, "textPlayerName")
+                    if textCfg and textCfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+                        -- Ambiguate with "none" context strips the realm name
+                        displayText = Ambiguate(displayText, "none")
+                    end
+                    ownerState.nameOverlayText:SetText(displayText)
                 end
             end)
         end
@@ -1113,7 +1318,12 @@ local function ensureRaidNameOverlay(frame, cfg)
     if frameState and frameState.nameOverlayText and frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
         if ok and currentText then
-            frameState.nameOverlayText:SetText(currentText or "")
+            local displayText = currentText
+            -- Apply realm stripping if enabled
+            if cfg and cfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+                displayText = Ambiguate(displayText, "none")
+            end
+            frameState.nameOverlayText:SetText(displayText or "")
         end
     end
 
@@ -1481,6 +1691,68 @@ end
 -- Target: CompactRaidGroup1..8Title (Button, parentKey "title").
 --------------------------------------------------------------------------------
 
+-- Get the current raid group orientation from Edit Mode settings
+-- Returns "horizontal" or "vertical"
+local function getGroupOrientation()
+    local mgr = _G.EditModeManagerFrame
+    local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+    local EMSetting = _G.Enum and _G.Enum.EditModeUnitFrameSetting
+    local RGD = _G.Enum and _G.Enum.RaidGroupDisplayType
+    if not (mgr and EM and EMSys and EMSetting and RGD and mgr.GetRegisteredSystemFrame) then
+        return "vertical" -- Default fallback
+    end
+    local raidFrame = mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EM.Raid)
+    if not raidFrame then return "vertical" end
+    if not (addon and addon.EditMode and addon.EditMode.GetSetting) then
+        return "vertical"
+    end
+    local displayType = addon.EditMode.GetSetting(raidFrame, EMSetting.RaidGroupDisplayType)
+    if displayType == RGD.SeparateGroupsHorizontal or displayType == RGD.CombineGroupsHorizontal then
+        return "horizontal"
+    end
+    return "vertical"
+end
+
+-- Apply number-only text and auto-centering to a group title
+-- groupIndex: the group number (1-8)
+local function applyNumberOnlyToGroupTitle(titleButton, groupIndex, cfg)
+    if not titleButton or not titleButton.GetFontString then return end
+    local fs = titleButton:GetFontString()
+    if not fs then return end
+
+    -- Set text to just the number
+    if fs.SetText then
+        pcall(fs.SetText, fs, tostring(groupIndex or ""))
+    end
+
+    -- Determine orientation and set auto-centering
+    local orientation = getGroupOrientation()
+
+    -- Apply centering based on orientation
+    if orientation == "vertical" then
+        -- Vertical layout: groups stacked vertically, title centered above each column
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, "CENTER")
+        end
+        -- Position at TOP, centered horizontally
+        local offsetX = cfg and cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg and cfg.offset and tonumber(cfg.offset.y) or 0
+        fs:ClearAllPoints()
+        fs:SetPoint("TOP", titleButton, "TOP", offsetX, offsetY)
+    else
+        -- Horizontal layout: groups laid out horizontally, title beside each row
+        if fs.SetJustifyH then
+            pcall(fs.SetJustifyH, fs, "LEFT")
+        end
+        -- Position at LEFT
+        local offsetX = cfg and cfg.offset and tonumber(cfg.offset.x) or 0
+        local offsetY = cfg and cfg.offset and tonumber(cfg.offset.y) or 0
+        fs:ClearAllPoints()
+        fs:SetPoint("LEFT", titleButton, "LEFT", offsetX, offsetY)
+    end
+end
+
 local function applyTextToFontString_GroupTitle(fs, ownerFrame, cfg)
     if not fs or not ownerFrame or not cfg then return end
 
@@ -1539,27 +1811,47 @@ local function applyTextToFontString_GroupTitle(fs, ownerFrame, cfg)
     end
 end
 
-local function applyGroupTitleToButton(titleButton, cfg)
+local function applyGroupTitleToButton(titleButton, cfg, groupIndex)
     if not titleButton or not cfg then return end
     if not titleButton.GetFontString then return end
     local fs = titleButton:GetFontString()
     if not fs then return end
-    applyTextToFontString_GroupTitle(fs, titleButton, cfg)
+
+    -- Check if numbers-only mode is enabled
+    local db = addon and addon.db and addon.db.profile
+    local raidCfg = db and db.groupFrames and db.groupFrames.raid
+    local numbersOnly = raidCfg and raidCfg.groupTitleNumbersOnly == true
+
+    if numbersOnly and groupIndex then
+        -- Apply font styling first (font face, size, style, color)
+        applyTextToFontString_GroupTitle(fs, titleButton, cfg)
+        -- Then apply number-only text and auto-centering (overrides anchor/position)
+        applyNumberOnlyToGroupTitle(titleButton, groupIndex, cfg)
+    else
+        -- Standard styling with full "Group N" text
+        applyTextToFontString_GroupTitle(fs, titleButton, cfg)
+    end
 end
 
 function addon.ApplyRaidFrameGroupTitlesStyle()
     local db = addon and addon.db and addon.db.profile
     if not db then return end
 
-    -- Zero-Touch: only apply if user has configured raid group title styling.
+    -- Zero-Touch: only apply if user has configured raid group title styling
+    -- OR if numbers-only mode is enabled.
     local groupFrames = rawget(db, "groupFrames")
     local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
     local cfg = raidCfg and rawget(raidCfg, "textGroupNumbers") or nil
-    if not cfg then
+    local numbersOnly = raidCfg and raidCfg.groupTitleNumbersOnly == true
+
+    -- If no text config and numbers-only is not enabled, skip (Zero-Touch)
+    if not cfg and not numbersOnly then
         return
     end
 
-    if not Utils.hasCustomTextSettings(cfg) then
+    -- If we have text config, check if it has custom settings
+    -- Numbers-only mode alone is enough to proceed
+    if cfg and not Utils.hasCustomTextSettings(cfg) and not numbersOnly then
         return
     end
 
@@ -1568,11 +1860,14 @@ function addon.ApplyRaidFrameGroupTitlesStyle()
         return
     end
 
+    -- Ensure cfg exists for applyGroupTitleToButton (use empty table as fallback)
+    local effectiveCfg = cfg or {}
+
     for group = 1, 8 do
         local groupFrame = _G["CompactRaidGroup" .. group]
         local titleButton = (groupFrame and groupFrame.title) or _G["CompactRaidGroup" .. group .. "Title"]
         if titleButton then
-            applyGroupTitleToButton(titleButton, cfg)
+            applyGroupTitleToButton(titleButton, effectiveCfg, group)
         end
     end
 end
@@ -1581,7 +1876,7 @@ local function installRaidFrameGroupTitleHooks()
     if addon._RaidFrameGroupTitleHooksInstalled then return end
     addon._RaidFrameGroupTitleHooksInstalled = true
 
-    local function tryApplyTitle(groupFrame)
+    local function tryApplyTitle(groupFrame, groupIndex)
         -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
         if isEditModeActive() then return end
         if not groupFrame or not Utils.isCompactRaidGroupFrame(groupFrame) then
@@ -1591,41 +1886,66 @@ local function installRaidFrameGroupTitleHooks()
         if not titleButton then return end
 
         local db = addon and addon.db and addon.db.profile
-        local cfg = db and db.groupFrames and db.groupFrames.raid and db.groupFrames.raid.textGroupNumbers or nil
-        if not cfg or not Utils.hasCustomTextSettings(cfg) then
+        local raidCfg = db and db.groupFrames and db.groupFrames.raid or nil
+        local cfg = raidCfg and raidCfg.textGroupNumbers or nil
+        local numbersOnly = raidCfg and raidCfg.groupTitleNumbersOnly == true
+
+        -- Zero-Touch: skip if no text config and numbers-only is not enabled
+        if not cfg and not numbersOnly then
+            return
+        end
+        if cfg and not Utils.hasCustomTextSettings(cfg) and not numbersOnly then
             return
         end
 
+        -- Extract group index from frame name if not provided
+        local effectiveGroupIndex = groupIndex
+        if not effectiveGroupIndex then
+            local frameName = groupFrame:GetName()
+            if frameName then
+                effectiveGroupIndex = tonumber(frameName:match("CompactRaidGroup(%d+)"))
+            end
+        end
+
         local titleRef = titleButton
-        local cfgRef = cfg
+        local cfgRef = cfg or {}
+        local groupIndexRef = effectiveGroupIndex
         if _G.C_Timer and _G.C_Timer.After then
             _G.C_Timer.After(0, function()
                 if InCombatLockdown and InCombatLockdown() then
                     Combat.queueRaidFrameReapply()
                     return
                 end
-                applyGroupTitleToButton(titleRef, cfgRef)
+                applyGroupTitleToButton(titleRef, cfgRef, groupIndexRef)
             end)
         else
             if InCombatLockdown and InCombatLockdown() then
                 Combat.queueRaidFrameReapply()
                 return
             end
-            applyGroupTitleToButton(titleRef, cfgRef)
+            applyGroupTitleToButton(titleRef, cfgRef, groupIndexRef)
         end
     end
 
     if _G.hooksecurefunc then
         if _G.CompactRaidGroup_UpdateLayout then
-            _G.hooksecurefunc("CompactRaidGroup_UpdateLayout", tryApplyTitle)
+            _G.hooksecurefunc("CompactRaidGroup_UpdateLayout", function(groupFrame)
+                -- Extract group index from frame
+                local groupIndex = groupFrame and groupFrame.GetID and groupFrame:GetID()
+                tryApplyTitle(groupFrame, groupIndex)
+            end)
         end
         if _G.CompactRaidGroup_InitializeForGroup then
             _G.hooksecurefunc("CompactRaidGroup_InitializeForGroup", function(groupFrame, groupIndex)
-                tryApplyTitle(groupFrame)
+                tryApplyTitle(groupFrame, groupIndex)
             end)
         end
         if _G.CompactRaidGroup_UpdateUnits then
-            _G.hooksecurefunc("CompactRaidGroup_UpdateUnits", tryApplyTitle)
+            _G.hooksecurefunc("CompactRaidGroup_UpdateUnits", function(groupFrame)
+                -- Extract group index from frame
+                local groupIndex = groupFrame and groupFrame.GetID and groupFrame:GetID()
+                tryApplyTitle(groupFrame, groupIndex)
+            end)
         end
     end
 end

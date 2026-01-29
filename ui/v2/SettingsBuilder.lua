@@ -287,6 +287,51 @@ function Builder:AddDescription(text, options)
 end
 
 --------------------------------------------------------------------------------
+-- AddLabel: Add a subsection label/header
+--------------------------------------------------------------------------------
+-- Creates a bold, non-dim label used for grouping controls within a section.
+-- Usage: inner:AddLabel("Group Title")
+--------------------------------------------------------------------------------
+
+function Builder:AddLabel(text)
+    local scrollContent = self._scrollContent
+    if not scrollContent then return self end
+
+    -- Add spacing before label
+    if #self._controls > 0 or #self._sections > 0 then
+        self._currentY = self._currentY - ITEM_SPACING
+    end
+
+    -- Create label frame
+    local frame = CreateFrame("Frame", nil, scrollContent)
+    frame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
+    frame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
+
+    local labelFS = frame:CreateFontString(nil, "OVERLAY")
+    local fontPath = Theme:GetFont("VALUE")
+    labelFS:SetFont(fontPath, 12, "")
+    labelFS:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    labelFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    labelFS:SetText(text or "")
+    labelFS:SetJustifyH("LEFT")
+    labelFS:SetWordWrap(false)
+
+    -- Use accent color for labels (not dim)
+    local ar, ag, ab = Theme:GetAccentColor()
+    labelFS:SetTextColor(ar, ag, ab, 1)
+
+    frame._text = labelFS
+    frame:SetHeight(18)
+
+    table.insert(self._controls, frame)
+
+    -- Update Y position
+    self._currentY = self._currentY - frame:GetHeight()
+
+    return self
+end
+
+--------------------------------------------------------------------------------
 -- AddSpacer: Add vertical space
 --------------------------------------------------------------------------------
 

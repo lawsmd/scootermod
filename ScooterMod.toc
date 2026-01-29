@@ -38,6 +38,7 @@ core/apply_all.lua
 core/components/base.lua
 core/components/cooldowns.lua
 core/components/actionbars.lua
+core/components/extraabilities.lua
 core/components/auras.lua
 core/components/personal_resource_display.lua
 core/components/scrollingcombattext.lua
@@ -96,6 +97,7 @@ ui/v2/settings/cdm/TrackedBuffsRenderer.lua
 ui/v2/settings/cdm/TrackedBarsRenderer.lua
 ui/v2/settings/actionbars/ActionBarRenderer.lua
 ui/v2/settings/actionbars/MicroBarRenderer.lua
+ui/v2/settings/actionbars/ExtraAbilitiesRenderer.lua
 ui/v2/settings/prd/GeneralRenderer.lua
 ui/v2/settings/prd/HealthBarRenderer.lua
 ui/v2/settings/prd/PowerBarRenderer.lua

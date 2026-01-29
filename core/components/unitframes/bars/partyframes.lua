@@ -465,6 +465,189 @@ function PartyFrames.disableHealthOverlay(bar)
 end
 
 --------------------------------------------------------------------------------
+-- Health Bar Borders
+--------------------------------------------------------------------------------
+-- Applies ScooterMod bar borders to party frame health bars.
+-- Uses addon-owned anchor frames to avoid taint.
+--------------------------------------------------------------------------------
+
+-- Clear health bar border for a single bar
+local function clearHealthBarBorder(bar)
+    if not bar then return end
+    local state = getState(bar)
+    if state and state.borderAnchor then
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(state.borderAnchor)
+        end
+        state.borderAnchor:Hide()
+    end
+end
+
+-- Apply health bar border to a single bar
+local function applyHealthBarBorder(bar, cfg)
+    if not bar then return end
+
+    local styleKey = cfg and cfg.healthBarBorderStyle
+    if not styleKey or styleKey == "none" then
+        clearHealthBarBorder(bar)
+        return
+    end
+
+    local state = ensureState(bar)
+
+    -- Create addon-owned anchor frame (avoid taint by not writing to Blizzard's bar)
+    if not state.borderAnchor then
+        local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+        -- Parent to bar's parent (the CompactUnitFrame) to avoid strata issues
+        local unitFrame = (bar.GetParent and bar:GetParent()) or nil
+        local anchorParent = unitFrame or bar:GetParent() or bar
+        local anchor = CreateFrame("Frame", nil, anchorParent, template)
+        anchor:SetAllPoints(bar)
+        state.borderAnchor = anchor
+    end
+
+    local anchor = state.borderAnchor
+
+    -- Set frame level above the health bar but below overlay elements
+    local barLevel = 0
+    local okL, lvl = pcall(bar.GetFrameLevel, bar)
+    if okL and type(lvl) == "number" then
+        barLevel = lvl
+    end
+    anchor:SetFrameLevel(barLevel + 10)
+    anchor:Show()
+
+    -- Apply border via BarBorders
+    local tintEnabled = cfg.healthBarBorderTintEnable
+    local tintColor = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
+    local thickness = tonumber(cfg.healthBarBorderThickness) or 1
+    local inset = tonumber(cfg.healthBarBorderInset) or 0
+
+    if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+        -- BarBorders expects a StatusBar, but our anchor is a plain Frame.
+        -- We need to set up the anchor to match bar's dimensions and apply backdrop directly.
+        anchor:ClearAllPoints()
+        anchor:SetAllPoints(bar)
+
+        -- Get the style definition
+        local style = addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+        if style and style.texture and anchor.SetBackdrop then
+            local edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
+            local paddingMult = style.paddingMultiplier or 0.5
+            local pad = math.floor(edgeSize * paddingMult + 0.5)
+            local padAdj = pad - inset
+            if padAdj < 0 then padAdj = 0 end
+
+            anchor:ClearAllPoints()
+            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -padAdj, padAdj)
+            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padAdj, -padAdj)
+
+            local insetMult = style.insetMultiplier or 0.65
+            local backdropInset = math.floor(edgeSize * insetMult + 0.5)
+            if backdropInset < 0 then backdropInset = 0 end
+
+            local ok = pcall(anchor.SetBackdrop, anchor, {
+                bgFile = nil,
+                edgeFile = style.texture,
+                tile = false,
+                edgeSize = edgeSize,
+                insets = { left = backdropInset, right = backdropInset, top = backdropInset, bottom = backdropInset },
+            })
+
+            if ok then
+                if anchor.SetBackdropBorderColor then
+                    if tintEnabled then
+                        anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
+                    else
+                        anchor:SetBackdropBorderColor(1, 1, 1, 1)
+                    end
+                end
+                if anchor.SetBackdropColor then
+                    anchor:SetBackdropColor(0, 0, 0, 0)
+                end
+            end
+        elseif styleKey == "square" and anchor.SetBackdrop then
+            -- Simple square border
+            local edgeSize = math.max(1, math.floor(thickness + 0.5))
+            anchor:ClearAllPoints()
+            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
+            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+
+            pcall(anchor.SetBackdrop, anchor, {
+                bgFile = nil,
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                tile = false,
+                edgeSize = edgeSize,
+                insets = { left = 0, right = 0, top = 0, bottom = 0 },
+            })
+
+            if anchor.SetBackdropBorderColor then
+                if tintEnabled then
+                    anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
+                else
+                    anchor:SetBackdropBorderColor(0, 0, 0, 1)
+                end
+            end
+            if anchor.SetBackdropColor then
+                anchor:SetBackdropColor(0, 0, 0, 0)
+            end
+        else
+            -- Unknown style, hide border
+            clearHealthBarBorder(bar)
+        end
+    end
+end
+
+-- 12.0 EDIT MODE GUARD: Skip processing when Edit Mode is active
+local function isEditModeActiveForBorders()
+    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        return addon.EditMode.IsEditModeActiveOrOpening()
+    end
+    local mgr = _G.EditModeManagerFrame
+    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
+end
+
+-- Apply health bar borders to all party frames
+function addon.ApplyPartyFrameHealthBarBorders()
+    if isEditModeActiveForBorders() then return end
+
+    if InCombatLockdown and InCombatLockdown() then
+        Combat.queuePartyFrameReapply()
+        return
+    end
+
+    local db = addon and addon.db and addon.db.profile
+    if not db then return end
+
+    local groupFrames = rawget(db, "groupFrames")
+    local cfg = groupFrames and rawget(groupFrames, "party") or nil
+
+    -- Zero-Touch: if no border style set or set to "none", clear all borders
+    local styleKey = cfg and cfg.healthBarBorderStyle
+    if not styleKey or styleKey == "none" then
+        for i = 1, 5 do
+            local frame = _G["CompactPartyFrameMember" .. i]
+            if frame and frame.healthBar then
+                clearHealthBarBorder(frame.healthBar)
+            end
+        end
+        return
+    end
+
+    -- Apply borders to all party health bars
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame and frame.healthBar then
+            C_Timer.After(0, function()
+                if frame and frame.healthBar then
+                    applyHealthBarBorder(frame.healthBar, cfg)
+                end
+            end)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Public API Functions
 --------------------------------------------------------------------------------
 
@@ -1155,7 +1338,17 @@ local function ensurePartyNameOverlay(frame, cfg)
             local frameState = state
             _G.hooksecurefunc(frame.name, "SetText", function(self, text)
                 if frameState and frameState.overlayText and frameState.overlayActive then
-                    frameState.overlayText:SetText(text or "")
+                    local displayText = text or ""
+                    -- Check for realm stripping setting
+                    local db = addon and addon.db and addon.db.profile
+                    local gf = db and rawget(db, "groupFrames")
+                    local party = gf and rawget(gf, "party")
+                    local textCfg = party and rawget(party, "textPlayerName")
+                    if textCfg and textCfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+                        -- Ambiguate with "none" context strips the realm name
+                        displayText = Ambiguate(displayText, "none")
+                    end
+                    frameState.overlayText:SetText(displayText)
                 end
             end)
         end
@@ -1170,7 +1363,12 @@ local function ensurePartyNameOverlay(frame, cfg)
     if frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
         if ok and currentText then
-            state.overlayText:SetText(currentText)
+            local displayText = currentText
+            -- Apply realm stripping if enabled
+            if cfg and cfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+                displayText = Ambiguate(displayText, "none")
+            end
+            state.overlayText:SetText(displayText)
         end
     end
 
@@ -1570,16 +1768,18 @@ end
 --------------------------------------------------------------------------------
 -- Over Absorb Glow Visibility
 --------------------------------------------------------------------------------
--- Hides or shows the OverAbsorbGlow texture on party frame health bars.
+-- Hides or shows the OverAbsorbGlow texture on party frames.
 -- This glow appears when absorb shields exceed the health bar width.
--- Frame: CompactPartyFrameMember[1-5].healthBar.overAbsorbGlow
+-- Frame: CompactPartyFrameMember[1-5].overAbsorbGlow (direct child of frame, not healthBar)
 --
 -- Uses alpha hiding with persistent hooks (same pattern as player frame OverAbsorbGlow).
 --------------------------------------------------------------------------------
 
 local function applyOverAbsorbGlowVisibility(frame, shouldHide)
-    if not frame or not frame.healthBar then return end
-    local glow = frame.healthBar.overAbsorbGlow
+    if not frame then return end
+    -- overAbsorbGlow is a direct child of CompactUnitFrame, not healthBar
+    -- Frame path: CompactPartyFrameMember[1-5].overAbsorbGlow
+    local glow = frame.overAbsorbGlow
     if not glow then return end
 
     local state = ensureState(glow)

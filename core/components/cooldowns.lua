@@ -63,6 +63,9 @@ local sizedIcons = setmetatable({}, { __mode = "k" })
 -- Using a local table instead of writing _scooterFontString to Blizzard frames avoids taint
 local scooterFontStrings = setmetatable({}, { __mode = "k" })
 
+-- Track cooldown end times per icon for per-icon opacity feature (weak keys for GC)
+local cooldownEndTimes = setmetatable({}, { __mode = "k" })
+
 -- Forward declaration (defined in Icon Sizing section, used by hookProcGlowResizing)
 local resizeProcGlow
 
@@ -557,17 +560,75 @@ local function applyCooldownTextStyle(cooldownFrame)
     end
 end
 
+-- Minimum cooldown duration to trigger dimming (filters out GCD)
+-- GCD is typically 1.5s base, can go down to ~0.75s with haste
+local MIN_COOLDOWN_FOR_DIMMING = 1.5
+
+-- Helper to track cooldown state and update per-icon opacity
+local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
+    local cdmIcon = cooldownFrame:GetParent()
+    if not cdmIcon then return end
+
+    -- Track cooldown state (only for cooldowns longer than GCD threshold)
+    if enable and enable ~= 0 and start and start > 0 and duration and duration > MIN_COOLDOWN_FOR_DIMMING then
+        cooldownEndTimes[cdmIcon] = start + duration
+    else
+        -- Don't clear if we have an existing longer cooldown still running
+        -- (GCD shouldn't override a real cooldown that's already tracked)
+        local existingEndTime = cooldownEndTimes[cdmIcon]
+        if not existingEndTime or GetTime() >= existingEndTime then
+            cooldownEndTimes[cdmIcon] = nil
+        end
+    end
+
+    -- Defer opacity update to next frame for safety
+    C_Timer.After(0, function()
+        if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+            -- updateIconCooldownOpacity is defined later in the file
+            if addon.RefreshCDMCooldownOpacity then
+                -- Can't call the local directly since it's defined later,
+                -- but we can update this icon specifically
+                local componentId = nil
+                local parent = cdmIcon:GetParent()
+                if parent then
+                    local parentName = parent.GetName and parent:GetName()
+                    componentId = parentName and CDM_VIEWERS[parentName]
+                end
+                if componentId == "essentialCooldowns" or componentId == "utilityCooldowns" then
+                    local component = addon.Components and addon.Components[componentId]
+                    if component and component.db then
+                        local opacitySetting = tonumber(component.db.opacityOnCooldown) or 100
+                        if opacitySetting < 100 then
+                            local endTime = cooldownEndTimes[cdmIcon]
+                            local isOnCD = endTime and GetTime() < endTime
+                            local targetAlpha = isOnCD and (opacitySetting / 100) or 1.0
+                            pcall(function() cdmIcon:SetAlpha(targetAlpha) end)
+                        else
+                            pcall(function() cdmIcon:SetAlpha(1.0) end)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
 -- Hook into Blizzard's cooldown system to intercept updates
 local function hookCooldownTextStyling()
     if directTextStyleHooked then return end
-    
+
     -- Hook CooldownFrame_Set (the main function that updates cooldowns)
     if CooldownFrame_Set then
         hooksecurefunc("CooldownFrame_Set", function(cooldownFrame, start, duration, enable, forceShowDrawEdge, modRate)
             if not cooldownFrame then return end
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
-            
-            -- Defer styling to next frame for safety
+
+            -- Track cooldown state for per-icon opacity feature
+            pcall(function()
+                trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
+            end)
+
+            -- Defer text styling to next frame for safety
             pcall(function()
                 C_Timer.After(0, function()
                     if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
@@ -577,13 +638,18 @@ local function hookCooldownTextStyling()
             end)
         end)
     end
-    
+
     -- Also hook CooldownFrame_SetTimer if it exists (legacy API)
     if CooldownFrame_SetTimer then
         hooksecurefunc("CooldownFrame_SetTimer", function(cooldownFrame, start, duration, enable, forceShowDrawEdge, modRate)
             if not cooldownFrame then return end
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
-            
+
+            -- Track cooldown state for per-icon opacity feature
+            pcall(function()
+                trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
+            end)
+
             pcall(function()
                 C_Timer.After(0, function()
                     if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
@@ -593,7 +659,7 @@ local function hookCooldownTextStyling()
             end)
         end)
     end
-    
+
     directTextStyleHooked = true
 end
 
@@ -1147,10 +1213,30 @@ local function runTextRefresh()
     end
 end
 
+-- Combined cleanup function that runs both overlay cleanup and cooldown expiration checks
+local function runCombinedCleanup()
+    runOverlayCleanup()
+    -- Check for expired cooldowns and restore full opacity
+    -- checkCooldownExpirations is defined later, so we inline the logic here
+    local now = GetTime()
+    for cdmIcon, endTime in pairs(cooldownEndTimes) do
+        if now >= endTime then
+            cooldownEndTimes[cdmIcon] = nil
+            -- Restore full opacity
+            pcall(function()
+                if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+                    cdmIcon:SetAlpha(1.0)
+                end
+            end)
+        end
+    end
+end
+
 local function startCleanupTicker()
     if cleanupTicker then return end
     if C_Timer and C_Timer.NewTicker then
-        cleanupTicker = C_Timer.NewTicker(0.5, runOverlayCleanup)
+        -- Ticker is a fallback safety net; SPELL_UPDATE_COOLDOWN handles immediate response
+        cleanupTicker = C_Timer.NewTicker(0.5, runCombinedCleanup)
     end
 end
 
@@ -1304,6 +1390,108 @@ function addon.RefreshCDMViewerOpacity(componentId)
 end
 
 --------------------------------------------------------------------------------
+-- Per-Icon Cooldown Opacity System (12.0 Compatible)
+--------------------------------------------------------------------------------
+-- This system dims individual icons when their ability is on cooldown.
+-- Uses SetAlpha on CDM icons (verified safe Jan 2026).
+-- Per-icon alpha multiplies with viewer-level alpha via WoW's alpha inheritance.
+--------------------------------------------------------------------------------
+
+-- Check if an icon is currently on cooldown
+local function isIconOnCooldown(cdmIcon)
+    local endTime = cooldownEndTimes[cdmIcon]
+    if not endTime then return false end
+    return GetTime() < endTime
+end
+
+-- Get component ID from a CDM icon frame
+local function getIconComponentId(cdmIcon)
+    if not cdmIcon then return nil end
+    local parent = cdmIcon:GetParent()
+    if not parent then return nil end
+    local parentName = parent.GetName and parent:GetName()
+    return parentName and CDM_VIEWERS[parentName]
+end
+
+-- Update opacity for a single icon based on its cooldown state
+local function updateIconCooldownOpacity(cdmIcon)
+    if not cdmIcon then return end
+    if cdmIcon.IsForbidden and cdmIcon:IsForbidden() then return end
+
+    local componentId = getIconComponentId(cdmIcon)
+    if not componentId then return end
+
+    -- Only Essential and Utility cooldowns support this feature
+    if componentId ~= "essentialCooldowns" and componentId ~= "utilityCooldowns" then
+        return
+    end
+
+    local component = addon.Components and addon.Components[componentId]
+    if not component or not component.db then return end
+
+    local opacitySetting = tonumber(component.db.opacityOnCooldown) or 100
+    -- If setting is 100%, feature is disabled (no dimming)
+    if opacitySetting >= 100 then
+        pcall(function() cdmIcon:SetAlpha(1.0) end)
+        return
+    end
+
+    local isOnCD = isIconOnCooldown(cdmIcon)
+    local targetAlpha = isOnCD and (opacitySetting / 100) or 1.0
+
+    pcall(function()
+        cdmIcon:SetAlpha(targetAlpha)
+    end)
+end
+
+-- Check for expired cooldowns and restore full opacity
+local function checkCooldownExpirations()
+    local now = GetTime()
+    for cdmIcon, endTime in pairs(cooldownEndTimes) do
+        if now >= endTime then
+            cooldownEndTimes[cdmIcon] = nil
+            updateIconCooldownOpacity(cdmIcon)  -- Restore full opacity
+        end
+    end
+end
+
+-- Exposed function for settings changes
+function addon.RefreshCDMCooldownOpacity(componentId)
+    -- Iterate tracked icons and update their cooldown opacity
+    for cdmIcon, _ in pairs(cooldownEndTimes) do
+        if componentId then
+            local iconComponentId = getIconComponentId(cdmIcon)
+            if iconComponentId == componentId then
+                updateIconCooldownOpacity(cdmIcon)
+            end
+        else
+            updateIconCooldownOpacity(cdmIcon)
+        end
+    end
+
+    -- Also refresh any visible icons in the viewers that may not be tracked yet
+    if componentId then
+        local viewerName
+        for vn, cid in pairs(CDM_VIEWERS) do
+            if cid == componentId then
+                viewerName = vn
+                break
+            end
+        end
+        if viewerName then
+            local viewer = _G[viewerName]
+            if viewer and viewer.GetChildren then
+                for _, child in ipairs({viewer:GetChildren()}) do
+                    if child and child.Cooldown then
+                        updateIconCooldownOpacity(child)
+                    end
+                end
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Event Handling
 --------------------------------------------------------------------------------
 
@@ -1377,6 +1565,20 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         throttledRefresh("EssentialCooldownViewer", "essentialCooldowns")
         throttledRefresh("UtilityCooldownViewer", "utilityCooldowns")
+
+        -- Immediately check for expired cooldowns and restore opacity
+        -- This provides faster response than waiting for the ticker
+        local now = GetTime()
+        for cdmIcon, endTime in pairs(cooldownEndTimes) do
+            if now >= endTime then
+                cooldownEndTimes[cdmIcon] = nil
+                pcall(function()
+                    if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+                        cdmIcon:SetAlpha(1.0)
+                    end
+                end)
+            end
+        end
     end
 end)
 
@@ -1914,11 +2116,14 @@ addon:RegisterComponentInitializer(function(self)
             opacityWithTarget = { type = "addon", default = 100, ui = {
                 label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
             }},
+            opacityOnCooldown = { type = "addon", default = 100, ui = {
+                label = "Opacity While on Cooldown", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 5
+            }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 5
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 6
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 6
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 7
             }},
             supportsText = { type = "addon", default = true },
         },
@@ -1994,14 +2199,17 @@ addon:RegisterComponentInitializer(function(self)
             opacityWithTarget = { type = "addon", default = 100, ui = {
                 label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
             }},
+            opacityOnCooldown = { type = "addon", default = 100, ui = {
+                label = "Opacity While on Cooldown", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 5
+            }},
             hideWhenInactive = { type = "editmode", default = false, ui = {
-                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 5
+                label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 6
             }},
             showTimer = { type = "editmode", default = true, ui = {
-                label = "Show Timer", widget = "checkbox", section = "Misc", order = 6
+                label = "Show Timer", widget = "checkbox", section = "Misc", order = 7
             }},
             showTooltip = { type = "editmode", default = true, ui = {
-                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 7
+                label = "Show Tooltips", widget = "checkbox", section = "Misc", order = 8
             }},
             supportsText = { type = "addon", default = true },
         },

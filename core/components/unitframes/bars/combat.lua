@@ -109,6 +109,10 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyRaidFrameNameOverlays then
                 addon.ApplyRaidFrameNameOverlays()
             end
+            -- Apply health bar borders
+            if addon.ApplyRaidFrameHealthBarBorders then
+                addon.ApplyRaidFrameHealthBarBorders()
+            end
         end
 
         if doParty then
@@ -128,6 +132,10 @@ local function ensureRaidFrameCombatWatcher()
             -- Apply visibility settings (over absorb glow, etc.)
             if addon.ApplyPartyOverAbsorbGlowVisibility then
                 addon.ApplyPartyOverAbsorbGlowVisibility()
+            end
+            -- Apply health bar borders
+            if addon.ApplyPartyFrameHealthBarBorders then
+                addon.ApplyPartyFrameHealthBarBorders()
             end
         end
     end)

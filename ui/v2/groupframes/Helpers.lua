@@ -95,6 +95,18 @@ function GF.applyRaidText()
     end
 end
 
+function GF.applyPartyHealthBarBorders()
+    if addon and addon.ApplyPartyFrameHealthBarBorders then
+        addon.ApplyPartyFrameHealthBarBorders()
+    end
+end
+
+function GF.applyRaidHealthBarBorders()
+    if addon and addon.ApplyRaidFrameHealthBarBorders then
+        addon.ApplyRaidFrameHealthBarBorders()
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Edit Mode Helpers
 --------------------------------------------------------------------------------
@@ -256,5 +268,9 @@ GF.TOOLTIPS = {
     columnSize = {
         title = "Column Size",
         text = "Number of frames per row or column in the combined groups view. Only available when Groups is set to 'Combine Groups'.",
+    },
+    groupTitleNumbersOnly = {
+        title = "Show Groups as Numbers Only",
+        text = "Display just the number instead of 'Group N'. Auto-centers beside-the-row (horizontal) or above-the-column (vertical).",
     },
 }

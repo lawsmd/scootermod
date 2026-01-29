@@ -94,6 +94,7 @@ Navigation.NavModel = {
             { key = "petBar", label = "Pet Bar" },
             { key = "stanceBar", label = "Stance Bar" },
             { key = "microBar", label = "Micro Bar" },
+            { key = "extraAbilities", label = "Extra Abilities" },
         },
     },
     {

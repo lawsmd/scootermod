@@ -187,6 +187,25 @@ local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabe
         })
     end
 
+    -- Hide Realm Name toggle (only for Player Name)
+    if textKey == "textPlayerName" then
+        inner:AddToggle({
+            label = "Hide Realm Name",
+            description = "Shows only the player name without server (e.g., 'Player' instead of 'Player-Realm')",
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                return not not s.hideRealm
+            end,
+            set = function(v)
+                local t = ensureDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].hideRealm = v and true or false
+                applyFn()
+            end,
+        })
+    end
+
     -- Font
     inner:AddFontSelector({
         label = "Font",
@@ -540,6 +559,20 @@ function GF.RenderParty(panel, scrollContent)
     })
 
     ----------------------------------------------------------------------------
+    -- Collapsible Section: Style
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Style",
+        componentId = COMPONENT_ID,
+        sectionKey = "style",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            buildStyleTab(inner, "healthBar", applyStyles)
+        end,
+    })
+
+    ----------------------------------------------------------------------------
     -- Collapsible Section: Border (Raid-Style only)
     ----------------------------------------------------------------------------
 
@@ -568,24 +601,94 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                     infoIcon = GF.TOOLTIPS.displayBorder,
                 })
+
+                inner:AddSpacer(12)
+                inner:AddLabel("Health Bar Borders")
+
+                -- Health Bar Border Style
+                inner:AddBarBorderSelector({
+                    label = "Border Style",
+                    includeNone = true,
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return cfg.healthBarBorderStyle or "none"
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderStyle = v or "none"
+                        GF.applyPartyHealthBarBorders()
+                    end,
+                })
+
+                -- Health Bar Border Tint
+                inner:AddToggleColorPicker({
+                    label = "Border Tint",
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return not not cfg.healthBarBorderTintEnable
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderTintEnable = not not v
+                        GF.applyPartyHealthBarBorders()
+                    end,
+                    getColor = function()
+                        local cfg = ensureDB() or {}
+                        local c = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
+                        return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                    end,
+                    setColor = function(r, g, b, a)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderTintColor = {r or 1, g or 1, b or 1, a or 1}
+                        GF.applyPartyHealthBarBorders()
+                    end,
+                    hasAlpha = true,
+                })
+
+                -- Health Bar Border Thickness
+                inner:AddSlider({
+                    label = "Border Thickness",
+                    min = 1,
+                    max = 8,
+                    step = 0.5,
+                    precision = 1,
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return tonumber(cfg.healthBarBorderThickness) or 1
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderThickness = tonumber(v) or 1
+                        GF.applyPartyHealthBarBorders()
+                    end,
+                })
+
+                -- Health Bar Border Inset
+                inner:AddSlider({
+                    label = "Border Inset",
+                    min = -4,
+                    max = 4,
+                    step = 1,
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return tonumber(cfg.healthBarBorderInset) or 0
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderInset = tonumber(v) or 0
+                        GF.applyPartyHealthBarBorders()
+                    end,
+                })
+
                 inner:Finalize()
             end,
         })
     end
-
-    ----------------------------------------------------------------------------
-    -- Collapsible Section: Style
-    ----------------------------------------------------------------------------
-
-    builder:AddCollapsibleSection({
-        title = "Style",
-        componentId = COMPONENT_ID,
-        sectionKey = "style",
-        defaultExpanded = false,
-        buildContent = function(contentFrame, inner)
-            buildStyleTab(inner, "healthBar", applyStyles)
-        end,
-    })
 
     ----------------------------------------------------------------------------
     -- Collapsible Section: Text

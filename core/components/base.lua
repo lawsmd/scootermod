@@ -1556,6 +1556,14 @@ function addon:ApplyStyles()
     if addon.ApplyPartyOverAbsorbGlowVisibility then
         addon.ApplyPartyOverAbsorbGlowVisibility()
     end
+    -- Group Frames: Apply party frame health bar borders
+    if addon.ApplyPartyFrameHealthBarBorders then
+        addon.ApplyPartyFrameHealthBarBorders()
+    end
+    -- Group Frames: Apply raid frame health bar borders
+    if addon.ApplyRaidFrameHealthBarBorders then
+        addon.ApplyRaidFrameHealthBarBorders()
+    end
 end
 
 function addon:ApplyEarlyComponentStyles()
