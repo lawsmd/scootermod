@@ -30,6 +30,12 @@ local SELECTOR_SWATCH_WIDTH = 40
 local SELECTOR_SWATCH_HEIGHT = 16
 local SELECTOR_SWATCH_BORDER = 2
 
+-- Dynamic height constants
+local MAX_ROW_HEIGHT = 200        -- Cap to prevent excessively tall rows
+local LABEL_LINE_HEIGHT = 16      -- Approximate label height
+local DESC_PADDING_TOP = 2        -- Space between label and description
+local DESC_PADDING_BOTTOM = 40    -- Space below description to border (increased for center-anchored layout)
+
 --------------------------------------------------------------------------------
 -- SelectorColorPicker: Selector with inline color swatch (visible when custom)
 --------------------------------------------------------------------------------
@@ -147,6 +153,37 @@ function Controls:CreateSelectorColorPicker(options)
         descFS:SetJustifyH("LEFT")
         descFS:SetWordWrap(true)
         row._description = descFS
+
+        -- Deferred height measurement after text layout completes
+        local function MeasureAndAdjustHeight()
+            if not row or not descFS then return end
+
+            -- Get the row's effective width (try row, then parent)
+            local rowWidth = row:GetWidth()
+            if rowWidth == 0 and row:GetParent() then
+                rowWidth = row:GetParent():GetWidth() or 0
+            end
+            if rowWidth == 0 then return end
+
+            -- Calculate available width for description text
+            local descAvailableWidth = rowWidth - selectorWidth - (SELECTOR_PADDING * 2)
+            if descAvailableWidth <= 0 then return end
+
+            -- Explicitly set description width so GetStringHeight returns wrapped height
+            descFS:SetWidth(descAvailableWidth)
+
+            local textHeight = descFS:GetStringHeight() or 0
+            local requiredHeight = LABEL_LINE_HEIGHT + DESC_PADDING_TOP + textHeight + DESC_PADDING_BOTTOM
+            requiredHeight = math.min(requiredHeight, MAX_ROW_HEIGHT)
+
+            local currentHeight = row:GetHeight()
+            if requiredHeight > currentHeight then
+                row:SetHeight(requiredHeight)
+            end
+        end
+
+        -- Try measuring after a short delay
+        C_Timer.After(0.1, MeasureAndAdjustHeight)
     end
 
     -- Selector container (right side)
@@ -976,6 +1013,10 @@ function Controls:CreateSelectorColorPicker(options)
         if row._isDisabled then
             row._updateDisabledState()
         end
+    end
+
+    function row:GetDescriptionFontString()
+        return self._description
     end
 
     return row

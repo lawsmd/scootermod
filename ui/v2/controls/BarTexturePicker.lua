@@ -869,5 +869,9 @@ function Controls:CreateBarTextureSelector(options)
         end
     end
 
+    function row:GetDescriptionFontString()
+        return self._description
+    end
+
     return row
 end

@@ -281,5 +281,9 @@ function Controls:CreateFontSelector(options)
         end
     end
 
+    function row:GetDescriptionFontString()
+        return self._description
+    end
+
     return row
 end

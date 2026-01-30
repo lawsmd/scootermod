@@ -88,11 +88,12 @@ end
 function addon.GetClassColorRGB(unitOrClassToken)
 	local classToken = nil
 	if type(unitOrClassToken) == "string" then
-		-- Prefer unit id (e.g., "player") when provided
-		if UnitClass and (unitOrClassToken == "player" or unitOrClassToken == "target" or unitOrClassToken == "focus" or unitOrClassToken == "pet") then
+		-- Try to get class from any valid unit token (player, target, party1, raid5, etc.)
+		if UnitClass and UnitExists and UnitExists(unitOrClassToken) then
 			local _, token = UnitClass(unitOrClassToken)
 			classToken = token
 		else
+			-- Not a valid unit - treat as class token directly (e.g., "WARRIOR")
 			classToken = unitOrClassToken
 		end
 	end

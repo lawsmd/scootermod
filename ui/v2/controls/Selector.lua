@@ -32,6 +32,13 @@ local EMPHASIZED_ROW_HEIGHT_WITH_DESC = 90
 local EMPHASIZED_LABEL_SIZE = 14
 local EMPHASIZED_BORDER_WIDTH = 3
 
+-- Dynamic height constants
+local MAX_ROW_HEIGHT = 200        -- Cap to prevent excessively tall rows
+local LABEL_LINE_HEIGHT = 16      -- Approximate label height
+local DESC_PADDING_TOP = 2        -- Space between label and description
+local DESC_PADDING_TOP_EMPH = 4   -- Space for emphasized controls
+local DESC_PADDING_BOTTOM = 36    -- Space below description to border (doubled for center-anchored layout)
+
 --------------------------------------------------------------------------------
 -- Selector: Dropdown/selector with arrow buttons on each side
 --------------------------------------------------------------------------------
@@ -179,6 +186,38 @@ function Controls:CreateSelector(options)
         descFS:SetJustifyH("LEFT")
         descFS:SetWordWrap(true)
         row._description = descFS
+
+        -- Deferred height measurement after text layout completes
+        local function MeasureAndAdjustHeight()
+            if not row or not descFS then return end
+
+            -- Get the row's effective width (try row, then parent)
+            local rowWidth = row:GetWidth()
+            if rowWidth == 0 and row:GetParent() then
+                rowWidth = row:GetParent():GetWidth() or 0
+            end
+            if rowWidth == 0 then return end
+
+            -- Calculate available width for description text
+            local descAvailableWidth = rowWidth - selectorWidth - (SELECTOR_PADDING * 2) - labelLeftPad
+            if descAvailableWidth <= 0 then return end
+
+            -- Explicitly set description width so GetStringHeight returns wrapped height
+            descFS:SetWidth(descAvailableWidth)
+
+            local textHeight = descFS:GetStringHeight() or 0
+            local paddingAbove = emphasized and DESC_PADDING_TOP_EMPH or DESC_PADDING_TOP
+            local requiredHeight = LABEL_LINE_HEIGHT + paddingAbove + textHeight + DESC_PADDING_BOTTOM
+            requiredHeight = math.min(requiredHeight, MAX_ROW_HEIGHT)
+
+            local currentHeight = row:GetHeight()
+            if requiredHeight > currentHeight then
+                row:SetHeight(requiredHeight)
+            end
+        end
+
+        -- Try measuring after a short delay
+        C_Timer.After(0.1, MeasureAndAdjustHeight)
     end
 
     -- Selector container (right side)
@@ -824,6 +863,10 @@ function Controls:CreateSelector(options)
             self._dropdown:Hide()
             self._dropdown:SetParent(nil)
         end
+    end
+
+    function row:GetDescriptionFontString()
+        return self._description
     end
 
     return row
