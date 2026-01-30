@@ -1980,6 +1980,32 @@ UIPanel._renderers = {
 
         yOffset = yOffset - 70
 
+        -- Keep Friendly Nameplates Disabled toggle
+        -- Workaround for other addons re-enabling friendly nameplates on reload
+        local npToggle = Controls:CreateToggle({
+            parent = scrollContent,
+            label = "Keep Friendly Nameplates Disabled",
+            description = "On login/reload, automatically unchecks 'Friendly Player Nameplates' and 'Friendly NPC Nameplates' in the game options. Useful if another addon keeps re-enabling them.",
+            get = function()
+                return addon.db and addon.db.profile and addon.db.profile.keepFriendlyNameplatesDisabled
+            end,
+            set = function(enabled)
+                if addon.db and addon.db.profile then
+                    addon.db.profile.keepFriendlyNameplatesDisabled = enabled
+                    if enabled then
+                        -- Apply immediately as well
+                        pcall(SetCVar, "nameplateShowFriendlyPlayers", "0")
+                        pcall(SetCVar, "nameplateShowFriendlyNpcs", "0")
+                    end
+                end
+            end,
+        })
+        npToggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
+        npToggle:SetPoint("RIGHT", scrollContent, "RIGHT", 0, 0)
+        table.insert(self._debugMenuControls, npToggle)
+
+        yOffset = yOffset - 70
+
         -- Set content height
         scrollContent:SetHeight(math.abs(yOffset) + 20)
     end,

@@ -468,17 +468,43 @@ end
 -- Health Bar Borders
 --------------------------------------------------------------------------------
 -- Applies ScooterMod bar borders to party frame health bars.
--- Uses addon-owned anchor frames to avoid taint.
+--
+-- IMPORTANT: Uses explicit edge textures on the parent CompactUnitFrame (not a
+-- child frame) to ensure correct draw order with Blizzard's selection highlight.
+--
+-- Layer order on a single frame:
+-- 1. Health bar (StatusBar)
+-- 2. Health overlay texture (BORDER sublevel 7)
+-- 3. ScooterMod border textures (OVERLAY sublevel -8) <- our borders
+-- 4. Selection highlight (OVERLAY sublevel 0+) <- Blizzard's highlight draws on top
+--
+-- Note: We use OVERLAY layer with the lowest sublevel (-8) so borders appear
+-- above the health bar content but below the selection highlight.
+--
+-- The previous SetBackdrop() approach on a child frame caused borders to draw
+-- on top of the selection highlight because child frame layers draw after parent
+-- frame layers (even if both are OVERLAY).
 --------------------------------------------------------------------------------
 
 -- Clear health bar border for a single bar
 local function clearHealthBarBorder(bar)
     if not bar then return end
+    local unitFrame = bar.GetParent and bar:GetParent()
+    if not unitFrame then return end
+
+    -- Hide edge textures if they exist
+    local edges = unitFrame.ScooterModBorderEdges
+    if edges then
+        for _, tex in pairs(edges) do
+            if tex and tex.Hide then
+                tex:Hide()
+            end
+        end
+    end
+
+    -- Also hide legacy anchor frame if it exists (from previous implementation)
     local state = getState(bar)
     if state and state.borderAnchor then
-        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
-            addon.BarBorders.ClearBarFrame(state.borderAnchor)
-        end
         state.borderAnchor:Hide()
     end
 end
@@ -493,108 +519,102 @@ local function applyHealthBarBorder(bar, cfg)
         return
     end
 
-    local state = ensureState(bar)
+    -- Get the parent CompactUnitFrame - borders must be created directly on this
+    -- frame (not a child) so layer order is respected with selection highlight
+    local unitFrame = bar.GetParent and bar:GetParent()
+    if not unitFrame then return end
 
-    -- Create addon-owned anchor frame (avoid taint by not writing to Blizzard's bar)
-    if not state.borderAnchor then
-        local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-        -- Parent to bar's parent (the CompactUnitFrame) to avoid strata issues
-        local unitFrame = (bar.GetParent and bar:GetParent()) or nil
-        local anchorParent = unitFrame or bar:GetParent() or bar
-        local anchor = CreateFrame("Frame", nil, anchorParent, template)
-        anchor:SetAllPoints(bar)
-        state.borderAnchor = anchor
+    -- Create edge textures on the CompactUnitFrame if they don't exist
+    -- Use OVERLAY layer with lowest sublevel (-8) to appear above health bar
+    -- content but below selection highlight (which uses higher sublevels)
+    local edges = unitFrame.ScooterModBorderEdges
+    if not edges then
+        edges = {
+            Top = unitFrame:CreateTexture(nil, "OVERLAY", nil, -8),
+            Bottom = unitFrame:CreateTexture(nil, "OVERLAY", nil, -8),
+            Left = unitFrame:CreateTexture(nil, "OVERLAY", nil, -8),
+            Right = unitFrame:CreateTexture(nil, "OVERLAY", nil, -8),
+        }
+        -- Enable pixel grid snapping for crisp borders at any UI scale
+        for _, tex in pairs(edges) do
+            if tex.SetSnapToPixelGrid then
+                tex:SetSnapToPixelGrid(true)
+            end
+            if tex.SetTexelSnappingBias then
+                tex:SetTexelSnappingBias(0)
+            end
+        end
+        unitFrame.ScooterModBorderEdges = edges
     end
 
-    local anchor = state.borderAnchor
-
-    -- Set frame level above the health bar but below overlay elements
-    local barLevel = 0
-    local okL, lvl = pcall(bar.GetFrameLevel, bar)
-    if okL and type(lvl) == "number" then
-        barLevel = lvl
-    end
-    anchor:SetFrameLevel(barLevel + 10)
-    anchor:Show()
-
-    -- Apply border via BarBorders
+    -- Get border settings
     local tintEnabled = cfg.healthBarBorderTintEnable
     local tintColor = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
     local inset = tonumber(cfg.healthBarBorderInset) or 0
 
-    if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-        -- BarBorders expects a StatusBar, but our anchor is a plain Frame.
-        -- We need to set up the anchor to match bar's dimensions and apply backdrop directly.
-        anchor:ClearAllPoints()
-        anchor:SetAllPoints(bar)
+    -- Calculate edge size and padding based on style
+    local style = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+    local edgeSize, pad, texturePath
 
-        -- Get the style definition
-        local style = addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
-        if style and style.texture and anchor.SetBackdrop then
-            local edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
-            local paddingMult = style.paddingMultiplier or 0.5
-            local pad = math.floor(edgeSize * paddingMult + 0.5)
-            local padAdj = pad - inset
-            if padAdj < 0 then padAdj = 0 end
+    if styleKey == "square" then
+        -- Simple square border using solid color texture
+        edgeSize = math.max(1, math.floor(thickness + 0.5))
+        pad = 1 - inset
+        if pad < 0 then pad = 0 end
+        texturePath = "Interface\\Buttons\\WHITE8x8"
+    elseif style and style.texture then
+        -- Traditional border style with texture
+        edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
+        local paddingMult = style.paddingMultiplier or 0.5
+        pad = math.floor(edgeSize * paddingMult + 0.5) - inset
+        if pad < 0 then pad = 0 end
+        texturePath = style.texture
+    else
+        -- Unknown style, hide border
+        clearHealthBarBorder(bar)
+        return
+    end
 
-            anchor:ClearAllPoints()
-            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -padAdj, padAdj)
-            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padAdj, -padAdj)
+    -- Position edges around the health bar
+    -- Horizontal edges span full width including corners
+    -- Vertical edges are trimmed by edge thickness to avoid corner overlap
+    edges.Top:ClearAllPoints()
+    edges.Top:SetPoint("TOPLEFT", bar, "TOPLEFT", -pad, pad)
+    edges.Top:SetPoint("TOPRIGHT", bar, "TOPRIGHT", pad, pad)
+    edges.Top:SetHeight(edgeSize)
 
-            local insetMult = style.insetMultiplier or 0.65
-            local backdropInset = math.floor(edgeSize * insetMult + 0.5)
-            if backdropInset < 0 then backdropInset = 0 end
+    edges.Bottom:ClearAllPoints()
+    edges.Bottom:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -pad, -pad)
+    edges.Bottom:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", pad, -pad)
+    edges.Bottom:SetHeight(edgeSize)
 
-            local ok = pcall(anchor.SetBackdrop, anchor, {
-                bgFile = nil,
-                edgeFile = style.texture,
-                tile = false,
-                edgeSize = edgeSize,
-                insets = { left = backdropInset, right = backdropInset, top = backdropInset, bottom = backdropInset },
-            })
+    edges.Left:ClearAllPoints()
+    edges.Left:SetPoint("TOPLEFT", bar, "TOPLEFT", -pad, pad - edgeSize)
+    edges.Left:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -pad, -pad + edgeSize)
+    edges.Left:SetWidth(edgeSize)
 
-            if ok then
-                if anchor.SetBackdropBorderColor then
-                    if tintEnabled then
-                        anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
-                    else
-                        anchor:SetBackdropBorderColor(1, 1, 1, 1)
-                    end
-                end
-                if anchor.SetBackdropColor then
-                    anchor:SetBackdropColor(0, 0, 0, 0)
-                end
-            end
-        elseif styleKey == "square" and anchor.SetBackdrop then
-            -- Simple square border
-            local edgeSize = math.max(1, math.floor(thickness + 0.5))
-            anchor:ClearAllPoints()
-            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
-            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+    edges.Right:ClearAllPoints()
+    edges.Right:SetPoint("TOPRIGHT", bar, "TOPRIGHT", pad, pad - edgeSize)
+    edges.Right:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", pad, -pad + edgeSize)
+    edges.Right:SetWidth(edgeSize)
 
-            pcall(anchor.SetBackdrop, anchor, {
-                bgFile = nil,
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                tile = false,
-                edgeSize = edgeSize,
-                insets = { left = 0, right = 0, top = 0, bottom = 0 },
-            })
+    -- Apply texture and color to all edges
+    local r, g, b, a
+    if tintEnabled then
+        r, g, b, a = tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1
+    elseif styleKey == "square" then
+        -- Default square border is black
+        r, g, b, a = 0, 0, 0, 1
+    else
+        -- Default for texture borders is white (shows texture's natural colors)
+        r, g, b, a = 1, 1, 1, 1
+    end
 
-            if anchor.SetBackdropBorderColor then
-                if tintEnabled then
-                    anchor:SetBackdropBorderColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
-                else
-                    anchor:SetBackdropBorderColor(0, 0, 0, 1)
-                end
-            end
-            if anchor.SetBackdropColor then
-                anchor:SetBackdropColor(0, 0, 0, 0)
-            end
-        else
-            -- Unknown style, hide border
-            clearHealthBarBorder(bar)
-        end
+    for _, tex in pairs(edges) do
+        tex:SetTexture(texturePath)
+        tex:SetVertexColor(r, g, b, a)
+        tex:Show()
     end
 end
 
