@@ -66,16 +66,54 @@ end
 function GF.applyPartyStyles()
     if addon and addon.ApplyGroupFrameStylesFor then
         addon.ApplyGroupFrameStylesFor("party")
-    elseif addon and addon.ApplyStyles then
-        addon:ApplyStyles()
+        return
+    end
+    -- Apply only party-specific functions instead of global ApplyStyles
+    -- This prevents party frames from refreshing when unrelated settings change
+    if addon.ApplyPartyFrameHealthBarStyle then
+        addon.ApplyPartyFrameHealthBarStyle()
+    end
+    if addon.ApplyPartyFrameHealthOverlays then
+        addon.ApplyPartyFrameHealthOverlays()
+    end
+    if addon.ApplyPartyFrameNameOverlays then
+        addon.ApplyPartyFrameNameOverlays()
+    end
+    if addon.ApplyPartyFrameHealthBarBorders then
+        addon.ApplyPartyFrameHealthBarBorders()
+    end
+    if addon.ApplyPartyFrameTitleStyle then
+        addon.ApplyPartyFrameTitleStyle()
+    end
+    if addon.ApplyPartyOverAbsorbGlowVisibility then
+        addon.ApplyPartyOverAbsorbGlowVisibility()
     end
 end
 
 function GF.applyRaidStyles()
     if addon and addon.ApplyGroupFrameStylesFor then
         addon.ApplyGroupFrameStylesFor("raid")
-    elseif addon and addon.ApplyStyles then
-        addon:ApplyStyles()
+        return
+    end
+    -- Apply only raid-specific functions instead of global ApplyStyles
+    -- This prevents raid frames from refreshing when unrelated settings change
+    if addon.ApplyRaidFrameHealthBarStyle then
+        addon.ApplyRaidFrameHealthBarStyle()
+    end
+    if addon.ApplyRaidFrameHealthOverlays then
+        addon.ApplyRaidFrameHealthOverlays()
+    end
+    if addon.ApplyRaidFrameNameOverlays then
+        addon.ApplyRaidFrameNameOverlays()
+    end
+    if addon.ApplyRaidFrameHealthBarBorders then
+        addon.ApplyRaidFrameHealthBarBorders()
+    end
+    if addon.ApplyRaidFrameStatusTextStyle then
+        addon.ApplyRaidFrameStatusTextStyle()
+    end
+    if addon.ApplyRaidFrameGroupTitlesStyle then
+        addon.ApplyRaidFrameGroupTitlesStyle()
     end
 end
 

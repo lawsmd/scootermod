@@ -140,6 +140,10 @@ function Textures.applyValueBasedColor(bar, unit, overlay)
 
     local r, g, b = color:GetRGB()
 
+    -- Note: In 12.0, GetRGB() could theoretically return secret values, but
+    -- UnitHealthPercent with a color curve should return a clean color object.
+    -- The pcall wrappers on SetVertexColor below handle any edge cases.
+
     -- Color ALL relevant textures to handle cases where HealthBarTexture and
     -- GetStatusBarTexture() are different objects, or where multiple textures
     -- need coloring. This fixes the "white layer on top" issue at full opacity.
@@ -210,7 +214,22 @@ function Textures.scheduleColorValidation(bar, unit, overlay)
     if not bar or not unit then return end
 
     -- Prevent duplicate validations for the same bar
-    if pendingValidations[bar] then return end
+    if pendingValidations[bar] then
+        return
+    end
+
+    -- NOTE: The time-based cooldown was removed because it caused stuck colors.
+    -- When health changed rapidly (e.g., damaged to 20% then healed to 100% within
+    -- 600ms), the cooldown blocked the second event from getting its own validation
+    -- loop, leaving colors stuck until the next health change.
+    --
+    -- The cooldown was originally added (pre-anchor-fix) to prevent blinking when
+    -- ApplyStyles() was called repeatedly. The anchor-based fix now handles that
+    -- case, so the cooldown is no longer needed.
+    --
+    -- The pendingValidations check below still prevents truly duplicate validations
+    -- for the same bar when the SAME event causes multiple calls.
+
     pendingValidations[bar] = true
 
     -- SIMPLIFIED APPROACH: Due to 12.0 secret value issues, color comparison is unreliable.
@@ -218,7 +237,7 @@ function Textures.scheduleColorValidation(bar, unit, overlay)
     -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
     -- This ensures we eventually apply the correct color even if UnitHealthPercent
     -- is initially stale (e.g., when healing to exactly 100%).
-    -- Use longer delays to ensure UnitHealthPercent has time to update.
+    -- Extended delays to catch edge cases where API updates are slow.
     local delays = { 0.05, 0.1, 0.2, 0.35, 0.5 }  -- 50ms, 100ms, 200ms, 350ms, 500ms
     local completed = 0
 

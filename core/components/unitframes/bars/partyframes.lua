@@ -42,27 +42,6 @@ local function ensureState(frame)
     return PartyFrameState[frame]
 end
 
--- 12.0+: Some values can be "secret" and will hard-error on arithmetic/comparisons.
--- Treat those as unreadable and skip optional overlays rather than crashing.
-local function safeNumber(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return nil end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return nil
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then
-        return nil
-    end
-    return n
-end
-
 --------------------------------------------------------------------------------
 -- Party Frame Detection
 --------------------------------------------------------------------------------
@@ -121,9 +100,13 @@ end
 -- Health Bar Overlay (Combat-Safe Persistence)
 --------------------------------------------------------------------------------
 
--- Update overlay width based on health bar value
+-- Update overlay dimensions based on health bar fill texture
+-- 12.0 FIX: Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
+-- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
+-- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
+
     local state = getState(bar)
     local overlay = state and state.healthOverlay or nil
     if not overlay then return end
@@ -131,53 +114,29 @@ local function updateHealthOverlay(bar)
         overlay:Hide()
         return
     end
-    -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
-    local totalWidth = 0
-    do
-        -- Use the StatusBar frame width (not the fill texture width).
-        -- The fill texture width varies with health %, but we need the full bar width.
-        local okW, w = pcall(bar.GetWidth, bar)
-        totalWidth = safeNumber(okW and w) or 0
-    end
-    local minVal, maxVal
-    do
-        local okMM, mn, mx = pcall(bar.GetMinMaxValues, bar)
-        minVal = safeNumber(okMM and mn)
-        maxVal = safeNumber(okMM and mx)
-    end
-    local value
-    do
-        local okV, v = pcall(bar.GetValue, bar)
-        value = safeNumber(okV and v)
-        if value == nil then value = minVal end
-    end
 
-    if not totalWidth or totalWidth <= 0 or minVal == nil or maxVal == nil or value == nil then
-        overlay:Hide()
-        return
-    end
-    if maxVal <= minVal then
+    -- 12.0 SECRET-SAFE APPROACH: Anchor overlay to the status bar fill texture.
+    -- Blizzard's fill texture is sized internally without exposing secret values.
+    -- By anchoring to it, our overlay automatically matches the fill dimensions.
+    local fill = bar:GetStatusBarTexture()
+    if not fill then
         overlay:Hide()
         return
     end
 
-    local frac = (value - minVal) / (maxVal - minVal)
-    if frac <= 0 then
-        overlay:Hide()
-        return
-    end
-    if frac > 1 then frac = 1 end
-
-    overlay:Show()
-    overlay:SetWidth(totalWidth * frac)
+    -- Anchor overlay to match the fill texture exactly.
+    -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
+    -- will correctly have zero width too. This avoids reading GetWidth() which can
+    -- return secret values in 12.0.
     overlay:ClearAllPoints()
-    overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-    overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    overlay:SetAllPoints(fill)
+    overlay:Show()
 end
 
 -- Style the overlay texture and color
 local function styleHealthOverlay(bar, cfg)
     if not bar or not cfg then return end
+
     local state = getState(bar)
     local overlay = state and state.healthOverlay or nil
     if not overlay then return end
@@ -223,6 +182,10 @@ local function styleHealthOverlay(bar, cfg)
     local r, g, b, a = 1, 1, 1, 1
     if colorMode == "value" then
         -- "Color by Value" mode: use UnitHealthPercent with color curve
+        -- FIRST: Apply fallback green so overlay is never colorless (in case applyValueBasedColor
+        -- encounters secret values and returns early without applying color)
+        overlay:SetVertexColor(0, 1, 0, 1)
+
         local unit
         local parentFrame = bar.GetParent and bar:GetParent()
         if parentFrame then
@@ -230,11 +193,10 @@ local function styleHealthOverlay(bar, cfg)
             if okU and u then unit = u end
         end
         if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+            -- This will override the fallback green if it can determine the actual color
             addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
-            return -- Color applied by applyValueBasedColor, skip SetVertexColor below
         end
-        -- Fallback: if unit not available yet, use default green (will update on first health change)
-        r, g, b, a = 0, 1, 0, 1
+        return -- Color already handled (either fallback green or value-based)
     elseif colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
@@ -316,6 +278,11 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     if state then state.overlayActive = hasCustom end
 
     if not hasCustom then
+        if state then
+            -- Clear styling state so re-enabling will apply fresh
+            state.stylingApplied = nil
+            state.lastAppliedFingerprint = nil
+        end
         if state and state.healthOverlay then
             state.healthOverlay:Hide()
         end
@@ -375,7 +342,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 updateHealthOverlay(self)
             end)
             if bar.HookScript then
-                bar:HookScript("OnSizeChanged", function(self)
+                bar:HookScript("OnSizeChanged", function(self, width, height)
                     updateHealthOverlay(self)
                 end)
             end
@@ -424,40 +391,76 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         end)
     end
 
+    -- Build a config fingerprint to detect if settings have actually changed.
+    -- This prevents expensive re-styling when ApplyStyles() is called but party
+    -- frame settings haven't changed (e.g., when changing Action Bar settings).
+    local fingerprint = string.format("%s|%s|%s|%s|%s",
+        tostring(cfg.healthBarTexture or ""),
+        tostring(cfg.healthBarColorMode or ""),
+        tostring(cfg.healthBarBackgroundTexture or ""),
+        tostring(cfg.healthBarBackgroundColorMode or ""),
+        cfg.healthBarCustomColor and string.format("%.2f,%.2f,%.2f,%.2f",
+            cfg.healthBarCustomColor[1] or 0,
+            cfg.healthBarCustomColor[2] or 0,
+            cfg.healthBarCustomColor[3] or 0,
+            cfg.healthBarCustomColor[4] or 1) or ""
+    )
+
+    -- If config hasn't changed and styling was already applied, skip re-styling.
+    -- This prevents visual blinking when ApplyStyles() is called for unrelated
+    -- settings (e.g., CDM, Action Bars). We track stylingApplied separately from
+    -- overlay dimensions because GetWidth() can return <= 1 due to secret values.
+    if state.lastAppliedFingerprint == fingerprint and state.stylingApplied then
+        -- FIX: With sticky visibility in place (Fix 1), the overlay won't be hidden
+        -- due to secret values, so we don't need an aggressive recovery loop.
+        -- The SetValue hook will update dimensions when values become available.
+        -- Only attempt a single deferred update if overlay isn't visible yet.
+        local overlay = state.healthOverlay
+        if overlay and not overlay:IsShown() then
+            if _G.C_Timer and _G.C_Timer.After then
+                C_Timer.After(0.1, function()
+                    updateHealthOverlay(bar)
+                    -- Don't re-style here - styling is already applied
+                end)
+            end
+        end
+        return -- Already styled with same config, skip
+    end
+
+    -- Store fingerprint for next comparison
+    state.lastAppliedFingerprint = fingerprint
+
     styleHealthOverlay(bar, cfg)
     hideBlizzardFill(bar)
     updateHealthOverlay(bar)
+
+    -- Mark styling as applied (separate from overlay dimensions being ready)
+    state.stylingApplied = true
+
     -- Queue repeating updates to handle cases where bar dimensions aren't ready
     -- immediately (e.g., on UI reload at 100% health where no SetValue fires).
     -- Keep trying until the overlay is successfully shown.
-    -- See GROUPFRAMES.md "Health Bar Overlay Initialization" for details.
+    -- NOTE: This retry loop only runs on initial setup (fingerprint check above
+    -- prevents re-entry on subsequent ApplyStyles calls).
+    -- FIX: Reduced from 5 to 3 attempts and removed re-styling in retry loop.
+    -- With anchor-based sizing, we just need to ensure updateHealthOverlay runs
+    -- after the fill texture is ready. A single deferred call should suffice.
     if _G.C_Timer and _G.C_Timer.After then
-        local attempts = 0
-        local maxAttempts = 5  -- Reduced from 10: 5 attempts at 100ms = 500ms total (same time, fewer operations)
-        local function tryUpdate()
-            attempts = attempts + 1
-            local st = getState(bar)
-            local overlay = st and st.healthOverlay
-            -- Check if overlay is visible and has width > 0
-            if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
-                return -- Success, stop trying
-            end
-            -- Try to update
+        C_Timer.After(0.1, function()
             updateHealthOverlay(bar)
-            styleHealthOverlay(bar, cfg)
-            -- If still not working and under max attempts, try again
-            if attempts < maxAttempts then
-                C_Timer.After(0.1, tryUpdate)  -- Increased from 0.05 to maintain 500ms total
-            end
-        end
-        C_Timer.After(0.1, tryUpdate)  -- Increased from 0.05
+        end)
     end
 end
 
 function PartyFrames.disableHealthOverlay(bar)
     if not bar then return end
     local state = getState(bar)
-    if state then state.overlayActive = false end
+    if state then
+        state.overlayActive = false
+        -- Clear styling state so re-enabling will apply fresh
+        state.stylingApplied = nil
+        state.lastAppliedFingerprint = nil
+    end
     if state and state.healthOverlay then
         state.healthOverlay:Hide()
     end
@@ -642,17 +645,12 @@ function addon.ApplyPartyFrameHealthBarBorders()
     local groupFrames = rawget(db, "groupFrames")
     local cfg = groupFrames and rawget(groupFrames, "party") or nil
 
-    -- Zero-Touch: if no border style set or set to "none", clear all borders
-    local styleKey = cfg and cfg.healthBarBorderStyle
-    if not styleKey or styleKey == "none" then
-        for i = 1, 5 do
-            local frame = _G["CompactPartyFrameMember" .. i]
-            if frame and frame.healthBar then
-                clearHealthBarBorder(frame.healthBar)
-            end
-        end
-        return
-    end
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not cfg then return end
+
+    -- If no border style set or set to "none", skip - let explicit restore handle cleanup
+    local styleKey = cfg.healthBarBorderStyle
+    if not styleKey or styleKey == "none" then return end
 
     -- Apply borders to all party health bars
     for i = 1, 5 do
@@ -705,26 +703,26 @@ function addon.ApplyPartyFrameHealthOverlays()
     local groupFrames = rawget(db, "groupFrames")
     local cfg = groupFrames and rawget(groupFrames, "party") or nil
 
-    local hasCustom = cfg and (
-        (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
-        (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
-    )
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not cfg then return end
+
+    local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                      (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+
+    -- If no custom settings, also skip - let RestorePartyFrameHealthOverlays handle cleanup
+    if not hasCustom then return end
 
     for i = 1, 5 do
         local bar = _G["CompactPartyFrameMember" .. i .. "HealthBar"]
         if bar then
-            if hasCustom then
-                if not (InCombatLockdown and InCombatLockdown()) then
-                    PartyFrames.ensureHealthOverlay(bar, cfg)
-                else
-                    local state = getState(bar)
-                    if state and state.healthOverlay then
-                        styleHealthOverlay(bar, cfg)
-                        updateHealthOverlay(bar)
-                    end
-                end
+            if not (InCombatLockdown and InCombatLockdown()) then
+                PartyFrames.ensureHealthOverlay(bar, cfg)
             else
-                PartyFrames.disableHealthOverlay(bar)
+                local state = getState(bar)
+                if state and state.healthOverlay then
+                    styleHealthOverlay(bar, cfg)
+                    updateHealthOverlay(bar)
+                end
             end
         end
     end
@@ -1374,6 +1372,24 @@ local function ensurePartyNameOverlay(frame, cfg)
         end
     end
 
+    -- Build fingerprint to detect config changes
+    local fingerprint = string.format("%s|%s|%s|%s|%s|%s|%s",
+        tostring(cfg.fontFace or ""),
+        tostring(cfg.size or ""),
+        tostring(cfg.style or ""),
+        tostring(cfg.anchor or ""),
+        tostring(cfg.hideRealm or ""),
+        cfg.color and string.format("%.2f,%.2f,%.2f,%.2f",
+            cfg.color[1] or 1, cfg.color[2] or 1, cfg.color[3] or 1, cfg.color[4] or 1) or "",
+        cfg.offset and string.format("%.1f,%.1f", cfg.offset.x or 0, cfg.offset.y or 0) or ""
+    )
+
+    -- Skip re-styling if config hasn't changed and overlay is visible
+    if state.lastNameFingerprint == fingerprint and state.overlayText:IsShown() then
+        return
+    end
+    state.lastNameFingerprint = fingerprint
+
     -- Style the overlay and hide Blizzard's text
     stylePartyNameOverlay(frame, cfg)
     hideBlizzardPartyNameText(frame)
@@ -1415,24 +1431,26 @@ function addon.ApplyPartyFrameNameOverlays()
 
     local groupFrames = rawget(db, "groupFrames")
     local partyCfg = groupFrames and rawget(groupFrames, "party") or nil
-    local cfg = partyCfg and rawget(partyCfg, "textPlayerName") or nil
 
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not partyCfg then return end
+
+    local cfg = rawget(partyCfg, "textPlayerName") or nil
     local hasCustom = Utils.hasCustomTextSettings(cfg)
+
+    -- If no custom settings, skip - let RestorePartyFrameNameOverlays handle cleanup
+    if not hasCustom then return end
 
     for i = 1, 5 do
         local frame = _G["CompactPartyFrameMember" .. i]
         if frame then
-            if hasCustom then
-                -- Only create overlays out of combat (initial setup)
-                local state = getState(frame)
-                if not (InCombatLockdown and InCombatLockdown()) then
-                    ensurePartyNameOverlay(frame, cfg)
-                elseif state and state.overlayText then
-                    -- Already have overlay, just update styling (safe during combat for our FontString)
-                    stylePartyNameOverlay(frame, cfg)
-                end
-            else
-                disablePartyNameOverlay(frame)
+            -- Only create overlays out of combat (initial setup)
+            local state = getState(frame)
+            if not (InCombatLockdown and InCombatLockdown()) then
+                ensurePartyNameOverlay(frame, cfg)
+            elseif state and state.overlayText then
+                -- Already have overlay, just update styling (safe during combat for our FontString)
+                stylePartyNameOverlay(frame, cfg)
             end
         end
     end
@@ -1842,7 +1860,13 @@ end
 function PartyFrames.ApplyOverAbsorbGlowVisibility()
     local db = addon.db and addon.db.profile
     local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
-    local shouldHide = partyCfg and partyCfg.hideOverAbsorbGlow or false
+
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not partyCfg then return end
+
+    -- Only process if user has explicitly set hideOverAbsorbGlow
+    local shouldHide = partyCfg.hideOverAbsorbGlow or false
+    if not shouldHide then return end
 
     for i = 1, 5 do
         local frame = _G["CompactPartyFrameMember" .. i]

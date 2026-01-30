@@ -405,6 +405,32 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         end)
     end
 
+    -- Build a config fingerprint to detect if settings have actually changed.
+    -- This prevents expensive re-styling when ApplyStyles() is called but raid
+    -- frame settings haven't changed (e.g., when changing Action Bar settings).
+    local fingerprint = string.format("%s|%s|%s|%s|%s",
+        tostring(cfg.healthBarTexture or ""),
+        tostring(cfg.healthBarColorMode or ""),
+        tostring(cfg.healthBarBackgroundTexture or ""),
+        tostring(cfg.healthBarBackgroundColorMode or ""),
+        cfg.healthBarCustomColor and string.format("%.2f,%.2f,%.2f,%.2f",
+            cfg.healthBarCustomColor[1] or 0,
+            cfg.healthBarCustomColor[2] or 0,
+            cfg.healthBarCustomColor[3] or 0,
+            cfg.healthBarCustomColor[4] or 1) or ""
+    )
+
+    -- If config hasn't changed and overlay is already visible, skip re-styling
+    if state.lastAppliedFingerprint == fingerprint then
+        local overlay = state.healthOverlay
+        if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
+            return -- Already styled with same config, skip
+        end
+    end
+
+    -- Store fingerprint for next comparison
+    state.lastAppliedFingerprint = fingerprint
+
     styleHealthOverlay(bar, cfg)
     hideBlizzardFill(bar)
     updateHealthOverlay(bar)
@@ -601,23 +627,22 @@ function addon.ApplyRaidFrameHealthBarBorders()
     local groupFrames = rawget(db, "groupFrames")
     local cfg = groupFrames and rawget(groupFrames, "raid") or nil
 
-    -- Zero-Touch: if no border style set or set to "none", clear all borders
-    local styleKey = cfg and cfg.healthBarBorderStyle
-    local clearMode = (not styleKey or styleKey == "none")
+    -- Zero-Touch: if no raid config exists, don't touch raid frames at all
+    if not cfg then return end
+
+    -- If no border style set or set to "none", skip - let explicit restore handle cleanup
+    local styleKey = cfg.healthBarBorderStyle
+    if not styleKey or styleKey == "none" then return end
 
     -- Combined layout: CompactRaidFrame1..40
     for i = 1, 40 do
         local frame = _G["CompactRaidFrame" .. i]
         if frame and frame.healthBar then
-            if clearMode then
-                clearHealthBarBorder(frame.healthBar)
-            else
-                C_Timer.After(0, function()
-                    if frame and frame.healthBar then
-                        applyHealthBarBorder(frame.healthBar, cfg)
-                    end
-                end)
-            end
+            C_Timer.After(0, function()
+                if frame and frame.healthBar then
+                    applyHealthBarBorder(frame.healthBar, cfg)
+                end
+            end)
         end
     end
 
@@ -626,15 +651,11 @@ function addon.ApplyRaidFrameHealthBarBorders()
         for m = 1, 5 do
             local frame = _G["CompactRaidGroup" .. g .. "Member" .. m]
             if frame and frame.healthBar then
-                if clearMode then
-                    clearHealthBarBorder(frame.healthBar)
-                else
-                    C_Timer.After(0, function()
-                        if frame and frame.healthBar then
-                            applyHealthBarBorder(frame.healthBar, cfg)
-                        end
-                    end)
-                end
+                C_Timer.After(0, function()
+                    if frame and frame.healthBar then
+                        applyHealthBarBorder(frame.healthBar, cfg)
+                    end
+                end)
             end
         end
     end
@@ -714,27 +735,27 @@ function addon.ApplyRaidFrameHealthOverlays()
     local groupFrames = rawget(db, "groupFrames")
     local cfg = groupFrames and rawget(groupFrames, "raid") or nil
 
-    local hasCustom = cfg and (
-        (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
-        (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
-    )
+    -- Zero-Touch: if no raid config exists, don't touch raid frames at all
+    if not cfg then return end
+
+    local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default") or
+                      (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+
+    -- If no custom settings, also skip - let RestoreRaidFrameHealthOverlays handle cleanup
+    if not hasCustom then return end
 
     -- Combined layout
     for i = 1, 40 do
         local bar = _G["CompactRaidFrame" .. i .. "HealthBar"]
         if bar then
-            if hasCustom then
-                if not (InCombatLockdown and InCombatLockdown()) then
-                    RaidFrames.ensureHealthOverlay(bar, cfg)
-                else
-                    local state = getState(bar)
-                    if state and state.healthOverlay then
-                        styleHealthOverlay(bar, cfg)
-                        updateHealthOverlay(bar)
-                    end
-                end
+            if not (InCombatLockdown and InCombatLockdown()) then
+                RaidFrames.ensureHealthOverlay(bar, cfg)
             else
-                RaidFrames.disableHealthOverlay(bar)
+                local state = getState(bar)
+                if state and state.healthOverlay then
+                    styleHealthOverlay(bar, cfg)
+                    updateHealthOverlay(bar)
+                end
             end
         end
     end
@@ -744,18 +765,14 @@ function addon.ApplyRaidFrameHealthOverlays()
         for member = 1, 5 do
             local bar = _G["CompactRaidGroup" .. group .. "Member" .. member .. "HealthBar"]
             if bar then
-                if hasCustom then
-                    if not (InCombatLockdown and InCombatLockdown()) then
-                        RaidFrames.ensureHealthOverlay(bar, cfg)
-                    else
-                        local state = getState(bar)
-                        if state and state.healthOverlay then
-                            styleHealthOverlay(bar, cfg)
-                            updateHealthOverlay(bar)
-                        end
-                    end
+                if not (InCombatLockdown and InCombatLockdown()) then
+                    RaidFrames.ensureHealthOverlay(bar, cfg)
                 else
-                    RaidFrames.disableHealthOverlay(bar)
+                    local state = getState(bar)
+                    if state and state.healthOverlay then
+                        styleHealthOverlay(bar, cfg)
+                        updateHealthOverlay(bar)
+                    end
                 end
             end
         end
@@ -1312,6 +1329,24 @@ local function ensureRaidNameOverlay(frame, cfg)
         end
     end
 
+    -- Build fingerprint to detect config changes
+    local fingerprint = string.format("%s|%s|%s|%s|%s|%s|%s",
+        tostring(cfg.fontFace or ""),
+        tostring(cfg.size or ""),
+        tostring(cfg.style or ""),
+        tostring(cfg.anchor or ""),
+        tostring(cfg.hideRealm or ""),
+        cfg.color and string.format("%.2f,%.2f,%.2f,%.2f",
+            cfg.color[1] or 1, cfg.color[2] or 1, cfg.color[3] or 1, cfg.color[4] or 1) or "",
+        cfg.offset and string.format("%.1f,%.1f", cfg.offset.x or 0, cfg.offset.y or 0) or ""
+    )
+
+    -- Skip re-styling if config hasn't changed and overlay is visible
+    if frameState.lastNameFingerprint == fingerprint and frameState.nameOverlayText and frameState.nameOverlayText:IsShown() then
+        return
+    end
+    frameState.lastNameFingerprint = fingerprint
+
     styleRaidNameOverlay(frame, cfg)
     hideBlizzardRaidNameText(frame)
 
@@ -1350,25 +1385,27 @@ function addon.ApplyRaidFrameNameOverlays()
 
     local groupFrames = rawget(db, "groupFrames")
     local raidCfg = groupFrames and rawget(groupFrames, "raid") or nil
-    local cfg = raidCfg and rawget(raidCfg, "textPlayerName") or nil
 
+    -- Zero-Touch: if no raid config exists, don't touch raid frames at all
+    if not raidCfg then return end
+
+    local cfg = rawget(raidCfg, "textPlayerName") or nil
     local hasCustom = Utils.hasCustomTextSettings(cfg)
+
+    -- If no custom settings, skip - let RestoreRaidFrameNameOverlays handle cleanup
+    if not hasCustom then return end
 
     -- Combined layout: CompactRaidFrame1..40
     for i = 1, 40 do
         local frame = _G["CompactRaidFrame" .. i]
         if frame and frame.name then
-            if hasCustom then
-                if not (InCombatLockdown and InCombatLockdown()) then
-                    ensureRaidNameOverlay(frame, cfg)
-                else
-                    local state = getState(frame)
-                    if state and state.nameOverlayText then
-                        styleRaidNameOverlay(frame, cfg)
-                    end
-                end
+            if not (InCombatLockdown and InCombatLockdown()) then
+                ensureRaidNameOverlay(frame, cfg)
             else
-                disableRaidNameOverlay(frame)
+                local state = getState(frame)
+                if state and state.nameOverlayText then
+                    styleRaidNameOverlay(frame, cfg)
+                end
             end
         end
     end
@@ -1378,17 +1415,13 @@ function addon.ApplyRaidFrameNameOverlays()
         for member = 1, 5 do
             local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
             if frame and frame.name then
-                if hasCustom then
-                    if not (InCombatLockdown and InCombatLockdown()) then
-                        ensureRaidNameOverlay(frame, cfg)
-                    else
-                        local state = getState(frame)
-                        if state and state.nameOverlayText then
-                            styleRaidNameOverlay(frame, cfg)
-                        end
-                    end
+                if not (InCombatLockdown and InCombatLockdown()) then
+                    ensureRaidNameOverlay(frame, cfg)
                 else
-                    disableRaidNameOverlay(frame)
+                    local state = getState(frame)
+                    if state and state.nameOverlayText then
+                        styleRaidNameOverlay(frame, cfg)
+                    end
                 end
             end
         end
