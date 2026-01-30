@@ -4,6 +4,11 @@ addon.Media = addon.Media or {}
 
 local BAR_MEDIA_PREFIX = "Interface\\AddOns\\ScooterMod\\media\\bar\\"
 
+-- Track foreground/background state per StatusBar frame (weak keys for GC)
+-- Using a local table instead of writing to Blizzard frames avoids taint
+-- that causes secret value errors when Edit Mode iterates system frames
+local barFrameState = setmetatable({}, { __mode = "k" })
+
 -- Registry of bar textures bundled with ScooterMod. Keys are stable identifiers.
 local BAR_TEXTURES = {
 	-- Flat series (legacy "A1-A3", renamed for clarity)
@@ -193,48 +198,53 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 	-- unrelated settings trigger ApplyStyles() and cause redundant SetStatusBarTexture calls.
 	if barFrame.SetStatusBarTexture then
 		if fgPath then
-			local needsUpdate = (barFrame._ScooterModFGPath ~= fgPath)
+			local state = barFrameState[barFrame]
+			local needsUpdate = not state or state.fgPath ~= fgPath
 			if needsUpdate then
-				barFrame._ScooterModFGPath = fgPath
+				barFrameState[barFrame] = barFrameState[barFrame] or {}
+				barFrameState[barFrame].fgPath = fgPath
 				pcall(barFrame.SetStatusBarTexture, barFrame, fgPath)
 			end
 			local tex = barFrame:GetStatusBarTexture()
 			if tex and tex.SetDrawLayer then pcall(tex.SetDrawLayer, tex, "ARTWORK", 0) end
 			if tex and tex.SetSnapToPixelGrid then pcall(tex.SetSnapToPixelGrid, tex, false) end
-		elseif barFrame._ScooterModFGPath then
+		elseif barFrameState[barFrame] and barFrameState[barFrame].fgPath then
 			-- Foreground key changed to "default" - clear our stored path so future
 			-- custom textures will be applied correctly
-			barFrame._ScooterModFGPath = nil
+			barFrameState[barFrame].fgPath = nil
 		end
 	end
 
 	-- Background: prefer our own background texture anchored to the bar
-	if not barFrame.ScooterModBG then
-		barFrame.ScooterModBG = barFrame:CreateTexture(nil, "BACKGROUND", nil, -1)
-		barFrame.ScooterModBG:SetAllPoints(barFrame)
+	-- Use weak-key table to avoid tainting Blizzard system frames
+	local state = barFrameState[barFrame] or {}
+	barFrameState[barFrame] = state
+	if not state.bg then
+		state.bg = barFrame:CreateTexture(nil, "BACKGROUND", nil, -1)
+		state.bg:SetAllPoints(barFrame)
 	end
 	if bgPath then
 		-- Guard: Only update background texture if it's actually changing
-		local bgNeedsUpdate = (barFrame._ScooterModBGPath ~= bgPath)
+		local bgNeedsUpdate = state.bgPath ~= bgPath
 		if bgNeedsUpdate then
-			barFrame._ScooterModBGPath = bgPath
+			state.bgPath = bgPath
 			-- Check if it's an atlas or a texture path
 			local isAtlas = type(bgPath) == "string" and not bgPath:find("\\") and not bgPath:find("/")
 			if isAtlas then
-				pcall(barFrame.ScooterModBG.SetAtlas, barFrame.ScooterModBG, bgPath, true)
+				pcall(state.bg.SetAtlas, state.bg, bgPath, true)
 			else
-				pcall(barFrame.ScooterModBG.SetTexture, barFrame.ScooterModBG, bgPath)
+				pcall(state.bg.SetTexture, state.bg, bgPath)
 			end
 		end
 		-- Apply opacity (always check as this can change independently)
 		local opacity = tonumber(backgroundOpacity) or 50
 		opacity = math.max(0, math.min(100, opacity)) / 100
-		pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, opacity)
-		barFrame.ScooterModBG:Show()
+		pcall(state.bg.SetAlpha, state.bg, opacity)
+		state.bg:Show()
 	else
 		-- If no background selected, hide our overlay and let stock show
-		barFrame._ScooterModBGPath = nil
-		barFrame.ScooterModBG:Hide()
+		state.bgPath = nil
+		state.bg:Hide()
 	end
 
 	-- Dim the stock XML background if present so our overlay is visible
@@ -243,4 +253,10 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 			pcall(region.SetAlpha, region, 0.15)
 		end
 	end
+end
+
+-- Accessor for other modules (e.g., cooldowns.lua) to get the background texture
+-- without reading directly from the Blizzard frame table
+function addon.Media.GetBarFrameState(barFrame)
+	return barFrameState[barFrame]
 end

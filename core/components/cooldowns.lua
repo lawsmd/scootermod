@@ -1717,7 +1717,10 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
             end
             local bgColorMode = (component.db and component.db.styleBackgroundColorMode) or "default"
             local bgTint = (component.db and component.db.styleBackgroundTint) or {0,0,0,1}
-            if barFrame.ScooterModBG then
+            -- Use weak-key lookup to avoid reading taint-causing properties from Blizzard frames
+            local barState = addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
+            local bgTexture = barState and barState.bg
+            if bgTexture then
                 local r, g, b, a = 0, 0, 0, 1
                 if bgColorMode == "custom" and type(bgTint) == "table" then
                     r, g, b, a = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
@@ -1726,17 +1729,20 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 elseif bgColorMode == "default" then
                     r, g, b, a = 0, 0, 0, 1
                 end
-                if barFrame.ScooterModBG.SetVertexColor then
-                    pcall(barFrame.ScooterModBG.SetVertexColor, barFrame.ScooterModBG, r, g, b, 1.0)
+                if bgTexture.SetVertexColor then
+                    pcall(bgTexture.SetVertexColor, bgTexture, r, g, b, 1.0)
                 end
-                if barFrame.ScooterModBG.SetAlpha then
+                if bgTexture.SetAlpha then
                     local opacity = tonumber(bgOpacity) or 50
                     opacity = math.max(0, math.min(100, opacity)) / 100
-                    pcall(barFrame.ScooterModBG.SetAlpha, barFrame.ScooterModBG, opacity)
+                    pcall(bgTexture.SetAlpha, bgTexture, opacity)
                 end
             end
         else
-            if barFrame.ScooterModBG then barFrame.ScooterModBG:Hide() end
+            -- Use weak-key lookup for background texture
+            local barState = addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
+            local bgTexture = barState and barState.bg
+            if bgTexture then bgTexture:Hide() end
             local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
             if tex and tex.SetAtlas then pcall(tex.SetAtlas, tex, "UI-HUD-CoolDownManager-Bar", true) end
             if barFrame.SetStatusBarAtlas then pcall(barFrame.SetStatusBarAtlas, barFrame, "UI-HUD-CoolDownManager-Bar") end

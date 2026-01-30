@@ -1605,6 +1605,7 @@ local function applyPowerOffsets(component)
     local hide = ensureSettingValue(component, "hideBar") and true or false
     if hide then
         pcall(frame.Hide, frame)
+        pcall(frame.SetAlpha, frame, 0)  -- Alpha fallback: ensures bar stays hidden even if Blizzard shows it
     else
         pcall(frame.Show, frame)
     end

@@ -3,6 +3,16 @@ local addonName, addon = ...
 addon.Borders = addon.Borders or {}
 local Borders = addon.Borders
 
+-- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- (which would taint them and cause secret value errors during Edit Mode operations)
+local borderContainers = setmetatable({}, { __mode = "k" })   -- frame -> ScootSquareBorderContainer
+local borderEdges = setmetatable({}, { __mode = "k" })        -- container/frame -> ScootSquareBorderEdges
+local atlasContainers = setmetatable({}, { __mode = "k" })    -- frame -> ScooterAtlasBorderContainer
+local atlasBorders = setmetatable({}, { __mode = "k" })       -- frame -> ScootAtlasBorder
+local textureContainers = setmetatable({}, { __mode = "k" })  -- frame -> ScooterTextureBorderContainer
+local textureBorders = setmetatable({}, { __mode = "k" })     -- frame -> ScootTextureBorder
+local tintOverlays = setmetatable({}, { __mode = "k" })       -- frame -> { atlas = texture, texture = texture }
+
 -- 12.0+: Frame getters can trigger Blizzard secret-value errors
 -- on managed unit frames. Use safe getters that fall back gracefully.
 -- NOTE: These helpers must be defined BEFORE ensureContainer which uses them.
@@ -42,6 +52,7 @@ end
 
 local function hideLegacy(frame)
     if not frame then return end
+    -- Legacy direct frame property fallback (for frames that may have been styled before this fix)
     if frame.ScootSquareBorder and frame.ScootSquareBorder.edges then
         for _, tex in pairs(frame.ScootSquareBorder.edges) do tex:Hide() end
     end
@@ -51,8 +62,20 @@ local function hideLegacy(frame)
     if frame.ScootSquareBorderContainer then frame.ScootSquareBorderContainer:Hide() end
     if frame.ScootAtlasBorder then frame.ScootAtlasBorder:Hide() end
     if frame.ScootTextureBorder then frame.ScootTextureBorder:Hide() end
+    -- Weak-key lookup table versions
+    local edges = borderEdges[frame]
+    if edges then
+        for _, tex in pairs(edges) do if tex.Hide then tex:Hide() end end
+    end
+    local container = borderContainers[frame]
+    if container then container:Hide() end
+    local atlasBorder = atlasBorders[frame]
+    if atlasBorder then atlasBorder:Hide() end
+    local textureBorder = textureBorders[frame]
+    if textureBorder then textureBorder:Hide() end
     -- Also clear any tint overlays created by icon-border tinting. If these remain visible or keep their
     -- atlas/texture, they can continue to tint even after the base border is re-applied.
+    -- Legacy direct frame property fallback
     if frame.ScootAtlasBorderTintOverlay then
         frame.ScootAtlasBorderTintOverlay:Hide()
         if frame.ScootAtlasBorderTintOverlay.SetTexture then pcall(frame.ScootAtlasBorderTintOverlay.SetTexture, frame.ScootAtlasBorderTintOverlay, nil) end
@@ -63,14 +86,28 @@ local function hideLegacy(frame)
         if frame.ScootTextureBorderTintOverlay.SetTexture then pcall(frame.ScootTextureBorderTintOverlay.SetTexture, frame.ScootTextureBorderTintOverlay, nil) end
         if frame.ScootTextureBorderTintOverlay.SetAtlas then pcall(frame.ScootTextureBorderTintOverlay.SetAtlas, frame.ScootTextureBorderTintOverlay, nil) end
     end
+    -- Weak-key lookup table version for tint overlays
+    local overlays = tintOverlays[frame]
+    if overlays then
+        if overlays.atlas then
+            overlays.atlas:Hide()
+            if overlays.atlas.SetTexture then pcall(overlays.atlas.SetTexture, overlays.atlas, nil) end
+            if overlays.atlas.SetAtlas then pcall(overlays.atlas.SetAtlas, overlays.atlas, nil) end
+        end
+        if overlays.texture then
+            overlays.texture:Hide()
+            if overlays.texture.SetTexture then pcall(overlays.texture.SetTexture, overlays.texture, nil) end
+            if overlays.texture.SetAtlas then pcall(overlays.texture.SetAtlas, overlays.texture, nil) end
+        end
+    end
     -- No mask textures used in the final design, so nothing else to clear here.
 end
 
 local function ensureContainer(frame, strata, levelOffset, parent, anchorRegion)
-    local f = frame.ScootSquareBorderContainer
+    local f = borderContainers[frame]
     if not f then
         f = CreateFrame("Frame", nil, parent or UIParent)
-        frame.ScootSquareBorderContainer = f
+        borderContainers[frame] = f
     end
     local valid = { BACKGROUND=true, LOW=true, MEDIUM=true, HIGH=true, DIALOG=true, FULLSCREEN=true, FULLSCREEN_DIALOG=true, TOOLTIP=true }
     local desiredStrata = valid[strata or ""] and strata or (frame.GetFrameStrata and safeGetter(function() return frame:GetFrameStrata() end, "BACKGROUND")) or "BACKGROUND"
@@ -87,7 +124,7 @@ end
 
 local function ensureSquare(frame, layer, sublevel, container)
     local parent = container or frame
-    local edges = parent.ScootSquareBorderEdges
+    local edges = borderEdges[parent]
     if not edges then
         edges = {
             Top = parent:CreateTexture(nil, layer or "ARTWORK"),
@@ -104,7 +141,7 @@ local function ensureSquare(frame, layer, sublevel, container)
                 tex:SetTexelSnappingBias(0)
             end
         end
-        parent.ScootSquareBorderEdges = edges
+        borderEdges[parent] = edges
     end
     -- Ensure desired draw layer
     local lyr = layer or "ARTWORK"
@@ -176,7 +213,7 @@ end
 
 function Borders.HideAll(frame)
     hideLegacy(frame)
-    -- Also hide circular border
+    -- Also hide circular border (legacy direct property fallback)
     if frame.ScootCircleBorderContainer then
         local container = frame.ScootCircleBorderContainer
         if container.ScootCircleBorder then
@@ -188,6 +225,8 @@ function Borders.HideAll(frame)
         end
         container:Hide()
     end
+    -- Note: Circular borders are currently disabled (ApplyCircle is commented out)
+    -- so no weak-key lookup table is needed for them at this time.
 end
 
 -- Apply a circular border around a frame (for portraits)
@@ -401,12 +440,13 @@ function Borders.ApplyAtlas(frame, opts)
 
     -- If a Texture is passed (e.g., icon textures), wrap it in a small Frame so we
     -- have a valid CreateTexture target and stable anchor bounds.
+    local originalFrame = frame  -- Keep reference for weak-key lookup
     if frame.GetObjectType and frame:GetObjectType() == "Texture" then
         local parent = frame:GetParent() or UIParent
-        local container = frame.ScooterAtlasBorderContainer
+        local container = atlasContainers[frame]
         if not container then
             container = CreateFrame("Frame", nil, parent)
-            frame.ScooterAtlasBorderContainer = container
+            atlasContainers[frame] = container
             container:EnableMouse(false)
         end
         container:ClearAllPoints()
@@ -419,9 +459,11 @@ function Borders.ApplyAtlas(frame, opts)
         frame = container
     end
 
-    hideLegacy(frame)
-    if not frame.ScootAtlasBorder then
-        frame.ScootAtlasBorder = frame:CreateTexture(nil, "OVERLAY")
+    hideLegacy(originalFrame)
+    local border = atlasBorders[frame]
+    if not border then
+        border = frame:CreateTexture(nil, "OVERLAY")
+        atlasBorders[frame] = border
     end
 
     local preset = getAtlasPreset(opts.atlas)
@@ -456,7 +498,7 @@ function Borders.ApplyAtlas(frame, opts)
         offsets = opts.offsets or { left = px, top = -py, right = -px, bottom = py },
     }
 
-    applyTextureInternal(frame, frame.ScootAtlasBorder, params)
+    applyTextureInternal(frame, border, params)
 end
 
 function Borders.ApplyTexture(frame, opts)
@@ -464,12 +506,13 @@ function Borders.ApplyTexture(frame, opts)
 
     -- Same wrapper logic as ApplyAtlas: ensure we have a Frame target for borders
     -- when a raw Texture is passed in.
+    local originalFrame = frame  -- Keep reference for weak-key lookup
     if frame.GetObjectType and frame:GetObjectType() == "Texture" then
         local parent = frame:GetParent() or UIParent
-        local container = frame.ScooterTextureBorderContainer
+        local container = textureContainers[frame]
         if not container then
             container = CreateFrame("Frame", nil, parent)
-            frame.ScooterTextureBorderContainer = container
+            textureContainers[frame] = container
             container:EnableMouse(false)
         end
         container:ClearAllPoints()
@@ -482,9 +525,11 @@ function Borders.ApplyTexture(frame, opts)
         frame = container
     end
 
-    hideLegacy(frame)
-    if not frame.ScootTextureBorder then
-        frame.ScootTextureBorder = frame:CreateTexture(nil, "OVERLAY")
+    hideLegacy(originalFrame)
+    local border = textureBorders[frame]
+    if not border then
+        border = frame:CreateTexture(nil, "OVERLAY")
+        textureBorders[frame] = border
     end
 
     local params = {
@@ -497,7 +542,7 @@ function Borders.ApplyTexture(frame, opts)
         offsets = opts.offsets,
     }
 
-    applyTextureInternal(frame, frame.ScootTextureBorder, params)
+    applyTextureInternal(frame, border, params)
 end
 
 function addon.BuildBarBorderOptionsContainer()

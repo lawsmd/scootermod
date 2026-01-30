@@ -13,6 +13,19 @@ local addonName, addon = ...
 -- - Even if the component DB exists due to Edit Mode changes, text styling should only apply
 --   when the specific text config tables exist (so changing Height doesn't implicitly restyle text).
 
+-- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- (which would taint them and cause secret value errors during Edit Mode operations)
+local otState = setmetatable({}, { __mode = "k" })  -- frame/fs/bg/module -> state table
+
+-- Helper to get or create state for a frame/object
+local function getState(obj)
+    if not obj then return nil end
+    if not otState[obj] then
+        otState[obj] = {}
+    end
+    return otState[obj]
+end
+
 -- Module-level storage for captured FontObjects (used to read live Edit Mode text size)
 local _capturedFontObjects = {}
 
@@ -22,10 +35,11 @@ local function SafeSetFont(fs, face, size, flags)
 
     -- Capture the original FontObject BEFORE calling SetFont (which detaches the fontstring).
     -- This allows us to read the live text size during Edit Mode preview.
-    if not fs._ScooterOriginalFontObject then
+    local state = getState(fs)
+    if state and not state.originalFontObject then
         local ok, fontObj = pcall(fs.GetFontObject, fs)
         if ok and fontObj then
-            fs._ScooterOriginalFontObject = fontObj
+            state.originalFontObject = fontObj
             _capturedFontObjects[fontObj] = true
         end
     end
@@ -191,11 +205,14 @@ local function ApplyColorWithDefaultRestore(fs, cfg)
     if not fs or not cfg then return end
 
     -- IMPORTANT: Objective Tracker recycles (pools) block/line frames on collapse/expand.
-    -- Any state cached directly on a fontstring can become stale when that fontstring is reused
-    -- for a different quest/line. Clear cached color state on every pass to avoid “swapping”
+    -- Any state cached can become stale when that fontstring is reused
+    -- for a different quest/line. Clear cached color state on every pass to avoid "swapping"
     -- behavior where one item is styled and the other is not.
-    fs._ScooterObjectiveTrackerBaseColor = nil
-    fs._ScooterObjectiveTrackerAppliedCustomColor = nil
+    local state = getState(fs)
+    if state then
+        state.baseColor = nil
+        state.appliedCustomColor = nil
+    end
 
     -- Color is a mode selector (Default/Custom).
     -- In Default mode, we do not set a color at all; Blizzard remains the source of truth.
@@ -205,25 +222,29 @@ local function ApplyColorWithDefaultRestore(fs, cfg)
 
     local c = cfg.color
     if type(c) ~= "table" then return end
-    fs._ScooterObjectiveTrackerApplyingColor = true
+    if state then state.applyingColor = true end
     SafeSetTextColor(fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-    fs._ScooterObjectiveTrackerApplyingColor = nil
+    if state then state.applyingColor = nil end
 end
 
 local function EnsureQuestNameHoverColorHook(headerText, ownerBlock)
     if not headerText then return end
 
-    -- Keep an up-to-date reference in case blocks/fonts are recycled.
-    headerText._ScooterObjectiveTrackerQuestNameOwnerBlock = ownerBlock
+    local state = getState(headerText)
+    if not state then return end
 
-    if headerText._ScooterObjectiveTrackerQuestNameHooked then return end
+    -- Keep an up-to-date reference in case blocks/fonts are recycled.
+    state.questNameOwnerBlock = ownerBlock
+
+    if state.questNameHooked then return end
     if not hooksecurefunc then return end
     if type(headerText.SetTextColor) ~= "function" then return end
 
-    headerText._ScooterObjectiveTrackerQuestNameHooked = true
+    state.questNameHooked = true
 
     local function isOwnerHighlighted()
-        local block = headerText._ScooterObjectiveTrackerQuestNameOwnerBlock
+        local st = getState(headerText)
+        local block = st and st.questNameOwnerBlock
         if type(block) ~= "table" then return false end
 
         if block.isHighlighted then return true end
@@ -235,7 +256,8 @@ local function EnsureQuestNameHoverColorHook(headerText, ownerBlock)
     end
 
     local function enforceQuestNameColor()
-        if headerText._ScooterObjectiveTrackerApplyingColor then return end
+        local st = getState(headerText)
+        if st and st.applyingColor then return end
 
         -- Read current profile live to stay correct across profile switches.
         local db = addon and addon.db and addon.db.profile and addon.db.profile.components and addon.db.profile.components.objectiveTracker
@@ -253,9 +275,9 @@ local function EnsureQuestNameHoverColorHook(headerText, ownerBlock)
             r, g, b = BrightenRGBTowardsWhite(r, g, b, 0.35)
         end
 
-        headerText._ScooterObjectiveTrackerApplyingColor = true
+        if st then st.applyingColor = true end
         pcall(headerText.SetTextColor, headerText, r, g, b, a)
-        headerText._ScooterObjectiveTrackerApplyingColor = nil
+        if st then st.applyingColor = nil end
     end
 
     -- Blizzard hover logic changes quest name colors by calling SetTextColor; re-apply ours after.
@@ -420,7 +442,9 @@ local function SafeSetShown(region, shown)
 end
 
 local function CaptureObjectiveTrackerHeaderBackgroundBaseline(bg)
-    if not bg or bg._ScooterObjectiveTrackerBaseBG then return end
+    if not bg then return end
+    local state = getState(bg)
+    if not state or state.baseBG then return end
     local base = {}
     if bg.IsShown then
         local ok, v = pcall(bg.IsShown, bg)
@@ -436,11 +460,13 @@ local function CaptureObjectiveTrackerHeaderBackgroundBaseline(bg)
             base.r, base.g, base.b, base.vA = r, g, b, a
         end
     end
-    bg._ScooterObjectiveTrackerBaseBG = base
+    state.baseBG = base
 end
 
 local function RestoreObjectiveTrackerHeaderBackground(bg)
-    local base = bg and bg._ScooterObjectiveTrackerBaseBG
+    if not bg then return end
+    local state = getState(bg)
+    local base = state and state.baseBG
     if type(base) ~= "table" then return end
 
     if base.shown ~= nil then
@@ -532,20 +558,21 @@ local function ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     for _, bg in ipairs(targets) do
         if bg then
             CaptureObjectiveTrackerHeaderBackgroundBaseline(bg)
+            local bgState = getState(bg)
 
             if useHide then
                 SafeSetShown(bg, false)
-                bg._ScooterObjectiveTrackerAppliedHide = true
+                if bgState then bgState.appliedHide = true end
             else
-                if bg._ScooterObjectiveTrackerAppliedHide then
+                if bgState and bgState.appliedHide then
                     -- Restore visibility to baseline when un-hiding.
-                    local base = bg._ScooterObjectiveTrackerBaseBG
+                    local base = bgState.baseBG
                     if type(base) == "table" and base.shown ~= nil then
                         SafeSetShown(bg, base.shown)
                     else
                         SafeSetShown(bg, true)
                     end
-                    bg._ScooterObjectiveTrackerAppliedHide = nil
+                    bgState.appliedHide = nil
                 end
 
                 if useTint then
@@ -555,11 +582,11 @@ local function ApplyObjectiveTrackerHeaderBackgroundStyling(self)
                     if bg.SetAlpha and a ~= nil then
                         pcall(bg.SetAlpha, bg, a)
                     end
-                    bg._ScooterObjectiveTrackerAppliedTint = true
+                    if bgState then bgState.appliedTint = true end
                 else
-                    if bg._ScooterObjectiveTrackerAppliedTint then
+                    if bgState and bgState.appliedTint then
                         RestoreObjectiveTrackerHeaderBackground(bg)
-                        bg._ScooterObjectiveTrackerAppliedTint = nil
+                        bgState.appliedTint = nil
                     end
                 end
             end
@@ -650,14 +677,16 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     end
 
     local function RestoreFrameBaseline(frame)
-        if not frame or not frame._ScooterObjectiveTrackerCombatOpacityApplied then
+        if not frame then return end
+        local frameState = getState(frame)
+        if not frameState or not frameState.combatOpacityApplied then
             return
         end
-        if frame.SetAlpha and frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha ~= nil then
-            pcall(frame.SetAlpha, frame, frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha)
+        if frame.SetAlpha and frameState.combatOpacityBaseAlpha ~= nil then
+            pcall(frame.SetAlpha, frame, frameState.combatOpacityBaseAlpha)
         end
-        frame._ScooterObjectiveTrackerCombatOpacityApplied = nil
-        frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha = nil
+        frameState.combatOpacityApplied = nil
+        frameState.combatOpacityBaseAlpha = nil
     end
 
     local function ApplyFrameOverride(frame, alpha)
@@ -665,16 +694,19 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
             return
         end
 
+        local frameState = getState(frame)
+        if not frameState then return end
+
         -- Capture baseline alpha once so we can restore it after combat.
-        if frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha == nil and frame.GetAlpha then
+        if frameState.combatOpacityBaseAlpha == nil and frame.GetAlpha then
             local ok, a = pcall(frame.GetAlpha, frame)
             if ok and a ~= nil then
-                frame._ScooterObjectiveTrackerCombatOpacityBaseAlpha = a
+                frameState.combatOpacityBaseAlpha = a
             end
         end
 
         pcall(frame.SetAlpha, frame, alpha)
-        frame._ScooterObjectiveTrackerCombatOpacityApplied = true
+        frameState.combatOpacityApplied = true
     end
 
     if shouldApply then
@@ -702,23 +734,28 @@ end
 
 local function InstallObjectiveTrackerHooks(self)
     local tracker = _G.ObjectiveTrackerFrame
-    if not tracker or tracker._ScooterObjectiveTrackerHooked then return end
-    tracker._ScooterObjectiveTrackerHooked = true
+    if not tracker then return end
+    local trackerState = getState(tracker)
+    if not trackerState or trackerState.hooked then return end
+    trackerState.hooked = true
 
     -- Coalesce re-application to one per frame.
+    -- Use a module-level variable for the queued flag since self is the component table
+    local applyQueued = false
     local function requestApply()
-        if self._ScooterObjectiveTrackerApplyQueued then return end
-        self._ScooterObjectiveTrackerApplyQueued = true
+        if applyQueued then return end
+        applyQueued = true
         _G.C_Timer.After(0, function()
-            self._ScooterObjectiveTrackerApplyQueued = nil
+            applyQueued = false
             ApplyObjectiveTrackerStylingAll(self)
         end)
     end
 
     local function EnsureModuleEndLayoutHook(module)
         if type(module) ~= "table" then return end
-        if module._ScooterObjectiveTrackerModuleHooked then return end
-        module._ScooterObjectiveTrackerModuleHooked = true
+        local moduleState = getState(module)
+        if not moduleState or moduleState.moduleHooked then return end
+        moduleState.moduleHooked = true
 
         if type(module.EndLayout) == "function" then
             hooksecurefunc(module, "EndLayout", requestApply)

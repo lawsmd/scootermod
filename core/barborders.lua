@@ -4,6 +4,12 @@ addon.BarBorders = addon.BarBorders or {}
 local BarBorders = addon.BarBorders
 
 local MEDIA_PATH_PREFIX = "Interface\\AddOns\\ScooterMod\\media\\barborder\\"
+
+-- Track border state per barFrame using weak keys to avoid tainting Blizzard system frames.
+-- Writing properties directly to CDM StatusBar frames causes taint that propagates to
+-- Arena frames when Edit Mode iterates registered system frames.
+local borderFrameState = setmetatable({}, { __mode = "k" })
+
 local DEFAULT_REFERENCE_HEIGHT = 18
 local DEFAULT_THICKNESS_MULTIPLIER = 1.35
 local MAX_EDGE_SIZE = 48
@@ -67,23 +73,26 @@ local function cloneColor(color)
 end
 
 local function ensureBorderFrame(barFrame)
-    local holder = barFrame.ScooterStyledBorder
+    local bfState = borderFrameState[barFrame] or {}
+    borderFrameState[barFrame] = bfState
+    local holder = bfState.holder
     if not holder then
         local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-        local parentOverride = rawget(barFrame, "_ScooterBorderContainerParentRef")
+        local parentOverride = bfState.containerParentRef
         holder = CreateFrame("Frame", nil, parentOverride or barFrame, template)
         holder:SetClipsChildren(false)
         holder:SetIgnoreParentAlpha(false)
-        barFrame.ScooterStyledBorder = holder
+        bfState.holder = holder
     end
-    local strata = (barFrame._ScooterBorderContainerParentRef or barFrame).GetFrameStrata and (barFrame._ScooterBorderContainerParentRef or barFrame):GetFrameStrata()
+    local containerRef = bfState.containerParentRef or barFrame
+    local strata = containerRef.GetFrameStrata and containerRef:GetFrameStrata()
     if strata then
         holder:SetFrameStrata(strata)
     end
-    local parentForLevel = barFrame._ScooterBorderContainerParentRef or barFrame
+    local parentForLevel = bfState.containerParentRef or barFrame
     local level = (parentForLevel.GetFrameLevel and parentForLevel:GetFrameLevel()) or 0
-    local offset = tonumber(barFrame._ScooterBorderLevelOffset) or 8
-    local desiredLevel = tonumber(barFrame._ScooterBorderFixedLevel) or (level + offset)
+    local offset = tonumber(bfState.levelOffset) or 8
+    local desiredLevel = tonumber(bfState.fixedLevel) or (level + offset)
     holder:SetFrameLevel(desiredLevel)
     return holder
 end
@@ -131,18 +140,21 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
     local holder = ensureBorderFrame(barFrame)
     if not holder then return false end
 
+    local bfState = borderFrameState[barFrame] or {}
+    borderFrameState[barFrame] = bfState
+
     -- Edge and padding scale with the bar's height (original behavior)
     local edgeSize = computeEdgeSize(barFrame, style, thickness)
     local paddingMultiplier = style and style.paddingMultiplier or 0.5
     local pad = math.floor(edgeSize * paddingMultiplier + 0.5)
-    local insetPx = tonumber(inset) or tonumber(barFrame and barFrame._ScooterBorderInset) or 0
+    local insetPx = tonumber(inset) or tonumber(bfState.inset) or 0
     -- Positive inset pulls the border inward (smaller padding); negative pushes outward
     local padAdj = pad - insetPx
     if padAdj < 0 then padAdj = 0 end
 
     -- Allow per-frame, per-side pad adjustments (used for fine-tuning Cast Bar borders).
     local padL, padR, padT, padB = padAdj, padAdj, padAdj, padAdj
-    local perSide = barFrame and barFrame._ScooterBorderPadAdjust
+    local perSide = bfState.padAdjust
     if type(perSide) == "table" then
         padL = padL + (tonumber(perSide.left) or 0)
         padR = padR + (tonumber(perSide.right) or 0)
@@ -173,7 +185,7 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
     holder:Show()
 
     if not skipStateUpdate then
-        barFrame._ScooterBorderState = {
+        bfState.state = {
             styleKey = style.key,
             thickness = thickness,
             color = cloneColor(color),
@@ -185,8 +197,9 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
 end
 
 local function handleSizeChanged(frame)
-    if not frame or not frame._ScooterBorderState then return end
-    local state = frame._ScooterBorderState
+    local bfState = borderFrameState[frame]
+    if not frame or not bfState or not bfState.state then return end
+    local state = bfState.state
     if not state.styleKey then return end
     local style = STYLE_MAP[state.styleKey]
     if not style then return end
@@ -196,10 +209,12 @@ local function handleSizeChanged(frame)
 end
 
 local function ensureSizeHook(barFrame)
-    if not barFrame or barFrame._ScooterBorderSizeHooked then return end
+    local bfState = borderFrameState[barFrame]
+    if not barFrame or (bfState and bfState.sizeHooked) then return end
     if barFrame.HookScript then
         barFrame:HookScript("OnSizeChanged", handleSizeChanged)
-        barFrame._ScooterBorderSizeHooked = true
+        borderFrameState[barFrame] = borderFrameState[barFrame] or {}
+        borderFrameState[barFrame].sizeHooked = true
     end
 end
 
@@ -306,28 +321,47 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
 
     local color = cloneColor(options and options.color)
 
+    -- Use weak-key table to store options instead of writing to Blizzard frame
+    local bfState = borderFrameState[barFrame] or {}
+    borderFrameState[barFrame] = bfState
+
     -- Allow callers (e.g., Unit Frames) to request a specific relative level/parent so text stays above borders
     if type(options) == "table" and options.levelOffset then
-        barFrame._ScooterBorderLevelOffset = tonumber(options.levelOffset) or 8
+        bfState.levelOffset = tonumber(options.levelOffset) or 8
     else
-        barFrame._ScooterBorderLevelOffset = 8
+        bfState.levelOffset = 8
     end
     if type(options) == "table" and options.containerParent and options.containerParent.GetFrameLevel then
-        barFrame._ScooterBorderContainerParentRef = options.containerParent
+        bfState.containerParentRef = options.containerParent
     else
-        barFrame._ScooterBorderContainerParentRef = nil
+        bfState.containerParentRef = nil
     end
-    barFrame._ScooterBorderInset = tonumber(options and options.inset) or 0
+    bfState.inset = tonumber(options and options.inset) or 0
 
-    return applyStyle(barFrame, style, color, thickness, false, barFrame._ScooterBorderInset)
+    return applyStyle(barFrame, style, color, thickness, false, bfState.inset)
 end
 
 function BarBorders.ClearBarFrame(barFrame)
     if not barFrame then return end
-    barFrame._ScooterBorderState = nil
-    local holder = barFrame.ScooterStyledBorder
-    if holder then
-        if holder.SetBackdrop then pcall(holder.SetBackdrop, holder, nil) end
-        holder:Hide()
+    local bfState = borderFrameState[barFrame]
+    if bfState then
+        bfState.state = nil
+        local holder = bfState.holder
+        if holder then
+            if holder.SetBackdrop then pcall(holder.SetBackdrop, holder, nil) end
+            holder:Hide()
+        end
     end
+end
+
+-- Accessor for other modules to get the border holder frame without reading
+-- directly from the Blizzard frame table (avoids taint)
+function BarBorders.GetBorderHolder(barFrame)
+    local bfState = borderFrameState[barFrame]
+    return bfState and bfState.holder
+end
+
+-- Accessor for full border state (holder, state, etc.)
+function BarBorders.GetBorderState(barFrame)
+    return borderFrameState[barFrame]
 end

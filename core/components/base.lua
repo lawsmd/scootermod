@@ -104,8 +104,12 @@ local function HideDefaultBarTextures(barFrame, restore)
         end
         return false
     end
+    -- Use accessor functions for CDM bars (weak-key tables), fall back to direct read for Unit Frame bars
+    local mediaState = addon.Media and addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
+    local scooterModBG = (mediaState and mediaState.bg) or barFrame.ScooterModBG
+    local borderHolder = (addon.BarBorders and addon.BarBorders.GetBorderHolder and addon.BarBorders.GetBorderHolder(barFrame)) or barFrame.ScooterStyledBorder
     for _, region in ipairs({ barFrame:GetRegions() }) do
-        if region and region ~= barFrame.ScooterModBG and region ~= barFrame.ScooterStyledBorder and region ~= (barFrame.ScooterStyledBorder and barFrame.ScooterStyledBorder.Texture) then
+        if region and region ~= scooterModBG and region ~= borderHolder and region ~= (borderHolder and borderHolder.Texture) then
             if region.GetObjectType and region:GetObjectType() == "Texture" then
                 local layer = region:GetDrawLayer()
                 if layer == "OVERLAY" or layer == "ARTWORK" or layer == "BORDER" then

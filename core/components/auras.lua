@@ -5,6 +5,19 @@ local ClampOpacity = Util.ClampOpacity
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
 local PlayerInCombat = Util.PlayerInCombat
 
+-- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- (which would taint them and cause secret value errors during Edit Mode operations)
+local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
+
+-- Helper to get or create state for a frame/object
+local function getState(obj)
+    if not obj then return nil end
+    if not auraState[obj] then
+        auraState[obj] = {}
+    end
+    return auraState[obj]
+end
+
 function addon.ApplyAuraFrameVisualsFor(component)
     if not component or (component.id ~= "buffs" and component.id ~= "debuffs") then return end
 
@@ -47,24 +60,28 @@ function addon.ApplyAuraFrameVisualsFor(component)
     end
 
     local function enforceTextColor(fs, key)
-        if not fs or fs._ScooterColorApplying then return end
+        local state = getState(fs)
+        if not fs or not state or state.colorApplying then return end
         local cfg = db[key]
         if type(cfg) ~= "table" then return end
         local color = cfg.color
         if type(color) ~= "table" or not fs.SetTextColor then return end
-        fs._ScooterColorApplying = true
+        state.colorApplying = true
         fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-        fs._ScooterColorApplying = nil
+        state.colorApplying = nil
     end
 
     local function ensureTextHooks(fs, key)
         if not fs or not hooksecurefunc then return end
-        fs._ScooterTextHooks = fs._ScooterTextHooks or {}
+        local state = getState(fs)
+        if not state then return end
+        state.textHooks = state.textHooks or {}
         local function hookMethod(method)
-            if fs._ScooterTextHooks[method] or type(fs[method]) ~= "function" then return end
-            fs._ScooterTextHooks[method] = true
+            if state.textHooks[method] or type(fs[method]) ~= "function" then return end
+            state.textHooks[method] = true
             hooksecurefunc(fs, method, function()
-                if fs._ScooterColorApplying then return end
+                local st = getState(fs)
+                if st and st.colorApplying then return end
                 enforceTextColor(fs, key)
             end)
         end
@@ -88,13 +105,15 @@ function addon.ApplyAuraFrameVisualsFor(component)
 
     local function captureDefaultAnchor(fs, fallbackRelTo)
         if not fs then return nil end
-        if not fs._ScooterDefaultAnchor then
+        local state = getState(fs)
+        if not state then return nil end
+        if not state.defaultAnchor then
             local point, relTo, relPoint, x, y = fs:GetPoint(1)
             if not point then
                 point, relPoint, x, y = "CENTER", "CENTER", 0, 0
             end
             if relTo == nil then relTo = fallbackRelTo end
-            fs._ScooterDefaultAnchor = {
+            state.defaultAnchor = {
                 point = point or "CENTER",
                 relTo = relTo,
                 relPoint = relPoint or point or "CENTER",
@@ -102,7 +121,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
                 y = y or 0,
             }
         end
-        return fs._ScooterDefaultAnchor
+        return state.defaultAnchor
     end
 
     local function applyAuraText(fs, key, defaultSize, fallbackRelTo)
@@ -117,9 +136,10 @@ function addon.ApplyAuraFrameVisualsFor(component)
         if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
         local color = cfg.color
         if color and fs.SetTextColor then
-            fs._ScooterColorApplying = true
+            local state = getState(fs)
+            if state then state.colorApplying = true end
             fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-            fs._ScooterColorApplying = nil
+            if state then state.colorApplying = nil end
         end
         local anchor = captureDefaultAnchor(fs, fallbackRelTo)
         if anchor and fs.ClearAllPoints and fs.SetPoint then
@@ -176,16 +196,17 @@ function addon.ApplyAuraFrameVisualsFor(component)
 
         for _, tex in ipairs(textures) do
             if tex and tex.SetAlpha then
+                local state = getState(tex)
                 if hideTextures then
-                    if tex._ScooterOriginalAlpha == nil then
+                    if state and state.originalAlpha == nil then
                         local alpha = tex:GetAlpha()
-                        tex._ScooterOriginalAlpha = alpha ~= nil and alpha or 1
+                        state.originalAlpha = alpha ~= nil and alpha or 1
                     end
                     tex:SetAlpha(0)
                 else
-                    local alpha = tex._ScooterOriginalAlpha
+                    local alpha = state and state.originalAlpha
                     tex:SetAlpha(alpha ~= nil and alpha or 1)
-                    tex._ScooterOriginalAlpha = nil
+                    if state then state.originalAlpha = nil end
                 end
             end
         end
@@ -195,8 +216,9 @@ function addon.ApplyAuraFrameVisualsFor(component)
 
     if componentId == "buffs" then
         local collapseButton = frame.CollapseAndExpandButton
-        if collapseButton and not collapseButton._ScooterHideTexturesHooked then
-            collapseButton._ScooterHideTexturesHooked = true
+        local btnState = collapseButton and getState(collapseButton)
+        if collapseButton and btnState and not btnState.hideTexturesHooked then
+            btnState.hideTexturesHooked = true
             local function refreshCollapseButton()
                 applyCollapseButtonVisibility()
             end
@@ -269,28 +291,32 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local border = aura.DebuffBorder
         if not border then return end
 
-        if not icon._ScooterDebuffBaseWidth then
+        local iconState = getState(icon)
+        local borderState = getState(border)
+        if not iconState or not borderState then return end
+
+        if not iconState.debuffBaseWidth then
             local w = icon:GetWidth()
             if w and w > 0 then
-                icon._ScooterDebuffBaseWidth = w
+                iconState.debuffBaseWidth = w
             end
         end
-        if not icon._ScooterDebuffBaseHeight then
+        if not iconState.debuffBaseHeight then
             local h = icon:GetHeight()
             if h and h > 0 then
-                icon._ScooterDebuffBaseHeight = h
+                iconState.debuffBaseHeight = h
             end
         end
-        if not border._ScooterDebuffBaseWidth then
+        if not borderState.debuffBaseWidth then
             local bw = border:GetWidth()
             if bw and bw > 0 then
-                border._ScooterDebuffBaseWidth = bw
+                borderState.debuffBaseWidth = bw
             end
         end
-        if not border._ScooterDebuffBaseHeight then
+        if not borderState.debuffBaseHeight then
             local bh = border:GetHeight()
             if bh and bh > 0 then
-                border._ScooterDebuffBaseHeight = bh
+                borderState.debuffBaseHeight = bh
             end
         end
     end
@@ -300,10 +326,13 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local border = aura.DebuffBorder
         if not border or not border.SetSize then return end
 
-        local baseIconWidth = icon._ScooterDebuffBaseWidth
-        local baseIconHeight = icon._ScooterDebuffBaseHeight
-        local baseBorderWidth = border._ScooterDebuffBaseWidth
-        local baseBorderHeight = border._ScooterDebuffBaseHeight
+        local iconState = getState(icon)
+        local borderState = getState(border)
+
+        local baseIconWidth = iconState and iconState.debuffBaseWidth
+        local baseIconHeight = iconState and iconState.debuffBaseHeight
+        local baseBorderWidth = borderState and borderState.debuffBaseWidth
+        local baseBorderHeight = borderState and borderState.debuffBaseHeight
 
         local width = targetWidth or icon:GetWidth()
         local height = targetHeight or icon:GetHeight()
@@ -315,10 +344,10 @@ function addon.ApplyAuraFrameVisualsFor(component)
             border:SetHeight(baseBorderHeight * (height / baseIconHeight))
         end
 
-        if border.ClearAllPoints and border.SetPoint and not border._ScooterDebuffAnchorLocked then
+        if border.ClearAllPoints and border.SetPoint and borderState and not borderState.debuffAnchorLocked then
             border:ClearAllPoints()
             border:SetPoint("CENTER", icon, "CENTER")
-            border._ScooterDebuffAnchorLocked = true
+            borderState.debuffAnchorLocked = true
         end
     end
 
@@ -403,14 +432,15 @@ local function ApplyAuraFrameStyling(self)
     local frame = _G[self.frameName]
     if not frame or not frame.AuraContainer then return end
 
-    if hooksecurefunc and not frame._ScooterAuraHooked then
+    local frameState = getState(frame)
+    if hooksecurefunc and frameState and not frameState.auraHooked then
         local componentId = self.id
         hooksecurefunc(frame, "UpdateAuraButtons", function()
             if addon and addon.Components and addon.Components[componentId] and addon.ApplyAuraFrameVisualsFor then
                 addon.ApplyAuraFrameVisualsFor(addon.Components[componentId])
             end
         end)
-        frame._ScooterAuraHooked = true
+        frameState.auraHooked = true
     end
 
     if addon and addon.ApplyAuraFrameVisualsFor then

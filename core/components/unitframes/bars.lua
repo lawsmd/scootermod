@@ -44,6 +44,35 @@ local function safeNumber(v)
     return n
 end
 
+-- 12.0+: GetPoint() string values (point, relativePoint) can be secrets.
+-- Returns fallback if the value is not a usable string.
+local function safePointToken(v, fallback)
+    if type(v) ~= "string" then return fallback end
+    -- Even simple string comparisons can error on "secret" values; guard it.
+    local ok, nonEmpty = pcall(function() return v ~= "" end)
+    if ok and nonEmpty then return v end
+    return fallback
+end
+
+-- 12.0+: GetPoint() offset values can be secrets that error on arithmetic.
+-- Returns 0 if the value is not a usable number.
+local function safeOffset(v)
+    local okNil, isNil = pcall(function() return v == nil end)
+    if okNil and isNil then return 0 end
+    local n = v
+    if type(n) ~= "number" then
+        local ok, conv = pcall(tonumber, n)
+        if ok and type(conv) == "number" then
+            n = conv
+        else
+            return 0
+        end
+    end
+    local ok = pcall(function() return n + 0 end)
+    if not ok then return 0 end
+    return n
+end
+
 -- Reference extracted modules (loaded via TOC before this file)
 local Utils = addon.BarsUtils
 local Combat = addon.BarsCombat
@@ -3659,11 +3688,12 @@ do
                             if b.point == nil then
                                 if fs and fs.GetPoint then
                                     local p, relTo, rp, x, y = fs:GetPoint(1)
-                                    b.point = p or "CENTER"
+                                    -- Store raw values; sanitization happens at use time
+                                    b.point = p
                                     b.relTo = relTo or (fs.GetParent and fs:GetParent()) or apb
-                                    b.relPoint = rp or b.point
-                                    b.x = tonumber(x) or 0
-                                    b.y = tonumber(y) or 0
+                                    b.relPoint = rp
+                                    b.x = x
+                                    b.y = y
                                 else
                                     b.point, b.relTo, b.relPoint, b.x, b.y =
                                         "CENTER", (fs and fs.GetParent and fs:GetParent()) or apb, "CENTER", 0, 0
@@ -3752,21 +3782,33 @@ do
                             if fs.ClearAllPoints and fs.SetPoint then
                                 local b = ensureBaseline(fs, baselineKey)
                                 fs:ClearAllPoints()
-                                fs:SetPoint(
-                                    b.point or "CENTER",
-                                    b.relTo or (fs.GetParent and fs:GetParent()) or apb,
-                                    b.relPoint or b.point or "CENTER",
-                                    (b.x or 0) + ox,
-                                    (b.y or 0) + oy
-                                )
+                                -- Sanitize at use time (matches text.lua pattern)
+                                local point = safePointToken(b.point, "CENTER")
+                                local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or apb
+                                local relPoint = safePointToken(b.relPoint, point)
+                                local x = safeOffset(b.x) + ox
+                                local y = safeOffset(b.y) + oy
+                                local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
+                                if not ok then
+                                    -- Fallback: anchor to parent with no offset
+                                    local parent = (fs.GetParent and fs:GetParent()) or apb
+                                    pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
+                                end
                             end
 
-                            -- Force text redraw to apply alignment visually
-                            if fs.GetText and fs.SetText then
-                                local txt = fs:GetText()
-                                if txt then
+                            -- Force text redraw to apply alignment visually (secret-value safe)
+                            if fs and fs.GetText and fs.SetText then
+                                local ok, txt = pcall(fs.GetText, fs)
+                                if ok and txt and type(txt) == "string" then
                                     fs:SetText("")
                                     fs:SetText(txt)
+                                else
+                                    -- Fallback: toggle alpha to force redraw without needing text value
+                                    local okAlpha, alpha = pcall(function() return fs.GetAlpha and fs:GetAlpha() end)
+                                    if okAlpha and alpha then
+                                        pcall(fs.SetAlpha, fs, 0)
+                                        pcall(fs.SetAlpha, fs, alpha)
+                                    end
                                 end
                             end
                         end

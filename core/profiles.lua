@@ -483,14 +483,14 @@ local function applyComponentEditModeViaLibrary(component)
         local v = (db.orientation or component.settings.orientation.default or "H")
         local emv = (v == "H") and 0 or 1
         set((EM and EM.Orientation) or 0, emv)
-        if type(frame.UpdateSystemSettingOrientation) == "function" then pcall(frame.UpdateSystemSettingOrientation, frame) end
+        -- NOTE: UpdateSystemSetting* calls removed to prevent taint (see TAINT.md Rule 2).
+        -- Visual updates now come from the deferred SetActiveLayout() in SaveOnly().
     end
 
     -- Columns/Rows (IconLimit)
     if component.settings.columns then
         local v = tonumber(db.columns or component.settings.columns.default or 12) or 12
         set((EM and EM.IconLimit) or 1, v)
-        if type(frame.UpdateSystemSettingIconLimit) == "function" then pcall(frame.UpdateSystemSettingIconLimit, frame) end
     end
 
     -- Direction (IconDirection)
@@ -500,14 +500,12 @@ local function applyComponentEditModeViaLibrary(component)
         local emv
         if orientation == "H" then emv = (dir == "right") and 1 or 0 else emv = (dir == "up") and 1 or 0 end
         set((EM and EM.IconDirection) or 2, emv)
-        if type(frame.UpdateSystemSettingIconDirection) == "function" then pcall(frame.UpdateSystemSettingIconDirection, frame) end
     end
 
     -- Icon Padding
     if component.settings.iconPadding then
         local v = tonumber(db.iconPadding or component.settings.iconPadding.default or 2) or 2
         set((EM and EM.IconPadding) or 4, v)
-        if type(frame.UpdateSystemSettingIconPadding) == "function" then pcall(frame.UpdateSystemSettingIconPadding, frame) end
     end
 
     -- Icon Size (Scale) - raw 50..200 snapped to 10s
@@ -516,7 +514,6 @@ local function applyComponentEditModeViaLibrary(component)
         if v < 50 then v = 50 elseif v > 200 then v = 200 end
         v = math.floor(v / 10 + 0.5) * 10
         set((EM and EM.IconSize) or 3, v)
-        if type(frame.UpdateSystemSettingIconSize) == "function" then pcall(frame.UpdateSystemSettingIconSize, frame) end
     end
 
     -- Tracked Bars: Display Mode (BarContent) 0=both,1=icon,2=name
@@ -524,7 +521,6 @@ local function applyComponentEditModeViaLibrary(component)
         local v = tostring(db.displayMode or component.settings.displayMode.default or "both")
         local emv = (v == "icon") and 1 or ((v == "name") and 2 or 0)
         set(_G.Enum.EditModeCooldownViewerSetting.BarContent, emv)
-        if type(frame.UpdateSystemSettingBarContent) == "function" then pcall(frame.UpdateSystemSettingBarContent, frame) end
     end
 
     -- Opacity 50..100
@@ -532,7 +528,6 @@ local function applyComponentEditModeViaLibrary(component)
         local v = tonumber(db.opacity or component.settings.opacity.default or 100) or 100
         if v < 50 then v = 50 elseif v > 100 then v = 100 end
         set((EM and EM.Opacity) or 5, v)
-        if type(frame.UpdateSystemSettingOpacity) == "function" then pcall(frame.UpdateSystemSettingOpacity, frame) end
     end
 
     -- Visibility dropdown (0 always, 1 combat, 2 hidden)
@@ -540,32 +535,27 @@ local function applyComponentEditModeViaLibrary(component)
         local mode = tostring(db.visibilityMode or component.settings.visibilityMode.default or "always")
         local emv = (mode == "combat") and 1 or ((mode == "never") and 2 or 0)
         if EM and EM.VisibleSetting then set(EM.VisibleSetting, emv) else set(0, emv) end
-        if type(frame.UpdateSystemSettingVisibleSetting) == "function" then pcall(frame.UpdateSystemSettingVisibleSetting, frame) end
     end
 
     -- Checkboxes (timers/tooltips/hide-inactive) if present on component
     if component.settings.showTimer and EM and EM.ShowTimer then
         local v = (db.showTimer == nil and component.settings.showTimer.default) or db.showTimer
         set(EM.ShowTimer, v and 1 or 0)
-        if type(frame.UpdateSystemSettingShowTimer) == "function" then pcall(frame.UpdateSystemSettingShowTimer, frame) end
     end
     if component.settings.showTooltip and EM and EM.ShowTooltips then
         local v = (db.showTooltip == nil and component.settings.showTooltip.default) or db.showTooltip
         set(EM.ShowTooltips, v and 1 or 0)
-        if type(frame.UpdateSystemSettingShowTooltips) == "function" then pcall(frame.UpdateSystemSettingShowTooltips, frame) end
     end
     if component.settings.hideWhenInactive and EM then
         local v = (db.hideWhenInactive == nil and component.settings.hideWhenInactive.default) or db.hideWhenInactive
-        -- No stable enum seen earlier; best-effort: try UpdateSystemSettingHideWhenInactive
+        -- No stable enum seen earlier; best-effort setting via library
         if frame.settingDisplayInfo and frame.settingDisplayInfo.hideWhenInactive then
             set(frame.settingDisplayInfo.hideWhenInactive, v and 1 or 0)
         end
-        if type(frame.UpdateSystemSettingHideWhenInactive) == "function" then pcall(frame.UpdateSystemSettingHideWhenInactive, frame) end
     end
 
-    if type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-    local ic = (frame.GetItemContainerFrame and frame:GetItemContainerFrame()) or frame
-    if ic and type(ic.UpdateLayout) == "function" then pcall(ic.UpdateLayout, ic) end
+    -- NOTE: UpdateLayout() calls removed to prevent taint.
+    -- The deferred SetActiveLayout() in SaveOnly() triggers Blizzard's clean rebuild.
 end
 
 local function applyAllComponentsEditModeViaLibrary()

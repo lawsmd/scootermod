@@ -14,6 +14,19 @@ local function _SafePCall(method, frame, useSecure)
         pcall(fn, frame)
     end
 end
+
+-- 12.0+: Weak-key lookup table to avoid writing properties to Blizzard frames
+-- (which would taint them and cause secret value errors during Edit Mode operations)
+local editModeState = setmetatable({}, { __mode = "k" })
+
+local function getEditModeState(frame)
+    if not frame then return nil end
+    if not editModeState[frame] then
+        editModeState[frame] = {}
+    end
+    return editModeState[frame]
+end
+
 local addonName, addon = ...
 
 addon.EditMode = {}
@@ -710,22 +723,28 @@ end
 local function _ForceObjectiveTrackerRelayout(frame, origin)
     if not frame then return end
 
+    local state = getEditModeState(frame)
+    if not state then return end
+
     -- Avoid re-entrancy and avoid calling into module layout code while Blizzard is mid-update
     -- (this can trip internal invariants like AnchorBlock entry counts).
-    frame._ScooterObjectiveTrackerRelayoutOrigin = origin or frame._ScooterObjectiveTrackerRelayoutOrigin
-    if frame._ScooterObjectiveTrackerRelayoutQueued then return end
-    frame._ScooterObjectiveTrackerRelayoutQueued = true
+    state.relayoutOrigin = origin or state.relayoutOrigin
+    if state.relayoutQueued then return end
+    state.relayoutQueued = true
 
     local timer = _G.C_Timer
     if not (timer and type(timer.After) == "function") then
-        frame._ScooterObjectiveTrackerRelayoutQueued = nil
+        state.relayoutQueued = nil
         return
     end
 
     timer.After(0, function()
         if not frame then return end
-        frame._ScooterObjectiveTrackerRelayoutQueued = nil
-        frame._ScooterObjectiveTrackerRelayoutOrigin = nil
+        local st = getEditModeState(frame)
+        if st then
+            st.relayoutQueued = nil
+            st.relayoutOrigin = nil
+        end
 
         -- Mark modules dirty so the next Update pass recomputes block heights/anchors safely.
         if type(frame.ForEachModule) == "function" then

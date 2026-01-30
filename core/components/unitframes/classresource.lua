@@ -358,9 +358,19 @@ local function applyClassResourceForUnit(unit)
 		local origPadding = originalPaddings[frame] or { leftPadding = 0, topPadding = 0 }
 
 		-- POSITIONING: Use leftPadding/topPadding within the managed layout system
-		if not inCombat then
-			frame.leftPadding = (origPadding.leftPadding or 0) + offsetX
-			frame.topPadding = (origPadding.topPadding or 0) - offsetY  -- Negate Y so positive = up
+		-- TAINT MITIGATION: Only write padding properties when user has requested non-zero offsets.
+		-- Zero-Touch profiles (offsetX=0, offsetY=0) skip this write to avoid tainting Blizzard frames.
+		-- Users who configure offsets accept the trade-off for the functionality.
+		if not inCombat and (offsetX ~= 0 or offsetY ~= 0) then
+			local newLeft = (origPadding.leftPadding or 0) + offsetX
+			local newTop = (origPadding.topPadding or 0) - offsetY  -- Negate Y so positive = up
+			-- Only write if different from current to minimize unnecessary taint surface
+			if frame.leftPadding ~= newLeft then
+				frame.leftPadding = newLeft
+			end
+			if frame.topPadding ~= newTop then
+				frame.topPadding = newTop
+			end
 			debugPrint("Set padding for", frame:GetName() or "unnamed",
 				"left:", frame.leftPadding, "top:", frame.topPadding)
 		end
