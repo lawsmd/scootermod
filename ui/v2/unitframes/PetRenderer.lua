@@ -190,6 +190,28 @@ local function buildHealthStyleTab(inner)
     inner:Finalize()
 end
 
+local function buildHealthSizingTab(inner)
+    -- Height % (overlay shrinking for health bars)
+    inner:AddSlider({
+        label = "Height %",
+        min = 50,
+        max = 100,
+        step = 5,
+        get = function()
+            local t = ensureUFDB() or {}
+            return tonumber(t.healthBarOverlayHeightPct) or 100
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarOverlayHeightPct = tonumber(v) or 100
+            applyBarTextures()
+        end,
+    })
+
+    inner:Finalize()
+end
+
 local function buildHealthBorderTab(inner)
     -- Check if custom borders are enabled
     local function isEnabled()
@@ -706,6 +728,7 @@ function UF.RenderPet(panel, scrollContent)
                 componentId = COMPONENT_ID,
                 sectionKey = "healthBar_tabs",
                 buildContent = {
+                    sizing = function(cf, tabInner) buildHealthSizingTab(tabInner) end,
                     style = function(cf, tabInner) buildHealthStyleTab(tabInner) end,
                     border = function(cf, tabInner) buildHealthBorderTab(tabInner) end,
                     percentText = function(cf, tabInner) buildHealthPercentTextTab(tabInner) end,
@@ -771,6 +794,11 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:AddSlider({ label = "Background Opacity", min = 0, max = 100, step = 1,
                             get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBackgroundOpacity) or 50 end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarBackgroundOpacity = tonumber(v) or 50; applyBarTextures() end end })
+                        tabInner:AddSpacer(8)
+                        -- Height % (overlay shrinking for power bars)
+                        tabInner:AddSlider({ label = "Overlay Height %", min = 50, max = 100, step = 5,
+                            get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOverlayHeightPct) or 100 end,
+                            set = function(v) local t = ensureUFDB(); if t then t.powerBarOverlayHeightPct = tonumber(v) or 100; applyBarTextures() end end })
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)

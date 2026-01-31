@@ -217,6 +217,28 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
     inner:Finalize()
 end
 
+local function buildSizingTab(inner, barPrefix, applyFn)
+    -- Height % (overlay shrinking for health/power bars)
+    inner:AddSlider({
+        label = "Height %",
+        min = 50,
+        max = 100,
+        step = 5,
+        get = function()
+            local t = ensureUFDB() or {}
+            return tonumber(t[barPrefix .. "OverlayHeightPct"]) or 100
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t[barPrefix .. "OverlayHeightPct"] = tonumber(v) or 100
+            applyFn()
+        end,
+    })
+
+    inner:Finalize()
+end
+
 local function buildBorderTab(inner, barPrefix, applyFn)
     inner:AddBarBorderSelector({
         label = "Border Style",
@@ -631,6 +653,9 @@ function UF.RenderPlayer(panel, scrollContent)
                 componentId = COMPONENT_ID,
                 sectionKey = "healthBar_tabs",
                 buildContent = {
+                    sizing = function(cf, tabInner)
+                        buildSizingTab(tabInner, "healthBar", applyBarTextures)
+                    end,
                     style = function(cf, tabInner)
                         buildStyleTab(tabInner, "healthBar", applyBarTextures)
                     end,

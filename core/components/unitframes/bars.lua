@@ -890,7 +890,25 @@ do
         end
 
         overlay:ClearAllPoints()
-        overlay:SetAllPoints(statusBarTex)
+
+        -- Height reduction: shrink overlay from both top and bottom (centered)
+        -- when healthBarHeightPct < 100. This creates a visually thinner bar
+        -- while still tracking health correctly via StatusBarTexture anchoring.
+        local heightPct = st.rectHeightPct or 100
+        if heightPct >= 100 then
+            overlay:SetAllPoints(statusBarTex)
+        else
+            -- Calculate inset from both edges for centered shrinking
+            local barHeight = 0
+            if bar and bar.GetHeight then
+                local ok, h = pcall(bar.GetHeight, bar)
+                if ok and type(h) == "number" then barHeight = h end
+            end
+            local reduction = 1 - (heightPct / 100)
+            local inset = (barHeight * reduction) / 2
+            overlay:SetPoint("TOPLEFT", statusBarTex, "TOPLEFT", 0, -inset)
+            overlay:SetPoint("BOTTOMRIGHT", statusBarTex, "BOTTOMRIGHT", 0, inset)
+        end
         overlay:Show()
 
         -- CRITICAL: Hide Blizzard's native texture(s) so they don't show through as white.
@@ -923,10 +941,23 @@ do
         if not okTex then statusBarTex = nil end
 
         overlay:ClearAllPoints()
-        if statusBarTex then
-            overlay:SetAllPoints(statusBarTex)
+
+        -- Height reduction: shrink overlay from both top and bottom (centered)
+        -- when powerBarHeightPct < 100. Same approach as health bar overlay.
+        local heightPct = st.powerOverlayHeightPct or 100
+        local anchorTarget = statusBarTex or bar
+        if heightPct >= 100 then
+            overlay:SetAllPoints(anchorTarget)
         else
-            overlay:SetAllPoints(bar)
+            local barHeight = 0
+            if bar and bar.GetHeight then
+                local ok, h = pcall(bar.GetHeight, bar)
+                if ok and type(h) == "number" then barHeight = h end
+            end
+            local reduction = 1 - (heightPct / 100)
+            local inset = (barHeight * reduction) / 2
+            overlay:SetPoint("TOPLEFT", anchorTarget, "TOPLEFT", 0, -inset)
+            overlay:SetPoint("BOTTOMRIGHT", anchorTarget, "BOTTOMRIGHT", 0, inset)
         end
         overlay:Show()
     end
@@ -959,9 +990,12 @@ do
         -- Check if non-default color or texture settings require overlay
         local colorMode = cfg and cfg.healthBarColorMode or "default"
         local texKey = cfg and cfg.healthBarTexture or "default"
+        local heightPct = cfg and tonumber(cfg.healthBarHeightPct) or 100
         local hasNonDefaultColor = (colorMode ~= "default" and colorMode ~= "" and colorMode ~= nil)
         local hasNonDefaultTexture = (texKey ~= "default" and texKey ~= "" and texKey ~= nil)
-        local needsOverlayForStyling = hasNonDefaultColor or hasNonDefaultTexture
+        local overlayHeightPct = cfg and tonumber(cfg.healthBarOverlayHeightPct) or 100
+        local hasHeightReduction = (overlayHeightPct < 100)
+        local needsOverlayForStyling = hasNonDefaultColor or hasNonDefaultTexture or hasHeightReduction
 
         if unit == "Target" or unit == "Focus" then
             local portraitCfg = rawget(ufCfg, "portrait")
@@ -999,6 +1033,9 @@ do
         end
 
         st.rectActive = shouldActivate
+
+        -- Store height percentage for overlay shrinking (used by updateRectHealthOverlay)
+        st.rectHeightPct = cfg and tonumber(cfg.healthBarOverlayHeightPct) or 100
 
         if not shouldActivate then
             if st.rectFill then
@@ -1192,11 +1229,13 @@ do
 
         local texKey = cfg.powerBarTexture or "default"
         local colorMode = cfg.powerBarColorMode or "default"
+        local overlayHeightPct = tonumber(cfg.powerBarOverlayHeightPct) or 100
 
         -- Determine whether overlay should be active: only for non-default settings
         local isDefaultTexture = (texKey == "default" or texKey == "" or texKey == nil)
         local isDefaultColor = (colorMode == "default" or colorMode == "" or colorMode == nil)
-        local shouldActivate = not (isDefaultTexture and isDefaultColor)
+        local hasHeightReduction = (overlayHeightPct < 100)
+        local shouldActivate = not (isDefaultTexture and isDefaultColor) or hasHeightReduction
 
         -- Deactivate overlay if bar is hidden or texture-only-hidden
         if cfg.powerBarHidden == true or cfg.powerBarHideTextureOnly == true then
@@ -1207,6 +1246,9 @@ do
         if not st then return end
 
         st.powerOverlayActive = shouldActivate
+
+        -- Store height percentage for overlay shrinking (used by updateRectPowerOverlay)
+        st.powerOverlayHeightPct = cfg and tonumber(cfg.powerBarOverlayHeightPct) or 100
 
         if not shouldActivate then
             if st.powerFill then
@@ -1501,7 +1543,7 @@ do
                 local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
                 local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
                 if hasBackgroundCustomization then
-                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", cfg.healthBarOverlayHeightPct)
                 end
             end
 
@@ -1567,6 +1609,16 @@ do
                         local expandY = baseOffset - inset
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                        -- Calculate height inset for reduced-height bar overlay
+                        local heightInset = 0
+                        local heightPct = tonumber(cfg.healthBarOverlayHeightPct) or 100
+                        if heightPct < 100 and hb and hb.GetHeight then
+                            local ok, barHeight = pcall(hb.GetHeight, hb)
+                            if ok and type(barHeight) == "number" then
+                                local reduction = 1 - (heightPct / 100)
+                                heightInset = (barHeight * reduction) / 2
+                            end
+                        end
                         addon.Borders.ApplySquare(anchorFrame, {
                             size = thickness,
                             color = sqColor,
@@ -1574,6 +1626,7 @@ do
                             layerSublevel = 3,
                             expandX = expandX,
                             expandY = expandY,
+                            heightInset = heightInset,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
                         })
                     end
@@ -1632,7 +1685,7 @@ do
                 local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
                 local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
                 if hasBackgroundCustomization then
-                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", cfg.healthBarOverlayHeightPct)
                 end
             end
 
@@ -1696,6 +1749,16 @@ do
                         local expandY = baseOffset - inset
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                        -- Calculate height inset for reduced-height bar overlay
+                        local heightInset = 0
+                        local heightPct = tonumber(cfg.healthBarOverlayHeightPct) or 100
+                        if heightPct < 100 and hb and hb.GetHeight then
+                            local ok2, barHeight = pcall(hb.GetHeight, hb)
+                            if ok2 and type(barHeight) == "number" then
+                                local reduction = 1 - (heightPct / 100)
+                                heightInset = (barHeight * reduction) / 2
+                            end
+                        end
                         addon.Borders.ApplySquare(anchorFrame, {
                             size = thickness,
                             color = sqColor,
@@ -1703,6 +1766,7 @@ do
                             layerSublevel = 3,
                             expandX = expandX,
                             expandY = expandY,
+                            heightInset = heightInset,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
                         })
                     end
@@ -1758,7 +1822,7 @@ do
                 local bgOpacityHB = tonumber(cfg.healthBarBackgroundOpacity)
                 local hasBackgroundCustomization = bgTexKeyHB or bgColorModeHB or (bgOpacityHB and bgOpacityHB ~= 1)
                 if hasBackgroundCustomization then
-                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", cfg.healthBarOverlayHeightPct)
                 end
             end
 
@@ -1822,6 +1886,16 @@ do
                         local expandY = baseOffset - inset
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                        -- Calculate height inset for reduced-height bar overlay
+                        local heightInset = 0
+                        local heightPct = tonumber(cfg.healthBarOverlayHeightPct) or 100
+                        if heightPct < 100 and hb and hb.GetHeight then
+                            local ok2, barHeight = pcall(hb.GetHeight, hb)
+                            if ok2 and type(barHeight) == "number" then
+                                local reduction = 1 - (heightPct / 100)
+                                heightInset = (barHeight * reduction) / 2
+                            end
+                        end
                         addon.Borders.ApplySquare(anchorFrame, {
                             size = thickness,
                             color = sqColor,
@@ -1829,6 +1903,7 @@ do
                             layerSublevel = 3,
                             expandX = expandX,
                             expandY = expandY,
+                            heightInset = heightInset,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
                         })
                     end
@@ -2185,7 +2260,7 @@ do
                                     local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
                                     local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
                                     local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
-                                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", cfg.healthBarOverlayHeightPct)
                                 end
                             end
 
@@ -2293,6 +2368,16 @@ do
                                             local expandX = baseX - inset
                                             if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                             if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                            -- Calculate height inset for reduced-height bar overlay
+                                            local heightInset = 0
+                                            local heightPct = tonumber(cfg.healthBarOverlayHeightPct) or 100
+                                            if heightPct < 100 and hb and hb.GetHeight then
+                                                local okH, barHeight = pcall(hb.GetHeight, hb)
+                                                if okH and type(barHeight) == "number" then
+                                                    local reduction = 1 - (heightPct / 100)
+                                                    heightInset = (barHeight * reduction) / 2
+                                                end
+                                            end
                                             addon.Borders.ApplySquare(anchorFrame, {
                                                 size = thickness,
                                                 color = sqColor,
@@ -2300,6 +2385,7 @@ do
                                                 layerSublevel = 3,
                                                 expandX = expandX,
                                                 expandY = expandY,
+                                                heightInset = heightInset,
                                                 skipDimensionCheck = true, -- Anchor frame may be small
                                             })
                                             handled = true
@@ -2442,7 +2528,7 @@ do
                                     local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
                                     local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
                                     local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
-                                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+                                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power", cfg.powerBarOverlayHeightPct)
                                 end
                             end
 
@@ -2555,6 +2641,16 @@ do
                                             local expandX = baseX - inset
                                             if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                             if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                            -- Calculate height inset for reduced-height bar overlay
+                                            local heightInset = 0
+                                            local heightPct = tonumber(cfg.powerBarOverlayHeightPct) or 100
+                                            if heightPct < 100 and pb and pb.GetHeight then
+                                                local okH, barHeight = pcall(pb.GetHeight, pb)
+                                                if okH and type(barHeight) == "number" then
+                                                    local reduction = 1 - (heightPct / 100)
+                                                    heightInset = (barHeight * reduction) / 2
+                                                end
+                                            end
                                             addon.Borders.ApplySquare(anchorFrame, {
                                                 size = thickness,
                                                 color = sqColor,
@@ -2562,6 +2658,7 @@ do
                                                 layerSublevel = 3,
                                                 expandX = expandX,
                                                 expandY = expandY,
+                                                heightInset = heightInset,
                                                 skipDimensionCheck = true, -- Anchor frame may be small
                                             })
                                         end
@@ -2723,7 +2820,7 @@ do
                     local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
                     local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
                     local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
-                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", cfg.healthBarOverlayHeightPct)
                 end
             end
 
@@ -2862,6 +2959,16 @@ do
                                     local expandX = baseX - inset
                                     if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                     if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                    -- Calculate height inset for reduced-height bar overlay
+                                    local heightInset = 0
+                                    local heightPct = tonumber(cfg.healthBarOverlayHeightPct) or 100
+                                    if heightPct < 100 and hb and hb.GetHeight then
+                                        local okH, barHeight = pcall(hb.GetHeight, hb)
+                                        if okH and type(barHeight) == "number" then
+                                            local reduction = 1 - (heightPct / 100)
+                                            heightInset = (barHeight * reduction) / 2
+                                        end
+                                    end
                                     -- Pet is already excluded by the outer guard
                                     addon.Borders.ApplySquare(hb, {
                                         size = thickness,
@@ -2870,6 +2977,7 @@ do
                                         layerSublevel = 3,
                                         expandX = expandX,
                                         expandY = expandY,
+                                        heightInset = heightInset,
                                     })
                                 end
 							end
@@ -3274,7 +3382,7 @@ do
                     local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
                     local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
                     local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
-                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power", cfg.powerBarOverlayHeightPct)
                 end
             end
             
@@ -3486,7 +3594,7 @@ do
                     local altBgTexKey = acfg.backgroundTexture or "default"
                     local altBgColorMode = acfg.backgroundColorMode or "default"
                     local altBgOpacity = acfg.backgroundOpacity or 50
-                    applyBackgroundToBar(apb, altBgTexKey, altBgColorMode, acfg.backgroundTint, altBgOpacity, unit, "altpower")
+                    applyBackgroundToBar(apb, altBgTexKey, altBgColorMode, acfg.backgroundTint, altBgOpacity, unit, "altpower", nil)
 
                     -- Hide texture only (bar visible=false but text visible=true)
                     local altHideTextureOnly = (acfg.hideTextureOnly == true)
@@ -4364,6 +4472,16 @@ do
                                 local expandX = baseX - inset
                                 if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                 if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
+                                -- Calculate height inset for reduced-height bar overlay
+                                local heightInset = 0
+                                local heightPct = tonumber(cfg.powerBarOverlayHeightPct) or 100
+                                if heightPct < 100 and pb and pb.GetHeight then
+                                    local okH, barHeight = pcall(pb.GetHeight, pb)
+                                    if okH and type(barHeight) == "number" then
+                                        local reduction = 1 - (heightPct / 100)
+                                        heightInset = (barHeight * reduction) / 2
+                                    end
+                                end
                                 -- Pet is already excluded by the outer guard
                                 addon.Borders.ApplySquare(pb, {
                                     size = thickness,
@@ -4372,6 +4490,7 @@ do
                                     layerSublevel = 3,
                                     expandX = expandX,
                                     expandY = expandY,
+                                    heightInset = heightInset,
                                 })
                             end
                         end

@@ -458,7 +458,8 @@ end
 --------------------------------------------------------------------------------
 
 -- Apply background texture and color to a bar
-function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind)
+-- @param heightPct: Optional percentage (50-100) to reduce background height to match foreground overlay
+function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind, heightPct)
     if not bar then return end
 
     -- Combat safety: creating/modifying textures on protected frames during combat can taint.
@@ -492,8 +493,28 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
             sublevel = 1
         end
         bar.ScooterModBG = bar:CreateTexture(nil, layer, nil, sublevel)
+    end
+
+    -- Apply height reduction to match foreground overlay when heightPct < 100
+    local effectiveHeightPct = tonumber(heightPct) or 100
+    if effectiveHeightPct >= 100 then
+        bar.ScooterModBG:ClearAllPoints()
         bar.ScooterModBG:SetAllPoints(bar)
-    elseif barKind == "cast" then
+    else
+        bar.ScooterModBG:ClearAllPoints()
+        local barHeight = 0
+        if bar and bar.GetHeight then
+            local ok, h = pcall(bar.GetHeight, bar)
+            if ok and type(h) == "number" then barHeight = h end
+        end
+        local reduction = 1 - (effectiveHeightPct / 100)
+        local inset = (barHeight * reduction) / 2
+        bar.ScooterModBG:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, -inset)
+        bar.ScooterModBG:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, inset)
+    end
+
+    -- Handle sublevel changes for existing backgrounds
+    if barKind == "cast" then
         -- If we created ScooterModBG earlier (e.g., before cast styling was enabled),
         -- make sure it sits above the stock Background for CastingBarFrame.
         local _, currentSub = bar.ScooterModBG:GetDrawLayer()
