@@ -36,6 +36,7 @@ local RULES_CARD_RIGHT_MARGIN = 8
 local RULES_CARD_PADDING = 12
 local RULES_MAX_DISPLAY_BADGES = 3
 local RULES_SPEC_BADGE_GAP = 12  -- Horizontal gap between spec badges
+local RULES_SPEC_BADGE_MIN_WIDTH = 70  -- Minimum width for spec badges
 local RULES_BREADCRUMB_HEIGHT = 30  -- Taller dropdowns for long text
 
 --------------------------------------------------------------------------------
@@ -415,13 +416,10 @@ local function CreateRulesSpecBadge(parent, specID)
     end
     badge._name = name
 
-    -- Auto-size based on text width
-    C_Timer.After(0, function()
-        if name and badge then
-            local textWidth = name:GetStringWidth() or 60
-            badge:SetWidth(20 + textWidth + 8)
-        end
-    end)
+    -- Size based on text width (synchronous for correct positioning)
+    local textWidth = name:GetStringWidth() or 60
+    local badgeWidth = math.max(RULES_SPEC_BADGE_MIN_WIDTH, 20 + textWidth + 8)
+    badge:SetWidth(badgeWidth)
 
     -- Tooltip
     badge:EnableMouse(true)

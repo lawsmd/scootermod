@@ -377,11 +377,16 @@ function EssentialCooldowns.Render(panel, scrollContent)
 
             -- Font style options
             local fontStyleValues = {
-                NONE = "None",
-                OUTLINE = "Outline",
-                THICKOUTLINE = "Thick Outline",
+                ["NONE"] = "Regular",
+                ["OUTLINE"] = "Outline",
+                ["THICKOUTLINE"] = "Thick Outline",
+                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+                ["SHADOW"] = "Shadow",
+                ["SHADOWOUTLINE"] = "Shadow Outline",
+                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
             }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
 
             -- Tabbed section for Charges (stacks) and Cooldowns text settings
             inner:AddTabbedSection({
@@ -458,8 +463,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
                         -- Offset X slider
                         tabBuilder:AddSlider({
                             label = "Offset X",
-                            min = -50,
-                            max = 50,
+                            min = -100,
+                            max = 100,
                             step = 1,
                             get = function()
                                 local offset = getStacksSetting("offset", {x=0, y=0})
@@ -474,15 +479,15 @@ function EssentialCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                            minLabel = "-100",
+                            maxLabel = "+100",
                         })
 
                         -- Offset Y slider
                         tabBuilder:AddSlider({
                             label = "Offset Y",
-                            min = -50,
-                            max = 50,
+                            min = -100,
+                            max = 100,
                             step = 1,
                             get = function()
                                 local offset = getStacksSetting("offset", {x=0, y=0})
@@ -497,8 +502,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                            minLabel = "-100",
+                            maxLabel = "+100",
                         })
 
                         tabBuilder:Finalize()
@@ -569,8 +574,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
                         -- Offset X slider
                         tabBuilder:AddSlider({
                             label = "Offset X",
-                            min = -50,
-                            max = 50,
+                            min = -100,
+                            max = 100,
                             step = 1,
                             get = function()
                                 local offset = getCooldownSetting("offset", {x=0, y=0})
@@ -585,15 +590,15 @@ function EssentialCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                            minLabel = "-100",
+                            maxLabel = "+100",
                         })
 
                         -- Offset Y slider
                         tabBuilder:AddSlider({
                             label = "Offset Y",
-                            min = -50,
-                            max = 50,
+                            min = -100,
+                            max = 100,
                             step = 1,
                             get = function()
                                 local offset = getCooldownSetting("offset", {x=0, y=0})
@@ -608,8 +613,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                            minLabel = "-100",
+                            maxLabel = "+100",
                         })
 
                         tabBuilder:Finalize()

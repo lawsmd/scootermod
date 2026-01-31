@@ -154,13 +154,6 @@ Helpers.fontStyleValues = {
 }
 Helpers.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
 
--- Simple font style options (3 options)
-Helpers.fontStyleSimpleValues = {
-    NONE = "Regular",
-    OUTLINE = "Outline",
-    THICKOUTLINE = "Thick Outline",
-}
-Helpers.fontStyleSimpleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
 
 -- Text color mode options
 Helpers.textColorValues = {

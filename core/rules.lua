@@ -201,23 +201,24 @@ local function applyActionValue(actionId, value, reason)
         return
     end
 
-    -- Log if rulesLogging is enabled in profile
-    local profile = addon and addon.db and addon.db.profile
-    if profile and profile.rulesLogging then
-        local label = handler.path and table.concat(handler.path, " > ") or actionId
-        local displayValue = tostring(value)
-        if handler.valueType == "boolean" then
-            displayValue = value and "ON" or "OFF"
-        end
-        addon:Print(string.format("[Rules] %s = %s (%s)", label, displayValue, reason or ""))
+    -- Always log rule actions for diagnostic purposes
+    local label = handler.path and table.concat(handler.path, " > ") or actionId
+    local displayValue = tostring(value)
+    if handler.valueType == "boolean" then
+        displayValue = value and "true" or "false"
     end
 
     local ok, changed = pcall(handler.set, value, reason)
     if not ok then
         if addon and addon.Print then
-            addon:Print(string.format("Rules: failed to apply %s (%s)", actionId, tostring(ok)))
+            addon:Print(string.format("Rules: Failed to apply %s (%s)", label, tostring(changed)))
         end
         return
+    end
+
+    -- Only log when a change was actually made
+    if changed ~= false and addon and addon.Print then
+        addon:Print(string.format("Rules: %s = %s (%s)", label, displayValue, reason or ""))
     end
 end
 
@@ -1032,6 +1033,15 @@ function Rules:ApplyAll(reason)
                 if ok then
                     -- Store the current (non-overridden) value as the baseline
                     setBaseline(actionId, currentValue)
+                    -- Log baseline capture for diagnostics
+                    if addon and addon.Print then
+                        local label = handler.path and table.concat(handler.path, " > ") or actionId
+                        local displayValue = tostring(currentValue)
+                        if handler.valueType == "boolean" then
+                            displayValue = currentValue and "true" or "false"
+                        end
+                        addon:Print(string.format("Rules: Baseline captured for %s = %s", label, displayValue))
+                    end
                 end
             end
         end

@@ -9,6 +9,10 @@ addon.UI.Settings.CDM.TrackedBuffs = {}
 local TrackedBuffs = addon.UI.Settings.CDM.TrackedBuffs
 local SettingsBuilder = addon.UI.SettingsBuilder
 
+-- Text color options (shared across text settings)
+local textColorValues = { default = "Default", class = "Class Color", custom = "Custom" }
+local textColorOrder = { "default", "class", "custom" }
+
 function TrackedBuffs.Render(panel, scrollContent)
     panel:ClearContent()
     local builder = SettingsBuilder:CreateFor(scrollContent)
@@ -229,6 +233,271 @@ function TrackedBuffs.Render(panel, scrollContent)
                     if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
                 end,
                 minLabel = "-4", maxLabel = "+4",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    -- Text Section (contains tabbed sub-sections for Charges and Cooldowns)
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "trackedBuffs",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Helper to apply text styling
+            local function applyText()
+                if addon and addon.ApplyStyles then
+                    C_Timer.After(0, function() addon:ApplyStyles() end)
+                end
+            end
+
+            -- Font style options
+            local fontStyleValues = {
+                ["NONE"] = "Regular",
+                ["OUTLINE"] = "Outline",
+                ["THICKOUTLINE"] = "Thick Outline",
+                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+                ["SHADOW"] = "Shadow",
+                ["SHADOWOUTLINE"] = "Shadow Outline",
+                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
+            }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+
+            -- Tabbed section for Charges (stacks) and Cooldowns text settings
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "charges", label = "Charges" },
+                    { key = "cooldowns", label = "Cooldowns" },
+                },
+                componentId = "trackedBuffs",
+                sectionKey = "textTabs",
+                buildContent = {
+                    charges = function(tabContent, tabBuilder)
+                        -- Helper to get/set textStacks sub-properties
+                        local function getStacksSetting(key, default)
+                            local ts = getSetting("textStacks")
+                            if ts and ts[key] ~= nil then return ts[key] end
+                            return default
+                        end
+                        local function setStacksSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textStacks = comp.db.textStacks or {}
+                                comp.db.textStacks[key] = value
+                            end
+                            applyText()
+                        end
+
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for charges/stacks text.",
+                            get = function() return getStacksSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setStacksSetting("fontFace", v) end,
+                        })
+
+                        -- Font Size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getStacksSetting("size", 16) end,
+                            set = function(v) setStacksSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font Style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getStacksSetting("style", "OUTLINE") end,
+                            set = function(v) setStacksSetting("style", v) end,
+                        })
+
+                        -- Font Color picker
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Font Color",
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getStacksSetting("colorMode", "default") end,
+                            set = function(v) setStacksSetting("colorMode", v or "default") end,
+                            getColor = function()
+                                local c = getStacksSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setStacksSetting("color", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        -- Offset X slider
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -100,
+                            max = 100,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.x = v
+                                end
+                                applyText()
+                            end,
+                            minLabel = "-100",
+                            maxLabel = "+100",
+                        })
+
+                        -- Offset Y slider
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -100,
+                            max = 100,
+                            step = 1,
+                            get = function()
+                                local offset = getStacksSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textStacks = comp.db.textStacks or {}
+                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                    comp.db.textStacks.offset.y = v
+                                end
+                                applyText()
+                            end,
+                            minLabel = "-100",
+                            maxLabel = "+100",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    cooldowns = function(tabContent, tabBuilder)
+                        -- Helper to get/set textCooldown sub-properties
+                        local function getCooldownSetting(key, default)
+                            local tc = getSetting("textCooldown")
+                            if tc and tc[key] ~= nil then return tc[key] end
+                            return default
+                        end
+                        local function setCooldownSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textCooldown = comp.db.textCooldown or {}
+                                comp.db.textCooldown[key] = value
+                            end
+                            applyText()
+                        end
+
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for cooldown timer text.",
+                            get = function() return getCooldownSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setCooldownSetting("fontFace", v) end,
+                        })
+
+                        -- Font Size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getCooldownSetting("size", 14) end,
+                            set = function(v) setCooldownSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font Style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getCooldownSetting("style", "OUTLINE") end,
+                            set = function(v) setCooldownSetting("style", v) end,
+                        })
+
+                        -- Font Color picker
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Font Color",
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getCooldownSetting("colorMode", "default") end,
+                            set = function(v) setCooldownSetting("colorMode", v or "default") end,
+                            getColor = function()
+                                local c = getCooldownSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setCooldownSetting("color", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        -- Offset X slider
+                        tabBuilder:AddSlider({
+                            label = "Offset X",
+                            min = -100,
+                            max = 100,
+                            step = 1,
+                            get = function()
+                                local offset = getCooldownSetting("offset", {x=0, y=0})
+                                return offset.x or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textCooldown = comp.db.textCooldown or {}
+                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                    comp.db.textCooldown.offset.x = v
+                                end
+                                applyText()
+                            end,
+                            minLabel = "-100",
+                            maxLabel = "+100",
+                        })
+
+                        -- Offset Y slider
+                        tabBuilder:AddSlider({
+                            label = "Offset Y",
+                            min = -100,
+                            max = 100,
+                            step = 1,
+                            get = function()
+                                local offset = getCooldownSetting("offset", {x=0, y=0})
+                                return offset.y or 0
+                            end,
+                            set = function(v)
+                                local comp = getComponent()
+                                if comp and comp.db then
+                                    comp.db.textCooldown = comp.db.textCooldown or {}
+                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                    comp.db.textCooldown.offset.y = v
+                                end
+                                applyText()
+                            end,
+                            minLabel = "-100",
+                            maxLabel = "+100",
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
             })
 
             inner:Finalize()

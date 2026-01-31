@@ -18,12 +18,8 @@ end
 
 -- Open Blizzard's Cooldown Manager / Cooldown Viewer settings UI.
 -- Returns true if we successfully opened a target frame, false otherwise.
+-- No combat check needed - Blizzard's CDM settings work during combat.
 function addon:OpenCooldownManagerSettings()
-    if InCombatLockdown and InCombatLockdown() then
-        if addon and addon.Print then addon:Print("Cannot open Settings during combat.") end
-        return false
-    end
-
     local opened = false
 
     -- Prefer opening the dedicated Cooldown Viewer Settings frame directly

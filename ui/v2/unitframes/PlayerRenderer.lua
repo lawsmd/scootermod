@@ -844,6 +844,709 @@ function UF.RenderPlayer(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
+    -- Collapsible Section: Alternate Power Bar (Player only - conditional)
+    --------------------------------------------------------------------------------
+    -- Only shown for specs that have an alternate power bar (e.g., Elemental Shaman, Shadow Priest, Brewmaster Monk)
+
+    if addon.UnitFrames_PlayerHasAlternatePowerBar and addon.UnitFrames_PlayerHasAlternatePowerBar() then
+
+        -- Helper to access the nested altPowerBar config
+        local function ensureAltPowerBarDB()
+            local t = ensureUFDB()
+            if not t then return nil end
+            if not t.altPowerBar then
+                t.altPowerBar = {}
+            end
+            return t.altPowerBar
+        end
+
+        -- Helper for nested text config
+        local function ensureAltPowerTextDB(textKey)
+            local apb = ensureAltPowerBarDB()
+            if not apb then return nil end
+            if not apb[textKey] then
+                apb[textKey] = {}
+            end
+            return apb[textKey]
+        end
+
+        local altPowerTabs = {
+            { key = "positioning", label = "Positioning" },
+            { key = "sizing", label = "Sizing" },
+            { key = "style", label = "Style" },
+            { key = "border", label = "Border" },
+            { key = "visibility", label = "Visibility" },
+            { key = "percentText", label = "% Text" },
+            { key = "valueText", label = "Value Text" },
+        }
+
+        builder:AddCollapsibleSection({
+            title = "Alternate Power Bar",
+            componentId = COMPONENT_ID,
+            sectionKey = "altPowerBar",
+            defaultExpanded = false,
+            buildContent = function(contentFrame, inner)
+                inner:AddTabbedSection({
+                    tabs = altPowerTabs,
+                    componentId = COMPONENT_ID,
+                    sectionKey = "altPowerBar_tabs",
+                    buildContent = {
+                        positioning = function(cf, tabInner)
+                            tabInner:AddSlider({
+                                label = "X Offset",
+                                min = -150, max = 150, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.offsetX) or 0
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.offsetX = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+                            tabInner:AddSlider({
+                                label = "Y Offset",
+                                min = -150, max = 150, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.offsetY) or 0
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.offsetY = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+                            tabInner:Finalize()
+                        end,
+                        sizing = function(cf, tabInner)
+                            tabInner:AddSlider({
+                                label = "Width %",
+                                min = 10, max = 150, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.widthPct) or 100
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.widthPct = tonumber(v) or 100
+                                    applyBarTextures()
+                                end,
+                            })
+                            tabInner:Finalize()
+                        end,
+                        style = function(cf, tabInner)
+                            -- Foreground Texture
+                            tabInner:AddBarTextureSelector({
+                                label = "Foreground Texture",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.texture or "default"
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.texture = v or "default"
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Foreground Color
+                            tabInner:AddSelectorColorPicker({
+                                label = "Foreground Color",
+                                values = UF.healthColorValues,
+                                order = UF.healthColorOrder,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.colorMode or "default"
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.colorMode = v or "default"
+                                    applyBarTextures()
+                                end,
+                                getColor = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    local c = apb.tint or {1, 1, 1, 1}
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                setColor = function(r, g, b, a)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.tint = {r or 1, g or 1, b or 1, a or 1}
+                                    applyBarTextures()
+                                end,
+                                customValue = "custom",
+                                hasAlpha = true,
+                            })
+
+                            tabInner:AddSpacer(8)
+
+                            -- Background Texture
+                            tabInner:AddBarTextureSelector({
+                                label = "Background Texture",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.backgroundTexture or "default"
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.backgroundTexture = v or "default"
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Background Color
+                            tabInner:AddSelectorColorPicker({
+                                label = "Background Color",
+                                values = UF.bgColorValues,
+                                order = UF.bgColorOrder,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.backgroundColorMode or "default"
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.backgroundColorMode = v or "default"
+                                    applyBarTextures()
+                                end,
+                                getColor = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    local c = apb.backgroundTint or {0, 0, 0, 1}
+                                    return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
+                                end,
+                                setColor = function(r, g, b, a)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.backgroundTint = {r or 0, g or 0, b or 0, a or 1}
+                                    applyBarTextures()
+                                end,
+                                customValue = "custom",
+                                hasAlpha = true,
+                            })
+
+                            -- Background Opacity
+                            tabInner:AddSlider({
+                                label = "Background Opacity",
+                                min = 0, max = 100, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.backgroundOpacity) or 50
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.backgroundOpacity = tonumber(v) or 50
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:Finalize()
+                        end,
+                        border = function(cf, tabInner)
+                            tabInner:AddBarBorderSelector({
+                                label = "Border Style",
+                                includeNone = true,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.borderStyle or "square"
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderStyle = v or "square"
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:AddToggleColorPicker({
+                                label = "Border Tint",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return not not apb.borderTintEnable
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderTintEnable = not not v
+                                    applyBarTextures()
+                                end,
+                                getColor = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    local c = apb.borderTintColor or {1, 1, 1, 1}
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                setColor = function(r, g, b, a)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderTintColor = {r or 1, g or 1, b or 1, a or 1}
+                                    applyBarTextures()
+                                end,
+                                hasAlpha = true,
+                            })
+
+                            tabInner:AddSlider({
+                                label = "Border Thickness",
+                                min = 1, max = 8, step = 0.2, precision = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.borderThickness) or 1
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderThickness = tonumber(v) or 1
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:AddSlider({
+                                label = "Border Inset",
+                                min = -4, max = 4, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.borderInset) or 0
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderInset = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:Finalize()
+                        end,
+                        visibility = function(cf, tabInner)
+                            tabInner:AddToggle({
+                                label = "Hide Alternate Power Bar",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hidden == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hidden = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Hide Alternate Power Bar",
+                                    tooltipText = "Completely hides the alternate power bar (e.g., Maelstrom for Elemental Shaman, Insanity for Shadow Priest, Stagger for Brewmaster).",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide the Bar but not its Text",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hideTextureOnly == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hideTextureOnly = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Hide the Bar but not its Text",
+                                    tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of your alternate power resource.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide Full Bar Animations",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hideFullSpikes == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hideFullSpikes = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Full Bar Animations",
+                                    tooltipText = "Disables Blizzard's full-bar celebration animations that play when the resource is full. These overlays can't be resized, so hiding them keeps custom bar heights consistent.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide Power Feedback",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hideFeedback == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hideFeedback = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Power Feedback",
+                                    tooltipText = "Disables the flash animation that plays when you spend or gain alternate power. This animation shows a quick highlight on the portion of the bar that changed.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide APB Spark",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hideSpark == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hideSpark = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "APB Spark",
+                                    tooltipText = "Hides the spark/glow indicator that appears at the current power level on the alternate power bar.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide Mana Cost Predictions",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.hideManaCostPrediction == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.hideManaCostPrediction = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Mana Cost Predictions",
+                                    tooltipText = "Hides the power cost prediction overlay that appears on the alternate power bar when casting a spell.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide Percent Text",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.percentHidden == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.percentHidden = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Hide Percent Text",
+                                    tooltipText = "Hides the percentage text overlay on the alternate power bar.",
+                                },
+                            })
+
+                            tabInner:AddToggle({
+                                label = "Hide Value Text",
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return apb.valueHidden == true
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.valueHidden = (v == true)
+                                    applyBarTextures()
+                                end,
+                                infoIcon = {
+                                    tooltipTitle = "Hide Value Text",
+                                    tooltipText = "Hides the numeric value text overlay on the alternate power bar.",
+                                },
+                            })
+
+                            tabInner:Finalize()
+                        end,
+                        percentText = function(cf, tabInner)
+                            -- Font
+                            tabInner:AddFontSelector({
+                                label = "Font",
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    return s.fontFace or "FRIZQT__"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.fontFace = v
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Style
+                            tabInner:AddSelector({
+                                label = "Style",
+                                values = UF.fontStyleValues,
+                                order = UF.fontStyleOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    return s.style or "OUTLINE"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.style = v
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Size
+                            tabInner:AddSlider({
+                                label = "Size",
+                                min = 6, max = 48, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    return tonumber(s.size) or 14
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.size = tonumber(v) or 14
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Color
+                            tabInner:AddSelectorColorPicker({
+                                label = "Color",
+                                values = UF.fontColorPowerValues,
+                                order = UF.fontColorPowerOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    return s.colorMode or "default"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.colorMode = v or "default"
+                                    applyBarTextures()
+                                end,
+                                getColor = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    local c = s.color or {1, 1, 1, 1}
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                setColor = function(r, g, b, a)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.color = {r or 1, g or 1, b or 1, a or 1}
+                                    applyBarTextures()
+                                end,
+                                customValue = "custom",
+                                hasAlpha = true,
+                            })
+
+                            -- Alignment
+                            tabInner:AddSelector({
+                                label = "Alignment",
+                                values = UF.alignmentValues,
+                                order = UF.alignmentOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    return s.alignment or "LEFT"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.alignment = v or "LEFT"
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Offset X
+                            tabInner:AddSlider({
+                                label = "Offset X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    local o = s.offset or {}
+                                    return tonumber(o.x) or 0
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.offset = s.offset or {}
+                                    s.offset.x = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Offset Y
+                            tabInner:AddSlider({
+                                label = "Offset Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    local o = s.offset or {}
+                                    return tonumber(o.y) or 0
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textPercent")
+                                    if not s then return end
+                                    s.offset = s.offset or {}
+                                    s.offset.y = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:Finalize()
+                        end,
+                        valueText = function(cf, tabInner)
+                            -- Font
+                            tabInner:AddFontSelector({
+                                label = "Font",
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    return s.fontFace or "FRIZQT__"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.fontFace = v
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Style
+                            tabInner:AddSelector({
+                                label = "Style",
+                                values = UF.fontStyleValues,
+                                order = UF.fontStyleOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    return s.style or "OUTLINE"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.style = v
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Size
+                            tabInner:AddSlider({
+                                label = "Size",
+                                min = 6, max = 48, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    return tonumber(s.size) or 14
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.size = tonumber(v) or 14
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Color
+                            tabInner:AddSelectorColorPicker({
+                                label = "Color",
+                                values = UF.fontColorPowerValues,
+                                order = UF.fontColorPowerOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    return s.colorMode or "default"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.colorMode = v or "default"
+                                    applyBarTextures()
+                                end,
+                                getColor = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    local c = s.color or {1, 1, 1, 1}
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end,
+                                setColor = function(r, g, b, a)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.color = {r or 1, g or 1, b or 1, a or 1}
+                                    applyBarTextures()
+                                end,
+                                customValue = "custom",
+                                hasAlpha = true,
+                            })
+
+                            -- Alignment
+                            tabInner:AddSelector({
+                                label = "Alignment",
+                                values = UF.alignmentValues,
+                                order = UF.alignmentOrder,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    return s.alignment or "RIGHT"
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.alignment = v or "RIGHT"
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Offset X
+                            tabInner:AddSlider({
+                                label = "Offset X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    local o = s.offset or {}
+                                    return tonumber(o.x) or 0
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.offset = s.offset or {}
+                                    s.offset.x = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            -- Offset Y
+                            tabInner:AddSlider({
+                                label = "Offset Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    local o = s.offset or {}
+                                    return tonumber(o.y) or 0
+                                end,
+                                set = function(v)
+                                    local s = ensureAltPowerTextDB("textValue")
+                                    if not s then return end
+                                    s.offset = s.offset or {}
+                                    s.offset.y = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            })
+
+                            tabInner:Finalize()
+                        end,
+                    },
+                })
+                inner:Finalize()
+            end,
+        })
+    end
+
+    --------------------------------------------------------------------------------
     -- Collapsible Section: Class Resource (Player only - dynamic title)
     --------------------------------------------------------------------------------
 

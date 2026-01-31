@@ -328,11 +328,16 @@ function Buffs.Render(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             local fontStyleValues = {
-                NONE = "None",
-                OUTLINE = "Outline",
-                THICKOUTLINE = "Thick Outline",
+                ["NONE"] = "Regular",
+                ["OUTLINE"] = "Outline",
+                ["THICKOUTLINE"] = "Thick Outline",
+                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+                ["SHADOW"] = "Shadow",
+                ["SHADOWOUTLINE"] = "Shadow Outline",
+                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
             }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
 
             inner:AddTabbedSection({
                 tabs = {

@@ -336,8 +336,17 @@ function UtilityCooldowns.Render(panel, scrollContent)
                 end
             end
 
-            local fontStyleValues = { NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline" }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE" }
+            local fontStyleValues = {
+                ["NONE"] = "Regular",
+                ["OUTLINE"] = "Outline",
+                ["THICKOUTLINE"] = "Thick Outline",
+                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+                ["SHADOW"] = "Shadow",
+                ["SHADOWOUTLINE"] = "Shadow Outline",
+                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
+            }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
 
             inner:AddTabbedSection({
                 tabs = {
@@ -392,7 +401,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                             customValue = "custom", hasAlpha = true,
                         })
                         tabBuilder:AddSlider({
-                            label = "Offset X", min = -50, max = 50, step = 1,
+                            label = "Offset X", min = -100, max = 100, step = 1,
                             get = function()
                                 local offset = getStacksSetting("offset", {x=0, y=0})
                                 return offset.x or 0
@@ -406,10 +415,10 @@ function UtilityCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50", maxLabel = "+50",
+                            minLabel = "-100", maxLabel = "+100",
                         })
                         tabBuilder:AddSlider({
-                            label = "Offset Y", min = -50, max = 50, step = 1,
+                            label = "Offset Y", min = -100, max = 100, step = 1,
                             get = function()
                                 local offset = getStacksSetting("offset", {x=0, y=0})
                                 return offset.y or 0
@@ -423,7 +432,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50", maxLabel = "+50",
+                            minLabel = "-100", maxLabel = "+100",
                         })
                         tabBuilder:Finalize()
                     end,
@@ -472,7 +481,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                             customValue = "custom", hasAlpha = true,
                         })
                         tabBuilder:AddSlider({
-                            label = "Offset X", min = -50, max = 50, step = 1,
+                            label = "Offset X", min = -100, max = 100, step = 1,
                             get = function()
                                 local offset = getCooldownSetting("offset", {x=0, y=0})
                                 return offset.x or 0
@@ -486,10 +495,10 @@ function UtilityCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50", maxLabel = "+50",
+                            minLabel = "-100", maxLabel = "+100",
                         })
                         tabBuilder:AddSlider({
-                            label = "Offset Y", min = -50, max = 50, step = 1,
+                            label = "Offset Y", min = -100, max = 100, step = 1,
                             get = function()
                                 local offset = getCooldownSetting("offset", {x=0, y=0})
                                 return offset.y or 0
@@ -503,7 +512,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                                 end
                                 applyText()
                             end,
-                            minLabel = "-50", maxLabel = "+50",
+                            minLabel = "-100", maxLabel = "+100",
                         })
                         tabBuilder:Finalize()
                     end,

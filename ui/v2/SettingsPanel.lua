@@ -2224,9 +2224,7 @@ end
 
 function UIPanel:Toggle()
     if InCombatLockdown and InCombatLockdown() then
-        if addon and addon.Print then
-            addon:Print("Cannot open settings during combat.")
-        end
+        -- Message already shown when panel was closed; don't spam
         return
     end
 
@@ -2245,9 +2243,7 @@ end
 
 function UIPanel:Show()
     if InCombatLockdown and InCombatLockdown() then
-        if addon and addon.Print then
-            addon:Print("Cannot open settings during combat.")
-        end
+        -- Message already shown when panel was closed; don't spam
         return
     end
 
@@ -2305,20 +2301,35 @@ function UIPanel:IsShown()
 end
 
 --------------------------------------------------------------------------------
--- Combat Safety (auto-close on combat start)
+-- Combat Safety (auto-close on combat start, auto-reopen on combat end)
 --------------------------------------------------------------------------------
 
--- Register for combat events to auto-close if needed
+-- Track if panel was closed by combat (for auto-reopen)
+UIPanel._closedByCombat = false
+
+-- Register for combat events
 local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
         -- Combat started - hide UI panel if shown
         if UIPanel.frame and UIPanel.frame:IsShown() then
+            UIPanel._closedByCombat = true
             UIPanel.frame:Hide()
             if addon and addon.Print then
-                addon:Print("UI Settings closed for combat.")
+                addon:Print("ScooterMod settings will reopen when combat ends.")
             end
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Combat ended - reopen if we closed it
+        if UIPanel._closedByCombat then
+            UIPanel._closedByCombat = false
+            C_Timer.After(0.1, function()
+                if not InCombatLockdown() then
+                    UIPanel:Show()
+                end
+            end)
         end
     end
 end)

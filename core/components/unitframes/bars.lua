@@ -3488,11 +3488,51 @@ do
                     local altBgOpacity = acfg.backgroundOpacity or 50
                     applyBackgroundToBar(apb, altBgTexKey, altBgColorMode, acfg.backgroundTint, altBgOpacity, unit, "altpower")
 
+                    -- Hide texture only (bar visible=false but text visible=true)
+                    local altHideTextureOnly = (acfg.hideTextureOnly == true)
+                    if Util and Util.SetPowerBarTextureOnlyHidden then
+                        Util.SetPowerBarTextureOnlyHidden(apb, altHideTextureOnly and not altHidden)
+                    end
+
+                    -- Clear custom borders when texture-only hide is enabled (so only text remains)
+                    if altHideTextureOnly and not altHidden then
+                        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                            addon.BarBorders.ClearBarFrame(apb)
+                        end
+                        if addon.Borders and addon.Borders.HideAll then
+                            addon.Borders.HideAll(apb)
+                        end
+                    end
+
+                    -- Determine if all visuals should be hidden (when bar is fully hidden or texture-only hidden)
+                    local hideAllVisuals = altHidden or altHideTextureOnly
+
+                    -- Full power spike animations
+                    if Util and Util.SetFullPowerSpikeHidden then
+                        Util.SetFullPowerSpikeHidden(apb, acfg.hideFullSpikes == true or hideAllVisuals)
+                    end
+
+                    -- Power feedback flash
+                    if Util and Util.SetPowerFeedbackHidden then
+                        Util.SetPowerFeedbackHidden(apb, acfg.hideFeedback == true or hideAllVisuals)
+                    end
+
+                    -- Spark/glow indicator
+                    if Util and Util.SetPowerBarSparkHidden then
+                        Util.SetPowerBarSparkHidden(apb, acfg.hideSpark == true or hideAllVisuals)
+                    end
+
+                    -- Mana cost prediction overlay
+                    if Util and Util.SetManaCostPredictionHidden then
+                        Util.SetManaCostPredictionHidden(apb, acfg.hideManaCostPrediction == true or hideAllVisuals)
+                    end
+
                     -- Custom border (shares global Use Custom Borders; Alt Power has its own style/tint/thickness/inset)
                     do
                         -- Global unit-frame switch; borders only draw when this is enabled.
+                        -- Skip borders when bar is hidden or texture-only mode (only text should remain).
                         local useCustomBorders = not not cfg.useCustomBorders
-                        if useCustomBorders then
+                        if useCustomBorders and not altHidden and not altHideTextureOnly then
                             -- Style resolution: prefer Alternate Power–specific, then Power, then Health.
                             local styleKey = acfg.borderStyle
                                 or cfg.powerBarBorderStyle
@@ -3716,6 +3756,10 @@ do
                                 if cfgT.size ~= nil or cfgT.style ~= nil or cfgT.color ~= nil or cfgT.alignment ~= nil then
                                     return true
                                 end
+                                -- colorMode is used for APB text to support "classPower" color
+                                if cfgT.colorMode ~= nil and cfgT.colorMode ~= "default" then
+                                    return true
+                                end
                                 if cfgT.offset and (cfgT.offset.x ~= nil or cfgT.offset.y ~= nil) then
                                     local ox = tonumber(cfgT.offset.x) or 0
                                     local oy = tonumber(cfgT.offset.y) or 0
@@ -3738,12 +3782,38 @@ do
                             if fsState then fsState.applyingFont = true end
                             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
                             if fsState then fsState.applyingFont = nil end
-                            local c = styleCfg.color or { 1, 1, 1, 1 }
+                            -- Determine effective color based on colorMode
+                            local c = styleCfg.color or {1, 1, 1, 1}
+                            local colorMode = styleCfg.colorMode or "default"
+                            if colorMode == "classPower" then
+                                -- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
+                                if addon.GetPowerColorRGB then
+                                    local pr, pg, pb = addon.GetPowerColorRGB("player")
+                                    -- Lighten mana blue for text readability (mana = powerType 0)
+                                    local powerType = UnitPowerType("player")
+                                    if powerType == 0 then -- MANA
+                                        local lightenFactor = 0.25
+                                        pr = (pr or 0) + (1 - (pr or 0)) * lightenFactor
+                                        pg = (pg or 0) + (1 - (pg or 0)) * lightenFactor
+                                        pb = (pb or 0) + (1 - (pb or 0)) * lightenFactor
+                                    end
+                                    c = {pr or 1, pg or 1, pb or 1, 1}
+                                end
+                            elseif colorMode == "class" then
+                                local cr, cg, cb = addon.GetClassColorRGB("player")
+                                c = {cr or 1, cg or 1, cb or 1, 1}
+                            elseif colorMode == "default" then
+                                -- Default white for Blizzard's standard bar text color
+                                c = {1, 1, 1, 1}
+                            end
+                            -- colorMode == "custom" uses styleCfg.color as-is
                             if fs.SetTextColor then
                                 pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
                             end
 
-                            -- Apply text alignment (requires explicit width on the FontString)
+                            -- Apply text alignment using two-point anchoring (matches text.lua pattern).
+                            -- This makes SetJustifyH work correctly without needing GetWidth() (which can
+                            -- trigger secret value errors on unit frame StatusBars in 12.0).
                             -- Check for both :right and -right patterns to handle all key formats
                             local defaultAlign = "LEFT"
                             if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
@@ -3753,47 +3823,26 @@ do
                             end
                             local alignment = styleCfg.alignment or defaultAlign
                             local parentBar = fs:GetParent()
-                            if parentBar and parentBar.GetWidth then
-                                -- 12.0+: StatusBar:GetWidth() can trigger Blizzard internal updates that may
-                                -- error due to secret values. Treat width as best-effort and skip alignment
-                                -- forcing if we can't safely read a number.
-                                local barWidth
-                                do
-                                    local isStatusBar = false
-                                    if parentBar.GetObjectType then
-                                        local okT, t = pcall(parentBar.GetObjectType, parentBar)
-                                        isStatusBar = okT and (t == "StatusBar")
-                                    end
-                                    if not isStatusBar then
-                                        local okW, w = pcall(parentBar.GetWidth, parentBar)
-                                        barWidth = safeNumber(okW and w)
-                                    end
-                                end
-                                if barWidth and barWidth > 0 and fs.SetWidth then
-                                    pcall(fs.SetWidth, fs, barWidth)
-                                end
-                            end
-                            if fs.SetJustifyH then
-                                pcall(fs.SetJustifyH, fs, alignment)
-                            end
 
                             local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
                             local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
-                            if fs.ClearAllPoints and fs.SetPoint then
-                                local b = ensureBaseline(fs, baselineKey)
+
+                            -- Get baseline Y position for vertical offset
+                            local b = ensureBaseline(fs, baselineKey)
+                            local yOffset = safeOffset(b.y) + oy
+
+                            -- Use two-point anchoring to span the parent bar width.
+                            if fs.ClearAllPoints and fs.SetPoint and parentBar then
                                 fs:ClearAllPoints()
-                                -- Sanitize at use time (matches text.lua pattern)
-                                local point = safePointToken(b.point, "CENTER")
-                                local relTo = b.relTo or (fs.GetParent and fs:GetParent()) or apb
-                                local relPoint = safePointToken(b.relPoint, point)
-                                local x = safeOffset(b.x) + ox
-                                local y = safeOffset(b.y) + oy
-                                local ok = pcall(fs.SetPoint, fs, point, relTo, relPoint, x, y)
-                                if not ok then
-                                    -- Fallback: anchor to parent with no offset
-                                    local parent = (fs.GetParent and fs:GetParent()) or apb
-                                    pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
-                                end
+                                -- Anchor both left and right edges to span the bar
+                                local leftPad = 2 + ox
+                                local rightPad = -2 + ox
+                                pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
+                                pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
+                            end
+
+                            if fs.SetJustifyH then
+                                pcall(fs.SetJustifyH, fs, alignment)
                             end
 
                             -- Force text redraw to apply alignment visually (secret-value safe)
