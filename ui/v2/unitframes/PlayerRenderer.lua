@@ -524,6 +524,24 @@ local function buildHealthVisibilityTab(inner)
         },
     })
 
+    inner:AddToggle({
+        label = "Hide Health Loss Animation",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideHealthLossAnimation
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideHealthLossAnimation = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = {
+            tooltipTitle = "Health Loss Animation",
+            tooltipText = "The dark red bar that appears briefly when you take damage, showing the amount of health lost. Hide this to remove the damage flash effect.",
+        },
+    })
+
     inner:Finalize()
 end
 

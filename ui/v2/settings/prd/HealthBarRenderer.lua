@@ -423,6 +423,16 @@ function HealthBar.Render(panel, scrollContent)
                 },
             })
 
+            inner:AddToggle({
+                label = "Hide Health Loss Animation",
+                get = function() return getSetting("hideHealthLossAnimation") or false end,
+                set = function(v) setSetting("hideHealthLossAnimation", v) end,
+                infoIcon = {
+                    tooltipTitle = "Health Loss Animation",
+                    tooltipText = "The dark red bar that appears briefly when you take damage, showing the amount of health lost. Hide this to remove the damage flash effect.",
+                },
+            })
+
             inner:AddSpacer(12)
 
             inner:AddSlider({

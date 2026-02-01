@@ -946,6 +946,57 @@ do
         return container
     end
 
+    -- Reparent AnimatedLossBar into clipping container for proper height clipping (Player only).
+    -- The AnimatedLossBar shows health lost as a dark red bar that fades out. Without reparenting,
+    -- it appears at full height even when height reduction is active, and renders in the wrong z-order.
+    local function reparentAnimatedLossBar(bar, clipContainer, heightPct)
+        -- Get the animated loss bar (sibling of HealthBar in HealthBarsContainer)
+        local parent = bar and bar:GetParent()
+        local animatedLossBar = parent and parent.PlayerFrameHealthBarAnimatedLoss
+
+        if not animatedLossBar then return end
+
+        local st = getState(bar)
+        if not st then return end
+
+        if clipContainer and heightPct and heightPct < 100 then
+            -- Height reduction active: reparent into clipping container
+            if animatedLossBar:GetParent() ~= clipContainer then
+                st.animLossOrigParent = animatedLossBar:GetParent()
+                st.animLossOrigPoints = {}
+                -- Save original anchor points
+                for i = 1, animatedLossBar:GetNumPoints() do
+                    local point, relativeTo, relativePoint, xOfs, yOfs = animatedLossBar:GetPoint(i)
+                    st.animLossOrigPoints[i] = { point = point, relativeTo = relativeTo, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs }
+                end
+                animatedLossBar:SetParent(clipContainer)
+                -- Re-anchor to match the bar position within the clip container
+                animatedLossBar:ClearAllPoints()
+                animatedLossBar:SetAllPoints(bar)
+                -- Ensure it renders behind our overlay (lower sublevel in OVERLAY layer)
+                if animatedLossBar.SetDrawLayer then
+                    pcall(animatedLossBar.SetDrawLayer, animatedLossBar, "OVERLAY", 1)
+                end
+            end
+        else
+            -- Height reduction disabled: restore original parent
+            if st.animLossOrigParent and animatedLossBar:GetParent() ~= st.animLossOrigParent then
+                animatedLossBar:SetParent(st.animLossOrigParent)
+                -- Restore original anchor points
+                animatedLossBar:ClearAllPoints()
+                if st.animLossOrigPoints and #st.animLossOrigPoints > 0 then
+                    for _, pt in ipairs(st.animLossOrigPoints) do
+                        animatedLossBar:SetPoint(pt.point, pt.relativeTo, pt.relativePoint, pt.xOfs, pt.yOfs)
+                    end
+                else
+                    -- Fallback: re-anchor to sibling HealthBar
+                    animatedLossBar:SetAllPoints(bar)
+                end
+                -- Let Blizzard manage draw layer naturally
+            end
+        end
+    end
+
     -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
     -- This is used to visually "fill in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
@@ -1111,11 +1162,21 @@ do
                 st.heightClipBackgroundHidden = false
             end
             st.heightClipActive = false
+            -- Restore AnimatedLossBar to original parent for Player unit
+            if unit == "Player" then
+                reparentAnimatedLossBar(bar, nil, 100)
+            end
             return
         end
 
         -- Get or create clipping container for height reduction
         local clipContainer = ensureHeightClipContainer(bar, unit, cfg)
+
+        -- Reparent AnimatedLossBar into clipping container for Player unit
+        if unit == "Player" then
+            local heightPct = cfg and cfg.healthBarOverlayHeightPct or 100
+            reparentAnimatedLossBar(bar, clipContainer, heightPct)
+        end
 
         if not st.rectFill then
             -- Create overlay as child of clipping container (or bar if no height reduction)
@@ -2958,6 +3019,12 @@ do
             -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.MyHealPredictionBar
             if unit == "Player" and hb and Util and Util.SetHealPredictionHidden then
                 Util.SetHealPredictionHidden(hb, cfg.healthBarHideHealPrediction == true)
+            end
+
+            -- Hide/Show Health Loss Animation (Player only)
+            -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss
+            if unit == "Player" and hb and Util and Util.SetHealthLossAnimationHidden then
+                Util.SetHealthLossAnimationHidden(hb, cfg.healthBarHideHealthLossAnimation == true)
             end
 
             -- Health Bar custom border (Health Bar only)

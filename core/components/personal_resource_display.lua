@@ -1310,6 +1310,42 @@ local function hidePRDBarTextures(bar, barType, hidden)
     end
 end
 
+-- Helper to get the animated loss bar frame from PlayerFrame
+local function getPRDAnimatedLossBar()
+    return PlayerFrame
+        and PlayerFrame.PlayerFrameContent
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+        and PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss
+end
+
+-- Hide/show the health loss animation (the dark red bar that appears when taking damage)
+local function applyPRDHealthLossAnimationVisibility(component)
+    local hideAnim = ensureSettingValue(component, "hideHealthLossAnimation") and true or false
+    local animatedLossBar = getPRDAnimatedLossBar()
+
+    if not animatedLossBar then return end
+
+    if hideAnim then
+        pcall(animatedLossBar.Hide, animatedLossBar)
+        -- Install hook to keep it hidden (same pattern as hidePRDBarTextures)
+        if not getProp(animatedLossBar, "_ScootHideLossAnimHooked") then
+            setProp(animatedLossBar, "_ScootHideLossAnimHooked", true)
+            pcall(function()
+                hooksecurefunc(animatedLossBar, "Show", function(self)
+                    if getProp(self, "_ScootHideLossAnim") then
+                        pcall(self.Hide, self)
+                    end
+                end)
+            end)
+        end
+        setProp(animatedLossBar, "_ScootHideLossAnim", true)
+    else
+        setProp(animatedLossBar, "_ScootHideLossAnim", false)
+        -- Don't force Show - let Blizzard control visibility naturally
+    end
+end
+
 local function applyPRDHealthVisuals(component, container)
     if not component or not container then
         return
@@ -1349,6 +1385,7 @@ local function applyPRDHealthVisuals(component, container)
     applyPRDBackgroundStyle(statusBar, "health", component)
     applyPRDBarBorder(component, statusBar)
     applyHealthTextOverlay(component)
+    applyPRDHealthLossAnimationVisibility(component)
 end
 
 local function applyPRDPowerVisuals(component, frame)
@@ -1809,6 +1846,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             hideTextureOnly = { type = "addon", default = false, ui = {
                 label = "Hide the Bar but not its Text", widget = "checkbox", section = "Misc", order = 2,
+            }},
+            hideHealthLossAnimation = { type = "addon", default = false, ui = {
+                label = "Hide Health Loss Animation", widget = "checkbox", section = "Misc", order = 3,
             }},
             -- Opacity settings (addon-only, 1-100 percentage)
             opacityInCombat = { type = "addon", default = 100, ui = { hidden = true }},

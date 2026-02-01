@@ -972,6 +972,70 @@ local function SetHealPredictionHidden(ownerFrame, hidden)
 end
 Util.SetHealPredictionHidden = SetHealPredictionHidden
 
+--- Hide/show the Health Loss Animation bar on the Player Health Bar
+--- This bar shows the dark red "damage taken" animation that fades out.
+--- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss
+--- ownerFrame: the HealthBar frame whose parent (HealthBarsContainer) contains the AnimatedLoss sibling
+--- hidden: boolean - true to hide the bar, false to restore it
+local function SetHealthLossAnimationHidden(ownerFrame, hidden)
+    if not ownerFrame or type(ownerFrame) ~= "table" then
+        return
+    end
+    -- AnimatedLossBar is a sibling of HealthBar in HealthBarsContainer, not a child
+    local parent = ownerFrame.GetParent and ownerFrame:GetParent()
+    local animatedLossBar = parent and parent.PlayerFrameHealthBarAnimatedLoss
+    if not animatedLossBar or (animatedLossBar.IsForbidden and animatedLossBar:IsForbidden()) then
+        return
+    end
+    setProp(animatedLossBar, "healthLossAnimHidden", not not hidden)
+
+    -- Capture original alpha once so we can restore it when un-hiding.
+    if animatedLossBar.GetAlpha and getProp(animatedLossBar, "healthLossAnimOrigAlpha") == nil then
+        local ok, a = pcall(animatedLossBar.GetAlpha, animatedLossBar)
+        setProp(animatedLossBar, "healthLossAnimOrigAlpha", ok and (a or 1) or 1)
+    end
+
+    -- IMPORTANT: Do NOT call Hide()/Show() on this frame.
+    -- Hide/Show on protected unitframe children is taint-prone and can later surface as blocked
+    -- calls in unrelated Blizzard code paths.
+    --
+    -- Approach: enforce invisibility with SetAlpha(0) and persistent hooks.
+    if getProp(animatedLossBar, "healthLossAnimHidden") then
+        if animatedLossBar.SetAlpha then
+            pcall(animatedLossBar.SetAlpha, animatedLossBar, 0)
+        end
+
+        if _G.hooksecurefunc and not getProp(animatedLossBar, "healthLossAnimVisibilityHooked") then
+            setProp(animatedLossBar, "healthLossAnimVisibilityHooked", true)
+
+            _G.hooksecurefunc(animatedLossBar, "Show", function(self)
+                if getProp(self, "healthLossAnimHidden") and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+
+            _G.hooksecurefunc(animatedLossBar, "SetAlpha", function(self, alpha)
+                if getProp(self, "healthLossAnimHidden") and alpha and alpha > 0 then
+                    -- Re-apply alpha 0 to enforce invisibility
+                    if not getProp(self, "healthLossAnimSettingAlpha") then
+                        setProp(self, "healthLossAnimSettingAlpha", true)
+                        pcall(self.SetAlpha, self, 0)
+                        setProp(self, "healthLossAnimSettingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    else
+        -- Restore original alpha
+        if animatedLossBar.SetAlpha then
+            local restoreAlpha = getProp(animatedLossBar, "healthLossAnimOrigAlpha")
+            if restoreAlpha == nil then restoreAlpha = 1 end
+            pcall(animatedLossBar.SetAlpha, animatedLossBar, restoreAlpha)
+        end
+    end
+end
+Util.SetHealthLossAnimationHidden = SetHealthLossAnimationHidden
+
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
 
