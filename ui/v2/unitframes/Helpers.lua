@@ -347,6 +347,7 @@ end
 function UF.getHealthBarTabs(componentId)
     if componentId == "ufTarget" or componentId == "ufFocus" then
         return {
+            { key = "sizing", label = "Sizing" },
             { key = "direction", label = "Direction" },
             { key = "style", label = "Style" },
             { key = "border", label = "Border" },
@@ -355,6 +356,7 @@ function UF.getHealthBarTabs(componentId)
         }
     elseif componentId == "ufPlayer" then
         return {
+            { key = "sizing", label = "Sizing" },
             { key = "style", label = "Style" },
             { key = "border", label = "Border" },
             { key = "visibility", label = "Visibility" },

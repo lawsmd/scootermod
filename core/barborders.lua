@@ -166,9 +166,11 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
         if padB < 0 then padB = 0 end
     end
 
+    -- Use anchorTarget if specified (e.g., clipping container for height reduction)
+    local anchorFrame = (bfState and bfState.anchorTarget) or barFrame
     holder:ClearAllPoints()
-    holder:SetPoint("TOPLEFT", barFrame, "TOPLEFT", -padL, padT)
-    holder:SetPoint("BOTTOMRIGHT", barFrame, "BOTTOMRIGHT", padR, -padB)
+    holder:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", -padL, padT)
+    holder:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", padR, -padB)
 
     if not applyBackdrop(holder, style, edgeSize) then
         holder:Hide()
@@ -337,6 +339,12 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
         bfState.containerParentRef = nil
     end
     bfState.inset = tonumber(options and options.inset) or 0
+    -- Allow callers to specify an alternate frame to anchor the border to (e.g., clipping container)
+    if type(options) == "table" and options.anchorTarget and options.anchorTarget.GetHeight then
+        bfState.anchorTarget = options.anchorTarget
+    else
+        bfState.anchorTarget = nil
+    end
 
     return applyStyle(barFrame, style, color, thickness, false, bfState.inset)
 end

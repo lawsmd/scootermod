@@ -581,16 +581,23 @@ do
         else
             manaContainer = root.TargetFrameContent and root.TargetFrameContent.TargetFrameContentMain and root.TargetFrameContent.TargetFrameContentMain.ManaBar or nil
         end
-        -- Determine bar level and desired ordering: bar < holder < text
+        -- Determine bar level and desired ordering: bar < clipContainer < holder < text
         local barLevel = (hb and hb.GetFrameLevel and hb:GetFrameLevel()) or 0
         if pb and pb.GetFrameLevel then
             local pbl = pb:GetFrameLevel() or 0
             if pbl > barLevel then barLevel = pbl end
         end
+        -- Account for height clip container if active (text must be above it)
+        local clipContainerLevel = 0
+        local st = hb and getState(hb)
+        if st and st.heightClipContainer and st.heightClipActive then
+            local ccLevel = st.heightClipContainer.GetFrameLevel and st.heightClipContainer:GetFrameLevel()
+            if ccLevel then clipContainerLevel = ccLevel end
+        end
         local curTextLevel = 0
         if hbContainer and hbContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, hbContainer:GetFrameLevel() or 0) end
         if manaContainer and manaContainer.GetFrameLevel then curTextLevel = math.max(curTextLevel, manaContainer:GetFrameLevel() or 0) end
-        local desiredTextLevel = math.max(curTextLevel, barLevel + 2)
+        local desiredTextLevel = math.max(curTextLevel, barLevel + 2, clipContainerLevel + 1)
         -- Raise text containers above holder
         if hbContainer and hbContainer.SetFrameLevel then pcall(hbContainer.SetFrameLevel, hbContainer, desiredTextLevel) end
         if manaContainer and manaContainer.SetFrameLevel then pcall(manaContainer.SetFrameLevel, manaContainer, desiredTextLevel) end
@@ -848,6 +855,97 @@ do
         updateBossRectOverlay(bar, overlayKey)
     end
 
+    -- Height clipping container for health bar overlays with reduced height (healthBarOverlayHeightPct).
+    -- Instead of shrinking the overlay (which would expose Blizzard's bar above/below), we:
+    -- 1. Keep the overlay at FULL HEIGHT to completely occlude Blizzard's bar
+    -- 2. Use a clipping container with SetClipsChildren(true) to crop the visible portion
+    -- This prevents flash of Blizzard's bar on target change, combat entry, and frame updates.
+    --
+    -- UNIFIED CLIPPING ARCHITECTURE:
+    -- The clipping container is the "master" frame that contains ALL visual elements at reduced height:
+    --   heightClipContainer (Frame, positioned at reduced height, clips children)
+    --     ├─ heightClipBackground (Texture, BACKGROUND layer, matches CONTAINER size)
+    --     └─ rectFill (Texture, OVERLAY layer, full bar height - gets clipped)
+    --   Border is applied to the CLIPPING CONTAINER (via anchor frames that SetAllPoints to it)
+    --   bar.ScooterModBG is hidden when height clip is active
+    --   Text on bar renders above container (higher frame level)
+    local function ensureHeightClipContainer(bar, unit, cfg)
+        local st = getState(bar)
+        if not st then return nil end
+
+        local heightPct = cfg and cfg.healthBarOverlayHeightPct
+        if not heightPct or heightPct >= 100 then
+            -- No height reduction - hide container and restore original elements
+            if st.heightClipContainer then
+                st.heightClipContainer:Hide()
+            end
+            -- Restore original background (bar.ScooterModBG, not st.backgroundTex)
+            if st.heightClipBackgroundHidden and bar.ScooterModBG then
+                bar.ScooterModBG:Show()
+                st.heightClipBackgroundHidden = false
+            end
+            st.heightClipActive = false
+            return nil
+        end
+
+        -- Create clipping container (once per bar)
+        if not st.heightClipContainer then
+            local container = CreateFrame("Frame", nil, bar:GetParent() or bar)
+            container:SetClipsChildren(true)
+            -- Frame level BELOW bar so text (which is on the bar) renders above our overlay.
+            -- Blizzard's fill texture is hidden (alpha 0), so even though it's "above" our
+            -- overlay in frame level terms, our overlay still shows through.
+            -- This ensures: background < our overlay < Blizzard's hidden fill < text
+            container:SetFrameLevel(math.max(1, (bar:GetFrameLevel() or 1) - 1))
+            st.heightClipContainer = container
+        end
+
+        -- Position container at reduced height (centered vertically)
+        local container = st.heightClipContainer
+        local barHeight = bar:GetHeight()
+        local targetHeight = barHeight * (heightPct / 100)
+        local inset = (barHeight - targetHeight) / 2
+
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, -inset)
+        container:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, inset)
+        container:Show()
+
+        -- Create/update background that matches CONTAINER size (not full bar)
+        if not st.heightClipBackground then
+            local bg = container:CreateTexture(nil, "BACKGROUND", nil, -1)
+            st.heightClipBackground = bg
+        end
+
+        local bg = st.heightClipBackground
+        bg:ClearAllPoints()
+        bg:SetAllPoints(container)  -- Match container, NOT full bar
+
+        -- Copy from original background (bar.ScooterModBG) OR use sensible default
+        local origBg = bar.ScooterModBG
+        if origBg then
+            local tex = origBg:GetTexture()
+            if tex then
+                bg:SetTexture(tex)
+            else
+                -- Copy color texture - use typical background opacity, not dark overlay
+                bg:SetColorTexture(0, 0, 0, 0.5)
+            end
+            local r, g, b, a = origBg:GetVertexColor()
+            if r then bg:SetVertexColor(r, g, b, a) end
+            -- Hide original to prevent showing at full size
+            origBg:Hide()
+            st.heightClipBackgroundHidden = true
+        else
+            -- No custom background - use transparent (let parent show through)
+            bg:SetColorTexture(0, 0, 0, 0)
+        end
+        bg:Show()
+
+        st.heightClipActive = true
+        return container
+    end
+
     -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
     -- This is used to visually "fill in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
@@ -1004,11 +1102,25 @@ do
             if st.rectFill then
                 st.rectFill:Hide()
             end
+            if st.heightClipContainer then
+                st.heightClipContainer:Hide()
+            end
+            -- Restore original background if it was hidden (bar.ScooterModBG, not st.backgroundTex)
+            if st.heightClipBackgroundHidden and bar.ScooterModBG then
+                bar.ScooterModBG:Show()
+                st.heightClipBackgroundHidden = false
+            end
+            st.heightClipActive = false
             return
         end
 
+        -- Get or create clipping container for height reduction
+        local clipContainer = ensureHeightClipContainer(bar, unit, cfg)
+
         if not st.rectFill then
-            local overlay = bar:CreateTexture(nil, "OVERLAY", nil, 2)
+            -- Create overlay as child of clipping container (or bar if no height reduction)
+            local overlayParent = clipContainer or bar
+            local overlay = overlayParent:CreateTexture(nil, "OVERLAY", nil, 2)
             overlay:SetVertTile(false)
             overlay:SetHorizTile(false)
             overlay:SetTexCoord(0, 1, 0, 1)
@@ -1033,6 +1145,41 @@ do
                         if isEditModeActive() then return end
                         updateRectHealthOverlay(unit, self)
                     end)
+                end
+            end
+
+            -- Hook bar size changes to update clipping container dimensions
+            if clipContainer and bar.HookScript and not st.heightClipSizeHooked then
+                st.heightClipSizeHooked = true
+                bar:HookScript("OnSizeChanged", function(self)
+                    if isEditModeActive() then return end
+                    local s = getState(self)
+                    if s and s.heightClipContainer and s.heightClipContainer:IsShown() then
+                        local db = addon and addon.db and addon.db.profile
+                        local unitFrames = db and rawget(db, "unitFrames")
+                        local ufCfg = unitFrames and rawget(unitFrames, unit)
+                        local heightPct = ufCfg and ufCfg.healthBarOverlayHeightPct or 100
+                        local barHeight = self:GetHeight()
+                        local targetHeight = barHeight * (heightPct / 100)
+                        local inset = (barHeight - targetHeight) / 2
+                        s.heightClipContainer:ClearAllPoints()
+                        s.heightClipContainer:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -inset)
+                        s.heightClipContainer:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, inset)
+                    end
+                end)
+            end
+        elseif st.rectFill then
+            -- Overlay already exists - ensure it's parented correctly
+            local currentParent = st.rectFill:GetParent()
+            if clipContainer then
+                -- Height reduction enabled: reparent to clipping container if needed
+                if currentParent ~= clipContainer then
+                    st.rectFill:SetParent(clipContainer)
+                end
+            else
+                -- Height reduction disabled: reparent back to bar if needed
+                if currentParent ~= bar and st.heightClipContainer then
+                    st.rectFill:SetParent(bar)
                 end
             end
         end
@@ -1179,6 +1326,11 @@ do
             if overlay and overlay.SetVertexColor then
                 overlay:SetVertexColor(r, g, b, a)
             end
+        end
+
+        -- Ensure text containers are raised above the clipping container when height reduction is active
+        if st.heightClipActive then
+            ensureTextAndBorderOrdering(unit)
         end
 
         updateRectHealthOverlay(unit, bar)
@@ -1527,9 +1679,11 @@ do
                         anchorFrame = CreateFrame("Frame", nil, hb)
                         setProp(hb, "petHealthBorderAnchor", anchorFrame)
                     end
-                    -- Anchor to health bar bounds (safe SetAllPoints)
+                    -- Anchor to clipping container if height reduction active, else health bar
                     anchorFrame:ClearAllPoints()
-                    anchorFrame:SetAllPoints(hb)
+                    local st = getState(hb)
+                    local borderTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or hb
+                    anchorFrame:SetAllPoints(borderTarget)
                     -- Set frame level above the health bar so borders draw on top
                     local parentLevel = 10 -- fallback if GetFrameLevel returns secret
                     local ok, level = pcall(function() return hb:GetFrameLevel() end)
@@ -1656,9 +1810,11 @@ do
                         anchorFrame = CreateFrame("Frame", nil, hb)
                         setProp(hb, "totHealthBorderAnchor", anchorFrame)
                     end
-                    -- Anchor to health bar bounds (safe SetAllPoints)
+                    -- Anchor to clipping container if height reduction active, else health bar
                     anchorFrame:ClearAllPoints()
-                    anchorFrame:SetAllPoints(hb)
+                    local st = getState(hb)
+                    local borderTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or hb
+                    anchorFrame:SetAllPoints(borderTarget)
                     -- Set frame level above the health bar so borders draw on top
                     local parentLevel = 10 -- fallback if GetFrameLevel returns secret
                     local ok, level = pcall(function() return hb:GetFrameLevel() end)
@@ -1782,9 +1938,11 @@ do
                         anchorFrame = CreateFrame("Frame", nil, hb)
                         setProp(hb, "fotHealthBorderAnchor", anchorFrame)
                     end
-                    -- Anchor to health bar bounds (safe SetAllPoints)
+                    -- Anchor to clipping container if height reduction active, else health bar
                     anchorFrame:ClearAllPoints()
-                    anchorFrame:SetAllPoints(hb)
+                    local st = getState(hb)
+                    local borderTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or hb
+                    anchorFrame:SetAllPoints(borderTarget)
                     -- Set frame level above the health bar so borders draw on top
                     local parentLevel = 10 -- fallback if GetFrameLevel returns secret
                     local ok, level = pcall(function() return hb:GetFrameLevel() end)
@@ -2224,13 +2382,15 @@ do
                                     setProp(hb, "bossHealthBorderAnchor", anchorFrame)
                                 end
 
-                                -- Anchor to HealthBarsContainer bounds if available, else fall back to StatusBar
+                                -- Anchor to HealthBarsContainer bounds if available, else clipping container or StatusBar
                                 anchorFrame:ClearAllPoints()
                                 if hbContainer then
                                     anchorFrame:SetPoint("TOPLEFT", hbContainer, "TOPLEFT", 0, 0)
                                     anchorFrame:SetPoint("BOTTOMRIGHT", hbContainer, "BOTTOMRIGHT", 0, 0)
                                 else
-                                    anchorFrame:SetAllPoints(hb)
+                                    local st = getState(hb)
+                                    local borderTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or hb
+                                    anchorFrame:SetAllPoints(borderTarget)
                                 end
                                 anchorFrame:Show()
 
@@ -2838,6 +2998,9 @@ do
 									color = {0, 0, 0, 1}
 								end
 							end
+                            -- Determine border anchor target: use clipping container if height reduction active
+                            local st = getState(hb)
+                            local borderAnchorTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or nil
                             local handled = false
                             if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
 								-- Clear any prior holder/state to avoid stale tinting when toggling
@@ -2848,6 +3011,7 @@ do
                                     levelOffset = 1, -- just above bar fill; text will be raised above holder
                                     containerParent = (hb and hb:GetParent()) or nil,
                                     inset = inset,
+                                    anchorTarget = borderAnchorTarget, -- anchor to clipping container if active
                                 })
 							end
                             if not handled then
@@ -2863,7 +3027,9 @@ do
                                     if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                     if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                     -- Pet is already excluded by the outer guard
-                                    addon.Borders.ApplySquare(hb, {
+                                    -- Apply to clipping container if height reduction active, else to health bar
+                                    local squareBorderTarget = borderAnchorTarget or hb
+                                    addon.Borders.ApplySquare(squareBorderTarget, {
                                         size = thickness,
                                         color = sqColor,
                                         layer = "OVERLAY",

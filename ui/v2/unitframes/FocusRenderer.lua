@@ -314,6 +314,16 @@ function UF.RenderFocus(panel, scrollContent)
                 componentId = COMPONENT_ID,
                 sectionKey = "healthBar_tabs",
                 buildContent = {
+                    sizing = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Height %",
+                            min = 10, max = 100, step = 5,
+                            get = function() local t = ensureUFDB() or {}; return tonumber(t.healthBarOverlayHeightPct) or 100 end,
+                            set = function(v) local t = ensureUFDB(); if t then t.healthBarOverlayHeightPct = tonumber(v) or 100; applyBarTextures() end end,
+                            infoIcon = { tooltipTitle = "Health Bar Height", tooltipText = "Reduces the visible height of the health bar. The bar fill still tracks health correctly, but is cropped to this percentage of its normal height (centered vertically)." },
+                        })
+                        tabInner:Finalize()
+                    end,
                     direction = function(cf, tabInner) buildDirectionTab(tabInner) end,
                     style = function(cf, tabInner) buildStyleTab(tabInner, "healthBar", applyBarTextures) end,
                     border = function(cf, tabInner) buildBorderTab(tabInner, "healthBar", applyBarTextures) end,

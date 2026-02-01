@@ -162,24 +162,31 @@ function Textures.applyValueBasedColor(bar, unit, overlay)
         texturesColored = texturesColored + 1
     end
 
-    -- 2. Color GetStatusBarTexture() result
-    local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-    if statusBarTex and statusBarTex.SetVertexColor and statusBarTex ~= overlay then
-        pcall(statusBarTex.SetVertexColor, statusBarTex, r, g, b, 1)
-        texturesColored = texturesColored + 1
-    end
+    -- When the overlay system is active (rectActive=true), it handles all visual display.
+    -- Skip ALL modifications to Blizzard's textures - touching them triggers internal
+    -- re-renders that "wake up" the hidden full-size bar and break height reduction.
+    local overlaySystemActive = barState and barState.rectActive
 
-    -- 3. Color bar.HealthBarTexture if it's a different object (Blizzard's named child)
-    local namedTex = bar.HealthBarTexture
-    if namedTex and namedTex.SetVertexColor and namedTex ~= overlay and namedTex ~= statusBarTex then
-        pcall(namedTex.SetVertexColor, namedTex, r, g, b, 1)
-        texturesColored = texturesColored + 1
-    end
+    if not overlaySystemActive then
+        -- 2. Color GetStatusBarTexture() result
+        local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        if statusBarTex and statusBarTex.SetVertexColor and statusBarTex ~= overlay then
+            pcall(statusBarTex.SetVertexColor, statusBarTex, r, g, b, 1)
+            texturesColored = texturesColored + 1
+        end
 
-    -- 4. Also set the StatusBar's color directly (affects how it renders the fill)
-    if bar.SetStatusBarColor then
-        pcall(bar.SetStatusBarColor, bar, r, g, b)
-        texturesColored = texturesColored + 1
+        -- 3. Color bar.HealthBarTexture if it's a different object (Blizzard's named child)
+        local namedTex = bar.HealthBarTexture
+        if namedTex and namedTex.SetVertexColor and namedTex ~= overlay and namedTex ~= statusBarTex then
+            pcall(namedTex.SetVertexColor, namedTex, r, g, b, 1)
+            texturesColored = texturesColored + 1
+        end
+
+        -- 4. Also set the StatusBar's color directly (affects how it renders the fill)
+        if bar.SetStatusBarColor then
+            pcall(bar.SetStatusBarColor, bar, r, g, b)
+            texturesColored = texturesColored + 1
+        end
     end
 
     if barState then barState.applyingValueBasedColor = nil end
