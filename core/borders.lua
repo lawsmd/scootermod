@@ -200,18 +200,23 @@ function Borders.ApplySquare(frame, opts)
     local sizeBottom = (opts.sizeBottom ~= nil) and math.max(1, tonumber(opts.sizeBottom)) or size
     local sizeLeft   = (opts.sizeLeft   ~= nil) and math.max(1, tonumber(opts.sizeLeft))   or size
     local sizeRight  = (opts.sizeRight  ~= nil) and math.max(1, tonumber(opts.sizeRight))  or size
-    -- Optional height inset for matching reduced-height bar overlays (health/power bars with Height %)
-    -- When heightInset > 0, all edges are moved inward from top/bottom to wrap the reduced-height bar
-    local heightInset = tonumber(opts.heightInset) or 0
     -- Prevent corner over-darkening without leaving gaps:
     -- let horizontal edges span the full width; trim vertical edges by the thickness.
     -- This yields a single-draw corner (from the horizontal edge) at each corner.
-    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - heightInset);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - heightInset);        e.Top:SetHeight(sizeTop)
-    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom + heightInset); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom + heightInset); e.Bottom:SetHeight(sizeBottom)
-    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - sizeTop - heightInset);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + sizeBottom + heightInset);   e.Left:SetWidth(sizeLeft)
-    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - sizeTop - heightInset);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + sizeBottom + heightInset); e.Right:SetWidth(sizeRight)
-    for _, t in pairs(e) do if t.Show then t:Show() end end
-    if container and container.Show then container:Show() end
+    e.Top:ClearAllPoints();    e.Top:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop);        e.Top:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop);        e.Top:SetHeight(sizeTop)
+    e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom); e.Bottom:SetHeight(sizeBottom)
+    e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - sizeTop);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + sizeBottom);   e.Left:SetWidth(sizeLeft)
+    e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - sizeTop);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + sizeBottom); e.Right:SetWidth(sizeRight)
+    -- 12.0+: Defer Show() for managed frames (PetFrame, etc.) to break taint chain
+    if opts.deferShow then
+        C_Timer.After(0, function()
+            for _, t in pairs(e) do if t.Show then t:Show() end end
+            if container and container.Show then container:Show() end
+        end)
+    else
+        for _, t in pairs(e) do if t.Show then t:Show() end end
+        if container and container.Show then container:Show() end
+    end
 end
 
 function Borders.HideAll(frame)

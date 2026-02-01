@@ -137,18 +137,6 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
     inner:Finalize()
 end
 
-local function buildSizingTab(inner, barPrefix, applyFn)
-    -- Height % (overlay shrinking for health/power bars)
-    inner:AddSlider({
-        label = "Height %",
-        min = 50, max = 100, step = 5,
-        get = function() local t = ensureFocusTargetDB() or {}; return tonumber(t[barPrefix .. "OverlayHeightPct"]) or 100 end,
-        set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "OverlayHeightPct"] = tonumber(v) or 100; applyFn() end end,
-    })
-
-    inner:Finalize()
-end
-
 local function buildBorderTab(inner, barPrefix, applyFn)
     inner:AddBarBorderSelector({
         label = "Border Style",
@@ -401,14 +389,12 @@ function UF.RenderFocusTarget(panel, scrollContent)
         buildContent = function(contentFrame, inner)
             inner:AddTabbedSection({
                 tabs = {
-                    { key = "sizing", label = "Sizing" },
                     { key = "style", label = "Style" },
                     { key = "border", label = "Border" },
                 },
                 componentId = COMPONENT_ID,
                 sectionKey = "healthBar_tabs",
                 buildContent = {
-                    sizing = function(cf, tabInner) buildSizingTab(tabInner, "healthBar", applyNow) end,
                     style = function(cf, tabInner) buildStyleTab(tabInner, "healthBar", applyNow) end,
                     border = function(cf, tabInner) buildBorderTab(tabInner, "healthBar", applyNow) end,
                 },

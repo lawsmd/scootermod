@@ -80,11 +80,9 @@ function Presets:CheckDependencies(preset)
     if not preset then
         return false, "Preset not found."
     end
-    -- Note: We no longer block on ConsolePort being disabled.
-    -- The preset can be applied, and ConsolePort profile data will be
-    -- stored for later use when ConsolePort is enabled.
-    -- The apply flow will show an informational message if ConsolePort
-    -- is recommended but not currently available.
+    if preset.requiresConsolePort and not self:HasConsolePort() then
+        return false, "ConsolePort must be installed to import this preset."
+    end
     return true
 end
 
@@ -303,22 +301,13 @@ function Presets:ApplyPresetFromUI(preset)
                     end
                 end
 
-                local hasConsolePortData = d.preset and d.preset.consolePortProfile ~= nil
-                local recommendsConsolePort = d.preset and d.preset.requiresConsolePort
-                local consolePortAvailable = Presets:HasConsolePort()
-
-                -- If preset has ConsolePort data and ConsolePort is available, prompt to import
-                if hasConsolePortData and consolePortAvailable then
+                local wantsConsolePortPrompt = (d.preset and d.preset.consolePortProfile ~= nil) or (d.preset and d.preset.requiresConsolePort)
+                if wantsConsolePortPrompt then
                     addon.Dialogs:Show("SCOOTERMOD_IMPORT_CONSOLEPORT", {
                         onAccept = function() apply(true) end,
                         onCancel = function() apply(false) end,
                     })
                     return
-                end
-
-                -- If preset recommends ConsolePort but it's not available, show info message
-                if (hasConsolePortData or recommendsConsolePort) and not consolePortAvailable then
-                    addon:Print("Note: This preset includes ConsolePort settings. Enable ConsolePort and re-apply the preset to import them.")
                 end
 
                 apply(false)

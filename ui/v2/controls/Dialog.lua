@@ -775,8 +775,8 @@ Controls:RegisterDialog("SCOOTERMOD_PRESET_TARGET_CHOICE", {
     text = "How would you like to apply the %s preset?",
     acceptText = "Create New Profile",
     cancelText = "Apply to Existing",
-    acceptWidth = 160,
-    cancelWidth = 160,
+    acceptWidth = 140,
+    cancelWidth = 140,
     height = 160,
 })
 
