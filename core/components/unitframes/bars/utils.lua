@@ -120,6 +120,7 @@ function Utils.hasCustomTextSettings(cfg)
     if cfg.offset then
         if (cfg.offset.x and cfg.offset.x ~= 0) or (cfg.offset.y and cfg.offset.y ~= 0) then return true end
     end
+    if cfg.hideRealm then return true end
     return false
 end
 

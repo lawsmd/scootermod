@@ -77,7 +77,10 @@ local function ApplyExtraAbilitiesStyling(self)
     scale = tonumber(scale) or 100
     if scale < 25 then scale = 25 elseif scale > 150 then scale = 150 end
     local scaleValue = scale / 100
-    pcall(container.SetScale, container, scaleValue)
+    -- SetScale is protected on Edit Mode-managed frames during combat
+    if not InCombatLockdown() then
+        pcall(container.SetScale, container, scaleValue)
+    end
 
     -- Apply opacity
     local baseOp = tonumber(self.db and self.db.barOpacity)

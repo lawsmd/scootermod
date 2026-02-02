@@ -115,6 +115,9 @@ function GF.applyRaidStyles()
     if addon.ApplyRaidFrameGroupTitlesStyle then
         addon.ApplyRaidFrameGroupTitlesStyle()
     end
+    if addon.ApplyRaidOverAbsorbGlowVisibility then
+        addon.ApplyRaidOverAbsorbGlowVisibility()
+    end
 end
 
 function GF.applyPartyText()

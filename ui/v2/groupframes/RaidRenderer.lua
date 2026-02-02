@@ -694,7 +694,21 @@ function GF.RenderRaid(panel, scrollContent)
         sectionKey = "visibility",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddDescription("Visibility options coming in a future update.")
+            inner:AddToggle({
+                label = "Hide Over Absorb Glow",
+                description = "Hides the glow effect when absorb shields exceed health bar width.",
+                get = function()
+                    local db = GF.ensureRaidDB()
+                    return db and db.hideOverAbsorbGlow or false
+                end,
+                set = function(v)
+                    local db = GF.ensureRaidDB()
+                    if db then
+                        db.hideOverAbsorbGlow = v
+                    end
+                    GF.applyRaidStyles()
+                end,
+            })
             inner:Finalize()
         end,
     })

@@ -1769,6 +1769,18 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local thickness = tonumber(component.db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
         local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+        -- DEBUG: Trace border tint values
+        if addon.debugEnabled then
+            print(string.format("[TrackedBars] borderTintEnable=%s, borderTintColor=%s",
+                tostring(component.db.borderTintEnable),
+                type(component.db.borderTintColor) == "table" and
+                    string.format("{%.2f,%.2f,%.2f,%.2f}",
+                        component.db.borderTintColor[1] or 0,
+                        component.db.borderTintColor[2] or 0,
+                        component.db.borderTintColor[3] or 0,
+                        component.db.borderTintColor[4] or 0)
+                    or "nil"))
+        end
         local tintEnabled = component.db.borderTintEnable and type(component.db.borderTintColor) == "table"
         local color
         if tintEnabled then
@@ -1784,10 +1796,11 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
 
         local handled = false
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+            local inset = tonumber(component.db.borderInset) or 0
             handled = addon.BarBorders.ApplyToBarFrame(barFrame, styleKey, {
                 color = color,
                 thickness = thickness,
-                component = component,
+                inset = inset,
             })
         end
 
@@ -2364,6 +2377,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
+            }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
             }},
             iconTallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Icon", order = 1

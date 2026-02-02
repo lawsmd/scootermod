@@ -1181,6 +1181,22 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
             end)
         end)
     end)
+
+    -- Hook ShowLocalPlayerEntry to restyle the sticky player row when it appears
+    -- LocalPlayerEntry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
+    if sessionWindow.ShowLocalPlayerEntry and not sessionWindow._ScooterLocalPlayerHooked then
+        sessionWindow._ScooterLocalPlayerHooked = true
+        hooksecurefunc(sessionWindow, "ShowLocalPlayerEntry", function(self, earlierInList)
+            C_Timer.After(0, function()
+                if not component.db then return end
+                local localPlayerEntry = self.LocalPlayerEntry
+                if localPlayerEntry then
+                    ApplySingleEntryStyle(localPlayerEntry, component.db)
+                end
+            end)
+        end)
+    end
+
     return true
 end
 
@@ -1287,6 +1303,13 @@ local function ApplyDamageMeterStyling(self)
         ForEachVisibleEntry(sessionWindow, function(entryFrame)
             ApplySingleEntryStyle(entryFrame, db)
         end)
+
+        -- Style LocalPlayerEntry (sticky player row at bottom when scrolled past own position)
+        -- This entry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
+        local localPlayerEntry = sessionWindow.LocalPlayerEntry
+        if localPlayerEntry then
+            ApplySingleEntryStyle(localPlayerEntry, db)
+        end
     end
 end
 

@@ -258,8 +258,8 @@ function TrackedBars.Render(panel, scrollContent)
 
             inner:AddToggleColorPicker({
                 label = "Border Tint",
-                getToggle = function() return getSetting("borderTintEnable") or false end,
-                setToggle = function(v) setSetting("borderTintEnable", v) end,
+                get = function() return getSetting("borderTintEnable") or false end,
+                set = function(v) setSetting("borderTintEnable", v) end,
                 getColor = function()
                     local c = getSetting("borderTintColor")
                     return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
@@ -276,9 +276,17 @@ function TrackedBars.Render(panel, scrollContent)
 
             inner:AddSlider({
                 label = "Border Thickness", min = 1, max = 8, step = 0.5,
+                precision = 1,
                 get = function() local v = getSetting("borderThickness") or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                 set = function(v) setSetting("borderThickness", math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))) end,
                 minLabel = "1", maxLabel = "8",
+            })
+
+            inner:AddSlider({
+                label = "Border Inset", min = -4, max = 4, step = 1,
+                get = function() return getSetting("borderInset") or 0 end,
+                set = function(v) setSetting("borderInset", v) end,
+                minLabel = "-4", maxLabel = "4",
             })
 
             inner:Finalize()
@@ -311,8 +319,8 @@ function TrackedBars.Render(panel, scrollContent)
 
             inner:AddToggleColorPicker({
                 label = "Border Tint",
-                getToggle = function() return getSetting("iconBorderTintEnable") or false end,
-                setToggle = function(v) setSetting("iconBorderTintEnable", v) end,
+                get = function() return getSetting("iconBorderTintEnable") or false end,
+                set = function(v) setSetting("iconBorderTintEnable", v) end,
                 getColor = function()
                     local c = getSetting("iconBorderTintColor")
                     return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
@@ -331,6 +339,7 @@ function TrackedBars.Render(panel, scrollContent)
 
             inner:AddSlider({
                 label = "Border Thickness", min = 1, max = 8, step = 0.5,
+                precision = 1,
                 get = function() local v = getSetting("iconBorderThickness") or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                 set = function(v) setSetting("iconBorderThickness", math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))) end,
                 minLabel = "1", maxLabel = "8",

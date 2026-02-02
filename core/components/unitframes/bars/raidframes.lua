@@ -136,9 +136,13 @@ end
 -- Health Bar Overlay (Combat-Safe Persistence)
 --------------------------------------------------------------------------------
 
--- Update overlay width based on health bar value
+-- Update overlay dimensions based on health bar fill texture
+-- 12.0 FIX: Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
+-- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
+-- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
+
     local state = getState(bar)
     local overlay = state and state.healthOverlay or nil
     if not overlay then return end
@@ -146,48 +150,23 @@ local function updateHealthOverlay(bar)
         overlay:Hide()
         return
     end
-    -- 12.0+: These getters can surface Blizzard "secret value" errors. Best-effort only.
-    local totalWidth = 0
-    do
-        -- Use the StatusBar frame width (not the fill texture width).
-        -- The fill texture width varies with health %, but we need the full bar width.
-        local okW, w = pcall(bar.GetWidth, bar)
-        totalWidth = safeNumber(okW and w) or 0
-    end
-    local minVal, maxVal
-    do
-        local okMM, mn, mx = pcall(bar.GetMinMaxValues, bar)
-        minVal = safeNumber(okMM and mn)
-        maxVal = safeNumber(okMM and mx)
-    end
-    local value
-    do
-        local okV, v = pcall(bar.GetValue, bar)
-        value = safeNumber(okV and v)
-        if value == nil then value = minVal end
-    end
 
-    if not totalWidth or totalWidth <= 0 or minVal == nil or maxVal == nil or value == nil then
-        overlay:Hide()
-        return
-    end
-    if maxVal <= minVal then
+    -- 12.0 SECRET-SAFE APPROACH: Anchor overlay to the status bar fill texture.
+    -- Blizzard's fill texture is sized internally without exposing secret values.
+    -- By anchoring to it, our overlay automatically matches the fill dimensions.
+    local fill = bar:GetStatusBarTexture()
+    if not fill then
         overlay:Hide()
         return
     end
 
-    local frac = (value - minVal) / (maxVal - minVal)
-    if frac <= 0 then
-        overlay:Hide()
-        return
-    end
-    if frac > 1 then frac = 1 end
-
-    overlay:Show()
-    overlay:SetWidth(totalWidth * frac)
+    -- Anchor overlay to match the fill texture exactly.
+    -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
+    -- will correctly have zero width too. This avoids reading GetWidth() which can
+    -- return secret values in 12.0.
     overlay:ClearAllPoints()
-    overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-    overlay:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    overlay:SetAllPoints(fill)
+    overlay:Show()
 end
 
 -- Style the overlay texture and color
@@ -377,11 +356,42 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                     end
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                        -- Schedule validation to catch timing edge cases (stuck colors at 100%)
+                        if addon.BarsTextures.scheduleColorValidation then
+                            addon.BarsTextures.scheduleColorValidation(self, unit, overlay)
+                        end
                     end
                 end
             end)
             _G.hooksecurefunc(bar, "SetMinMaxValues", function(self)
                 updateHealthOverlay(self)
+            end)
+            -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
+            -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
+            -- calls SetStatusBarColor(green), our hook fires IMMEDIATELY after and re-applies
+            -- our value-based color. No frame gap = no blink.
+            _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
+                local st = getState(self)
+                if not st or not st.overlayActive then return end
+                -- Recursion guard: Check the SAME flag that applyValueBasedColor uses in addon.FrameState
+                -- to prevent infinite loops when we call SetStatusBarColor from applyValueBasedColor.
+                local fs = addon.FrameState and addon.FrameState.Get(self)
+                if fs and fs.applyingValueBasedColor then return end
+                local db = addon and addon.db and addon.db.profile
+                local groupFrames = db and rawget(db, "groupFrames") or nil
+                local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+                if cfg and cfg.healthBarColorMode == "value" then
+                    local overlay = st.healthOverlay
+                    local parentFrame = self.GetParent and self:GetParent()
+                    local unit
+                    if parentFrame then
+                        local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                        if okU and u then unit = u end
+                    end
+                    if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                    end
+                end
             end)
             if bar.HookScript then
                 bar:HookScript("OnSizeChanged", function(self)
@@ -420,10 +430,12 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
             cfg.healthBarCustomColor[4] or 1) or ""
     )
 
-    -- If config hasn't changed and overlay is already visible, skip re-styling
+    -- If config hasn't changed and overlay is already visible, skip re-styling.
+    -- Note: Don't check GetWidth() as it can return secret values in 12.0.
+    -- With anchor-based sizing, if the overlay is shown, it's sized correctly.
     if state.lastAppliedFingerprint == fingerprint then
         local overlay = state.healthOverlay
-        if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
+        if overlay and overlay:IsShown() then
             return -- Already styled with same config, skip
         end
     end
@@ -434,30 +446,15 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     styleHealthOverlay(bar, cfg)
     hideBlizzardFill(bar)
     updateHealthOverlay(bar)
-    -- Queue repeating updates to handle cases where bar dimensions aren't ready
-    -- immediately (e.g., on UI reload at 100% health where no SetValue fires).
-    -- Keep trying until the overlay is successfully shown.
-    -- See GROUPFRAMES.md "Health Bar Overlay Initialization" for details.
+
+    -- Queue a single deferred update to handle cases where the fill texture
+    -- isn't ready immediately (e.g., on UI reload). With anchor-based sizing,
+    -- we don't need a retry loop - the overlay will automatically match the
+    -- fill texture dimensions once anchored.
     if _G.C_Timer and _G.C_Timer.After then
-        local attempts = 0
-        local maxAttempts = 10
-        local function tryUpdate()
-            attempts = attempts + 1
-            local st = getState(bar)
-            local overlay = st and st.healthOverlay
-            -- Check if overlay is visible and has width > 0
-            if overlay and overlay:IsShown() and overlay:GetWidth() > 1 then
-                return -- Success, stop trying
-            end
-            -- Try to update
+        C_Timer.After(0.1, function()
             updateHealthOverlay(bar)
-            styleHealthOverlay(bar, cfg)
-            -- If still not working and under max attempts, try again
-            if attempts < maxAttempts then
-                C_Timer.After(0.05, tryUpdate)
-            end
-        end
-        C_Timer.After(0.05, tryUpdate)
+        end)
     end
 end
 
@@ -515,6 +512,26 @@ local function applyHealthBarBorder(bar, cfg)
 
     local anchor = state.borderAnchor
 
+    -- Hook size changes to keep explicit size in sync (for anchor secrecy fix)
+    if not state.borderSizeHooked then
+        state.borderSizeHooked = true
+        hooksecurefunc(bar, "SetSize", function(self, w, h)
+            if state.borderAnchor and type(w) == "number" and type(h) == "number" then
+                -- Will be resized on next applyHealthBarBorder call
+                state.borderNeedsResize = true
+            end
+        end)
+    end
+
+    -- 12.0 ANCHOR SECRECY FIX: Get bar dimensions safely
+    -- Health bars can be "anchoring secret" after SetValue(secretHealth), causing
+    -- GetWidth/GetHeight to return secrets. Try pcall, fallback to defaults.
+    local barWidth, barHeight = 100, 20  -- Default compact unit frame health bar size
+    local okSize, w, h = pcall(function() return bar:GetWidth(), bar:GetHeight() end)
+    if okSize and type(w) == "number" and type(h) == "number" and w > 0 and h > 0 then
+        barWidth, barHeight = w, h
+    end
+
     -- Set frame level above the health bar but below overlay elements
     local barLevel = 0
     local okL, lvl = pcall(bar.GetFrameLevel, bar)
@@ -551,6 +568,11 @@ local function applyHealthBarBorder(bar, cfg)
             local backdropInset = math.floor(edgeSize * insetMult + 0.5)
             if backdropInset < 0 then backdropInset = 0 end
 
+            -- 12.0 ANCHOR SECRECY FIX: Set explicit size to prevent anchor secrecy from
+            -- causing GetWidth() to return secrets inside SetBackdrop
+            -- Size = bar size + padding adjustments (padAdj on each side)
+            anchor:SetSize(barWidth + padAdj * 2, barHeight + padAdj * 2)
+
             local ok = pcall(anchor.SetBackdrop, anchor, {
                 bgFile = nil,
                 edgeFile = style.texture,
@@ -577,6 +599,9 @@ local function applyHealthBarBorder(bar, cfg)
             anchor:ClearAllPoints()
             anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
             anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+
+            -- 12.0 ANCHOR SECRECY FIX: Set explicit size: bar size + 1px border on each side
+            anchor:SetSize(barWidth + 2, barHeight + 2)
 
             pcall(anchor.SetBackdrop, anchor, {
                 bgFile = nil,
@@ -922,17 +947,45 @@ function RaidFrames.installHooks()
             if okU and u then unit = u end
             if not unit then return end
 
-            -- Defer to avoid taint (same pattern as existing hooks)
-            C_Timer.After(0, function()
-                local state = getState(frame.healthBar)
-                local overlay = state and state.healthOverlay or nil
-                if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit, overlay)
-                elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                    -- No overlay, apply to status bar texture directly
-                    addon.BarsTextures.applyValueBasedColor(frame.healthBar, unit)
+            -- FIX: Conditional deferral to prevent blinking during health regen.
+            -- The blink occurs because:
+            --   1. SetValue hook applies our color
+            --   2. Blizzard's CompactUnitFrame_UpdateHealthColor resets to default green
+            --   3. Our deferred callback re-applies our color (1 frame later = visible flicker)
+            --
+            -- Solution: Only defer when overlay doesn't exist yet (initialization).
+            -- When overlay is ready and shown, apply immediately (synchronously).
+            local healthBar = frame.healthBar
+            local state = getState(healthBar)
+            local overlay = state and state.healthOverlay or nil
+
+            if overlay and overlay:IsShown() then
+                -- Overlay exists and is shown - apply immediately (no defer)
+                -- This prevents the 1-frame blink where Blizzard's color shows
+                if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                    addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay)
+                    -- Schedule validation to catch timing edge cases (stuck colors at 100%)
+                    if addon.BarsTextures.scheduleColorValidation then
+                        addon.BarsTextures.scheduleColorValidation(healthBar, unit, overlay)
+                    end
                 end
-            end)
+            else
+                -- Overlay not ready - defer to ensure initialization completes
+                C_Timer.After(0, function()
+                    local st = getState(healthBar)
+                    local ov = st and st.healthOverlay or nil
+                    if ov and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit, ov)
+                        -- Schedule validation for deferred case too
+                        if addon.BarsTextures.scheduleColorValidation then
+                            addon.BarsTextures.scheduleColorValidation(healthBar, unit, ov)
+                        end
+                    elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        -- No overlay, apply to status bar texture directly
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit)
+                    end
+                end)
+            end
         end)
     end
 end
@@ -1996,5 +2049,89 @@ end
 
 -- Install text hooks on load
 RaidFrames.installTextHooks()
+
+--------------------------------------------------------------------------------
+-- Over Absorb Glow Visibility
+--------------------------------------------------------------------------------
+-- Hides or shows the OverAbsorbGlow texture on raid frames.
+-- This glow appears when absorb shields exceed the health bar width.
+-- Frame paths:
+--   - CompactRaidGroup[1-8]Member[1-5].overAbsorbGlow (group layout)
+--   - CompactRaidFrame[1-40].overAbsorbGlow (combined layout)
+--
+-- Uses alpha hiding with persistent hooks (same pattern as party frames).
+--------------------------------------------------------------------------------
+
+local function applyOverAbsorbGlowVisibility(frame, shouldHide)
+    if not frame then return end
+    local glow = frame.overAbsorbGlow
+    if not glow then return end
+
+    local state = ensureState(glow)
+    if not state then return end
+
+    if shouldHide then
+        state.glowHidden = true
+        if glow.SetAlpha then pcall(glow.SetAlpha, glow, 0) end
+
+        -- Install persistence hooks (only once)
+        if not state.glowHooked and _G.hooksecurefunc then
+            state.glowHooked = true
+            _G.hooksecurefunc(glow, "SetAlpha", function(self, alpha)
+                local st = getState(self)
+                if alpha and alpha > 0 and st and st.glowHidden then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            local st2 = getState(self)
+                            if st2 and st2.glowHidden and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+            _G.hooksecurefunc(glow, "Show", function(self)
+                local st = getState(self)
+                if st and st.glowHidden and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+        end
+    else
+        state.glowHidden = false
+        if glow.SetAlpha then pcall(glow.SetAlpha, glow, 1) end
+    end
+end
+
+function RaidFrames.ApplyOverAbsorbGlowVisibility()
+    local db = addon.db and addon.db.profile
+    local raidCfg = db and db.groupFrames and db.groupFrames.raid or nil
+
+    -- Zero-Touch: if no raid config exists, don't touch raid frames at all
+    if not raidCfg then return end
+
+    local shouldHide = raidCfg.hideOverAbsorbGlow or false
+    if not shouldHide then return end
+
+    -- Pattern 1: Group-based naming (CompactRaidGroup1Member1, etc.)
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame then
+                applyOverAbsorbGlowVisibility(frame, shouldHide)
+            end
+        end
+    end
+
+    -- Pattern 2: Combined naming (CompactRaidFrame1, etc.)
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame then
+            applyOverAbsorbGlowVisibility(frame, shouldHide)
+        end
+    end
+end
+
+addon.ApplyRaidOverAbsorbGlowVisibility = RaidFrames.ApplyOverAbsorbGlowVisibility
 
 return RaidFrames

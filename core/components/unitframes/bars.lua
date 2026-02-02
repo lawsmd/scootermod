@@ -672,18 +672,33 @@ do
             return
         end
 
-        -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
-        -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
-        -- is the actual "fill" portion of the StatusBar and automatically scales with bar value.
-        -- This follows the 12.0 paradigm: anchor to existing elements, don't read values.
+        -- 12.0 FIX: Anchor to StatusBarTexture for horizontal fill tracking (no secret value reads).
         local statusBarTex = bar:GetStatusBarTexture()
         if not statusBarTex then
             overlay:Hide()
             return
         end
 
+        -- BOSS FIX: Use stored bounds frame for vertical constraints.
+        -- Boss HealthBar StatusBar is oversized (spans both health + power areas).
+        -- We anchor LEFT/RIGHT to StatusBarTexture (tracks fill width automatically),
+        -- and TOP/BOTTOM to the correct bounds frame (HealthBarsContainer for health,
+        -- ManaBar for power).
+        local boundsFrame = st.bossRectBoundsFrame
+
         overlay:ClearAllPoints()
-        overlay:SetAllPoints(statusBarTex)
+        if boundsFrame and boundsFrame ~= bar then
+            -- Hybrid anchoring: 4 edges anchored separately
+            -- Horizontal: track StatusBarTexture fill
+            overlay:SetPoint("LEFT", statusBarTex, "LEFT", 0, 0)
+            overlay:SetPoint("RIGHT", statusBarTex, "RIGHT", 0, 0)
+            -- Vertical: constrain to correct bounds frame
+            overlay:SetPoint("TOP", boundsFrame, "TOP", 0, 0)
+            overlay:SetPoint("BOTTOM", boundsFrame, "BOTTOM", 0, 0)
+        else
+            -- Fallback for non-Boss bars or if bounds resolution failed
+            overlay:SetAllPoints(statusBarTex)
+        end
         overlay:Show()
     end
 
