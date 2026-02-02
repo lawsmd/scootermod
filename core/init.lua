@@ -101,8 +101,8 @@ function addon:MigrateIconWidthHeightToRatio()
     -- Component IDs and their base sizes for migration
     local componentMigrations = {
         { id = "essentialCooldowns", baseSize = 50 },
-        { id = "utilityCooldowns", baseSize = 44 },
-        { id = "trackedBuffs", baseSize = 44 },
+        { id = "utilityCooldowns", baseSize = 30 },
+        { id = "trackedBuffs", baseSize = 40 },
         { id = "buffs", baseSize = 30 },
         { id = "debuffs", baseSize = 30 },
     }

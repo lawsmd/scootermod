@@ -150,10 +150,10 @@ local function ResetIconBorderTarget(target)
         if tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
     end
 
-    wipeTexture(target.ScootAtlasBorder)
-    wipeTexture(target.ScootTextureBorder)
-    wipeTexture(target.ScootAtlasBorderTintOverlay)
-    wipeTexture(target.ScootTextureBorderTintOverlay)
+    wipeTexture(addon.Borders.GetAtlasBorder and addon.Borders.GetAtlasBorder(target))
+    wipeTexture(addon.Borders.GetTextureBorder and addon.Borders.GetTextureBorder(target))
+    wipeTexture(addon.Borders.GetAtlasTintOverlay and addon.Borders.GetAtlasTintOverlay(target))
+    wipeTexture(addon.Borders.GetTextureTintOverlay and addon.Borders.GetTextureTintOverlay(target))
 
     if target.ScootSquareBorderEdges then
         for _, edge in pairs(target.ScootSquareBorderEdges) do
@@ -1172,7 +1172,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
         })
-        appliedTexture = targetFrame.ScootAtlasBorder
+        appliedTexture = addon.Borders.GetAtlasBorder(targetFrame)
     elseif styleDef.type == "texture" then
         addon.Borders.ApplyTexture(targetFrame, {
             texture = styleDef.texture,
@@ -1183,7 +1183,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             layer = styleDef.layer or "OVERLAY",
             layerSublevel = styleDef.layerSublevel or 7,
         })
-        appliedTexture = targetFrame.ScootTextureBorder
+        appliedTexture = addon.Borders.GetTextureBorder(targetFrame)
     else
         addon.Borders.ApplySquare(targetFrame, {
             size = thickness,
@@ -1202,8 +1202,10 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
                 end
             end
         end
-        if targetFrame.ScootAtlasBorderTintOverlay then targetFrame.ScootAtlasBorderTintOverlay:Hide() end
-        if targetFrame.ScootTextureBorderTintOverlay then targetFrame.ScootTextureBorderTintOverlay:Hide() end
+        local atlasOverlay = addon.Borders.GetAtlasTintOverlay(targetFrame)
+        local textureOverlay = addon.Borders.GetTextureTintOverlay(targetFrame)
+        if atlasOverlay then atlasOverlay:Hide() end
+        if textureOverlay then textureOverlay:Hide() end
     end
 
     if appliedTexture then
@@ -1218,9 +1220,9 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
         local overlay
         if styleDef.type == "atlas" then
-            overlay = targetFrame.ScootAtlasBorderTintOverlay
+            overlay = addon.Borders.GetAtlasTintOverlay(targetFrame)
         elseif styleDef.type == "texture" then
-            overlay = targetFrame.ScootTextureBorderTintOverlay
+            overlay = addon.Borders.GetTextureTintOverlay(targetFrame)
         end
 
         local function clampSublevel(val)
@@ -1241,9 +1243,9 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             tex:SetVertexColor(1, 1, 1, 1)
             tex:Hide()
             if styleDef.type == "atlas" then
-                targetFrame.ScootAtlasBorderTintOverlay = tex
+                addon.Borders.SetAtlasTintOverlay(targetFrame, tex)
             else
-                targetFrame.ScootTextureBorderTintOverlay = tex
+                addon.Borders.SetTextureTintOverlay(targetFrame, tex)
             end
             return tex
         end
@@ -1260,7 +1262,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             local b = tintColor[3] or 1
             local a = tintColor[4] or 1
             if styleDef.type == "atlas" and styleDef.atlas then
-                overlay:SetAtlas(styleDef.atlas, true)
+                overlay:SetAtlas(styleDef.atlas)
             elseif styleDef.type == "texture" and styleDef.texture then
                 overlay:SetTexture(styleDef.texture)
             end
@@ -1274,8 +1276,8 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             appliedTexture:SetAlpha(0)
         else
             local overlays = {
-                frame.ScootAtlasBorderTintOverlay,
-                frame.ScootTextureBorderTintOverlay,
+                addon.Borders.GetAtlasTintOverlay(frame),
+                addon.Borders.GetTextureTintOverlay(frame),
             }
             for _, ov in ipairs(overlays) do
                 if ov then
@@ -1299,7 +1301,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
                     layer = styleDef.layer or "OVERLAY",
                     layerSublevel = styleDef.layerSublevel or 7,
                 })
-                appliedTexture = frame.ScootAtlasBorder
+                appliedTexture = addon.Borders.GetAtlasBorder(frame)
             elseif styleDef.type == "texture" and styleDef.texture then
                 addon.Borders.ApplyTexture(frame, {
                     texture = styleDef.texture,
@@ -1310,7 +1312,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
                     layer = styleDef.layer or "OVERLAY",
                     layerSublevel = styleDef.layerSublevel or 7,
                 })
-                appliedTexture = frame.ScootTextureBorder
+                appliedTexture = addon.Borders.GetTextureBorder(frame)
             else
                 addon.Borders.ApplySquare(frame, {
                     size = thickness,

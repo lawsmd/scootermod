@@ -741,7 +741,7 @@ do
 						-- Defensive cleanup: if any legacy Scooter borders were drawn directly on the
 						-- icon texture (pre-wrapper versions), hide them once so only the current
 						-- wrapper/container-based border remains visible.
-						if (icon.ScootAtlasBorder or icon.ScootTextureBorder or icon.ScootSquareBorderContainer or icon.ScootSquareBorderEdges)
+						if ((addon.Borders.GetAtlasBorder and addon.Borders.GetAtlasBorder(icon)) or (addon.Borders.GetTextureBorder and addon.Borders.GetTextureBorder(icon)) or icon.ScootSquareBorderContainer or icon.ScootSquareBorderEdges)
 							and addon.Borders and addon.Borders.HideAll then
 							addon.Borders.HideAll(icon)
 						end
@@ -1517,7 +1517,7 @@ do
 					}
 
 					if iconBorderEnabled and not iconDisabled then
-						if (icon.ScootAtlasBorder or icon.ScootTextureBorder or icon.ScootSquareBorderContainer or icon.ScootSquareBorderEdges)
+						if ((addon.Borders.GetAtlasBorder and addon.Borders.GetAtlasBorder(icon)) or (addon.Borders.GetTextureBorder and addon.Borders.GetTextureBorder(icon)) or icon.ScootSquareBorderContainer or icon.ScootSquareBorderEdges)
 							and addon.Borders and addon.Borders.HideAll then
 							addon.Borders.HideAll(icon)
 						end

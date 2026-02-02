@@ -1840,6 +1840,36 @@ do
                 ensureRectHealthOverlay(unit, hb, cfg)
             end
 
+            -- Apply foreground color mode (same logic as shared path)
+            -- ToT returns early, so we must apply color here instead of in the shared path
+            local st = getState(hb)
+            if st and st.rectActive and st.rectFill then
+                local colorMode = cfg.healthBarColorMode or "default"
+                local tint = cfg.healthBarTint
+                local overlay = st.rectFill
+
+                if colorMode == "value" then
+                    if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(hb, "targettarget", overlay)
+                    end
+                    st.valueColorOverlay = overlay
+                elseif colorMode == "custom" and type(tint) == "table" then
+                    overlay:SetVertexColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1)
+                elseif colorMode == "class" and addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB("player")
+                    overlay:SetVertexColor(cr or 1, cg or 1, cb or 1, 1)
+                elseif colorMode == "texture" then
+                    overlay:SetVertexColor(1, 1, 1, 1)
+                elseif colorMode == "default" then
+                    if addon.GetDefaultHealthColorRGB then
+                        local hr, hg, hb_color = addon.GetDefaultHealthColorRGB()
+                        overlay:SetVertexColor(hr or 0, hg or 1, hb_color or 0, 1)
+                    else
+                        overlay:SetVertexColor(0, 1, 0, 1)
+                    end
+                end
+            end
+
             -- Apply background texture (overlay approach only handles foreground)
             if hb then
                 local bgTexKeyHB = cfg.healthBarBackgroundTexture
@@ -1966,6 +1996,36 @@ do
             local hb = resolveHealthBar(frame, unit)
             if hb then
                 ensureRectHealthOverlay(unit, hb, cfg)
+            end
+
+            -- Apply foreground color mode (same logic as shared path)
+            -- FoT returns early, so we must apply color here instead of in the shared path
+            local st = getState(hb)
+            if st and st.rectActive and st.rectFill then
+                local colorMode = cfg.healthBarColorMode or "default"
+                local tint = cfg.healthBarTint
+                local overlay = st.rectFill
+
+                if colorMode == "value" then
+                    if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(hb, "focustarget", overlay)
+                    end
+                    st.valueColorOverlay = overlay
+                elseif colorMode == "custom" and type(tint) == "table" then
+                    overlay:SetVertexColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1)
+                elseif colorMode == "class" and addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB("player")
+                    overlay:SetVertexColor(cr or 1, cg or 1, cb or 1, 1)
+                elseif colorMode == "texture" then
+                    overlay:SetVertexColor(1, 1, 1, 1)
+                elseif colorMode == "default" then
+                    if addon.GetDefaultHealthColorRGB then
+                        local hr, hg, hb_color = addon.GetDefaultHealthColorRGB()
+                        overlay:SetVertexColor(hr or 0, hg or 1, hb_color or 0, 1)
+                    else
+                        overlay:SetVertexColor(0, 1, 0, 1)
+                    end
+                end
             end
 
             -- Apply background texture (overlay approach only handles foreground)
@@ -5169,6 +5229,16 @@ do
                     and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
                 return hb
             end
+        elseif unit == "targettarget" then
+            local cfg = unitFrames and rawget(unitFrames, "TargetOfTarget") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local tot = _G.TargetFrameToT
+            return tot and tot.HealthBar or nil
+        elseif unit == "focustarget" then
+            local cfg = unitFrames and rawget(unitFrames, "FocusTarget") or nil
+            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local fot = _G.FocusFrameToT
+            return fot and fot.HealthBar or nil
         end
         return nil
     end
@@ -5298,6 +5368,18 @@ do
             end
         end
 
+        -- TargetOfTarget
+        local totHB = TargetFrameToT and TargetFrameToT.HealthBar
+        if totHB then
+            hookSetValueForValueColor(totHB, "TargetOfTarget", "targettarget")
+        end
+
+        -- FocusTarget
+        local fotHB = FocusFrameToT and FocusFrameToT.HealthBar
+        if fotHB then
+            hookSetValueForValueColor(fotHB, "FocusTarget", "focustarget")
+        end
+
         -- Hook RefreshOpacityState to re-apply value-based colors after opacity changes.
         -- This ensures color persists through opacity transitions (e.g., 20% -> 100% when target acquired).
         if addon.RefreshOpacityState and not addon._valueColorOpacityHooked then
@@ -5309,6 +5391,8 @@ do
                         { key = "Player", token = "player" },
                         { key = "Target", token = "target" },
                         { key = "Focus", token = "focus" },
+                        { key = "TargetOfTarget", token = "targettarget" },
+                        { key = "FocusTarget", token = "focustarget" },
                     }
                     for _, mapping in ipairs(unitMappings) do
                         local cfg = addon.db and addon.db.profile

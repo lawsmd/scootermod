@@ -553,6 +553,39 @@ function Borders.ApplyTexture(frame, opts)
     applyTextureInternal(frame, border, params)
 end
 
+-- Getter functions to access weak-key table entries without writing to frames
+function Borders.GetAtlasBorder(frame)
+    return atlasBorders[frame]
+end
+
+function Borders.GetTextureBorder(frame)
+    return textureBorders[frame]
+end
+
+function Borders.GetAtlasTintOverlay(frame)
+    local overlays = tintOverlays[frame]
+    return overlays and overlays.atlas
+end
+
+function Borders.GetTextureTintOverlay(frame)
+    local overlays = tintOverlays[frame]
+    return overlays and overlays.texture
+end
+
+function Borders.SetAtlasTintOverlay(frame, texture)
+    if not tintOverlays[frame] then
+        tintOverlays[frame] = {}
+    end
+    tintOverlays[frame].atlas = texture
+end
+
+function Borders.SetTextureTintOverlay(frame, texture)
+    if not tintOverlays[frame] then
+        tintOverlays[frame] = {}
+    end
+    tintOverlays[frame].texture = texture
+end
+
 function addon.BuildBarBorderOptionsContainer()
     if addon.BarBorders and addon.BarBorders.GetDropdownEntries then
         return addon.BarBorders.GetDropdownEntries({
