@@ -30,6 +30,13 @@ local function ensureCastBarDB()
     return UF.ensureCastBarDB(UNIT_KEY)
 end
 
+local function ensureBuffsDebuffsDB()
+    local t = UF.ensureUFDB(UNIT_KEY)
+    if not t then return nil end
+    t.buffsDebuffs = t.buffsDebuffs or {}
+    return t.buffsDebuffs
+end
+
 local function ensureNameLevelDB(textKey)
     local t = UF.ensureUFDB(UNIT_KEY)
     if not t then return nil end
@@ -74,6 +81,12 @@ local function applyNameLevelText()
         addon.ApplyUnitFrameNameLevelTextFor(UNIT_KEY)
     end
     UF.applyStyles()
+end
+
+local function applyBuffsDebuffs()
+    if addon and addon.ApplyUnitFrameBuffsDebuffsFor then
+        addon.ApplyUnitFrameBuffsDebuffsFor(UNIT_KEY)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -147,9 +160,9 @@ local function buildBorderTab(inner, barPrefix, applyFn)
 
     inner:AddSlider({
         label = "Border Thickness",
-        min = 1, max = 8, step = 0.2, precision = 1,
-        get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BorderThickness"]) or 1 end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderThickness"] = tonumber(v) or 1; applyFn() end end,
+        min = 1, max = 8, step = 0.5, precision = 1,
+        get = function() local t = ensureUFDB() or {}; local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
     })
 
     inner:AddSlider({
@@ -384,6 +397,92 @@ function UF.RenderFocus(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
+    -- Buffs & Debuffs (Focus - 5 tabs, same as Target)
+    --------------------------------------------------------------------------------
+
+    local buffsTabs = UF.getBuffsDebuffsTabs()
+
+    builder:AddCollapsibleSection({
+        title = "Buffs & Debuffs",
+        componentId = COMPONENT_ID,
+        sectionKey = "buffsDebuffs",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = buffsTabs,
+                componentId = COMPONENT_ID,
+                sectionKey = "buffsDebuffs_tabs",
+                buildContent = {
+                    sizing = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Icon Scale",
+                            min = 20, max = 200, step = 5,
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return tonumber(t.iconScale) or 100 end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.iconScale = tonumber(v) or 100; applyBuffsDebuffs() end end,
+                            minLabel = "20%", maxLabel = "200%",
+                        })
+                        tabInner:AddSlider({
+                            label = "Icon Shape",
+                            description = "Adjust icon aspect ratio. Center = square icons.",
+                            min = -67, max = 67, step = 1,
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return tonumber(t.tallWideRatio) or 0 end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.tallWideRatio = tonumber(v) or 0; applyBuffsDebuffs() end end,
+                            minLabel = "Wide", maxLabel = "Tall",
+                        })
+                        tabInner:Finalize()
+                    end,
+                    border = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Enable Custom Borders",
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return not not t.borderEnable end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.borderEnable = v and true or false; applyBuffsDebuffs() end end,
+                        })
+                        local borderValues, borderOrder = UF.buildIconBorderOptions()
+                        tabInner:AddSelector({
+                            label = "Border Style",
+                            values = borderValues, order = borderOrder,
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return t.borderStyle or "square" end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.borderStyle = v or "square"; applyBuffsDebuffs() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Border Thickness",
+                            min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; local v = tonumber(t.borderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.borderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyBuffsDebuffs() end end,
+                        })
+                        tabInner:AddToggleColorPicker({
+                            label = "Border Tint",
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return not not t.borderTintEnable end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.borderTintEnable = not not v; applyBuffsDebuffs() end end,
+                            getColor = function() local t = ensureBuffsDebuffsDB() or {}; local c = t.borderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureBuffsDebuffsDB(); if t then t.borderTintColor = {r or 1, g or 1, b or 1, a or 1}; applyBuffsDebuffs() end end,
+                            hasAlpha = true,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    visibility = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Hide Buffs & Debuffs",
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return not not t.hideBuffsDebuffs end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.hideBuffsDebuffs = v and true or false; applyBuffsDebuffs() end end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    filters = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Show Only Player Buffs",
+                            get = function() local t = ensureBuffsDebuffsDB() or {}; return not not t.onlyPlayerBuffs end,
+                            set = function(v) local t = ensureBuffsDebuffsDB(); if t then t.onlyPlayerBuffs = v and true or false; applyBuffsDebuffs() end end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    --------------------------------------------------------------------------------
     -- Collapsible Section: Name & Level Text
     --------------------------------------------------------------------------------
 
@@ -450,9 +549,9 @@ function UF.RenderFocus(panel, scrollContent)
                             setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropBorderTintColor = {r,g,b,a}; applyNameLevelText() end end,
                             hasAlpha = true,
                         })
-                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderThickness) or 1 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = tonumber(v) or 1; applyNameLevelText() end end })
+                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end })
                         tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
                             get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInset) or 0 end,
                             set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInset = tonumber(v) or 0; applyNameLevelText() end end })
@@ -576,9 +675,9 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSelector({ label = "Border Style", values = targetBorderValues, order = targetBorderOrder,
                             get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderStyle or "texture_c" end,
                             set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderStyle = v or "texture_c"; applyPortrait() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.portraitBorderThickness) or 1 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderThickness = tonumber(v) or 1; applyPortrait() end end })
+                        tabInner:AddSlider({ label = "Border Inset", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensurePortraitDB() or {}; local v = tonumber(t.portraitBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyPortrait() end end })
                         tabInner:AddSelectorColorPicker({ label = "Border Color", values = UF.portraitBorderColorValues, order = UF.portraitBorderColorOrder,
                             get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderColorMode or "texture" end,
                             set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderColorMode = v or "texture"; applyPortrait() end end,
@@ -617,18 +716,34 @@ function UF.RenderFocus(panel, scrollContent)
                 sectionKey = "castBar_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
+                        tabInner:AddSelector({
+                            label = "Anchor To",
+                            values = {
+                                ["default"] = "Default (Blizzard)",
+                                ["healthTop"] = "Above Health Bar",
+                                ["healthBottom"] = "Below Health Bar",
+                                ["powerTop"] = "Above Power Bar",
+                                ["powerBottom"] = "Below Power Bar",
+                            },
+                            order = {"default", "healthTop", "healthBottom", "powerTop", "powerBottom"},
+                            get = function() local t = ensureCastBarDB() or {}; return t.anchorMode or "default" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.anchorMode = v; applyCastBar() end end,
+                        })
                         tabInner:AddSlider({ label = "X Offset", min = -200, max = 200, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarOffsetX) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarOffsetX = tonumber(v) or 0; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetX) or 0 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.offsetX = tonumber(v) or 0; applyCastBar() end end })
                         tabInner:AddSlider({ label = "Y Offset", min = -200, max = 200, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarOffsetY) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarOffsetY = tonumber(v) or 0; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetY) or 0 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.offsetY = tonumber(v) or 0; applyCastBar() end end })
                         tabInner:Finalize()
                     end,
                     sizing = function(cf, tabInner)
-                        tabInner:AddSlider({ label = "Width", min = 50, max = 400, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarWidth) or 195 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarWidth = tonumber(v) or 195; applyCastBar() end end })
+                        tabInner:AddSlider({ label = "Scale %", min = 50, max = 150, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarScale) or 100 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarScale = tonumber(v) or 100; applyCastBar() end end })
+                        tabInner:AddSlider({ label = "Width %", min = 50, max = 150, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.widthPct) or 100 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.widthPct = tonumber(v) or 100; applyCastBar() end end })
                         tabInner:AddSlider({ label = "Height", min = 5, max = 50, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarHeight) or 13 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarHeight = tonumber(v) or 13; applyCastBar() end end })
@@ -657,25 +772,39 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSlider({ label = "Background Opacity", min = 0, max = 100, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBackgroundOpacity) or 50 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBackgroundOpacity = tonumber(v) or 50; applyCastBar() end end })
+                        tabInner:AddSpacer(8)
+                        tabInner:AddToggle({ label = "Hide Spark",
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSparkHidden end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarSparkHidden = v and true or false; applyCastBar() end end })
+                        tabInner:AddSelectorColorPicker({ label = "Spark Color",
+                            values = { ["default"] = "Default", ["custom"] = "Custom" },
+                            order = { "default", "custom" },
+                            get = function() local t = ensureCastBarDB() or {}; return t.castBarSparkColorMode or "default" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarSparkColorMode = v or "default"; applyCastBar() end end,
+                            getColor = function() local t = ensureCastBarDB() or {}; local c = t.castBarSparkTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.castBarSparkTint = {r,g,b,a}; applyCastBar() end end,
+                            customValue = "custom", hasAlpha = true })
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)
                         tabInner:AddToggle({ label = "Enable Border",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderEnable end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderEnable = not not v; applyCastBar() end end })
-                        local borderValues, borderOrder = UF.buildBarBorderOptions()
-                        tabInner:AddSelector({ label = "Border Style", values = borderValues, order = borderOrder,
+                        tabInner:AddBarBorderSelector({
+                            label = "Border Style",
+                            includeNone = true,
                             get = function() local t = ensureCastBarDB() or {}; return t.castBarBorderStyle or "square" end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderStyle = v or "square"; applyCastBar() end end })
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderStyle = v or "square"; applyCastBar() end end,
+                        })
                         tabInner:AddToggleColorPicker({ label = "Border Tint",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderTintEnable end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderTintEnable = not not v; applyCastBar() end end,
                             getColor = function() local t = ensureCastBarDB() or {}; local c = t.castBarBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
                             setColor = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.castBarBorderTintColor = {r,g,b,a}; applyCastBar() end end,
                             hasAlpha = true })
-                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderThickness) or 1 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderThickness = tonumber(v) or 1; applyCastBar() end end })
+                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureCastBarDB() or {}; local v = tonumber(t.castBarBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyCastBar() end end })
                         tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderInset) or 0 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderInset = tonumber(v) or 0; applyCastBar() end end })
@@ -683,11 +812,11 @@ function UF.RenderFocus(panel, scrollContent)
                     end,
                     icon = function(cf, tabInner)
                         tabInner:AddToggle({ label = "Hide Icon",
-                            get = function() local t = ensureCastBarDB() or {}; return not not t.castBarIconHidden end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconHidden = v and true or false; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.iconDisabled end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.iconDisabled = v and true or false; applyCastBar() end end })
                         tabInner:AddSlider({ label = "Icon Size", min = 10, max = 64, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconSize) or 24 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconSize = tonumber(v) or 24; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.iconWidth = tonumber(v) or 24; t.iconHeight = tonumber(v) or 24; applyCastBar() end end })
                         tabInner:AddSlider({ label = "Icon X Offset", min = -100, max = 100, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconOffsetX) or 0 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconOffsetX = tonumber(v) or 0; applyCastBar() end end })
@@ -701,17 +830,17 @@ function UF.RenderFocus(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSpellNameHidden end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarSpellNameHidden = v and true or false; applyCastBar() end end })
                         tabInner:AddFontSelector({ label = "Spell Name Font",
-                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellName or {}; return s.fontFace or "FRIZQT__" end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.spellName = t.spellName or {}; t.spellName.fontFace = v; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellNameText or {}; return s.fontFace or "FRIZQT__" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.fontFace = v; applyCastBar() end end })
                         tabInner:AddSelector({ label = "Spell Name Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
-                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellName or {}; return s.style or "OUTLINE" end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.spellName = t.spellName or {}; t.spellName.style = v; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellNameText or {}; return s.style or "OUTLINE" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.style = v; applyCastBar() end end })
                         tabInner:AddSlider({ label = "Spell Name Size", min = 6, max = 32, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellName or {}; return tonumber(s.size) or 12 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.spellName = t.spellName or {}; t.spellName.size = tonumber(v) or 12; applyCastBar() end end })
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellNameText or {}; return tonumber(s.size) or 12 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.size = tonumber(v) or 12; applyCastBar() end end })
                         tabInner:AddColorPicker({ label = "Spell Name Color",
-                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellName or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            set = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.spellName = t.spellName or {}; t.spellName.color = {r,g,b,a}; applyCastBar() end end,
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.spellNameText or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            set = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.color = {r,g,b,a}; applyCastBar() end end,
                             hasAlpha = true })
                         tabInner:Finalize()
                     end,

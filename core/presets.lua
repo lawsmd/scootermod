@@ -144,114 +144,34 @@ local function getEditableLayoutsForPresetTarget()
     return layouts
 end
 
--- Show a custom dropdown dialog for selecting existing layout
--- This creates a temporary dialog frame with a dropdown
+-- Show a TUI-styled dialog for selecting existing layout
 local function showExistingLayoutSelector(preset, onSelect, onCancel)
     local presetName = preset.name or preset.id or "Preset"
     local layouts = getEditableLayoutsForPresetTarget()
 
     if #layouts == 0 then
-        addon:Print("No existing editable layouts found. Please create a new profile instead.")
+        addon:Print("No existing editable layouts found.")
         if onCancel then onCancel() end
         return
     end
 
-    -- Create or reuse the layout selector frame
-    local selectorFrame = _G["ScooterModLayoutSelector"]
-    if not selectorFrame then
-        selectorFrame = CreateFrame("Frame", "ScooterModLayoutSelector", UIParent, "BasicFrameTemplateWithInset")
-        selectorFrame:SetSize(400, 200)
-        selectorFrame:SetPoint("CENTER")
-        selectorFrame:SetFrameStrata("DIALOG")
-        selectorFrame:SetFrameLevel(110)
-        selectorFrame:EnableMouse(true)
-        selectorFrame:SetMovable(true)
-        selectorFrame:RegisterForDrag("LeftButton")
-        selectorFrame:SetScript("OnDragStart", selectorFrame.StartMoving)
-        selectorFrame:SetScript("OnDragStop", selectorFrame.StopMovingOrSizing)
-        selectorFrame:SetClampedToScreen(true)
-
-        -- Title
-        if selectorFrame.TitleText then
-            selectorFrame.TitleText:SetText("Select Existing Layout")
-        end
-
-        -- Instructions text
-        local text = selectorFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-        text:SetPoint("TOP", selectorFrame, "TOP", 0, -35)
-        text:SetPoint("LEFT", selectorFrame, "LEFT", 20, 0)
-        text:SetPoint("RIGHT", selectorFrame, "RIGHT", -20, 0)
-        text:SetJustifyH("CENTER")
-        text:SetWordWrap(true)
-        selectorFrame.Text = text
-
-        -- Dropdown frame
-        local dropdownFrame = CreateFrame("Frame", "ScooterModLayoutSelectorDropdown", selectorFrame, "UIDropDownMenuTemplate")
-        dropdownFrame:SetPoint("CENTER", selectorFrame, "CENTER", 0, 10)
-        UIDropDownMenu_SetWidth(dropdownFrame, 250)
-        selectorFrame.Dropdown = dropdownFrame
-
-        -- Apply button
-        local applyBtn = CreateFrame("Button", nil, selectorFrame, "UIPanelButtonTemplate")
-        applyBtn:SetSize(100, 24)
-        applyBtn:SetPoint("BOTTOMRIGHT", selectorFrame, "BOTTOM", -5, 15)
-        applyBtn:SetText("Apply")
-        selectorFrame.ApplyButton = applyBtn
-
-        -- Cancel button
-        local cancelBtn = CreateFrame("Button", nil, selectorFrame, "UIPanelButtonTemplate")
-        cancelBtn:SetSize(100, 24)
-        cancelBtn:SetPoint("BOTTOMLEFT", selectorFrame, "BOTTOM", 5, 15)
-        cancelBtn:SetText(CANCEL or "Cancel")
-        selectorFrame.CancelButton = cancelBtn
+    -- Build list options for the dialog
+    local listOptions = {}
+    for _, name in ipairs(layouts) do
+        table.insert(listOptions, { value = name, label = name })
     end
 
-    -- Update instruction text
-    selectorFrame.Text:SetText(string.format("Select an existing layout to apply the %s preset to:", presetName))
-
-    -- Store selected layout
-    selectorFrame._selectedLayout = layouts[1]
-
-    -- Initialize dropdown
-    UIDropDownMenu_Initialize(selectorFrame.Dropdown, function(self, level)
-        for _, layoutName in ipairs(layouts) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = layoutName
-            info.value = layoutName
-            info.func = function()
-                selectorFrame._selectedLayout = layoutName
-                UIDropDownMenu_SetText(selectorFrame.Dropdown, layoutName)
-                CloseDropDownMenus()
+    addon.Dialogs:Show("SCOOTERMOD_SELECT_EXISTING_LAYOUT", {
+        formatArgs = { presetName },
+        listOptions = listOptions,
+        selectedValue = layouts[1],
+        onAccept = function(data, _, selectedValue)
+            if onSelect and selectedValue then
+                onSelect(selectedValue)
             end
-            info.checked = (layoutName == selectorFrame._selectedLayout)
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-    UIDropDownMenu_SetText(selectorFrame.Dropdown, selectorFrame._selectedLayout)
-
-    -- Wire up buttons
-    selectorFrame.ApplyButton:SetScript("OnClick", function()
-        local selected = selectorFrame._selectedLayout
-        selectorFrame:Hide()
-        if onSelect and selected then
-            onSelect(selected)
-        end
-    end)
-
-    selectorFrame.CancelButton:SetScript("OnClick", function()
-        selectorFrame:Hide()
-        if onCancel then onCancel() end
-    end)
-
-    if selectorFrame.CloseButton then
-        selectorFrame.CloseButton:SetScript("OnClick", function()
-            selectorFrame:Hide()
-            if onCancel then onCancel() end
-        end)
-    end
-
-    selectorFrame:Show()
-    selectorFrame:Raise()
+        end,
+        onCancel = onCancel,
+    })
 end
 
 function Presets:ApplyPresetFromUI(preset)

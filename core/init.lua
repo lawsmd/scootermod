@@ -68,6 +68,9 @@ function addon:OnInitialize()
     -- NOTE: pendingProfileActivation is consumed in Profiles:Initialize() so the new
     -- profile/layout is activated as early as possible (before ApplyStyles runs).
 
+    -- Migrate legacy iconWidth/iconHeight to tallWideRatio for all applicable components
+    self:MigrateIconWidthHeightToRatio()
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
@@ -87,6 +90,69 @@ function addon:OnInitialize()
     end
 
     self:RegisterEvents()
+end
+
+-- Migrate legacy iconWidth/iconHeight settings to tallWideRatio
+-- This converts saved width/height pairs into the new unified ratio slider value
+function addon:MigrateIconWidthHeightToRatio()
+    if not self.db or not self.db.profile then return end
+    local profile = self.db.profile
+
+    -- Component IDs and their base sizes for migration
+    local componentMigrations = {
+        { id = "essentialCooldowns", baseSize = 50 },
+        { id = "utilityCooldowns", baseSize = 44 },
+        { id = "trackedBuffs", baseSize = 44 },
+        { id = "buffs", baseSize = 30 },
+        { id = "debuffs", baseSize = 30 },
+    }
+
+    -- Migrate component settings
+    profile.components = profile.components or {}
+    for _, info in ipairs(componentMigrations) do
+        local compDb = profile.components[info.id]
+        if compDb then
+            local width = tonumber(compDb.iconWidth)
+            local height = tonumber(compDb.iconHeight)
+            -- Only migrate if iconWidth/iconHeight exist and tallWideRatio doesn't
+            if width and height and compDb.tallWideRatio == nil then
+                local ratio = 0
+                if addon.IconRatio and addon.IconRatio.MigrateFromWidthHeight then
+                    ratio = addon.IconRatio.MigrateFromWidthHeight(width, height, info.baseSize)
+                end
+                compDb.tallWideRatio = ratio
+                compDb.iconWidth = nil
+                compDb.iconHeight = nil
+            end
+        end
+    end
+
+    -- Migrate trackedBars icon settings (uses iconTallWideRatio instead)
+    local trackedBarsDb = profile.components.trackedBars
+    if trackedBarsDb then
+        local width = tonumber(trackedBarsDb.iconWidth)
+        local height = tonumber(trackedBarsDb.iconHeight)
+        if width and height and trackedBarsDb.iconTallWideRatio == nil then
+            local ratio = 0
+            if addon.IconRatio and addon.IconRatio.MigrateFromWidthHeight then
+                ratio = addon.IconRatio.MigrateFromWidthHeight(width, height, 30)
+            end
+            trackedBarsDb.iconTallWideRatio = ratio
+            trackedBarsDb.iconWidth = nil
+            trackedBarsDb.iconHeight = nil
+        end
+    end
+
+    -- Migrate Unit Frame buffs/debuffs (Target and Focus)
+    profile.unitFrames = profile.unitFrames or {}
+    for _, unit in ipairs({ "Target", "Focus" }) do
+        local unitDb = profile.unitFrames[unit]
+        if unitDb and unitDb.buffsDebuffs then
+            local cfg = unitDb.buffsDebuffs
+            -- UF buffs/debuffs didn't have iconWidth/iconHeight before, only iconScale
+            -- But we add tallWideRatio support now - no migration needed, just ensure nil doesn't break
+        end
+    end
 end
 
 function addon:GetDefaults()

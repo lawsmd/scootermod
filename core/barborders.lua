@@ -21,10 +21,10 @@ local CATEGORY_LABELS = {
 
 local STYLE_DEFINITIONS = {
     -- Traditional selections (soft gradients, Blizzard-adjacent)
-    { key = "mmtBorder1", label = "mMediaTag Border 1", file = "mborder1.tga", category = "traditional", order = 10, thicknessScale = 1.10, paddingMultiplier = 0.55 },
-    { key = "mmtBorder2", label = "mMediaTag Border 2", file = "mborder2.tga", category = "traditional", order = 20, thicknessScale = 1.20, paddingMultiplier = 0.55 },
-    { key = "mmtYBorder", label = "mMediaTag Y Border", file = "yborder.tga", category = "traditional", order = 30, thicknessScale = 1.15, paddingMultiplier = 0.55 },
-    { key = "mmtYBorder2", label = "mMediaTag Y Border 2", file = "yborder2.tga", category = "traditional", order = 40, thicknessScale = 1.20, paddingMultiplier = 0.55 },
+    { key = "mmtBorder1", label = "Border 1", file = "mborder1.tga", category = "traditional", order = 10, thicknessScale = 1.10, paddingMultiplier = 0.55 },
+    { key = "mmtBorder2", label = "Border 2", file = "mborder2.tga", category = "traditional", order = 20, thicknessScale = 1.20, paddingMultiplier = 0.55 },
+    { key = "mmtYBorder", label = "Y Border", file = "yborder.tga", category = "traditional", order = 30, thicknessScale = 1.15, paddingMultiplier = 0.55 },
+    { key = "mmtYBorder2", label = "Y Border 2", file = "yborder2.tga", category = "traditional", order = 40, thicknessScale = 1.20, paddingMultiplier = 0.55 },
     { key = "mmtYuluSwitch", label = "Yulu Border Switch", file = "YuluBorderSwitch.tga", category = "traditional", order = 50, thicknessScale = 1.30, paddingMultiplier = 0.55 },
     { key = "mmtYuluXI", label = "Yulu Border XI", file = "YuluBorderXI.tga", category = "traditional", order = 60, thicknessScale = 1.30, paddingMultiplier = 0.55 },
 

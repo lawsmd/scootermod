@@ -339,6 +339,33 @@ function UF.buildBarBorderOptions()
 end
 
 --------------------------------------------------------------------------------
+-- Build Icon Border Options from addon (for buff/debuff icons, etc.)
+--------------------------------------------------------------------------------
+
+function UF.buildIconBorderOptions()
+    local values = { square = "Default (Square)" }
+    local order = { "square" }
+
+    if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
+        local data = addon.IconBorders.GetDropdownEntries()
+        if data and #data > 0 then
+            values = {}
+            order = {}
+            for _, entry in ipairs(data) do
+                local key = entry.value or entry.key
+                local label = entry.text or entry.label or key
+                if key then
+                    values[key] = label
+                    table.insert(order, key)
+                end
+            end
+        end
+    end
+
+    return values, order
+end
+
+--------------------------------------------------------------------------------
 -- Common Tab Definitions
 --------------------------------------------------------------------------------
 -- Returns tab configurations for various sections
@@ -446,10 +473,9 @@ function UF.getClassResourceTabs()
     }
 end
 
--- Buffs & Debuffs tabs (Target only)
+-- Buffs & Debuffs tabs (Target/Focus)
 function UF.getBuffsDebuffsTabs()
     return {
-        { key = "positioning", label = "Positioning" },
         { key = "sizing", label = "Sizing" },
         { key = "border", label = "Border" },
         { key = "visibility", label = "Visibility" },

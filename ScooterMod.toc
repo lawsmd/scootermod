@@ -35,6 +35,7 @@ core/editmode.lua
 core/profiles.lua
 core/rules.lua
 core/apply_all.lua
+core/iconratio.lua
 core/components/base.lua
 core/components/cooldowns.lua
 core/components/actionbars.lua

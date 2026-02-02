@@ -263,16 +263,17 @@ local function buildBorderTab(inner, barPrefix, applyFn)
         label = "Border Thickness",
         min = 1,
         max = 8,
-        step = 0.2,
+        step = 0.5,
         precision = 1,
         get = function()
             local t = ensureUFDB() or {}
-            return tonumber(t[barPrefix .. "BorderThickness"]) or 1
+            local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1
+            return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
         end,
         set = function(v)
             local t = ensureUFDB()
             if not t then return end
-            t[barPrefix .. "BorderThickness"] = tonumber(v) or 1
+            t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
             applyFn()
         end,
     })
@@ -1135,15 +1136,16 @@ function UF.RenderPlayer(panel, scrollContent)
 
                             tabInner:AddSlider({
                                 label = "Border Thickness",
-                                min = 1, max = 8, step = 0.2, precision = 1,
+                                min = 1, max = 8, step = 0.5, precision = 1,
                                 get = function()
                                     local apb = ensureAltPowerBarDB() or {}
-                                    return tonumber(apb.borderThickness) or 1
+                                    local v = tonumber(apb.borderThickness) or 1
+                                    return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                                 end,
                                 set = function(v)
                                     local apb = ensureAltPowerBarDB()
                                     if not apb then return end
-                                    apb.borderThickness = tonumber(v) or 1
+                                    apb.borderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
                                     applyBarTextures()
                                 end,
                             })
@@ -2028,15 +2030,16 @@ function UF.RenderPlayer(panel, scrollContent)
                         })
                         tabInner:AddSlider({
                             label = "Border Thickness",
-                            min = 1, max = 8, step = 0.2, precision = 1,
+                            min = 1, max = 8, step = 0.5, precision = 1,
                             get = function()
                                 local t = ensureUFDB() or {}
-                                return tonumber(t.nameBackdropBorderThickness) or 1
+                                local v = tonumber(t.nameBackdropBorderThickness) or 1
+                                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                             end,
                             set = function(v)
                                 local t = ensureUFDB()
                                 if not t then return end
-                                t.nameBackdropBorderThickness = tonumber(v) or 1
+                                t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
                                 applyNameLevelText()
                             end,
                         })
@@ -2424,15 +2427,16 @@ function UF.RenderPlayer(panel, scrollContent)
                         })
                         tabInner:AddSlider({
                             label = "Border Inset",
-                            min = 1, max = 8, step = 0.2, precision = 1,
+                            min = 1, max = 8, step = 0.5, precision = 1,
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                return tonumber(t.portraitBorderThickness) or 1
+                                local v = tonumber(t.portraitBorderThickness) or 1
+                                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.portraitBorderThickness = tonumber(v) or 1
+                                t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
                                 applyPortrait()
                             end,
                         })
@@ -2746,6 +2750,48 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                         })
+                        tabInner:AddSpacer(8)
+                        tabInner:AddToggle({
+                            label = "Hide Spark",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.castBarSparkHidden
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.castBarSparkHidden = v and true or false
+                                applyCastBar()
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Spark Color",
+                            values = { ["default"] = "Default", ["custom"] = "Custom" },
+                            order = { "default", "custom" },
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return t.castBarSparkColorMode or "default"
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.castBarSparkColorMode = v or "default"
+                                applyCastBar()
+                            end,
+                            getColor = function()
+                                local t = ensureCastBarDB() or {}
+                                local c = t.castBarSparkTint or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.castBarSparkTint = {r, g, b, a}
+                                applyCastBar()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)
@@ -2803,15 +2849,16 @@ function UF.RenderPlayer(panel, scrollContent)
                         })
                         tabInner:AddSlider({
                             label = "Border Thickness",
-                            min = 1, max = 8, step = 0.2, precision = 1,
+                            min = 1, max = 8, step = 0.5, precision = 1,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarBorderThickness) or 1
+                                local v = tonumber(t.castBarBorderThickness) or 1
+                                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castBarBorderThickness = tonumber(v) or 1
+                                t.castBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
                                 applyCastBar()
                             end,
                         })
@@ -3064,6 +3111,40 @@ function UF.RenderPlayer(panel, scrollContent)
                                 t.castBarHidden = v and true or false
                                 applyCastBar()
                             end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Text Border",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideTextBorder
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideTextBorder = v and true or false
+                                applyCastBar()
+                            end,
+                            tooltip = {
+                                tooltipTitle = "Text Border",
+                                tooltipText = "Hides the text border frame that appears when the cast bar is unlocked from the Player frame.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Channel Shadow",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideChannelingShadow
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideChannelingShadow = v and true or false
+                                applyCastBar()
+                            end,
+                            tooltip = {
+                                tooltipTitle = "Channel Shadow",
+                                tooltipText = "Hides the shadow effect behind the cast bar during channeled spells.",
+                            },
                         })
                         tabInner:Finalize()
                     end,

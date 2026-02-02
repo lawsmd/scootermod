@@ -22,6 +22,9 @@ end
 local DIALOG_WIDTH = 400
 local DIALOG_HEIGHT = 160
 local DIALOG_HEIGHT_EDITBOX = 200
+local DIALOG_HEIGHT_LIST = 300
+local LIST_HEIGHT_DEFAULT = 150
+local LIST_ITEM_HEIGHT = 28
 local BORDER_WIDTH = 3
 local BUTTON_HEIGHT = 28
 local BUTTON_MIN_WIDTH = 100
@@ -29,6 +32,11 @@ local BUTTON_PADDING = 16
 local BUTTON_GAP = 12
 local CONTENT_PADDING = 24
 local MODAL_OPACITY = 0.80
+
+-- Custom scrollbar constants
+local SCROLLBAR_WIDTH = 8
+local SCROLLBAR_THUMB_MIN_HEIGHT = 24
+local SCROLLBAR_MARGIN = 4
 
 --------------------------------------------------------------------------------
 -- Module State
@@ -147,6 +155,409 @@ local function CreateDialogButton(parent, text, width)
     end
 
     return btn
+end
+
+--------------------------------------------------------------------------------
+-- Helper: Create List Container for selectable options
+--------------------------------------------------------------------------------
+
+local function CreateListContainer(parent, height)
+    local theme = GetTheme()
+    local ar, ag, ab = theme:GetAccentColor()
+
+    -- Calculate dimensions explicitly (don't rely on GetWidth/GetHeight before layout)
+    local listHeight = height or LIST_HEIGHT_DEFAULT
+    local containerWidth = DIALOG_WIDTH - (CONTENT_PADDING * 2)
+    local contentWidth = containerWidth - SCROLLBAR_WIDTH - SCROLLBAR_MARGIN - 8  -- Account for insets
+
+    -- Container frame
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(containerWidth, listHeight)
+    container._listHeight = listHeight
+    container._contentWidth = contentWidth
+
+    -- Background (slightly lighter than dialog background)
+    local bg = container:CreateTexture(nil, "BACKGROUND", nil, -7)
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+    container._bg = bg
+
+    -- Border
+    container._border = CreateBorder(container, 1, ar, ag, ab, 0.6)
+
+    -- Scroll frame for items (no template - we'll build our own scrollbar)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, container)
+    scrollFrame:SetPoint("TOPLEFT", 2, -2)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -(SCROLLBAR_WIDTH + SCROLLBAR_MARGIN + 4), 2)
+
+    -- Content frame (holds the list items) - use explicit width, not GetWidth()
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(contentWidth, listHeight)
+    scrollFrame:SetScrollChild(content)
+    container._content = content
+    container._scrollFrame = scrollFrame
+
+    ----------------------------------------------------------------------------
+    -- Custom TUI Scrollbar
+    ----------------------------------------------------------------------------
+    local scrollbar = CreateFrame("Frame", nil, container)
+    scrollbar:SetWidth(SCROLLBAR_WIDTH)
+    scrollbar:SetPoint("TOPRIGHT", container, "TOPRIGHT", -SCROLLBAR_MARGIN, -2)
+    scrollbar:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -SCROLLBAR_MARGIN, 2)
+    scrollbar:Hide()  -- Hidden until needed
+    container._scrollbar = scrollbar
+
+    -- Scrollbar track background
+    local track = scrollbar:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetColorTexture(ar, ag, ab, 0.1)
+    scrollbar._track = track
+
+    -- Scrollbar thumb (draggable)
+    local thumb = CreateFrame("Button", nil, scrollbar)
+    thumb:SetWidth(SCROLLBAR_WIDTH)
+    thumb:SetHeight(SCROLLBAR_THUMB_MIN_HEIGHT)
+    thumb:SetPoint("TOP", scrollbar, "TOP", 0, 0)
+    thumb:EnableMouse(true)
+    thumb:RegisterForDrag("LeftButton")
+    scrollbar._thumb = thumb
+
+    local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
+    thumbTex:SetAllPoints()
+    thumbTex:SetColorTexture(ar, ag, ab, 0.5)
+    thumb._tex = thumbTex
+    thumb._isDragging = false
+
+    -- Thumb hover/drag visual states
+    thumb:SetScript("OnEnter", function(self)
+        if not self._isDragging then
+            local r, g, b = theme:GetAccentColor()
+            self._tex:SetColorTexture(r, g, b, 0.8)
+        end
+    end)
+
+    thumb:SetScript("OnLeave", function(self)
+        if not self._isDragging then
+            local r, g, b = theme:GetAccentColor()
+            self._tex:SetColorTexture(r, g, b, 0.5)
+        end
+    end)
+
+    -- Thumb dragging
+    thumb:SetScript("OnDragStart", function(self)
+        self._isDragging = true
+        local r, g, b = theme:GetAccentColor()
+        self._tex:SetColorTexture(r, g, b, 1.0)
+        self._dragStartY = select(2, GetCursorPosition()) / UIParent:GetEffectiveScale()
+        self._dragStartScroll = scrollFrame:GetVerticalScroll() or 0
+    end)
+
+    thumb:SetScript("OnDragStop", function(self)
+        self._isDragging = false
+        local r, g, b = theme:GetAccentColor()
+        if self:IsMouseOver() then
+            self._tex:SetColorTexture(r, g, b, 0.8)
+        else
+            self._tex:SetColorTexture(r, g, b, 0.5)
+        end
+    end)
+
+    thumb:SetScript("OnUpdate", function(self)
+        if not self._isDragging then return end
+
+        local currentY = select(2, GetCursorPosition()) / UIParent:GetEffectiveScale()
+        local deltaY = self._dragStartY - currentY
+
+        local trackHeight = scrollbar:GetHeight()
+        local thumbHeight = self:GetHeight()
+        local maxThumbTravel = trackHeight - thumbHeight
+
+        if maxThumbTravel <= 0 then return end
+
+        local contentHeight = content:GetHeight()
+        local visibleHeight = scrollFrame:GetHeight()
+        local maxScroll = math.max(0, contentHeight - visibleHeight)
+
+        -- Convert pixel drag to scroll amount
+        local scrollPerPixel = maxScroll / maxThumbTravel
+        local newScroll = self._dragStartScroll + (deltaY * scrollPerPixel)
+        newScroll = math.max(0, math.min(maxScroll, newScroll))
+
+        scrollFrame:SetVerticalScroll(newScroll)
+        container:UpdateScrollbar()
+    end)
+
+    -- Click on track to jump
+    scrollbar:EnableMouse(true)
+    scrollbar:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+
+        local _, cursorY = GetCursorPosition()
+        cursorY = cursorY / UIParent:GetEffectiveScale()
+        local trackTop = self:GetTop()
+        local clickOffset = trackTop - cursorY
+
+        local trackHeight = self:GetHeight()
+        local thumbHeight = thumb:GetHeight()
+        local maxThumbTravel = trackHeight - thumbHeight
+
+        if maxThumbTravel <= 0 then return end
+
+        local contentHeight = content:GetHeight()
+        local visibleHeight = scrollFrame:GetHeight()
+        local maxScroll = math.max(0, contentHeight - visibleHeight)
+
+        -- Calculate target scroll based on click position
+        local targetThumbOffset = clickOffset - (thumbHeight / 2)
+        targetThumbOffset = math.max(0, math.min(maxThumbTravel, targetThumbOffset))
+        local scrollPercent = targetThumbOffset / maxThumbTravel
+        local newScroll = scrollPercent * maxScroll
+
+        scrollFrame:SetVerticalScroll(newScroll)
+        container:UpdateScrollbar()
+    end)
+
+    -- Mouse wheel scrolling
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local contentHeight = content:GetHeight()
+        local visibleHeight = self:GetHeight()
+        local maxScroll = math.max(0, contentHeight - visibleHeight)
+
+        if maxScroll <= 0 then return end
+
+        local current = self:GetVerticalScroll() or 0
+        local step = LIST_ITEM_HEIGHT * 2  -- Scroll 2 items at a time
+        local newScroll = current - (delta * step)
+        newScroll = math.max(0, math.min(maxScroll, newScroll))
+
+        self:SetVerticalScroll(newScroll)
+        container:UpdateScrollbar()
+    end)
+
+    -- Also enable mouse wheel on container itself
+    container:EnableMouseWheel(true)
+    container:SetScript("OnMouseWheel", function(self, delta)
+        scrollFrame:GetScript("OnMouseWheel")(scrollFrame, delta)
+    end)
+
+    -- Update scrollbar visibility and thumb position
+    function container:UpdateScrollbar()
+        -- Use GetHeight with fallback to stored dimensions (for before layout completes)
+        local contentHeight = content:GetHeight()
+        if contentHeight == 0 then
+            contentHeight = #self._items * LIST_ITEM_HEIGHT
+        end
+
+        local visibleHeight = scrollFrame:GetHeight()
+        if visibleHeight == 0 then
+            visibleHeight = self._listHeight - 4  -- Account for insets
+        end
+
+        if contentHeight <= visibleHeight or contentHeight == 0 then
+            scrollbar:Hide()
+            return
+        end
+
+        scrollbar:Show()
+
+        local trackHeight = scrollbar:GetHeight()
+        if trackHeight == 0 then
+            trackHeight = self._listHeight - 4  -- Account for insets
+        end
+
+        local thumbHeight = math.max(SCROLLBAR_THUMB_MIN_HEIGHT, (visibleHeight / contentHeight) * trackHeight)
+        thumb:SetHeight(thumbHeight)
+
+        local maxScroll = contentHeight - visibleHeight
+        local currentScroll = scrollFrame:GetVerticalScroll() or 0
+        local scrollPercent = maxScroll > 0 and (currentScroll / maxScroll) or 0
+        local maxThumbOffset = trackHeight - thumbHeight
+        local thumbOffset = scrollPercent * maxThumbOffset
+
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", scrollbar, "TOP", 0, -thumbOffset)
+    end
+
+    -- Item storage
+    container._items = {}
+    container._selectedValue = nil
+    container._onSelect = nil
+
+    -- Method to populate the list
+    function container:SetListOptions(options, selectedValue, onSelect)
+        self._onSelect = onSelect
+        self._selectedValue = nil
+
+        -- Clear existing items
+        for _, item in ipairs(self._items) do
+            item:Hide()
+            item:SetParent(nil)
+        end
+        wipe(self._items)
+
+        if not options or #options == 0 then
+            C_Timer.After(0, function() self:UpdateScrollbar() end)
+            return
+        end
+
+        -- Calculate content height using stored dimensions (not GetHeight which may return 0)
+        local contentHeight = #options * LIST_ITEM_HEIGHT
+        local visibleHeight = self._listHeight - 4  -- Account for insets
+        self._content:SetHeight(math.max(contentHeight, visibleHeight))
+
+        -- Use stored content width (not GetWidth which may return 0 before layout)
+        self._content:SetWidth(self._contentWidth)
+
+        -- Create list items
+        for i, opt in ipairs(options) do
+            local item = self:CreateListItem(opt.value, opt.label, i)
+            self._items[i] = item
+
+            -- Pre-select if matches
+            if selectedValue and opt.value == selectedValue then
+                self._selectedValue = opt.value
+                item:SetSelected(true)
+            end
+        end
+
+        -- Default to first if none selected
+        if not self._selectedValue and #options > 0 then
+            self._selectedValue = options[1].value
+            if self._items[1] then
+                self._items[1]:SetSelected(true)
+            end
+        end
+
+        -- Reset scroll position and defer scrollbar update until frame is laid out
+        self._scrollFrame:SetVerticalScroll(0)
+        C_Timer.After(0, function() self:UpdateScrollbar() end)
+    end
+
+    -- Method to create a single list item
+    function container:CreateListItem(value, label, index)
+        local item = CreateFrame("Button", nil, self._content)
+        -- Use stored width instead of GetWidth() which may return 0 before layout
+        item:SetSize(self._contentWidth, LIST_ITEM_HEIGHT)
+        item:SetPoint("TOPLEFT", self._content, "TOPLEFT", 0, -((index - 1) * LIST_ITEM_HEIGHT))
+
+        item._value = value
+        item._isSelected = false
+
+        -- Background (hidden by default, shown on hover/select)
+        local itemBg = item:CreateTexture(nil, "BACKGROUND", nil, -6)
+        itemBg:SetAllPoints()
+        itemBg:SetColorTexture(ar, ag, ab, 0)
+        item._bg = itemBg
+
+        -- Bottom border (dim separator)
+        local separator = item:CreateTexture(nil, "ARTWORK", nil, 1)
+        separator:SetPoint("BOTTOMLEFT", 0, 0)
+        separator:SetPoint("BOTTOMRIGHT", 0, 0)
+        separator:SetHeight(1)
+        separator:SetColorTexture(ar, ag, ab, 0.2)
+        item._separator = separator
+
+        -- Label text
+        local labelText = item:CreateFontString(nil, "OVERLAY")
+        local fontPath = theme:GetFont("VALUE")
+        labelText:SetFont(fontPath, 13, "")
+        labelText:SetPoint("LEFT", item, "LEFT", 10, 0)
+        labelText:SetPoint("RIGHT", item, "RIGHT", -10, 0)
+        labelText:SetJustifyH("LEFT")
+        labelText:SetText(label or value)
+        labelText:SetTextColor(1, 1, 1, 1)
+        item._label = labelText
+
+        -- Selection indicator (right side)
+        local selIndicator = item:CreateFontString(nil, "OVERLAY")
+        selIndicator:SetFont(fontPath, 11, "")
+        selIndicator:SetPoint("RIGHT", item, "RIGHT", -10, 0)
+        selIndicator:SetText("[sel]")
+        selIndicator:SetTextColor(ar, ag, ab, 1)
+        selIndicator:Hide()
+        item._selIndicator = selIndicator
+
+        function item:SetSelected(selected)
+            self._isSelected = selected
+            local r, g, b = theme:GetAccentColor()
+            if selected then
+                self._bg:SetColorTexture(r, g, b, 0.25)
+                self._selIndicator:Show()
+            else
+                if self:IsMouseOver() then
+                    self._bg:SetColorTexture(r, g, b, 0.15)
+                else
+                    self._bg:SetColorTexture(r, g, b, 0)
+                end
+                self._selIndicator:Hide()
+            end
+        end
+
+        -- Hover handlers
+        item:SetScript("OnEnter", function(self)
+            if not self._isSelected then
+                local r, g, b = theme:GetAccentColor()
+                self._bg:SetColorTexture(r, g, b, 0.15)
+            end
+        end)
+
+        item:SetScript("OnLeave", function(self)
+            if not self._isSelected then
+                self._bg:SetColorTexture(0, 0, 0, 0)
+            end
+        end)
+
+        -- Click handler
+        item:SetScript("OnClick", function(self)
+            -- Deselect all others
+            for _, otherItem in ipairs(container._items) do
+                otherItem:SetSelected(false)
+            end
+            -- Select this one
+            self:SetSelected(true)
+            container._selectedValue = self._value
+            if container._onSelect then
+                container._onSelect(self._value)
+            end
+        end)
+
+        return item
+    end
+
+    function container:GetSelectedValue()
+        return self._selectedValue
+    end
+
+    function container:UpdateTheme()
+        local r, g, b = theme:GetAccentColor()
+        -- Update container border
+        for _, tex in pairs(self._border) do
+            tex:SetColorTexture(r, g, b, 0.6)
+        end
+        -- Update scrollbar
+        if self._scrollbar then
+            self._scrollbar._track:SetColorTexture(r, g, b, 0.1)
+            local thumb = self._scrollbar._thumb
+            if thumb and thumb._tex and not thumb._isDragging then
+                if thumb:IsMouseOver() then
+                    thumb._tex:SetColorTexture(r, g, b, 0.8)
+                else
+                    thumb._tex:SetColorTexture(r, g, b, 0.5)
+                end
+            end
+        end
+        -- Update list items
+        for _, item in ipairs(self._items) do
+            item._separator:SetColorTexture(r, g, b, 0.2)
+            item._selIndicator:SetTextColor(r, g, b, 1)
+            if item._isSelected then
+                item._bg:SetColorTexture(r, g, b, 0.25)
+            end
+        end
+    end
+
+    return container
 end
 
 --------------------------------------------------------------------------------
@@ -326,6 +737,9 @@ local function CreateDialogFrame()
 
     f._editBox = editBox
 
+    -- List container (hidden by default, created lazily)
+    f._listContainer = nil
+
     -- Accept button
     local acceptBtn = CreateDialogButton(f, "Yes", BUTTON_MIN_WIDTH)
     f._acceptBtn = acceptBtn
@@ -366,6 +780,10 @@ local function CreateDialogFrame()
             for _, tex in pairs(f._editBox._border) do
                 tex:SetColorTexture(r, g, b, 0.6)
             end
+        end
+        -- Update list container if present
+        if f._listContainer and f._listContainer.UpdateTheme then
+            f._listContainer:UpdateTheme()
         end
     end)
 
@@ -429,6 +847,28 @@ function Controls:ShowDialog(name, options)
         f:SetHeight(options.height or def.height or DIALOG_HEIGHT)
     end
 
+    -- Handle list options
+    local listOptions = options.listOptions or def.listOptions
+    local hasList = listOptions and #listOptions > 0
+    if hasList then
+        local listHeight = options.listHeight or def.listHeight or LIST_HEIGHT_DEFAULT
+        -- Create list container lazily
+        if not f._listContainer then
+            f._listContainer = CreateListContainer(f, listHeight)
+        end
+        f._listContainer:SetSize(DIALOG_WIDTH - (CONTENT_PADDING * 2), listHeight)
+        f._listContainer:Show()
+
+        local selectedValue = options.selectedValue or def.selectedValue
+        f._listContainer:SetListOptions(listOptions, selectedValue, nil)
+
+        f:SetHeight(options.height or def.height or DIALOG_HEIGHT_LIST)
+    else
+        if f._listContainer then
+            f._listContainer:Hide()
+        end
+    end
+
     -- Determine if info-only (just OK, no cancel)
     local infoOnly = locked and true or (options.infoOnly or def.infoOnly)
 
@@ -460,8 +900,14 @@ function Controls:ShowDialog(name, options)
         f._cancelBtn:Show()
     end
 
-    -- Layout: text above buttons
-    if hasEditBox then
+    -- Layout: text above buttons (or list/editbox above buttons, text above those)
+    if hasList then
+        f._listContainer:ClearAllPoints()
+        f._listContainer:SetPoint("LEFT", f, "LEFT", CONTENT_PADDING, 0)
+        f._listContainer:SetPoint("RIGHT", f, "RIGHT", -CONTENT_PADDING, 0)
+        f._listContainer:SetPoint("BOTTOM", f._acceptBtn, "TOP", 0, 16)
+        f._text:SetPoint("BOTTOM", f._listContainer, "TOP", 0, 12)
+    elseif hasEditBox then
         f._editBox:ClearAllPoints()
         f._editBox:SetPoint("LEFT", f, "LEFT", CONTENT_PADDING, 0)
         f._editBox:SetPoint("RIGHT", f, "RIGHT", -CONTENT_PADDING, 0)
@@ -487,19 +933,26 @@ function Controls:ShowDialog(name, options)
     f._onCancel = options.onCancel
     f._data = options.data
     f._hasEditBox = hasEditBox
+    f._hasList = hasList
 
     -- Helper to get edit box text
     local function getEditBoxText()
         return hasEditBox and f._editBox:GetText() or nil
     end
 
+    -- Helper to get selected list value
+    local function getSelectedValue()
+        return hasList and f._listContainer and f._listContainer:GetSelectedValue() or nil
+    end
+
     -- Wire up buttons
     f._acceptBtn:SetScript("OnClick", function()
         local editText = getEditBoxText()
+        local selectedValue = getSelectedValue()
         f:Hide()
         backdrop:Hide()
         if f._onAccept then
-            f._onAccept(f._data, editText)
+            f._onAccept(f._data, editText, selectedValue)
         end
     end)
 
@@ -775,8 +1228,8 @@ Controls:RegisterDialog("SCOOTERMOD_PRESET_TARGET_CHOICE", {
     text = "How would you like to apply the %s preset?",
     acceptText = "Create New Profile",
     cancelText = "Apply to Existing",
-    acceptWidth = 140,
-    cancelWidth = 140,
+    acceptWidth = 180,
+    cancelWidth = 180,
     height = 160,
 })
 
@@ -815,4 +1268,12 @@ Controls:RegisterDialog("SCOOTERMOD_APPLYALL_TEXTURES", {
     acceptWidth = 130,
     cancelText = CANCEL or "Cancel",
     height = 180,
+})
+
+Controls:RegisterDialog("SCOOTERMOD_SELECT_EXISTING_LAYOUT", {
+    text = "Select an existing layout to apply the %s preset to:",
+    acceptText = "Apply",
+    cancelText = CANCEL or "Cancel",
+    height = 300,
+    listHeight = 150,
 })

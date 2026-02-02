@@ -9,7 +9,7 @@ Presets:Register({
     id = "ScooterUI",
     name = "ScooterUI",
     description = "Author's flagship desktop layout showcasing ScooterMod styling for raiding and Mythic+.",
-    wowBuild = "12.0.7",
+    wowBuild = "12.0.0",
     version = "2026.01.31",
     screenClass = "desktop",
     recommendedInput = "Mouse + Keyboard",
@@ -3613,9 +3613,7 @@ Presets:Register({
         borderEnable = true,
         borderThickness = 2,
         hideBuffsDebuffs = true,
-        iconHeight = 24,
         iconScale = 50,
-        iconWidth = 32,
       },
       castBar = {
         anchorMode = "healthBottom",
@@ -4018,9 +4016,7 @@ Presets:Register({
         borderEnable = true,
         borderThickness = 2,
         hideBuffsDebuffs = false,
-        iconHeight = 21.000003814697,
         iconScale = 50,
-        iconWidth = 32,
       },
       castBar = {
         anchorMode = "healthBottom",

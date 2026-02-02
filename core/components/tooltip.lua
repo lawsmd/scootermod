@@ -302,6 +302,19 @@ local function ApplyTooltipStyling(self)
             statusBarTexture:Show()
         end
     end
+
+    -- Apply tooltip scale
+    local scale = db.tooltipScale or 1.0
+    if tooltip.SetScale then
+        tooltip:SetScale(scale)
+    end
+    -- Also scale comparison tooltips
+    for tooltipName in pairs(COMPARISON_TOOLTIP_NAMES) do
+        local compTooltip = _G[tooltipName]
+        if compTooltip and compTooltip.SetScale then
+            compTooltip:SetScale(scale)
+        end
+    end
 end
 
 addon:RegisterComponentInitializer(function(self)
@@ -340,6 +353,9 @@ addon:RegisterComponentInitializer(function(self)
 
             -- Class color settings
             classColorPlayerNames = { type = "addon", default = false },
+
+            -- Tooltip scale setting
+            tooltipScale = { type = "addon", default = 1.0 },
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

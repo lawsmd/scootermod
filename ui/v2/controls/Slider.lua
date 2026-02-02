@@ -117,6 +117,8 @@ function Controls:CreateSlider(options)
     local sliderWidth = options.width or SLIDER_DEFAULT_WIDTH
     local inputWidth = options.inputWidth or SLIDER_INPUT_WIDTH
     local precision = options.precision or 0
+    local displayMultiplier = options.displayMultiplier or 1
+    local displaySuffix = options.displaySuffix or ""
     local name = options.name
     local isDisabledFn = options.disabled or options.isDisabled
 
@@ -462,11 +464,14 @@ function Controls:CreateSlider(options)
 
     -- Format value for display
     local function FormatValue(val)
+        local displayVal = val * displayMultiplier
+        local formatted
         if precision == 0 then
-            return tostring(math.floor(val + 0.5))
+            formatted = tostring(math.floor(displayVal + 0.5))
         else
-            return string.format("%." .. precision .. "f", val)
+            formatted = string.format("%." .. precision .. "f", displayVal)
         end
+        return formatted .. displaySuffix
     end
 
     -- Clamp value to min/max and snap to step
@@ -676,6 +681,19 @@ function Controls:CreateSlider(options)
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
     end)
 
+    -- Helper to parse input value (handles displayMultiplier and displaySuffix)
+    local function ParseInputValue(text)
+        -- Strip suffix if present
+        if displaySuffix ~= "" and text:sub(-#displaySuffix) == displaySuffix then
+            text = text:sub(1, -#displaySuffix - 1)
+        end
+        local val = tonumber(text)
+        if val and displayMultiplier ~= 0 then
+            return val / displayMultiplier
+        end
+        return val
+    end
+
     -- Input field handlers
     inputFrame:SetScript("OnEnterPressed", function(self)
         if IsSyncLocked() then
@@ -685,7 +703,7 @@ function Controls:CreateSlider(options)
         end
 
         local text = self:GetText()
-        local val = tonumber(text)
+        local val = ParseInputValue(text)
         if val then
             row._currentValue = ClampValue(val)
             setValue(row._currentValue)
@@ -708,7 +726,7 @@ function Controls:CreateSlider(options)
         end
 
         local text = self:GetText()
-        local val = tonumber(text)
+        local val = ParseInputValue(text)
         if val then
             row._currentValue = ClampValue(val)
             setValue(row._currentValue)

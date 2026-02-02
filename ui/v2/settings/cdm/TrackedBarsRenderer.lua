@@ -275,9 +275,9 @@ function TrackedBars.Render(panel, scrollContent)
             })
 
             inner:AddSlider({
-                label = "Border Thickness", min = 1, max = 8, step = 0.2,
-                get = function() return getSetting("borderThickness") or 1 end,
-                set = function(v) setSetting("borderThickness", v) end,
+                label = "Border Thickness", min = 1, max = 8, step = 0.5,
+                get = function() local v = getSetting("borderThickness") or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                set = function(v) setSetting("borderThickness", math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))) end,
                 minLabel = "1", maxLabel = "8",
             })
 
@@ -295,17 +295,12 @@ function TrackedBars.Render(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddSlider({
-                label = "Icon Width", min = 8, max = 32, step = 1,
-                get = function() return getSetting("iconWidth") or 30 end,
-                set = function(v) setSetting("iconWidth", v) end,
-                minLabel = "8", maxLabel = "32",
-            })
-
-            inner:AddSlider({
-                label = "Icon Height", min = 8, max = 32, step = 1,
-                get = function() return getSetting("iconHeight") or 30 end,
-                set = function(v) setSetting("iconHeight", v) end,
-                minLabel = "8", maxLabel = "32",
+                label = "Icon Shape",
+                description = "Adjust icon aspect ratio. Center = square icons.",
+                min = -67, max = 67, step = 1,
+                get = function() return getSetting("iconTallWideRatio") or 0 end,
+                set = function(v) setSetting("iconTallWideRatio", v) end,
+                minLabel = "Wide", maxLabel = "Tall",
             })
 
             inner:AddToggle({
@@ -335,9 +330,9 @@ function TrackedBars.Render(panel, scrollContent)
             })
 
             inner:AddSlider({
-                label = "Border Thickness", min = 1, max = 8, step = 0.2,
-                get = function() return getSetting("iconBorderThickness") or 1 end,
-                set = function(v) setSetting("iconBorderThickness", v) end,
+                label = "Border Thickness", min = 1, max = 8, step = 0.5,
+                get = function() local v = getSetting("iconBorderThickness") or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                set = function(v) setSetting("iconBorderThickness", math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))) end,
                 minLabel = "1", maxLabel = "8",
             })
 

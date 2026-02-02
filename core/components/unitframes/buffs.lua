@@ -27,8 +27,6 @@ end
 do
 	-- Store original positions per aura frame so offsets remain relative to stock layout
 	local originalAuraPositions = {}
-	-- Store original sizes per aura frame so we can reason about defaults if needed
-	local originalAuraSizes = {}
 
 	local function resolveUnitFrame(unit)
 		local mgr = _G.EditModeManagerFrame
@@ -69,10 +67,8 @@ do
 
 		local offsetX = tonumber(cfg.offsetX) or 0
 		local offsetY = tonumber(cfg.offsetY) or 0
-		local iconWidth = tonumber(cfg.iconWidth)
-		local iconHeight = tonumber(cfg.iconHeight)
 		local scalePct = tonumber(cfg.iconScale) or 100
-		if scalePct < 50 then scalePct = 50 elseif scalePct > 150 then scalePct = 150 end
+		if scalePct < 20 then scalePct = 20 elseif scalePct > 200 then scalePct = 200 end
 		local scaleMultiplier = scalePct / 100.0
 		local hideBuffsDebuffs = cfg.hideBuffsDebuffs == true
 
@@ -108,82 +104,61 @@ do
 			return
 		end
 
+		-- Calculate icon dimensions from ratio if set
+		local ratio = tonumber(cfg.tallWideRatio) or 0
+		local ratioWidth, ratioHeight
+		if ratio ~= 0 and addon.IconRatio then
+			-- Use component ID based on unit for base size lookup
+			local componentId = (unit == "Target") and "targetBuffsDebuffs" or "focusBuffsDebuffs"
+			ratioWidth, ratioHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
+		end
+
 		-- Apply visual styling to all auras in a pool
-		-- SAFE during combat: SetSize, SetScale, SetAllPoints, border styling are all cosmetic
+		-- SAFE during combat: SetScale and border styling are cosmetic operations
 		local function applyToPool(pool)
 			if not pool or not pool.EnumerateActive then return end
 
 			for auraFrame in pool:EnumerateActive() do
-				-- Sizing: treat Blizzard's layout as the baseline and only grow/shrink
-				-- relative to the stock size. We seed cfg.iconWidth/iconHeight from the
-				-- first active aura we see so default sliders match Blizzard visuals.
-				if auraFrame and auraFrame.SetSize then
-					if not originalAuraSizes[auraFrame] then
-						local w, h
-						do
-							local okW, ww = pcall(auraFrame.GetWidth, auraFrame)
-							w = (okW and type(ww) == "number") and ww or 21
-						end
-						do
-							local okH, hh = pcall(auraFrame.GetHeight, auraFrame)
-							h = (okH and type(hh) == "number") and hh or 21
-						end
-						originalAuraSizes[auraFrame] = {
-							width = w,
-							height = h,
-						}
-					end
+				-- Apply uniform scale so we can shrink/grow icons without fighting
+				-- Blizzard's internal aura-row math. This affects the visual size
+				-- while leaving the logical layout width/height unchanged.
+				-- Let Blizzard determine the base icon size; we only multiply by scale.
+				-- iconScale=100 means 1.0x (Blizzard default), 50 means 0.5x, 200 means 2.0x.
+				if auraFrame and auraFrame.SetScale then
+					auraFrame:SetScale(scaleMultiplier)
 
-					-- Seed DB defaults from the first aura frame if not already set
-					if not iconWidth or not iconHeight then
-						local base = originalAuraSizes[auraFrame]
-						if base then
-							if not iconWidth then
-								cfg.iconWidth = cfg.iconWidth or base.width
-								iconWidth = tonumber(cfg.iconWidth) or base.width
-							end
-							if not iconHeight then
-								cfg.iconHeight = cfg.iconHeight or base.height
-								iconHeight = tonumber(cfg.iconHeight) or base.height
-							end
+					-- Apply ratio-based sizing if configured
+					local icon = auraFrame.Icon
+					if icon and ratioWidth and ratioHeight then
+						-- Resize the auraFrame itself (the icon is anchored to fill it)
+						if auraFrame.SetSize then
+							auraFrame:SetSize(ratioWidth, ratioHeight)
 						end
-					end
-
-					if iconWidth and iconHeight then
-						local w = iconWidth
-						local h = iconHeight
-						-- Defensive clamp against absurdly small values
-						if w < 8 then w = 8 end
-						if h < 8 then h = 8 end
-						auraFrame:SetSize(w, h)
-
-						-- Keep icon/cooldown filling the aura frame
-						local icon = auraFrame.Icon
-						if icon and icon.SetAllPoints then
-							icon:SetAllPoints(auraFrame)
+						-- Calculate texture coordinates to crop instead of stretch
+						local aspectRatio = ratioWidth / ratioHeight
+						local left, right, top, bottom = 0, 1, 0, 1
+						if aspectRatio > 1.0 then
+							-- Wider than tall - crop top/bottom
+							local cropAmount = 1.0 - (1.0 / aspectRatio)
+							local cropOffset = cropAmount / 2.0
+							top = cropOffset
+							bottom = 1.0 - cropOffset
+						elseif aspectRatio < 1.0 then
+							-- Taller than wide - crop left/right
+							local cropAmount = 1.0 - aspectRatio
+							local cropOffset = cropAmount / 2.0
+							left = cropOffset
+							right = 1.0 - cropOffset
 						end
-						local cd = auraFrame.Cooldown
-						if cd and cd.SetAllPoints then
-							cd:SetAllPoints(auraFrame)
+						if icon.SetTexCoord then
+							pcall(icon.SetTexCoord, icon, left, right, top, bottom)
 						end
-
-						-- Grow Blizzard's default debuff border alongside the icon so it continues
-						-- to frame correctly when custom borders are disabled.
-						local blizzBorder = auraFrame.Border
-						if blizzBorder and blizzBorder.SetSize and (not cfg.borderEnable) then
-							blizzBorder:SetSize(w + 2, h + 2)
-						end
-					end
-
-					-- Apply uniform scale so we can shrink/grow icons without fighting
-					-- Blizzard's internal aura-row math. This affects the visual size
-					-- while leaving the logical layout width/height unchanged.
-					if auraFrame.SetScale then
-						auraFrame:SetScale(scaleMultiplier)
+					elseif icon and icon.SetTexCoord then
+						-- Reset to default coords if no ratio
+						pcall(icon.SetTexCoord, icon, 0, 1, 0, 1)
 					end
 
 					-- Custom icon border styling (Essential Cooldowns-style) when enabled
-					local icon = auraFrame.Icon
 					local blizzBorder = auraFrame.Border
 					if icon then
 						if cfg.borderEnable then
@@ -225,6 +200,15 @@ do
 									tintColorKey = "borderTintColor",
 									defaultThickness = 1,
 								})
+							end
+							-- Explicitly resize the border container to match icon dimensions
+							-- (SetPoint anchoring to Textures doesn't always propagate size changes)
+							if ratioWidth and ratioHeight then
+								local iconState = getState(icon)
+								local container = iconState and iconState.ScooterIconBorderContainer
+								if container and container.SetSize then
+									container:SetSize(ratioWidth, ratioHeight)
+								end
 							end
 						else
 							-- Restore Blizzard's default border and hide any custom border textures

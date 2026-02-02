@@ -74,7 +74,7 @@ local selectedTab = "standard"
 -- Helper Functions
 --------------------------------------------------------------------------------
 
-local function GetBorderDisplayName(key, stripPrefix)
+local function GetBorderDisplayName(key)
     if key == "default" then return "Default" end
     if key == "none" then return "No Border" end
     if key == "square" then return "Square" end
@@ -83,12 +83,7 @@ local function GetBorderDisplayName(key, stripPrefix)
     if addon.BarBorders and addon.BarBorders.GetStyle then
         local style = addon.BarBorders.GetStyle(key)
         if style and style.label then
-            local name = style.label
-            -- Strip "mMediaTag " prefix when requested (for Standard tab)
-            if stripPrefix and name:sub(1, 10) == "mMediaTag " then
-                name = name:sub(11)
-            end
-            return name
+            return style.label
         end
     end
 
@@ -498,9 +493,8 @@ local function CreateBarBorderPicker()
             btn:ClearAllPoints()
             btn:SetPoint("TOPLEFT", content, "TOPLEFT", x, y)
 
-            -- Set display name (strip "mMediaTag " prefix on standard tab)
-            local stripPrefix = (selectedTab == "standard")
-            local displayName = GetBorderDisplayName(borderKey, stripPrefix)
+            -- Set display name
+            local displayName = GetBorderDisplayName(borderKey)
             btn._nameText:SetText(displayName)
 
             -- Set border preview

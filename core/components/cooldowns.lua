@@ -1021,13 +1021,13 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
     local borderEnabled = db.borderEnable
     local hasTextConfig = db.textCooldown or db.textStacks
 
-    -- Check if icon sizing is configured (either width or height differs from default)
-    local iconWidth = tonumber(db.iconWidth)
-    local iconHeight = tonumber(db.iconHeight)
-    local defaultWidth = component.settings and component.settings.iconWidth and component.settings.iconWidth.default
-    local defaultHeight = component.settings and component.settings.iconHeight and component.settings.iconHeight.default
-    local hasCustomSize = iconWidth and iconHeight and
-        (iconWidth ~= defaultWidth or iconHeight ~= defaultHeight)
+    -- Check if icon sizing is configured via ratio
+    local ratio = tonumber(db.tallWideRatio) or 0
+    local hasCustomSize = ratio ~= 0
+    local iconWidth, iconHeight
+    if hasCustomSize and addon.IconRatio then
+        iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
+    end
 
     for _, child in ipairs({ viewer:GetChildren() }) do
         if isValidCDMItemFrame(child) then
@@ -1035,7 +1035,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                 Overlays.HideOverlay(child)
             else
                 -- Apply icon sizing if configured
-                if hasCustomSize then
+                if hasCustomSize and iconWidth and iconHeight then
                     Overlays.ApplyIconSize(child, {
                         width = iconWidth,
                         height = iconHeight,
@@ -1106,16 +1106,16 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                     local component = addon.Components and addon.Components[componentId]
                     if not component or not component.db then return end
 
-                    -- Apply icon sizing if configured
-                    local iconWidth = tonumber(component.db.iconWidth)
-                    local iconHeight = tonumber(component.db.iconHeight)
-                    local defaultWidth = component.settings and component.settings.iconWidth and component.settings.iconWidth.default
-                    local defaultHeight = component.settings and component.settings.iconHeight and component.settings.iconHeight.default
-                    if iconWidth and iconHeight and (iconWidth ~= defaultWidth or iconHeight ~= defaultHeight) then
-                        Overlays.ApplyIconSize(itemFrame, {
-                            width = iconWidth,
-                            height = iconHeight,
-                        })
+                    -- Apply icon sizing if configured via ratio
+                    local ratio = tonumber(component.db.tallWideRatio) or 0
+                    if ratio ~= 0 and addon.IconRatio then
+                        local iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
+                        if iconWidth and iconHeight then
+                            Overlays.ApplyIconSize(itemFrame, {
+                                width = iconWidth,
+                                height = iconHeight,
+                            })
+                        end
                     end
 
                     if component.db.borderEnable and not hasBlizzardDebuffBorder(itemFrame) then
@@ -1638,15 +1638,18 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         return nil
     end
 
-    local iconWidth = tonumber(getSettingValue("iconWidth"))
-    local iconHeight = tonumber(getSettingValue("iconHeight"))
+    -- Calculate icon dimensions from ratio
+    local iconRatio = tonumber(getSettingValue("iconTallWideRatio")) or 0
+    local iconWidth, iconHeight
+    if addon.IconRatio then
+        iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent("trackedBars", iconRatio)
+    else
+        -- Fallback if IconRatio not loaded
+        iconWidth, iconHeight = 30, 30
+    end
     if iconWidth and iconHeight and iconFrame.SetSize then
         iconWidth = math.max(8, math.min(32, iconWidth))
         iconHeight = math.max(8, math.min(32, iconHeight))
-        if component.db then
-            component.db.iconWidth = iconWidth
-            component.db.iconHeight = iconHeight
-        end
         iconFrame:SetSize(iconWidth, iconHeight)
         local tex = iconFrame.Icon or (child.GetIconTexture and child:GetIconTexture())
         if tex and tex.SetAllPoints then tex:SetAllPoints(iconFrame) end
@@ -2080,11 +2083,8 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            iconWidth = { type = "addon", default = 50, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2
-            }},
-            iconHeight = { type = "addon", default = 50, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
@@ -2163,11 +2163,8 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            iconWidth = { type = "addon", default = 44, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2
-            }},
-            iconHeight = { type = "addon", default = 44, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
@@ -2246,11 +2243,8 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            iconWidth = { type = "addon", default = 44, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 2
-            }},
-            iconHeight = { type = "addon", default = 44, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 96, step = 1, section = "Sizing", order = 3
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
@@ -2369,16 +2363,13 @@ addon:RegisterComponentInitializer(function(self)
                 end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            iconWidth = { type = "addon", default = 30, ui = {
-                label = "Icon Width", widget = "slider", min = 8, max = 32, step = 1, section = "Icon", order = 1
-            }},
-            iconHeight = { type = "addon", default = 30, ui = {
-                label = "Icon Height", widget = "slider", min = 8, max = 32, step = 1, section = "Icon", order = 2
+            iconTallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Icon", order = 1
             }},
             iconBorderEnable = { type = "addon", default = false, ui = {
-                label = "Enable Border", widget = "checkbox", section = "Icon", order = 3
+                label = "Enable Border", widget = "checkbox", section = "Icon", order = 2
             }},
             iconBorderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Icon", order = 4
@@ -2396,7 +2387,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             iconBorderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Icon", order = 7
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Icon", order = 7
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1

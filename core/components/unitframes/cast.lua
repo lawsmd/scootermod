@@ -583,7 +583,7 @@ do
 			do
 				local enabled = not not cfg.castBarBorderEnable
 				local styleKey = cfg.castBarBorderStyle or "square"
-				local colorMode = cfg.castBarBorderColorMode or "default"
+				local tintEnabled = not not cfg.castBarBorderTintEnable
 				local tintTbl = type(cfg.castBarBorderTintColor) == "table" and cfg.castBarBorderTintColor or {1,1,1,1}
 				local tintColor = {
 					tintTbl[1] or 1,
@@ -624,12 +624,10 @@ do
 					-- Determine effective color from mode + style
 					local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
 					local color
-					if colorMode == "custom" then
+					if tintEnabled then
 						color = tintColor
-					elseif colorMode == "texture" then
-						color = {1, 1, 1, 1}
-					else -- "default"
-						if styleDef and styleKey ~= "square" then
+					else
+						if styleDef then
 							color = {1, 1, 1, 1}
 						else
 							color = {0, 0, 0, 1}
@@ -670,7 +668,7 @@ do
 						-- Fallback: pixel (square) border using generic square helper
 						if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
 						if addon.Borders and addon.Borders.ApplySquare then
-							local sqColor = (colorMode == "custom") and tintColor or {0, 0, 0, 1}
+							local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
 							local baseY = (thickness <= 1) and 0 or 1
 							local baseX = 1
 							local expandY = baseY - combinedInset
@@ -1390,7 +1388,7 @@ do
 			do
 				local enabled = not not cfg.castBarBorderEnable
 				local styleKey = cfg.castBarBorderStyle or "square"
-				local colorMode = cfg.castBarBorderColorMode or "default"
+				local tintEnabled = not not cfg.castBarBorderTintEnable
 				local tintTbl = type(cfg.castBarBorderTintColor) == "table" and cfg.castBarBorderTintColor or {1,1,1,1}
 				local tintColor = {
 					tintTbl[1] or 1,
@@ -1413,12 +1411,10 @@ do
 				else
 					local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
 					local color
-					if colorMode == "custom" then
+					if tintEnabled then
 						color = tintColor
-					elseif colorMode == "texture" then
-						color = {1, 1, 1, 1}
-					else -- "default"
-						if styleDef and styleKey ~= "square" then
+					else
+						if styleDef then
 							color = {1, 1, 1, 1}
 						else
 							color = {0, 0, 0, 1}
@@ -1455,7 +1451,7 @@ do
 				if not handled then
 					if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
 					if addon.Borders and addon.Borders.ApplySquare then
-						local sqColor = (colorMode == "custom") and tintColor or {0, 0, 0, 1}
+						local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
 						local baseY = (thickness <= 1) and 0 or 1
 						local baseX = 1
 						local expandY = baseY - combinedInset

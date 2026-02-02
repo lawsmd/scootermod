@@ -193,33 +193,18 @@ function Debuffs.Render(panel, scrollContent)
             })
 
             inner:AddSlider({
-                label = "Icon Width",
-                description = "Custom icon width in pixels.",
-                min = 24,
-                max = 48,
+                label = "Icon Shape",
+                description = "Adjust icon aspect ratio. Center = square icons.",
+                min = -67,
+                max = 67,
                 step = 1,
-                get = function() return getSetting("iconWidth") or 30 end,
+                get = function() return getSetting("tallWideRatio") or 0 end,
                 set = function(v)
-                    setSetting("iconWidth", v)
+                    setSetting("tallWideRatio", v)
                     applyStyles()
                 end,
-                minLabel = "24px",
-                maxLabel = "48px",
-            })
-
-            inner:AddSlider({
-                label = "Icon Height",
-                description = "Custom icon height in pixels.",
-                min = 24,
-                max = 48,
-                step = 1,
-                get = function() return getSetting("iconHeight") or 30 end,
-                set = function(v)
-                    setSetting("iconHeight", v)
-                    applyStyles()
-                end,
-                minLabel = "24px",
-                maxLabel = "48px",
+                minLabel = "Wide",
+                maxLabel = "Tall",
             })
 
             inner:Finalize()

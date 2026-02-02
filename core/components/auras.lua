@@ -242,8 +242,15 @@ function addon.ApplyAuraFrameVisualsFor(component)
         end
     end
 
-    local width = tonumber(resolveSettingValue("iconWidth"))
-    local height = tonumber(resolveSettingValue("iconHeight"))
+    -- Calculate icon dimensions from ratio
+    local ratio = tonumber(resolveSettingValue("tallWideRatio")) or 0
+    local width, height
+    if addon.IconRatio then
+        width, height = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
+    else
+        -- Fallback if IconRatio not loaded
+        width, height = 30, 30
+    end
 
     local borderEnabled = not not resolveSettingValue("borderEnable")
     local borderStyle = tostring(resolveSettingValue("borderStyle") or "square")
@@ -392,6 +399,25 @@ function addon.ApplyAuraFrameVisualsFor(component)
                 end
                 if icon and icon.SetSize and width and height then
                     icon:SetSize(width, height)
+                    -- Calculate texture coordinates to crop instead of stretch
+                    local aspectRatio = width / height
+                    local left, right, top, bottom = 0, 1, 0, 1
+                    if aspectRatio > 1.0 then
+                        -- Wider than tall - crop top/bottom
+                        local cropAmount = 1.0 - (1.0 / aspectRatio)
+                        local cropOffset = cropAmount / 2.0
+                        top = cropOffset
+                        bottom = 1.0 - cropOffset
+                    elseif aspectRatio < 1.0 then
+                        -- Taller than wide - crop left/right
+                        local cropAmount = 1.0 - aspectRatio
+                        local cropOffset = cropAmount / 2.0
+                        left = cropOffset
+                        right = 1.0 - cropOffset
+                    end
+                    if icon.SetTexCoord then
+                        pcall(icon.SetTexCoord, icon, left, right, top, bottom)
+                    end
                 end
                 if icon then
                     resizeDebuffBorder(aura, icon, width, height)
@@ -521,11 +547,9 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1,
             }},
-            iconWidth = { type = "addon", default = 30, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 2,
-            }},
-            iconHeight = { type = "addon", default = 30, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 3,
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2,
+                minLabel = "Wide", maxLabel = "Tall",
             }},
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1,
@@ -546,7 +570,7 @@ addon:RegisterComponentInitializer(function(self)
                 end,
             }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.2, section = "Border", order = 5,
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5,
             }},
             opacity = { type = "addon", default = 100, ui = {
                 label = "Opacity in Combat", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 1,
@@ -610,11 +634,9 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1,
             }},
-            iconWidth = { type = "addon", default = 30, ui = {
-                label = "Icon Width", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 2,
-            }},
-            iconHeight = { type = "addon", default = 30, ui = {
-                label = "Icon Height", widget = "slider", min = 24, max = 48, step = 1, section = "Sizing", order = 3,
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2,
+                minLabel = "Wide", maxLabel = "Tall",
             }},
             opacity = { type = "addon", default = 100, ui = {
                 label = "Opacity in Combat", widget = "slider", min = 50, max = 100, step = 1, section = "Misc", order = 1,

@@ -732,6 +732,115 @@ function addon.ApplyAllPlayerMiscVisibility()
     end
 end
 
+-- Pet Misc.: Hide Entire Pet Frame
+-- Useful for ConsolePort users who use the Pet Ring instead of the Pet frame
+-- Frame path: PetFrame (global)
+do
+    local _petFrameHooked = false
+    local _originalPetFrameAlpha = nil
+
+    local function getPetFrame()
+        local mgr = _G.EditModeManagerFrame
+        local EM = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices
+        local EMSys = _G.Enum and _G.Enum.EditModeSystem
+        if mgr and EMSys and mgr.GetRegisteredSystemFrame and EM and EM.Pet then
+            return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, EM.Pet)
+        end
+        return _G.PetFrame
+    end
+
+    local function applyPetFrameHiddenState()
+        local petFrame = getPetFrame()
+        if not petFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        -- Zero‑Touch: only operate if the user has a config table for Pet.
+        local unitFrames = rawget(db, "unitFrames")
+        local petCfg = unitFrames and rawget(unitFrames, "Pet") or nil
+        if not petCfg then
+            return
+        end
+
+        -- Zero‑Touch: nil means "don't touch"; only apply if explicitly set.
+        if petCfg.hideEntireFrame == nil then
+            return
+        end
+        local hideEntireFrame = (petCfg.hideEntireFrame == true)
+
+        -- Capture original alpha on first run
+        if _originalPetFrameAlpha == nil then
+            _originalPetFrameAlpha = petFrame:GetAlpha() or 1
+        end
+
+        if hideEntireFrame then
+            -- Hide via SetAlpha(0) - safe for protected frames
+            if petFrame.SetAlpha then
+                pcall(petFrame.SetAlpha, petFrame, 0)
+            end
+        else
+            -- Restore original alpha (other visibility settings will re-apply their values)
+            if petFrame.SetAlpha then
+                pcall(petFrame.SetAlpha, petFrame, _originalPetFrameAlpha)
+            end
+            -- Re-apply opacity settings if they exist
+            addon.ApplyUnitFrameVisibilityFor("Pet")
+        end
+    end
+
+    -- Install hooks to maintain hidden state when Blizzard updates the Pet frame
+    local function installPetFrameHooks()
+        if _petFrameHooked then return end
+        _petFrameHooked = true
+
+        local petFrame = getPetFrame()
+        if not petFrame then return end
+
+        -- Hook Show() to re-apply hidden state when Blizzard shows the frame
+        if petFrame.Show then
+            hooksecurefunc(petFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                local unitFrames = rawget(db, "unitFrames")
+                local petCfg = unitFrames and rawget(unitFrames, "Pet") or nil
+                if petCfg and petCfg.hideEntireFrame == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to change it
+        if petFrame.SetAlpha then
+            hooksecurefunc(petFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                local unitFrames = rawget(db, "unitFrames")
+                local petCfg = unitFrames and rawget(unitFrames, "Pet") or nil
+                if petCfg and petCfg.hideEntireFrame == true and alpha and alpha > 0 then
+                    -- Defer to avoid recursion
+                    if not getProp(self, "petFrameAlphaDeferred") then
+                        setProp(self, "petFrameAlphaDeferred", true)
+                        C_Timer.After(0, function()
+                            setProp(self, "petFrameAlphaDeferred", nil)
+                            if petCfg and petCfg.hideEntireFrame == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyPetFrameVisibility()
+        installPetFrameHooks()
+        applyPetFrameHiddenState()
+    end
+end
+
 function addon:SyncAllEditModeSettings()
     local anyChanged = false
     for id, component in pairs(self.Components) do

@@ -710,9 +710,9 @@ function ActionBar.Render(panel, scrollContent, componentId)
                 })
 
                 inner:AddSlider({
-                    label = "Border Thickness", min = 1, max = 8, step = 0.2,
-                    get = function() return getSetting("borderThickness") or 1 end,
-                    set = function(v) setSetting("borderThickness", v) end,
+                    label = "Border Thickness", min = 1, max = 8, step = 0.5,
+                    get = function() local v = getSetting("borderThickness") or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                    set = function(v) setSetting("borderThickness", math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))) end,
                     minLabel = "1", maxLabel = "8",
                 })
 

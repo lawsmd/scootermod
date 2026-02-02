@@ -170,6 +170,36 @@ function Tooltip.Render(panel, scrollContent)
         tabBuilder:Finalize()
     end
 
+    -- Collapsible section: Sizing
+    builder:AddCollapsibleSection({
+        title = "Sizing",
+        componentId = "tooltip",
+        sectionKey = "sizing",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Tooltip Scale",
+                description = "Scale the size of tooltips. Affects GameTooltip and comparison tooltips.",
+                min = 0.5,
+                max = 1.5,
+                step = 0.05,
+                get = function()
+                    return getSetting("tooltipScale") or 1.0
+                end,
+                set = function(v)
+                    setSetting("tooltipScale", v)
+                end,
+                minLabel = "50%",
+                maxLabel = "150%",
+                precision = 0,
+                displayMultiplier = 100,
+                displaySuffix = "%",
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Collapsible section: Text (with tabbed sub-sections)
     builder:AddCollapsibleSection({
         title = "Text",

@@ -132,23 +132,15 @@ function TrackedBuffs.Render(panel, scrollContent)
             })
 
             inner:AddSlider({
-                label = "Icon Width", min = 24, max = 96, step = 1,
-                get = function() return getSetting("iconWidth") or 44 end,
+                label = "Icon Shape",
+                description = "Adjust icon aspect ratio. Center = square icons.",
+                min = -67, max = 67, step = 1,
+                get = function() return getSetting("tallWideRatio") or 0 end,
                 set = function(v)
-                    setSetting("iconWidth", v)
+                    setSetting("tallWideRatio", v)
                     if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
                 end,
-                minLabel = "24px", maxLabel = "96px",
-            })
-
-            inner:AddSlider({
-                label = "Icon Height", min = 24, max = 96, step = 1,
-                get = function() return getSetting("iconHeight") or 44 end,
-                set = function(v)
-                    setSetting("iconHeight", v)
-                    if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
-                end,
-                minLabel = "24px", maxLabel = "96px",
+                minLabel = "Wide", maxLabel = "Tall",
             })
 
             inner:Finalize()

@@ -245,16 +245,17 @@ local function buildHealthBorderTab(inner)
         label = "Border Thickness",
         min = 1,
         max = 8,
-        step = 0.2,
+        step = 0.5,
         precision = 1,
         get = function()
             local t = ensureUFDB() or {}
-            return tonumber(t.healthBarBorderThickness) or 1
+            local v = tonumber(t.healthBarBorderThickness) or 1
+            return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
         end,
         set = function(v)
             local t = ensureUFDB()
             if not t then return end
-            t.healthBarBorderThickness = tonumber(v) or 1
+            t.healthBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
             applyBarTextures()
         end,
     })
@@ -783,9 +784,9 @@ function UF.RenderPet(panel, scrollContent)
                             getColor = function() local t = ensureUFDB() or {}; local c = t.powerBarBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
                             setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.powerBarBorderTintColor = {r,g,b,a}; applyBarTextures() end end,
                             hasAlpha = true })
-                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderThickness) or 1 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderThickness = tonumber(v) or 1; applyBarTextures() end end })
+                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureUFDB() or {}; local v = tonumber(t.powerBarBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyBarTextures() end end })
                         tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
                             get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInset) or 0 end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderInset = tonumber(v) or 0; applyBarTextures() end end })
@@ -902,9 +903,9 @@ function UF.RenderPet(panel, scrollContent)
                             getColor = function() local t = ensureUFDB() or {}; local c = t.nameBackdropBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
                             setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropBorderTintColor = {r,g,b,a}; applyNameLevelText() end end,
                             hasAlpha = true })
-                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.2, precision = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderThickness) or 1 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = tonumber(v) or 1; applyNameLevelText() end end })
+                        tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end })
                         tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
                             get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInset) or 0 end,
                             set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInset = tonumber(v) or 0; applyNameLevelText() end end })
@@ -1064,15 +1065,16 @@ function UF.RenderPet(panel, scrollContent)
             label = "Border Inset",
             min = 1,
             max = 8,
-            step = 0.2,
+            step = 0.5,
             precision = 1,
             get = function()
                 local t = ensurePortraitDB() or {}
-                return tonumber(t.portraitBorderThickness) or 1
+                local v = tonumber(t.portraitBorderThickness) or 1
+                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
             end,
             set = function(v)
                 local t = ensurePortraitDB()
-                if t then t.portraitBorderThickness = tonumber(v) or 1; applyPortrait() end
+                if t then t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyPortrait() end
             end,
         })
 
@@ -1181,6 +1183,24 @@ function UF.RenderPet(panel, scrollContent)
         sectionKey = "visibility",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
+            -- Hide Entire Pet Frame
+            inner:AddToggle({
+                label = "Hide Entire Pet Frame",
+                description = "Completely hides the Pet frame. Useful for ConsolePort users who prefer the Pet Ring.",
+                get = function()
+                    local t = ensureUFDB() or {}
+                    return t.hideEntireFrame == true
+                end,
+                set = function(v)
+                    local t = ensureUFDB()
+                    if not t then return end
+                    t.hideEntireFrame = v
+                    if addon.ApplyPetFrameVisibility then
+                        addon.ApplyPetFrameVisibility()
+                    end
+                end,
+            })
+
             -- Out of Combat Opacity
             inner:AddSlider({
                 label = "Opacity - Out of Combat",

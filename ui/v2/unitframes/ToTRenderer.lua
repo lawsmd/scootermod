@@ -156,9 +156,9 @@ local function buildBorderTab(inner, barPrefix, applyFn)
 
     inner:AddSlider({
         label = "Border Thickness",
-        min = 1, max = 8, step = 0.2, precision = 1,
-        get = function() local t = ensureToTDB() or {}; return tonumber(t[barPrefix .. "BorderThickness"]) or 1 end,
-        set = function(v) local t = ensureToTDB(); if t then t[barPrefix .. "BorderThickness"] = tonumber(v) or 1; applyFn() end end,
+        min = 1, max = 8, step = 0.5, precision = 1,
+        get = function() local t = ensureToTDB() or {}; local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+        set = function(v) local t = ensureToTDB(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
     })
 
     inner:AddSlider({
@@ -233,9 +233,9 @@ local function buildPortraitBorderTab(inner)
 
     inner:AddSlider({
         label = "Border Inset",
-        min = 1, max = 8, step = 0.2, precision = 1,
-        get = function() local t = ensurePortraitDB() or {}; return tonumber(t.portraitBorderThickness) or 1 end,
-        set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderThickness = tonumber(v) or 1; applyPortrait() end end,
+        min = 1, max = 8, step = 0.5, precision = 1,
+        get = function() local t = ensurePortraitDB() or {}; local v = tonumber(t.portraitBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+        set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyPortrait() end end,
     })
 
     inner:AddSelectorColorPicker({

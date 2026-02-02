@@ -618,6 +618,8 @@ function Builder:AddSlider(options)
         width = options.width,
         inputWidth = options.inputWidth,
         precision = options.precision,
+        displayMultiplier = options.displayMultiplier,
+        displaySuffix = options.displaySuffix,
         -- Edit Mode sync support
         onEditModeSync = options.onEditModeSync,
         debounceDelay = options.debounceDelay,
