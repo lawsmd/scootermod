@@ -512,14 +512,6 @@ function Controls:CreateSlider(options)
     end
     UpdateDisplay()
 
-    -- Initialize disabled state from function
-    if isDisabledFn then
-        row._isDisabled = isDisabledFn() and true or false
-        if row._isDisabled then
-            row:SetDisabled(true)
-        end
-    end
-
     -- Sync lock state for Edit Mode sync protection
     row._syncLocked = false  -- Only used for non-debounceKey sliders
 
@@ -887,6 +879,14 @@ function Controls:CreateSlider(options)
     end
 
     row._debounceKey = debounceKey
+
+    -- Initialize disabled state from function (must be after SetDisabled is defined)
+    if isDisabledFn then
+        row._isDisabled = isDisabledFn() and true or false
+        if row._isDisabled then
+            row:SetDisabled(true)
+        end
+    end
 
     return row
 end

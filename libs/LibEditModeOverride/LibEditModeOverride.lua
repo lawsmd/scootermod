@@ -100,6 +100,12 @@ local function SliderIsIndexBased(frame, setting, restrictions)
      and restrictions.minValue == 50 and restrictions.maxValue == 200 and restrictions.stepSize == 10 then
     return true
   end
+  -- Minimap Size: treat as index-based when it presents a 50–200, step-10 slider.
+  if frame and frame.system == Enum.EditModeSystem.Minimap
+     and restrictions.type == Enum.EditModeSettingDisplayType.Slider
+     and restrictions.minValue == 50 and restrictions.maxValue == 200 and restrictions.stepSize == 10 then
+    return true
+  end
   return false
 end
 

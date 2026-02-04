@@ -1170,7 +1170,7 @@ function UIPanel:CreateContentPane()
 
     -- Container for centering (holds ASCII title + ASCII mascot)
     local homeContainer = CreateFrame("Frame", nil, homeContent)
-    homeContainer:SetPoint("CENTER", homeContent, "CENTER", 0, 20)  -- Slightly above center
+    homeContainer:SetPoint("CENTER", homeContent, "CENTER", 0, -10)  -- Slightly below center
 
     local labelFont = Theme:GetFont("LABEL")
 

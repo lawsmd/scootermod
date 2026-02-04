@@ -213,6 +213,18 @@ local function ResolveSettingId(frame, logicalKey)
         end
     end
 
+    -- Minimap: Use enum-based IDs
+    local minimapSys = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.Minimap
+    if minimapSys and sys == minimapSys then
+        local lk = _lower(logicalKey)
+        local EM = _G.Enum and _G.Enum.EditModeMinimapSetting
+        if EM then
+            if lk == "size" or lk == "mapsize" or lk == "map_size" then return EM.Size end
+            if lk == "header_underneath" or lk == "headerunderneath" then return EM.HeaderUnderneath end
+            if lk == "rotate_minimap" or lk == "rotateminimap" then return EM.RotateMinimap end
+        end
+    end
+
     local auraSystem = _G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.AuraFrame
     local cacheKey = logicalKey
     if sys == auraSystem then
@@ -893,6 +905,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
         if desiredRaw > 200 then desiredRaw = 200 end
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
+    elseif settingId == "size" or settingId == "mapSize" then
+        -- Minimap Size: 50-200%, step 10, index-based
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "size") or setting.settingId
+        local desiredRaw = tonumber(dbValue) or 100
+        if desiredRaw < 50 then desiredRaw = 50 end
+        if desiredRaw > 200 then desiredRaw = 200 end
+        desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
+        editModeValue = desiredRaw
     elseif settingId == "opacity" then
         -- Write RAW percent. Cooldown Viewer uses 50..100; Objective Tracker uses 0..100.
         local v = tonumber(dbValue) or 100
@@ -1145,6 +1165,12 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
                     component._pendingAuraIconSizeExpiry = os and os.time and (os.time() + 2) or nil
                 end
             end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            return true
+        elseif settingId == "size" or settingId == "mapSize" then
+            -- Minimap Size: Write raw percent (50-200)
+            markBackSyncSkip(nil, 2)
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "iconPadding" then
@@ -1630,6 +1656,19 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
                 _AuraBackfillLog("Sync iconSize: LEO raw=%s editModeValue=%s -> dbValue=%s", tostring(raw), tostring(initialEditModeValue), tostring(dbValue))
             end
         end
+    elseif settingId == "size" or settingId == "mapSize" then
+        -- Minimap Size: 50-200%, step 10, index-based
+        -- Read value via LibEditModeOverride which handles index-to-raw conversion
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "size") or setting.settingId
+        local raw = addon.EditMode.GetSetting(frame, setting.settingId)
+        local v = tonumber(raw) or tonumber(editModeValue) or 100
+        -- Heuristic: if the value looks like an index (0–15), convert to 50–200
+        if v <= 15 then
+            dbValue = (v * 10) + 50
+        else
+            dbValue = v
+        end
+        if dbValue < 50 then dbValue = 50 elseif dbValue > 200 then dbValue = 200 end
     elseif settingId == "opacity" then
         -- Read RAW percent. Cooldown Viewer uses 50..100; Objective Tracker uses 0..100.
         local resolved = ResolveSettingId(frame, "opacity")

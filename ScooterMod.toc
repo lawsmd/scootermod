@@ -63,6 +63,7 @@ core/components/unitframes/copy.lua
 core/components/unitframes/scalemult.lua
 core/components/unitframes/totscale.lua
 core/components/unitframes/offscreenunlock.lua
+core/components/minimap/minimap.lua
 core/components/tooltip.lua
 core/components/objectivetracker.lua
 core/components/damagemeters.lua
