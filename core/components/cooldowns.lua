@@ -46,13 +46,13 @@ local CDM_VIEWERS = {
 --------------------------------------------------------------------------------
 -- Icon Centering Support
 --------------------------------------------------------------------------------
--- When users enable "Center the Edit Mode Anchor", we reposition icons within
--- the viewer so they expand symmetrically from the center instead of growing
--- from one edge. This makes the visual center stable across characters with
--- different icon counts.
+-- When users enable centering features, we reposition icons within the viewer
+-- so they expand symmetrically from the center instead of growing from one
+-- edge. This makes the visual center stable across characters with different
+-- icon counts.
 --
--- Approach (CMC-style): Hook RefreshLayout, collect visible icons, calculate
--- centered offsets, reposition via ClearAllPoints() + SetPoint().
+-- Approach: Hook RefreshLayout, collect visible icons, calculate centered
+-- offsets, reposition via ClearAllPoints() + SetPoint().
 --
 -- Risk: Icon repositioning may cause taint in 12.0. If taint errors occur
 -- (secret value comparisons in Blizzard code), this feature should be reverted.
