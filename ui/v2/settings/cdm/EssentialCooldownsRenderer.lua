@@ -442,50 +442,51 @@ function EssentialCooldowns.Render(panel, scrollContent)
                             hasAlpha = true,
                         })
 
-                        -- Offset X slider
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            min = -100,
-                            max = 100,
-                            step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.x or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.x = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100",
-                            maxLabel = "+100",
-                        })
-
-                        -- Offset Y slider
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            min = -100,
-                            max = 100,
-                            step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.y or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.y = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100",
-                            maxLabel = "+100",
+                        -- Offset dual slider (X and Y side-by-side)
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-100",
+                                maxLabel = "+100",
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-100",
+                                maxLabel = "+100",
+                            },
                         })
 
                         tabBuilder:Finalize()

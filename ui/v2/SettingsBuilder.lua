@@ -1136,6 +1136,77 @@ function Builder:AddSelectorColorPicker(options)
 end
 
 --------------------------------------------------------------------------------
+-- AddDualSlider: Add two compact sliders side-by-side (for X/Y offset pairs)
+--------------------------------------------------------------------------------
+-- Options:
+--   label          : Setting label text (left side)
+--   description    : Optional description below label
+--   sliderA        : Table with slider A options (see below)
+--   sliderB        : Table with slider B options (see below)
+--   trackWidth     : Slider track width override (optional, default 90)
+--   inputWidth     : Text input width override (optional, default 36)
+--   debounceKey    : Unique key for debounce timer (optional)
+--   onEditModeSync : Function(aVal, bVal) for Edit Mode sync (debounced)
+--   key            : Optional unique key for dynamic updates
+--
+-- Slider A/B options:
+--   axisLabel  : Small prefix label (e.g., "X" or "Y")
+--   min, max   : Value range (required)
+--   step       : Step increment (default 1)
+--   get        : Function returning current value
+--   set        : Function(newValue) to save value
+--   minLabel   : Optional tiny label under left end
+--   maxLabel   : Optional tiny label under right end
+--   precision  : Decimal places for display (default 0)
+--------------------------------------------------------------------------------
+
+function Builder:AddDualSlider(options)
+    local scrollContent = self._scrollContent
+    if not scrollContent then return self end
+
+    -- Add item spacing
+    if #self._controls > 0 then
+        self._currentY = self._currentY - ITEM_SPACING
+    end
+
+    -- Create dual slider using Controls module
+    local dualSlider = Controls:CreateDualSlider({
+        parent = scrollContent,
+        label = options.label,
+        description = options.description,
+        sliderA = options.sliderA,
+        sliderB = options.sliderB,
+        trackWidth = options.trackWidth,
+        inputWidth = options.inputWidth,
+        debounceKey = options.debounceKey,
+        onEditModeSync = options.onEditModeSync,
+        debounceDelay = options.debounceDelay,
+        useLightDim = self._useLightDim,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
+    })
+
+    if dualSlider then
+        -- Position the dual slider
+        dualSlider:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
+        dualSlider:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
+
+        -- Track for cleanup
+        table.insert(self._controls, dualSlider)
+
+        -- Register by key for dynamic updates
+        if options.key then
+            self._controlsByKey[options.key] = dualSlider
+        end
+
+        -- Update Y position
+        self._currentY = self._currentY - dualSlider:GetHeight()
+    end
+
+    return self
+end
+
+--------------------------------------------------------------------------------
 -- Future Control Methods (stubs)
 --------------------------------------------------------------------------------
 

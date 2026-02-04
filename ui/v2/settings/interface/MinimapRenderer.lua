@@ -760,7 +760,7 @@ function Minimap.Render(panel, scrollContent)
     })
 
     ----------------------------------------------------------------------------
-    -- Section 3: Buttons (Placeholder)
+    -- Section 3: Buttons (Tabbed - Addon Buttons)
     ----------------------------------------------------------------------------
     builder:AddCollapsibleSection({
         title = "Buttons",
@@ -768,17 +768,151 @@ function Minimap.Render(panel, scrollContent)
         sectionKey = "buttons",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddDescription(
-                "Button customization is coming in a future update.\n\n" ..
-                "This section will include options for hiding and repositioning minimap buttons."
-            )
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "addonButtons", label = "Addon Buttons" },
+                },
+                componentId = "minimapStyle",
+                sectionKey = "buttonsTabs",
+                buildContent = {
+                    ----------------------------------------------------------------
+                    -- Tab: Addon Buttons
+                    ----------------------------------------------------------------
+                    addonButtons = function(tabContent, tabBuilder)
+                        -- Addon Button Container toggle
+                        tabBuilder:AddToggle({
+                            label = "Use Addon Button Container",
+                            description = "Consolidate minimap addon buttons into a dropdown menu.",
+                            get = function()
+                                return getSetting("addonButtonContainerEnabled") or false
+                            end,
+                            set = function(v)
+                                setSetting("addonButtonContainerEnabled", v)
+                                -- Re-render to update disabled states
+                                C_Timer.After(0.05, function()
+                                    if panel and Minimap.Render then
+                                        Minimap.Render(panel, scrollContent)
+                                    end
+                                end)
+                            end,
+                        })
+
+                        -- Keep ScooterMod Button Separate toggle
+                        tabBuilder:AddToggle({
+                            label = "Keep ScooterMod Button Separate",
+                            description = "Keep ScooterMod's minimap button visible outside the container.",
+                            get = function()
+                                return getSetting("scooterModButtonSeparate") or false
+                            end,
+                            set = function(v)
+                                setSetting("scooterModButtonSeparate", v)
+                            end,
+                            isDisabled = function()
+                                return not getSetting("addonButtonContainerEnabled")
+                            end,
+                        })
+
+                        -- Container Position selector
+                        tabBuilder:AddSelector({
+                            label = "Container Position",
+                            description = "Where to place the addon button container relative to the minimap.",
+                            values = anchorOptions,
+                            order = anchorOrder,
+                            get = function()
+                                return getSetting("addonButtonContainerAnchor") or "BOTTOMRIGHT"
+                            end,
+                            set = function(v)
+                                setSetting("addonButtonContainerAnchor", v)
+                            end,
+                            isDisabled = function()
+                                return not getSetting("addonButtonContainerEnabled")
+                            end,
+                        })
+
+                        -- Container Offset (Dual Slider for X/Y)
+                        tabBuilder:AddDualSlider({
+                            label = "Container Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    return getSetting("addonButtonContainerOffsetX") or 0
+                                end,
+                                set = function(v)
+                                    setSetting("addonButtonContainerOffsetX", v)
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    return getSetting("addonButtonContainerOffsetY") or 0
+                                end,
+                                set = function(v)
+                                    setSetting("addonButtonContainerOffsetY", v)
+                                end,
+                            },
+                            isDisabled = function()
+                                return not getSetting("addonButtonContainerEnabled")
+                            end,
+                        })
+
+                        -- Hide Addon Button Borders toggle
+                        tabBuilder:AddToggle({
+                            label = "Hide Addon Button Borders",
+                            description = "Hide borders, background mask, and hover glow on addon minimap buttons.",
+                            get = function()
+                                return getSetting("hideAddonButtonBorders") or false
+                            end,
+                            set = function(v)
+                                setSetting("hideAddonButtonBorders", v)
+                                -- Re-render to update tint disabled state
+                                C_Timer.After(0.05, function()
+                                    if panel and Minimap.Render then
+                                        Minimap.Render(panel, scrollContent)
+                                    end
+                                end)
+                            end,
+                        })
+
+                        -- Border Tint (ToggleColorPicker)
+                        tabBuilder:AddToggleColorPicker({
+                            label = "Border Tint",
+                            description = "Apply a custom tint color to addon button borders.",
+                            get = function()
+                                return getSetting("addonButtonBorderTintEnabled") or false
+                            end,
+                            set = function(v)
+                                setSetting("addonButtonBorderTintEnabled", v)
+                            end,
+                            getColor = function()
+                                local c = getSetting("addonButtonBorderTintColor") or {1, 1, 1, 1}
+                                return c[1], c[2], c[3], c[4]
+                            end,
+                            setColor = function(r, g, b, a)
+                                setSetting("addonButtonBorderTintColor", {r, g, b, a})
+                            end,
+                            hasAlpha = true,
+                            isDisabled = function()
+                                return getSetting("hideAddonButtonBorders")
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
+            })
 
             inner:Finalize()
         end,
     })
 
     ----------------------------------------------------------------------------
-    -- Section 4: Visibility & Misc (Placeholder)
+    -- Section 4: Visibility & Misc
     ----------------------------------------------------------------------------
     builder:AddCollapsibleSection({
         title = "Visibility & Misc",
@@ -786,10 +920,16 @@ function Minimap.Render(panel, scrollContent)
         sectionKey = "visibility",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddDescription(
-                "Visibility and miscellaneous options are coming in a future update.\n\n" ..
-                "This section will include options for hiding minimap elements and other settings."
-            )
+            inner:AddToggle({
+                label = "Enable Off-Screen Edit Mode Dragging",
+                description = "Allows moving the minimap closer to or past screen edges during Edit Mode. Useful for Steam Deck and handheld setups.",
+                get = function()
+                    return getSetting("allowOffScreenDragging") or false
+                end,
+                set = function(v)
+                    setSetting("allowOffScreenDragging", v)
+                end,
+            })
 
             inner:Finalize()
         end,

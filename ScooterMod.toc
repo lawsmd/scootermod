@@ -64,6 +64,7 @@ core/components/unitframes/scalemult.lua
 core/components/unitframes/totscale.lua
 core/components/unitframes/offscreenunlock.lua
 core/components/minimap/minimap.lua
+core/components/minimap/offscreenunlock.lua
 core/components/tooltip.lua
 core/components/objectivetracker.lua
 core/components/damagemeters.lua
@@ -78,6 +79,7 @@ ui/v2/controls/Toggle.lua
 ui/v2/controls/Collapsible.lua
 ui/v2/controls/Selector.lua
 ui/v2/controls/Slider.lua
+ui/v2/controls/DualSlider.lua
 ui/v2/controls/Tabbed.lua
 ui/v2/controls/FontSelector.lua
 ui/v2/controls/InfoIcon.lua
