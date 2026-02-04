@@ -1980,29 +1980,28 @@ UIPanel._renderers = {
 
         yOffset = yOffset - 70
 
-        -- Keep Friendly Nameplates Disabled toggle
-        -- Workaround for other addons re-enabling friendly nameplates on reload
-        local npToggle = Controls:CreateToggle({
+        -- Keep BugSack Button Separate toggle
+        local bugSackToggle = Controls:CreateToggle({
             parent = scrollContent,
-            label = "Keep Friendly Nameplates Disabled",
-            description = "On login/reload, automatically unchecks 'Friendly Player Nameplates' and 'Friendly NPC Nameplates' in the game options. Useful if another addon keeps re-enabling them.",
+            label = "Keep BugSack Button Separate",
+            description = "Keep BugSack's minimap button visible outside the addon button container.",
             get = function()
-                return addon.db and addon.db.profile and addon.db.profile.keepFriendlyNameplatesDisabled
+                return addon.db and addon.db.profile and addon.db.profile.bugSackButtonSeparate
             end,
             set = function(enabled)
                 if addon.db and addon.db.profile then
-                    addon.db.profile.keepFriendlyNameplatesDisabled = enabled
-                    if enabled then
-                        -- Apply immediately as well
-                        pcall(SetCVar, "nameplateShowFriendlyPlayers", "0")
-                        pcall(SetCVar, "nameplateShowFriendlyNpcs", "0")
+                    addon.db.profile.bugSackButtonSeparate = enabled
+                    -- Re-apply minimap styling to update button visibility
+                    local minimapComp = addon.Components and addon.Components["minimapStyle"]
+                    if minimapComp and minimapComp.ApplyStyling then
+                        minimapComp:ApplyStyling()
                     end
                 end
             end,
         })
-        npToggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
-        npToggle:SetPoint("RIGHT", scrollContent, "RIGHT", 0, 0)
-        table.insert(self._debugMenuControls, npToggle)
+        bugSackToggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
+        bugSackToggle:SetPoint("RIGHT", scrollContent, "RIGHT", 0, 0)
+        table.insert(self._debugMenuControls, bugSackToggle)
 
         yOffset = yOffset - 70
 

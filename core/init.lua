@@ -460,14 +460,6 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         end
     end
 
-    -- Apply "Keep Friendly Nameplates Disabled" setting if enabled (debug menu workaround)
-    if isInitialLogin or isReloadingUi then
-        if self.db and self.db.profile and self.db.profile.keepFriendlyNameplatesDisabled then
-            pcall(SetCVar, "nameplateShowFriendlyPlayers", "0")
-            pcall(SetCVar, "nameplateShowFriendlyNpcs", "0")
-        end
-    end
-
     -- Clear login guard shortly after initial login/reload.
     if isInitialLogin or isReloadingUi then
         if C_Timer and C_Timer.After then

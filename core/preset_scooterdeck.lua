@@ -3499,7 +3499,6 @@ Presets:Register({
       },
     },
   },
-  keepFriendlyNameplatesDisabled = true,
   minimap = {
     hide = false,
     minimapPos = 151.07274938198,

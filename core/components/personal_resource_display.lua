@@ -1527,6 +1527,36 @@ getPowerBar = function()
     return bar
 end
 
+-- Hook to keep HealthBarsContainer hidden when hideBar is enabled.
+-- This intercepts Blizzard's Show() calls (e.g., after closing Trading Post UI)
+-- and re-hides the container if the user has "Hide Health Bar" enabled.
+local healthContainerShowHookInstalled = false
+
+local function ensureHealthContainerShowHook()
+    if healthContainerShowHookInstalled then return end
+
+    local container = getHealthContainer()
+    if not container or not container.Show then return end
+
+    healthContainerShowHookInstalled = true
+
+    hooksecurefunc(container, "Show", function(self)
+        -- Check if hideBar is enabled for prdHealth
+        local component = addon.Components and addon.Components.prdHealth
+        local hide = component and component.db and component.db.hideBar
+        if hide then
+            -- Defer to next frame to avoid re-entrancy issues
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if self and self.Hide then
+                        pcall(self.Hide, self)
+                    end
+                end)
+            end
+        end
+    end)
+end
+
 local function applyHealthOffsets(component)
     -- 12.0: PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
     -- Positioning is handled by Edit Mode; we apply sizing, styling, and visibility.
@@ -1546,6 +1576,9 @@ local function applyHealthOffsets(component)
     if not container then
         return
     end
+
+    -- Install hook to intercept Blizzard's Show() calls (e.g., after closing Trading Post)
+    ensureHealthContainerShowHook()
 
     -- Hide bar via Hide()/Show() — frame is IsProtected: false
     local hide = ensureSettingValue(component, "hideBar") and true or false

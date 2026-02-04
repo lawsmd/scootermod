@@ -86,6 +86,34 @@ function EssentialCooldowns.Render(panel, scrollContent)
             local currentOrientation = getSetting("orientation") or "H"
             local initialDirValues, initialDirOrder = OrientationPatterns.getDirectionOptions(currentOrientation)
 
+            -- Center Anchor toggle - changes how the first row expands
+            inner:AddToggle({
+                key = "centerAnchor",
+                label = "Center Icons on Edit Mode Anchor",
+                description = "Centers icons on the anchor point. Useful when sharing profiles across characters with different cooldown counts.",
+                get = function() return getSetting("centerAnchor") or false end,
+                set = function(v)
+                    setSetting("centerAnchor", v)
+                    if addon.RefreshCDMCenterAnchor then
+                        addon.RefreshCDMCenterAnchor("essentialCooldowns")
+                    end
+                end,
+            })
+
+            -- Center Additional Rows toggle - changes how overflow rows are positioned
+            inner:AddToggle({
+                key = "centerAdditionalRows",
+                label = "Center Additional Rows",
+                description = "Centers overflow rows under the first row for a balanced appearance.",
+                get = function() return getSetting("centerAdditionalRows") or false end,
+                set = function(v)
+                    setSetting("centerAdditionalRows", v)
+                    if addon.RefreshCDMCenterAnchor then
+                        addon.RefreshCDMCenterAnchor("essentialCooldowns")
+                    end
+                end,
+            })
+
             inner:AddSelector({
                 key = "orientation",
                 label = "Orientation",
@@ -107,6 +135,11 @@ function EssentialCooldowns.Render(panel, scrollContent)
                     local columnsSlider = inner:GetControl("columnsRows")
                     if columnsSlider then
                         columnsSlider:SetLabel(OrientationPatterns.getColumnsLabel(v))
+                    end
+
+                    -- Update centering for new orientation if either feature is enabled
+                    if (getSetting("centerAnchor") or getSetting("centerAdditionalRows")) and addon.RefreshCDMCenterAnchor then
+                        addon.RefreshCDMCenterAnchor("essentialCooldowns")
                     end
                 end,
                 -- Prevent rapid changes during Edit Mode sync (orientation changes trigger

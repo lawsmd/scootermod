@@ -1355,15 +1355,17 @@ local function ApplyButtonContainerStyle(db)
     -- Collect and manage buttons
     local allButtons = CollectMinimapAddonButtons()
     local keepScooterSeparate = db.scooterModButtonSeparate
+    local keepBugSackSeparate = addon.db and addon.db.profile and addon.db.profile.bugSackButtonSeparate
 
     wipe(managedButtons)
 
     for name, info in pairs(allButtons) do
-        -- Check if this is ScooterMod's button
+        -- Check if this is ScooterMod's or BugSack's button
         local isScooterMod = name:lower():match("scooter") or name == "LibDBIcon10_ScooterMod"
+        local isBugSack = name:lower():match("bugsack") or name == "LibDBIcon10_BugSack"
 
-        if isScooterMod and keepScooterSeparate then
-            -- Keep ScooterMod button visible
+        if (isScooterMod and keepScooterSeparate) or (isBugSack and keepBugSackSeparate) then
+            -- Keep this button visible
             if info.button then
                 info.button:Show()
             end
@@ -1383,8 +1385,10 @@ local function ApplyButtonContainerStyle(db)
                         if db and db.addonButtonContainerEnabled then
                             -- Check if this button should still be hidden
                             local keepScooterSeparate = db.scooterModButtonSeparate
+                            local keepBugSackSeparate = addon.db and addon.db.profile and addon.db.profile.bugSackButtonSeparate
                             local isScooterMod = name:lower():match("scooter") or name == "LibDBIcon10_ScooterMod"
-                            if not (isScooterMod and keepScooterSeparate) then
+                            local isBugSack = name:lower():match("bugsack") or name == "LibDBIcon10_BugSack"
+                            if not ((isScooterMod and keepScooterSeparate) or (isBugSack and keepBugSackSeparate)) then
                                 self:Hide()
                             end
                         end
