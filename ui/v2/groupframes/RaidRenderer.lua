@@ -75,6 +75,7 @@ local function buildStyleTab(inner, barPrefix, applyFn)
         label = "Foreground Color",
         values = GF.healthColorValues,
         order = GF.healthColorOrder,
+        optionInfoIcons = GF.healthColorInfoIcons,
         get = function()
             local t = ensureDB() or {}
             return t[barPrefix .. "ColorMode"] or "default"

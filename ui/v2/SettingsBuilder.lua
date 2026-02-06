@@ -549,6 +549,7 @@ function Builder:AddSelector(options)
         emphasized = options.emphasized,
         disabled = options.disabled,
         isDisabled = options.isDisabled,
+        optionInfoIcons = options.optionInfoIcons,
     })
 
     if selector then
@@ -1113,6 +1114,7 @@ function Builder:AddSelectorColorPicker(options)
         useLightDim = self._useLightDim,
         disabled = options.disabled,
         isDisabled = options.isDisabled,
+        optionInfoIcons = options.optionInfoIcons,
     })
 
     if selectorColor then

@@ -94,6 +94,11 @@ local function SliderIsIndexBased(frame, setting, restrictions)
   if frame and frame.system == Enum.EditModeSystem.CooldownViewer and setting == Enum.EditModeCooldownViewerSetting.IconSize then
     return true
   end
+  -- CooldownViewer BarWidthScale: index-based (50-200, step 1, ConvertValueDefault)
+  if frame and frame.system == Enum.EditModeSystem.CooldownViewer
+     and setting == Enum.EditModeCooldownViewerSetting.BarWidthScale then
+    return true
+  end
   -- Aura Frame Icon Size: treat as index-based when it presents a 50–200, step-10 slider.
   if frame and frame.system == Enum.EditModeSystem.AuraFrame
      and restrictions.type == Enum.EditModeSettingDisplayType.Slider

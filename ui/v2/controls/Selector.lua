@@ -82,6 +82,7 @@ function Controls:CreateSelector(options)
     local syncCooldown = options.syncCooldown  -- Optional cooldown for Edit Mode sync
     local emphasized = options.emphasized or false
     local isDisabledFn = options.disabled or options.isDisabled
+    local optionInfoIcons = options.optionInfoIcons
 
     local hasDesc = description and description ~= ""
     local rowHeight
@@ -596,6 +597,9 @@ function Controls:CreateSelector(options)
 
         -- Clear existing option buttons
         for _, btn in ipairs(dropdown._optionButtons) do
+            if btn._infoIcon then
+                btn._infoIcon:Cleanup()
+            end
             btn:Hide()
             btn:SetParent(nil)
         end
@@ -603,6 +607,10 @@ function Controls:CreateSelector(options)
 
         -- Get current accent color
         local accentR, accentG, accentB = theme:GetAccentColor()
+
+        -- Determine text offset based on whether any info icons exist
+        local hasAnyInfoIcons = optionInfoIcons and next(optionInfoIcons)
+        local textLeftOffset = hasAnyInfoIcons and 28 or 12
 
         -- Create option buttons
         for i, key in ipairs(kList) do
@@ -622,12 +630,27 @@ function Controls:CreateSelector(options)
             local optText = optBtn:CreateFontString(nil, "OVERLAY")
             local optFont = theme:GetFont("VALUE")
             optText:SetFont(optFont, 12, "")
-            optText:SetPoint("LEFT", optBtn, "LEFT", 12, 0)
+            optText:SetPoint("LEFT", optBtn, "LEFT", textLeftOffset, 0)
             optText:SetPoint("RIGHT", optBtn, "RIGHT", -12, 0)
             optText:SetJustifyH("LEFT")
             optText:SetText(vMap[key] or key)
             optBtn._text = optText
             optBtn._key = key
+
+            -- Add info icon if configured for this option key
+            if optionInfoIcons and optionInfoIcons[key] then
+                local iconData = optionInfoIcons[key]
+                local infoIcon = Controls:CreateInfoIcon({
+                    parent = optBtn,
+                    tooltipText = iconData.tooltipText,
+                    tooltipTitle = iconData.tooltipTitle,
+                    size = 14,
+                })
+                if infoIcon then
+                    infoIcon:SetPoint("LEFT", optBtn, "LEFT", 8, 0)
+                    optBtn._infoIcon = infoIcon
+                end
+            end
 
             -- Highlight current selection
             local isSelected = (key == row._currentKey)
@@ -856,6 +879,9 @@ function Controls:CreateSelector(options)
             end
             if self._dropdown._optionButtons then
                 for _, btn in ipairs(self._dropdown._optionButtons) do
+                    if btn._infoIcon then
+                        btn._infoIcon:Cleanup()
+                    end
                     btn:Hide()
                     btn:SetParent(nil)
                 end

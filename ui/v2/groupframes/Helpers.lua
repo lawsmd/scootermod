@@ -209,6 +209,12 @@ GF.healthColorValues = {
 }
 GF.healthColorOrder = { "default", "texture", "class", "value", "valueDark", "custom" }
 
+GF.healthColorInfoIcons = {
+    valueDark = {
+        tooltipText = "Dark bar at full health. Below 100%, uses the standard Color by Value color curve.",
+    },
+}
+
 -- Background color mode options
 GF.bgColorValues = {
     default = "Default",

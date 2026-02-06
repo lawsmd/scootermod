@@ -100,9 +100,10 @@ end
 
 -- These mirror the Pet renderer but may have Player-specific variations
 
-local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
+local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder, colorInfoIcons)
     colorValues = colorValues or UF.healthColorValues
     colorOrder = colorOrder or UF.healthColorOrder
+    colorInfoIcons = colorInfoIcons or UF.healthColorInfoIcons
 
     -- Foreground Texture
     inner:AddBarTextureSelector({
@@ -124,6 +125,7 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
         label = "Foreground Color",
         values = colorValues,
         order = colorOrder,
+        optionInfoIcons = colorInfoIcons,
         get = function()
             local t = ensureUFDB() or {}
             return t[barPrefix .. "ColorMode"] or "default"
@@ -2146,37 +2148,20 @@ function UF.RenderPlayer(panel, scrollContent)
                             customValue = "custom",
                             hasAlpha = true,
                         })
-                        tabInner:AddSlider({
-                            label = "Name Text Offset X",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                local o = s.offset or {}
-                                return tonumber(o.x) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.offset = t.offset or {}
-                                t.offset.x = tonumber(v) or 0
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Name Text Offset Y",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                local o = s.offset or {}
-                                return tonumber(o.y) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.offset = t.offset or {}
-                                t.offset.y = tonumber(v) or 0
-                                applyNameLevelText()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Name Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -2264,37 +2249,20 @@ function UF.RenderPlayer(panel, scrollContent)
                             customValue = "custom",
                             hasAlpha = true,
                         })
-                        tabInner:AddSlider({
-                            label = "Level Text Offset X",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                local o = s.offset or {}
-                                return tonumber(o.x) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.offset = t.offset or {}
-                                t.offset.x = tonumber(v) or 0
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Level Text Offset Y",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                local o = s.offset or {}
-                                return tonumber(o.y) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.offset = t.offset or {}
-                                t.offset.y = tonumber(v) or 0
-                                applyNameLevelText()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Level Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
                         })
                         tabInner:Finalize()
                     end,

@@ -165,7 +165,7 @@ function TrackedBars.Render(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddSlider({
-                label = "Icon Size (Scale)", min = 50, max = 200, step = 10,
+                label = "Bar Scale", min = 50, max = 200, step = 10,
                 get = function() return getSetting("iconSize") or 100 end,
                 set = function(v) setSetting("iconSize", v) end,
                 debounceKey = "trackedBars_iconSize",
@@ -175,10 +175,13 @@ function TrackedBars.Render(panel, scrollContent)
             })
 
             inner:AddSlider({
-                label = "Bar Width", min = 120, max = 480, step = 2,
-                get = function() return getSetting("barWidth") or 220 end,
+                label = "Bar Width", min = 50, max = 200, step = 1,
+                get = function() return getSetting("barWidth") or 100 end,
                 set = function(v) setSetting("barWidth", v) end,
-                minLabel = "120", maxLabel = "480",
+                debounceKey = "trackedBars_barWidth",
+                debounceDelay = 0.3,
+                onEditModeSync = function() syncEditModeSetting("barWidth") end,
+                minLabel = "50%", maxLabel = "200%",
             })
 
             inner:Finalize()

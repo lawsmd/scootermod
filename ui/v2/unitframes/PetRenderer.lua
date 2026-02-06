@@ -120,6 +120,7 @@ local function buildHealthStyleTab(inner)
         end,
         customValue = "custom",
         hasAlpha = true,
+        optionInfoIcons = UF.healthColorInfoIcons,
     })
 
     inner:AddSpacer(8)

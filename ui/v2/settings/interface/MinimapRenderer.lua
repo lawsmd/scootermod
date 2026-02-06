@@ -401,36 +401,22 @@ function Minimap.Render(panel, scrollContent)
                         -- Only show offset controls when position is not "dock"
                         local currentPosition = getSetting("zoneTextPosition") or getSetting("zoneTextAnchor") or "dock"
                         if currentPosition ~= "dock" then
-                            tabBuilder:AddSlider({
-                                label = "Offset X",
-                                description = "Horizontal offset from the anchor point.",
-                                min = -50,
-                                max = 50,
-                                step = 1,
-                                get = function()
-                                    return getSetting("zoneTextOffsetX") or 0
-                                end,
-                                set = function(v)
-                                    setSetting("zoneTextOffsetX", v)
-                                end,
-                                minLabel = "-50",
-                                maxLabel = "+50",
-                            })
-
-                            tabBuilder:AddSlider({
-                                label = "Offset Y",
-                                description = "Vertical offset from the anchor point.",
-                                min = -50,
-                                max = 50,
-                                step = 1,
-                                get = function()
-                                    return getSetting("zoneTextOffsetY") or 0
-                                end,
-                                set = function(v)
-                                    setSetting("zoneTextOffsetY", v)
-                                end,
-                                minLabel = "-50",
-                                maxLabel = "+50",
+                            tabBuilder:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -50, max = 50, step = 1,
+                                    get = function() return getSetting("zoneTextOffsetX") or 0 end,
+                                    set = function(v) setSetting("zoneTextOffsetX", v) end,
+                                    minLabel = "-50", maxLabel = "+50",
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -50, max = 50, step = 1,
+                                    get = function() return getSetting("zoneTextOffsetY") or 0 end,
+                                    set = function(v) setSetting("zoneTextOffsetY", v) end,
+                                    minLabel = "-50", maxLabel = "+50",
+                                },
                             })
                         end
 
@@ -565,36 +551,22 @@ function Minimap.Render(panel, scrollContent)
                         -- Only show offset controls when position is not "dock"
                         local currentPosition = getSetting("clockPosition") or getSetting("clockAnchor") or "dock"
                         if currentPosition ~= "dock" then
-                            tabBuilder:AddSlider({
-                                label = "Offset X",
-                                description = "Horizontal offset from the anchor point.",
-                                min = -50,
-                                max = 50,
-                                step = 1,
-                                get = function()
-                                    return getSetting("clockOffsetX") or 0
-                                end,
-                                set = function(v)
-                                    setSetting("clockOffsetX", v)
-                                end,
-                                minLabel = "-50",
-                                maxLabel = "+50",
-                            })
-
-                            tabBuilder:AddSlider({
-                                label = "Offset Y",
-                                description = "Vertical offset from the anchor point.",
-                                min = -50,
-                                max = 50,
-                                step = 1,
-                                get = function()
-                                    return getSetting("clockOffsetY") or 0
-                                end,
-                                set = function(v)
-                                    setSetting("clockOffsetY", v)
-                                end,
-                                minLabel = "-50",
-                                maxLabel = "+50",
+                            tabBuilder:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -50, max = 50, step = 1,
+                                    get = function() return getSetting("clockOffsetX") or 0 end,
+                                    set = function(v) setSetting("clockOffsetX", v) end,
+                                    minLabel = "-50", maxLabel = "+50",
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -50, max = 50, step = 1,
+                                    get = function() return getSetting("clockOffsetY") or 0 end,
+                                    set = function(v) setSetting("clockOffsetY", v) end,
+                                    minLabel = "-50", maxLabel = "+50",
+                                },
                             })
                         end
 
@@ -718,36 +690,22 @@ function Minimap.Render(panel, scrollContent)
                             end,
                         })
 
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            description = "Horizontal offset from the anchor point.",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                return getSetting("systemDataOffsetX") or 0
-                            end,
-                            set = function(v)
-                                setSetting("systemDataOffsetX", v)
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
-                        })
-
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            description = "Vertical offset from the anchor point.",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                return getSetting("systemDataOffsetY") or -18
-                            end,
-                            set = function(v)
-                                setSetting("systemDataOffsetY", v)
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50, max = 50, step = 1,
+                                get = function() return getSetting("systemDataOffsetX") or 0 end,
+                                set = function(v) setSetting("systemDataOffsetX", v) end,
+                                minLabel = "-50", maxLabel = "+50",
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50, max = 50, step = 1,
+                                get = function() return getSetting("systemDataOffsetY") or -18 end,
+                                set = function(v) setSetting("systemDataOffsetY", v) end,
+                                minLabel = "-50", maxLabel = "+50",
+                            },
                         })
 
                         tabBuilder:Finalize()

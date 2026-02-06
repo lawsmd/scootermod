@@ -89,9 +89,10 @@ end
 -- Shared Tab Builders
 --------------------------------------------------------------------------------
 
-local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
+local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder, colorInfoIcons)
     colorValues = colorValues or UF.healthColorValues
     colorOrder = colorOrder or UF.healthColorOrder
+    colorInfoIcons = colorInfoIcons or UF.healthColorInfoIcons
 
     inner:AddBarTextureSelector({
         label = "Foreground Texture",
@@ -101,7 +102,7 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
 
     inner:AddSelectorColorPicker({
         label = "Foreground Color",
-        values = colorValues, order = colorOrder,
+        values = colorValues, order = colorOrder, optionInfoIcons = colorInfoIcons,
         get = function() local t = ensureFocusTargetDB() or {}; return t[barPrefix .. "ColorMode"] or "default" end,
         set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "ColorMode"] = v or "default"; applyFn() end end,
         getColor = function() local t = ensureFocusTargetDB() or {}; local c = t[barPrefix .. "Tint"] or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,

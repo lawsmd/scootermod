@@ -92,9 +92,10 @@ end
 -- Shared Tab Builders (reuse helpers from Player renderer pattern)
 --------------------------------------------------------------------------------
 
-local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
+local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder, colorInfoIcons)
     colorValues = colorValues or UF.healthColorValues
     colorOrder = colorOrder or UF.healthColorOrder
+    colorInfoIcons = colorInfoIcons or UF.healthColorInfoIcons
 
     inner:AddBarTextureSelector({
         label = "Foreground Texture",
@@ -114,6 +115,7 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder)
         label = "Foreground Color",
         values = colorValues,
         order = colorOrder,
+        optionInfoIcons = colorInfoIcons,
         get = function()
             local t = ensureUFDB() or {}
             return t[barPrefix .. "ColorMode"] or "default"

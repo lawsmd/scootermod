@@ -255,6 +255,12 @@ UF.healthColorValues = {
 }
 UF.healthColorOrder = { "default", "texture", "class", "value", "valueDark", "custom" }
 
+UF.healthColorInfoIcons = {
+    valueDark = {
+        tooltipText = "Dark bar at full health. Below 100%, uses the standard Color by Value color curve.",
+    },
+}
+
 -- Bar color mode options (power)
 UF.powerColorValues = {
     default = "Default",

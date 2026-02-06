@@ -177,6 +177,8 @@ local function ResolveSettingId(frame, logicalKey)
         if logicalKey == "iconSize" or logicalKey == "icon_size" then return EM.IconSize end
         if logicalKey == "iconPadding" or logicalKey == "icon_padding" then return EM.IconPadding end
         if logicalKey == "opacity" then return EM.Opacity end
+        if logicalKey == "barWidth" or logicalKey == "bar_width"
+           or logicalKey == "barWidthScale" or logicalKey == "bar_width_scale" then return EM.BarWidthScale end
         -- Tracked Bars specific (bar content/display mode)
         if logicalKey == "bar_content" then return EM.BarContent end
     end
@@ -905,6 +907,14 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
         if desiredRaw > 200 then desiredRaw = 200 end
         desiredRaw = math.floor(desiredRaw / 10 + 0.5) * 10
         editModeValue = desiredRaw
+    elseif settingId == "barWidth" then
+        -- Tracked Bars Bar Width Scale: 50-200%, step 1, index-based
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_width_scale") or setting.settingId
+        local desiredRaw = tonumber(dbValue) or 100
+        if desiredRaw < 50 then desiredRaw = 50 end
+        if desiredRaw > 200 then desiredRaw = 200 end
+        desiredRaw = math.floor(desiredRaw + 0.5)
+        editModeValue = desiredRaw
     elseif settingId == "size" or settingId == "mapSize" then
         -- Minimap Size: 50-200%, step 10, index-based
         setting.settingId = setting.settingId or ResolveSettingId(frame, "size") or setting.settingId
@@ -1165,6 +1175,11 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
                     component._pendingAuraIconSizeExpiry = os and os.time and (os.time() + 2) or nil
                 end
             end
+            if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
+            return true
+        elseif settingId == "barWidth" then
+            markBackSyncSkip(nil, 2)
+            addon.EditMode.SetSetting(frame, setting.settingId, editModeValue)
             if addon.EditMode and addon.EditMode.SaveOnly then addon.EditMode.SaveOnly() end
             return true
         elseif settingId == "size" or settingId == "mapSize" then
@@ -1665,6 +1680,23 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         -- Heuristic: if the value looks like an index (0–15), convert to 50–200
         if v <= 15 then
             dbValue = (v * 10) + 50
+        else
+            dbValue = v
+        end
+        if dbValue < 50 then dbValue = 50 elseif dbValue > 200 then dbValue = 200 end
+    elseif settingId == "barWidth" then
+        -- Tracked Bars Bar Width Scale: 50-200%, step 1, index-based
+        setting.settingId = setting.settingId or ResolveSettingId(frame, "bar_width_scale") or setting.settingId
+        local raw = addon.EditMode.GetSetting(frame, setting.settingId)
+        local v = tonumber(raw) or tonumber(editModeValue) or 100
+        -- Heuristic: if the value looks like an index (0–150), convert to 50–200
+        if v <= 150 and v >= 0 then
+            -- Could be index; check if LEO already converted. If raw < 50, definitely an index.
+            if v < 50 then
+                dbValue = v + 50
+            else
+                dbValue = v
+            end
         else
             dbValue = v
         end

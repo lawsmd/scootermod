@@ -18,7 +18,7 @@ local Util = addon.ComponentsUtil
 --   - Text styling (cooldown timer, charge/stack count) via overlay FontStrings
 --   - TrackedBars (bar textures, icon borders, text) - direct styling is safe
 --
--- See ADDONCONTEXT/Docs/COOLDOWNMANAGER.md for full documentation.
+-- See ADDONCONTEXT/Docs/COOLDOWNMANAGER/CDMREADME.md for full documentation.
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
@@ -1896,9 +1896,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
 
     local desiredPad = tonumber(component.db and component.db.iconBarPadding) or (component.settings.iconBarPadding and component.settings.iconBarPadding.default) or 0
     desiredPad = tonumber(desiredPad) or 0
-    local desiredWidthOverride = tonumber(component.db and component.db.barWidth)
 
-    local currentWidth = (barFrame.GetWidth and barFrame:GetWidth()) or nil
     local currentGap
     if barFrame.GetLeft and iconFrame.GetRight then
         local bl = barFrame:GetLeft()
@@ -1907,10 +1905,6 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     end
 
     local deltaPad = (currentGap and (desiredPad - currentGap)) or 0
-    local deltaWidth = 0
-    if desiredWidthOverride and desiredWidthOverride > 0 and currentWidth then
-        deltaWidth = desiredWidthOverride - currentWidth
-    end
 
     if barFrame.ClearAllPoints and barFrame.SetPoint then
         local rightPoint, rightRelTo, rightRelPoint, rx, ry
@@ -1923,9 +1917,9 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         end
         barFrame:ClearAllPoints()
         if rightPoint and rightRelTo then
-            barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad + deltaWidth, ry or 0)
+            barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad, ry or 0)
         else
-            barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad + deltaWidth, 0)
+            barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad, 0)
         end
         local anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = iconFrame, "RIGHT", "RIGHT"
         if iconFrame.IsShown and not iconFrame:IsShown() then
@@ -2581,10 +2575,10 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Y Position", widget = "slider", min = -1000, max = 1000, step = 1, section = "Positioning", order = 4
             }},
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
-                label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
+                label = "Bar Scale", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            barWidth = { type = "addon", default = 220, ui = {
-                label = "Bar Width", widget = "slider", min = 120, max = 480, step = 2, section = "Sizing", order = 2
+            barWidth = { type = "editmode", default = 100, ui = {
+                label = "Bar Width", widget = "slider", min = 50, max = 200, step = 1, section = "Sizing", order = 2
             }},
             styleEnableCustom = { type = "addon", default = true, ui = {
                 label = "Enable Custom Textures", widget = "checkbox", section = "Style", order = 0

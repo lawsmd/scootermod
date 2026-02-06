@@ -71,6 +71,22 @@ function addon:OnInitialize()
     -- Migrate legacy iconWidth/iconHeight to tallWideRatio for all applicable components
     self:MigrateIconWidthHeightToRatio()
 
+    -- Migrate legacy pixel-based barWidth to new Edit Mode percentage scale
+    do
+        local profile = self.db and self.db.profile
+        local trackedBarsDb = profile and profile.components and profile.components.trackedBars
+        if trackedBarsDb and trackedBarsDb.barWidth then
+            local old = tonumber(trackedBarsDb.barWidth)
+            if old and old > 49 then
+                -- Old values were pixels (120-480, default 220)
+                -- Convert to approximate percentage: old / 220 * 100
+                local pct = math.floor((old / 220) * 100 + 0.5)
+                if pct < 50 then pct = 50 elseif pct > 200 then pct = 200 end
+                trackedBarsDb.barWidth = pct
+            end
+        end
+    end
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
