@@ -1356,15 +1356,17 @@ do
         elseif unit == "FocusTarget" then unitToken = "focustarget"
         end
 
-        if colorMode == "value" then
+        if colorMode == "value" or colorMode == "valueDark" then
             -- "Color by Value" mode: use UnitHealthPercent with color curve
             -- Apply initial color now; dynamic updates handled by hooks below
+            local useDark = (colorMode == "valueDark")
             if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                 -- Pass the overlay as the texture to color
-                addon.BarsTextures.applyValueBasedColor(bar, unitToken, overlay)
+                addon.BarsTextures.applyValueBasedColor(bar, unitToken, overlay, useDark)
             end
             -- Store reference so dynamic updates can find the overlay
             st.valueColorOverlay = overlay
+            st.valueColorUseDark = useDark  -- Store for dynamic updates
         elseif colorMode == "custom" and type(tint) == "table" then
             r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
             if overlay and overlay.SetVertexColor then
@@ -1863,11 +1865,13 @@ do
                 local tint = cfg.healthBarTint
                 local overlay = st.rectFill
 
-                if colorMode == "value" then
+                if colorMode == "value" or colorMode == "valueDark" then
+                    local useDark = (colorMode == "valueDark")
                     if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(hb, "targettarget", overlay)
+                        addon.BarsTextures.applyValueBasedColor(hb, "targettarget", overlay, useDark)
                     end
                     st.valueColorOverlay = overlay
+                    st.valueColorUseDark = useDark
                 elseif colorMode == "custom" and type(tint) == "table" then
                     overlay:SetVertexColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1)
                 elseif colorMode == "class" and addon.GetClassColorRGB then
@@ -2021,11 +2025,13 @@ do
                 local tint = cfg.healthBarTint
                 local overlay = st.rectFill
 
-                if colorMode == "value" then
+                if colorMode == "value" or colorMode == "valueDark" then
+                    local useDark = (colorMode == "valueDark")
                     if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(hb, "focustarget", overlay)
+                        addon.BarsTextures.applyValueBasedColor(hb, "focustarget", overlay, useDark)
                     end
                     st.valueColorOverlay = overlay
+                    st.valueColorUseDark = useDark
                 elseif colorMode == "custom" and type(tint) == "table" then
                     overlay:SetVertexColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1)
                 elseif colorMode == "class" and addon.GetClassColorRGB then
@@ -3071,8 +3077,8 @@ do
 						if maskAtlas then pcall(mask.SetAtlas, mask, maskAtlas) end
 					end
                     -- Re-apply value-based color after SetAtlas (which resets vertex color to white)
-                    if colorModeHB == "value" and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(hb, unitId)
+                    if (colorModeHB == "value" or colorModeHB == "valueDark") and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                        addon.BarsTextures.applyValueBasedColor(hb, unitId, nil, colorModeHB == "valueDark")
                     end
 				end
 			end
@@ -3227,18 +3233,19 @@ do
                         local texKey = cfgP.healthBarTexture or "default"
                         local colorMode = cfgP.healthBarColorMode or "default"
                         local tint = cfgP.healthBarTint
-                        -- Re-apply if custom texture OR "value" color mode (Blizzard's new texture needs coloring)
+                        -- Re-apply if custom texture OR "value"/"valueDark" color mode (Blizzard's new texture needs coloring)
                         local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
-                        local needsValueColor = (colorMode == "value")
+                        local needsValueColor = (colorMode == "value" or colorMode == "valueDark")
                         if not hasCustomTexture and not needsValueColor then
                             return
                         end
                         -- For value mode with default texture, just re-apply color to the new texture
                         -- Use small delay to ensure color is applied AFTER Blizzard's code completes
                         if needsValueColor and not hasCustomTexture then
+                            local useDark = (colorMode == "valueDark")
                             C_Timer.After(0, function()
                                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                                    addon.BarsTextures.applyValueBasedColor(self, "player")
+                                    addon.BarsTextures.applyValueBasedColor(self, "player", nil, useDark)
                                 end
                             end)
                         else
@@ -3268,7 +3275,7 @@ do
                         -- Only do work when the user has customized either texture or color;
                         -- default settings can safely follow Blizzard's behavior.
                         local hasCustomTexture = (type(texKey) == "string" and texKey ~= "" and texKey ~= "default")
-                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "value")
+                        local hasCustomColor = (colorMode == "custom" and type(tint) == "table") or (colorMode == "class") or (colorMode == "value") or (colorMode == "valueDark")
                         if not hasCustomTexture and not hasCustomColor then
                             return
                         end
@@ -5204,37 +5211,42 @@ end
 
 do
     -- Map unit tokens to their health bar frames
+    -- Returns: bar, useDark (both nil if not using value-based color mode)
     local function getHealthBarForUnit(unit)
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames") or nil
 
         if unit == "player" then
             local cfg = unitFrames and rawget(unitFrames, "Player") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local hb = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContent
                 and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
                 and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
                 and _G.PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar
-            return hb
+            return hb, (colorMode == "valueDark")
         elseif unit == "target" then
             local cfg = unitFrames and rawget(unitFrames, "Target") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local hb = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
                 and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
                 and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
                 and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
-            return hb
+            return hb, (colorMode == "valueDark")
         elseif unit == "focus" then
             local cfg = unitFrames and rawget(unitFrames, "Focus") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local hb = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
                 and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
                 and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
                 and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
-            return hb
+            return hb, (colorMode == "valueDark")
         elseif unit:match("^boss%d$") then
             local cfg = unitFrames and rawget(unitFrames, "Boss") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local bossIndex = tonumber(unit:match("^boss(%d)$"))
             if bossIndex and bossIndex >= 1 and bossIndex <= 5 then
                 local bossFrame = _G["Boss" .. bossIndex .. "TargetFrame"]
@@ -5242,20 +5254,22 @@ do
                     and bossFrame.TargetFrameContent.TargetFrameContentMain
                     and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
                     and bossFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
-                return hb
+                return hb, (colorMode == "valueDark")
             end
         elseif unit == "targettarget" then
             local cfg = unitFrames and rawget(unitFrames, "TargetOfTarget") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local tot = _G.TargetFrameToT
-            return tot and tot.HealthBar or nil
+            return (tot and tot.HealthBar or nil), (colorMode == "valueDark")
         elseif unit == "focustarget" then
             local cfg = unitFrames and rawget(unitFrames, "FocusTarget") or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil end
             local fot = _G.FocusFrameToT
-            return fot and fot.HealthBar or nil
+            return (fot and fot.HealthBar or nil), (colorMode == "valueDark")
         end
-        return nil
+        return nil, nil
     end
 
     -- Helper to get the value color overlay for a bar (if active)
@@ -5279,19 +5293,19 @@ do
     healthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
         if not unit then return end
 
-        local bar = getHealthBarForUnit(unit)
+        local bar, useDark = getHealthBarForUnit(unit)
         if not bar then return end
 
         -- Apply value-based color using the color curve
         -- Use the overlay texture if available (cleaner than modifying Blizzard's textures)
         if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
             local overlay = getValueColorOverlay(bar)
-            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
 
             -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
             -- UnitHealthPercent can have timing lag, so we reapply at multiple intervals
             if addon.BarsTextures.scheduleColorValidation then
-                addon.BarsTextures.scheduleColorValidation(bar, unit, overlay)
+                addon.BarsTextures.scheduleColorValidation(bar, unit, overlay, useDark)
             end
         end
     end)
@@ -5302,16 +5316,16 @@ do
     healthColorEventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     healthColorEventFrame:HookScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_TARGET_CHANGED" then
-            local bar = getHealthBarForUnit("target")
+            local bar, useDark = getHealthBarForUnit("target")
             if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                 local overlay = getValueColorOverlay(bar)
-                addon.BarsTextures.applyValueBasedColor(bar, "target", overlay)
+                addon.BarsTextures.applyValueBasedColor(bar, "target", overlay, useDark)
             end
         elseif event == "PLAYER_FOCUS_CHANGED" then
-            local bar = getHealthBarForUnit("focus")
+            local bar, useDark = getHealthBarForUnit("focus")
             if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                 local overlay = getValueColorOverlay(bar)
-                addon.BarsTextures.applyValueBasedColor(bar, "focus", overlay)
+                addon.BarsTextures.applyValueBasedColor(bar, "focus", overlay, useDark)
             end
         end
     end)
@@ -5327,15 +5341,17 @@ do
         hooksecurefunc(bar, "SetValue", function(self)
             local cfg = addon.db and addon.db.profile
             cfg = cfg and cfg.unitFrames and cfg.unitFrames[unitKey]
-            if cfg and cfg.healthBarColorMode == "value" then
+            local colorMode = cfg and cfg.healthBarColorMode
+            if colorMode == "value" or colorMode == "valueDark" then
+                local useDark = (colorMode == "valueDark")
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                     local overlay = getValueColorOverlay(self)
-                    addon.BarsTextures.applyValueBasedColor(self, unitToken, overlay)
+                    addon.BarsTextures.applyValueBasedColor(self, unitToken, overlay, useDark)
 
                     -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
                     -- UnitHealthPercent can have timing lag, so we reapply at multiple intervals
                     if addon.BarsTextures.scheduleColorValidation then
-                        addon.BarsTextures.scheduleColorValidation(self, unitToken, overlay)
+                        addon.BarsTextures.scheduleColorValidation(self, unitToken, overlay, useDark)
                     end
                 end
             end
@@ -5413,11 +5429,12 @@ do
                         local cfg = addon.db and addon.db.profile
                             and addon.db.profile.unitFrames
                             and addon.db.profile.unitFrames[mapping.key]
-                        if cfg and cfg.healthBarColorMode == "value" then
-                            local bar = getHealthBarForUnit(mapping.token)
+                        local colorMode = cfg and cfg.healthBarColorMode
+                        if colorMode == "value" or colorMode == "valueDark" then
+                            local bar, useDark = getHealthBarForUnit(mapping.token)
                             if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                                 local overlay = getValueColorOverlay(bar)
-                                addon.BarsTextures.applyValueBasedColor(bar, mapping.token, overlay)
+                                addon.BarsTextures.applyValueBasedColor(bar, mapping.token, overlay, useDark)
                             end
                         end
                     end
@@ -5425,12 +5442,14 @@ do
                     local bossCfg = addon.db and addon.db.profile
                         and addon.db.profile.unitFrames
                         and addon.db.profile.unitFrames.Boss
-                    if bossCfg and bossCfg.healthBarColorMode == "value" then
+                    local bossColorMode = bossCfg and bossCfg.healthBarColorMode
+                    if bossColorMode == "value" or bossColorMode == "valueDark" then
+                        local useDark = (bossColorMode == "valueDark")
                         for i = 1, 5 do
                             local bar = getHealthBarForUnit("boss" .. i)
                             if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                                 local overlay = getValueColorOverlay(bar)
-                                addon.BarsTextures.applyValueBasedColor(bar, "boss" .. i, overlay)
+                                addon.BarsTextures.applyValueBasedColor(bar, "boss" .. i, overlay, useDark)
                             end
                         end
                     end

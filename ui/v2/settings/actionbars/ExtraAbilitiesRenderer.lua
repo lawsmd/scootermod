@@ -189,44 +189,44 @@ function ExtraAbilities.Render(panel, scrollContent)
                             hasAlpha = true,
                         })
 
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            min = -50, max = 50, step = 1,
-                            get = function()
-                                local offset = getChargesSetting("offset", {x=0, y=0})
-                                return (type(offset) == "table" and offset.x) or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-                                    comp.db.textCharges = comp.db.textCharges or {}
-                                    comp.db.textCharges.offset = comp.db.textCharges.offset or {}
-                                    comp.db.textCharges.offset.x = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-50", maxLabel = "+50",
-                        })
-
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            min = -50, max = 50, step = 1,
-                            get = function()
-                                local offset = getChargesSetting("offset", {x=0, y=0})
-                                return (type(offset) == "table" and offset.y) or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-                                    comp.db.textCharges = comp.db.textCharges or {}
-                                    comp.db.textCharges.offset = comp.db.textCharges.offset or {}
-                                    comp.db.textCharges.offset.y = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-50", maxLabel = "+50",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getChargesSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCharges = comp.db.textCharges or {}
+                                        comp.db.textCharges.offset = comp.db.textCharges.offset or {}
+                                        comp.db.textCharges.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getChargesSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCharges = comp.db.textCharges or {}
+                                        comp.db.textCharges.offset = comp.db.textCharges.offset or {}
+                                        comp.db.textCharges.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
                         })
 
                         tabBuilder:Finalize()
@@ -285,44 +285,44 @@ function ExtraAbilities.Render(panel, scrollContent)
                             hasAlpha = true,
                         })
 
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            min = -50, max = 50, step = 1,
-                            get = function()
-                                local offset = getCooldownSetting("offset", {x=0, y=0})
-                                return (type(offset) == "table" and offset.x) or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-                                    comp.db.textCooldown = comp.db.textCooldown or {}
-                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
-                                    comp.db.textCooldown.offset.x = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-50", maxLabel = "+50",
-                        })
-
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            min = -50, max = 50, step = 1,
-                            get = function()
-                                local offset = getCooldownSetting("offset", {x=0, y=0})
-                                return (type(offset) == "table" and offset.y) or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-                                    comp.db.textCooldown = comp.db.textCooldown or {}
-                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
-                                    comp.db.textCooldown.offset.y = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-50", maxLabel = "+50",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.x) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return (type(offset) == "table" and offset.y) or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
                         })
 
                         tabBuilder:Finalize()

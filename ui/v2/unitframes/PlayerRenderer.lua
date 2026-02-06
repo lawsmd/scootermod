@@ -422,46 +422,42 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
         end,
     })
 
-    -- X Offset
-    inner:AddSlider({
-        label = "Offset X",
-        min = -100,
-        max = 100,
-        step = 1,
-        get = function()
-            local s = ensureTextDB(textKey) or {}
-            local o = s.offset or {}
-            return tonumber(o.x) or 0
-        end,
-        set = function(v)
-            local t = ensureUFDB()
-            if not t then return end
-            t[textKey] = t[textKey] or {}
-            t[textKey].offset = t[textKey].offset or {}
-            t[textKey].offset.x = tonumber(v) or 0
-            applyStyles()
-        end,
-    })
-
-    -- Y Offset
-    inner:AddSlider({
-        label = "Offset Y",
-        min = -100,
-        max = 100,
-        step = 1,
-        get = function()
-            local s = ensureTextDB(textKey) or {}
-            local o = s.offset or {}
-            return tonumber(o.y) or 0
-        end,
-        set = function(v)
-            local t = ensureUFDB()
-            if not t then return end
-            t[textKey] = t[textKey] or {}
-            t[textKey].offset = t[textKey].offset or {}
-            t[textKey].offset.y = tonumber(v) or 0
-            applyStyles()
-        end,
+    inner:AddDualSlider({
+        label = "Offset",
+        sliderA = {
+            axisLabel = "X",
+            min = -100, max = 100, step = 1,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                local o = s.offset or {}
+                return tonumber(o.x) or 0
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].offset = t[textKey].offset or {}
+                t[textKey].offset.x = tonumber(v) or 0
+                applyStyles()
+            end,
+        },
+        sliderB = {
+            axisLabel = "Y",
+            min = -100, max = 100, step = 1,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                local o = s.offset or {}
+                return tonumber(o.y) or 0
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].offset = t[textKey].offset or {}
+                t[textKey].offset.y = tonumber(v) or 0
+                applyStyles()
+            end,
+        },
     })
 
     inner:Finalize()
@@ -712,38 +708,36 @@ function UF.RenderPlayer(panel, scrollContent)
                 sectionKey = "powerBar_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        -- Power bar positioning options
-                        tabInner:AddSlider({
-                            label = "X Offset",
-                            min = -100,
-                            max = 100,
-                            step = 1,
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return tonumber(t.powerBarOffsetX) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.powerBarOffsetX = tonumber(v) or 0
-                                applyBarTextures()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Y Offset",
-                            min = -100,
-                            max = 100,
-                            step = 1,
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return tonumber(t.powerBarOffsetY) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.powerBarOffsetY = tonumber(v) or 0
-                                applyBarTextures()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensureUFDB() or {}
+                                    return tonumber(t.powerBarOffsetX) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureUFDB()
+                                    if not t then return end
+                                    t.powerBarOffsetX = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensureUFDB() or {}
+                                    return tonumber(t.powerBarOffsetY) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureUFDB()
+                                    if not t then return end
+                                    t.powerBarOffsetY = tonumber(v) or 0
+                                    applyBarTextures()
+                                end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -934,33 +928,36 @@ function UF.RenderPlayer(panel, scrollContent)
                     sectionKey = "altPowerBar_tabs",
                     buildContent = {
                         positioning = function(cf, tabInner)
-                            tabInner:AddSlider({
-                                label = "X Offset",
-                                min = -150, max = 150, step = 1,
-                                get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
-                                    return tonumber(apb.offsetX) or 0
-                                end,
-                                set = function(v)
-                                    local apb = ensureAltPowerBarDB()
-                                    if not apb then return end
-                                    apb.offsetX = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
-                            })
-                            tabInner:AddSlider({
-                                label = "Y Offset",
-                                min = -150, max = 150, step = 1,
-                                get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
-                                    return tonumber(apb.offsetY) or 0
-                                end,
-                                set = function(v)
-                                    local apb = ensureAltPowerBarDB()
-                                    if not apb then return end
-                                    apb.offsetY = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
+                            tabInner:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -150, max = 150, step = 1,
+                                    get = function()
+                                        local apb = ensureAltPowerBarDB() or {}
+                                        return tonumber(apb.offsetX) or 0
+                                    end,
+                                    set = function(v)
+                                        local apb = ensureAltPowerBarDB()
+                                        if not apb then return end
+                                        apb.offsetX = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -150, max = 150, step = 1,
+                                    get = function()
+                                        local apb = ensureAltPowerBarDB() or {}
+                                        return tonumber(apb.offsetY) or 0
+                                    end,
+                                    set = function(v)
+                                        local apb = ensureAltPowerBarDB()
+                                        if not apb then return end
+                                        apb.offsetY = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
                             })
                             tabInner:Finalize()
                         end,
@@ -1410,40 +1407,40 @@ function UF.RenderPlayer(panel, scrollContent)
                                 end,
                             })
 
-                            -- Offset X
-                            tabInner:AddSlider({
-                                label = "Offset X",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local s = ensureAltPowerTextDB("textPercent") or {}
-                                    local o = s.offset or {}
-                                    return tonumber(o.x) or 0
-                                end,
-                                set = function(v)
-                                    local s = ensureAltPowerTextDB("textPercent")
-                                    if not s then return end
-                                    s.offset = s.offset or {}
-                                    s.offset.x = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
-                            })
-
-                            -- Offset Y
-                            tabInner:AddSlider({
-                                label = "Offset Y",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local s = ensureAltPowerTextDB("textPercent") or {}
-                                    local o = s.offset or {}
-                                    return tonumber(o.y) or 0
-                                end,
-                                set = function(v)
-                                    local s = ensureAltPowerTextDB("textPercent")
-                                    if not s then return end
-                                    s.offset = s.offset or {}
-                                    s.offset.y = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
+                            tabInner:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -100, max = 100, step = 1,
+                                    get = function()
+                                        local s = ensureAltPowerTextDB("textPercent") or {}
+                                        local o = s.offset or {}
+                                        return tonumber(o.x) or 0
+                                    end,
+                                    set = function(v)
+                                        local s = ensureAltPowerTextDB("textPercent")
+                                        if not s then return end
+                                        s.offset = s.offset or {}
+                                        s.offset.x = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -100, max = 100, step = 1,
+                                    get = function()
+                                        local s = ensureAltPowerTextDB("textPercent") or {}
+                                        local o = s.offset or {}
+                                        return tonumber(o.y) or 0
+                                    end,
+                                    set = function(v)
+                                        local s = ensureAltPowerTextDB("textPercent")
+                                        if not s then return end
+                                        s.offset = s.offset or {}
+                                        s.offset.y = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
                             })
 
                             tabInner:Finalize()
@@ -1544,40 +1541,40 @@ function UF.RenderPlayer(panel, scrollContent)
                                 end,
                             })
 
-                            -- Offset X
-                            tabInner:AddSlider({
-                                label = "Offset X",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local s = ensureAltPowerTextDB("textValue") or {}
-                                    local o = s.offset or {}
-                                    return tonumber(o.x) or 0
-                                end,
-                                set = function(v)
-                                    local s = ensureAltPowerTextDB("textValue")
-                                    if not s then return end
-                                    s.offset = s.offset or {}
-                                    s.offset.x = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
-                            })
-
-                            -- Offset Y
-                            tabInner:AddSlider({
-                                label = "Offset Y",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local s = ensureAltPowerTextDB("textValue") or {}
-                                    local o = s.offset or {}
-                                    return tonumber(o.y) or 0
-                                end,
-                                set = function(v)
-                                    local s = ensureAltPowerTextDB("textValue")
-                                    if not s then return end
-                                    s.offset = s.offset or {}
-                                    s.offset.y = tonumber(v) or 0
-                                    applyBarTextures()
-                                end,
+                            tabInner:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -100, max = 100, step = 1,
+                                    get = function()
+                                        local s = ensureAltPowerTextDB("textValue") or {}
+                                        local o = s.offset or {}
+                                        return tonumber(o.x) or 0
+                                    end,
+                                    set = function(v)
+                                        local s = ensureAltPowerTextDB("textValue")
+                                        if not s then return end
+                                        s.offset = s.offset or {}
+                                        s.offset.x = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -100, max = 100, step = 1,
+                                    get = function()
+                                        local s = ensureAltPowerTextDB("textValue") or {}
+                                        local o = s.offset or {}
+                                        return tonumber(o.y) or 0
+                                    end,
+                                    set = function(v)
+                                        local s = ensureAltPowerTextDB("textValue")
+                                        if not s then return end
+                                        s.offset = s.offset or {}
+                                        s.offset.y = tonumber(v) or 0
+                                        applyBarTextures()
+                                    end,
+                                },
                             })
 
                             tabInner:Finalize()
@@ -1616,33 +1613,36 @@ function UF.RenderPlayer(panel, scrollContent)
                 sectionKey = "classResource_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = "X Offset",
-                            min = -150, max = 150, step = 1,
-                            get = function()
-                                local cfg = ensureClassResourceDB() or {}
-                                return tonumber(cfg.offsetX) or 0
-                            end,
-                            set = function(v)
-                                local cfg = ensureClassResourceDB()
-                                if not cfg then return end
-                                cfg.offsetX = tonumber(v) or 0
-                                applyClassResource()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Y Offset",
-                            min = -150, max = 150, step = 1,
-                            get = function()
-                                local cfg = ensureClassResourceDB() or {}
-                                return tonumber(cfg.offsetY) or 0
-                            end,
-                            set = function(v)
-                                local cfg = ensureClassResourceDB()
-                                if not cfg then return end
-                                cfg.offsetY = tonumber(v) or 0
-                                applyClassResource()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -150, max = 150, step = 1,
+                                get = function()
+                                    local cfg = ensureClassResourceDB() or {}
+                                    return tonumber(cfg.offsetX) or 0
+                                end,
+                                set = function(v)
+                                    local cfg = ensureClassResourceDB()
+                                    if not cfg then return end
+                                    cfg.offsetX = tonumber(v) or 0
+                                    applyClassResource()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -150, max = 150, step = 1,
+                                get = function()
+                                    local cfg = ensureClassResourceDB() or {}
+                                    return tonumber(cfg.offsetY) or 0
+                                end,
+                                set = function(v)
+                                    local cfg = ensureClassResourceDB()
+                                    if not cfg then return end
+                                    cfg.offsetY = tonumber(v) or 0
+                                    applyClassResource()
+                                end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -1829,37 +1829,40 @@ function UF.RenderPlayer(panel, scrollContent)
                                     applyTotemBar()
                                 end,
                             })
-                            tabInner:AddSlider({
-                                label = "X Offset",
-                                min = -50, max = 50, step = 1,
-                                get = function()
-                                    local cfg = ensureTotemBarTimerTextDB() or {}
-                                    local o = cfg.offset or {}
-                                    return tonumber(o.x) or 0
-                                end,
-                                set = function(v)
-                                    local cfg = ensureTotemBarTimerTextDB()
-                                    if not cfg then return end
-                                    cfg.offset = cfg.offset or {}
-                                    cfg.offset.x = tonumber(v) or 0
-                                    applyTotemBar()
-                                end,
-                            })
-                            tabInner:AddSlider({
-                                label = "Y Offset",
-                                min = -50, max = 50, step = 1,
-                                get = function()
-                                    local cfg = ensureTotemBarTimerTextDB() or {}
-                                    local o = cfg.offset or {}
-                                    return tonumber(o.y) or 0
-                                end,
-                                set = function(v)
-                                    local cfg = ensureTotemBarTimerTextDB()
-                                    if not cfg then return end
-                                    cfg.offset = cfg.offset or {}
-                                    cfg.offset.y = tonumber(v) or 0
-                                    applyTotemBar()
-                                end,
+                            tabInner:AddDualSlider({
+                                label = "Offset",
+                                sliderA = {
+                                    axisLabel = "X",
+                                    min = -50, max = 50, step = 1,
+                                    get = function()
+                                        local cfg = ensureTotemBarTimerTextDB() or {}
+                                        local o = cfg.offset or {}
+                                        return tonumber(o.x) or 0
+                                    end,
+                                    set = function(v)
+                                        local cfg = ensureTotemBarTimerTextDB()
+                                        if not cfg then return end
+                                        cfg.offset = cfg.offset or {}
+                                        cfg.offset.x = tonumber(v) or 0
+                                        applyTotemBar()
+                                    end,
+                                },
+                                sliderB = {
+                                    axisLabel = "Y",
+                                    min = -50, max = 50, step = 1,
+                                    get = function()
+                                        local cfg = ensureTotemBarTimerTextDB() or {}
+                                        local o = cfg.offset or {}
+                                        return tonumber(o.y) or 0
+                                    end,
+                                    set = function(v)
+                                        local cfg = ensureTotemBarTimerTextDB()
+                                        if not cfg then return end
+                                        cfg.offset = cfg.offset or {}
+                                        cfg.offset.y = tonumber(v) or 0
+                                        applyTotemBar()
+                                    end,
+                                },
                             })
                             tabInner:Finalize()
                         end,
@@ -2319,33 +2322,36 @@ function UF.RenderPlayer(panel, scrollContent)
                 sectionKey = "portrait_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = "X Offset",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return tonumber(t.offsetX) or 0
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.offsetX = tonumber(v) or 0
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Y Offset",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return tonumber(t.offsetY) or 0
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.offsetY = tonumber(v) or 0
-                                applyPortrait()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensurePortraitDB() or {}
+                                    return tonumber(t.offsetX) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensurePortraitDB()
+                                    if not t then return end
+                                    t.offsetX = tonumber(v) or 0
+                                    applyPortrait()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensurePortraitDB() or {}
+                                    return tonumber(t.offsetY) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensurePortraitDB()
+                                    if not t then return end
+                                    t.offsetY = tonumber(v) or 0
+                                    applyPortrait()
+                                end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -2591,33 +2597,36 @@ function UF.RenderPlayer(panel, scrollContent)
                 sectionKey = "castBar_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = "X Offset",
-                            min = -200, max = 200, step = 1,
-                            get = function()
-                                local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarOffsetX) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureCastBarDB()
-                                if not t then return end
-                                t.castBarOffsetX = tonumber(v) or 0
-                                applyCastBar()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Y Offset",
-                            min = -200, max = 200, step = 1,
-                            get = function()
-                                local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarOffsetY) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureCastBarDB()
-                                if not t then return end
-                                t.castBarOffsetY = tonumber(v) or 0
-                                applyCastBar()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -200, max = 200, step = 1,
+                                get = function()
+                                    local t = ensureCastBarDB() or {}
+                                    return tonumber(t.castBarOffsetX) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureCastBarDB()
+                                    if not t then return end
+                                    t.castBarOffsetX = tonumber(v) or 0
+                                    applyCastBar()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -200, max = 200, step = 1,
+                                get = function()
+                                    local t = ensureCastBarDB() or {}
+                                    return tonumber(t.castBarOffsetY) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureCastBarDB()
+                                    if not t then return end
+                                    t.castBarOffsetY = tonumber(v) or 0
+                                    applyCastBar()
+                                end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -2906,33 +2915,36 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                         })
-                        tabInner:AddSlider({
-                            label = "Icon X Offset",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarIconOffsetX) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureCastBarDB()
-                                if not t then return end
-                                t.castBarIconOffsetX = tonumber(v) or 0
-                                applyCastBar()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Icon Y Offset",
-                            min = -100, max = 100, step = 1,
-                            get = function()
-                                local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarIconOffsetY) or 0
-                            end,
-                            set = function(v)
-                                local t = ensureCastBarDB()
-                                if not t then return end
-                                t.castBarIconOffsetY = tonumber(v) or 0
-                                applyCastBar()
-                            end,
+                        tabInner:AddDualSlider({
+                            label = "Icon Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensureCastBarDB() or {}
+                                    return tonumber(t.castBarIconOffsetX) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureCastBarDB()
+                                    if not t then return end
+                                    t.castBarIconOffsetX = tonumber(v) or 0
+                                    applyCastBar()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensureCastBarDB() or {}
+                                    return tonumber(t.castBarIconOffsetY) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensureCastBarDB()
+                                    if not t then return end
+                                    t.castBarIconOffsetY = tonumber(v) or 0
+                                    applyCastBar()
+                                end,
+                            },
                         })
                         tabInner:Finalize()
                     end,

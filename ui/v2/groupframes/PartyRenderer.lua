@@ -309,46 +309,47 @@ local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabe
         end,
     })
 
-    -- X Offset
-    inner:AddSlider({
-        label = "Offset X",
-        min = -50,
-        max = 50,
-        step = 1,
-        get = function()
-            local s = ensureTextDB(textKey) or {}
-            local o = s.offset or {}
-            return tonumber(o.x) or 0
-        end,
-        set = function(v)
-            local t = ensureDB()
-            if not t then return end
-            t[textKey] = t[textKey] or {}
-            t[textKey].offset = t[textKey].offset or {}
-            t[textKey].offset.x = tonumber(v) or 0
-            applyFn()
-        end,
-    })
-
-    -- Y Offset
-    inner:AddSlider({
-        label = "Offset Y",
-        min = -50,
-        max = 50,
-        step = 1,
-        get = function()
-            local s = ensureTextDB(textKey) or {}
-            local o = s.offset or {}
-            return tonumber(o.y) or 0
-        end,
-        set = function(v)
-            local t = ensureDB()
-            if not t then return end
-            t[textKey] = t[textKey] or {}
-            t[textKey].offset = t[textKey].offset or {}
-            t[textKey].offset.y = tonumber(v) or 0
-            applyFn()
-        end,
+    -- Offset X/Y
+    inner:AddDualSlider({
+        label = "Offset",
+        sliderA = {
+            axisLabel = "X",
+            min = -50,
+            max = 50,
+            step = 1,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                local o = s.offset or {}
+                return tonumber(o.x) or 0
+            end,
+            set = function(v)
+                local t = ensureDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].offset = t[textKey].offset or {}
+                t[textKey].offset.x = tonumber(v) or 0
+                applyFn()
+            end,
+        },
+        sliderB = {
+            axisLabel = "Y",
+            min = -50,
+            max = 50,
+            step = 1,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                local o = s.offset or {}
+                return tonumber(o.y) or 0
+            end,
+            set = function(v)
+                local t = ensureDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].offset = t[textKey].offset or {}
+                t[textKey].offset.y = tonumber(v) or 0
+                applyFn()
+            end,
+        },
     })
 
     inner:Finalize()

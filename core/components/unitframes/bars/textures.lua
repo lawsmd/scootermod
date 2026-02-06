@@ -95,15 +95,79 @@ function Textures.getHealthValueCurve()
     return getHealthValueCurve()
 end
 
+--------------------------------------------------------------------------------
+-- Health Value Dark Color Curve ("Color by Value (Dark)" Feature)
+--------------------------------------------------------------------------------
+-- Same API pattern as the standard curve, but with dark gray at 100% health
+-- instead of green. This provides a "damage indicator" style where healthy
+-- units are muted and damaged units stand out.
+--
+-- Gradient: Dark Gray (100%) -> Yellow (50%) -> Red (0%)
+-- The 0.23 gray value matches ElvUI's default health color for visual consistency.
+--------------------------------------------------------------------------------
+
+local healthValueDarkCurve = nil
+
+local function getHealthValueDarkCurve()
+    if not healthValueDarkCurve then
+        if not _G.C_CurveUtil then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueDarkCurve: C_CurveUtil not available") end
+            return nil
+        end
+        if not _G.C_CurveUtil.CreateColorCurve then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueDarkCurve: CreateColorCurve not available") end
+            return nil
+        end
+
+        healthValueDarkCurve = C_CurveUtil.CreateColorCurve()
+        if not healthValueDarkCurve then
+            if addon.DebugPrint then addon.DebugPrint("getHealthValueDarkCurve: CreateColorCurve returned nil") end
+            return nil
+        end
+
+        -- Linear interpolation between color points
+        if healthValueDarkCurve.SetType and _G.Enum and _G.Enum.LuaCurveType then
+            local ok, err = pcall(healthValueDarkCurve.SetType, healthValueDarkCurve, Enum.LuaCurveType.Linear)
+            if not ok and addon.DebugPrint then addon.DebugPrint("getHealthValueDarkCurve: SetType failed - " .. tostring(err)) end
+        end
+
+        -- Add color points: Red at 0%, Yellow at 50%, Green at 99.99%, Dark Gray at 100%
+        -- The 99.99% green point ensures the curve matches the regular curve for virtually
+        -- all values. Only exactly 100% shows dark gray - the 0.01% transition is imperceptible.
+        -- Dark gray (0.23, 0.23, 0.23) matches ElvUI's default health color
+        if healthValueDarkCurve.AddPoint and _G.CreateColor then
+            local ok1, err1 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 0.0, CreateColor(1, 0, 0, 1))       -- Red at 0%
+            local ok2, err2 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 0.5, CreateColor(1, 1, 0, 1))       -- Yellow at 50%
+            local ok3, err3 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 0.9999, CreateColor(0, 1, 0, 1))    -- Green at 99.99% (matches regular curve)
+            local ok4, err4 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 1.0, CreateColor(0.23, 0.23, 0.23, 1)) -- Dark gray at 100%
+            if addon.DebugPrint then
+                if not ok1 then addon.DebugPrint("getHealthValueDarkCurve: AddPoint(0) failed - " .. tostring(err1)) end
+                if not ok2 then addon.DebugPrint("getHealthValueDarkCurve: AddPoint(50) failed - " .. tostring(err2)) end
+                if not ok3 then addon.DebugPrint("getHealthValueDarkCurve: AddPoint(99.99) failed - " .. tostring(err3)) end
+                if not ok4 then addon.DebugPrint("getHealthValueDarkCurve: AddPoint(100) failed - " .. tostring(err4)) end
+            end
+        end
+
+        if addon.DebugPrint then addon.DebugPrint("getHealthValueDarkCurve: created curve with " .. (healthValueDarkCurve.GetPointCount and healthValueDarkCurve:GetPointCount() or "?") .. " points") end
+    end
+    return healthValueDarkCurve
+end
+
+-- Expose dark curve getter for other modules
+function Textures.getHealthValueDarkCurve()
+    return getHealthValueDarkCurve()
+end
+
 -- Apply value-based color to a health bar texture using UnitHealthPercent
 -- @param bar: The StatusBar frame
 -- @param unit: Unit token ("player", "target", "party1", etc.)
 -- @param overlay: Optional overlay texture to color instead of bar texture
-function Textures.applyValueBasedColor(bar, unit, overlay)
+-- @param useDark: If true, use dark gray at 100% instead of green
+function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
     if not bar or not unit then return end
 
-    -- Get the health value color curve
-    local curve = getHealthValueCurve()
+    -- Get the appropriate health value color curve
+    local curve = useDark and getHealthValueDarkCurve() or getHealthValueCurve()
     if not curve then
         if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: curve is nil") end
         return
@@ -217,7 +281,8 @@ local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for G
 -- @param bar: The StatusBar frame
 -- @param unit: Unit token ("player", "target", "party1", etc.)
 -- @param overlay: Optional overlay texture to validate/color
-function Textures.scheduleColorValidation(bar, unit, overlay)
+-- @param useDark: If true, use dark gray at 100% instead of green
+function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
     if not bar or not unit then return end
 
     -- Prevent duplicate validations for the same bar
@@ -257,7 +322,7 @@ function Textures.scheduleColorValidation(bar, unit, overlay)
             end
             -- Unconditionally reapply - let applyValueBasedColor handle everything
             if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
             end
         end)
     end
@@ -308,9 +373,10 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         return
     end
 
-    -- "value" mode uses dynamic updates via hooks, not static color.
+    -- "value" and "valueDark" modes use dynamic updates via hooks, not static color.
     -- Apply custom texture if selected, then apply initial value-based color.
-    if colorMode == "value" then
+    if colorMode == "value" or colorMode == "valueDark" then
+        local useDark = (colorMode == "valueDark")
         local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
         local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
         if isCustom and resolvedPath then
@@ -323,7 +389,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         -- Apply initial value-based color using the unit token (unitForClass parameter)
         -- This ensures the bar isn't left white when the setting is first enabled
         if unitForClass then
-            Textures.applyValueBasedColor(bar, unitForClass)
+            Textures.applyValueBasedColor(bar, unitForClass, nil, useDark)
         end
         return
     end

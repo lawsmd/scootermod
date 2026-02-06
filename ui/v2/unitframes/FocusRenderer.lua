@@ -224,18 +224,20 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
         set = function(v) local t = ensureUFDB(); if t then t[textKey] = t[textKey] or {}; t[textKey].alignment = v or defaultAlignment; applyStyles() end end,
     })
 
-    inner:AddSlider({
-        label = "Offset X",
-        min = -100, max = 100, step = 1,
-        get = function() local s = ensureTextDB(textKey) or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-        set = function(v) local t = ensureUFDB(); if t then t[textKey] = t[textKey] or {}; t[textKey].offset = t[textKey].offset or {}; t[textKey].offset.x = tonumber(v) or 0; applyStyles() end end,
-    })
-
-    inner:AddSlider({
-        label = "Offset Y",
-        min = -100, max = 100, step = 1,
-        get = function() local s = ensureTextDB(textKey) or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-        set = function(v) local t = ensureUFDB(); if t then t[textKey] = t[textKey] or {}; t[textKey].offset = t[textKey].offset or {}; t[textKey].offset.y = tonumber(v) or 0; applyStyles() end end,
+    inner:AddDualSlider({
+        label = "Offset",
+        sliderA = {
+            axisLabel = "X",
+            min = -100, max = 100, step = 1,
+            get = function() local s = ensureTextDB(textKey) or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+            set = function(v) local t = ensureUFDB(); if t then t[textKey] = t[textKey] or {}; t[textKey].offset = t[textKey].offset or {}; t[textKey].offset.x = tonumber(v) or 0; applyStyles() end end,
+        },
+        sliderB = {
+            axisLabel = "Y",
+            min = -100, max = 100, step = 1,
+            get = function() local s = ensureTextDB(textKey) or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+            set = function(v) local t = ensureUFDB(); if t then t[textKey] = t[textKey] or {}; t[textKey].offset = t[textKey].offset or {}; t[textKey].offset.y = tonumber(v) or 0; applyStyles() end end,
+        },
     })
 
     inner:Finalize()
@@ -366,12 +368,21 @@ function UF.RenderFocus(panel, scrollContent)
                 sectionKey = "powerBar_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        tabInner:AddSlider({ label = "X Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetX) or 0 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.powerBarOffsetX = tonumber(v) or 0; applyBarTextures() end end })
-                        tabInner:AddSlider({ label = "Y Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetY) or 0 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.powerBarOffsetY = tonumber(v) or 0; applyBarTextures() end end })
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetX) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.powerBarOffsetX = tonumber(v) or 0; applyBarTextures() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarOffsetY) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.powerBarOffsetY = tonumber(v) or 0; applyBarTextures() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     sizing = function(cf, tabInner)
@@ -583,12 +594,21 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSelector({ label = "Name Text Alignment", values = UF.alignmentValues, order = UF.alignmentOrder,
                             get = function() local s = ensureNameLevelDB("textName") or {}; return s.alignment or "LEFT" end,
                             set = function(v) local t = ensureNameLevelDB("textName"); if t then t.alignment = v or "LEFT"; applyNameLevelText() end end })
-                        tabInner:AddSlider({ label = "Name Text Offset X", min = -100, max = 100, step = 1,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end })
-                        tabInner:AddSlider({ label = "Name Text Offset Y", min = -100, max = 100, step = 1,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end })
+                        tabInner:AddDualSlider({
+                            label = "Name Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     levelText = function(cf, tabInner)
@@ -610,12 +630,21 @@ function UF.RenderFocus(panel, scrollContent)
                             getColor = function() local s = ensureNameLevelDB("textLevel") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
                             setColor = function(r,g,b,a) local t = ensureNameLevelDB("textLevel"); if t then t.color = {r,g,b,a}; applyNameLevelText() end end,
                             customValue = "custom", hasAlpha = true })
-                        tabInner:AddSlider({ label = "Level Text Offset X", min = -100, max = 100, step = 1,
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end })
-                        tabInner:AddSlider({ label = "Level Text Offset Y", min = -100, max = 100, step = 1,
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end })
+                        tabInner:AddDualSlider({
+                            label = "Level Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                 },
@@ -646,12 +675,21 @@ function UF.RenderFocus(panel, scrollContent)
                 sectionKey = "portrait_tabs",
                 buildContent = {
                     positioning = function(cf, tabInner)
-                        tabInner:AddSlider({ label = "X Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetX) or 0 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.offsetX = tonumber(v) or 0; applyPortrait() end end })
-                        tabInner:AddSlider({ label = "Y Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetY) or 0 end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.offsetY = tonumber(v) or 0; applyPortrait() end end })
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetX) or 0 end,
+                                set = function(v) local t = ensurePortraitDB(); if t then t.offsetX = tonumber(v) or 0; applyPortrait() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetY) or 0 end,
+                                set = function(v) local t = ensurePortraitDB(); if t then t.offsetY = tonumber(v) or 0; applyPortrait() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     sizing = function(cf, tabInner)
@@ -729,12 +767,21 @@ function UF.RenderFocus(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return t.anchorMode or "default" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.anchorMode = v; applyCastBar() end end,
                         })
-                        tabInner:AddSlider({ label = "X Offset", min = -200, max = 200, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetX) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.offsetX = tonumber(v) or 0; applyCastBar() end end })
-                        tabInner:AddSlider({ label = "Y Offset", min = -200, max = 200, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetY) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.offsetY = tonumber(v) or 0; applyCastBar() end end })
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -200, max = 200, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetX) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.offsetX = tonumber(v) or 0; applyCastBar() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -200, max = 200, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.offsetY) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.offsetY = tonumber(v) or 0; applyCastBar() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     sizing = function(cf, tabInner)
@@ -817,12 +864,21 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSlider({ label = "Icon Size", min = 10, max = 64, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.iconWidth = tonumber(v) or 24; t.iconHeight = tonumber(v) or 24; applyCastBar() end end })
-                        tabInner:AddSlider({ label = "Icon X Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconOffsetX) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconOffsetX = tonumber(v) or 0; applyCastBar() end end })
-                        tabInner:AddSlider({ label = "Icon Y Offset", min = -100, max = 100, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconOffsetY) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconOffsetY = tonumber(v) or 0; applyCastBar() end end })
+                        tabInner:AddDualSlider({
+                            label = "Icon Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconOffsetX) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconOffsetX = tonumber(v) or 0; applyCastBar() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarIconOffsetY) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.castBarIconOffsetY = tonumber(v) or 0; applyCastBar() end end,
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     spellName = function(cf, tabInner)

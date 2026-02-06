@@ -293,48 +293,46 @@ function Debuffs.Render(panel, scrollContent)
                             hasAlpha = true,
                         })
 
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.x or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.x = v
-                                end
-                                applyStyles()
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
-                        })
-
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.y or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.y = v
-                                end
-                                applyStyles()
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50,
+                                max = 50,
+                                step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.x = v
+                                    end
+                                    applyStyles()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50,
+                                max = 50,
+                                step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.y = v
+                                    end
+                                    applyStyles()
+                                end,
+                            },
                         })
 
                         tabBuilder:Finalize()
@@ -392,48 +390,46 @@ function Debuffs.Render(panel, scrollContent)
                             hasAlpha = true,
                         })
 
-                        tabBuilder:AddSlider({
-                            label = "Offset X",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                local offset = getDurationSetting("offset", {x=0, y=0})
-                                return offset.x or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textDuration = comp.db.textDuration or {}
-                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
-                                    comp.db.textDuration.offset.x = v
-                                end
-                                applyStyles()
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
-                        })
-
-                        tabBuilder:AddSlider({
-                            label = "Offset Y",
-                            min = -50,
-                            max = 50,
-                            step = 1,
-                            get = function()
-                                local offset = getDurationSetting("offset", {x=0, y=0})
-                                return offset.y or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textDuration = comp.db.textDuration or {}
-                                    comp.db.textDuration.offset = comp.db.textDuration.offset or {}
-                                    comp.db.textDuration.offset.y = v
-                                end
-                                applyStyles()
-                            end,
-                            minLabel = "-50",
-                            maxLabel = "+50",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50,
+                                max = 50,
+                                step = 1,
+                                get = function()
+                                    local offset = getDurationSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textDuration = comp.db.textDuration or {}
+                                        comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                        comp.db.textDuration.offset.x = v
+                                    end
+                                    applyStyles()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50,
+                                max = 50,
+                                step = 1,
+                                get = function()
+                                    local offset = getDurationSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textDuration = comp.db.textDuration or {}
+                                        comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                        comp.db.textDuration.offset.y = v
+                                    end
+                                    applyStyles()
+                                end,
+                            },
                         })
 
                         tabBuilder:Finalize()

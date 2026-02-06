@@ -180,11 +180,17 @@ local function styleHealthOverlay(bar, cfg)
     end
 
     local r, g, b, a = 1, 1, 1, 1
-    if colorMode == "value" then
+    if colorMode == "value" or colorMode == "valueDark" then
         -- "Color by Value" mode: use UnitHealthPercent with color curve
-        -- FIRST: Apply fallback green so overlay is never colorless (in case applyValueBasedColor
+        -- FIRST: Apply fallback color so overlay is never colorless (in case applyValueBasedColor
         -- encounters secret values and returns early without applying color)
-        overlay:SetVertexColor(0, 1, 0, 1)
+        -- Use dark gray for valueDark, green for standard value mode
+        local useDark = (colorMode == "valueDark")
+        if useDark then
+            overlay:SetVertexColor(0.23, 0.23, 0.23, 1)  -- Dark gray fallback
+        else
+            overlay:SetVertexColor(0, 1, 0, 1)  -- Green fallback
+        end
 
         local unit
         local parentFrame = bar.GetParent and bar:GetParent()
@@ -193,10 +199,10 @@ local function styleHealthOverlay(bar, cfg)
             if okU and u then unit = u end
         end
         if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-            -- This will override the fallback green if it can determine the actual color
-            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay)
+            -- This will override the fallback color if it can determine the actual color
+            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
         end
-        return -- Color already handled (either fallback green or value-based)
+        return -- Color already handled (either fallback or value-based)
     elseif colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" then
@@ -313,7 +319,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             barState.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
-                -- Also update color for "value" mode to eliminate flicker.
+                -- Also update color for "value"/"valueDark" mode to eliminate flicker.
                 -- By updating color in the same hook as width, both changes happen
                 -- atomically in the same frame (no timing gap = no flicker).
                 local st = getState(self)
@@ -321,7 +327,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "party") or nil
-                if cfg and cfg.healthBarColorMode == "value" then
+                local colorMode = cfg and cfg.healthBarColorMode
+                if colorMode == "value" or colorMode == "valueDark" then
+                    local useDark = (colorMode == "valueDark")
                     local overlay = st.healthOverlay
                     local parentFrame = self.GetParent and self:GetParent()
                     local unit
@@ -330,10 +338,10 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                         if okU and u then unit = u end
                     end
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay, useDark)
                         -- Schedule validation to catch timing edge cases (stuck colors at 100%)
                         if addon.BarsTextures.scheduleColorValidation then
-                            addon.BarsTextures.scheduleColorValidation(self, unit, overlay)
+                            addon.BarsTextures.scheduleColorValidation(self, unit, overlay, useDark)
                         end
                     end
                 end
@@ -360,7 +368,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "party") or nil
-                if cfg and cfg.healthBarColorMode == "value" then
+                local colorMode = cfg and cfg.healthBarColorMode
+                if colorMode == "value" or colorMode == "valueDark" then
+                    local useDark = (colorMode == "valueDark")
                     local overlay = st.healthOverlay
                     local parentFrame = self.GetParent and self:GetParent()
                     local unit
@@ -369,7 +379,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                         if okU and u then unit = u end
                     end
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay)
+                        addon.BarsTextures.applyValueBasedColor(self, unit, overlay, useDark)
                     end
                 end
             end)
@@ -853,7 +863,10 @@ function PartyFrames.installHooks()
 
             local db = addon and addon.db and addon.db.profile
             local cfg = db and db.groupFrames and db.groupFrames.party or nil
-            if not cfg or cfg.healthBarColorMode ~= "value" then return end
+            local colorMode = cfg and cfg.healthBarColorMode
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return end
+
+            local useDark = (colorMode == "valueDark")
 
             -- Get unit token from the frame
             local unit
@@ -877,10 +890,10 @@ function PartyFrames.installHooks()
                 -- Overlay exists and is shown - apply immediately (no defer)
                 -- This prevents the 1-frame blink where Blizzard's color shows
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                    addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay)
+                    addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay, useDark)
                     -- Schedule validation to catch timing edge cases (stuck colors at 100%)
                     if addon.BarsTextures.scheduleColorValidation then
-                        addon.BarsTextures.scheduleColorValidation(healthBar, unit, overlay)
+                        addon.BarsTextures.scheduleColorValidation(healthBar, unit, overlay, useDark)
                     end
                 end
             else
@@ -889,14 +902,14 @@ function PartyFrames.installHooks()
                     local st = getState(healthBar)
                     local ov = st and st.healthOverlay or nil
                     if ov and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                        addon.BarsTextures.applyValueBasedColor(healthBar, unit, ov)
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit, ov, useDark)
                         -- Schedule validation for deferred case too
                         if addon.BarsTextures.scheduleColorValidation then
-                            addon.BarsTextures.scheduleColorValidation(healthBar, unit, ov)
+                            addon.BarsTextures.scheduleColorValidation(healthBar, unit, ov, useDark)
                         end
                     elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         -- No overlay, apply to status bar texture directly
-                        addon.BarsTextures.applyValueBasedColor(healthBar, unit)
+                        addon.BarsTextures.applyValueBasedColor(healthBar, unit, nil, useDark)
                     end
                 end)
             end
@@ -927,12 +940,15 @@ local function isPartyUnit(unit)
 end
 
 local function getPartyHealthBarForUnit(unit)
-    if not unit or not isPartyUnit(unit) then return nil end
+    if not unit or not isPartyUnit(unit) then return nil, nil, nil end
 
     local db = addon and addon.db and addon.db.profile
     local groupFrames = db and rawget(db, "groupFrames") or nil
     local cfg = groupFrames and rawget(groupFrames, "party") or nil
-    if not cfg or cfg.healthBarColorMode ~= "value" then return nil end
+    local colorMode = cfg and cfg.healthBarColorMode
+    if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return nil, nil, nil end
+
+    local useDark = (colorMode == "valueDark")
 
     -- Party frames are dynamically assigned - check each frame's unit property
     for i = 1, 5 do
@@ -943,12 +959,12 @@ local function getPartyHealthBarForUnit(unit)
             if ok and u then frameUnit = u end
             -- Check if this frame is displaying the unit we're looking for
             if frameUnit and UnitIsUnit(frameUnit, unit) then
-                return frame.healthBar, frame
+                return frame.healthBar, frame, useDark
             end
         end
     end
 
-    return nil
+    return nil, nil, nil
 end
 
 local partyHealthColorEventFrame = CreateFrame("Frame")
@@ -958,7 +974,7 @@ partyHealthColorEventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")
 partyHealthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
     if not unit or not isPartyUnit(unit) then return end
 
-    local bar, frame = getPartyHealthBarForUnit(unit)
+    local bar, frame, useDark = getPartyHealthBarForUnit(unit)
     if not bar then return end
 
     -- Use the frame's actual unit token for color calculation
@@ -971,13 +987,13 @@ partyHealthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
     local state = getState(bar)
     local overlay = state and state.healthOverlay or nil
     if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-        addon.BarsTextures.applyValueBasedColor(bar, actualUnit, overlay)
+        addon.BarsTextures.applyValueBasedColor(bar, actualUnit, overlay, useDark)
         -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
         if addon.BarsTextures.scheduleColorValidation then
-            addon.BarsTextures.scheduleColorValidation(bar, actualUnit, overlay)
+            addon.BarsTextures.scheduleColorValidation(bar, actualUnit, overlay, useDark)
         end
     elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-        addon.BarsTextures.applyValueBasedColor(bar, actualUnit)
+        addon.BarsTextures.applyValueBasedColor(bar, actualUnit, nil, useDark)
     end
 end)
 

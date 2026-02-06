@@ -176,18 +176,20 @@ end
 --------------------------------------------------------------------------------
 
 local function buildPortraitPositioningTab(inner)
-    inner:AddSlider({
-        label = "X Offset",
-        min = -100, max = 100, step = 1,
-        get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetX) or 0 end,
-        set = function(v) local t = ensurePortraitDB(); if t then t.offsetX = tonumber(v) or 0; applyPortrait() end end,
-    })
-
-    inner:AddSlider({
-        label = "Y Offset",
-        min = -100, max = 100, step = 1,
-        get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetY) or 0 end,
-        set = function(v) local t = ensurePortraitDB(); if t then t.offsetY = tonumber(v) or 0; applyPortrait() end end,
+    inner:AddDualSlider({
+        label = "Offset",
+        sliderA = {
+            axisLabel = "X",
+            min = -100, max = 100, step = 1,
+            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetX) or 0 end,
+            set = function(v) local t = ensurePortraitDB(); if t then t.offsetX = tonumber(v) or 0; applyPortrait() end end,
+        },
+        sliderB = {
+            axisLabel = "Y",
+            min = -100, max = 100, step = 1,
+            get = function() local t = ensurePortraitDB() or {}; return tonumber(t.offsetY) or 0 end,
+            set = function(v) local t = ensurePortraitDB(); if t then t.offsetY = tonumber(v) or 0; applyPortrait() end end,
+        },
     })
 
     inner:Finalize()
@@ -347,34 +349,31 @@ function UF.RenderFocusTarget(panel, scrollContent)
         minLabel = "0.5x", maxLabel = "2.0x",
     })
 
-    -- X Offset slider
-    builder:AddSlider({
-        label = "X Offset",
-        description = "Horizontal offset from default position.",
-        min = -150, max = 150, step = 1,
-        get = function()
-            local t = ensureFocusTargetDB() or {}
-            return tonumber(t.offsetX) or 0
-        end,
-        set = function(v)
-            writeOffsets(v, nil)
-        end,
-        minLabel = "-150", maxLabel = "150",
-    })
-
-    -- Y Offset slider
-    builder:AddSlider({
-        label = "Y Offset",
-        description = "Vertical offset from default position.",
-        min = -150, max = 150, step = 1,
-        get = function()
-            local t = ensureFocusTargetDB() or {}
-            return tonumber(t.offsetY) or 0
-        end,
-        set = function(v)
-            writeOffsets(nil, v)
-        end,
-        minLabel = "-150", maxLabel = "150",
+    -- Position Offset dual slider
+    builder:AddDualSlider({
+        label = "Position Offset",
+        sliderA = {
+            axisLabel = "X",
+            min = -150, max = 150, step = 1,
+            get = function()
+                local t = ensureFocusTargetDB() or {}
+                return tonumber(t.offsetX) or 0
+            end,
+            set = function(v)
+                writeOffsets(v, nil)
+            end,
+        },
+        sliderB = {
+            axisLabel = "Y",
+            min = -150, max = 150, step = 1,
+            get = function()
+                local t = ensureFocusTargetDB() or {}
+                return tonumber(t.offsetY) or 0
+            end,
+            set = function(v)
+                writeOffsets(nil, v)
+            end,
+        },
     })
 
     --------------------------------------------------------------------------------
@@ -529,40 +528,41 @@ function UF.RenderFocusTarget(panel, scrollContent)
                 set = function(v) local t = ensureNameTextDB(); if t then t.alignment = v or "LEFT"; applyNameText() end end,
             })
 
-            -- X Offset slider
-            inner:AddSlider({
-                label = "X Offset",
-                min = -100, max = 100, step = 1,
-                get = function()
-                    local t = ensureNameTextDB() or {}
-                    return tonumber(t.offset and t.offset.x) or 0
-                end,
-                set = function(v)
-                    local t = ensureNameTextDB()
-                    if t then
-                        t.offset = t.offset or {}
-                        t.offset.x = tonumber(v) or 0
-                        applyNameText()
-                    end
-                end,
-            })
-
-            -- Y Offset slider
-            inner:AddSlider({
-                label = "Y Offset",
-                min = -100, max = 100, step = 1,
-                get = function()
-                    local t = ensureNameTextDB() or {}
-                    return tonumber(t.offset and t.offset.y) or 0
-                end,
-                set = function(v)
-                    local t = ensureNameTextDB()
-                    if t then
-                        t.offset = t.offset or {}
-                        t.offset.y = tonumber(v) or 0
-                        applyNameText()
-                    end
-                end,
+            -- Offset dual slider
+            inner:AddDualSlider({
+                label = "Offset",
+                sliderA = {
+                    axisLabel = "X",
+                    min = -100, max = 100, step = 1,
+                    get = function()
+                        local t = ensureNameTextDB() or {}
+                        return tonumber(t.offset and t.offset.x) or 0
+                    end,
+                    set = function(v)
+                        local t = ensureNameTextDB()
+                        if t then
+                            t.offset = t.offset or {}
+                            t.offset.x = tonumber(v) or 0
+                            applyNameText()
+                        end
+                    end,
+                },
+                sliderB = {
+                    axisLabel = "Y",
+                    min = -100, max = 100, step = 1,
+                    get = function()
+                        local t = ensureNameTextDB() or {}
+                        return tonumber(t.offset and t.offset.y) or 0
+                    end,
+                    set = function(v)
+                        local t = ensureNameTextDB()
+                        if t then
+                            t.offset = t.offset or {}
+                            t.offset.y = tonumber(v) or 0
+                            applyNameText()
+                        end
+                    end,
+                },
             })
 
             inner:Finalize()

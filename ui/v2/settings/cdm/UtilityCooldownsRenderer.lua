@@ -416,39 +416,42 @@ function UtilityCooldowns.Render(panel, scrollContent)
                             setColor = function(r,g,b,a) setStacksSetting("color", {r,g,b,a}) end,
                             customValue = "custom", hasAlpha = true,
                         })
-                        tabBuilder:AddSlider({
-                            label = "Offset X", min = -100, max = 100, step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.x or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.x = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100", maxLabel = "+100",
-                        })
-                        tabBuilder:AddSlider({
-                            label = "Offset Y", min = -100, max = 100, step = 1,
-                            get = function()
-                                local offset = getStacksSetting("offset", {x=0, y=0})
-                                return offset.y or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textStacks = comp.db.textStacks or {}
-                                    comp.db.textStacks.offset = comp.db.textStacks.offset or {}
-                                    comp.db.textStacks.offset.y = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100", maxLabel = "+100",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local offset = getStacksSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textStacks = comp.db.textStacks or {}
+                                        comp.db.textStacks.offset = comp.db.textStacks.offset or {}
+                                        comp.db.textStacks.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
                         })
                         tabBuilder:Finalize()
                     end,
@@ -496,39 +499,42 @@ function UtilityCooldowns.Render(panel, scrollContent)
                             setColor = function(r,g,b,a) setCooldownSetting("color", {r,g,b,a}) end,
                             customValue = "custom", hasAlpha = true,
                         })
-                        tabBuilder:AddSlider({
-                            label = "Offset X", min = -100, max = 100, step = 1,
-                            get = function()
-                                local offset = getCooldownSetting("offset", {x=0, y=0})
-                                return offset.x or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textCooldown = comp.db.textCooldown or {}
-                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
-                                    comp.db.textCooldown.offset.x = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100", maxLabel = "+100",
-                        })
-                        tabBuilder:AddSlider({
-                            label = "Offset Y", min = -100, max = 100, step = 1,
-                            get = function()
-                                local offset = getCooldownSetting("offset", {x=0, y=0})
-                                return offset.y or 0
-                            end,
-                            set = function(v)
-                                local comp = getComponent()
-                                if comp and comp.db then
-                                    comp.db.textCooldown = comp.db.textCooldown or {}
-                                    comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
-                                    comp.db.textCooldown.offset.y = v
-                                end
-                                applyText()
-                            end,
-                            minLabel = "-100", maxLabel = "+100",
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local offset = getCooldownSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textCooldown = comp.db.textCooldown or {}
+                                        comp.db.textCooldown.offset = comp.db.textCooldown.offset or {}
+                                        comp.db.textCooldown.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
                         })
                         tabBuilder:Finalize()
                     end,

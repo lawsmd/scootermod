@@ -250,9 +250,10 @@ UF.healthColorValues = {
     texture = "Texture Original",
     class = "Class Color",
     value = "Color by Value",
+    valueDark = "Color by Value (Dark)",
     custom = "Custom",
 }
-UF.healthColorOrder = { "default", "texture", "class", "value", "custom" }
+UF.healthColorOrder = { "default", "texture", "class", "value", "valueDark", "custom" }
 
 -- Bar color mode options (power)
 UF.powerColorValues = {
