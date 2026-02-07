@@ -1855,10 +1855,752 @@ addon.RefreshCDMOverlays = function(componentId)
 end
 
 --------------------------------------------------------------------------------
--- TrackedBars Styling (Direct - Safe for Bar Frames)
+-- TrackedBars Styling
 --------------------------------------------------------------------------------
--- TrackedBars (BuffBarCooldownViewer) use direct styling because bar frames
--- are not protected the same way as icon viewers. This is safe and tested.
+-- TrackedBars (BuffBarCooldownViewer) support two modes:
+--   Default: Overlay-based bar styling (fill overlay anchored to StatusBar fill)
+--   Vertical: Addon-owned vertical stack frames with mirrored data
+-- Text styling (SetFont/SetTextColor) remains direct — always safe.
+--------------------------------------------------------------------------------
+
+-- Default mode overlay tracking (weak keys for GC)
+local trackedBarOverlays = setmetatable({}, { __mode = "k" })
+
+-- Data mirroring for vertical mode (weak keys for GC)
+local barItemMirror = setmetatable({}, { __mode = "k" })
+local hookedBarItems = setmetatable({}, { __mode = "k" })
+local visHookedItems = setmetatable({}, { __mode = "k" })
+
+-- Vertical stack pool and active list
+local vertStackPool = {}
+local activeVertStacks = {} -- ordered array of { blizzItem = child, frame = vertStack }
+local vertContainer = nil
+local verticalModeActive = false
+local vertRebuildPending = false
+
+-- Alpha enforcement hooks tracking (weak keys)
+local alphaEnforcedItems = setmetatable({}, { __mode = "k" })
+
+--------------------------------------------------------------------------------
+-- Tracked Bar Mode Helpers
+--------------------------------------------------------------------------------
+
+local function getTrackedBarMode()
+    local comp = addon.Components and addon.Components.trackedBars
+    if not comp or not comp.db then return "default" end
+    return comp.db.barMode or "default"
+end
+
+local function getTrackedBarSetting(key)
+    local comp = addon.Components and addon.Components.trackedBars
+    if not comp then return nil end
+    if comp.db and comp.db[key] ~= nil then return comp.db[key] end
+    if comp.settings and comp.settings[key] then return comp.settings[key].default end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- Default Mode: Bar Overlay Creation
+--------------------------------------------------------------------------------
+
+local function createBarOverlay(blizzBarItem)
+    local barFrame = (blizzBarItem.GetBarFrame and blizzBarItem:GetBarFrame()) or blizzBarItem.Bar
+    if not barFrame then return nil end
+
+    local overlay = CreateFrame("Frame", nil, barFrame)
+    overlay:SetAllPoints(barFrame)
+    overlay:SetFrameLevel(barFrame:GetFrameLevel())  -- Same level, not +1, so OVERLAY-layer text stays on top
+    overlay:EnableMouse(false)
+
+    -- BORDER layer sits below OVERLAY where Blizzard's Name/Duration FontStrings live
+    overlay.barBg = overlay:CreateTexture(nil, "BACKGROUND", nil, -1)
+    overlay.barBg:SetAllPoints(overlay)
+    overlay.barBg:Hide()
+
+    overlay.barFill = overlay:CreateTexture(nil, "BORDER", nil, -1)
+    overlay.barFill:Hide()
+
+    overlay:Hide()
+    return overlay
+end
+
+local function getOrCreateBarOverlay(blizzBarItem)
+    local existing = trackedBarOverlays[blizzBarItem]
+    if existing then return existing end
+    local overlay = createBarOverlay(blizzBarItem)
+    if overlay then
+        trackedBarOverlays[blizzBarItem] = overlay
+    end
+    return overlay
+end
+
+local function anchorFillOverlay(overlay, barFrame)
+    if not overlay or not overlay.barFill or not barFrame then return end
+    local fill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+    if not fill then return end
+    overlay.barFill:ClearAllPoints()
+    overlay.barFill:SetAllPoints(fill)
+end
+
+local function hideBarOverlay(blizzBarItem)
+    local overlay = trackedBarOverlays[blizzBarItem]
+    if not overlay then return end
+    overlay:Hide()
+    if overlay.barFill then overlay.barFill:Hide() end
+    if overlay.barBg then overlay.barBg:Hide() end
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Data Mirroring Hooks
+--------------------------------------------------------------------------------
+
+local function installDataMirrorHooks(child)
+    if hookedBarItems[child] then return end
+    hookedBarItems[child] = true
+
+    local mirror = barItemMirror[child]
+    if not mirror then
+        mirror = {}
+        barItemMirror[child] = mirror
+    end
+
+    local barFrame = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
+    if barFrame then
+        if barFrame.SetValue then
+            hooksecurefunc(barFrame, "SetValue", function(_, val)
+                local m = barItemMirror[child]
+                if not m then return end
+                if not issecretvalue(val) then
+                    m.barValue = val
+                    m.valueTime = GetTime()
+                end
+                -- Forward to vertical StatusBar (C++ handles secrets natively)
+                if verticalModeActive and m.vertStatusBar then
+                    pcall(m.vertStatusBar.SetValue, m.vertStatusBar, val)
+                end
+            end)
+        end
+        if barFrame.SetMinMaxValues then
+            hooksecurefunc(barFrame, "SetMinMaxValues", function(_, minVal, maxVal)
+                local m = barItemMirror[child]
+                if not m then return end
+                if not issecretvalue(minVal) then m.barMin = minVal end
+                if not issecretvalue(maxVal) then m.barMax = maxVal end
+                -- Forward to vertical StatusBar (C++ handles secrets natively)
+                if verticalModeActive and m.vertStatusBar then
+                    pcall(m.vertStatusBar.SetMinMaxValues, m.vertStatusBar, minVal, maxVal)
+                end
+            end)
+        end
+        if barFrame.Name and barFrame.Name.SetText then
+            hooksecurefunc(barFrame.Name, "SetText", function(_, text)
+                local m = barItemMirror[child]
+                if m then m.nameText = text end
+                if verticalModeActive then
+                    addon.UpdateVerticalBarText(child, "name")
+                end
+            end)
+        end
+        if barFrame.Duration and barFrame.Duration.SetText then
+            hooksecurefunc(barFrame.Duration, "SetText", function(_, text)
+                local m = barItemMirror[child]
+                if m then m.durationText = text end
+                if verticalModeActive then
+                    addon.UpdateVerticalBarText(child, "duration")
+                end
+            end)
+        end
+    end
+
+    local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
+    if iconFrame then
+        if iconFrame.Icon and iconFrame.Icon.SetTexture then
+            hooksecurefunc(iconFrame.Icon, "SetTexture", function(_, tex)
+                local m = barItemMirror[child]
+                if m then m.spellTexture = tex end
+                if verticalModeActive then
+                    addon.UpdateVerticalBarText(child, "icon")
+                end
+            end)
+        end
+        if iconFrame.Applications and iconFrame.Applications.SetText then
+            hooksecurefunc(iconFrame.Applications, "SetText", function(_, text)
+                local m = barItemMirror[child]
+                if m then m.applicationsText = text end
+                if verticalModeActive then
+                    addon.UpdateVerticalBarText(child, "applications")
+                end
+            end)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Stack Frame Creation
+--------------------------------------------------------------------------------
+
+local function createVerticalStack()
+    local stack = CreateFrame("Frame", nil, UIParent)
+    stack:EnableMouse(false)
+
+    -- Icon region (bottom of stack)
+    stack.iconRegion = CreateFrame("Frame", nil, stack)
+    stack.iconRegion:EnableMouse(true)
+    stack.iconTexture = stack.iconRegion:CreateTexture(nil, "ARTWORK")
+    stack.iconTexture:SetAllPoints(stack.iconRegion)
+    stack.applicationsFS = stack.iconRegion:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    stack.applicationsFS:SetPoint("BOTTOMRIGHT", stack.iconRegion, "BOTTOMRIGHT", -2, 2)
+    stack.applicationsFS:SetJustifyH("RIGHT")
+
+    -- Bar region (above icon)
+    stack.barRegion = CreateFrame("Frame", nil, stack)
+    stack.barRegion:EnableMouse(false)
+
+    stack.barBg = stack.barRegion:CreateTexture(nil, "BACKGROUND", nil, 0)
+    stack.barBg:SetAllPoints(stack.barRegion)
+
+    stack.barFill = CreateFrame("StatusBar", nil, stack.barRegion)
+    stack.barFill:SetAllPoints(stack.barRegion)
+    stack.barFill:SetOrientation("VERTICAL")
+    stack.barFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    stack.barFill:SetMinMaxValues(0, 1)
+    stack.barFill:SetValue(0)
+
+    -- Rotated spell name frame (swapped dimensions, -90deg rotation)
+    stack.spellNameFrame = CreateFrame("Frame", nil, stack.barRegion)
+    stack.spellNameFS = stack.spellNameFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    stack.spellNameFS:SetAllPoints(stack.spellNameFrame)
+    stack.spellNameFS:SetJustifyH("CENTER")
+    stack.spellNameFS:SetJustifyV("MIDDLE")
+
+    local ag = stack.spellNameFrame:CreateAnimationGroup()
+    local rot = ag:CreateAnimation("Rotation")
+    rot:SetDegrees(-90)
+    rot:SetDuration(0)
+    rot:SetEndDelay(2147483647)
+    ag:Play()
+    stack.spellNameAG = ag
+
+    -- Timer fontstring (top of stack, right-side up)
+    stack.timerFS = stack:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    stack.timerFS:SetJustifyH("CENTER")
+
+    stack:Hide()
+    return stack
+end
+
+local function acquireVertStack()
+    local stack = table.remove(vertStackPool)
+    if not stack then
+        stack = createVerticalStack()
+    end
+    return stack
+end
+
+local function releaseVertStack(stack)
+    if not stack then return end
+    stack:Hide()
+    stack:ClearAllPoints()
+    stack:SetParent(UIParent)
+    stack.iconTexture:SetTexture(nil)
+    stack.applicationsFS:SetText("")
+    stack.spellNameFS:SetText("")
+    stack.timerFS:SetText("")
+    stack.barFill:SetMinMaxValues(0, 1)
+    stack.barFill:SetValue(0)
+    table.insert(vertStackPool, stack)
+end
+
+local function releaseAllVertStacks()
+    for i = #activeVertStacks, 1, -1 do
+        local entry = activeVertStacks[i]
+        -- Clear forwarding reference
+        local m = barItemMirror[entry.blizzItem]
+        if m then m.vertStatusBar = nil end
+        releaseVertStack(entry.frame)
+        activeVertStacks[i] = nil
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Layout and Sizing
+--------------------------------------------------------------------------------
+
+local function layoutVerticalStack(stack, displayMode)
+    if not stack then return end
+    local iconSize = tonumber(getTrackedBarSetting("iconSize")) or 100
+    local scale = iconSize / 100
+    local barWidth = tonumber(getTrackedBarSetting("barWidth")) or 100
+    local barHeight = barWidth * scale -- barWidth setting = vertical bar height
+    local iconBarPad = tonumber(getTrackedBarSetting("iconBarPadding")) or 0
+    local stackWidth = 30 * scale
+    local iconDim = stackWidth
+
+    local iconRatio = tonumber(getTrackedBarSetting("iconTallWideRatio")) or 0
+    local iconW, iconH = iconDim, iconDim
+    if addon.IconRatio then
+        iconW, iconH = addon.IconRatio.GetDimensionsForComponent("trackedBars", iconRatio)
+        iconW = (iconW or 30) * scale
+        iconH = (iconH or 30) * scale
+    else
+        iconW = iconDim
+        iconH = iconDim
+    end
+    iconW = math.max(8, iconW)
+    iconH = math.max(8, iconH)
+    stackWidth = iconW
+
+    displayMode = displayMode or "both"
+    local showIcon = (displayMode ~= "name")
+    local showName = (displayMode ~= "icon")
+
+    stack.iconRegion:SetShown(showIcon)
+    stack.spellNameFS:SetShown(showName)
+
+    -- Timer always at top
+    local yOff = 0
+
+    -- Icon at bottom
+    if showIcon then
+        stack.iconRegion:SetSize(iconW, iconH)
+        stack.iconRegion:ClearAllPoints()
+        stack.iconRegion:SetPoint("BOTTOM", stack, "BOTTOM", 0, 0)
+        yOff = iconH + iconBarPad
+    end
+
+    -- Bar region above icon (or at bottom if no icon)
+    stack.barRegion:ClearAllPoints()
+    stack.barRegion:SetSize(stackWidth, barHeight)
+    stack.barRegion:SetPoint("BOTTOM", stack, "BOTTOM", 0, yOff)
+
+    -- Rotated name frame: swapped dimensions so text reads along the bar
+    stack.spellNameFrame:ClearAllPoints()
+    stack.spellNameFrame:SetSize(barHeight, stackWidth) -- swapped
+    stack.spellNameFrame:SetPoint("CENTER", stack.barRegion, "CENTER")
+
+    -- Timer above bar
+    stack.timerFS:ClearAllPoints()
+    stack.timerFS:SetPoint("BOTTOM", stack.barRegion, "TOP", 0, 2)
+
+    -- Total stack height
+    local timerHeight = 16 * scale
+    local totalHeight = (showIcon and (iconH + iconBarPad) or 0) + barHeight + timerHeight + 2
+    stack:SetSize(stackWidth, totalHeight)
+end
+
+local function layoutVerticalStacks()
+    if not vertContainer then return end
+    local padding = tonumber(getTrackedBarSetting("iconPadding")) or 3
+    local xOffset = 0
+    for _, entry in ipairs(activeVertStacks) do
+        entry.frame:ClearAllPoints()
+        entry.frame:SetPoint("BOTTOMLEFT", vertContainer, "BOTTOMLEFT", xOffset, 0)
+        xOffset = xOffset + entry.frame:GetWidth() + padding
+    end
+    vertContainer:SetSize(math.max(1, xOffset), 1)
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Fill + Text Updates
+--------------------------------------------------------------------------------
+
+function addon.UpdateVerticalBarText(child, which)
+    local mirror = barItemMirror[child]
+    if not mirror then return end
+    local stack
+    for _, entry in ipairs(activeVertStacks) do
+        if entry.blizzItem == child then
+            stack = entry.frame
+            break
+        end
+    end
+    if not stack then return end
+
+    if which == "name" then
+        stack.spellNameFS:SetText(mirror.nameText or "")
+    elseif which == "duration" then
+        stack.timerFS:SetText(mirror.durationText or "")
+    elseif which == "icon" then
+        stack.iconTexture:SetTexture(mirror.spellTexture)
+    elseif which == "applications" then
+        local txt = mirror.applicationsText or ""
+        stack.applicationsFS:SetText(txt)
+        stack.applicationsFS:SetShown(txt ~= "" and txt ~= "0" and txt ~= "1")
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Style Application
+--------------------------------------------------------------------------------
+
+local function styleVerticalStack(stack, component)
+    if not stack or not component or not component.db then return end
+    local db = component.db
+    local defaultFace = select(1, GameFontNormal:GetFont())
+
+    -- Bar textures
+    local useCustom = db.styleEnableCustom ~= false
+    if useCustom then
+        local fgKey = db.styleForegroundTexture or "bevelled"
+        local bgKey = db.styleBackgroundTexture or "bevelled"
+        local fgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(fgKey)
+        local bgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(bgKey)
+
+        if fgPath then
+            stack.barFill:SetStatusBarTexture(fgPath)
+        else
+            stack.barFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        end
+
+        if bgPath then
+            stack.barBg:SetTexture(bgPath)
+        else
+            stack.barBg:SetColorTexture(0, 0, 0, 1)
+        end
+
+        -- Foreground color (use same legacy settings as ApplyTrackedBarVisualsForChild)
+        local fgColorMode = db.styleForegroundColorMode or "default"
+        local fgTint = db.styleForegroundTint or {1,1,1,1}
+        local fgR, fgG, fgB, fgA = 1, 1, 1, 1
+        if fgColorMode == "custom" and type(fgTint) == "table" then
+            fgR, fgG, fgB, fgA = fgTint[1] or 1, fgTint[2] or 1, fgTint[3] or 1, fgTint[4] or 1
+        elseif fgColorMode == "texture" then
+            fgR, fgG, fgB, fgA = 1, 1, 1, 1
+        elseif fgColorMode == "default" then
+            fgR, fgG, fgB, fgA = 1.0, 0.5, 0.25, 1.0
+        end
+        stack.barFill:GetStatusBarTexture():SetVertexColor(fgR, fgG, fgB, fgA)
+
+        -- Background color + opacity (use same legacy settings as ApplyTrackedBarVisualsForChild)
+        local bgColorMode = db.styleBackgroundColorMode or "default"
+        local bgTint = db.styleBackgroundTint or {0,0,0,1}
+        local bgOpacity = tonumber(db.styleBackgroundOpacity) or 50
+        bgOpacity = math.max(0, math.min(100, bgOpacity)) / 100
+        local bgR, bgG, bgB, bgA = 0, 0, 0, 1
+        if bgColorMode == "custom" and type(bgTint) == "table" then
+            bgR, bgG, bgB, bgA = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
+        elseif bgColorMode == "texture" then
+            bgR, bgG, bgB, bgA = 1, 1, 1, 1
+        elseif bgColorMode == "default" then
+            bgR, bgG, bgB, bgA = 0, 0, 0, 1
+        end
+        stack.barBg:SetVertexColor(bgR, bgG, bgB, bgA)
+        stack.barBg:SetAlpha(bgOpacity)
+
+        stack.barFill:Show()
+        stack.barBg:Show()
+    else
+        -- Default CDM look
+        stack.barFill:SetStatusBarTexture("UI-HUD-CoolDownManager-Bar")
+        stack.barFill:GetStatusBarTexture():SetVertexColor(1.0, 0.5, 0.25, 1.0)
+        stack.barBg:SetAtlas("UI-HUD-CoolDownManager-Bar-BG")
+        stack.barBg:SetVertexColor(1, 1, 1, 1)
+        stack.barBg:SetAlpha(1)
+        stack.barFill:Show()
+        stack.barBg:Show()
+    end
+
+    -- Border on bar
+    local wantBorder = db.borderEnable
+    if wantBorder then
+        local styleKey = db.borderStyle or "square"
+        local thickness = tonumber(db.borderThickness) or 1
+        if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
+        local tintEnabled = db.borderTintEnable and type(db.borderTintColor) == "table"
+        local color
+        if tintEnabled then
+            local c = db.borderTintColor
+            color = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+        else
+            color = {0, 0, 0, 1}
+        end
+        local inset = tonumber(db.borderInset) or 0
+        local handled = false
+        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+            handled = addon.BarBorders.ApplyToBarFrame(stack.barRegion, styleKey, {
+                color = color,
+                thickness = thickness,
+                inset = inset,
+            })
+        end
+        if not handled then
+            if addon.Borders and addon.Borders.ApplySquare then
+                addon.Borders.ApplySquare(stack.barRegion, {
+                    size = thickness,
+                    color = color,
+                    layer = "OVERLAY",
+                    layerSublevel = 7,
+                    levelOffset = 5,
+                    containerParent = stack.barRegion,
+                    expandX = 1,
+                    expandY = 2,
+                    skipDimensionCheck = true,
+                })
+            end
+        end
+    else
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(stack.barRegion) end
+        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(stack.barRegion) end
+    end
+
+    -- Icon border
+    local iconBorderEnabled = not not db.iconBorderEnable
+    local iconStyle = tostring(db.iconBorderStyle or "none")
+    local iconThickness = tonumber(db.iconBorderThickness) or 1
+    iconThickness = math.max(1, math.min(16, iconThickness))
+    local iconTintEnabled = not not db.iconBorderTintEnable
+    local tintRaw = db.iconBorderTintColor
+    local tintColor = {1, 1, 1, 1}
+    if type(tintRaw) == "table" then
+        tintColor = { tintRaw[1] or 1, tintRaw[2] or 1, tintRaw[3] or 1, tintRaw[4] or 1 }
+    end
+    if iconBorderEnabled and stack.iconRegion:IsShown() then
+        addon.ApplyIconBorderStyle(stack.iconRegion, iconStyle, {
+            thickness = iconThickness,
+            color = iconTintEnabled and tintColor or nil,
+            tintEnabled = iconTintEnabled,
+            db = db,
+            thicknessKey = "iconBorderThickness",
+            tintColorKey = "iconBorderTintColor",
+            defaultThickness = 1,
+        })
+    else
+        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(stack.iconRegion) end
+    end
+
+    -- Text: Spell Name
+    local nameCfg = db.textName or { size = 14, style = "OUTLINE", color = {1,1,1,1} }
+    local nameFace = addon.ResolveFontFace and addon.ResolveFontFace(nameCfg.fontFace or "FRIZQT__") or defaultFace
+    if addon.ApplyFontStyle then
+        addon.ApplyFontStyle(stack.spellNameFS, nameFace, tonumber(nameCfg.size) or 14, nameCfg.style or "OUTLINE")
+    else
+        stack.spellNameFS:SetFont(nameFace, tonumber(nameCfg.size) or 14, nameCfg.style or "OUTLINE")
+    end
+    local nc = resolveCDMColor(nameCfg)
+    stack.spellNameFS:SetTextColor(nc[1] or 1, nc[2] or 1, nc[3] or 1, nc[4] or 1)
+
+    -- Text: Timer
+    local durCfg = db.textDuration or { size = 14, style = "OUTLINE", color = {1,1,1,1} }
+    local durFace = addon.ResolveFontFace and addon.ResolveFontFace(durCfg.fontFace or "FRIZQT__") or defaultFace
+    if addon.ApplyFontStyle then
+        addon.ApplyFontStyle(stack.timerFS, durFace, tonumber(durCfg.size) or 14, durCfg.style or "OUTLINE")
+    else
+        stack.timerFS:SetFont(durFace, tonumber(durCfg.size) or 14, durCfg.style or "OUTLINE")
+    end
+    local dc = resolveCDMColor(durCfg)
+    stack.timerFS:SetTextColor(dc[1] or 1, dc[2] or 1, dc[3] or 1, dc[4] or 1)
+
+    -- Text: Applications
+    local stacksCfg = db.textStacks or { size = 14, style = "OUTLINE", color = {1,1,1,1} }
+    local stacksFace = addon.ResolveFontFace and addon.ResolveFontFace(stacksCfg.fontFace or "FRIZQT__") or defaultFace
+    if addon.ApplyFontStyle then
+        addon.ApplyFontStyle(stack.applicationsFS, stacksFace, tonumber(stacksCfg.size) or 14, stacksCfg.style or "OUTLINE")
+    else
+        stack.applicationsFS:SetFont(stacksFace, tonumber(stacksCfg.size) or 14, stacksCfg.style or "OUTLINE")
+    end
+    local sc = resolveCDMColor(stacksCfg)
+    stack.applicationsFS:SetTextColor(sc[1] or 1, sc[2] or 1, sc[3] or 1, sc[4] or 1)
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Tooltip Forwarding
+--------------------------------------------------------------------------------
+
+local function setupVertStackTooltip(stack, blizzBarItem)
+    stack.iconRegion:SetScript("OnEnter", function()
+        pcall(function()
+            if blizzBarItem and blizzBarItem.OnEnter then
+                blizzBarItem:OnEnter()
+            end
+        end)
+    end)
+    stack.iconRegion:SetScript("OnLeave", function()
+        pcall(function()
+            if blizzBarItem and blizzBarItem.OnLeave then
+                blizzBarItem:OnLeave()
+            end
+        end)
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Blizzard Item Alpha Enforcement
+--------------------------------------------------------------------------------
+
+local function enforceBlizzItemAlpha(child)
+    if alphaEnforcedItems[child] then return end
+    alphaEnforcedItems[child] = true
+    pcall(child.SetAlpha, child, 0)
+    if child.SetAlpha then
+        hooksecurefunc(child, "SetAlpha", function(self, alpha)
+            if verticalModeActive and alpha > 0 then
+                pcall(self.SetAlpha, self, 0)
+            end
+        end)
+    end
+end
+
+local function restoreBlizzItemAlpha(child)
+    -- Cannot remove hooks, but verticalModeActive = false stops enforcement
+    pcall(child.SetAlpha, child, 1)
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Apply/Remove
+--------------------------------------------------------------------------------
+
+local function ensureVertContainer()
+    if vertContainer then return vertContainer end
+    vertContainer = CreateFrame("Frame", nil, UIParent)
+    vertContainer:SetPoint("BOTTOMLEFT", _G["BuffBarCooldownViewer"] or UIParent, "BOTTOMLEFT", 0, 0)
+    vertContainer:EnableMouse(false)
+    vertContainer:SetSize(1, 1)
+
+    vertContainer:Show()
+    return vertContainer
+end
+
+local function applyVerticalMode(component)
+    verticalModeActive = true
+    ensureVertContainer()
+    local frame = _G[component.frameName]
+    if not frame then return end
+
+    local displayMode = getTrackedBarSetting("displayMode") or "both"
+
+    -- Release any previous stacks
+    releaseAllVertStacks()
+
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do
+        if child.GetBarFrame or child.Bar then
+            -- Install data mirror hooks (always, even for hidden items)
+            installDataMirrorHooks(child)
+
+            -- Skip hidden/inactive items — respects Blizzard's hideWhenInactive logic
+            if not child:IsShown() then
+                -- Don't create a vertical stack for items Blizzard has hidden
+            else
+
+            -- Acquire vertical stack
+            local stack = acquireVertStack()
+            stack:SetParent(vertContainer)
+
+            -- Populate from mirror (capture current data)
+            local mirror = barItemMirror[child] or {}
+
+            -- Try to read current values from Blizzard frames as initial data
+            local barFrame = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
+            local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
+
+            -- Capture current icon texture
+            if iconFrame and iconFrame.Icon then
+                local ok, tex = pcall(iconFrame.Icon.GetTexture, iconFrame.Icon)
+                if ok and tex then mirror.spellTexture = tex end
+            end
+
+            -- Set mirrored data on stack
+            stack.iconTexture:SetTexture(mirror.spellTexture)
+            stack.spellNameFS:SetText(mirror.nameText or "")
+            stack.timerFS:SetText(mirror.durationText or "")
+            local appText = mirror.applicationsText or ""
+            stack.applicationsFS:SetText(appText)
+            stack.applicationsFS:SetShown(appText ~= "" and appText ~= "0" and appText ~= "1")
+
+            -- Layout the stack geometry
+            layoutVerticalStack(stack, displayMode)
+
+            -- Style the stack (textures, borders, fonts)
+            styleVerticalStack(stack, component)
+
+            -- Store mirror and StatusBar forwarding reference
+            barItemMirror[child] = mirror
+            mirror.vertStatusBar = stack.barFill
+            table.insert(activeVertStacks, { blizzItem = child, frame = stack })
+
+            -- Sync initial values from Blizzard bar (secret or not — C++ handles both)
+            local initBar = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
+            if initBar then
+                pcall(function()
+                    local min, max = initBar:GetMinMaxValues()
+                    stack.barFill:SetMinMaxValues(min, max)
+                end)
+                pcall(function()
+                    local val = initBar:GetValue()
+                    stack.barFill:SetValue(val)
+                end)
+            end
+
+            -- Setup tooltip forwarding
+            setupVertStackTooltip(stack, child)
+
+            -- Hide Blizzard bar item
+            enforceBlizzItemAlpha(child)
+
+            stack:Show()
+            end -- else (IsShown)
+        end
+    end
+
+    layoutVerticalStacks()
+    vertContainer:Show()
+end
+
+local function removeVerticalMode()
+    verticalModeActive = false
+    releaseAllVertStacks()
+    if vertContainer then
+        vertContainer:Hide()
+    end
+
+    -- Restore Blizzard bar items
+    local comp = addon.Components and addon.Components.trackedBars
+    if comp then
+        local frame = _G[comp.frameName]
+        if frame then
+            for _, child in ipairs({ frame:GetChildren() }) do
+                restoreBlizzItemAlpha(child)
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Vertical Mode: Edit Mode Integration
+--------------------------------------------------------------------------------
+
+local vertEditModeHooked = false
+
+local function hookVertEditMode()
+    if vertEditModeHooked then return end
+    local viewer = _G["BuffBarCooldownViewer"]
+    if not viewer then return end
+    if viewer.SetIsEditing then
+        hooksecurefunc(viewer, "SetIsEditing", function(self, isEditing)
+            if isEditing then
+                -- Entering Edit Mode: temporarily show Blizzard bars, hide vert
+                if verticalModeActive then
+                    if vertContainer then vertContainer:Hide() end
+                    for _, child in ipairs({ self:GetChildren() }) do
+                        pcall(child.SetAlpha, child, 1)
+                    end
+                end
+            else
+                -- Exiting Edit Mode: re-apply if vertical mode
+                if getTrackedBarMode() == "vertical" then
+                    C_Timer.After(0, function()
+                        local comp = addon.Components and addon.Components.trackedBars
+                        if comp then applyVerticalMode(comp) end
+                    end)
+                end
+            end
+        end)
+    end
+    vertEditModeHooked = true
+end
+
+--------------------------------------------------------------------------------
+-- Default Mode: Overlay-Based Styling for ApplyTrackedBarVisualsForChild
 --------------------------------------------------------------------------------
 
 function addon.ApplyTrackedBarVisualsForChild(component, child)
@@ -1928,17 +2670,27 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         barFrame:SetPoint("LEFT", anchorLeftTo, anchorLeftPoint, desiredPad, 0)
     end
 
-    if addon.Media and addon.Media.ApplyBarTexturesToBarFrame then
+    -- Overlay-based bar texture styling
+    do
         local useCustom = (component.db and component.db.styleEnableCustom) ~= false
         if useCustom then
-            local fg = component.db and component.db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default)
-            local bg = component.db and component.db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default)
-            local bgOpacity = component.db and component.db.styleBackgroundOpacity or (component.settings.styleBackgroundOpacity and component.settings.styleBackgroundOpacity.default) or 50
-            addon.Media.ApplyBarTexturesToBarFrame(barFrame, fg, bg, bgOpacity)
-            local fgColorMode = (component.db and component.db.styleForegroundColorMode) or "default"
-            local fgTint = (component.db and component.db.styleForegroundTint) or {1,1,1,1}
-            local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
-            if tex and tex.SetVertexColor then
+            local overlay = getOrCreateBarOverlay(child)
+            if overlay then
+                -- Anchor fill overlay to Blizzard's fill texture (secret-safe)
+                anchorFillOverlay(overlay, barFrame)
+
+                -- Apply foreground texture to fill overlay
+                local fg = component.db and component.db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default)
+                local fgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(fg)
+                if fgPath then
+                    overlay.barFill:SetTexture(fgPath)
+                else
+                    overlay.barFill:SetColorTexture(1, 0.5, 0.25, 1)
+                end
+
+                -- Foreground color
+                local fgColorMode = (component.db and component.db.styleForegroundColorMode) or "default"
+                local fgTint = (component.db and component.db.styleForegroundTint) or {1,1,1,1}
                 local r, g, b, a = 1, 1, 1, 1
                 if fgColorMode == "custom" and type(fgTint) == "table" then
                     r, g, b, a = fgTint[1] or 1, fgTint[2] or 1, fgTint[3] or 1, fgTint[4] or 1
@@ -1947,49 +2699,56 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 elseif fgColorMode == "default" then
                     r, g, b, a = 1.0, 0.5, 0.25, 1.0
                 end
-                pcall(tex.SetVertexColor, tex, r, g, b, a)
-            end
-            local bgColorMode = (component.db and component.db.styleBackgroundColorMode) or "default"
-            local bgTint = (component.db and component.db.styleBackgroundTint) or {0,0,0,1}
-            -- Use weak-key lookup to avoid reading taint-causing properties from Blizzard frames
-            local barState = addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
-            local bgTexture = barState and barState.bg
-            if bgTexture then
-                local r, g, b, a = 0, 0, 0, 1
+                overlay.barFill:SetVertexColor(r, g, b, a)
+                overlay.barFill:Show()
+
+                -- Apply background texture to bg overlay
+                local bg = component.db and component.db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default)
+                local bgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(bg)
+                if bgPath then
+                    overlay.barBg:SetTexture(bgPath)
+                else
+                    overlay.barBg:SetColorTexture(0, 0, 0, 1)
+                end
+
+                -- Background color + opacity
+                local bgColorMode = (component.db and component.db.styleBackgroundColorMode) or "default"
+                local bgTint = (component.db and component.db.styleBackgroundTint) or {0,0,0,1}
+                local bgOpacity = component.db and component.db.styleBackgroundOpacity or (component.settings.styleBackgroundOpacity and component.settings.styleBackgroundOpacity.default) or 50
+                local br, bg2, bb, ba = 0, 0, 0, 1
                 if bgColorMode == "custom" and type(bgTint) == "table" then
-                    r, g, b, a = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
+                    br, bg2, bb, ba = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
                 elseif bgColorMode == "texture" then
-                    r, g, b, a = 1, 1, 1, 1
+                    br, bg2, bb, ba = 1, 1, 1, 1
                 elseif bgColorMode == "default" then
-                    r, g, b, a = 0, 0, 0, 1
+                    br, bg2, bb, ba = 0, 0, 0, 1
                 end
-                if bgTexture.SetVertexColor then
-                    pcall(bgTexture.SetVertexColor, bgTexture, r, g, b, 1.0)
-                end
-                if bgTexture.SetAlpha then
-                    local opacity = tonumber(bgOpacity) or 50
-                    opacity = math.max(0, math.min(100, opacity)) / 100
-                    pcall(bgTexture.SetAlpha, bgTexture, opacity)
-                end
+                overlay.barBg:SetVertexColor(br, bg2, bb, ba)
+                local opacityVal = tonumber(bgOpacity) or 50
+                opacityVal = math.max(0, math.min(100, opacityVal)) / 100
+                overlay.barBg:SetAlpha(opacityVal)
+                overlay.barBg:Show()
+
+                overlay:Show()
+
+                -- Hide Blizzard fill texture so our overlay shows through
+                local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+                if blizzFill then pcall(blizzFill.SetAlpha, blizzFill, 0) end
+                -- Hide Blizzard background
+                if barFrame.BarBG then pcall(barFrame.BarBG.SetAlpha, barFrame.BarBG, 0) end
             end
         else
-            -- Use weak-key lookup for background texture
-            local barState = addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
-            local bgTexture = barState and barState.bg
-            if bgTexture then bgTexture:Hide() end
-            local tex = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
-            if tex and tex.SetAtlas then pcall(tex.SetAtlas, tex, "UI-HUD-CoolDownManager-Bar", true) end
+            -- No custom textures: hide overlay, restore Blizzard defaults
+            hideBarOverlay(child)
+            local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+            if blizzFill then
+                if blizzFill.SetAlpha then pcall(blizzFill.SetAlpha, blizzFill, 1.0) end
+                if blizzFill.SetAtlas then pcall(blizzFill.SetAtlas, blizzFill, "UI-HUD-CoolDownManager-Bar", true) end
+                if blizzFill.SetVertexColor then pcall(blizzFill.SetVertexColor, blizzFill, 1.0, 0.5, 0.25, 1.0) end
+                if blizzFill.SetTexCoord then pcall(blizzFill.SetTexCoord, blizzFill, 0, 1, 0, 1) end
+            end
             if barFrame.SetStatusBarAtlas then pcall(barFrame.SetStatusBarAtlas, barFrame, "UI-HUD-CoolDownManager-Bar") end
-            if tex then
-                if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1.0, 0.5, 0.25, 1.0) end
-                if tex.SetAlpha then pcall(tex.SetAlpha, tex, 1.0) end
-                if tex.SetTexCoord then pcall(tex.SetTexCoord, tex, 0, 1, 0, 1) end
-            end
-            for _, region in ipairs({ barFrame:GetRegions() }) do
-                if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                    pcall(region.SetAlpha, region, 1.0)
-                end
-            end
+            if barFrame.BarBG then pcall(barFrame.BarBG.SetAlpha, barFrame.BarBG, 1.0) end
             Util.HideDefaultBarTextures(barFrame, true)
         end
     end
@@ -2068,11 +2827,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     end
 
     local iconBorderEnabled = not not getSettingValue("iconBorderEnable")
-    local iconStyle = tostring(getSettingValue("iconBorderStyle") or "square")
-    if iconStyle == "none" then
-        iconStyle = "square"
-        if component.db then component.db.iconBorderStyle = iconStyle end
-    end
+    local iconStyle = tostring(getSettingValue("iconBorderStyle") or "none")
     local iconThickness = tonumber(getSettingValue("iconBorderThickness")) or 1
     iconThickness = math.max(1, math.min(16, iconThickness))
     local iconTintEnabled = not not getSettingValue("iconBorderTintEnable")
@@ -2240,43 +2995,77 @@ end
 
 local trackedBarsHooked = false
 
+local function scheduleVerticalRebuild(component)
+    if vertRebuildPending then return end
+    vertRebuildPending = true
+    C_Timer.After(0, function()
+        vertRebuildPending = false
+        if verticalModeActive then
+            applyVerticalMode(component)
+        end
+    end)
+end
+
 local function hookTrackedBars(component)
     if trackedBarsHooked then return end
-    
+
     local frame = _G[component.frameName]
     if not frame then return end
-    
+
     if frame.OnAcquireItemFrame then
         hooksecurefunc(frame, "OnAcquireItemFrame", function(viewer, itemFrame)
+            -- Always install data mirror hooks (needed for vertical mode)
+            installDataMirrorHooks(itemFrame)
+
+            -- Hook visibility changes to refresh vertical layout when buffs activate/deactivate
+            if not visHookedItems[itemFrame] and itemFrame.SetShown then
+                hooksecurefunc(itemFrame, "SetShown", function()
+                    if verticalModeActive then
+                        scheduleVerticalRebuild(component)
+                    end
+                end)
+                visHookedItems[itemFrame] = true
+            end
+
             if InCombatLockdown and InCombatLockdown() then return end
-            if C_Timer and C_Timer.After then
+            local mode = getTrackedBarMode()
+            if mode == "vertical" then
+                scheduleVerticalRebuild(component)
+            else
                 C_Timer.After(0, function()
-                    if addon and addon.ApplyTrackedBarVisualsForChild then
+                    if addon.ApplyTrackedBarVisualsForChild then
                         addon.ApplyTrackedBarVisualsForChild(component, itemFrame)
                     end
                 end)
             end
         end)
     end
-    
+
     if frame.RefreshLayout then
         hooksecurefunc(frame, "RefreshLayout", function()
             if InCombatLockdown and InCombatLockdown() then return end
-            if C_Timer and C_Timer.After then
+            local mode = getTrackedBarMode()
+            if mode == "vertical" then
+                scheduleVerticalRebuild(component)
+            else
                 C_Timer.After(0, function()
                     if not addon or not addon.Components or not addon.Components.trackedBars then return end
-                    local f = _G[addon.Components.trackedBars.frameName]
+                    local comp = addon.Components.trackedBars
+                    local f = _G[comp.frameName]
                     if not f then return end
                     for _, child in ipairs({ f:GetChildren() }) do
-                        if addon and addon.ApplyTrackedBarVisualsForChild then
-                            addon.ApplyTrackedBarVisualsForChild(component, child)
+                        if addon.ApplyTrackedBarVisualsForChild then
+                            addon.ApplyTrackedBarVisualsForChild(comp, child)
                         end
                     end
                 end)
             end
         end)
     end
-    
+
+    -- Hook Edit Mode for vertical mode support
+    hookVertEditMode()
+
     trackedBarsHooked = true
 end
 
@@ -2288,15 +3077,23 @@ addon:RegisterComponentInitializer(function(self)
     -- TrackedBars apply styling directly; icon-based CDM uses overlays
     local function SafeApplyStyling(component)
         if component.id == "trackedBars" then
-            -- TrackedBars use direct styling (safe for bar frames)
             local frame = _G[component.frameName]
             if not frame then return end
-            
+
             hookTrackedBars(component)
-            
-            for _, child in ipairs({ frame:GetChildren() }) do
-                if addon and addon.ApplyTrackedBarVisualsForChild then
-                    addon.ApplyTrackedBarVisualsForChild(component, child)
+
+            local mode = getTrackedBarMode()
+            if mode == "vertical" then
+                applyVerticalMode(component)
+            else
+                -- Default mode: remove vertical if active, apply overlay styling
+                if verticalModeActive then
+                    removeVerticalMode()
+                end
+                for _, child in ipairs({ frame:GetChildren() }) do
+                    if addon.ApplyTrackedBarVisualsForChild then
+                        addon.ApplyTrackedBarVisualsForChild(component, child)
+                    end
                 end
             end
         else
@@ -2562,6 +3359,7 @@ addon:RegisterComponentInitializer(function(self)
         name = "Tracked Bars",
         frameName = "BuffBarCooldownViewer",
         settings = {
+            barMode = { type = "addon", default = "default" },
             iconPadding = { type = "editmode", settingId = 4, default = 3, ui = {
                 label = "Icon Padding", widget = "slider", min = 2, max = 10, step = 1, section = "Positioning", order = 1
             }},
@@ -2577,7 +3375,7 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", settingId = 3, default = 100, ui = {
                 label = "Bar Scale", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            barWidth = { type = "editmode", default = 100, ui = {
+            barWidth = { type = "editmode", settingId = 11, default = 100, ui = {
                 label = "Bar Width", widget = "slider", min = 50, max = 200, step = 1, section = "Sizing", order = 2
             }},
             styleEnableCustom = { type = "addon", default = true, ui = {
@@ -2640,7 +3438,7 @@ addon:RegisterComponentInitializer(function(self)
             iconBorderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
                 label = "Tint Color", widget = "color", section = "Icon", order = 5
             }},
-            iconBorderStyle = { type = "addon", default = "square", ui = {
+            iconBorderStyle = { type = "addon", default = "none", ui = {
                 label = "Border Style", widget = "dropdown", section = "Icon", order = 6,
                 optionsProvider = function()
                     if addon.BuildIconBorderOptionsContainer then

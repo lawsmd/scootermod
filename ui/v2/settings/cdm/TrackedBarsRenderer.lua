@@ -9,6 +9,10 @@ addon.UI.Settings.CDM.TrackedBars = {}
 local TrackedBars = addon.UI.Settings.CDM.TrackedBars
 local SettingsBuilder = addon.UI.SettingsBuilder
 
+-- Text color options (shared across text settings)
+local textColorValues = { default = "Default", class = "Class Color", custom = "Custom" }
+local textColorOrder = { "default", "class", "custom" }
+
 function TrackedBars.Render(panel, scrollContent)
     panel:ClearContent()
 
@@ -105,13 +109,13 @@ function TrackedBars.Render(panel, scrollContent)
 
     -- Build icon border options for selector (returns values and order)
     local function getIconBorderOptions()
-        local values = { square = "Default (Square)" }
-        local order = { "square" }
+        local values = { none = "None", square = "Default (Square)" }
+        local order = { "none", "square" }
         if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
             local data = addon.IconBorders.GetDropdownEntries()
             if data and #data > 0 then
-                values = {}
-                order = {}
+                values = { none = "None" }
+                order = { "none" }
                 for _, entry in ipairs(data) do
                     local key = entry.value or entry.key
                     local label = entry.text or entry.label or key
@@ -124,6 +128,19 @@ function TrackedBars.Render(panel, scrollContent)
         end
         return values, order
     end
+
+    ---------------------------------------------------------------------------
+    -- Mode Selector (parent level, emphasized)
+    ---------------------------------------------------------------------------
+    builder:AddSelector({
+        label = "Mode",
+        description = "Choose how tracked bars are displayed.",
+        values = { default = "Default", vertical = "Vertical Bars" },
+        order = { "default", "vertical" },
+        emphasized = true,
+        get = function() return getSetting("barMode") or "default" end,
+        set = function(v) setSetting("barMode", v) end,
+    })
 
     ---------------------------------------------------------------------------
     -- Positioning Section
@@ -297,6 +314,267 @@ function TrackedBars.Render(panel, scrollContent)
     })
 
     ---------------------------------------------------------------------------
+    -- Text Section (contains tabbed sub-sections for Spell Name and Timer)
+    ---------------------------------------------------------------------------
+    builder:AddCollapsibleSection({
+        title = "Text",
+        componentId = "trackedBars",
+        sectionKey = "text",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Helper to apply text styling
+            local function applyText()
+                if addon and addon.ApplyStyles then
+                    C_Timer.After(0, function() addon:ApplyStyles() end)
+                end
+            end
+
+            -- Font style options
+            local fontStyleValues = {
+                ["NONE"] = "Regular",
+                ["OUTLINE"] = "Outline",
+                ["THICKOUTLINE"] = "Thick Outline",
+                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
+                ["SHADOW"] = "Shadow",
+                ["SHADOWOUTLINE"] = "Shadow Outline",
+                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
+                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
+            }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+
+            -- Tabbed section for Spell Name and Timer text settings
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "spellName", label = "Spell Name" },
+                    { key = "timer", label = "Timer" },
+                },
+                componentId = "trackedBars",
+                sectionKey = "textTabs",
+                buildContent = {
+                    spellName = function(tabContent, tabBuilder)
+                        -- Helper to get/set textName sub-properties
+                        local function getNameSetting(key, default)
+                            local tn = getSetting("textName")
+                            if tn and tn[key] ~= nil then return tn[key] end
+                            return default
+                        end
+                        local function setNameSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textName = comp.db.textName or {}
+                                comp.db.textName[key] = value
+                            end
+                            applyText()
+                        end
+
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for spell name text.",
+                            get = function() return getNameSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setNameSetting("fontFace", v) end,
+                        })
+
+                        -- Font Size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getNameSetting("size", 14) end,
+                            set = function(v) setNameSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font Style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getNameSetting("style", "OUTLINE") end,
+                            set = function(v) setNameSetting("style", v) end,
+                        })
+
+                        -- Font Color picker
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Font Color",
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getNameSetting("colorMode", "default") end,
+                            set = function(v) setNameSetting("colorMode", v or "default") end,
+                            getColor = function()
+                                local c = getNameSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setNameSetting("color", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        -- Offset X/Y dual slider
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getNameSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textName = comp.db.textName or {}
+                                        comp.db.textName.offset = comp.db.textName.offset or {}
+                                        comp.db.textName.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getNameSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textName = comp.db.textName or {}
+                                        comp.db.textName.offset = comp.db.textName.offset or {}
+                                        comp.db.textName.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    timer = function(tabContent, tabBuilder)
+                        -- Helper to get/set textDuration sub-properties
+                        local function getDurationSetting(key, default)
+                            local td = getSetting("textDuration")
+                            if td and td[key] ~= nil then return td[key] end
+                            return default
+                        end
+                        local function setDurationSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textDuration = comp.db.textDuration or {}
+                                comp.db.textDuration[key] = value
+                            end
+                            applyText()
+                        end
+
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for timer/duration text.",
+                            get = function() return getDurationSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setDurationSetting("fontFace", v) end,
+                        })
+
+                        -- Font Size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getDurationSetting("size", 14) end,
+                            set = function(v) setDurationSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font Style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getDurationSetting("style", "OUTLINE") end,
+                            set = function(v) setDurationSetting("style", v) end,
+                        })
+
+                        -- Font Color picker
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Font Color",
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getDurationSetting("colorMode", "default") end,
+                            set = function(v) setDurationSetting("colorMode", v or "default") end,
+                            getColor = function()
+                                local c = getDurationSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setDurationSetting("color", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        -- Offset X/Y dual slider
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getDurationSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textDuration = comp.db.textDuration or {}
+                                        comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                        comp.db.textDuration.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getDurationSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textDuration = comp.db.textDuration or {}
+                                        comp.db.textDuration.offset = comp.db.textDuration.offset or {}
+                                        comp.db.textDuration.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                            },
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ---------------------------------------------------------------------------
     -- Icon Section
     ---------------------------------------------------------------------------
     builder:AddCollapsibleSection({
@@ -312,12 +590,6 @@ function TrackedBars.Render(panel, scrollContent)
                 get = function() return getSetting("iconTallWideRatio") or 0 end,
                 set = function(v) setSetting("iconTallWideRatio", v) end,
                 minLabel = "Wide", maxLabel = "Tall",
-            })
-
-            inner:AddToggle({
-                label = "Enable Border",
-                get = function() return getSetting("iconBorderEnable") or false end,
-                set = function(v) setSetting("iconBorderEnable", v) end,
             })
 
             inner:AddToggleColorPicker({
@@ -336,8 +608,19 @@ function TrackedBars.Render(panel, scrollContent)
                 label = "Border Style",
                 values = iconBorderValues,
                 order = iconBorderOrder,
-                get = function() return getSetting("iconBorderStyle") or "square" end,
-                set = function(v) setSetting("iconBorderStyle", v) end,
+                get = function()
+                    if not getSetting("iconBorderEnable") then return "none" end
+                    return getSetting("iconBorderStyle") or "square"
+                end,
+                set = function(v)
+                    if v == "none" then
+                        setSetting("iconBorderEnable", false)
+                        setSetting("iconBorderStyle", "none")
+                    else
+                        setSetting("iconBorderEnable", true)
+                        setSetting("iconBorderStyle", v)
+                    end
+                end,
             })
 
             inner:AddSlider({
