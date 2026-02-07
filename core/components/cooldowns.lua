@@ -2428,9 +2428,11 @@ end
 --------------------------------------------------------------------------------
 
 local function enforceBlizzItemAlpha(child)
+    -- Always force alpha to 0 (needed on every vertical activation)
+    pcall(child.SetAlpha, child, 0)
+    -- Install the enforcement hook only once per child
     if alphaEnforcedItems[child] then return end
     alphaEnforcedItems[child] = true
-    pcall(child.SetAlpha, child, 0)
     if child.SetAlpha then
         hooksecurefunc(child, "SetAlpha", function(self, alpha)
             if verticalModeActive and alpha > 0 then
