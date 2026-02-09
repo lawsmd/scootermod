@@ -30,6 +30,7 @@ local frame = nil       -- The menu frame
 local buttons = {}      -- Created button references (for cleanup)
 local initialized = false
 local hookInstalled = false
+local blizzMenuAlphaHidden = false
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -38,6 +39,13 @@ local hookInstalled = false
 local function IsSettingEnabled()
     return addon.db and addon.db.profile and addon.db.profile.misc
         and addon.db.profile.misc.customGameMenu
+end
+
+local function RestoreBlizzardGameMenu()
+    if not blizzMenuAlphaHidden then return end
+    blizzMenuAlphaHidden = false
+    GameMenuFrame:SetAlpha(1)
+    GameMenuFrame:EnableMouse(true)
 end
 
 -- Wrap a callback in pcall for combat safety, play sound, and hide menu
@@ -390,6 +398,16 @@ local function InitializeFrame()
         position = "right",
         offsetX = 8,
     })
+
+    -- When custom menu is closed out of combat, restore GameMenuFrame if alpha-hidden
+    frame:HookScript("OnHide", function()
+        if blizzMenuAlphaHidden and not InCombatLockdown() then
+            RestoreBlizzardGameMenu()
+            if GameMenuFrame:IsShown() then
+                pcall(HideUIPanel, GameMenuFrame)
+            end
+        end
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -436,22 +454,53 @@ function GameMenu:InstallHook()
     if not GameMenuFrame then return end
 
     GameMenuFrame:HookScript("OnShow", function(self)
-        if not IsSettingEnabled() then
+        if not IsSettingEnabled() then return end
+
+        if blizzMenuAlphaHidden then
+            -- Re-shown while already alpha-hidden (e.g., sub-panel closed), re-suppress
+            GameMenuFrame:SetAlpha(0)
+            GameMenuFrame:EnableMouse(false)
             return
         end
 
-        -- Hide Blizzard's menu and show ours instead
-        HideUIPanel(GameMenuFrame)
-        GameMenu:Show()
+        if InCombatLockdown() then
+            -- HideUIPanel is blocked during combat; visually hide instead
+            GameMenuFrame:SetAlpha(0)
+            GameMenuFrame:EnableMouse(false)
+            blizzMenuAlphaHidden = true
+            GameMenu:Show()
+        else
+            HideUIPanel(GameMenuFrame)
+            GameMenu:Show()
+        end
+    end)
+
+    -- When GameMenuFrame hides during alpha-hidden state (ESC in combat),
+    -- also close our custom menu for single-ESC-press behavior
+    GameMenuFrame:HookScript("OnHide", function()
+        if blizzMenuAlphaHidden then
+            RestoreBlizzardGameMenu()
+            if frame and frame:IsShown() then
+                frame:Hide()
+            end
+        end
     end)
 end
 
--- Register hook installation on PLAYER_ENTERING_WORLD
+-- Register hook installation on PLAYER_ENTERING_WORLD + combat-end cleanup
 local hookFrame = CreateFrame("Frame")
 hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+hookFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 hookFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         GameMenu:InstallHook()
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if blizzMenuAlphaHidden then
+            RestoreBlizzardGameMenu()
+            if GameMenuFrame:IsShown() then
+                pcall(HideUIPanel, GameMenuFrame)
+            end
+        end
     end
 end)

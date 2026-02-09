@@ -2183,6 +2183,7 @@ function UIPanel:GetCategoryTitle(key)
         objectiveTracker = "Objective Tracker",
         minimap = "Minimap",
         chat = "Chat",
+        misc = "Misc.",
         cdmQoL = "CDM: Quality of Life",
         essentialCooldowns = "CDM: Essential Cooldowns",
         utilityCooldowns = "CDM: Utility Cooldowns",
