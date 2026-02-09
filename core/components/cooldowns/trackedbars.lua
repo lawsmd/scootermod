@@ -418,6 +418,9 @@ local function styleVerticalStack(stack, component)
         local fgR, fgG, fgB, fgA = 1, 1, 1, 1
         if fgColorMode == "custom" and type(fgTint) == "table" then
             fgR, fgG, fgB, fgA = fgTint[1] or 1, fgTint[2] or 1, fgTint[3] or 1, fgTint[4] or 1
+        elseif fgColorMode == "class" and addon.GetClassColorRGB then
+            local cr, cg, cb = addon.GetClassColorRGB("player")
+            fgR, fgG, fgB, fgA = cr or 1, cg or 1, cb or 1, 1
         elseif fgColorMode == "texture" then
             fgR, fgG, fgB, fgA = 1, 1, 1, 1
         elseif fgColorMode == "default" then
@@ -433,6 +436,9 @@ local function styleVerticalStack(stack, component)
         local bgR, bgG, bgB, bgA = 0, 0, 0, 1
         if bgColorMode == "custom" and type(bgTint) == "table" then
             bgR, bgG, bgB, bgA = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
+        elseif bgColorMode == "class" and addon.GetClassColorRGB then
+            local cr, cg, cb = addon.GetClassColorRGB("player")
+            bgR, bgG, bgB, bgA = cr or 0, cg or 0, cb or 0, 1
         elseif bgColorMode == "texture" then
             bgR, bgG, bgB, bgA = 1, 1, 1, 1
         elseif bgColorMode == "default" then
@@ -850,6 +856,9 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 local r, g, b, a = 1, 1, 1, 1
                 if fgColorMode == "custom" and type(fgTint) == "table" then
                     r, g, b, a = fgTint[1] or 1, fgTint[2] or 1, fgTint[3] or 1, fgTint[4] or 1
+                elseif fgColorMode == "class" and addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB("player")
+                    r, g, b, a = cr or 1, cg or 1, cb or 1, 1
                 elseif fgColorMode == "texture" then
                     r, g, b, a = 1, 1, 1, 1
                 elseif fgColorMode == "default" then
@@ -874,6 +883,9 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 local br, bg2, bb, ba = 0, 0, 0, 1
                 if bgColorMode == "custom" and type(bgTint) == "table" then
                     br, bg2, bb, ba = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
+                elseif bgColorMode == "class" and addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB("player")
+                    br, bg2, bb, ba = cr or 0, cg or 0, cb or 0, 1
                 elseif bgColorMode == "texture" then
                     br, bg2, bb, ba = 1, 1, 1, 1
                 elseif bgColorMode == "default" then

@@ -226,28 +226,52 @@ function TrackedBars.Render(panel, scrollContent)
                 set = function(v) setSetting("styleForegroundTexture", v) end,
             })
 
+            inner:AddSelectorColorPicker({
+                label = "Foreground Color",
+                values = {
+                    default = "Default",
+                    class = "Class Color",
+                    custom = "Custom",
+                },
+                order = { "default", "class", "custom" },
+                get = function() return getSetting("styleForegroundColorMode") or "default" end,
+                set = function(v) setSetting("styleForegroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleForegroundTint") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleForegroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
+            })
+
             inner:AddBarTextureSelector({
                 label = "Background Texture",
                 get = function() return getSetting("styleBackgroundTexture") or "bevelled" end,
                 set = function(v) setSetting("styleBackgroundTexture", v) end,
             })
 
-            inner:AddColorPicker({
-                label = "Foreground Color",
-                get = function()
-                    local c = getSetting("styleForegroundColor")
-                    return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
-                end,
-                set = function(r, g, b, a) setSetting("styleForegroundColor", {r, g, b, a}) end,
-            })
-
-            inner:AddColorPicker({
+            inner:AddSelectorColorPicker({
                 label = "Background Color",
-                get = function()
-                    local c = getSetting("styleBackgroundColor")
-                    return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 0.9
+                values = {
+                    default = "Default",
+                    class = "Class Color",
+                    custom = "Custom",
+                },
+                order = { "default", "class", "custom" },
+                get = function() return getSetting("styleBackgroundColorMode") or "default" end,
+                set = function(v) setSetting("styleBackgroundColorMode", v) end,
+                getColor = function()
+                    local c = getSetting("styleBackgroundTint") or {0, 0, 0, 1}
+                    return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
                 end,
-                set = function(r, g, b, a) setSetting("styleBackgroundColor", {r, g, b, a}) end,
+                setColor = function(r, g, b, a)
+                    setSetting("styleBackgroundTint", {r, g, b, a})
+                end,
+                customValue = "custom",
+                hasAlpha = true,
             })
 
             inner:AddSlider({

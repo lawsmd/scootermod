@@ -31,12 +31,14 @@ end
 
 local RUNE_MEDIA_PREFIX = "Interface\\AddOns\\ScooterMod\\media\\runes\\pixel-skull-"
 
+local RUNE_MEDIA_EXT = ".tga"
+
 local SPEC_TEXTURES = {
-	[1] = RUNE_MEDIA_PREFIX .. "blood",
-	[2] = RUNE_MEDIA_PREFIX .. "frost",
-	[3] = RUNE_MEDIA_PREFIX .. "unholy",
+	[1] = RUNE_MEDIA_PREFIX .. "blood" .. RUNE_MEDIA_EXT,
+	[2] = RUNE_MEDIA_PREFIX .. "frost" .. RUNE_MEDIA_EXT,
+	[3] = RUNE_MEDIA_PREFIX .. "unholy" .. RUNE_MEDIA_EXT,
 }
-local DEFAULT_TEXTURE = RUNE_MEDIA_PREFIX .. "base"
+local DEFAULT_TEXTURE = RUNE_MEDIA_PREFIX .. "base" .. RUNE_MEDIA_EXT
 
 -- Blizzard texture region keys to suppress (set alpha 0)
 local BLIZZARD_TEXTURE_KEYS = {
@@ -86,7 +88,7 @@ local function createRuneOverlay(runeButton)
 	overlay:SetAllPoints(runeButton)
 	overlay:SetFrameLevel(runeButton:GetFrameLevel() + 10)
 
-	local skull = overlay:CreateTexture(nil, "OVERLAY")
+	local skull = overlay:CreateTexture(nil, "ARTWORK")
 	skull:SetSize(24, 24)
 	skull:SetPoint("CENTER", overlay, "CENTER", 0, 0)
 	skull:SetTexelSnappingBias(0)
@@ -95,11 +97,12 @@ local function createRuneOverlay(runeButton)
 
 	local cooldown = CreateFrame("Cooldown", nil, overlay, "CooldownFrameTemplate")
 	cooldown:SetAllPoints(skull)
+	cooldown:SetFrameLevel(overlay:GetFrameLevel() + 1)
 	cooldown:SetReverse(false)
 	cooldown:SetDrawBling(false)
 	cooldown:SetDrawEdge(false)
 	cooldown:SetHideCountdownNumbers(true)
-	cooldown:SetSwipeColor(0, 0, 0, 0.7)
+	cooldown:SetSwipeColor(0, 0, 0, 1.0)
 	overlay.cooldown = cooldown
 
 	overlay:Hide()
@@ -142,6 +145,9 @@ local function suppressBlizzardVisuals(runeButton)
 	if blizzCD and blizzCD.SetAlpha then
 		pcall(blizzCD.SetAlpha, blizzCD, 0)
 	end
+
+	-- Track that we suppressed this rune button (for safe restore guard)
+	setProp(runeButton, "scooterRuneSuppressed", true)
 end
 
 local function restoreBlizzardVisuals(runeButton)
@@ -151,47 +157,97 @@ local function restoreBlizzardVisuals(runeButton)
 		pcall(blizzCD.SetAlpha, blizzCD, 1)
 	end
 
-	-- Restore DepleteVisuals
+	-- Restore DepleteVisuals alpha (do NOT force-Show; Blizzard manages visibility)
 	local deplete = runeButton.DepleteVisuals
-	if deplete then
-		pcall(deplete.Show, deplete)
-		if deplete.SetAlpha then
-			pcall(deplete.SetAlpha, deplete, 1)
+	if deplete and deplete.SetAlpha then
+		pcall(deplete.SetAlpha, deplete, 1)
+	end
+
+	-- Restore correct texture alphas by replaying the appropriate Blizzard animation
+	-- to its final state. Each animation has setToFinalAlpha="true", so Play+Finish
+	-- sets exactly the right alpha per texture for that visual state.
+	-- (Blindly setting all 12 textures to alpha 1 stacks active+inactive+glow, causing bright artifacts.)
+	local vs = runeButton.visualState
+
+	-- Stop all animations first (they were stopped during suppress, but be safe)
+	for _, animKey in ipairs(BLIZZARD_ANIM_KEYS) do
+		local anim = runeButton[animKey]
+		if anim and anim.Stop then
+			pcall(anim.Stop, anim)
 		end
 	end
 
-	-- Clear visual state tracking and let Blizzard re-animate
-	setProp(runeButton, "scooterRuneVisualState", nil)
-	if runeButton.UpdateState then
-		pcall(runeButton.UpdateState, runeButton)
+	-- Restore BG_Shadow (not managed by any animation)
+	local bgShadow = runeButton.BG_Shadow
+	if bgShadow and bgShadow.SetAlpha then
+		pcall(bgShadow.SetAlpha, bgShadow, 1)
 	end
+
+	if vs == RUNE_STATE_READY or vs == nil then
+		-- Skip CooldownEndingAnim to final: BG_Active=1, Rune_Active=1, rest=0
+		local anim = runeButton.CooldownEndingAnim
+		if anim and anim.Play and anim.Finish then
+			pcall(anim.Play, anim)
+			pcall(anim.Finish, anim)
+		end
+	else
+		-- Skip EmptyAnim to final: BG_Inactive=1, Rune_Inactive=0.4, rest=0
+		-- Next RUNE_POWER_UPDATE will kick off CooldownFillAnim if needed
+		local anim = runeButton.EmptyAnim
+		if anim and anim.Play and anim.Finish then
+			pcall(anim.Play, anim)
+			pcall(anim.Finish, anim)
+		end
+	end
+
+	-- Clear tracking flags
+	setProp(runeButton, "scooterRuneSuppressed", nil)
+	setProp(runeButton, "scooterRuneVisualState", nil)
 end
 
 --------------------------------------------------------------------------------
 -- State Update
 --------------------------------------------------------------------------------
 
+-- Blizzard's RuneButtonMixin.VisualState enum (set in untainted context)
+local RUNE_STATE_EMPTY = 1
+local RUNE_STATE_ON_COOLDOWN = 2
+local RUNE_STATE_COOLDOWN_ENDING = 3
+local RUNE_STATE_READY = 4
+
 local function updateOverlayState(runeButton, specIndex)
 	local overlay = getProp(runeButton, "scooterRuneOverlay")
 	if not overlay then return end
 
-	local start, duration, runeReady = GetRuneCooldown(runeButton.runeIndex)
 	local texturePath = getSpecTexture(specIndex)
 
-	if runeReady then
-		-- Ready state: bright skull, no cooldown
+	-- Read Blizzard's cached state (set in untainted context by UpdateState)
+	-- instead of calling GetRuneCooldown() which returns secrets from tainted context
+	local vs = runeButton.visualState
+	local lastState = runeButton.lastRuneState
+
+	-- If Blizzard hasn't called UpdateState yet, default to Ready (next RUNE_POWER_UPDATE will correct)
+	if vs == nil then
+		vs = RUNE_STATE_READY
+	end
+
+	if vs == RUNE_STATE_READY then
+		-- Ready: bright skull, no cooldown swipe
 		overlay:Show()
 		overlay.skull:SetTexture(texturePath)
 		overlay.skull:SetAlpha(1.0)
 		overlay.cooldown:Clear()
-	elseif start and duration and duration > 0 then
-		-- On cooldown: skull visible, dark swipe gradually reveals it
+	elseif vs == RUNE_STATE_ON_COOLDOWN or vs == RUNE_STATE_COOLDOWN_ENDING then
+		-- On cooldown: skull visible with dark swipe
 		overlay:Show()
 		overlay.skull:SetTexture(texturePath)
 		overlay.skull:SetAlpha(1.0)
-		overlay.cooldown:SetCooldown(start, duration)
+		overlay.cooldown:SetSwipeTexture(texturePath)
+		if lastState and lastState.start and lastState.duration then
+			pcall(overlay.cooldown.SetCooldown, overlay.cooldown, lastState.start, lastState.duration)
+		end
 	else
-		-- Empty state: fully transparent
+		-- Empty state: hide overlay
 		overlay:Hide()
 	end
 end
@@ -279,7 +335,9 @@ local function installRuneHooks(runeFrame)
 					if not cfg or cfg.textureStyle ~= "pixel" then return end
 					local overlay = getProp(self, "scooterRuneOverlay")
 					if overlay and overlay.skull then
-						overlay.skull:SetTexture(getSpecTexture(specIndex))
+						local tex = getSpecTexture(specIndex)
+						overlay.skull:SetTexture(tex)
+						overlay.cooldown:SetSwipeTexture(tex)
 					end
 				end)
 			end
@@ -349,7 +407,9 @@ function addon.ApplyDKRuneTextures(context)
 				if overlay then
 					overlay:Hide()
 				end
-				restoreBlizzardVisuals(runeButton)
+				if getProp(runeButton, "scooterRuneSuppressed") then
+					restoreBlizzardVisuals(runeButton)
+				end
 			end
 		end
 	end
