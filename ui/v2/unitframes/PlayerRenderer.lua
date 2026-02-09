@@ -1605,83 +1605,111 @@ function UF.RenderPlayer(panel, scrollContent)
         sectionKey = "classResource",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
+            local _, playerClass = UnitClass("player")
+            local crTabs = {}
+            if playerClass == "DEATHKNIGHT" then
+                crTabs[#crTabs + 1] = { key = "textures", label = "Textures" }
+            end
+            crTabs[#crTabs + 1] = { key = "positioning", label = "Positioning" }
+            crTabs[#crTabs + 1] = { key = "sizing", label = "Sizing" }
+            crTabs[#crTabs + 1] = { key = "visibility", label = "Visibility" }
+
+            local crBuildContent = {}
+
+            crBuildContent.textures = function(cf, tabInner)
+                tabInner:AddSelector({
+                    label = "Rune Style",
+                    values = { default = "Blizzard Default", pixel = "Pixel Art" },
+                    order = { "default", "pixel" },
+                    get = function()
+                        local cfg = ensureClassResourceDB() or {}
+                        return cfg.textureStyle or "default"
+                    end,
+                    set = function(v)
+                        local cfg = ensureClassResourceDB()
+                        if not cfg then return end
+                        cfg.textureStyle = v or "default"
+                        applyClassResource()
+                    end,
+                })
+                tabInner:Finalize()
+            end
+
+            crBuildContent.positioning = function(cf, tabInner)
+                tabInner:AddDualSlider({
+                    label = "Offset",
+                    sliderA = {
+                        axisLabel = "X",
+                        min = -150, max = 150, step = 1,
+                        get = function()
+                            local cfg = ensureClassResourceDB() or {}
+                            return tonumber(cfg.offsetX) or 0
+                        end,
+                        set = function(v)
+                            local cfg = ensureClassResourceDB()
+                            if not cfg then return end
+                            cfg.offsetX = tonumber(v) or 0
+                            applyClassResource()
+                        end,
+                    },
+                    sliderB = {
+                        axisLabel = "Y",
+                        min = -150, max = 150, step = 1,
+                        get = function()
+                            local cfg = ensureClassResourceDB() or {}
+                            return tonumber(cfg.offsetY) or 0
+                        end,
+                        set = function(v)
+                            local cfg = ensureClassResourceDB()
+                            if not cfg then return end
+                            cfg.offsetY = tonumber(v) or 0
+                            applyClassResource()
+                        end,
+                    },
+                })
+                tabInner:Finalize()
+            end
+
+            crBuildContent.sizing = function(cf, tabInner)
+                tabInner:AddSlider({
+                    label = getClassResourceTitle() .. " Scale",
+                    min = 50, max = 150, step = 1,
+                    get = function()
+                        local cfg = ensureClassResourceDB() or {}
+                        return tonumber(cfg.scale) or 100
+                    end,
+                    set = function(v)
+                        local cfg = ensureClassResourceDB()
+                        if not cfg then return end
+                        cfg.scale = tonumber(v) or 100
+                        applyClassResource()
+                    end,
+                })
+                tabInner:Finalize()
+            end
+
+            crBuildContent.visibility = function(cf, tabInner)
+                tabInner:AddToggle({
+                    label = "Hide " .. getClassResourceTitle(),
+                    get = function()
+                        local cfg = ensureClassResourceDB() or {}
+                        return cfg.hide == true
+                    end,
+                    set = function(v)
+                        local cfg = ensureClassResourceDB()
+                        if not cfg then return end
+                        cfg.hide = (v == true)
+                        applyClassResource()
+                    end,
+                })
+                tabInner:Finalize()
+            end
+
             inner:AddTabbedSection({
-                tabs = {
-                    { key = "positioning", label = "Positioning" },
-                    { key = "sizing", label = "Sizing" },
-                    { key = "visibility", label = "Visibility" },
-                },
+                tabs = crTabs,
                 componentId = COMPONENT_ID,
                 sectionKey = "classResource_tabs",
-                buildContent = {
-                    positioning = function(cf, tabInner)
-                        tabInner:AddDualSlider({
-                            label = "Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -150, max = 150, step = 1,
-                                get = function()
-                                    local cfg = ensureClassResourceDB() or {}
-                                    return tonumber(cfg.offsetX) or 0
-                                end,
-                                set = function(v)
-                                    local cfg = ensureClassResourceDB()
-                                    if not cfg then return end
-                                    cfg.offsetX = tonumber(v) or 0
-                                    applyClassResource()
-                                end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -150, max = 150, step = 1,
-                                get = function()
-                                    local cfg = ensureClassResourceDB() or {}
-                                    return tonumber(cfg.offsetY) or 0
-                                end,
-                                set = function(v)
-                                    local cfg = ensureClassResourceDB()
-                                    if not cfg then return end
-                                    cfg.offsetY = tonumber(v) or 0
-                                    applyClassResource()
-                                end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                    sizing = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = getClassResourceTitle() .. " Scale",
-                            min = 50, max = 150, step = 1,
-                            get = function()
-                                local cfg = ensureClassResourceDB() or {}
-                                return tonumber(cfg.scale) or 100
-                            end,
-                            set = function(v)
-                                local cfg = ensureClassResourceDB()
-                                if not cfg then return end
-                                cfg.scale = tonumber(v) or 100
-                                applyClassResource()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    visibility = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Hide " .. getClassResourceTitle(),
-                            get = function()
-                                local cfg = ensureClassResourceDB() or {}
-                                return cfg.hide == true
-                            end,
-                            set = function(v)
-                                local cfg = ensureClassResourceDB()
-                                if not cfg then return end
-                                cfg.hide = (v == true)
-                                applyClassResource()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                },
+                buildContent = crBuildContent,
             })
             inner:Finalize()
         end,

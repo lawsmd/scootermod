@@ -47,6 +47,29 @@ function ClassResource.Render(panel, scrollContent)
     end
 
     ---------------------------------------------------------------------------
+    -- Textures Section (DK only)
+    ---------------------------------------------------------------------------
+    local _, playerClass = UnitClass("player")
+    if playerClass == "DEATHKNIGHT" then
+        builder:AddCollapsibleSection({
+            title = "Textures",
+            componentId = "prdClassResource",
+            sectionKey = "textures",
+            defaultExpanded = false,
+            buildContent = function(contentFrame, inner)
+                inner:AddSelector({
+                    label = "Rune Style",
+                    values = { default = "Blizzard Default", pixel = "Pixel Art" },
+                    order = { "default", "pixel" },
+                    get = function() return getSetting("textureStyle") or "default" end,
+                    set = function(v) setSetting("textureStyle", v or "default") end,
+                })
+                inner:Finalize()
+            end,
+        })
+    end
+
+    ---------------------------------------------------------------------------
     -- Sizing Section
     ---------------------------------------------------------------------------
     builder:AddCollapsibleSection({

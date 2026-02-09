@@ -1761,6 +1761,11 @@ local function applyClassResourceOffsets(component)
     local componentScale = resolveClassResourceScale(component)
     applyScaleToFrame(frame, componentScale, component)
     applyPRDClassResourceVisibility(component, frame)
+
+    -- Apply DK rune texture overlay if available
+    if addon.ApplyDKRuneTextures then
+        addon.ApplyDKRuneTextures("prd")
+    end
 end
 
 local function buildPRDBorderOptions()

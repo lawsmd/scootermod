@@ -137,6 +137,7 @@ local function ensureConfig()
 	cfg.classResourceCustomPositionEnabled = nil
 	cfg.classResourcePosX = nil
 	cfg.classResourcePosY = nil
+	if cfg.textureStyle == nil then cfg.textureStyle = "default" end
 	return cfg
 end
 
@@ -394,6 +395,11 @@ local function applyClassResourceForUnit(unit)
 	-- Trigger layout update to apply padding changes when using offsets
 	if not inCombat and (offsetX ~= 0 or offsetY ~= 0) then
 		triggerLayoutUpdate()
+	end
+
+	-- Apply DK rune texture overlay if available
+	if addon.ApplyDKRuneTextures then
+		addon.ApplyDKRuneTextures("uf")
 	end
 end
 
