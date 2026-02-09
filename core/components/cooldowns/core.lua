@@ -374,6 +374,11 @@ local function createOverlayFrame(parent)
     overlay.chargeText:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", -2, 2)
     overlay.chargeText:Hide()
 
+    overlay.keybindText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    overlay.keybindText:SetDrawLayer("OVERLAY", 7)
+    overlay.keybindText:SetPoint("TOPLEFT", overlay, "TOPLEFT", 2, -2)
+    overlay.keybindText:Hide()
+
     return overlay
 end
 
@@ -401,6 +406,10 @@ local function releaseOverlay(overlay)
     if overlay.chargeText then
         overlay.chargeText:SetText("")
         overlay.chargeText:Hide()
+    end
+    if overlay.keybindText then
+        overlay.keybindText:SetText("")
+        overlay.keybindText:Hide()
     end
     table.insert(overlayPool, overlay)
 end
@@ -736,6 +745,8 @@ local function applyFontStyleDirect(fontString, cfg, opts)
         end)
     end
 end
+
+addon.ApplyFontStyleDirect = applyFontStyleDirect
 
 -- Apply cooldown text styling when a cooldown is set
 local function applyCooldownTextStyle(cooldownFrame)
@@ -1249,6 +1260,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
     local db = component.db
     local borderEnabled = db.borderEnable
     local hasTextConfig = db.textCooldown or db.textStacks
+    local hasBindingConfig = db.textBindings and db.textBindings.enabled
 
     -- Check if icon sizing is configured via ratio
     local ratio = tonumber(db.tallWideRatio) or 0
@@ -1300,9 +1312,23 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                     Overlays.HideText(child)
                 end
 
+                -- Apply keybind text if enabled (Essential/Utility only)
+                if hasBindingConfig then
+                    -- Ensure overlay exists for keybind text
+                    local kbOverlay = Overlays.GetOrCreateForIcon(child)
+                    if kbOverlay and addon.SpellBindings then
+                        addon.SpellBindings.ApplyToIcon(child, db.textBindings)
+                    end
+                else
+                    local existingOverlay = activeOverlays[child]
+                    if existingOverlay and existingOverlay.keybindText then
+                        existingOverlay.keybindText:Hide()
+                    end
+                end
+
                 local overlay = activeOverlays[child]
                 if overlay then
-                    if borderEnabled or hasTextConfig then
+                    if borderEnabled or hasTextConfig or hasBindingConfig then
                         overlay:Show()
                     else
                         overlay:Hide()
@@ -1369,6 +1395,14 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                             stacks = component.db.textStacks,
                         })
                     end
+
+                    -- Apply keybind text if enabled
+                    if component.db.textBindings and component.db.textBindings.enabled and addon.SpellBindings then
+                        local kbOverlay = Overlays.GetOrCreateForIcon(itemFrame)
+                        if kbOverlay then
+                            addon.SpellBindings.ApplyToIcon(itemFrame, component.db.textBindings)
+                        end
+                    end
                 end)
             end
         end)
@@ -1376,6 +1410,10 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
     if viewer.OnReleaseItemFrame then
         hooksecurefunc(viewer, "OnReleaseItemFrame", function(_, itemFrame)
+            -- Clear keybind spell cache for released icon
+            if addon.SpellBindings and addon.SpellBindings.ClearIconCache then
+                addon.SpellBindings.ClearIconCache(itemFrame)
+            end
             -- Defer cleanup to break Blizzard's call stack and avoid taint propagation
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
@@ -1513,6 +1551,11 @@ function Overlays.Initialize()
     hookCooldownTextStyling()
     hookProcGlowResizing()
 
+    -- Initialize keybind system and share the activeOverlays table
+    if addon.SpellBindings then
+        addon.SpellBindings.SetActiveOverlays(activeOverlays)
+        addon.SpellBindings.Initialize()
+    end
 end
 
 function Overlays.ScheduleRetry()
@@ -1859,6 +1902,11 @@ addon.RefreshCDMOverlays = function(componentId)
     -- Refresh viewer opacity when settings change
     if addon.RefreshCDMViewerOpacity then
         addon.RefreshCDMViewerOpacity(componentId)
+    end
+
+    -- Refresh keybind text on overlays
+    if addon.SpellBindings and addon.SpellBindings.RefreshAllIcons then
+        addon.SpellBindings.RefreshAllIcons(componentId)
     end
 end
 

@@ -403,11 +403,15 @@ function EssentialCooldowns.Render(panel, scrollContent)
             }
             local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
 
-            -- Tabbed section for Charges (stacks) and Cooldowns text settings
+            -- Tabbed section for Charges, Cooldowns, and Keybinds text settings
             inner:AddTabbedSection({
                 tabs = {
                     { key = "charges", label = "Charges" },
                     { key = "cooldowns", label = "Cooldowns" },
+                    { key = "bindings", label = "Keybinds", infoIcon = {
+                        tooltipTitle = "Keybind Labels",
+                        tooltipText = "Addon-generated text showing your keybind for each ability. Enable with the toggle below.",
+                    }},
                 },
                 componentId = "essentialCooldowns",
                 sectionKey = "textTabs",
@@ -624,6 +628,142 @@ function EssentialCooldowns.Render(panel, scrollContent)
                                     applyText()
                                 end,
                                 minLabel = "-100", maxLabel = "+100",
+                            },
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    bindings = function(tabContent, tabBuilder)
+                        -- Helper to get/set textBindings sub-properties
+                        local function getBindingSetting(key, default)
+                            local tb = getSetting("textBindings")
+                            if tb and tb[key] ~= nil then return tb[key] end
+                            return default
+                        end
+                        local function setBindingSetting(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textBindings = comp.db.textBindings or {}
+                                comp.db.textBindings[key] = value
+                            end
+                            applyText()
+                        end
+
+                        -- Enable toggle
+                        tabBuilder:AddToggle({
+                            label = "Show Keybinds",
+                            description = "Display keybind text on cooldown icons.",
+                            get = function() return getBindingSetting("enabled", false) end,
+                            set = function(v) setBindingSetting("enabled", v) end,
+                        })
+
+                        -- Font selector
+                        tabBuilder:AddFontSelector({
+                            label = "Font",
+                            description = "The font used for keybind text.",
+                            get = function() return getBindingSetting("fontFace", "FRIZQT__") end,
+                            set = function(v) setBindingSetting("fontFace", v) end,
+                        })
+
+                        -- Font Size slider
+                        tabBuilder:AddSlider({
+                            label = "Font Size",
+                            min = 6,
+                            max = 32,
+                            step = 1,
+                            get = function() return getBindingSetting("size", 12) end,
+                            set = function(v) setBindingSetting("size", v) end,
+                            minLabel = "6",
+                            maxLabel = "32",
+                        })
+
+                        -- Font Style selector
+                        tabBuilder:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function() return getBindingSetting("style", "OUTLINE") end,
+                            set = function(v) setBindingSetting("style", v) end,
+                        })
+
+                        -- Font Color picker
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Font Color",
+                            values = textColorValues,
+                            order = textColorOrder,
+                            get = function() return getBindingSetting("colorMode", "default") end,
+                            set = function(v) setBindingSetting("colorMode", v or "default") end,
+                            getColor = function()
+                                local c = getBindingSetting("color", {1,1,1,1})
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setBindingSetting("color", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        -- Anchor selector (9-point)
+                        local anchorPoints = {
+                            TOPLEFT = "Top-Left", TOP = "Top-Center", TOPRIGHT = "Top-Right",
+                            LEFT = "Left", CENTER = "Center", RIGHT = "Right",
+                            BOTTOMLEFT = "Bottom-Left", BOTTOM = "Bottom-Center", BOTTOMRIGHT = "Bottom-Right",
+                        }
+                        local anchorPointOrder = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+
+                        tabBuilder:AddSelector({
+                            label = "Anchor",
+                            values = anchorPoints,
+                            order = anchorPointOrder,
+                            get = function() return getBindingSetting("anchor", "TOPLEFT") end,
+                            set = function(v) setBindingSetting("anchor", v) end,
+                        })
+
+                        -- Offset dual slider (X and Y)
+                        tabBuilder:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getBindingSetting("offset", {x=0, y=0})
+                                    return offset.x or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textBindings = comp.db.textBindings or {}
+                                        comp.db.textBindings.offset = comp.db.textBindings.offset or {}
+                                        comp.db.textBindings.offset.x = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-100",
+                                maxLabel = "+100",
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    local offset = getBindingSetting("offset", {x=0, y=0})
+                                    return offset.y or 0
+                                end,
+                                set = function(v)
+                                    local comp = getComponent()
+                                    if comp and comp.db then
+                                        comp.db.textBindings = comp.db.textBindings or {}
+                                        comp.db.textBindings.offset = comp.db.textBindings.offset or {}
+                                        comp.db.textBindings.offset.y = v
+                                    end
+                                    applyText()
+                                end,
+                                minLabel = "-100",
+                                maxLabel = "+100",
                             },
                         })
 

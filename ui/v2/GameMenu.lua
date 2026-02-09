@@ -209,16 +209,19 @@ local function BuildButtons()
         end),
     }))
 
-    -- 3. Store (conditional)
-    if C_StorePublic and C_StorePublic.IsEnabled and C_StorePublic.IsEnabled() then
+    -- 3. Store (conditional) - uses SecureActionButtonTemplate to click StoreMicroButton
+    -- in a secure context, avoiding ADDON_ACTION_FORBIDDEN on EventStoreUISetShown()
+    if C_StorePublic and C_StorePublic.IsEnabled and C_StorePublic.IsEnabled() and StoreMicroButton then
         AddButton(Controls:CreateButton({
             parent = frame,
             text = "Store",
             width = BUTTON_WIDTH,
             height = BUTTON_HEIGHT,
-            onClick = MakeButtonAction(function()
-                ToggleStoreUI()
-            end),
+            secureAction = { type = "click", clickbutton = StoreMicroButton },
+            onClick = function()
+                pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION)
+                if frame then frame:Hide() end
+            end,
         }))
     end
 

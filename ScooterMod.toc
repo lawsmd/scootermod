@@ -38,6 +38,7 @@ core/apply_all.lua
 core/iconratio.lua
 core/components/base.lua
 core/components/cooldowns/core.lua
+core/components/cooldowns/keybinds.lua
 core/components/cooldowns/essential.lua
 core/components/cooldowns/utility.lua
 core/components/cooldowns/trackedbuffs.lua

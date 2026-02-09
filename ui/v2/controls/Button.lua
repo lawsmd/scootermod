@@ -67,6 +67,7 @@ function Controls:CreateButton(options)
     btn:EnableMouse(true)
     if options.secureAction then
         btn:RegisterForClicks("AnyUp")
+        btn:SetAttribute("useOnKeyDown", false)
     else
         btn:RegisterForClicks("AnyUp", "AnyDown")
     end
@@ -206,6 +207,7 @@ function Controls:CreateButton(options)
             if action.action then btn:SetAttribute("action", action.action) end
             if action.binding then btn:SetAttribute("binding", action.binding) end
             if action.unit then btn:SetAttribute("unit", action.unit) end
+            if action.clickbutton then btn:SetAttribute("clickbutton", action.clickbutton) end
         end
 
         if _G.InCombatLockdown and _G.InCombatLockdown() then
