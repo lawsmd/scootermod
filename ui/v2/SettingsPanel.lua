@@ -1820,6 +1820,10 @@ UIPanel._renderers = {
         local M = addon.UI.Settings.Chat
         if M and M.Render then M.Render(self, scrollContent) end
     end,
+    misc = function(self, scrollContent)
+        local M = addon.UI.Settings.Misc
+        if M and M.Render then M.Render(self, scrollContent) end
+    end,
     -- SCT (external module)
     sctDamage = function(self, scrollContent)
         local M = addon.UI.Settings.SctDamage

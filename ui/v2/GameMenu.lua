@@ -1,0 +1,457 @@
+-- GameMenu.lua - Custom ScooterMod-styled game menu (ESC menu replacement)
+local addonName, addon = ...
+
+addon.UI = addon.UI or {}
+addon.UI.GameMenu = {}
+local GameMenu = addon.UI.GameMenu
+
+local Theme = addon.UI.Theme
+local Window = addon.UI.Window
+local Controls = addon.UI.Controls
+
+--------------------------------------------------------------------------------
+-- Constants
+--------------------------------------------------------------------------------
+
+local MENU_WIDTH = 290
+local BUTTON_WIDTH = 240
+local BUTTON_HEIGHT = 32
+local SCOOTER_BUTTON_HEIGHT = 36
+local BUTTON_SPACING = 4
+local SECTION_BREAK = 16
+local HEADER_HEIGHT = 40
+local PADDING_BOTTOM = 16
+
+--------------------------------------------------------------------------------
+-- State
+--------------------------------------------------------------------------------
+
+local frame = nil       -- The menu frame
+local buttons = {}      -- Created button references (for cleanup)
+local initialized = false
+local hookInstalled = false
+
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
+
+local function IsSettingEnabled()
+    return addon.db and addon.db.profile and addon.db.profile.misc
+        and addon.db.profile.misc.customGameMenu
+end
+
+-- Wrap a callback in pcall for combat safety, play sound, and hide menu
+local function MakeButtonAction(callback, sound)
+    return function()
+        pcall(PlaySound, sound or SOUNDKIT.IG_MAINMENU_OPTION)
+        if frame then frame:Hide() end
+        if callback then
+            pcall(callback)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Button Cleanup
+--------------------------------------------------------------------------------
+
+local function CleanupButtons()
+    for _, btn in ipairs(buttons) do
+        if btn then
+            if btn.Cleanup then btn:Cleanup() end
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+    end
+    wipe(buttons)
+end
+
+--------------------------------------------------------------------------------
+-- ScooterMod Button (inverted accent style)
+--------------------------------------------------------------------------------
+
+local function CreateScooterButton(parent)
+    local theme = Theme
+    local ar, ag, ab = theme:GetAccentColor()
+
+    local btn = Controls:CreateButton({
+        parent = parent,
+        text = "ScooterMod",
+        width = BUTTON_WIDTH,
+        height = SCOOTER_BUTTON_HEIGHT,
+        fontSize = 14,
+        onClick = function()
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION)
+            if frame then frame:Hide() end
+            local UIPanel = addon.UI.SettingsPanel
+            if UIPanel and UIPanel.Toggle then
+                UIPanel:Toggle()
+            end
+        end,
+    })
+
+    -- Force inverted resting state: accent fill shown, dark text
+    btn._hoverFill:Show()
+    btn._label:SetTextColor(0, 0, 0, 1)
+
+    -- Store the inverted flag so theme updates can maintain it
+    btn._scooterInverted = true
+
+    -- Scanline sweep texture (2px tall white line for CRT refresh effect)
+    local borderInset = btn._borderWidth or 2
+    local scanline = btn:CreateTexture(nil, "ARTWORK")
+    scanline:SetHeight(2)
+    scanline:SetPoint("TOPLEFT", btn, "TOPLEFT", borderInset, -borderInset)
+    scanline:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -borderInset, -borderInset)
+    scanline:SetColorTexture(1, 1, 1, 0.6)
+    scanline:Hide()
+    btn._scanline = scanline
+    btn._scanlineOffset = 0
+    btn._scanlineAnimating = false
+
+    -- Hover: show scanline sweep, fill stays, text stays black
+    btn:SetScript("OnEnter", function(self)
+        self._scanline:Show()
+        self._scanlineOffset = 0
+        self._scanlineAnimating = true
+    end)
+
+    btn:SetScript("OnLeave", function(self)
+        self._scanline:Hide()
+        self._scanlineAnimating = false
+    end)
+
+    btn:SetScript("OnUpdate", function(self, elapsed)
+        if not self._scanlineAnimating then return end
+        local inset = self._borderWidth or 2
+        local innerH = self:GetHeight() - (2 * inset)
+        self._scanlineOffset = self._scanlineOffset + (elapsed / 0.4) * innerH
+        if self._scanlineOffset >= innerH then
+            self._scanlineOffset = 0
+        end
+        self._scanline:SetPoint("TOPLEFT", self, "TOPLEFT", inset, -(inset + self._scanlineOffset))
+        self._scanline:SetPoint("TOPRIGHT", self, "TOPRIGHT", -inset, -(inset + self._scanlineOffset))
+    end)
+
+    -- Override theme subscription to maintain inverted state
+    if btn._subscribeKey then
+        theme:Unsubscribe(btn._subscribeKey)
+    end
+    local subscribeKey = "GameMenu_ScooterBtn_" .. tostring(btn)
+    btn._subscribeKey = subscribeKey
+    theme:Subscribe(subscribeKey, function(r, g, b)
+        -- Update border
+        if btn._border then
+            for _, tex in pairs(btn._border) do
+                tex:SetColorTexture(r, g, b, 1)
+            end
+        end
+        -- Maintain inverted fill (always shown)
+        if btn._hoverFill then
+            btn._hoverFill:SetColorTexture(r, g, b, 1)
+            btn._hoverFill:Show()
+        end
+        -- Text stays black in all states
+        btn._label:SetTextColor(0, 0, 0, 1)
+    end)
+
+    return btn
+end
+
+--------------------------------------------------------------------------------
+-- Build Menu Buttons
+--------------------------------------------------------------------------------
+
+local function BuildButtons()
+    if not frame then return end
+    CleanupButtons()
+
+    local yOffset = -HEADER_HEIGHT
+    local btnIndex = 0
+
+    local function AddButton(btn)
+        if not btn then return end
+        btnIndex = btnIndex + 1
+        btn:ClearAllPoints()
+        btn:SetPoint("TOP", frame, "TOP", 0, yOffset)
+        btn:Show()
+        buttons[btnIndex] = btn
+        yOffset = yOffset - btn:GetHeight() - BUTTON_SPACING
+    end
+
+    local function AddSectionBreak()
+        yOffset = yOffset - SECTION_BREAK
+    end
+
+    -- 1. ScooterMod (inverted accent button)
+    AddButton(CreateScooterButton(frame))
+
+    AddSectionBreak()
+
+    -- 2. Options (Blizzard Settings)
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Options",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = MakeButtonAction(function()
+            if SettingsPanel and SettingsPanel.Open then
+                SettingsPanel:Open()
+            end
+        end),
+    }))
+
+    -- 3. Store (conditional)
+    if C_StorePublic and C_StorePublic.IsEnabled and C_StorePublic.IsEnabled() then
+        AddButton(Controls:CreateButton({
+            parent = frame,
+            text = "Store",
+            width = BUTTON_WIDTH,
+            height = BUTTON_HEIGHT,
+            onClick = MakeButtonAction(function()
+                ToggleStoreUI()
+            end),
+        }))
+    end
+
+    -- 4. Show Rewards (conditional - active storefront)
+    if GameRulesUtil and GameRulesUtil.GetActiveAccountStore then
+        local storeFrontID = GameRulesUtil.GetActiveAccountStore()
+        if storeFrontID then
+            AddButton(Controls:CreateButton({
+                parent = frame,
+                text = "Show Rewards",
+                width = BUTTON_WIDTH,
+                height = BUTTON_HEIGHT,
+                onClick = MakeButtonAction(function()
+                    if C_AddOns and C_AddOns.LoadAddOn then
+                        pcall(C_AddOns.LoadAddOn, "Blizzard_AccountStore")
+                    end
+                    if AccountStoreFrame and AccountStoreFrame.SetStoreFrontID then
+                        AccountStoreFrame:SetStoreFrontID(storeFrontID)
+                    end
+                    if AccountStoreUtil and AccountStoreUtil.SetAccountStoreShown then
+                        AccountStoreUtil.SetAccountStoreShown(true)
+                    end
+                end),
+            }))
+        end
+    end
+
+    -- 5. Add-ons (conditional)
+    if GameRulesUtil and GameRulesUtil.ShouldShowAddOns and GameRulesUtil.ShouldShowAddOns() then
+        AddButton(Controls:CreateButton({
+            parent = frame,
+            text = "Add-ons",
+            width = BUTTON_WIDTH,
+            height = BUTTON_HEIGHT,
+            onClick = MakeButtonAction(function()
+                ShowUIPanel(AddonList)
+            end),
+        }))
+    end
+
+    -- 6. What's New (conditional)
+    if GameRulesUtil and GameRulesUtil.ShouldShowSplashScreen and GameRulesUtil.ShouldShowSplashScreen() then
+        AddButton(Controls:CreateButton({
+            parent = frame,
+            text = "What's New",
+            width = BUTTON_WIDTH,
+            height = BUTTON_HEIGHT,
+            onClick = MakeButtonAction(function()
+                C_SplashScreen.RequestLatestSplashScreen(true)
+            end),
+        }))
+    end
+
+    -- 7. Edit Mode (conditional)
+    if EditModeManagerFrame and EditModeManagerFrame.CanEnterEditMode and EditModeManagerFrame:CanEnterEditMode() then
+        AddButton(Controls:CreateButton({
+            parent = frame,
+            text = "Edit Mode",
+            width = BUTTON_WIDTH,
+            height = BUTTON_HEIGHT,
+            onClick = MakeButtonAction(function()
+                ShowUIPanel(EditModeManagerFrame)
+            end),
+        }))
+    end
+
+    -- 8. Cooldown Manager
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Cooldown Manager",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = MakeButtonAction(function()
+            if addon.OpenCooldownManagerSettings then
+                addon:OpenCooldownManagerSettings()
+            end
+        end),
+    }))
+
+    -- 9. Support
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Support",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = MakeButtonAction(function()
+            ToggleHelpFrame()
+        end),
+    }))
+
+    -- 10. Macros (conditional)
+    if not (C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule
+            and Enum.GameRule.MacrosDisabled and C_GameRules.IsGameRuleActive(Enum.GameRule.MacrosDisabled)) then
+        AddButton(Controls:CreateButton({
+            parent = frame,
+            text = "Macros",
+            width = BUTTON_WIDTH,
+            height = BUTTON_HEIGHT,
+            onClick = MakeButtonAction(function()
+                ShowMacroFrame()
+            end),
+        }))
+    end
+
+    AddSectionBreak()
+
+    -- 11. Log Out
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Log Out",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = MakeButtonAction(Logout, SOUNDKIT.IG_MAINMENU_LOGOUT),
+    }))
+
+    -- 12. Exit Game
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Exit Game",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = MakeButtonAction(Quit, SOUNDKIT.IG_MAINMENU_QUIT),
+    }))
+
+    AddSectionBreak()
+
+    -- 13. Return to Game
+    AddButton(Controls:CreateButton({
+        parent = frame,
+        text = "Return to Game",
+        width = BUTTON_WIDTH,
+        height = BUTTON_HEIGHT,
+        onClick = function()
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_CLOSE)
+            if frame then frame:Hide() end
+        end,
+    }))
+
+    -- Compute final height
+    local totalHeight = math.abs(yOffset) + PADDING_BOTTOM
+    frame:SetHeight(totalHeight)
+end
+
+--------------------------------------------------------------------------------
+-- Frame Initialization (lazy, on first Show)
+--------------------------------------------------------------------------------
+
+local function InitializeFrame()
+    if initialized then return end
+    initialized = true
+
+    frame = Window:Create("ScooterGameMenuFrame", UIParent, MENU_WIDTH, 1)
+    frame:SetMovable(false)
+    frame:EnableMouse(true)
+    frame:Hide()
+
+    -- Center on screen
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    -- Register for ESC-to-close
+    tinsert(UISpecialFrames, "ScooterGameMenuFrame")
+
+    -- Header: "Game Menu" title
+    local title = frame:CreateFontString(nil, "OVERLAY")
+    Theme:ApplyHeaderFont(title, 14)
+    title:SetPoint("TOP", frame, "TOP", 0, -14)
+    title:SetText("Game Menu")
+    frame._title = title
+
+    -- Info icon to the right of title
+    Controls:CreateInfoIconForLabel({
+        label = title,
+        tooltipTitle = "ScooterMod Game Menu",
+        tooltipText = "To switch back to the default menu, go to ScooterMod > Interface > Misc.",
+        size = 14,
+        position = "right",
+        offsetX = 8,
+    })
+end
+
+--------------------------------------------------------------------------------
+-- Public API
+--------------------------------------------------------------------------------
+
+function GameMenu:Show()
+    InitializeFrame()
+
+    -- Re-entrancy guard: if already shown, toggle off
+    if frame:IsShown() then
+        frame:Hide()
+        return
+    end
+
+    -- Rebuild buttons each time (conditional buttons may change)
+    BuildButtons()
+
+    -- Re-center (in case resolution changed)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    frame:Show()
+end
+
+function GameMenu:Hide()
+    if frame then
+        frame:Hide()
+    end
+end
+
+function GameMenu:IsShown()
+    return frame and frame:IsShown()
+end
+
+--------------------------------------------------------------------------------
+-- Hook Installation (called once on PLAYER_ENTERING_WORLD)
+--------------------------------------------------------------------------------
+
+function GameMenu:InstallHook()
+    if hookInstalled then return end
+    hookInstalled = true
+
+    if not GameMenuFrame then return end
+
+    GameMenuFrame:HookScript("OnShow", function(self)
+        if not IsSettingEnabled() then
+            return
+        end
+
+        -- Hide Blizzard's menu and show ours instead
+        HideUIPanel(GameMenuFrame)
+        GameMenu:Show()
+    end)
+end
+
+-- Register hook installation on PLAYER_ENTERING_WORLD
+local hookFrame = CreateFrame("Frame")
+hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+hookFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_ENTERING_WORLD" then
+        GameMenu:InstallHook()
+        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    end
+end)

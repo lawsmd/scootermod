@@ -201,6 +201,9 @@ function addon:GetDefaults()
                 hide = false,
                 minimapPos = 220,
             },
+            misc = {
+                customGameMenu = false,
+            },
             components = {},
             rules = {},
             rulesState = {

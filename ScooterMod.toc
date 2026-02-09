@@ -112,6 +112,7 @@ ui/v2/settings/prd/PowerBarRenderer.lua
 ui/v2/settings/prd/ClassResourceRenderer.lua
 ui/v2/settings/interface/MinimapRenderer.lua
 ui/v2/settings/interface/ChatRenderer.lua
+ui/v2/settings/interface/MiscRenderer.lua
 ui/v2/settings/interface/SctDamageRenderer.lua
 ui/v2/settings/interface/TooltipRenderer.lua
 ui/v2/settings/interface/DamageMeterRenderer.lua
@@ -135,6 +136,7 @@ ui/v2/groupframes/Helpers.lua
 ui/v2/groupframes/PartyRenderer.lua
 ui/v2/groupframes/RaidRenderer.lua
 ui/v2/SettingsPanel.lua
+ui/v2/GameMenu.lua
 
 core/ui_fixes.lua
 core/init.lua
