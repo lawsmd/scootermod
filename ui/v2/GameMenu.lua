@@ -328,22 +328,30 @@ local function BuildButtons()
 
     AddSectionBreak()
 
-    -- 11. Log Out
+    -- 11. Log Out - uses SecureActionButtonTemplate /logout macro to avoid ADDON_ACTION_FORBIDDEN
     AddButton(Controls:CreateButton({
         parent = frame,
         text = "Log Out",
         width = BUTTON_WIDTH,
         height = BUTTON_HEIGHT,
-        onClick = MakeButtonAction(Logout, SOUNDKIT.IG_MAINMENU_LOGOUT),
+        secureAction = { type = "macro", macrotext = "/logout" },
+        onClick = function()
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_LOGOUT)
+            if frame then frame:Hide() end
+        end,
     }))
 
-    -- 12. Exit Game
+    -- 12. Exit Game - uses SecureActionButtonTemplate /quit macro to avoid ADDON_ACTION_FORBIDDEN
     AddButton(Controls:CreateButton({
         parent = frame,
         text = "Exit Game",
         width = BUTTON_WIDTH,
         height = BUTTON_HEIGHT,
-        onClick = MakeButtonAction(Quit, SOUNDKIT.IG_MAINMENU_QUIT),
+        secureAction = { type = "macro", macrotext = "/quit" },
+        onClick = function()
+            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_QUIT)
+            if frame then frame:Hide() end
+        end,
     }))
 
     AddSectionBreak()
