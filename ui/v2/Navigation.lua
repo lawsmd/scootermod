@@ -43,6 +43,7 @@ Navigation.NavModel = {
             { key = "profilesManage", label = "Manage Profiles" },
             { key = "profilesPresets", label = "Presets" },
             { key = "profilesRules", label = "Rules" },
+            { key = "profilesImportExport", label = "Import/Export" },
         },
     },
     {

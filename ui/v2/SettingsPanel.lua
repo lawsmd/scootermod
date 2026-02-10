@@ -1362,6 +1362,22 @@ function UIPanel:ClearContent()
         self._presetsState.currentControls = {}
     end
 
+    -- 4b. Clean up Profiles > Import/Export state-based content
+    if self._importExportState and self._importExportState.currentControls then
+        for _, control in ipairs(self._importExportState.currentControls) do
+            if control.Cleanup then
+                control:Cleanup()
+            end
+            if control.Hide then
+                control:Hide()
+            end
+            if control.SetParent then
+                control:SetParent(nil)
+            end
+        end
+        self._importExportState.currentControls = {}
+    end
+
     -- 5. Clean up Apply All > Fonts state-based content
     if self._applyAllFontsControls then
         for _, control in ipairs(self._applyAllFontsControls) do
@@ -1898,6 +1914,10 @@ UIPanel._renderers = {
         local M = addon.UI.Settings.Profiles and addon.UI.Settings.Profiles.Rules
         if M and M.Render then M.Render(self, scrollContent) end
     end,
+    profilesImportExport = function(self, scrollContent)
+        local M = addon.UI.Settings.Profiles and addon.UI.Settings.Profiles.ImportExport
+        if M and M.Render then M.Render(self, scrollContent) end
+    end,
     -- Apply All (external modules)
     applyAllFonts = function(self, scrollContent)
         local M = addon.UI.Settings.ApplyAll and addon.UI.Settings.ApplyAll.Fonts
@@ -2176,6 +2196,7 @@ function UIPanel:GetCategoryTitle(key)
         profilesManage = "Manage Profiles",
         profilesPresets = "Presets",
         profilesRules = "Rules",
+        profilesImportExport = "Import/Export",
         applyAllFonts = "Apply All: Fonts",
         applyAllTextures = "Apply All: Bar Textures",
         damageMeter = "Damage Meters",
