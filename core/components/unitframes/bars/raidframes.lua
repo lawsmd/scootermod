@@ -39,27 +39,6 @@ local function ensureState(frame)
     return RaidFrameState[frame]
 end
 
--- Some values can be "secret" and will hard-error on arithmetic/comparisons.
--- Treat those as unreadable and skip optional overlays rather than crashing.
-local function safeNumber(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return nil end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return nil
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then
-        return nil
-    end
-    return n
-end
-
 --------------------------------------------------------------------------------
 -- Raid Frame Detection
 --------------------------------------------------------------------------------

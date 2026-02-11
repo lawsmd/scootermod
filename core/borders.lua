@@ -13,42 +13,10 @@ local textureContainers = setmetatable({}, { __mode = "k" })  -- frame -> Scoote
 local textureBorders = setmetatable({}, { __mode = "k" })     -- frame -> ScootTextureBorder
 local tintOverlays = setmetatable({}, { __mode = "k" })       -- frame -> { atlas = texture, texture = texture }
 
--- Frame getters can trigger Blizzard secret-value errors
--- on managed unit frames. Use safe getters that fall back gracefully.
--- NOTE: These helpers must be defined BEFORE ensureContainer which uses them.
-local function safeGetter(func, fallback)
-    if not func then return fallback end
-    local ok, result = pcall(func)
-    return ok and result or fallback
-end
-
--- Detect "secret values" that hard-error on math/compare.
-local function safeNumber(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return nil end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return nil
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then
-        return nil
-    end
-    return n
-end
-
--- Frame:GetWidth() and GetHeight() can trigger Blizzard secret-value errors
--- on managed unit frames. Use safe getters that fall back to 0 on error.
-local function safeDimension(func)
-    local value = safeGetter(func, nil)
-    local num = safeNumber(value)
-    return num or 0
-end
+-- Secret-value safe helpers (shared module loaded before this file via TOC)
+local SS = addon.SecretSafe
+local safeGetter = SS.safeGetter
+local safeDimension = SS.safeDimension
 
 local function hideLegacy(frame)
     if not frame then return end

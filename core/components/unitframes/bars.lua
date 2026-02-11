@@ -22,56 +22,8 @@ local PlayerInCombat = Util.PlayerInCombat
 local HideDefaultBarTextures = Util.HideDefaultBarTextures
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
 
--- Some StatusBar values (min/max/value) can be "secret" and will hard-error
--- on comparisons/arithmetic. For optional cosmetics like rectangular fill overlays,
--- treat secret values as unavailable and skip the overlay update.
-local function safeNumber(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return nil end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return nil
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then
-        return nil
-    end
-    return n
-end
-
--- GetPoint() string values (point, relativePoint) can be secrets.
--- Returns fallback if the value is not a usable string.
-local function safePointToken(v, fallback)
-    if type(v) ~= "string" then return fallback end
-    -- Even simple string comparisons can error on "secret" values; guard it.
-    local ok, nonEmpty = pcall(function() return v ~= "" end)
-    if ok and nonEmpty then return v end
-    return fallback
-end
-
--- GetPoint() offset values can be secrets that error on arithmetic.
--- Returns 0 if the value is not a usable number.
-local function safeOffset(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return 0 end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return 0
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then return 0 end
-    return n
-end
+-- Secret-value safe helpers (shared module)
+local safeOffset = addon.SecretSafe.safeOffset
 
 -- Reference extracted modules (loaded via TOC before this file)
 local Utils = addon.BarsUtils

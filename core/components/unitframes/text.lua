@@ -12,58 +12,11 @@ local function getState(frame)
     return fs and fs.Get(frame) or nil
 end
 
--- Blizzard can mark certain UI-derived numbers as "secret", which causes
--- arithmetic like `x + 1` to hard-error ("attempt to perform arithmetic on a secret value").
--- We treat those as unreadable offsets and fall back to 0 so styling does not crash.
-local function safeOffset(v)
-    local okNil, isNil = pcall(function() return v == nil end)
-    if okNil and isNil then return 0 end
-    local n = v
-    if type(n) ~= "number" then
-        local ok, conv = pcall(tonumber, n)
-        if ok and type(conv) == "number" then
-            n = conv
-        else
-            return 0
-        end
-    end
-    local ok = pcall(function() return n + 0 end)
-    if not ok then
-        return 0
-    end
-    return n
-end
-
-local function safePointToken(v, fallback)
-    if type(v) ~= "string" then return fallback end
-    -- Even simple string comparisons can error on "secret" values; guard it.
-    local ok, nonEmpty = pcall(function() return v ~= "" end)
-    if ok and nonEmpty then return v end
-    return fallback
-end
-
--- Some managed frames (notably UnitFrame StatusBars) can run internal update code during
--- "harmless" queries like GetWidth(). This can surface Blizzard errors due to
--- "secret values" when those updates run in an addon context.
---
--- Practical rule: **never call GetWidth() on StatusBars** during our styling passes.
--- If width is needed, callers must either rely on existing FontString widths or degrade
--- gracefully (hide optional cosmetics) when a safe width can't be obtained.
-local function safeGetWidth(frame)
-    if not frame or not frame.GetWidth then return nil end
-    if frame.GetObjectType then
-        local okT, t = pcall(frame.GetObjectType, frame)
-        if okT and t == "StatusBar" then
-            return nil
-        end
-    end
-    local ok, w = pcall(frame.GetWidth, frame)
-    if not ok then return nil end
-    if type(w) ~= "number" then return nil end
-    local okArith = pcall(function() return w + 0 end)
-    if not okArith then return nil end
-    return w
-end
+-- Secret-value safe helpers (shared module)
+local SS = addon.SecretSafe
+local safeOffset = SS.safeOffset
+local safePointToken = SS.safePointToken
+local safeGetWidth = SS.safeGetWidth
 
 -- Helper to get a usable width for FontString alignment.
 -- StatusBars return nil from safeGetWidth (to avoid secret value issues), so we need
