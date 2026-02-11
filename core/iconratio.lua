@@ -26,6 +26,10 @@ IconRatio.BASE_SIZES = {
     -- Unit Frame buffs/debuffs use the same base as player buffs
     targetBuffsDebuffs = 30,
     focusBuffsDebuffs = 30,
+    -- Action Bars
+    actionBar = 45,
+    petBar = 30,
+    stanceBar = 30,
 }
 
 --- Calculate icon dimensions based on base size and ratio

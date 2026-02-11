@@ -565,6 +565,22 @@ function Builder:AddSelector(options)
             self._controlsByKey[options.key] = selector
         end
 
+        -- Add info icon if specified
+        if options.infoIcon and options.infoIcon.tooltipText and selector._label then
+            local iconSize = options.infoIcon.size or 12
+            local infoIcon = Controls:CreateInfoIcon({
+                parent = selector,
+                tooltipText = options.infoIcon.tooltipText,
+                tooltipTitle = options.infoIcon.tooltipTitle,
+                size = iconSize,
+            })
+            if infoIcon then
+                infoIcon:SetPoint("LEFT", selector._label, "RIGHT", 4, 4)
+                selector._infoIcon = infoIcon
+                table.insert(self._controls, infoIcon)
+            end
+        end
+
         -- Update Y position
         self._currentY = self._currentY - selector:GetHeight()
     end

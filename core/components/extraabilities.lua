@@ -109,9 +109,26 @@ local function ApplyExtraAbilitiesStyling(self)
 
     -- Get settings
     local hideBlizzardArt = self.db and self.db.hideBlizzardArt
-    local wantBorder = self.db and self.db.borderEnable
-    local disableAll = self.db and self.db.borderDisableAll
-    local styleKey = (self.db and self.db.borderStyle) or "square"
+
+    -- Migration: convert old toggle settings to unified borderStyle
+    if self.db then
+        if self.db.borderDisableAll then
+            self.db.borderStyle = "hidden"
+            self.db.borderDisableAll = nil
+            self.db.borderEnable = nil
+        elseif self.db.borderEnable then
+            if not self.db.borderStyle or self.db.borderStyle == "off" then
+                self.db.borderStyle = "square"
+            end
+            self.db.borderEnable = nil
+        elseif self.db.borderEnable == false then
+            self.db.borderStyle = self.db.borderStyle or "off"
+            self.db.borderEnable = nil
+            self.db.borderDisableAll = nil
+        end
+    end
+
+    local styleKey = (self.db and self.db.borderStyle) or "off"
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
     local thickness = tonumber(self.db and self.db.borderThickness) or 1
     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
@@ -182,9 +199,14 @@ local function ApplyExtraAbilitiesStyling(self)
         end
 
         -- Border handling
-        if disableAll then
+        if styleKey == "off" then
+            -- Restore Blizzard default, remove custom borders
             if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
-        elseif wantBorder then
+        elseif styleKey == "hidden" then
+            -- Hide everything
+            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
+        else
+            -- Apply custom border
             if styleKey == "square" and addon.Borders and addon.Borders.ApplySquare then
                 if addon.Borders.HideAll then addon.Borders.HideAll(btn) end
                 local col = tintEnabled and tintColor or {0, 0, 0, 1}
@@ -227,8 +249,6 @@ local function ApplyExtraAbilitiesStyling(self)
                     defaultThickness = (self.settings and self.settings.borderThickness and self.settings.borderThickness.default) or 1,
                 })
             end
-        else
-            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
         end
 
         -- Text styling - Charges (Count)
@@ -305,20 +325,8 @@ addon:RegisterComponentInitializer(function(self)
             -- Text - Cooldown
             textCooldown = { type = "addon", default = { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
             -- Border
-            borderDisableAll = { type = "addon", default = false, ui = {
-                label = "Disable All Borders", widget = "checkbox", section = "Border", order = 1
-            }},
-            borderEnable = { type = "addon", default = false, ui = {
-                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 2
-            }},
-            borderTintEnable = { type = "addon", default = false, ui = {
-                label = "Border Tint", widget = "checkbox", section = "Border", order = 3
-            }},
-            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
-                label = "Tint Color", widget = "color", section = "Border", order = 4
-            }},
-            borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", section = "Border", order = 5,
+            borderStyle = { type = "addon", default = "off", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 1,
                 optionsProvider = function()
                     if addon.BuildIconBorderOptionsContainer then
                         return addon.BuildIconBorderOptionsContainer()
@@ -326,11 +334,17 @@ addon:RegisterComponentInitializer(function(self)
                     return {}
                 end
             }},
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 3
+            }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 6
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
             }},
             borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 7
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
             }},
             -- Visibility
             hideBlizzardArt = { type = "addon", default = false, ui = {

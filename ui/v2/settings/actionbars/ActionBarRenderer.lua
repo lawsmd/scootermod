@@ -65,13 +65,13 @@ function ActionBar.Render(panel, scrollContent, componentId)
 
     -- Build icon border options for selector (returns values and order)
     local function getIconBorderOptions()
-        local values = { square = "Default (Square)" }
-        local order = { "square" }
+        local values = { off = "Off", hidden = "Hidden", square = "Default (Square)" }
+        local order = { "off", "hidden", "square" }
         if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
             local data = addon.IconBorders.GetDropdownEntries()
             if data and #data > 0 then
-                values = {}
-                order = {}
+                values = { off = "Off", hidden = "Hidden" }
+                order = { "off", "hidden" }
                 for _, entry in ipairs(data) do
                     local key = entry.value or entry.key
                     local label = entry.text or entry.label or key
@@ -113,7 +113,8 @@ function ActionBar.Render(panel, scrollContent, componentId)
     local isPetBar = (componentId == "petBar")
     local isStanceBar = (componentId == "stanceBar")
     local hasNumIcons = isBar1 or isBar2to8  -- Only action bars 1-8 have numIcons
-    local hasBorderBackdrop = not isStanceBar  -- Stance bar doesn't have border/backdrop in this UI
+    local hasBorderBackdrop = not isStanceBar  -- Stance bar doesn't have backdrop in this UI
+    local hasBorder = true  -- All bars including Stance Bar have border settings
 
     ---------------------------------------------------------------------------
     -- Positioning Section
@@ -197,6 +198,17 @@ function ActionBar.Render(panel, scrollContent, componentId)
                 debounceDelay = 0.3,
                 onEditModeSync = function() syncEditModeSetting("iconSize") end,
                 minLabel = "50%", maxLabel = "200%",
+            })
+
+            inner:AddSlider({
+                label = "Icon Shape",
+                description = "Adjust icon aspect ratio. Center = square icons.",
+                min = -67, max = 67, step = 1,
+                get = function() return getSetting("tallWideRatio") or 0 end,
+                set = function(v) setSetting("tallWideRatio", v) end,
+                debounceKey = componentId .. "_tallWideRatio",
+                debounceDelay = 0.15,
+                minLabel = "Wide", maxLabel = "Tall",
             })
 
             inner:Finalize()
@@ -667,25 +679,26 @@ function ActionBar.Render(panel, scrollContent, componentId)
     end
 
     ---------------------------------------------------------------------------
-    -- Border Section (not for Stance Bar)
+    -- Border Section (all bars including Stance Bar)
     ---------------------------------------------------------------------------
-    if hasBorderBackdrop then
+    if hasBorder then
         builder:AddCollapsibleSection({
             title = "Border",
             componentId = componentId,
             sectionKey = "border",
             defaultExpanded = false,
             buildContent = function(contentFrame, inner)
-                inner:AddToggle({
-                    label = "Disable All Borders",
-                    get = function() return getSetting("borderDisableAll") or false end,
-                    set = function(v) setSetting("borderDisableAll", v) end,
-                })
-
-                inner:AddToggle({
-                    label = "Use Custom Border",
-                    get = function() return getSetting("borderEnable") or false end,
-                    set = function(v) setSetting("borderEnable", v) end,
+                local borderValues, borderOrder = getIconBorderOptions()
+                inner:AddSelector({
+                    label = "Border Style",
+                    values = borderValues,
+                    order = borderOrder,
+                    get = function() return getSetting("borderStyle") or "off" end,
+                    set = function(v) setSetting("borderStyle", v) end,
+                    infoIcon = {
+                        tooltipTitle = "Border Style",
+                        tooltipText = "\"Off\" shows the default Blizzard border, which ScooterMod does not customize. \"Hidden\" removes all borders entirely.",
+                    },
                 })
 
                 inner:AddToggleColorPicker({
@@ -697,15 +710,6 @@ function ActionBar.Render(panel, scrollContent, componentId)
                         return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
                     end,
                     setColor = function(r, g, b, a) setSetting("borderTintColor", {r, g, b, a}) end,
-                })
-
-                local borderValues, borderOrder = getIconBorderOptions()
-                inner:AddSelector({
-                    label = "Border Style",
-                    values = borderValues,
-                    order = borderOrder,
-                    get = function() return getSetting("borderStyle") or "square" end,
-                    set = function(v) setSetting("borderStyle", v) end,
                 })
 
                 inner:AddSlider({
@@ -725,10 +729,12 @@ function ActionBar.Render(panel, scrollContent, componentId)
                 inner:Finalize()
             end,
         })
+    end
 
-        ---------------------------------------------------------------------------
-        -- Backdrop Section (not for Stance Bar)
-        ---------------------------------------------------------------------------
+    ---------------------------------------------------------------------------
+    -- Backdrop Section (not for Stance Bar)
+    ---------------------------------------------------------------------------
+    if hasBorderBackdrop then
         builder:AddCollapsibleSection({
             title = "Backdrop",
             componentId = componentId,

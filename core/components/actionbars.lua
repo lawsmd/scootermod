@@ -8,6 +8,7 @@ local actionBarState = {}  -- per-frame state (component, baseOpacity, isMousedO
 local actionBarHooked = {} -- frames with OnEnter/OnLeave hooks
 local alphaHooked = {}     -- frames with SetAlpha hooks
 local settingAlpha = {}    -- recursion guard for SetAlpha calls
+local iconShapedButtons = setmetatable({}, { __mode = "k" })  -- tracks buttons modified by icon shape
 
 local function getBarState(bar)
     if not actionBarState[bar] then
@@ -193,9 +194,25 @@ local function ApplyActionBarStyling(self)
         end
     end
 
-    local wantBorder = self.db and self.db.borderEnable
-    local disableAll = self.db and self.db.borderDisableAll
-    local styleKey = (self.db and self.db.borderStyle) or "square"
+    -- Migration: convert old toggle settings to unified borderStyle
+    if self.db then
+        if self.db.borderDisableAll then
+            self.db.borderStyle = "hidden"
+            self.db.borderDisableAll = nil
+            self.db.borderEnable = nil
+        elseif self.db.borderEnable then
+            if not self.db.borderStyle or self.db.borderStyle == "off" then
+                self.db.borderStyle = "square"
+            end
+            self.db.borderEnable = nil
+        elseif self.db.borderEnable == false then
+            self.db.borderStyle = self.db.borderStyle or "off"
+            self.db.borderEnable = nil
+            self.db.borderDisableAll = nil
+        end
+    end
+
+    local styleKey = (self.db and self.db.borderStyle) or "off"
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
     local thickness = tonumber(self.db and self.db.borderThickness) or 1
     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
@@ -225,18 +242,149 @@ local function ApplyActionBarStyling(self)
         return nil
     end
 
+    -- Icon shape (non-uniform aspect ratio)
+    local IconRatio = addon.IconRatio
+    local tallWideRatio = tonumber(self.db and self.db.tallWideRatio) or 0
+    local isStanceOrPet = (self.frameName == "StanceBar") or (self.frameName == "PetActionBar")
+    local baseButtonSize = isStanceOrPet and 30 or 45
+
+    local inCombat = InCombatLockdown and InCombatLockdown()
+
     for _, btn in ipairs(enumerateButtons()) do
-        if disableAll then
+        -- Apply icon shape FIRST (before borders/backdrops which anchor to button edges)
+        -- Skip during combat: SetSize/ClearAllPoints/SetPoint on protected buttons causes ADDON_ACTION_BLOCKED
+        if not inCombat and tallWideRatio ~= 0 and IconRatio then
+            local btnW, btnH = IconRatio.CalculateDimensions(baseButtonSize, tallWideRatio)
+            if btnW and btnH then
+                pcall(btn.SetSize, btn, btnW, btnH)
+                iconShapedButtons[btn] = true
+
+                -- Crop icon texture (center-weighted) instead of stretching
+                local icon = btn.icon or btn.Icon
+                if icon then
+                    local aspectRatio = btnW / btnH
+                    local left, right, top, bottom = 0, 1, 0, 1
+                    if aspectRatio > 1.0 then
+                        -- Wider than tall: crop top/bottom
+                        local cropAmount = 1.0 - (1.0 / aspectRatio)
+                        local offset = cropAmount / 2.0
+                        top = offset
+                        bottom = 1.0 - offset
+                    elseif aspectRatio < 1.0 then
+                        -- Taller than wide: crop left/right
+                        local cropAmount = 1.0 - aspectRatio
+                        local offset = cropAmount / 2.0
+                        left = offset
+                        right = 1.0 - offset
+                    end
+                    pcall(icon.SetTexCoord, icon, left, right, top, bottom)
+
+                    -- Re-anchor icon to fill resized button (implicit XML anchoring doesn't update)
+                    pcall(function()
+                        icon:ClearAllPoints()
+                        icon:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                        icon:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                    end)
+                end
+
+                -- Reanchor cooldown frame to match new button edges
+                local cd = btn.cooldown or btn.Cooldown or btn.CooldownFrame
+                if cd then
+                    pcall(function()
+                        cd:ClearAllPoints()
+                        cd:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                        cd:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                    end)
+                end
+
+                -- Hide mask entirely — atlas rounded shape clips non-square icons
+                if btn.IconMask then
+                    pcall(btn.IconMask.Hide, btn.IconMask)
+                end
+
+                -- Resize hover/checked/pushed textures to match shaped button
+                for _, key in ipairs({"HighlightTexture", "CheckedTexture", "PushedTexture"}) do
+                    local tex = btn[key]
+                    if tex then
+                        pcall(function()
+                            tex:ClearAllPoints()
+                            tex:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+                            tex:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+                        end)
+                    end
+                end
+            end
+        elseif not inCombat and tallWideRatio == 0 and iconShapedButtons[btn] then
+            -- Only reset buttons that were previously shaped
+            pcall(btn.SetSize, btn, baseButtonSize, baseButtonSize)
+
+            local icon = btn.icon or btn.Icon
+            if icon then
+                pcall(icon.SetTexCoord, icon, 0, 1, 0, 1)
+                pcall(function()
+                    icon:ClearAllPoints()
+                    icon:SetAllPoints(btn)
+                end)
+            end
+
+            -- Restore IconMask to default (show + reset size)
+            if btn.IconMask then
+                pcall(btn.IconMask.Show, btn.IconMask)
+                pcall(btn.IconMask.SetSize, btn.IconMask, 45, 45)
+            end
+
+            -- Restore hover/checked/pushed textures to Blizzard defaults
+            for _, key in ipairs({"HighlightTexture", "CheckedTexture", "PushedTexture"}) do
+                local tex = btn[key]
+                if tex then
+                    pcall(function()
+                        tex:ClearAllPoints()
+                        tex:SetPoint("TOPLEFT")
+                        if isStanceOrPet then
+                            tex:SetSize(31.6, 30.9)
+                        else
+                            tex:SetSize(46, 45)
+                        end
+                    end)
+                end
+            end
+
+            -- Restore cooldown to Blizzard default offsets (anchored to icon)
+            local cd = btn.cooldown or btn.Cooldown or btn.CooldownFrame
+            if cd and icon then
+                pcall(function()
+                    cd:ClearAllPoints()
+                    if isStanceOrPet then
+                        -- SmallActionButtonMixin_OnLoad offsets (ActionButton.lua:1744-1745)
+                        cd:SetPoint("TOPLEFT", icon, "TOPLEFT", 1.7, -1.7)
+                        cd:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
+                    else
+                        -- ActionButtonTemplate.xml default (3px inset)
+                        cd:SetPoint("TOPLEFT", icon, "TOPLEFT", 3, -3)
+                        cd:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -3, 3)
+                    end
+                end)
+            end
+
+            iconShapedButtons[btn] = nil
+        end
+
+        if styleKey == "off" then
+            -- Restore Blizzard default art, remove custom borders
+            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
+            toggleDefaultButtonArt(btn, true)
+        elseif styleKey == "hidden" then
+            -- Hide everything
             if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
             toggleDefaultButtonArt(btn, false)
-        elseif wantBorder then
+        else
+            -- Apply custom border
             if styleKey == "square" and addon.Borders and addon.Borders.ApplySquare then
                 if addon.Borders.HideAll then addon.Borders.HideAll(btn) end
                 local col = tintEnabled and tintColor or {0, 0, 0, 1}
                 local isPetButton = (self.frameName == "PetActionBar")
                 local iconRegion = isPetButton and getButtonIconRegion(btn) or nil
-                -- Base offsets: expandTop = 1, expandBottom = -1, right edge at -1
-                -- borderInset adjusts these additively (negative = expand, positive = shrink)
+                local shaped = tallWideRatio ~= 0
                 addon.Borders.ApplySquare(btn, {
                     size = thickness,
                     color = col,
@@ -244,10 +392,8 @@ local function ApplyActionBarStyling(self)
                     layerSublevel = 7,
                     expandX = 0 - borderInset,
                     expandY = 0 - borderInset,
-                    expandTop = 1 - borderInset,
-                    expandBottom = -1 - borderInset,
-                    -- Pet Action Buttons have extra internal padding vs other action buttons; anchor the
-                    -- square border to the icon region so Border Inset = 0 hugs the icon edge.
+                    expandTop = (shaped and 0 or 1) - borderInset,
+                    expandBottom = (shaped and 0 or -1) - borderInset,
                     levelOffset = iconRegion and 5 or nil,
                     containerParent = iconRegion and btn or nil,
                     containerAnchorRegion = iconRegion,
@@ -256,18 +402,23 @@ local function ApplyActionBarStyling(self)
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
                 if edges and edges.Right then
                     edges.Right:ClearAllPoints()
-                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -1 + borderInset, 0)
-                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -1 + borderInset, 0)
+                    local rX = shaped and (0 - borderInset) or (-1 + borderInset)
+                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", rX, 0)
+                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", rX, 0)
                 end
                 if edges and edges.Top then
                     edges.Top:ClearAllPoints()
-                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInset, 1 - borderInset)
-                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", -1 + borderInset, 1 - borderInset)
+                    local tRX = shaped and (0 + borderInset) or (-1 + borderInset)
+                    local tY = shaped and (0 - borderInset) or (1 - borderInset)
+                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInset, tY)
+                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", tRX, tY)
                 end
                 if edges and edges.Bottom then
                     edges.Bottom:ClearAllPoints()
-                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInset, 1 - borderInset)
-                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", -1 + borderInset, 1 - borderInset)
+                    local bRX = shaped and (0 + borderInset) or (-1 + borderInset)
+                    local bY = shaped and (0 + borderInset) or (1 - borderInset)
+                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInset, bY)
+                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", bRX, bY)
                 end
             else
                 addon.ApplyIconBorderStyle(btn, styleKey, {
@@ -282,9 +433,6 @@ local function ApplyActionBarStyling(self)
                 })
             end
             toggleDefaultButtonArt(btn, false)
-        else
-            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(btn) end
-            toggleDefaultButtonArt(btn, true)
         end
 
         do
@@ -585,6 +733,30 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
+            }},
+            borderStyle = { type = "addon", default = "off", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 1,
+                optionsProvider = function()
+                    if addon.BuildIconBorderOptionsContainer then
+                        return addon.BuildIconBorderOptionsContainer()
+                    end
+                    return {}
+                end
+            }},
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 3
+            }},
+            borderThickness = { type = "addon", default = 1, ui = {
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
+            }},
+            borderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
+            }},
             barOpacity = { type = "addon", default = 100, ui = {
                 label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
             }},
@@ -623,20 +795,11 @@ addon:RegisterComponentInitializer(function(self)
                 iconSize = { type = "editmode", default = 100, ui = {
                     label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
                 }},
-                borderDisableAll = { type = "addon", default = false, ui = {
-                    label = "Disable All Borders", widget = "checkbox", section = "Border", order = 1
+                tallWideRatio = { type = "addon", default = 0, ui = {
+                    label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
                 }},
-                borderEnable = { type = "addon", default = false, ui = {
-                    label = "Use Custom Border", widget = "checkbox", section = "Border", order = 2
-                }},
-                borderTintEnable = { type = "addon", default = false, ui = {
-                    label = "Border Tint", widget = "checkbox", section = "Border", order = 3
-                }},
-                borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
-                    label = "Tint Color", widget = "color", section = "Border", order = 4
-                }},
-                borderStyle = { type = "addon", default = "square", ui = {
-                    label = "Border Style", widget = "dropdown", section = "Border", order = 5,
+                borderStyle = { type = "addon", default = "off", ui = {
+                    label = "Border Style", widget = "dropdown", section = "Border", order = 1,
                     optionsProvider = function()
                         if addon.BuildIconBorderOptionsContainer then
                             return addon.BuildIconBorderOptionsContainer()
@@ -644,11 +807,17 @@ addon:RegisterComponentInitializer(function(self)
                         return {}
                     end
                 }},
+                borderTintEnable = { type = "addon", default = false, ui = {
+                    label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+                }},
+                borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                    label = "Tint Color", widget = "color", section = "Border", order = 3
+                }},
                 borderThickness = { type = "addon", default = 1, ui = {
-                    label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 6
+                    label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
                 }},
                 borderInset = { type = "addon", default = 0, ui = {
-                    label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 7
+                    label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
                 }},
                 backdropDisable = { type = "addon", default = false, ui = {
                     label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
@@ -768,20 +937,11 @@ addon:RegisterComponentInitializer(function(self)
             iconSize = { type = "editmode", default = 100, ui = {
                 label = "Icon Size (Scale)", widget = "slider", min = 50, max = 200, step = 10, section = "Sizing", order = 1
             }},
-            borderDisableAll = { type = "addon", default = false, ui = {
-                label = "Disable All Borders", widget = "checkbox", section = "Border", order = 1
+            tallWideRatio = { type = "addon", default = 0, ui = {
+                label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
-            borderEnable = { type = "addon", default = false, ui = {
-                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 2
-            }},
-            borderTintEnable = { type = "addon", default = false, ui = {
-                label = "Border Tint", widget = "checkbox", section = "Border", order = 3
-            }},
-            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
-                label = "Tint Color", widget = "color", section = "Border", order = 4
-            }},
-            borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", section = "Border", order = 5,
+            borderStyle = { type = "addon", default = "off", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 1,
                 optionsProvider = function()
                     if addon.BuildIconBorderOptionsContainer then
                         return addon.BuildIconBorderOptionsContainer()
@@ -789,11 +949,17 @@ addon:RegisterComponentInitializer(function(self)
                     return {}
                 end
             }},
+            borderTintEnable = { type = "addon", default = false, ui = {
+                label = "Border Tint", widget = "checkbox", section = "Border", order = 2
+            }},
+            borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
+                label = "Tint Color", widget = "color", section = "Border", order = 3
+            }},
             borderThickness = { type = "addon", default = 1, ui = {
-                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 6
+                label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
             }},
             borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 7
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
             }},
             backdropDisable = { type = "addon", default = false, ui = {
                 label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
