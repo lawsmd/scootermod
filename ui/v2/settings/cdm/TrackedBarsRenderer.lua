@@ -546,6 +546,15 @@ function TrackedBars.Render(panel, scrollContent)
                 minLabel = "1", maxLabel = "8",
             })
 
+            inner:AddSlider({
+                label = "Border Inset",
+                description = "Move border inward (positive) or outward (negative).",
+                min = -4, max = 4, step = 1,
+                get = function() return getSetting("iconBorderInset") or 0 end,
+                set = function(v) setSetting("iconBorderInset", v) end,
+                minLabel = "-4", maxLabel = "+4",
+            })
+
             inner:Finalize()
         end,
     })

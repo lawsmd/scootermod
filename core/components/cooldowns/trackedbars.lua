@@ -509,6 +509,7 @@ local function styleVerticalStack(stack, component)
     local iconStyle = tostring(db.iconBorderStyle or "none")
     local iconThickness = tonumber(db.iconBorderThickness) or 1
     iconThickness = math.max(1, math.min(16, iconThickness))
+    local iconBorderInset = tonumber(db.iconBorderInset) or 0
     local iconTintEnabled = not not db.iconBorderTintEnable
     local tintRaw = db.iconBorderTintColor
     local tintColor = {1, 1, 1, 1}
@@ -518,6 +519,7 @@ local function styleVerticalStack(stack, component)
     if iconBorderEnabled and stack.iconRegion:IsShown() then
         addon.ApplyIconBorderStyle(stack.iconRegion, iconStyle, {
             thickness = iconThickness,
+            inset = iconBorderInset,
             color = iconTintEnabled and tintColor or nil,
             tintEnabled = iconTintEnabled,
             db = db,
@@ -999,6 +1001,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     local iconStyle = tostring(getSettingValue("iconBorderStyle") or "none")
     local iconThickness = tonumber(getSettingValue("iconBorderThickness")) or 1
     iconThickness = math.max(1, math.min(16, iconThickness))
+    local iconBorderInset = tonumber(getSettingValue("iconBorderInset")) or 0
     local iconTintEnabled = not not getSettingValue("iconBorderTintEnable")
     local tintRaw = getSettingValue("iconBorderTintColor")
     local tintColor = {1, 1, 1, 1}
@@ -1010,6 +1013,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         Util.ToggleDefaultIconOverlay(iconFrame, false)
         addon.ApplyIconBorderStyle(iconFrame, iconStyle, {
             thickness = iconThickness,
+            inset = iconBorderInset,
             color = iconTintEnabled and tintColor or nil,
             tintEnabled = iconTintEnabled,
             db = component.db,
@@ -1360,6 +1364,9 @@ addon:RegisterComponentInitializer(function(self)
             }},
             iconBorderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Icon", order = 7
+            }},
+            iconBorderInset = { type = "addon", default = 0, ui = {
+                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Icon", order = 8
             }},
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1

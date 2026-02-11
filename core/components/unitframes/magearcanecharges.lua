@@ -1,7 +1,7 @@
 -- magearcanecharges.lua - Mage Arcane Charge Pixel-Art Texture Overlay System
 -- Replaces Blizzard orb visuals with pixel art textures when enabled.
--- Unlike DK Runes (overlay frames), this directly replaces the Orb texture
--- so Blizzard's BORDER/OVERLAY animation effects render on top naturally.
+-- Unlike DK Runes (overlay frames), this directly replaces the Orb texture.
+-- ArcaneIcon (white spark) is hidden in pixel mode; other FX animations are preserved.
 local addonName, addon = ...
 
 local FS = nil
@@ -58,6 +58,13 @@ end
 -- Per-Button Setup / State / Restore
 --------------------------------------------------------------------------------
 
+local function hideArcaneIcon(chargeButton)
+	local icon = chargeButton.ArcaneIcon
+	if icon and icon.Hide then
+		pcall(icon.Hide, icon)
+	end
+end
+
 local function setupChargeOverlay(chargeButton)
 	if getProp(chargeButton, "scooterChargeOverlaid") then return end
 
@@ -81,6 +88,7 @@ local function setupChargeOverlay(chargeButton)
 		arcaneBGShadow:SetAlpha(0)
 	end
 
+	hideArcaneIcon(chargeButton)
 	setProp(chargeButton, "scooterChargeOverlaid", true)
 end
 
@@ -112,6 +120,11 @@ local function restoreChargeButton(chargeButton)
 	local arcaneBGShadow = chargeButton.ArcaneBGShadow
 	if arcaneBGShadow then
 		arcaneBGShadow:SetAlpha(1)
+	end
+
+	local arcaneIcon = chargeButton.ArcaneIcon
+	if arcaneIcon and arcaneIcon.Show then
+		pcall(arcaneIcon.Show, arcaneIcon)
 	end
 
 	setProp(chargeButton, "scooterChargeOverlaid", nil)
@@ -188,13 +201,17 @@ local function installChargeHooks(chargeFrame)
 							if not cfg2 or (cfg2.textureStyle_MAGE or "default") ~= "pixel" then return end
 							if getProp(self2, "scooterChargeOverlaid") then
 								updateChargeState(self2)
+								hideArcaneIcon(self2)
 							end
 						end)
 						setProp(btn, "scooterChargeSetActiveHooked", true)
 					end
 
-					-- Update state
+					-- Update state and suppress FX on newly-pooled buttons
 					updateChargeState(btn)
+					if getProp(btn, "scooterChargeOverlaid") then
+						hideArcaneIcon(btn)
+					end
 				end
 			end
 		end)
@@ -253,12 +270,14 @@ function addon.ApplyMageArcaneChargeTextures(context)
 							if not cfg2 or (cfg2.textureStyle_MAGE or "default") ~= "pixel" then return end
 							if getProp(self, "scooterChargeOverlaid") then
 								updateChargeState(self)
+								hideArcaneIcon(self)
 							end
 						end)
 						setProp(btn, "scooterChargeSetActiveHooked", true)
 					end
 
 					updateChargeState(btn)
+					hideArcaneIcon(btn)
 				end
 			end
 		end
