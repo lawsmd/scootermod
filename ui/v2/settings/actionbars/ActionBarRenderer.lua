@@ -23,88 +23,17 @@ function ActionBar.Render(panel, scrollContent, componentId)
         ActionBar.Render(panel, scrollContent, componentId)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components[componentId]
-    end
+    local h = Helpers.CreateComponentHelpers(componentId)
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApply
+    local syncEditModeSetting = h.sync
 
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components[componentId] and components[componentId][key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components[componentId] = profile.components[componentId] or {}
-                profile.components[componentId][key] = value
-            end
-        end
-        if addon and addon.ApplyStyles then
-            C_Timer.After(0, function() addon:ApplyStyles() end)
-        end
-    end
-
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
-
-    -- Build icon border options for selector (returns values and order)
     local function getIconBorderOptions()
-        local values = { off = "Off", hidden = "Hidden", square = "Default (Square)" }
-        local order = { "off", "hidden", "square" }
-        if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
-            local data = addon.IconBorders.GetDropdownEntries()
-            if data and #data > 0 then
-                values = { off = "Off", hidden = "Hidden" }
-                order = { "off", "hidden" }
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
+        return Helpers.getIconBorderOptions({{"off","Off"},{"hidden","Hidden"}})
     end
 
-    -- Build backdrop options for selector (returns values and order)
     local function getBackdropOptions()
-        local values = { blizzardBg = "Default Blizzard Backdrop" }
-        local order = { "blizzardBg" }
-        if addon.BuildIconBackdropOptionsContainer then
-            local data = addon.BuildIconBackdropOptionsContainer()
-            if data and #data > 0 then
-                values = {}
-                order = {}
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
+        return Helpers.getBackdropOptions()
     end
 
     -- Determine bar type characteristics
@@ -233,17 +162,8 @@ function ActionBar.Render(panel, scrollContent, componentId)
                     end
                 end
 
-                -- Font style options
-                local fontStyleValues = {
-                    ["NONE"] = "Regular",
-                    ["OUTLINE"] = "Outline",
-                    ["THICKOUTLINE"] = "Thick Outline",
-                    ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-                    ["SHADOW"] = "Shadow",
-                    ["SHADOWOUTLINE"] = "Shadow Outline",
-                    ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-                }
-                local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+                local fontStyleValues = Helpers.fontStyleValues
+                local fontStyleOrder = Helpers.fontStyleOrder
 
                 -- Determine tabs based on bar type
                 -- Action Bars and Pet Bar have 4 tabs: Charges, Cooldowns, Hotkey, Macro Name

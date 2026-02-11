@@ -111,6 +111,18 @@ function Helpers.CreateComponentHelpers(componentId)
         Helpers.setSettingAndApply(componentId, key, value)
     end
 
+    h.setAndApplyComponent = function(key, value)
+        Helpers.setSetting(componentId, key, value)
+        local comp = Helpers.getComponent(componentId)
+        if comp and comp.ApplyStyling then
+            C_Timer.After(0, function()
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end)
+        end
+    end
+
     h.sync = function(settingId)
         Helpers.syncEditModeSetting(componentId, settingId)
     end
@@ -193,14 +205,31 @@ Helpers.alignmentOrder = { "LEFT", "CENTER", "RIGHT" }
 --------------------------------------------------------------------------------
 
 -- Build icon border options for selector (returns values and order)
-function Helpers.getIconBorderOptions()
-    local values = { square = "Default (Square)" }
-    local order = { "square" }
+-- prefixEntries: optional array of {key, label} pairs to prepend before dynamic entries
+-- e.g. Helpers.getIconBorderOptions({{"off","Off"},{"hidden","Hidden"}})
+function Helpers.getIconBorderOptions(prefixEntries)
+    local values = {}
+    local order = {}
+    if prefixEntries then
+        for _, entry in ipairs(prefixEntries) do
+            values[entry[1]] = entry[2]
+            table.insert(order, entry[1])
+        end
+    end
+    values["square"] = "Default (Square)"
+    table.insert(order, "square")
+
     if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
         local data = addon.IconBorders.GetDropdownEntries()
         if data and #data > 0 then
             values = {}
             order = {}
+            if prefixEntries then
+                for _, entry in ipairs(prefixEntries) do
+                    values[entry[1]] = entry[2]
+                    table.insert(order, entry[1])
+                end
+            end
             for _, entry in ipairs(data) do
                 local key = entry.value or entry.key
                 local label = entry.text or entry.label or key

@@ -9,9 +9,9 @@ addon.UI.Settings.PRD.PowerBar = {}
 local PowerBar = addon.UI.Settings.PRD.PowerBar
 local SettingsBuilder = addon.UI.SettingsBuilder
 
--- Text color options for power-related settings
-local textColorPowerValues = { default = "Default", class = "Class Color", classPower = "Class Power Color", custom = "Custom" }
-local textColorPowerOrder = { "default", "class", "classPower", "custom" }
+local Helpers = addon.UI.Settings.Helpers
+local textColorPowerValues = Helpers.textColorPowerValues
+local textColorPowerOrder = Helpers.textColorPowerOrder
 
 function PowerBar.Render(panel, scrollContent)
     panel:ClearContent()
@@ -23,32 +23,9 @@ function PowerBar.Render(panel, scrollContent)
         PowerBar.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["prdPower"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        return nil
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        end
-        if comp and comp.ApplyStyling then
-            C_Timer.After(0, function()
-                if comp and comp.ApplyStyling then
-                    comp:ApplyStyling()
-                end
-            end)
-        end
-    end
+    local h = Helpers.CreateComponentHelpers("prdPower")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApplyComponent
 
     -- Build border options
     local function getBorderOptions()
@@ -276,15 +253,7 @@ function PowerBar.Render(panel, scrollContent)
 
                         tabInner:AddSelector({
                             label = "Font Style",
-                            values = {
-                                NONE = "Regular",
-                                OUTLINE = "Outline",
-                                THICKOUTLINE = "Thick Outline",
-                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
-                                SHADOW = "Shadow",
-                                SHADOWOUTLINE = "Shadow Outline",
-                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                            },
+                            values = Helpers.fontStyleValues,
                             order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("valueTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("valueTextFontFlags", v) end,
@@ -344,15 +313,7 @@ function PowerBar.Render(panel, scrollContent)
 
                         tabInner:AddSelector({
                             label = "Font Style",
-                            values = {
-                                NONE = "Regular",
-                                OUTLINE = "Outline",
-                                THICKOUTLINE = "Thick Outline",
-                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
-                                SHADOW = "Shadow",
-                                SHADOWOUTLINE = "Shadow Outline",
-                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                            },
+                            values = Helpers.fontStyleValues,
                             order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("percentTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("percentTextFontFlags", v) end,

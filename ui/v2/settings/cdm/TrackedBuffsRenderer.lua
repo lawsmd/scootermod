@@ -9,10 +9,6 @@ addon.UI.Settings.CDM.TrackedBuffs = {}
 local TrackedBuffs = addon.UI.Settings.CDM.TrackedBuffs
 local SettingsBuilder = addon.UI.SettingsBuilder
 
--- Text color options (shared across text settings)
-local textColorValues = { default = "Default", class = "Class Color", custom = "Custom" }
-local textColorOrder = { "default", "class", "custom" }
-
 function TrackedBuffs.Render(panel, scrollContent)
     panel:ClearContent()
     local builder = SettingsBuilder:CreateFor(scrollContent)
@@ -20,42 +16,11 @@ function TrackedBuffs.Render(panel, scrollContent)
 
     builder:SetOnRefresh(function() TrackedBuffs.Render(panel, scrollContent) end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["trackedBuffs"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.trackedBuffs and components.trackedBuffs[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.trackedBuffs = profile.components.trackedBuffs or {}
-                profile.components.trackedBuffs[key] = value
-            end
-        end
-    end
-
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("trackedBuffs")
+    local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
+    local syncEditModeSetting = h.sync
+    local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
 
     -- Positioning Section (different from Essential/Utility - has orientation but no columns)
     builder:AddCollapsibleSection({
@@ -182,20 +147,7 @@ function TrackedBuffs.Render(panel, scrollContent)
                 hasAlpha = true,
             })
 
-            local borderStyleValues, borderStyleOrder = { square = "Default" }, { "square" }
-            if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
-                local entries = addon.IconBorders.GetDropdownEntries()
-                if entries then
-                    borderStyleValues, borderStyleOrder = {}, {}
-                    for _, entry in ipairs(entries) do
-                        local key = entry.value or entry.key
-                        if key then
-                            borderStyleValues[key] = entry.text or entry.label or key
-                            table.insert(borderStyleOrder, key)
-                        end
-                    end
-                end
-            end
+            local borderStyleValues, borderStyleOrder = Helpers.getIconBorderOptions()
 
             inner:AddSelector({
                 label = "Border Style",
@@ -245,17 +197,8 @@ function TrackedBuffs.Render(panel, scrollContent)
                 end
             end
 
-            -- Font style options
-            local fontStyleValues = {
-                ["NONE"] = "Regular",
-                ["OUTLINE"] = "Outline",
-                ["THICKOUTLINE"] = "Thick Outline",
-                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-                ["SHADOW"] = "Shadow",
-                ["SHADOWOUTLINE"] = "Shadow Outline",
-                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-            }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+            local fontStyleValues = Helpers.fontStyleValues
+            local fontStyleOrder = Helpers.fontStyleOrder
 
             -- Tabbed section for Charges (stacks) and Cooldowns text settings
             inner:AddTabbedSection({

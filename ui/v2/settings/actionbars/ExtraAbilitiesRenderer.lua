@@ -22,59 +22,13 @@ function ExtraAbilities.Render(panel, scrollContent)
         ExtraAbilities.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["extraAbilities"]
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("extraAbilities")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApply
 
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.extraAbilities and components.extraAbilities[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.extraAbilities = profile.components.extraAbilities or {}
-                profile.components.extraAbilities[key] = value
-            end
-        end
-        if addon and addon.ApplyStyles then
-            C_Timer.After(0, function() addon:ApplyStyles() end)
-        end
-    end
-
-    -- Build icon border options for selector (returns values and order)
     local function getIconBorderOptions()
-        local values = { off = "Off", hidden = "Hidden", square = "Default (Square)" }
-        local order = { "off", "hidden", "square" }
-        if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
-            local data = addon.IconBorders.GetDropdownEntries()
-            if data and #data > 0 then
-                values = { off = "Off", hidden = "Hidden" }
-                order = { "off", "hidden" }
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
+        return Helpers.getIconBorderOptions({{"off","Off"},{"hidden","Hidden"}})
     end
 
     ---------------------------------------------------------------------------
@@ -113,17 +67,8 @@ function ExtraAbilities.Render(panel, scrollContent)
                 end
             end
 
-            -- Font style options
-            local fontStyleValues = {
-                ["NONE"] = "Regular",
-                ["OUTLINE"] = "Outline",
-                ["THICKOUTLINE"] = "Thick Outline",
-                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-                ["SHADOW"] = "Shadow",
-                ["SHADOWOUTLINE"] = "Shadow Outline",
-                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-            }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+            local fontStyleValues = Helpers.fontStyleValues
+            local fontStyleOrder = Helpers.fontStyleOrder
 
             local tabs = {
                 { key = "charges", label = "Charges" },

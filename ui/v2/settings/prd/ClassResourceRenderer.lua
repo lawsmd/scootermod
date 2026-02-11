@@ -19,32 +19,10 @@ function ClassResource.Render(panel, scrollContent)
         ClassResource.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["prdClassResource"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        return nil
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        end
-        if comp and comp.ApplyStyling then
-            C_Timer.After(0, function()
-                if comp and comp.ApplyStyling then
-                    comp:ApplyStyling()
-                end
-            end)
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("prdClassResource")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApplyComponent
 
     ---------------------------------------------------------------------------
     -- Textures Section (DK / Mage)

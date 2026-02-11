@@ -9,10 +9,6 @@ addon.UI.Settings.CDM.TrackedBars = {}
 local TrackedBars = addon.UI.Settings.CDM.TrackedBars
 local SettingsBuilder = addon.UI.SettingsBuilder
 
--- Text color options (shared across text settings)
-local textColorValues = { default = "Default", class = "Class Color", custom = "Custom" }
-local textColorOrder = { "default", "class", "custom" }
-
 function TrackedBars.Render(panel, scrollContent)
     panel:ClearContent()
 
@@ -23,110 +19,15 @@ function TrackedBars.Render(panel, scrollContent)
         TrackedBars.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["trackedBars"]
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("trackedBars")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApply
+    local syncEditModeSetting = h.sync
+    local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
 
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.trackedBars and components.trackedBars[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.trackedBars = profile.components.trackedBars or {}
-                profile.components.trackedBars[key] = value
-            end
-        end
-        if addon and addon.ApplyStyles then
-            C_Timer.After(0, function() addon:ApplyStyles() end)
-        end
-    end
-
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
-
-    -- Build bar texture options for selector (returns values and order)
-    local function getBarTextureOptions()
-        local values = { bevelled = "Bevelled" }
-        local order = { "bevelled" }
-        if addon.BuildBarTextureOptionsContainer then
-            local data = addon.BuildBarTextureOptionsContainer()
-            if data and #data > 0 then
-                values = {}
-                order = {}
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
-    end
-
-    -- Build bar border options for selector (returns values and order)
-    local function getBarBorderOptions()
-        local values = { square = "Default (Square)" }
-        local order = { "square" }
-        if addon.BuildBarBorderOptionsContainer then
-            local data = addon.BuildBarBorderOptionsContainer()
-            if data and #data > 0 then
-                values = {}
-                order = {}
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
-    end
-
-    -- Build icon border options for selector (returns values and order)
     local function getIconBorderOptions()
-        local values = { none = "None", square = "Default (Square)" }
-        local order = { "none", "square" }
-        if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
-            local data = addon.IconBorders.GetDropdownEntries()
-            if data and #data > 0 then
-                values = { none = "None" }
-                order = { "none" }
-                for _, entry in ipairs(data) do
-                    local key = entry.value or entry.key
-                    local label = entry.text or entry.label or key
-                    if key then
-                        values[key] = label
-                        table.insert(order, key)
-                    end
-                end
-            end
-        end
-        return values, order
+        return Helpers.getIconBorderOptions({{"none","None"}})
     end
 
     ---------------------------------------------------------------------------
@@ -353,17 +254,8 @@ function TrackedBars.Render(panel, scrollContent)
                 end
             end
 
-            -- Font style options
-            local fontStyleValues = {
-                ["NONE"] = "Regular",
-                ["OUTLINE"] = "Outline",
-                ["THICKOUTLINE"] = "Thick Outline",
-                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-                ["SHADOW"] = "Shadow",
-                ["SHADOWOUTLINE"] = "Shadow Outline",
-                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-            }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+            local fontStyleValues = Helpers.fontStyleValues
+            local fontStyleOrder = Helpers.fontStyleOrder
 
             -- Tabbed section for Spell Name and Timer text settings
             inner:AddTabbedSection({

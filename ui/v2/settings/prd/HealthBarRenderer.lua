@@ -19,32 +19,11 @@ function HealthBar.Render(panel, scrollContent)
         HealthBar.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["prdHealth"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        return nil
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        end
-        if comp and comp.ApplyStyling then
-            C_Timer.After(0, function()
-                if comp and comp.ApplyStyling then
-                    comp:ApplyStyling()
-                end
-            end)
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("prdHealth")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApplyComponent
+    local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
 
     -- Build border options
     local function getBorderOptions()
@@ -276,15 +255,7 @@ function HealthBar.Render(panel, scrollContent)
 
                         tabInner:AddSelector({
                             label = "Font Style",
-                            values = {
-                                NONE = "Regular",
-                                OUTLINE = "Outline",
-                                THICKOUTLINE = "Thick Outline",
-                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
-                                SHADOW = "Shadow",
-                                SHADOWOUTLINE = "Shadow Outline",
-                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                            },
+                            values = Helpers.fontStyleValues,
                             order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("valueTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("valueTextFontFlags", v) end,
@@ -344,15 +315,7 @@ function HealthBar.Render(panel, scrollContent)
 
                         tabInner:AddSelector({
                             label = "Font Style",
-                            values = {
-                                NONE = "Regular",
-                                OUTLINE = "Outline",
-                                THICKOUTLINE = "Thick Outline",
-                                HEAVYTHICKOUTLINE = "Heavy Thick Outline",
-                                SHADOW = "Shadow",
-                                SHADOWOUTLINE = "Shadow Outline",
-                                SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                            },
+                            values = Helpers.fontStyleValues,
                             order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("percentTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("percentTextFontFlags", v) end,

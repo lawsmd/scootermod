@@ -22,45 +22,11 @@ function MicroBar.Render(panel, scrollContent)
         MicroBar.Render(panel, scrollContent)
     end)
 
-    local function getComponent()
-        return addon.Components and addon.Components["microBar"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.microBar and components.microBar[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then addon:EnsureComponentDB(comp) end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.microBar = profile.components.microBar or {}
-                profile.components.microBar[key] = value
-            end
-        end
-        if addon and addon.ApplyStyles then
-            C_Timer.After(0, function() addon:ApplyStyles() end)
-        end
-    end
-
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("microBar")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApply
+    local syncEditModeSetting = h.sync
 
     ---------------------------------------------------------------------------
     -- Positioning Section

@@ -18,37 +18,9 @@ function SctDamage.Render(panel, scrollContent)
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Helper to get component settings
-    local function getComponent()
-        return addon.Components and addon.Components["sctDamage"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.sctDamage and components.sctDamage[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then
-                addon:EnsureComponentDB(comp)
-            end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.sctDamage = profile.components.sctDamage or {}
-                profile.components.sctDamage[key] = value
-            end
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("sctDamage")
+    local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
 
     builder:AddDescription(
         "Changes to the damage number font require a full game restart (not just a reload) to take effect. " ..

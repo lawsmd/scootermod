@@ -12,64 +12,17 @@ local SettingsBuilder = addon.UI.SettingsBuilder
 -- Helper Functions
 --------------------------------------------------------------------------------
 
-local function getComponent()
-    return addon.Components and addon.Components["minimapStyle"]
-end
+local Helpers = addon.UI.Settings.Helpers
+local h = Helpers.CreateComponentHelpers("minimapStyle")
+local getComponent = h.getComponent
+local getSetting = h.get
+local setSetting = h.setAndApply
 
-local function getSetting(key)
-    local comp = getComponent()
-    if comp and comp.db then
-        return comp.db[key]
-    end
-    local profile = addon.db and addon.db.profile
-    local components = profile and profile.components
-    return components and components.minimapStyle and components.minimapStyle[key]
-end
+local fontStyleValues = Helpers.fontStyleValues
+local fontStyleOrder = Helpers.fontStyleOrder
 
-local function setSetting(key, value)
-    local comp = getComponent()
-    if comp and comp.db then
-        if addon.EnsureComponentDB then
-            addon:EnsureComponentDB(comp)
-        end
-        comp.db[key] = value
-    else
-        local profile = addon.db and addon.db.profile
-        if profile then
-            profile.components = profile.components or {}
-            profile.components.minimapStyle = profile.components.minimapStyle or {}
-            profile.components.minimapStyle[key] = value
-        end
-    end
-    -- Apply styles after setting change
-    if addon and addon.ApplyStyles then
-        C_Timer.After(0, function()
-            if addon and addon.ApplyStyles then
-                addon:ApplyStyles()
-            end
-        end)
-    end
-end
-
--- Font style options (shared across tabs)
-local fontStyleValues = {
-    ["NONE"] = "Regular",
-    ["OUTLINE"] = "Outline",
-    ["THICKOUTLINE"] = "Thick Outline",
-    ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-    ["SHADOW"] = "Shadow",
-    ["SHADOWOUTLINE"] = "Shadow Outline",
-    ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-}
-local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
-
--- Color mode options
-local colorModeValues = {
-    ["default"] = "Default",
-    ["class"] = "Class Color",
-    ["custom"] = "Custom",
-}
-local colorModeOrder = { "default", "class", "custom" }
+local colorModeValues = Helpers.textColorValues
+local colorModeOrder = Helpers.textColorOrder
 
 -- Time source options
 local timeSourceValues = {

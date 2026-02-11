@@ -19,46 +19,10 @@ function Buffs.Render(panel, scrollContent)
         Buffs.Render(panel, scrollContent)
     end)
 
-    -- Helper to get component settings
-    local function getComponent()
-        return addon.Components and addon.Components["buffs"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.buffs and components.buffs[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            if addon.EnsureComponentDB then
-                addon:EnsureComponentDB(comp)
-            end
-            comp.db[key] = value
-        else
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.buffs = profile.components.buffs or {}
-                profile.components.buffs[key] = value
-            end
-        end
-    end
-
-    -- Helper to sync Edit Mode settings after value change
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("buffs")
+    local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
+    local syncEditModeSetting = h.sync
 
     -- Helper to apply styles after value change
     local function applyStyles()
@@ -254,23 +218,7 @@ function Buffs.Render(panel, scrollContent)
             })
 
             -- Border Style selector
-            local borderStyleValues = { square = "Default" }
-            local borderStyleOrder = { "square" }
-            if addon.IconBorders and addon.IconBorders.GetDropdownEntries then
-                local entries = addon.IconBorders.GetDropdownEntries()
-                if entries then
-                    borderStyleValues = {}
-                    borderStyleOrder = {}
-                    for _, entry in ipairs(entries) do
-                        local key = entry.value or entry.key
-                        local label = entry.text or entry.label or key
-                        if key then
-                            borderStyleValues[key] = label
-                            table.insert(borderStyleOrder, key)
-                        end
-                    end
-                end
-            end
+            local borderStyleValues, borderStyleOrder = Helpers.getIconBorderOptions()
 
             inner:AddSelector({
                 key = "borderStyle",
@@ -312,16 +260,8 @@ function Buffs.Render(panel, scrollContent)
         sectionKey = "text",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            local fontStyleValues = {
-                ["NONE"] = "Regular",
-                ["OUTLINE"] = "Outline",
-                ["THICKOUTLINE"] = "Thick Outline",
-                ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-                ["SHADOW"] = "Shadow",
-                ["SHADOWOUTLINE"] = "Shadow Outline",
-                ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-            }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+            local fontStyleValues = Helpers.fontStyleValues
+            local fontStyleOrder = Helpers.fontStyleOrder
 
             inner:AddTabbedSection({
                 tabs = {

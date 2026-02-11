@@ -21,56 +21,11 @@ function ObjectiveTracker.Render(panel, scrollContent)
         ObjectiveTracker.Render(panel, scrollContent)
     end)
 
-    -- Helper to get component settings
-    local function getComponent()
-        return addon.Components and addon.Components["objectiveTracker"]
-    end
-
-    local function getSetting(key)
-        local comp = getComponent()
-        if comp and comp.db then
-            return comp.db[key]
-        end
-        -- Fallback to profile.components if component not loaded
-        local profile = addon.db and addon.db.profile
-        local components = profile and profile.components
-        return components and components.objectiveTracker and components.objectiveTracker[key]
-    end
-
-    local function setSetting(key, value)
-        local comp = getComponent()
-        if comp and comp.db then
-            -- Ensure component DB exists
-            if addon.EnsureComponentDB then
-                addon:EnsureComponentDB(comp)
-            end
-            comp.db[key] = value
-        else
-            -- Fallback to profile.components
-            local profile = addon.db and addon.db.profile
-            if profile then
-                profile.components = profile.components or {}
-                profile.components.objectiveTracker = profile.components.objectiveTracker or {}
-                profile.components.objectiveTracker[key] = value
-            end
-        end
-        -- Apply styles after setting change
-        if addon and addon.ApplyStyles then
-            C_Timer.After(0, function()
-                if addon and addon.ApplyStyles then
-                    addon:ApplyStyles()
-                end
-            end)
-        end
-    end
-
-    -- Helper to sync Edit Mode settings after value change (debounced)
-    local function syncEditModeSetting(settingId)
-        local comp = getComponent()
-        if comp and addon.EditMode and addon.EditMode.SyncComponentSettingToEditMode then
-            addon.EditMode.SyncComponentSettingToEditMode(comp, settingId, { skipApply = true })
-        end
-    end
+    local Helpers = addon.UI.Settings.Helpers
+    local h = Helpers.CreateComponentHelpers("objectiveTracker")
+    local getComponent, getSetting = h.getComponent, h.get
+    local setSetting = h.setAndApply
+    local syncEditModeSetting = h.sync
 
     -- Helper to get text config sub-table
     local function getTextConfig(key)
@@ -99,17 +54,8 @@ function ObjectiveTracker.Render(panel, scrollContent)
         return t
     end
 
-    -- Font style options
-    local fontStyleValues = {
-        ["NONE"] = "Regular",
-        ["OUTLINE"] = "Outline",
-        ["THICKOUTLINE"] = "Thick Outline",
-        ["HEAVYTHICKOUTLINE"] = "Heavy Thick Outline",
-        ["SHADOW"] = "Shadow",
-        ["SHADOWOUTLINE"] = "Shadow Outline",
-        ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-    }
-    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
+    local fontStyleValues = Helpers.fontStyleValues
+    local fontStyleOrder = Helpers.fontStyleOrder
 
     -- Font color mode options (for UISelectorColorPicker)
     local fontColorValues = {
