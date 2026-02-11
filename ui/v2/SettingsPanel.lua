@@ -666,7 +666,7 @@ function UIPanel:CreateHeaderButtons()
 
     -- Pre-click handler: only set the guard flag for Edit Mode entry.
     -- Do NOT call ApplyChanges() here — it taints the execution context.
-    -- The EnterEditMode post-hook (core/editmode.lua) handles refreshing
+    -- The EnterEditMode post-hook (core/editmode/core.lua) handles refreshing
     -- each system frame's settings from fresh C-side data.
     editModeBtn:SetScript("PreClick", function()
         if addon and addon.EditMode then
