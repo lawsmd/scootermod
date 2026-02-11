@@ -235,23 +235,8 @@ local function copyValue(value)
 end
 
 local function ensureSettingValue(component, key)
-    if not component then
-        return nil
-    end
-    local db = component.db
-    if db and db[key] ~= nil then
-        return db[key]
-    end
-    local setting = component.settings and component.settings[key]
-    if not setting then
-        return db and db[key] or nil
-    end
-    local default = copyValue(setting.default)
-    if db and default ~= nil then
-        db[key] = copyValue(default)
-        return db[key]
-    end
-    return default
+    if not component or not component.db then return nil end
+    return component.db[key]
 end
 
 local function ensureColorSetting(component, key, fallback)
@@ -1484,20 +1469,12 @@ local function applyScaleToFrame(frame, multiplier, component)
 end
 
 local function resolveClassResourceScale(component)
-    if not component then
+    if not component or not component.db then
         return 1
     end
-    local settings = component.settings or {}
-    local defaultPercent = (settings.scale and settings.scale.default) or 100
-    local value = component.db and component.db.scale
-    if value == nil then
-        value = defaultPercent
-    end
-    value = tonumber(value) or defaultPercent
+    local value = tonumber(component.db.scale) or 100
     value = clampValue(math.floor(value + 0.5), MIN_CLASS_RESOURCE_SCALE_PERCENT, MAX_CLASS_RESOURCE_SCALE_PERCENT)
-    if component.db then
-        component.db.scale = value
-    end
+    component.db.scale = value
     return value / 100
 end
 

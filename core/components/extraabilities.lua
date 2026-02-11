@@ -70,11 +70,7 @@ local function ApplyExtraAbilitiesStyling(self)
     if not container then return end
 
     -- Apply scale to container
-    local scale = tonumber(self.db and self.db.scale)
-    if scale == nil and self.settings and self.settings.scale then
-        scale = self.settings.scale.default
-    end
-    scale = tonumber(scale) or 100
+    local scale = tonumber(self.db.scale) or 100
     if scale < 25 then scale = 25 elseif scale > 150 then scale = 150 end
     local scaleValue = scale / 100
     -- SetScale is protected on Edit Mode-managed frames during combat
@@ -83,19 +79,13 @@ local function ApplyExtraAbilitiesStyling(self)
     end
 
     -- Apply opacity
-    local baseOp = tonumber(self.db and self.db.barOpacity)
-    if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
-    baseOp = tonumber(baseOp) or 100
+    local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
 
-    local oocOp = tonumber(self.db and self.db.barOpacityOutOfCombat)
-    if oocOp == nil and self.settings and self.settings.barOpacityOutOfCombat then oocOp = self.settings.barOpacityOutOfCombat.default end
-    oocOp = tonumber(oocOp) or baseOp
+    local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
     if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
 
-    local tgtOp = tonumber(self.db and self.db.barOpacityWithTarget)
-    if tgtOp == nil and self.settings and self.settings.barOpacityWithTarget then tgtOp = self.settings.barOpacityWithTarget.default end
-    tgtOp = tonumber(tgtOp) or baseOp
+    local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
 
     local hasTarget = (UnitExists and UnitExists("target")) and true or false

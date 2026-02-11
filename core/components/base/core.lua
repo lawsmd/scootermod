@@ -48,6 +48,25 @@ local function CopyDefaultValue(value)
     return copy
 end
 
+-- Attach a lightweight defaults metatable to a component's db table so that
+-- reading an unset key automatically returns the setting's registered default.
+-- This eliminates the need for manual "or self.settings[key].default" fallbacks
+-- scattered across every component file.
+local function attachSettingsDefaults(db, component)
+    if not db or not component then return end
+    local settings = component.settings
+    if not settings then return end
+    if getmetatable(db) then return end  -- don't clobber proxy's metatable
+    setmetatable(db, {
+        __index = function(_, key)
+            local meta = settings[key]
+            if type(meta) == "table" and meta.default ~= nil then
+                return meta.default
+            end
+        end,
+    })
+end
+
 local Component = {}
 Component.__index = Component
 
@@ -104,6 +123,7 @@ function addon:LinkComponentsToDB()
         local persisted = components and rawget(components, id) or nil
         if persisted then
             component.db = persisted
+            attachSettingsDefaults(persisted, component)
         else
             -- Provide a lightweight proxy so UI code can read/write without nil checks.
             -- Reads return nil (so UI falls back to defaults). First write creates the real table.
@@ -161,6 +181,7 @@ function addon:EnsureComponentDB(componentOrId)
         components[component.id] = db
     end
     component.db = db
+    attachSettingsDefaults(db, component)
     return db
 end
 

@@ -157,15 +157,6 @@ function addon.ApplyAuraFrameVisualsFor(component)
         enforceTextColor(fs, key)
     end
 
-    local function resolveSettingValue(key)
-        if db[key] ~= nil then return db[key] end
-        local meta = settings[key]
-        if type(meta) == "table" then
-            return meta.default
-        end
-        return nil
-    end
-
     local componentId = component and component.id
 
     local function applyCollapseButtonVisibility()
@@ -174,7 +165,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local collapseButton = frame.CollapseAndExpandButton
         if not collapseButton then return end
 
-        local hideTextures = not not resolveSettingValue("hideCollapseButton")
+        local hideTextures = not not db.hideCollapseButton
         local unique = {}
         local textures = {}
 
@@ -243,7 +234,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
     end
 
     -- Calculate icon dimensions from ratio
-    local ratio = tonumber(resolveSettingValue("tallWideRatio")) or 0
+    local ratio = tonumber(db.tallWideRatio) or 0
     local width, height
     if addon.IconRatio then
         width, height = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
@@ -252,16 +243,16 @@ function addon.ApplyAuraFrameVisualsFor(component)
         width, height = 30, 30
     end
 
-    local borderEnabled = not not resolveSettingValue("borderEnable")
-    local borderStyle = tostring(resolveSettingValue("borderStyle") or "square")
+    local borderEnabled = not not db.borderEnable
+    local borderStyle = tostring(db.borderStyle or "square")
     if borderStyle == "none" then
         borderStyle = "square"
         if db then db.borderStyle = borderStyle end
     end
-    local borderThickness = tonumber(resolveSettingValue("borderThickness")) or 1
+    local borderThickness = tonumber(db.borderThickness) or 1
     if borderThickness < 1 then borderThickness = 1 elseif borderThickness > 8 then borderThickness = 8 end
-    local borderTintEnabled = not not resolveSettingValue("borderTintEnable")
-    local borderTintColor = resolveSettingValue("borderTintColor")
+    local borderTintEnabled = not not db.borderTintEnable
+    local borderTintColor = db.borderTintColor
     local tintColor
     if borderTintEnabled and type(borderTintColor) == "table" then
         tintColor = {
@@ -475,23 +466,11 @@ local function ApplyAuraFrameStyling(self)
 
     local container = frame.AuraContainer or frame
     if container then
-        local baseRaw = self.db and self.db.opacity
-        if baseRaw == nil and self.settings and self.settings.opacity then
-            baseRaw = self.settings.opacity.default
-        end
-        local baseOpacity = ClampOpacity(baseRaw, 50)
+        local baseOpacity = ClampOpacity(self.db.opacity, 50)
 
-        local oocRaw = self.db and self.db.opacityOutOfCombat
-        if oocRaw == nil and self.settings and self.settings.opacityOutOfCombat then
-            oocRaw = self.settings.opacityOutOfCombat.default
-        end
-        local oocOpacity = ClampOpacity(oocRaw or baseOpacity, 1)
+        local oocOpacity = ClampOpacity(self.db.opacityOutOfCombat or baseOpacity, 1)
 
-        local tgtRaw = self.db and self.db.opacityWithTarget
-        if tgtRaw == nil and self.settings and self.settings.opacityWithTarget then
-            tgtRaw = self.settings.opacityWithTarget.default
-        end
-        local tgtOpacity = ClampOpacity(tgtRaw or baseOpacity, 1)
+        local tgtOpacity = ClampOpacity(self.db.opacityWithTarget or baseOpacity, 1)
 
         local hasTarget = (UnitExists and UnitExists("target")) and true or false
         local appliedOpacity = hasTarget and tgtOpacity or (PlayerInCombat() and baseOpacity or oocOpacity)

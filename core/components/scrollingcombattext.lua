@@ -33,9 +33,8 @@ local function applyWorldTextStyling(self)
     end
 
     local db = self.db
-    local settings = self.settings or {}
 
-    local fontKey = db.fontFace or (settings.fontFace and settings.fontFace.default) or "FRIZQT__"
+    local fontKey = db.fontFace or "FRIZQT__"
     local resolve = addon.ResolveFontFace or function(_)
         return (select(1, _G.GameFontNormal:GetFont()))
     end
@@ -53,7 +52,7 @@ local function applyWorldTextStyling(self)
     end
     sctDamageState.lastKnownFont = fontKey
 
-    local scalePercent = clampPercent(db.fontScale or (settings.fontScale and settings.fontScale.default) or 100)
+    local scalePercent = clampPercent(db.fontScale or 100)
     db.fontScale = scalePercent
     db.fontStyle = nil
 

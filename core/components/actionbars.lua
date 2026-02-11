@@ -45,17 +45,11 @@ local function ApplyActionBarStyling(self)
     local bar = _G[self.frameName]
     if not bar then return end
 
-    local baseOp = tonumber(self.db and self.db.barOpacity)
-    if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
-    baseOp = tonumber(baseOp) or 100
+    local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
-    local oocOp = tonumber(self.db and self.db.barOpacityOutOfCombat)
-    if oocOp == nil and self.settings and self.settings.barOpacityOutOfCombat then oocOp = self.settings.barOpacityOutOfCombat.default end
-    oocOp = tonumber(oocOp) or baseOp
+    local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
     if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
-    local tgtOp = tonumber(self.db and self.db.barOpacityWithTarget)
-    if tgtOp == nil and self.settings and self.settings.barOpacityWithTarget then tgtOp = self.settings.barOpacityWithTarget.default end
-    tgtOp = tonumber(tgtOp) or baseOp
+    local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
@@ -437,7 +431,7 @@ local function ApplyActionBarStyling(self)
 
         do
             local disableBackdrop = self.db and self.db.backdropDisable
-            local style = (self.db and self.db.backdropStyle) or (self.settings and self.settings.backdropStyle and self.settings.backdropStyle.default) or "blizzardBg"
+            local style = self.db.backdropStyle or "blizzardBg"
             local opacity = tonumber(self.db and self.db.backdropOpacity) or 100
             local inset = tonumber(self.db and self.db.backdropInset) or 0
             local backdropTintEnabled = self.db and self.db.backdropTintEnable and type(self.db.backdropTintColor) == "table"
@@ -558,19 +552,13 @@ local function ApplyMicroBarStyling(self)
     -- Hook SetAlpha on this bar to intercept and correct external changes
     hookBarAlpha(bar)
 
-    local baseOp = tonumber(self.db and self.db.barOpacity)
-    if baseOp == nil and self.settings and self.settings.barOpacity then baseOp = self.settings.barOpacity.default end
-    baseOp = tonumber(baseOp) or 100
+    local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
 
-    local oocOp = tonumber(self.db and self.db.barOpacityOutOfCombat)
-    if oocOp == nil and self.settings and self.settings.barOpacityOutOfCombat then oocOp = self.settings.barOpacityOutOfCombat.default end
-    oocOp = tonumber(oocOp) or baseOp
+    local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
     if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
 
-    local tgtOp = tonumber(self.db and self.db.barOpacityWithTarget)
-    if tgtOp == nil and self.settings and self.settings.barOpacityWithTarget then tgtOp = self.settings.barOpacityWithTarget.default end
-    tgtOp = tonumber(tgtOp) or baseOp
+    local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
 
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
@@ -1039,11 +1027,7 @@ function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
 
     for key, def in pairs(dst.settings or {}) do
         if key ~= "supportsText" and key ~= "supportsEmptyVisibilitySection" then
-            local srcHasSetting = src.settings and src.settings[key] ~= nil
-            local srcVal = src.db and (src.db[key])
-            if srcVal == nil and srcHasSetting then
-                srcVal = src.settings[key] and src.settings[key].default
-            end
+            local srcVal = src.db[key]
             if srcVal ~= nil then
                 dst.db[key] = deepcopy(srcVal)
             end

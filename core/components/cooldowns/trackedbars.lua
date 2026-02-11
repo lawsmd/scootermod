@@ -48,10 +48,8 @@ end
 
 local function getTrackedBarSetting(key)
     local comp = addon.Components and addon.Components.trackedBars
-    if not comp then return nil end
-    if comp.db and comp.db[key] ~= nil then return comp.db[key] end
-    if comp.settings and comp.settings[key] then return comp.settings[key].default end
-    return nil
+    if not comp or not comp.db then return nil end
+    return comp.db[key]
 end
 
 --------------------------------------------------------------------------------
@@ -776,10 +774,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not barFrame or not iconFrame then return end
 
     local function getSettingValue(key)
-        if not component then return nil end
-        if component.db and component.db[key] ~= nil then return component.db[key] end
-        if component.settings and component.settings[key] then return component.settings[key].default end
-        return nil
+        if not component or not component.db then return nil end
+        return component.db[key]
     end
 
     -- Calculate icon dimensions from ratio
@@ -801,7 +797,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if mask and mask.SetAllPoints then mask:SetAllPoints(iconFrame) end
     end
 
-    local desiredPad = tonumber(component.db and component.db.iconBarPadding) or (component.settings.iconBarPadding and component.settings.iconBarPadding.default) or 0
+    local desiredPad = tonumber(component.db.iconBarPadding) or 0
     desiredPad = tonumber(desiredPad) or 0
 
     local currentGap
@@ -845,7 +841,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 anchorFillOverlay(overlay, barFrame)
 
                 -- Apply foreground texture to fill overlay
-                local fg = component.db and component.db.styleForegroundTexture or (component.settings.styleForegroundTexture and component.settings.styleForegroundTexture.default)
+                local fg = component.db.styleForegroundTexture
                 local fgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(fg)
                 if fgPath then
                     overlay.barFill:SetTexture(fgPath)
@@ -871,7 +867,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 overlay.barFill:Show()
 
                 -- Apply background texture to bg overlay
-                local bg = component.db and component.db.styleBackgroundTexture or (component.settings.styleBackgroundTexture and component.settings.styleBackgroundTexture.default)
+                local bg = component.db.styleBackgroundTexture
                 local bgPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(bg)
                 if bgPath then
                     overlay.barBg:SetTexture(bgPath)
@@ -882,7 +878,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 -- Background color + opacity
                 local bgColorMode = (component.db and component.db.styleBackgroundColorMode) or "default"
                 local bgTint = (component.db and component.db.styleBackgroundTint) or {0,0,0,1}
-                local bgOpacity = component.db and component.db.styleBackgroundOpacity or (component.settings.styleBackgroundOpacity and component.settings.styleBackgroundOpacity.default) or 50
+                local bgOpacity = component.db.styleBackgroundOpacity or 50
                 local br, bg2, bb, ba = 0, 0, 0, 1
                 if bgColorMode == "custom" and type(bgTint) == "table" then
                     br, bg2, bb, ba = bgTint[1] or 0, bgTint[2] or 0, bgTint[3] or 0, bgTint[4] or 1
