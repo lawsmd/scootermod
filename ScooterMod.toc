@@ -36,7 +36,9 @@ core/borders.lua
 core/editmode/core.lua
 core/editmode/sync.lua
 core/editmode/presets.lua
-core/profiles.lua
+core/profiles/core.lua
+core/profiles/layouts.lua
+core/profiles/spec.lua
 core/rules.lua
 core/apply_all.lua
 core/iconratio.lua
