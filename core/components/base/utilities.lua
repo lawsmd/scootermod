@@ -1,52 +1,12 @@
 local addonName, addon = ...
 
-addon.Components = addon.Components or {}
-addon.ComponentInitializers = addon.ComponentInitializers or {}
-addon.ComponentsUtil = addon.ComponentsUtil or {}
-
--- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
-
-local function getState(frame)
-    local fs = ensureFS()
-    return fs and fs.Get(frame) or nil
-end
-
-local function getProp(frame, key)
-    local st = getState(frame)
-    return st and st[key] or nil
-end
-
-local function setProp(frame, key, value)
-    local st = getState(frame)
-    if st then
-        st[key] = value
-    end
-end
-
-local function getIconBorderContainer(frame)
-    local st = getState(frame)
-    return st and st.ScooterIconBorderContainer or nil
-end
-
-local function setIconBorderContainer(frame, container)
-    local st = getState(frame)
-    if st then
-        st.ScooterIconBorderContainer = container
-    end
-end
+-- Import FrameState helpers from core.lua (promoted via addon.ComponentsUtil._*)
+local ensureFS = addon.ComponentsUtil._ensureFS
+local getState = addon.ComponentsUtil._getState
+local getProp = addon.ComponentsUtil._getProp
+local setProp = addon.ComponentsUtil._setProp
 
 local Util = addon.ComponentsUtil
-local UNIT_FRAME_CATEGORY_TO_UNIT = {
-    ufPlayer = "Player",
-    ufTarget = "Target",
-    ufFocus  = "Focus",
-    ufPet    = "Pet",
-}
 
 -- Combat watcher for FullPowerFrame pending reapplies.
 -- When hooks fire during combat (e.g., druid form change), we defer reapplication
@@ -74,18 +34,6 @@ local function queueFullPowerFrameReapply(fullPowerFrame)
     if not fullPowerFrame then return end
     ensureFullPowerFrameCombatWatcher()
     pendingFullPowerFrames[fullPowerFrame] = true
-end
-
-local function CopyDefaultValue(value)
-    if type(value) ~= "table" then
-        return value
-    end
-
-    local copy = {}
-    for k, v in pairs(value) do
-        copy[k] = CopyDefaultValue(v)
-    end
-    return copy
 end
 
 local function HideDefaultBarTextures(barFrame, restore)
@@ -134,60 +82,6 @@ local function ToggleDefaultIconOverlay(iconFrame, restore)
     end
 end
 Util.ToggleDefaultIconOverlay = ToggleDefaultIconOverlay
-
-local function ResetIconBorderTarget(target)
-    if not target then return end
-    if addon.Borders and addon.Borders.HideAll then
-        addon.Borders.HideAll(target)
-    end
-
-    local function wipeTexture(tex)
-        if not tex then return end
-        tex:Hide()
-        if tex.SetTexture then pcall(tex.SetTexture, tex, nil) end
-        if tex.SetAtlas then pcall(tex.SetAtlas, tex, nil, true) end
-        if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1, 1, 1, 0) end
-        if tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
-    end
-
-    wipeTexture(addon.Borders.GetAtlasBorder and addon.Borders.GetAtlasBorder(target))
-    wipeTexture(addon.Borders.GetTextureBorder and addon.Borders.GetTextureBorder(target))
-    wipeTexture(addon.Borders.GetAtlasTintOverlay and addon.Borders.GetAtlasTintOverlay(target))
-    wipeTexture(addon.Borders.GetTextureTintOverlay and addon.Borders.GetTextureTintOverlay(target))
-
-    if target.ScootSquareBorderEdges then
-        for _, edge in pairs(target.ScootSquareBorderEdges) do
-            if edge then edge:Hide() end
-        end
-    end
-
-    if target.ScootSquareBorder and target.ScootSquareBorder.edges then
-        for _, tex in pairs(target.ScootSquareBorder.edges) do
-            if tex and tex.Hide then tex:Hide() end
-        end
-    end
-    if target.ScootSquareBorderContainer and target.ScootSquareBorderContainer.Hide then
-        target.ScootSquareBorderContainer:Hide()
-    end
-end
-Util.ResetIconBorderTarget = ResetIconBorderTarget
-
-local function CleanupIconBorderAttachments(icon)
-    if not icon then return end
-    local seen = {}
-    local function cleanup(target)
-        if target and not seen[target] then
-            seen[target] = true
-            ResetIconBorderTarget(target)
-        end
-    end
-
-    cleanup(icon)
-    cleanup(getIconBorderContainer(icon))
-    cleanup(icon.ScooterAtlasBorderContainer)
-    cleanup(icon.ScooterTextureBorderContainer)
-end
-Util.CleanupIconBorderAttachments = CleanupIconBorderAttachments
 
 local function PlayerInCombat()
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
@@ -522,25 +416,25 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
     if not sparkFrame or (sparkFrame.IsForbidden and sparkFrame:IsForbidden()) then
         return
     end
-    
+
     if hidden then
         -- Mark as hidden and set alpha to 0
         setProp(sparkFrame, "powerBarSparkHidden", true)
         if sparkFrame.SetAlpha then
             pcall(sparkFrame.SetAlpha, sparkFrame, 0)
         end
-        
+
         -- Install hooks once to re-enforce alpha=0 when Blizzard tries to show the spark
         if _G.hooksecurefunc and not getProp(sparkFrame, "sparkVisibilityHooked") then
             setProp(sparkFrame, "sparkVisibilityHooked", true)
-            
+
             -- Hook Show() - Blizzard may call this directly
             _G.hooksecurefunc(sparkFrame, "Show", function(self)
                 if getProp(self, "powerBarSparkHidden") and self.SetAlpha then
                     pcall(self.SetAlpha, self, 0)
                 end
             end)
-            
+
             -- Hook UpdateShown() - Called frequently by Blizzard's spark logic
             if sparkFrame.UpdateShown then
                 _G.hooksecurefunc(sparkFrame, "UpdateShown", function(self)
@@ -549,7 +443,7 @@ local function SetPowerBarSparkHidden(ownerFrame, hidden)
                     end
                 end)
             end
-            
+
             -- Hook SetAlpha() - Re-enforce alpha=0 when Blizzard tries to change it
             -- CRITICAL: Use immediate re-enforcement with recursion guard, NOT C_Timer.After(0)
             -- Deferring causes visible flickering (texture visible for one frame before hiding)
@@ -646,7 +540,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
     if not ownerFrame or type(ownerFrame) ~= "table" then
         return
     end
-    
+
     -- Resolve the fill texture: prefer .texture named child, fall back to GetStatusBarTexture()
     local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
     -- Resolve background texture
@@ -654,7 +548,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
     -- Player-only overlay: Mana cost prediction bar (new Blizzard visual that sits on top of the power bar)
     -- Frame path (player): PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaCostPredictionBar
     local manaCostPredictionBar = ownerFrame.ManaCostPredictionBar
-    
+
     -- Helper to install alpha enforcement hooks on a texture
     local function installAlphaHook(tex, flagName)
         if not tex then return end
@@ -663,7 +557,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
         local hookKey = flagName .. "Hooked"
         if st[hookKey] then return end
         st[hookKey] = true
-        
+
         -- Hook SetAlpha with immediate re-enforcement using a recursion guard
         -- CRITICAL: Do NOT use C_Timer.After(0, ...) here - that defers to the next frame,
         -- causing visible flickering. Immediate enforcement with a guard flag ensures
@@ -679,7 +573,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
                 end
             end)
         end
-        
+
         -- Also hook Show() in case Blizzard calls it
         if _G.hooksecurefunc and tex.Show then
             _G.hooksecurefunc(tex, "Show", function(self)
@@ -693,7 +587,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             end)
         end
     end
-    
+
     if hidden then
         -- Mark textures as hidden and set alpha to 0
         if fillTex then
@@ -701,13 +595,13 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
             installAlphaHook(fillTex, "powerBarFillHidden")
         end
-        
+
         if bgTex then
             setProp(bgTex, "powerBarBGHidden", true)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
             installAlphaHook(bgTex, "powerBarBGHidden")
         end
-        
+
         -- Also hide Blizzard's mana cost prediction overlay bar (player only).
         -- We hide the whole overlay frame via alpha=0; parent alpha multiplication keeps all child textures hidden.
         if manaCostPredictionBar then
@@ -717,7 +611,7 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             end
             installAlphaHook(manaCostPredictionBar, "powerBarManaCostPredHidden")
         end
-        
+
         -- Also hide ScooterMod's custom background if present
         if ownerFrame.ScooterModBG then
             setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", true)
@@ -1035,749 +929,3 @@ local function SetHealthLossAnimationHidden(ownerFrame, hidden)
     end
 end
 Util.SetHealthLossAnimationHidden = SetHealthLossAnimationHidden
-
-function addon.ApplyIconBorderStyle(frame, styleKey, opts)
-    if not frame then return "none" end
-
-    Util.CleanupIconBorderAttachments(frame)
-
-    local targetFrame = frame
-    if frame.GetObjectType and frame:GetObjectType() == "Texture" then
-        local parent = frame:GetParent() or UIParent
-        local container = getIconBorderContainer(frame)
-        if not container then
-            container = CreateFrame("Frame", nil, parent)
-            setIconBorderContainer(frame, container)
-            container:EnableMouse(false)
-        end
-        container:ClearAllPoints()
-        container:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-        local strata = parent.GetFrameStrata and parent:GetFrameStrata() or "HIGH"
-        container:SetFrameStrata(strata)
-        local baseLevel = parent.GetFrameLevel and parent:GetFrameLevel() or 0
-        container:SetFrameLevel(baseLevel + 5)
-        targetFrame = container
-    end
-
-    Util.ResetIconBorderTarget(targetFrame)
-    if targetFrame ~= frame then
-        Util.ResetIconBorderTarget(frame)
-    end
-
-    local key = styleKey or "square"
-
-    local styleDef = addon.IconBorders and addon.IconBorders.GetStyle(key)
-    local tintEnabled = opts and opts.tintEnabled
-    local requestedColor = opts and opts.color
-    local dbTable = opts and opts.db
-    local thicknessKey = opts and opts.thicknessKey
-    local tintColorKey = opts and opts.tintColorKey
-    local defaultThicknessSetting = opts and opts.defaultThickness or 1
-    local thickness = tonumber(opts and opts.thickness) or defaultThicknessSetting
-    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-
-    if not styleDef then
-        if addon.Borders and addon.Borders.ApplySquare then
-            addon.Borders.ApplySquare(targetFrame, {
-                size = thickness,
-                color = tintEnabled and requestedColor or {0, 0, 0, 1},
-                layer = "OVERLAY",
-                layerSublevel = 7,
-            })
-        end
-        return "square"
-    end
-
-    if styleDef.type == "none" then
-        if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
-        return "none"
-    end
-
-    if styleDef.allowThicknessInset and dbTable and thicknessKey then
-        local stored = tonumber(dbTable[thicknessKey])
-        if stored then
-            thickness = stored
-        end
-        if styleDef.defaultThickness and styleDef.defaultThickness ~= defaultThicknessSetting then
-            if not stored or stored == defaultThicknessSetting then
-                thickness = styleDef.defaultThickness
-                dbTable[thicknessKey] = thickness
-            end
-        end
-    elseif dbTable and thicknessKey then
-        dbTable[thicknessKey] = thickness
-    end
-
-    if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-
-    if dbTable and thicknessKey then
-        dbTable[thicknessKey] = thickness
-    end
-
-    local function copyColor(color)
-        if type(color) ~= "table" then
-            return {1, 1, 1, 1}
-        end
-        return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
-    end
-
-    local defaultColor = copyColor(styleDef.defaultColor or (styleDef.type == "square" and {0, 0, 0, 1}) or {1, 1, 1, 1})
-    if type(requestedColor) ~= "table" then
-        if dbTable and tintColorKey and type(dbTable[tintColorKey]) == "table" then
-            requestedColor = dbTable[tintColorKey]
-        else
-            requestedColor = defaultColor
-        end
-    end
-
-    local baseColor = copyColor(defaultColor)
-    local tintColor = copyColor(requestedColor)
-    local baseApplyColor = copyColor(baseColor)
-    if styleDef.type == "square" then
-        baseApplyColor = tintEnabled and tintColor or baseColor
-    end
-
-    local function clamp(val, min, max)
-        if val < min then return min end
-        if val > max then return max end
-        return val
-    end
-
-    local baseExpandX = styleDef.expandX or 0
-    local baseExpandY = styleDef.expandY or baseExpandX
-    -- Get the borderInset from opts (negative = expand outward, positive = shrink inward)
-    local insetValue = tonumber(opts and opts.inset) or 0
-    local insetAdjust = 0
-    if styleDef.allowThicknessInset then
-        -- For custom art borders: use borderInset directly (thickness no longer affects expand)
-        -- Positive inset = shrink border inward (reduce expand), negative = expand outward
-        insetAdjust = -insetValue
-    else
-        -- For square borders: inset also applies
-        insetAdjust = -insetValue
-    end
-    local expandX = clamp(baseExpandX + insetAdjust, -8, 8)
-    local expandY = clamp(baseExpandY + insetAdjust, -8, 8)
-
-    local appliedTexture
-
-    if styleDef.type == "atlas" then
-        addon.Borders.ApplyAtlas(targetFrame, {
-            atlas = styleDef.atlas,
-            color = baseApplyColor,
-            tintColor = baseApplyColor,
-            expandX = expandX,
-            expandY = expandY,
-            layer = styleDef.layer or "OVERLAY",
-            layerSublevel = styleDef.layerSublevel or 7,
-        })
-        appliedTexture = addon.Borders.GetAtlasBorder(targetFrame)
-    elseif styleDef.type == "texture" then
-        addon.Borders.ApplyTexture(targetFrame, {
-            texture = styleDef.texture,
-            color = baseApplyColor,
-            tintColor = baseApplyColor,
-            expandX = expandX,
-            expandY = expandY,
-            layer = styleDef.layer or "OVERLAY",
-            layerSublevel = styleDef.layerSublevel or 7,
-        })
-        appliedTexture = addon.Borders.GetTextureBorder(targetFrame)
-    else
-        addon.Borders.ApplySquare(targetFrame, {
-            size = thickness,
-            color = baseApplyColor or {0, 0, 0, 1},
-            layer = styleDef.layer or "OVERLAY",
-            layerSublevel = styleDef.layerSublevel or 7,
-            expandX = expandX,
-            expandY = expandY,
-        })
-        local container = targetFrame.ScootSquareBorderContainer or targetFrame
-        local edges = (container and container.ScootSquareBorderEdges) or targetFrame.ScootSquareBorderEdges
-        if edges then
-            for _, edge in pairs(edges) do
-                if edge and edge.SetColorTexture then
-                    edge:SetColorTexture(baseApplyColor[1] or 0, baseApplyColor[2] or 0, baseApplyColor[3] or 0, (baseApplyColor[4] == nil and 1) or baseApplyColor[4])
-                end
-            end
-        end
-        local atlasOverlay = addon.Borders.GetAtlasTintOverlay(targetFrame)
-        local textureOverlay = addon.Borders.GetTextureTintOverlay(targetFrame)
-        if atlasOverlay then atlasOverlay:Hide() end
-        if textureOverlay then textureOverlay:Hide() end
-    end
-
-    if appliedTexture then
-        if styleDef.type == "square" and baseApplyColor then
-            appliedTexture:SetVertexColor(baseApplyColor[1] or 0, baseApplyColor[2] or 0, baseApplyColor[3] or 0, baseApplyColor[4] or 1)
-        else
-            appliedTexture:SetVertexColor(baseColor[1] or 1, baseColor[2] or 1, baseColor[3] or 1, baseColor[4] or 1)
-        end
-        appliedTexture:SetAlpha(baseColor[4] or 1)
-        if appliedTexture.SetDesaturated then pcall(appliedTexture.SetDesaturated, appliedTexture, false) end
-        if appliedTexture.SetBlendMode then pcall(appliedTexture.SetBlendMode, appliedTexture, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
-
-        local overlay
-        if styleDef.type == "atlas" then
-            overlay = addon.Borders.GetAtlasTintOverlay(targetFrame)
-        elseif styleDef.type == "texture" then
-            overlay = addon.Borders.GetTextureTintOverlay(targetFrame)
-        end
-
-        local function clampSublevel(val)
-            if val == nil then return nil end
-            if val > 7 then return 7 end
-            if val < -8 then return -8 end
-            return val
-        end
-
-        local function ensureOverlay()
-            if overlay and overlay:IsObjectType("Texture") then return overlay end
-            local layer, sublevel = appliedTexture:GetDrawLayer()
-            layer = layer or (styleDef.layer or "OVERLAY")
-            sublevel = clampSublevel((sublevel or (styleDef.layerSublevel or 7)) + 1) or clampSublevel((styleDef.layerSublevel or 7))
-            local tex = targetFrame:CreateTexture(nil, layer)
-            tex:SetDrawLayer(layer, sublevel or 0)
-            tex:SetAllPoints(appliedTexture)
-            tex:SetVertexColor(1, 1, 1, 1)
-            tex:Hide()
-            if styleDef.type == "atlas" then
-                addon.Borders.SetAtlasTintOverlay(targetFrame, tex)
-            else
-                addon.Borders.SetTextureTintOverlay(targetFrame, tex)
-            end
-            return tex
-        end
-
-        if tintEnabled then
-            overlay = ensureOverlay()
-            local layer, sublevel = appliedTexture:GetDrawLayer()
-            local desiredSub = clampSublevel((sublevel or 0) + 1)
-            if layer then overlay:SetDrawLayer(layer, desiredSub or clampSublevel(sublevel) or 0) end
-            overlay:ClearAllPoints()
-            overlay:SetAllPoints(appliedTexture)
-            local r = tintColor[1] or 1
-            local g = tintColor[2] or 1
-            local b = tintColor[3] or 1
-            local a = tintColor[4] or 1
-            if styleDef.type == "atlas" and styleDef.atlas then
-                overlay:SetAtlas(styleDef.atlas)
-            elseif styleDef.type == "texture" and styleDef.texture then
-                overlay:SetTexture(styleDef.texture)
-            end
-            local avg = (r + g + b) / 3
-            local blend = styleDef.tintBlendMode or ((avg >= 0.85) and "ADD" or "BLEND")
-            if overlay.SetBlendMode then pcall(overlay.SetBlendMode, overlay, blend) end
-            if overlay.SetDesaturated then pcall(overlay.SetDesaturated, overlay, (avg >= 0.85)) end
-            overlay:SetVertexColor(r, g, b, a)
-            overlay:SetAlpha(a)
-            overlay:Show()
-            appliedTexture:SetAlpha(0)
-        else
-            local overlays = {
-                addon.Borders.GetAtlasTintOverlay(frame),
-                addon.Borders.GetTextureTintOverlay(frame),
-            }
-            for _, ov in ipairs(overlays) do
-                if ov then
-                    ov:Hide()
-                    if ov.SetTexture then pcall(ov.SetTexture, ov, nil) end
-                    if ov.SetAtlas then pcall(ov.SetAtlas, ov, nil) end
-                    if ov.SetVertexColor then pcall(ov.SetVertexColor, ov, 1, 1, 1, 0) end
-                    if ov.SetBlendMode then pcall(ov.SetBlendMode, ov, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
-                end
-            end
-
-            if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
-
-            if styleDef.type == "atlas" and styleDef.atlas then
-                addon.Borders.ApplyAtlas(frame, {
-                    atlas = styleDef.atlas,
-                    color = baseColor,
-                    tintColor = baseColor,
-                    expandX = expandX,
-                    expandY = expandY,
-                    layer = styleDef.layer or "OVERLAY",
-                    layerSublevel = styleDef.layerSublevel or 7,
-                })
-                appliedTexture = addon.Borders.GetAtlasBorder(frame)
-            elseif styleDef.type == "texture" and styleDef.texture then
-                addon.Borders.ApplyTexture(frame, {
-                    texture = styleDef.texture,
-                    color = baseColor,
-                    tintColor = baseColor,
-                    expandX = expandX,
-                    expandY = expandY,
-                    layer = styleDef.layer or "OVERLAY",
-                    layerSublevel = styleDef.layerSublevel or 7,
-                })
-                appliedTexture = addon.Borders.GetTextureBorder(frame)
-            else
-                addon.Borders.ApplySquare(frame, {
-                    size = thickness,
-                    color = baseColor or {0, 0, 0, 1},
-                    layer = styleDef.layer or "OVERLAY",
-                    layerSublevel = styleDef.layerSublevel or 7,
-                })
-            end
-
-            if appliedTexture then
-                appliedTexture:SetAlpha(baseColor[4] or 1)
-                if appliedTexture.SetDesaturated then pcall(appliedTexture.SetDesaturated, appliedTexture, false) end
-                if appliedTexture.SetBlendMode then pcall(appliedTexture.SetBlendMode, appliedTexture, styleDef.baseBlendMode or styleDef.layerBlendMode or "BLEND") end
-                appliedTexture:SetVertexColor(baseColor[1] or 1, baseColor[2] or 1, baseColor[3] or 1, baseColor[4] or 1)
-            end
-        end
-    end
-
-    return styleDef.type
-end
-
-local Component = {}
-Component.__index = Component
-
-function Component:New(o)
-    o = o or {}
-    return setmetatable(o, self)
-end
-
-function Component:SyncEditModeSettings()
-    local frame = _G[self.frameName]
-    if not frame then return end
-
-    local changed = false
-    for settingId, setting in pairs(self.settings) do
-        if type(setting) == "table" and setting.type == "editmode" then
-            if addon.EditMode.SyncEditModeSettingToComponent(self, settingId) then
-                changed = true
-            end
-        end
-    end
-
-    return changed
-end
-
-addon.ComponentPrototype = Component
-
-function addon:RegisterComponent(component)
-    self.Components[component.id] = component
-end
-
-function addon:RegisterComponentInitializer(initializer)
-    if type(initializer) ~= "function" then return end
-    table.insert(self.ComponentInitializers, initializer)
-end
-
-function addon:InitializeComponents()
-    if wipe then
-        wipe(self.Components)
-    else
-        self.Components = {}
-    end
-
-    for _, initializer in ipairs(self.ComponentInitializers) do
-        pcall(initializer, self)
-    end
-end
-
-function addon:LinkComponentsToDB()
-    -- Zero‑Touch: do not create per-component SavedVariables tables just by linking.
-    -- Only assign existing persisted tables; otherwise leave component.db nil.
-    local profile = self.db and self.db.profile
-    local components = profile and rawget(profile, "components") or nil
-    for id, component in pairs(self.Components) do
-        local persisted = components and rawget(components, id) or nil
-        if persisted then
-            component.db = persisted
-        else
-            -- Provide a lightweight proxy so UI code can read/write without nil checks.
-            -- Reads return nil (so UI falls back to defaults). First write creates the real table.
-            if not component._ScootDBProxy then
-                local proxy = {}
-                setmetatable(proxy, {
-                    __index = function(_, key)
-                        local real = component.db
-                        if real and real ~= proxy then
-                            return real[key]
-                        end
-                        return nil
-                    end,
-                    __newindex = function(_, key, value)
-                        local realDb = addon:EnsureComponentDB(component)
-                        if realDb then
-                            rawset(realDb, key, value)
-                        end
-                    end,
-                    __pairs = function()
-                        local real = component.db
-                        if real and real ~= proxy then
-                            return pairs(real)
-                        end
-                        return function() return nil end
-                    end,
-                })
-                component._ScootDBProxy = proxy
-            end
-            component.db = component._ScootDBProxy
-        end
-    end
-end
-
-function addon:EnsureComponentDB(componentOrId)
-    local component = componentOrId
-    if type(componentOrId) == "string" then
-        component = self.Components and self.Components[componentOrId]
-    end
-    if not component or not component.id then
-        return nil
-    end
-    local profile = self.db and self.db.profile
-    if not profile then
-        return nil
-    end
-    local components = rawget(profile, "components")
-    if type(components) ~= "table" then
-        components = {}
-        profile.components = components
-    end
-    local db = rawget(components, component.id)
-    if type(db) ~= "table" then
-        db = {}
-        components[component.id] = db
-    end
-    component.db = db
-    return db
-end
-
-function addon:ClearFrameLevelState()
-    -- Best-effort hot cleanup when switching into a Zero‑Touch/empty profile without reload.
-    -- This cannot fully restore Blizzard baselines (only a reload can), but it prevents
-    -- our persistent hook flags from continuing to enforce hidden states.
-    local function safeAlpha(fs)
-        if fs and fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
-    end
-    local function clearTextFlags(fs)
-        if not fs then return end
-        -- Clear FrameState hidden flags (uses lookup table instead of writing to frames)
-        local fstate = ensureFS()
-        if fstate then
-            fstate.SetHidden(fs, "healthText", false)
-            fstate.SetHidden(fs, "powerText", false)
-            fstate.SetHidden(fs, "healthTextCenter", false)
-            fstate.SetHidden(fs, "powerTextCenter", false)
-            fstate.SetHidden(fs, "totName", false)
-            fstate.SetHidden(fs, "altPowerText", false)
-        end
-        safeAlpha(fs)
-    end
-
-    -- Clear cached fontstring references and their flags (if available this session).
-    if self._ufHealthTextFonts then
-        for _, cache in pairs(self._ufHealthTextFonts) do
-            clearTextFlags(cache and cache.leftFS)
-            clearTextFlags(cache and cache.rightFS)
-            clearTextFlags(cache and cache.textStringFS)
-        end
-    end
-    if self._ufPowerTextFonts then
-        for _, cache in pairs(self._ufPowerTextFonts) do
-            clearTextFlags(cache and cache.leftFS)
-            clearTextFlags(cache and cache.rightFS)
-            clearTextFlags(cache and cache.textStringFS)
-        end
-    end
-
-    -- Clear some well-known globals defensively (covers cases where caches weren't built).
-    clearTextFlags(_G.PlayerFrameHealthBarTextLeft)
-    clearTextFlags(_G.PlayerFrameHealthBarTextRight)
-    clearTextFlags(_G.PlayerFrameManaBarTextLeft)
-    clearTextFlags(_G.PlayerFrameManaBarTextRight)
-    clearTextFlags(_G.PetFrameHealthBarTextLeft)
-    clearTextFlags(_G.PetFrameHealthBarTextRight)
-    clearTextFlags(_G.PetFrameManaBarTextLeft)
-    clearTextFlags(_G.PetFrameManaBarTextRight)
-
-    -- Clear baseline caches so future applies recapture from the current Blizzard state.
-    self._ufTextBaselines = nil
-    self._ufPowerTextBaselines = nil
-    self._ufNameLevelTextBaselines = nil
-    self._ufNameContainerBaselines = nil
-    self._ufNameBackdropBaseWidth = nil
-    self._ufToTNameTextBaseline = nil
-
-    -- Drop caches so visibility-only hooks won't run expensive work and will re-resolve later.
-    self._ufHealthTextFonts = nil
-    self._ufPowerTextFonts = nil
-end
-
-function addon:ApplyStyles()
-    -- CRITICAL: Do NOT apply styles during combat - many styling functions call
-    -- SetStatusBarTexture, SetVertexColor, SetShown, etc. on protected Blizzard frames,
-    -- which taints them and causes "blocked from an action" errors.
-    if InCombatLockdown and InCombatLockdown() then
-        -- Ensure cast bar persistence hooks are installed even if we defer full styling.
-        -- This is a visual-only hook path and is safe to install during combat.
-        if addon.EnsureAllUnitFrameCastBarHooks then
-            addon.EnsureAllUnitFrameCastBarHooks()
-        end
-        -- Defer styling until combat ends
-        if not self._pendingApplyStyles then
-            self._pendingApplyStyles = true
-            self:RegisterEvent("PLAYER_REGEN_ENABLED")
-        end
-        return
-    end
-    local profile = self.db and self.db.profile
-    local componentsCfg = profile and rawget(profile, "components") or nil
-    for id, component in pairs(self.Components) do
-        -- Zero‑Touch: only apply component styling when the component has an explicit
-        -- SavedVariables table (i.e., the user has configured it).
-        local hasConfig = componentsCfg and rawget(componentsCfg, id) ~= nil
-        if hasConfig and component.ApplyStyling then
-            component:ApplyStyling()
-        end
-    end
-    if addon.ApplyAllUnitFrameHealthTextVisibility then
-        addon.ApplyAllUnitFrameHealthTextVisibility()
-    end
-    if addon.ApplyAllUnitFramePowerTextVisibility then
-        addon.ApplyAllUnitFramePowerTextVisibility()
-    end
-    if addon.ApplyAllUnitFrameNameLevelText then
-        addon.ApplyAllUnitFrameNameLevelText()
-    end
-    if addon.ApplyAllUnitFrameBarTextures then
-        addon.ApplyAllUnitFrameBarTextures()
-    end
-    if addon.ApplyAllUnitFramePortraits then
-        addon.ApplyAllUnitFramePortraits()
-    end
-	if addon.ApplyAllUnitFrameClassResources then
-		addon.ApplyAllUnitFrameClassResources()
-	end
-    if addon.ApplyAllUnitFrameCastBars then
-        addon.ApplyAllUnitFrameCastBars()
-    end
-    if addon.ApplyAllUnitFrameBuffsDebuffs then
-        addon.ApplyAllUnitFrameBuffsDebuffs()
-    end
-    if addon.ApplyAllUnitFrameVisibility then
-        addon.ApplyAllUnitFrameVisibility()
-    end
-    if addon.ApplyAllThreatMeterVisibility then
-        addon.ApplyAllThreatMeterVisibility()
-    end
-    if addon.ApplyTargetBossIconVisibility then
-        addon.ApplyTargetBossIconVisibility()
-    end
-    if addon.ApplyAllPlayerMiscVisibility then
-        addon.ApplyAllPlayerMiscVisibility()
-    end
-    if addon.ApplyPetFrameVisibility then
-        addon.ApplyPetFrameVisibility()
-    end
-	-- Unit Frames: Off-screen drag unlock (Player + Target)
-	if addon.ApplyAllUnitFrameOffscreenUnlocks then
-		addon.ApplyAllUnitFrameOffscreenUnlocks()
-	end
-    if addon.ApplyAllUnitFrameScaleMults then
-        addon.ApplyAllUnitFrameScaleMults()
-    end
-    -- ToT/FocusTarget: Apply scale and position (not Edit Mode managed)
-    if addon.ApplyAllToTSettings then
-        addon.ApplyAllToTSettings()
-    end
-    if addon.ApplyAllFocusTargetSettings then
-        addon.ApplyAllFocusTargetSettings()
-    end
-    -- Group Frames: Apply raid frame health bar styling
-    if addon.ApplyRaidFrameHealthBarStyle then
-        addon.ApplyRaidFrameHealthBarStyle()
-    end
-    -- Group Frames: Apply raid frame status text styling
-    if addon.ApplyRaidFrameStatusTextStyle then
-        addon.ApplyRaidFrameStatusTextStyle()
-    end
-    -- Group Frames: Apply raid group title styling (Group Numbers)
-    if addon.ApplyRaidFrameGroupTitlesStyle then
-        addon.ApplyRaidFrameGroupTitlesStyle()
-    end
-    -- Group Frames: Apply raid frame combat-safe overlays
-    if addon.ApplyRaidFrameHealthOverlays then
-        addon.ApplyRaidFrameHealthOverlays()
-    end
-    if addon.ApplyRaidFrameNameOverlays then
-        addon.ApplyRaidFrameNameOverlays()
-    end
-    -- Group Frames: Apply party frame health bar styling
-    if addon.ApplyPartyFrameHealthBarStyle then
-        addon.ApplyPartyFrameHealthBarStyle()
-    end
-    -- Group Frames: Apply party frame title styling (Party Title)
-    if addon.ApplyPartyFrameTitleStyle then
-        addon.ApplyPartyFrameTitleStyle()
-    end
-    -- Group Frames: Apply party frame combat-safe overlays
-    if addon.ApplyPartyFrameHealthOverlays then
-        addon.ApplyPartyFrameHealthOverlays()
-    end
-    if addon.ApplyPartyFrameNameOverlays then
-        addon.ApplyPartyFrameNameOverlays()
-    end
-    -- Group Frames: Apply party frame visibility settings (over absorb glow, etc.)
-    if addon.ApplyPartyOverAbsorbGlowVisibility then
-        addon.ApplyPartyOverAbsorbGlowVisibility()
-    end
-    -- Group Frames: Apply party frame health bar borders
-    if addon.ApplyPartyFrameHealthBarBorders then
-        addon.ApplyPartyFrameHealthBarBorders()
-    end
-    -- Group Frames: Apply raid frame health bar borders
-    if addon.ApplyRaidFrameHealthBarBorders then
-        addon.ApplyRaidFrameHealthBarBorders()
-    end
-end
-
-function addon:ApplyEarlyComponentStyles()
-    local profile = self.db and self.db.profile
-    local componentsCfg = profile and rawget(profile, "components") or nil
-    for id, component in pairs(self.Components) do
-        local hasConfig = componentsCfg and rawget(componentsCfg, id) ~= nil
-        if hasConfig and component.ApplyStyling and component.applyDuringInit then
-            component:ApplyStyling()
-        end
-    end
-end
-
-function addon:ResetComponentToDefaults(componentOrId)
-    local component = componentOrId
-    if type(componentOrId) == "string" then
-        component = self.Components and self.Components[componentOrId]
-    end
-
-    if not component then
-        return false, "component_missing"
-    end
-
-    if not component.db then
-        if type(self.EnsureComponentDB) == "function" then
-            self:EnsureComponentDB(component)
-        end
-    end
-
-    if not component.db then
-        return false, "component_db_unavailable"
-    end
-
-    local seen = {}
-    for settingId, setting in pairs(component.settings or {}) do
-        if type(setting) == "table" then
-            seen[settingId] = true
-            if setting.default ~= nil then
-                component.db[settingId] = CopyDefaultValue(setting.default)
-            else
-                component.db[settingId] = nil
-            end
-        end
-    end
-
-    for key in pairs(component.db) do
-        if not seen[key] then
-            component.db[key] = nil
-        end
-    end
-
-    if self.EditMode and self.EditMode.ResetComponentPositionToDefault then
-        self.EditMode.ResetComponentPositionToDefault(component)
-    end
-
-    if self.EditMode and self.EditMode.SyncComponentToEditMode then
-        self.EditMode.SyncComponentToEditMode(component, { skipApply = true })
-    end
-
-    if self.ApplyStyles then
-        self:ApplyStyles()
-    end
-
-    return true
-end
-
-function addon:ResetUnitFrameCategoryToDefaults(categoryKey)
-    if type(categoryKey) ~= "string" then
-        return false, "invalid_category"
-    end
-
-    local unit = UNIT_FRAME_CATEGORY_TO_UNIT[categoryKey]
-    if not unit then
-        return false, "unknown_unit"
-    end
-
-    local profile = self.db and self.db.profile
-    if not profile then
-        return false, "db_unavailable"
-    end
-
-    if profile.unitFrames then
-        profile.unitFrames[unit] = nil
-        local hasAny = false
-        for _ in pairs(profile.unitFrames) do
-            hasAny = true
-            break
-        end
-        if not hasAny then
-            profile.unitFrames = nil
-        end
-    end
-
-    if self.EditMode and self.EditMode.ResetUnitFramePosition then
-        self.EditMode.ResetUnitFramePosition(unit)
-    end
-
-    if self.ApplyUnitFrameBarTexturesFor then
-        self.ApplyUnitFrameBarTexturesFor(unit)
-    end
-    if self.ApplyUnitFrameHealthTextVisibilityFor then
-        self.ApplyUnitFrameHealthTextVisibilityFor(unit)
-    end
-    if self.ApplyUnitFramePowerTextVisibilityFor then
-        self.ApplyUnitFramePowerTextVisibilityFor(unit)
-    end
-    if self.ApplyUnitFrameNameLevelTextFor then
-        self.ApplyUnitFrameNameLevelTextFor(unit)
-    end
-    if self.ApplyUnitFramePortraitFor then
-        self.ApplyUnitFramePortraitFor(unit)
-    end
-    if self.ApplyUnitFrameCastBarFor then
-        self.ApplyUnitFrameCastBarFor(unit)
-    end
-    if self.ApplyUnitFrameBuffsDebuffsFor then
-        self.ApplyUnitFrameBuffsDebuffsFor(unit)
-    end
-    if self.ApplyUnitFrameVisibilityFor then
-        self.ApplyUnitFrameVisibilityFor(unit)
-    end
-
-    return true
-end
-
-function addon:SyncAllEditModeSettings()
-    local anyChanged = false
-    for _, component in pairs(self.Components) do
-        if component.SyncEditModeSettings then
-            if component:SyncEditModeSettings() then
-                anyChanged = true
-            end
-        end
-        if addon.EditMode.SyncComponentPositionFromEditMode then
-            if addon.EditMode.SyncComponentPositionFromEditMode(component) then
-                anyChanged = true
-            end
-        end
-    end
-
-    return anyChanged
-end
-
-
