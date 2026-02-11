@@ -421,7 +421,15 @@ function Controls:CreateSelectorColorPicker(options)
         local displayText = row._values[currentKey] or currentKey or "\226\128\148"
 
         -- Check if custom value is selected
-        local isCustom = (currentKey == row._customValue)
+        local isCustom
+        if type(row._customValue) == "table" then
+            isCustom = false
+            for _, val in ipairs(row._customValue) do
+                if currentKey == val then isCustom = true; break end
+            end
+        else
+            isCustom = (currentKey == row._customValue)
+        end
 
         if isCustom then
             -- Show swatch, adjust text position

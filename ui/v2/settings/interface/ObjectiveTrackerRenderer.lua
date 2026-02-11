@@ -108,9 +108,8 @@ function ObjectiveTracker.Render(panel, scrollContent)
         ["SHADOW"] = "Shadow",
         ["SHADOWOUTLINE"] = "Shadow Outline",
         ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-        ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
     }
-    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
     -- Font color mode options (for UISelectorColorPicker)
     local fontColorValues = {

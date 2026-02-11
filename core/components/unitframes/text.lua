@@ -12,7 +12,7 @@ local function getState(frame)
     return fs and fs.Get(frame) or nil
 end
 
--- 12.0+: Blizzard can mark certain UI-derived numbers as "secret", which causes
+-- Blizzard can mark certain UI-derived numbers as "secret", which causes
 -- arithmetic like `x + 1` to hard-error ("attempt to perform arithmetic on a secret value").
 -- We treat those as unreadable offsets and fall back to 0 so styling does not crash.
 local function safeOffset(v)
@@ -43,7 +43,7 @@ local function safePointToken(v, fallback)
 end
 
 -- Some managed frames (notably UnitFrame StatusBars) can run internal update code during
--- "harmless" queries like GetWidth(). In 12.0 PTR this can surface Blizzard errors due to
+-- "harmless" queries like GetWidth(). This can surface Blizzard errors due to
 -- "secret values" when those updates run in an addon context.
 --
 -- Practical rule: **never call GetWidth() on StatusBars** during our styling passes.
@@ -74,7 +74,7 @@ local function getBarWidthForAlignment(fs)
 
     -- Check if this FontString is part of a unit frame hierarchy FIRST.
     -- If so, avoid ALL GetWidth calls as they can trigger internal updates
-    -- (like heal prediction) that fail on secret values in 12.0.
+    -- (like heal prediction) that fail on secret values.
     local parent = fs.GetParent and fs:GetParent()
     if parent then
         local grandparent = parent.GetParent and parent:GetParent()
@@ -423,7 +423,7 @@ do
 
             -- Use two-point anchoring to span the parent bar width.
             -- This makes JustifyH work correctly without needing GetWidth() (which can
-            -- trigger secret value errors on unit frame StatusBars in 12.0).
+            -- trigger secret value errors on unit frame StatusBars).
             if fs.ClearAllPoints and fs.SetPoint and parentBar then
                 fs:ClearAllPoints()
                 -- Anchor both left and right edges to span the bar
@@ -521,7 +521,7 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 AND font styling when Blizzard updates.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyHealthTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
             local fstate = ensureFS()
@@ -687,7 +687,7 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
             local fstate = ensureFS()
@@ -1110,7 +1110,7 @@ do
 
 			-- Use two-point anchoring to span the parent bar width.
 			-- This makes JustifyH work correctly without needing GetWidth() (which can
-			-- trigger secret value errors on unit frame StatusBars in 12.0).
+			-- trigger secret value errors on unit frame StatusBars).
 			if fs.ClearAllPoints and fs.SetPoint and parentBar then
 				fs:ClearAllPoints()
 				-- Anchor both left and right edges to span the bar
@@ -1213,7 +1213,7 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyPowerTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
             local fstate = ensureFS()
@@ -1386,7 +1386,7 @@ do
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
         -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
             local fstate = ensureFS()
@@ -1870,7 +1870,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					-- If we can't safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -1960,7 +1960,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					-- If we can't safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						borderFrame:Hide()
 						return
@@ -2520,7 +2520,7 @@ do
 							addon._ufNameBackdropBaseWidth[unit] = base
 						end
 					end
-					-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+					-- If we can't safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -2622,7 +2622,7 @@ do
 						addon._ufNameBackdropBaseWidth[unit] = base
 					end
 				end
-				-- If we can't safely read a width (12.0 secret-value environment), skip cosmetics.
+				-- If we can't safely read a width (secret-value environment), skip cosmetics.
 				if not base or base <= 0 then
 					borderFrame:Hide()
 					return
@@ -2922,7 +2922,7 @@ do
 
 	-- Also hook CharacterFrameTab1-4 OnClick (the tabs at the bottom of Character Frame)
 	-- These can trigger updates when switching between Character/Reputation/Currency tabs
-	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function hookCharacterTabs()
 		local fstate = ensureFS()
 		if not fstate then return end
@@ -3034,7 +3034,7 @@ do
 		end
 
 		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
-		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 		local fstate = ensureFS()
 		if cfg.nameTextHidden ~= nil and fstate then
 			local hidden = (cfg.nameTextHidden == true)
@@ -3149,7 +3149,7 @@ do
 
 	-- Hook TargetofTarget frame updates to reapply styling
 	-- ToT frame is re-shown when target changes, so hook the ToT OnShow
-	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function installToTHooks()
 		local fstate = ensureFS()
 		if not fstate then return end
@@ -3226,7 +3226,7 @@ do
 		end
 
 		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
-		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 		local fstate = ensureFS()
 		if cfg.nameTextHidden ~= nil and fstate then
 			local hidden = (cfg.nameTextHidden == true)
@@ -3341,7 +3341,7 @@ do
 
 	-- Hook FocusFrameToT frame updates to reapply styling
 	-- FoT frame is re-shown when focus target changes, so hook the FoT OnShow
-	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint in 12.0).
+	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function installFoTHooks()
 		local fstate = ensureFS()
 		if not fstate then return end

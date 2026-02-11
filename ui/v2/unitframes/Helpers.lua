@@ -232,9 +232,8 @@ UF.fontStyleValues = {
     SHADOW = "Shadow",
     SHADOWOUTLINE = "Shadow Outline",
     SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-    HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
 }
-UF.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+UF.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
 -- Text alignment options
 UF.alignmentValues = {

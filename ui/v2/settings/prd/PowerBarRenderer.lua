@@ -284,9 +284,8 @@ function PowerBar.Render(panel, scrollContent)
                                 SHADOW = "Shadow",
                                 SHADOWOUTLINE = "Shadow Outline",
                                 SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("valueTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("valueTextFontFlags", v) end,
                         })
@@ -353,9 +352,8 @@ function PowerBar.Render(panel, scrollContent)
                                 SHADOW = "Shadow",
                                 SHADOWOUTLINE = "Shadow Outline",
                                 SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-                                HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
                             },
-                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" },
+                            order = { "OUTLINE", "NONE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" },
                             get = function() return getSetting("percentTextFontFlags") or "OUTLINE" end,
                             set = function(v) setSetting("percentTextFontFlags", v) end,
                         })

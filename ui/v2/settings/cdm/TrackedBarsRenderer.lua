@@ -362,9 +362,8 @@ function TrackedBars.Render(panel, scrollContent)
                 ["SHADOW"] = "Shadow",
                 ["SHADOWOUTLINE"] = "Shadow Outline",
                 ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
             }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
             -- Tabbed section for Spell Name and Timer text settings
             inner:AddTabbedSection({

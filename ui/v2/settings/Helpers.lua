@@ -150,9 +150,8 @@ Helpers.fontStyleValues = {
     SHADOW = "Shadow",
     SHADOWOUTLINE = "Shadow Outline",
     SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-    HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
 }
-Helpers.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+Helpers.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
 
 -- Text color mode options

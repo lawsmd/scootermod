@@ -5,7 +5,7 @@ local ClampOpacity = Util.ClampOpacity
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
 local PlayerInCombat = Util.PlayerInCombat
 
--- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- Weak-key lookup tables to avoid writing properties to Blizzard frames
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
 

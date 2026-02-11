@@ -15,7 +15,7 @@ local function _SafePCall(method, frame, useSecure)
     end
 end
 
--- 12.0+: Weak-key lookup table to avoid writing properties to Blizzard frames
+-- Weak-key lookup table to avoid writing properties to Blizzard frames
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local editModeState = setmetatable({}, { __mode = "k" })
 
@@ -643,7 +643,7 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
 
     opts = opts or {}
 
-    -- 12.0+ DEPRECATION WARNING: 'updaters' causes taint by calling methods on system frames.
+    -- DEPRECATION WARNING: 'updaters' causes taint by calling methods on system frames.
     -- Visual updates happen via deferred SetActiveLayout() in SaveOnly().
     if opts.updaters and addon._dbgEditMode then
         print("|cFFFF0000[EM.WriteSetting] WARNING: 'updaters' option is deprecated in 12.0+|r")

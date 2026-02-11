@@ -22,7 +22,7 @@ local PlayerInCombat = Util.PlayerInCombat
 local HideDefaultBarTextures = Util.HideDefaultBarTextures
 local ToggleDefaultIconOverlay = Util.ToggleDefaultIconOverlay
 
--- 12.0+: Some StatusBar values (min/max/value) can be "secret" and will hard-error
+-- Some StatusBar values (min/max/value) can be "secret" and will hard-error
 -- on comparisons/arithmetic. For optional cosmetics like rectangular fill overlays,
 -- treat secret values as unavailable and skip the overlay update.
 local function safeNumber(v)
@@ -44,7 +44,7 @@ local function safeNumber(v)
     return n
 end
 
--- 12.0+: GetPoint() string values (point, relativePoint) can be secrets.
+-- GetPoint() string values (point, relativePoint) can be secrets.
 -- Returns fallback if the value is not a usable string.
 local function safePointToken(v, fallback)
     if type(v) ~= "string" then return fallback end
@@ -54,7 +54,7 @@ local function safePointToken(v, fallback)
     return fallback
 end
 
--- 12.0+: GetPoint() offset values can be secrets that error on arithmetic.
+-- GetPoint() offset values can be secrets that error on arithmetic.
 -- Returns 0 if the value is not a usable number.
 local function safeOffset(v)
     local okNil, isNil = pcall(function() return v == nil end)
@@ -199,7 +199,7 @@ end
 -- Power Bar Custom Position (DEPRECATED)
 --------------------------------------------------------------------------------
 -- The Custom Position feature has been deprecated in favor of PRD (Personal
--- Resource Display) with overlay enhancements. PRD in 12.0 supports Edit Mode
+-- Resource Display) with overlay enhancements. PRD supports Edit Mode
 -- positioning, eliminating all the problems with repositioning the Player UF
 -- ManaBar (combat lockdown, position resets, taint issues).
 --
@@ -672,7 +672,7 @@ do
             return
         end
 
-        -- 12.0 FIX: Anchor to StatusBarTexture for horizontal fill tracking (no secret value reads).
+        -- Anchor to StatusBarTexture for horizontal fill tracking (no secret value reads).
         local statusBarTex = bar:GetStatusBarTexture()
         if not statusBarTex then
             overlay:Hide()
@@ -1034,7 +1034,7 @@ do
             end
             return
         end
-        -- 12.0 PTR: PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
+        -- PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
         -- innocuous StatusBar reads from addon code, and may hard-error due to "secret values" inside
         -- Blizzard_UnitFrame (e.g., myCurrentHealAbsorb comparisons). This overlay is purely cosmetic,
         -- so we disable it for Pet to guarantee preset/profile application can't provoke that path.
@@ -1044,10 +1044,10 @@ do
             -- environment. This overlay is cosmetic; we prefer a complete no-op.
             return
         end
-        -- 12.0 FIX: Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
-        -- "secret values" in 12.0, we anchor directly to the StatusBarTexture. The StatusBarTexture
+        -- Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
+        -- "secret values", we anchor directly to the StatusBarTexture. The StatusBarTexture
         -- is the actual "fill" portion of the StatusBar and automatically scales with health value.
-        -- This follows the 12.0 paradigm: anchor to existing elements, don't read values.
+        -- Anchor to existing elements, don't read values.
         if not statusBarTex then
             overlay:Hide()
             return
@@ -1695,10 +1695,10 @@ do
         local frame = getUnitFrameFor(unit)
         if not frame then return end
 
-        -- 12.0+: PetFrame is a managed/protected unit frame. Direct bar writes (SetStatusBarTexture)
+        -- PetFrame is a managed/protected unit frame. Direct bar writes (SetStatusBarTexture)
         -- can trigger Blizzard's internal heal prediction update callbacks that error on "secret values".
         -- For Pet we use the overlay-only approach: ensureRectHealthOverlay() creates an addon-owned
-        -- texture that uses SetAllPoints(statusBarTex) anchoring (12.0-safe) instead of value reads.
+        -- texture that uses SetAllPoints(statusBarTex) anchoring instead of value reads.
         -- We skip applyToBar() to avoid touching Blizzard's StatusBar directly.
         if unit == "Pet" then
             -- Hide PetFrameTexture (art hiding) - same pattern as line 3658+
@@ -1715,10 +1715,10 @@ do
                 hookAlphaEnforcer(ft, compute)
             end
 
-            -- 12.0 OVERLAY APPROACH: Instead of calling applyToBar() (which writes SetStatusBarTexture
+            -- OVERLAY APPROACH: Instead of calling applyToBar() (which writes SetStatusBarTexture
             -- to Blizzard's bar and can trigger heal prediction updates), use ensureRectHealthOverlay()
             -- which creates an addon-owned overlay texture. The overlay uses SetAllPoints(statusBarTex)
-            -- anchoring instead of reading values, making it 12.0-safe.
+            -- anchoring instead of reading values.
             local hb = resolveHealthBar(frame, unit)
             if hb then
                 ensureRectHealthOverlay(unit, hb, cfg)
@@ -1735,7 +1735,7 @@ do
                 end
             end
 
-            -- 12.0 BORDER APPROACH: BarBorders.ApplyToBarFrame uses GetFrameLevel/GetHeight
+            -- BORDER APPROACH: BarBorders.ApplyToBarFrame uses GetFrameLevel/GetHeight
             -- without pcall wrappers (barborders.lua lines 79, 84, 92), which can trigger
             -- secret value errors on Pet. Use an addon-owned anchor frame like Boss frames do.
             if hb and cfg.useCustomBorders then
@@ -1832,7 +1832,7 @@ do
             return
         end
 
-        -- 12.0+: TargetOfTarget uses the party frame template (like Pet) and is a protected frame.
+        -- TargetOfTarget uses the party frame template (like Pet) and is a protected frame.
         -- Direct bar writes and getters can trigger secret value errors. Use the same overlay+anchor
         -- pattern as Pet for safe border handling.
         if unit == "TargetOfTarget" then
@@ -1850,8 +1850,8 @@ do
                 hookAlphaEnforcer(ft, compute)
             end
 
-            -- 12.0 OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
-            -- overlay texture using SetAllPoints anchoring (12.0-safe).
+            -- OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
+            -- overlay texture using SetAllPoints anchoring.
             local hb = resolveHealthBar(frame, unit)
             if hb then
                 ensureRectHealthOverlay(unit, hb, cfg)
@@ -1900,7 +1900,7 @@ do
                 end
             end
 
-            -- 12.0 BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
+            -- BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
             if hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
                 if styleKey == "none" or styleKey == nil then
@@ -1992,7 +1992,7 @@ do
             return
         end
 
-        -- 12.0+: FocusTarget uses the party frame template (like Pet) and is a protected frame.
+        -- FocusTarget uses the party frame template (like Pet) and is a protected frame.
         -- Direct bar writes and getters can trigger secret value errors. Use the same overlay+anchor
         -- pattern as Pet for safe border handling.
         if unit == "FocusTarget" then
@@ -2010,8 +2010,8 @@ do
                 hookAlphaEnforcer(ft, compute)
             end
 
-            -- 12.0 OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
-            -- overlay texture using SetAllPoints anchoring (12.0-safe).
+            -- OVERLAY APPROACH: Use ensureRectHealthOverlay() which creates an addon-owned
+            -- overlay texture using SetAllPoints anchoring.
             local hb = resolveHealthBar(frame, unit)
             if hb then
                 ensureRectHealthOverlay(unit, hb, cfg)
@@ -2060,7 +2060,7 @@ do
                 end
             end
 
-            -- 12.0 BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
+            -- BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
             if hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
                 if styleKey == "none" or styleKey == nil then
@@ -3109,7 +3109,7 @@ do
             end
 
             -- Health Bar custom border (Health Bar only)
-            -- 12.0+: PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
+            -- PetFrame is a managed/protected frame. Even innocuous getters (GetWidth, GetFrameLevel)
             -- on PetFrame's health bar can trigger Blizzard internal updates that error on "secret values".
             -- Skip ALL border operations for Pet to guarantee preset/profile application doesn't provoke that path.
             if unit ~= "Pet" and unit ~= "TargetOfTarget" and unit ~= "FocusTarget" and not healthBarHideTextureOnly then
@@ -4128,7 +4128,7 @@ do
 
                             -- Apply text alignment using two-point anchoring (matches text.lua pattern).
                             -- This makes SetJustifyH work correctly without needing GetWidth() (which can
-                            -- trigger secret value errors on unit frame StatusBars in 12.0).
+                            -- trigger secret value errors on unit frame StatusBars).
                             -- Check for both :right and -right patterns to handle all key formats
                             local defaultAlign = "LEFT"
                             if baselineKey and (baselineKey:find(":right", 1, true) or baselineKey:find("-right", 1, true)) then
@@ -4277,7 +4277,7 @@ do
             -- Experimental: Power Bar Width scaling (texture/mask only)
             -- For Target/Focus: Only when reverse fill is enabled
             -- For Player: Always available
-            -- 12.0+: Pet excluded - even pcall-wrapped GetWidth on PetFrame's power bar
+            -- Pet excluded - even pcall-wrapped GetWidth on PetFrame's power bar
             -- can trigger Blizzard internal updates that error on "secret values".
             do
                 local canScale = false
@@ -4427,7 +4427,7 @@ do
 			-- Power Bar Height scaling (texture/mask only)
 			-- For Target/Focus: Only when reverse fill is enabled
 			-- For Player: Always available
-			-- 12.0+: Pet excluded - even pcall-wrapped GetHeight on PetFrame's power bar
+			-- Pet excluded - even pcall-wrapped GetHeight on PetFrame's power bar
 			-- can trigger Blizzard internal updates that error on "secret values".
 			do
                 -- Skip all Power Bar height scaling while in combat; defer to the next
@@ -4992,7 +4992,7 @@ do
     end
 
     function addon.ApplyAllUnitFrameBarTextures()
-        -- 12.0+: Styling passes must be resilient to Blizzard "secret value" errors that can
+        -- Styling passes must be resilient to Blizzard "secret value" errors that can
         -- surface from innocuous getters on managed UnitFrames (e.g., PetFrame heal prediction).
         -- Never allow those to hard-fail profile switching/preset apply.
         local function safeApply(unit)
@@ -5204,7 +5204,7 @@ end
 -- handler to update value-based health bar colors. This is separate from
 -- party/raid frames which use CompactUnitFrame_UpdateHealthColor hooks.
 --
--- The applyValueBasedColor function uses the 12.0 secret-safe pattern:
+-- The applyValueBasedColor function uses the secret-safe pattern:
 -- UnitHealthPercent(unit, false, colorCurve) returns a non-secret color
 -- by having Blizzard internally evaluate the secret health percentage.
 --------------------------------------------------------------------------------

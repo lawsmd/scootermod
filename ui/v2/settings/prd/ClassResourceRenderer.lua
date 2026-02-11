@@ -47,22 +47,26 @@ function ClassResource.Render(panel, scrollContent)
     end
 
     ---------------------------------------------------------------------------
-    -- Textures Section (DK only)
+    -- Textures Section (DK / Mage)
     ---------------------------------------------------------------------------
     local _, playerClass = UnitClass("player")
-    if playerClass == "DEATHKNIGHT" then
+    if playerClass == "DEATHKNIGHT" or playerClass == "MAGE" then
+        local textureLabel = (playerClass == "DEATHKNIGHT") and "Rune Style"
+            or (playerClass == "MAGE") and "Charge Style"
+            or "Texture Style"
         builder:AddCollapsibleSection({
             title = "Textures",
             componentId = "prdClassResource",
             sectionKey = "textures",
             defaultExpanded = false,
             buildContent = function(contentFrame, inner)
+                local textureKey = "textureStyle_" .. playerClass
                 inner:AddSelector({
-                    label = "Rune Style",
+                    label = textureLabel,
                     values = { default = "Blizzard Default", pixel = "Pixel Art" },
                     order = { "default", "pixel" },
-                    get = function() return getSetting("textureStyle") or "default" end,
-                    set = function(v) setSetting("textureStyle", v or "default") end,
+                    get = function() return getSetting(textureKey) or "default" end,
+                    set = function(v) setSetting(textureKey, v or "default") end,
                 })
                 inner:Finalize()
             end,

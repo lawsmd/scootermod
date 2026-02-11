@@ -231,7 +231,7 @@ local function RegisterTooltipPostProcessor()
 
             -- Apply class color to player names if enabled
             if db.classColorPlayerNames then
-                -- GetUnit() and UnitIsPlayer() can return/receive secret values in 12.0
+                -- GetUnit() and UnitIsPlayer() can return/receive secret values
                 -- Wrap everything in pcall to handle secrets safely
                 local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
                 if ok and unitToken then

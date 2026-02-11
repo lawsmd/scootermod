@@ -63,6 +63,7 @@ core/components/unitframes/bars.lua
 core/components/unitframes/portraits.lua
 core/components/unitframes/classresource.lua
 core/components/unitframes/dkrunes.lua
+core/components/unitframes/magearcanecharges.lua
 core/components/unitframes/totembar.lua
 core/components/unitframes/cast.lua
 core/components/unitframes/buffs.lua

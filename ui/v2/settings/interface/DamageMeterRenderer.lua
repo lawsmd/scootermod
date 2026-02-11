@@ -193,9 +193,8 @@ function DamageMeter.Render(panel, scrollContent)
         ["SHADOW"] = "Shadow",
         ["SHADOWOUTLINE"] = "Shadow Outline",
         ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-        ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
     }
-    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+    local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
     -- Bars section (collapsible with tabs inside)
     builder:AddCollapsibleSection({
@@ -548,6 +547,7 @@ function DamageMeter.Render(panel, scrollContent)
                 sectionKey = "titleBarTabs",
                 tabs = {
                     { key = "titleText", label = "Title Text" },
+                    { key = "timerText", label = "Timer Text" },
                     { key = "buttons", label = "Buttons" },
                     { key = "backdrop", label = "Backdrop" },
                 },
@@ -664,6 +664,81 @@ function DamageMeter.Render(panel, scrollContent)
                             set = function(value)
                                 setSetting("titleTextRightClickMeterType", value)
                             end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    timerText = function(tabContent, tabInner)
+                        -- Helper to get/set textTimer sub-table
+                        local function getTextTimer()
+                            local t = getSetting("textTimer")
+                            return t or {}
+                        end
+                        local function setTextTimerProp(key, value)
+                            local comp = getComponent()
+                            if comp and comp.db then
+                                comp.db.textTimer = comp.db.textTimer or {}
+                                comp.db.textTimer[key] = value
+                            end
+                            if addon and addon.ApplyStyles then
+                                C_Timer.After(0, function()
+                                    if addon and addon.ApplyStyles then addon:ApplyStyles() end
+                                end)
+                            end
+                        end
+
+                        -- Font selector
+                        tabInner:AddFontSelector({
+                            label = "Font",
+                            get = function()
+                                local t = getTextTimer()
+                                return t.fontFace or "FRIZQT__"
+                            end,
+                            set = function(value)
+                                setTextTimerProp("fontFace", value)
+                            end,
+                        })
+
+                        -- Font Style selector
+                        tabInner:AddSelector({
+                            label = "Font Style",
+                            values = fontStyleValues,
+                            order = fontStyleOrder,
+                            get = function()
+                                local t = getTextTimer()
+                                return t.fontStyle or "OUTLINE"
+                            end,
+                            set = function(value)
+                                setTextTimerProp("fontStyle", value)
+                            end,
+                        })
+
+                        -- Color with default/custom mode
+                        local TIMER_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
+                        tabInner:AddSelectorColorPicker({
+                            label = "Color",
+                            values = {
+                                ["default"] = "Default (Gold)",
+                                ["custom"] = "Custom",
+                            },
+                            order = { "default", "custom" },
+                            get = function()
+                                local t = getTextTimer()
+                                return t.colorMode or "default"
+                            end,
+                            set = function(value)
+                                setTextTimerProp("colorMode", value)
+                            end,
+                            getColor = function()
+                                local t = getTextTimer()
+                                local c = t.color
+                                if c then return c[1] or TIMER_DEFAULT_COLOR[1], c[2] or TIMER_DEFAULT_COLOR[2], c[3] or TIMER_DEFAULT_COLOR[3], c[4] or TIMER_DEFAULT_COLOR[4] end
+                                return TIMER_DEFAULT_COLOR[1], TIMER_DEFAULT_COLOR[2], TIMER_DEFAULT_COLOR[3], TIMER_DEFAULT_COLOR[4]
+                            end,
+                            setColor = function(r, g, b, a)
+                                setTextTimerProp("color", { r, g, b, a or 1 })
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
                         })
                         tabInner:Finalize()
                     end,

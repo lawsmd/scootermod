@@ -399,9 +399,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
                 ["SHADOW"] = "Shadow",
                 ["SHADOWOUTLINE"] = "Shadow Outline",
                 ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-                ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
             }
-            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+            local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
             -- Tabbed section for Charges, Cooldowns, and Keybinds text settings
             inner:AddTabbedSection({

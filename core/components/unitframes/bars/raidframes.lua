@@ -17,9 +17,9 @@ addon.BarsRaidFrames = addon.BarsRaidFrames or {}
 local RaidFrames = addon.BarsRaidFrames
 
 --------------------------------------------------------------------------------
--- 12.0 TAINT PREVENTION: Lookup table for raid frame state
+-- TAINT PREVENTION: Lookup table for raid frame state
 --------------------------------------------------------------------------------
--- In 12.0, writing properties directly to CompactRaidFrame/CompactRaidGroup
+-- Writing properties directly to CompactRaidFrame/CompactRaidGroup
 -- frames (or their children) can mark them as "addon-touched". This causes
 -- Blizzard field reads (e.g., frame.unit/outOfRange) to return secret values.
 -- Store all ScooterMod state in a separate lookup table keyed by frame.
@@ -39,7 +39,7 @@ local function ensureState(frame)
     return RaidFrameState[frame]
 end
 
--- 12.0+: Some values can be "secret" and will hard-error on arithmetic/comparisons.
+-- Some values can be "secret" and will hard-error on arithmetic/comparisons.
 -- Treat those as unreadable and skip optional overlays rather than crashing.
 local function safeNumber(v)
     local okNil, isNil = pcall(function() return v == nil end)
@@ -137,7 +137,7 @@ end
 --------------------------------------------------------------------------------
 
 -- Update overlay dimensions based on health bar fill texture
--- 12.0 FIX: Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
+-- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
 -- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
@@ -151,7 +151,7 @@ local function updateHealthOverlay(bar)
         return
     end
 
-    -- 12.0 SECRET-SAFE APPROACH: Anchor overlay to the status bar fill texture.
+    -- SECRET-SAFE: Anchor overlay to the status bar fill texture.
     -- Blizzard's fill texture is sized internally without exposing secret values.
     -- By anchoring to it, our overlay automatically matches the fill dimensions.
     local fill = bar:GetStatusBarTexture()
@@ -163,7 +163,7 @@ local function updateHealthOverlay(bar)
     -- Anchor overlay to match the fill texture exactly.
     -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
     -- will correctly have zero width too. This avoids reading GetWidth() which can
-    -- return secret values in 12.0.
+    -- return secret values.
     overlay:ClearAllPoints()
     overlay:SetAllPoints(fill)
     overlay:Show()
@@ -440,7 +440,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     )
 
     -- If config hasn't changed and overlay is already visible, skip re-styling.
-    -- Note: Don't check GetWidth() as it can return secret values in 12.0.
+    -- Note: Don't check GetWidth() as it can return secret values.
     -- With anchor-based sizing, if the overlay is shown, it's sized correctly.
     if state.lastAppliedFingerprint == fingerprint then
         local overlay = state.healthOverlay
@@ -532,7 +532,7 @@ local function applyHealthBarBorder(bar, cfg)
         end)
     end
 
-    -- 12.0 ANCHOR SECRECY FIX: Get bar dimensions safely
+    -- ANCHOR SECRECY FIX: Get bar dimensions safely
     -- Health bars can be "anchoring secret" after SetValue(secretHealth), causing
     -- GetWidth/GetHeight to return secrets. Try pcall, fallback to defaults.
     local barWidth, barHeight = 100, 20  -- Default compact unit frame health bar size
@@ -577,7 +577,7 @@ local function applyHealthBarBorder(bar, cfg)
             local backdropInset = math.floor(edgeSize * insetMult + 0.5)
             if backdropInset < 0 then backdropInset = 0 end
 
-            -- 12.0 ANCHOR SECRECY FIX: Set explicit size to prevent anchor secrecy from
+            -- ANCHOR SECRECY FIX: Set explicit size to prevent anchor secrecy from
             -- causing GetWidth() to return secrets inside SetBackdrop
             -- Size = bar size + padding adjustments (padAdj on each side)
             anchor:SetSize(barWidth + padAdj * 2, barHeight + padAdj * 2)
@@ -609,7 +609,7 @@ local function applyHealthBarBorder(bar, cfg)
             anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
             anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
 
-            -- 12.0 ANCHOR SECRECY FIX: Set explicit size: bar size + 1px border on each side
+            -- ANCHOR SECRECY FIX: Set explicit size: bar size + 1px border on each side
             anchor:SetSize(barWidth + 2, barHeight + 2)
 
             pcall(anchor.SetBackdrop, anchor, {
@@ -637,7 +637,7 @@ local function applyHealthBarBorder(bar, cfg)
     end
 end
 
--- 12.0 EDIT MODE GUARD: Skip processing when Edit Mode is active
+-- EDIT MODE GUARD: Skip processing when Edit Mode is active
 local function isEditModeActiveForBorders()
     if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
         return addon.EditMode.IsEditModeActiveOrOpening()
@@ -837,7 +837,7 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
--- 12.0 EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
+-- EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
 -- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
 -- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
 -- frame type), the addon code in the execution context can cause UnitInRange() and

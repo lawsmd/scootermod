@@ -40,7 +40,7 @@ local function ShowDebugCopyWindow(title, text)
     if f.title then f.title:SetText(title or "Scooter Debug") end
     if f.EditBox then f.EditBox:SetText(text or "") end
     f:Show()
-    -- Defer focus/highlight to avoid scroll system taint in 12.0
+    -- Defer focus/highlight to avoid scroll system taint.
     -- These operations trigger Blizzard's scroll callbacks which can
     -- encounter secret values if called synchronously from addon context
     C_Timer.After(0, function()
@@ -784,13 +784,13 @@ local function SafeCall(fn, ...)
     return nil
 end
 
--- 12.0 secret value handling: some getters return "secret" values that cannot be
+-- Secret value handling: some getters return "secret" values that cannot be
 -- used in string operations, comparisons, or arithmetic. We detect these by
 -- attempting the operation in a pcall. IMPORTANT: Even comparing a secret to nil
 -- can fail, so ALL operations must be wrapped in pcall.
 
 -- Returns a guaranteed-safe string, or fallback if the value is a secret
--- IMPORTANT: In 12.0, even tostring(secret) can return a "tainted" value that
+-- IMPORTANT: Even tostring(secret) can return a "tainted" value that
 -- passes initial checks but fails in table.concat. We must verify the result
 -- is a real Lua string type AND can be used in string operations.
 local function safeString(value, fallback)
@@ -873,7 +873,7 @@ local function TableInspectorBuildDump(focusedTable)
         end
     end
 
-    -- 12.0 STRATEGY: Instead of pairs() iteration (which returns secrets),
+    -- Instead of pairs() iteration (which returns secrets),
     -- call specific known frame methods directly. These are more likely to work.
 
     push("Frame Information")
@@ -987,7 +987,7 @@ local function TableInspectorBuildDump(focusedTable)
                     if rpOk then table.insert(parts, "(" .. rpStr .. ")") end
                 end
 
-                -- Offsets (often secrets in 12.0)
+                -- Offsets (often secrets)
                 if x and y and type(x) == "number" and type(y) == "number" then
                     local offsetOk, offsetStr = pcall(string.format, "%.1f, %.1f", x, y)
                     if offsetOk then table.insert(parts, "offset: " .. offsetStr) end
@@ -1084,7 +1084,7 @@ local function ShowTableInspectorCopyWindow(title, text)
     if f.title then f.title:SetText(title or "Copied Output") end
     if f.EditBox then f.EditBox:SetText(text or "") end
     f:Show()
-    -- Defer focus/highlight to avoid scroll system taint in 12.0
+    -- Defer focus/highlight to avoid scroll system taint
     C_Timer.After(0, function()
         if f.EditBox and f:IsShown() then
             f.EditBox:HighlightText()
@@ -1097,7 +1097,7 @@ end
 -- This reads what Blizzard is actually showing, bypassing GetDebugName() secrets
 -- IMPORTANT: Must be defined before AttachTableInspectorCopyButton which calls it
 --
--- 12.0 CRITICAL: GetText() returns secret values even on Blizzard's own tooltips.
+-- CRITICAL: GetText() returns secret values even on Blizzard's own tooltips.
 -- We must wrap ALL operations (including type() checks) in pcall because
 -- comparing or type-checking a secret value throws an error.
 local function ExtractFrameStackTooltipText()
@@ -1196,7 +1196,7 @@ function addon.DumpTableAttributes()
     local parent = _G.TableAttributeDisplay
     if parent and parent:IsShown() and parent.focusedTable then
         local dump = TableInspectorBuildDump(parent.focusedTable)
-        -- 12.0: Title is now hardcoded in dump; use simple title for window
+        -- Title is now hardcoded in dump; use simple title for window
         ShowTableInspectorCopyWindow("Table Attributes", dump)
         return true
     end

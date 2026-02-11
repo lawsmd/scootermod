@@ -1607,7 +1607,7 @@ function UF.RenderPlayer(panel, scrollContent)
         buildContent = function(contentFrame, inner)
             local _, playerClass = UnitClass("player")
             local crTabs = {}
-            if playerClass == "DEATHKNIGHT" then
+            if playerClass == "DEATHKNIGHT" or playerClass == "MAGE" then
                 crTabs[#crTabs + 1] = { key = "textures", label = "Textures" }
             end
             crTabs[#crTabs + 1] = { key = "positioning", label = "Positioning" }
@@ -1617,18 +1617,22 @@ function UF.RenderPlayer(panel, scrollContent)
             local crBuildContent = {}
 
             crBuildContent.textures = function(cf, tabInner)
+                local textureLabel = (playerClass == "DEATHKNIGHT") and "Rune Style"
+                    or (playerClass == "MAGE") and "Charge Style"
+                    or "Texture Style"
+                local textureKey = "textureStyle_" .. playerClass
                 tabInner:AddSelector({
-                    label = "Rune Style",
+                    label = textureLabel,
                     values = { default = "Blizzard Default", pixel = "Pixel Art" },
                     order = { "default", "pixel" },
                     get = function()
                         local cfg = ensureClassResourceDB() or {}
-                        return cfg.textureStyle or "default"
+                        return cfg[textureKey] or "default"
                     end,
                     set = function(v)
                         local cfg = ensureClassResourceDB()
                         if not cfg then return end
-                        cfg.textureStyle = v or "default"
+                        cfg[textureKey] = v or "default"
                         applyClassResource()
                     end,
                 })

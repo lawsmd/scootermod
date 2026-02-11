@@ -147,7 +147,7 @@ local function ApplyMinimapShape(db)
         -- Override GetMinimapShape for addon compatibility
         _G.GetMinimapShape = function() return "SQUARE" end
 
-        -- HybridMinimap compatibility (12.0+ dungeons/raids)
+        -- HybridMinimap compatibility
         if HybridMinimap then
             pcall(function()
                 HybridMinimap.MapCanvas:SetUseMaskTexture(false)

@@ -133,11 +133,10 @@ local function ensureConfig()
 	db.unitFrames.Player.classResource = db.unitFrames.Player.classResource or {}
 	local cfg = db.unitFrames.Player.classResource
 
-	-- Clean up removed custom position keys (feature retired in 12.0)
+	-- Clean up removed custom position keys (feature retired)
 	cfg.classResourceCustomPositionEnabled = nil
 	cfg.classResourcePosX = nil
 	cfg.classResourcePosY = nil
-	if cfg.textureStyle == nil then cfg.textureStyle = "default" end
 	return cfg
 end
 
@@ -400,6 +399,11 @@ local function applyClassResourceForUnit(unit)
 	-- Apply DK rune texture overlay if available
 	if addon.ApplyDKRuneTextures then
 		addon.ApplyDKRuneTextures("uf")
+	end
+
+	-- Apply Mage arcane charge texture overlay if available
+	if addon.ApplyMageArcaneChargeTextures then
+		addon.ApplyMageArcaneChargeTextures("uf")
 	end
 end
 

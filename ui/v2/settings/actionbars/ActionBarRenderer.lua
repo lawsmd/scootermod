@@ -230,9 +230,8 @@ function ActionBar.Render(panel, scrollContent, componentId)
                     ["SHADOW"] = "Shadow",
                     ["SHADOWOUTLINE"] = "Shadow Outline",
                     ["SHADOWTHICKOUTLINE"] = "Shadow Thick Outline",
-                    ["HEAVYSHADOWTHICKOUTLINE"] = "Heavy Shadow Thick Outline",
                 }
-                local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+                local fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
                 -- Determine tabs based on bar type
                 -- Action Bars and Pet Bar have 4 tabs: Charges, Cooldowns, Hotkey, Macro Name

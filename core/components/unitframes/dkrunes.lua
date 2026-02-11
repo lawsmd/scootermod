@@ -320,7 +320,7 @@ local function installRuneHooks(runeFrame)
 				hooksecurefunc(runeButton, "UpdateState", function(self)
 					local ctx, _ = resolveRuneContext(self)
 					local cfg = getConfigForContext(ctx)
-					if not cfg or cfg.textureStyle ~= "pixel" then return end
+					if not cfg or (cfg.textureStyle_DEATHKNIGHT or "default") ~= "pixel" then return end
 					suppressBlizzardVisuals(self)
 					local specIndex = GetSpecialization and GetSpecialization() or nil
 					updateOverlayState(self, specIndex)
@@ -332,7 +332,7 @@ local function installRuneHooks(runeFrame)
 				hooksecurefunc(runeButton, "UpdateSpec", function(self, specIndex)
 					local ctx, _ = resolveRuneContext(self)
 					local cfg = getConfigForContext(ctx)
-					if not cfg or cfg.textureStyle ~= "pixel" then return end
+					if not cfg or (cfg.textureStyle_DEATHKNIGHT or "default") ~= "pixel" then return end
 					local overlay = getProp(self, "scooterRuneOverlay")
 					if overlay and overlay.skull then
 						local tex = getSpecTexture(specIndex)
@@ -379,7 +379,7 @@ function addon.ApplyDKRuneTextures(context)
 	if not runeFrame or not runeFrame.Runes then return end
 	if not cfg then return end
 
-	local textureStyle = cfg.textureStyle or "default"
+	local textureStyle = cfg.textureStyle_DEATHKNIGHT or "default"
 
 	if textureStyle == "pixel" then
 		-- Install hooks (idempotent)

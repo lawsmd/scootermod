@@ -37,7 +37,7 @@ addon.BarsTextures = addon.BarsTextures or {}
 local Textures = addon.BarsTextures
 
 --------------------------------------------------------------------------------
--- Health Value Color Curve (12.0 "Color by Value" Feature)
+-- Health Value Color Curve ("Color by Value" Feature)
 --------------------------------------------------------------------------------
 -- Uses C_CurveUtil.CreateColorCurve() with UnitHealthPercent() to safely color
 -- health bars based on remaining health percentage. This pattern is secret-safe
@@ -204,7 +204,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
 
     local r, g, b = color:GetRGB()
 
-    -- Note: In 12.0, GetRGB() could theoretically return secret values, but
+    -- Note: GetRGB() could theoretically return secret values, but
     -- UnitHealthPercent with a color curve should return a clean color object.
     -- The pcall wrappers on SetVertexColor below handle any edge cases.
 
@@ -268,7 +268,7 @@ end
 -- doesn't reflect the new health value immediately (API timing lag).
 --
 -- Why brute-force instead of smart validation:
--- In 12.0, GetVertexColor() returns "secret values" that error on arithmetic,
+-- GetVertexColor() returns "secret values" that error on arithmetic,
 -- making color comparison impossible. Unconditional reapply avoids reading colors.
 --
 -- Intervals: 50ms, 100ms, 200ms, 350ms, 500ms - ensures at least one reapply
@@ -304,7 +304,7 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
 
     pendingValidations[bar] = true
 
-    -- SIMPLIFIED APPROACH: Due to 12.0 secret value issues, color comparison is unreliable.
+    -- SIMPLIFIED APPROACH: Due to secret value issues, color comparison is unreliable.
     -- Instead of smart validation, use a brute-force approach:
     -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
     -- This ensures we eventually apply the correct color even if UnitHealthPercent
@@ -417,7 +417,11 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
             if ok and path then
                 -- Some Blizzard status bars use atlases; GetAtlas may return nil while GetTexture returns the atlas token.
                 -- Prefer treating such strings as atlases when possible to avoid spritesheet rendering on restore.
-                local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(path) ~= nil
+                local isAtlas = false
+                if type(path) == "string" and _G.C_Texture and _G.C_Texture.GetAtlasInfo then
+                    local infoOk, info = pcall(_G.C_Texture.GetAtlasInfo, path)
+                    isAtlas = infoOk and info ~= nil
+                end
                 if isAtlas then
                     local existingAtlas = getProp(bar, "ufOrigAtlas")
                     if not existingAtlas then setProp(bar, "ufOrigAtlas", path) end

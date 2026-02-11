@@ -13,7 +13,7 @@ local addonName, addon = ...
 -- - Even if the component DB exists due to Edit Mode changes, text styling should only apply
 --   when the specific text config tables exist (so changing Height doesn't implicitly restyle text).
 
--- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- Weak-key lookup tables to avoid writing properties to Blizzard frames
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local otState = setmetatable({}, { __mode = "k" })  -- frame/fs/bg/module -> state table
 

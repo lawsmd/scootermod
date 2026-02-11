@@ -3,7 +3,7 @@ local addonName, addon = ...
 addon.Borders = addon.Borders or {}
 local Borders = addon.Borders
 
--- 12.0+: Weak-key lookup tables to avoid writing properties to Blizzard frames
+-- Weak-key lookup tables to avoid writing properties to Blizzard frames
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local borderContainers = setmetatable({}, { __mode = "k" })   -- frame -> ScootSquareBorderContainer
 local borderEdges = setmetatable({}, { __mode = "k" })        -- container/frame -> ScootSquareBorderEdges
@@ -13,7 +13,7 @@ local textureContainers = setmetatable({}, { __mode = "k" })  -- frame -> Scoote
 local textureBorders = setmetatable({}, { __mode = "k" })     -- frame -> ScootTextureBorder
 local tintOverlays = setmetatable({}, { __mode = "k" })       -- frame -> { atlas = texture, texture = texture }
 
--- 12.0+: Frame getters can trigger Blizzard secret-value errors
+-- Frame getters can trigger Blizzard secret-value errors
 -- on managed unit frames. Use safe getters that fall back gracefully.
 -- NOTE: These helpers must be defined BEFORE ensureContainer which uses them.
 local function safeGetter(func, fallback)
@@ -22,7 +22,7 @@ local function safeGetter(func, fallback)
     return ok and result or fallback
 end
 
--- 12.0+: Detect "secret values" that hard-error on math/compare.
+-- Detect "secret values" that hard-error on math/compare.
 local function safeNumber(v)
     local okNil, isNil = pcall(function() return v == nil end)
     if okNil and isNil then return nil end
@@ -42,7 +42,7 @@ local function safeNumber(v)
     return n
 end
 
--- 12.0+: Frame:GetWidth() and GetHeight() can trigger Blizzard secret-value errors
+-- Frame:GetWidth() and GetHeight() can trigger Blizzard secret-value errors
 -- on managed unit frames. Use safe getters that fall back to 0 on error.
 local function safeDimension(func)
     local value = safeGetter(func, nil)
@@ -207,7 +207,7 @@ function Borders.ApplySquare(frame, opts)
     e.Bottom:ClearAllPoints(); e.Bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, -eyBottom); e.Bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, -eyBottom); e.Bottom:SetHeight(sizeBottom)
     e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - sizeTop);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + sizeBottom);   e.Left:SetWidth(sizeLeft)
     e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - sizeTop);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + sizeBottom); e.Right:SetWidth(sizeRight)
-    -- 12.0+: Defer Show() for managed frames (PetFrame, etc.) to break taint chain
+    -- Defer Show() for managed frames (PetFrame, etc.) to break taint chain
     if opts.deferShow then
         C_Timer.After(0, function()
             for _, t in pairs(e) do if t.Show then t:Show() end end

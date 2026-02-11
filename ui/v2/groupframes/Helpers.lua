@@ -180,9 +180,8 @@ GF.fontStyleValues = {
     SHADOW = "Shadow",
     SHADOWOUTLINE = "Shadow Outline",
     SHADOWTHICKOUTLINE = "Shadow Thick Outline",
-    HEAVYSHADOWTHICKOUTLINE = "Heavy Shadow Thick Outline",
 }
-GF.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE", "HEAVYSHADOWTHICKOUTLINE" }
+GF.fontStyleOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "HEAVYTHICKOUTLINE", "SHADOW", "SHADOWOUTLINE", "SHADOWTHICKOUTLINE" }
 
 -- 9-way alignment anchor options
 GF.anchorValues = {

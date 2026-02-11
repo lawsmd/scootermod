@@ -17,9 +17,9 @@ addon.BarsPartyFrames = addon.BarsPartyFrames or {}
 local PartyFrames = addon.BarsPartyFrames
 
 --------------------------------------------------------------------------------
--- 12.0 TAINT PREVENTION: Lookup table for party frame state
+-- TAINT PREVENTION: Lookup table for party frame state
 --------------------------------------------------------------------------------
--- In 12.0, writing properties directly to CompactPartyFrameMember frames
+-- Writing properties directly to CompactPartyFrameMember frames
 -- (e.g., frame._ScootActive = true) can mark the entire frame as "addon-touched".
 -- This causes ALL field accesses to return secret values in protected contexts
 -- (like Edit Mode), breaking Blizzard's own code (frame.outOfRange becomes secret).
@@ -101,7 +101,7 @@ end
 --------------------------------------------------------------------------------
 
 -- Update overlay dimensions based on health bar fill texture
--- 12.0 FIX: Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
+-- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
 -- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
@@ -115,7 +115,7 @@ local function updateHealthOverlay(bar)
         return
     end
 
-    -- 12.0 SECRET-SAFE APPROACH: Anchor overlay to the status bar fill texture.
+    -- SECRET-SAFE: Anchor overlay to the status bar fill texture.
     -- Blizzard's fill texture is sized internally without exposing secret values.
     -- By anchoring to it, our overlay automatically matches the fill dimensions.
     local fill = bar:GetStatusBarTexture()
@@ -127,7 +127,7 @@ local function updateHealthOverlay(bar)
     -- Anchor overlay to match the fill texture exactly.
     -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
     -- will correctly have zero width too. This avoids reading GetWidth() which can
-    -- return secret values in 12.0.
+    -- return secret values.
     overlay:ClearAllPoints()
     overlay:SetAllPoints(fill)
     overlay:Show()
@@ -631,7 +631,7 @@ local function applyHealthBarBorder(bar, cfg)
     end
 end
 
--- 12.0 EDIT MODE GUARD: Skip processing when Edit Mode is active
+-- EDIT MODE GUARD: Skip processing when Edit Mode is active
 local function isEditModeActiveForBorders()
     if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
         return addon.EditMode.IsEditModeActiveOrOpening()
@@ -752,7 +752,7 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
--- 12.0 EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
+-- EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
 -- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
 -- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
 -- frame type), the addon code in the execution context can cause UnitInRange() and
@@ -1325,7 +1325,7 @@ local function showBlizzardPartyNameText(frame)
 end
 
 -- Create or update the party name text overlay for a specific frame
--- 12.0 TAINT FIX: Uses lookup table instead of writing to Blizzard frames
+-- TAINT PREVENTION: Uses lookup table instead of writing to Blizzard frames
 local function ensurePartyNameOverlay(frame, cfg)
     if not frame then return end
 
@@ -1411,7 +1411,7 @@ local function ensurePartyNameOverlay(frame, cfg)
     hideBlizzardPartyNameText(frame)
 
     -- Copy current text from Blizzard's FontString to our overlay
-    -- Wrap in pcall as GetText() can return secrets in 12.0
+    -- Wrap in pcall as GetText() can return secrets
     if frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
         if ok and currentText then

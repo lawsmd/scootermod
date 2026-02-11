@@ -130,23 +130,23 @@ function addon.ResolveFontFace(key)
 end
 
 --------------------------------------------------------------------------------
--- Font Style Application Helper (supports SHADOW, HEAVYSHADOW, and HEAVY prefixes)
+-- Font Style Application Helper (supports SHADOW and HEAVY prefixes)
 --------------------------------------------------------------------------------
 -- Apply font settings to a FontString with support for shadow-prefixed styles.
 -- Supported styles: NONE, OUTLINE, THICKOUTLINE, plus these prefixes:
 --   SHADOW*: adds a subtle drop shadow (offset 1, -1) for extra visual weight.
---   HEAVYSHADOW*: adds a bolder drop shadow (offset 2, -2) for maximum thickness.
 --   HEAVY*: adds a centered glow effect (offset 0, 0) - thickens without directional shadow.
 function addon.ApplyFontStyle(fs, font, size, style)
     if not fs then return end
     style = style or ""
 
     -- Detect prefixes (check longer ones first to avoid partial matches)
-    local heavyShadow = style:sub(1, 11) == "HEAVYSHADOW"
     local heavy = false
     local shadow = false
 
-    if heavyShadow then
+    if style:sub(1, 11) == "HEAVYSHADOW" then
+        -- Backward compat: HEAVYSHADOW* saved settings render as regular SHADOW
+        shadow = true
         style = style:sub(12) -- Strip HEAVYSHADOW prefix
     elseif style:sub(1, 5) == "HEAVY" then
         heavy = true
@@ -168,11 +168,7 @@ function addon.ApplyFontStyle(fs, font, size, style)
 
     -- Apply shadow settings
     if fs.SetShadowColor and fs.SetShadowOffset then
-        if heavyShadow then
-            -- Heavy shadow: darker color with larger offset for maximum visual weight
-            pcall(fs.SetShadowColor, fs, 0, 0, 0, 0.9)
-            pcall(fs.SetShadowOffset, fs, 2, -2)
-        elseif heavy then
+        if heavy then
             -- Heavy: thickens text with upper-right offset (opposite of drop shadow look)
             pcall(fs.SetShadowColor, fs, 0, 0, 0, 0.9)
             pcall(fs.SetShadowOffset, fs, 1, 1)

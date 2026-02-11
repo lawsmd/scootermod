@@ -1725,7 +1725,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1772,7 +1772,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar2 = {
@@ -1826,7 +1826,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1873,7 +1873,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar3 = {
@@ -1927,7 +1927,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1974,7 +1974,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar4 = {
@@ -2028,7 +2028,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2075,7 +2075,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar5 = {
@@ -2129,7 +2129,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2176,7 +2176,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar6 = {
@@ -2230,7 +2230,7 @@ Presets:Register({
           y = 0,
         },
         size = 20,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2277,7 +2277,7 @@ Presets:Register({
           y = 20,
         },
         size = 14,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     actionBar7 = {
@@ -2538,7 +2538,7 @@ Presets:Register({
         offset = {
         },
         size = 14,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     damageMeter = {
@@ -2752,7 +2752,7 @@ Presets:Register({
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 24,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -2773,7 +2773,7 @@ Presets:Register({
           y = 32,
         },
         size = 18,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -2942,7 +2942,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2989,7 +2989,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     prdClassResource = {
@@ -3239,16 +3239,16 @@ Presets:Register({
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textName = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 12,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textStacks = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -3286,7 +3286,7 @@ Presets:Register({
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 18,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3307,7 +3307,7 @@ Presets:Register({
           y = 5,
         },
         size = 20,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -3367,7 +3367,7 @@ Presets:Register({
           y = 12,
         },
         size = 14,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -3683,7 +3683,7 @@ Presets:Register({
         offset = {
         },
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "RIGHT",
@@ -3709,7 +3709,7 @@ Presets:Register({
         colorMode = "custom",
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 10,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textName = {
         alignment = "RIGHT",
@@ -3720,11 +3720,11 @@ Presets:Register({
           y = -0,
         },
         size = 10,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerValue = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3817,7 +3817,7 @@ Presets:Register({
           y = -0,
         },
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3950,7 +3950,7 @@ Presets:Register({
           y = -0,
         },
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "RIGHT",
@@ -3980,7 +3980,7 @@ Presets:Register({
           y = 1,
         },
         size = 10,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textName = {
         colorMode = "class",
@@ -3990,7 +3990,7 @@ Presets:Register({
           y = 2,
         },
         size = 12,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         alignment = "RIGHT",
@@ -4007,7 +4007,7 @@ Presets:Register({
         colorMode = "default",
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       totemBar = {
         iconBorders = {
@@ -4094,7 +4094,7 @@ Presets:Register({
         offset = {
         },
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "RIGHT",
@@ -4123,7 +4123,7 @@ Presets:Register({
           y = 1,
         },
         size = 10,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textName = {
         alignment = "RIGHT",
@@ -4141,11 +4141,11 @@ Presets:Register({
           y = -0,
         },
         size = 12,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerValue = {
         fontFace = "ROBOTO_SEMICOND_BLACK",

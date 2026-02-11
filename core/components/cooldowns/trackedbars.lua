@@ -35,6 +35,7 @@ local vertRebuildPending = false
 -- Alpha enforcement hooks tracking (weak keys)
 local alphaEnforcedItems = setmetatable({}, { __mode = "k" })
 
+
 --------------------------------------------------------------------------------
 -- Tracked Bar Mode Helpers
 --------------------------------------------------------------------------------

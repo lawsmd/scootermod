@@ -82,6 +82,19 @@ end
 addon.IsJiberishIconsAvailable = IsJiberishIconsAvailable
 addon.GetJiberishIconsStyles = GetJiberishIconsStyles
 
+-- Per-window state storage (avoids tainting Blizzard frames with _Scooter* properties)
+local windowState = setmetatable({}, { __mode = "k" })  -- Weak keys for GC
+
+local function getWindowState(sessionWindow)
+    if not windowState[sessionWindow] then
+        windowState[sessionWindow] = {}
+    end
+    return windowState[sessionWindow]
+end
+
+-- Module-level hook guard for the main DamageMeter frame (avoids writing to dmFrame)
+local dmFrameHooked = false
+
 --------------------------------------------------------------------------------
 -- Enhanced Title Feature: Display session type alongside meter type
 -- e.g., "DPS (Current)", "HPS (Overall)", "Interrupts (Segment 3)"
@@ -205,8 +218,9 @@ end
 -- @return boolean - true if hooks were newly installed, false if already hooked
 local function HookSessionWindowTitleUpdates(sessionWindow)
     if not sessionWindow then return false end
-    if sessionWindow._ScooterTitleHooked then return false end
-    sessionWindow._ScooterTitleHooked = true
+    local state = getWindowState(sessionWindow)
+    if state.titleHooked then return false end
+    state.titleHooked = true
 
     -- Hook SetDamageMeterType - fires when user changes meter type (DPS, HPS, etc.)
     if sessionWindow.SetDamageMeterType then
@@ -238,23 +252,30 @@ end
 -- @return boolean - true if hooks were newly installed, false if already hooked
 local function HookSessionWindowTitleRightClick(sessionWindow)
     if not sessionWindow then return false end
-    if sessionWindow._ScooterTitleRightClickHooked then return false end
+    local state = getWindowState(sessionWindow)
+    if state.titleRightClickHooked then return false end
 
     local dropdown = sessionWindow.DamageMeterTypeDropdown
     local typeNameFS = dropdown and dropdown.TypeName
     if not typeNameFS then return false end
 
-    sessionWindow._ScooterTitleRightClickHooked = true
+    state.titleRightClickHooked = true
 
     -- Create invisible overlay button covering the TypeName FontString
-    -- Only intercepts right-clicks; left-clicks pass through to dropdown
-    local overlay = CreateFrame("Button", nil, dropdown)
-    overlay:SetAllPoints(typeNameFS)
-    overlay:SetFrameLevel((dropdown:GetFrameLevel() or 0) + 10)
+    -- Parented to UIParent (not dropdown) to avoid tainting the dropdown frame.
+    -- In 12.0.1, dropdown anchors to SessionTimer TOPRIGHT; tainting it causes
+    -- Menu.lua secret value errors when SessionTimer triggers layout recalculation.
+    local overlay = CreateFrame("Button", nil, UIParent)
+    overlay:SetAllPoints(typeNameFS)         -- anchoring TO Blizzard frames is safe
+    overlay:SetFrameStrata("MEDIUM")
+    local ok, level = pcall(dropdown.GetFrameLevel, dropdown)
+    if ok and type(level) == "number" then
+        overlay:SetFrameLevel(level + 10)
+    end
     overlay:RegisterForClicks("RightButtonUp")  -- Only right-click
     overlay:EnableMouse(false)  -- Disabled by default
 
-    sessionWindow._ScooterTitleRightClickOverlay = overlay
+    state.titleRightClickOverlay = overlay
 
     overlay:SetScript("OnClick", function(self, button)
         if button == "RightButton" and dropdown.OpenMenu then
@@ -267,9 +288,11 @@ end
 
 -- Enable/disable the right-click overlay based on setting
 local function UpdateTitleRightClickState(sessionWindow, enabled)
-    local overlay = sessionWindow and sessionWindow._ScooterTitleRightClickOverlay
+    local state = sessionWindow and getWindowState(sessionWindow)
+    local overlay = state and state.titleRightClickOverlay
     if overlay then
         overlay:EnableMouse(enabled)
+        overlay:SetShown(enabled)    -- hide entirely when not needed (UIParent child)
     end
 end
 
@@ -798,6 +821,36 @@ local function ApplyTitleStyling(sessionWindow, db)
     UpdateTitleRightClickState(sessionWindow, db.titleTextRightClickMeterType or false)
 end
 
+-- Default color for SessionTimer (inherits GameFontNormalMed1 - same gold as title)
+local TIMER_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
+
+-- Apply session timer text styling (the [00:05:23] timer next to the title)
+local function ApplyTimerStyling(sessionWindow, db)
+    if not sessionWindow or not db then return end
+    local timerFS = sessionWindow.SessionTimer
+    if not timerFS or not timerFS.SetFont then return end
+
+    local timerCfg = db.textTimer
+    if not timerCfg then return end
+
+    -- Font face and style
+    if timerCfg.fontFace and addon and addon.ResolveFontFace then
+        local face = addon.ResolveFontFace(timerCfg.fontFace)
+        local baseSize = 12
+        local flags = timerCfg.fontStyle or "OUTLINE"
+        pcall(timerFS.SetFont, timerFS, face, baseSize, flags)
+    end
+
+    -- Color
+    local colorMode = timerCfg.colorMode or "default"
+    if colorMode == "custom" and timerCfg.color then
+        local c = timerCfg.color
+        pcall(timerFS.SetTextColor, timerFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+    elseif colorMode == "default" then
+        pcall(timerFS.SetTextColor, timerFS, TIMER_DEFAULT_COLOR[1], TIMER_DEFAULT_COLOR[2], TIMER_DEFAULT_COLOR[3], TIMER_DEFAULT_COLOR[4])
+    end
+end
+
 -- Apply button tint styling to a session window
 -- This tints all button visuals consistently:
 -- - DamageMeterTypeDropdown.Arrow (the arrow IS the button)
@@ -881,16 +934,6 @@ local function ApplyButtonTintStyling(sessionWindow, db)
             pcall(sessionNameFS.SetTextColor, sessionNameFS, TITLE_DEFAULT_COLOR[1], TITLE_DEFAULT_COLOR[2], TITLE_DEFAULT_COLOR[3], TITLE_DEFAULT_COLOR[4])
         end
     end
-end
-
--- Per-window state storage for button overlays (avoids tainting Blizzard frames)
-local windowState = setmetatable({}, { __mode = "k" })  -- Weak keys for GC
-
-local function getWindowState(sessionWindow)
-    if not windowState[sessionWindow] then
-        windowState[sessionWindow] = {}
-    end
-    return windowState[sessionWindow]
 end
 
 -- Create a ScooterMod-owned overlay texture for a button icon
@@ -1168,10 +1211,11 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
     if not sessionWindow or not sessionWindow.ScrollBox then
         return false
     end
-    if sessionWindow._ScooterScrollHooked then
+    local state = getWindowState(sessionWindow)
+    if state.scrollHooked then
         return false
     end
-    sessionWindow._ScooterScrollHooked = true
+    state.scrollHooked = true
 
     hooksecurefunc(sessionWindow.ScrollBox, "Update", function(scrollBox)
         _G.C_Timer.After(0, function()
@@ -1184,8 +1228,8 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
 
     -- Hook ShowLocalPlayerEntry to restyle the sticky player row when it appears
     -- LocalPlayerEntry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
-    if sessionWindow.ShowLocalPlayerEntry and not sessionWindow._ScooterLocalPlayerHooked then
-        sessionWindow._ScooterLocalPlayerHooked = true
+    if sessionWindow.ShowLocalPlayerEntry and not state.localPlayerHooked then
+        state.localPlayerHooked = true
         hooksecurefunc(sessionWindow, "ShowLocalPlayerEntry", function(self, earlierInList)
             C_Timer.After(0, function()
                 if not component.db then return end
@@ -1205,8 +1249,8 @@ end
 -- ScrollBox hooks for individual windows are handled by HookSessionWindowScrollBox
 local function HookEntryAcquisition(component)
     local dmFrame = _G.DamageMeter
-    if not dmFrame or dmFrame._ScooterDMHooked then return end
-    dmFrame._ScooterDMHooked = true
+    if not dmFrame or dmFrameHooked then return end
+    dmFrameHooked = true
 
     -- Coalesce re-application to one per frame
     local function requestApply()
@@ -1271,6 +1315,7 @@ local function ApplyDamageMeterStyling(self)
 
         -- Apply title bar styling (title text, buttons, backdrop)
         ApplyTitleStyling(sessionWindow, db)
+        ApplyTimerStyling(sessionWindow, db)
 
         -- Apply button icon overlays (if enabled) - must come before button tint
         local overlaysHandledButtons = ApplyButtonIconOverlays(sessionWindow, db)
@@ -1376,6 +1421,15 @@ addon:RegisterComponentInitializer(function(self)
                 fontFace = "FRIZQT__",
                 fontStyle = "OUTLINE",
                 scaleMultiplier = 1.0,
+                colorMode = "default",
+                color = { 1.0, 0.82, 0, 1 },
+            }, ui = { hidden = true }},
+
+            -- Text settings - Timer (session timer [00:05:23])
+            -- Same defaults as textTitle (both inherit GameFontNormalMed1)
+            textTimer = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                fontStyle = "OUTLINE",
                 colorMode = "default",
                 color = { 1.0, 0.82, 0, 1 },
             }, ui = { hidden = true }},

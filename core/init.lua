@@ -3,7 +3,7 @@ local addonName, addon = ...
 addon.FeatureToggles = addon.FeatureToggles or {}
 
 function addon:OnInitialize()
-    -- 12.0 PTR safety: Settings modules can be renamed/restructured between builds.
+    -- PTR safety: Settings modules can be renamed/restructured between builds.
     -- Treat these loads as best-effort to avoid hard errors during initialization.
     if C_AddOns and C_AddOns.LoadAddOn then
         pcall(C_AddOns.LoadAddOn, "Blizzard_Settings")
@@ -253,7 +253,7 @@ function addon:RegisterEvents()
     end
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
-    -- 12.0 PTR safety: Edit Mode event names have historically changed between major patches.
+    -- PTR safety: Edit Mode event names have historically changed between major patches.
     safeRegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
@@ -436,7 +436,7 @@ function addon:PLAYER_REGEN_ENABLED()
 end
 
 function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
-    -- Initialize Edit Mode integration (best-effort; keep addon loading even if Edit Mode changes in 12.0).
+    -- Initialize Edit Mode integration (best-effort; keep addon loading even if Edit Mode changes).
     if addon.EditMode and addon.EditMode.Initialize then
         pcall(addon.EditMode.Initialize)
     end

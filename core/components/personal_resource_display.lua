@@ -322,7 +322,7 @@ end
 --------------------------------------------------------------------------------
 -- PRD Opacity System
 -- Implements state-based opacity (combat > target > out-of-combat).
--- SetAlpha on PRD frames is safe in 12.0 (not protected).
+-- SetAlpha on PRD frames is safe (not protected).
 --------------------------------------------------------------------------------
 
 -- Get opacity value based on current combat/target state
@@ -630,7 +630,7 @@ local function applyTextStyle(leftText, rightText, component, overlayType)
 end
 
 -- Apply cached text values after overlay creation based on per-text show flags
--- Note: cached values may be secret values (12.0). SetText(secret) is allowed.
+-- Note: cached values may be secret values. SetText(secret) is allowed.
 local function applyCachedText(overlayType, db)
     local storage = textOverlays[overlayType]
     if not storage then return end
@@ -711,7 +711,7 @@ local function installPowerTextHooks()
                 if ok then onSourceTextChanged("power", "left", text) end
             end)
         end
-        -- Capture initial value (may be secret value in 12.0; SetText(secret) is allowed)
+        -- Capture initial value (may be secret value; SetText(secret) is allowed)
         local ok, text = pcall(leftSource.GetText, leftSource)
         if ok then
             textOverlays.power.lastLeft = text
@@ -860,7 +860,7 @@ end
 -- Bar Overlay System
 -- Uses overlay textures anchored to StatusBarTexture (auto-follows fill level).
 -- Overlay frames are parented to UIParent to avoid taint on nameplate frames.
--- Pattern matches Boss/Party/Raid frame overlays (12.0-safe, no secret values).
+-- Pattern matches Boss/Party/Raid frame overlays (secret-safe, no secret values).
 --------------------------------------------------------------------------------
 
 local prdBarOverlays = {
@@ -1558,7 +1558,7 @@ local function ensureHealthContainerShowHook()
 end
 
 local function applyHealthOffsets(component)
-    -- 12.0: PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
+    -- PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
     -- Positioning is handled by Edit Mode; we apply sizing, styling, and visibility.
     if not isPRDEnabledByCVar() then
         -- PRD is disabled; clear any existing borders/overlays and bail out
@@ -1655,7 +1655,7 @@ local function applyHealthOffsets(component)
 end
 
 local function applyPowerOffsets(component)
-    -- 12.0: PRD power bar is PersonalResourceDisplayFrame.PowerBar (IsProtected: false).
+    -- PRD power bar is PersonalResourceDisplayFrame.PowerBar (IsProtected: false).
     if not isPRDEnabledByCVar() then
         local frame = getPowerBar()
         if frame then
@@ -1731,7 +1731,7 @@ local function applyPowerOffsets(component)
 end
 
 local function applyClassResourceOffsets(component)
-    -- 12.0: Class resource is inside PersonalResourceDisplayFrame.ClassFrameContainer.
+    -- Class resource is inside PersonalResourceDisplayFrame.ClassFrameContainer.
     -- Positioning is handled by Blizzard; we apply scale and visibility.
     if not isPRDEnabledByCVar() then
         return
@@ -1765,6 +1765,11 @@ local function applyClassResourceOffsets(component)
     -- Apply DK rune texture overlay if available
     if addon.ApplyDKRuneTextures then
         addon.ApplyDKRuneTextures("prd")
+    end
+
+    -- Apply Mage arcane charge texture overlay if available
+    if addon.ApplyMageArcaneChargeTextures then
+        addon.ApplyMageArcaneChargeTextures("prd")
     end
 end
 
@@ -1815,7 +1820,7 @@ end
 
 addon:RegisterComponentInitializer(function(self)
     -- PRD Global component - settings placeholder for future use.
-    -- As of 12.0 (Midnight), PRD positioning is handled entirely via Edit Mode.
+    -- PRD positioning is handled entirely via Edit Mode.
     -- The previous CVar-based "Minimize Vertical Movement" feature has been removed.
     local global = Component:New({
         id = "prdGlobal",
