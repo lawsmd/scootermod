@@ -475,10 +475,8 @@ end
 --------------------------------------------------------------------------------
 
 function UF.RenderTarget(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 

@@ -14,9 +14,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local BORDER_WIDTH = 2
 local TOGGLE_HEIGHT = 36
@@ -41,26 +39,7 @@ local EMPHASIZED_LABEL_SIZE = 16
 local EMPHASIZED_INDICATOR_WIDTH = 70
 local EMPHASIZED_INDICATOR_HEIGHT = 26
 
---------------------------------------------------------------------------------
 -- Toggle: Full-row toggle control with ON/OFF state indicator
---------------------------------------------------------------------------------
--- Creates a clickable row with:
---   - Label text on the left (accent when ON, dim when OFF)
---   - State indicator on the right: [  ON  ] or [ OFF  ]
---   - Hover effect on the entire row
---   - Optional description text below the label
---
--- Options table:
---   label       : Setting name/label (string)
---   description : Optional description text below label
---   get         : Function that returns current boolean state
---   set         : Function(newValue) called when toggled
---   parent      : Parent frame (required)
---   width       : Control width (optional, defaults to parent width)
---   name        : Global frame name (optional)
---   emphasized  : Boolean, use "Hero Toggle" styling for master controls
---   infoIcon    : Optional { tooltipText, tooltipTitle } for inline info icon
---------------------------------------------------------------------------------
 
 function Controls:CreateToggle(options)
     local theme = GetTheme()

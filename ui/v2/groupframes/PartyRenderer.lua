@@ -55,7 +55,6 @@ end
 --------------------------------------------------------------------------------
 
 local function buildStyleTab(inner, barPrefix, applyFn)
-    -- Foreground Texture
     inner:AddBarTextureSelector({
         label = "Foreground Texture",
         get = function()
@@ -70,7 +69,6 @@ local function buildStyleTab(inner, barPrefix, applyFn)
         end,
     })
 
-    -- Foreground Color
     inner:AddSelectorColorPicker({
         label = "Foreground Color",
         values = GF.healthColorValues,
@@ -103,7 +101,6 @@ local function buildStyleTab(inner, barPrefix, applyFn)
 
     inner:AddSpacer(8)
 
-    -- Background Texture
     inner:AddBarTextureSelector({
         label = "Background Texture",
         get = function()
@@ -118,7 +115,6 @@ local function buildStyleTab(inner, barPrefix, applyFn)
         end,
     })
 
-    -- Background Color
     inner:AddSelectorColorPicker({
         label = "Background Color",
         values = GF.bgColorValues,
@@ -148,7 +144,6 @@ local function buildStyleTab(inner, barPrefix, applyFn)
         hasAlpha = true,
     })
 
-    -- Background Opacity
     inner:AddSlider({
         label = "Background Opacity",
         min = 0,
@@ -170,7 +165,6 @@ local function buildStyleTab(inner, barPrefix, applyFn)
 end
 
 local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabel)
-    -- Optional hide toggle (e.g., for Party Title)
     if includeHideToggle then
         inner:AddToggle({
             label = hideLabel or "Hide",
@@ -188,7 +182,6 @@ local function buildTextTab(inner, textKey, applyFn, includeHideToggle, hideLabe
         })
     end
 
-    -- Hide Realm Name toggle (only for Player Name)
     if textKey == "textPlayerName" then
         inner:AddToggle({
             label = "Hide Realm Name",
@@ -361,14 +354,11 @@ end
 --------------------------------------------------------------------------------
 
 function GF.RenderParty(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Store reference for re-rendering on changes
     builder:SetOnRefresh(function()
         GF.RenderParty(panel, scrollContent)
     end)
@@ -379,7 +369,6 @@ function GF.RenderParty(panel, scrollContent)
     -- Parent-Level Edit Mode Settings
     ----------------------------------------------------------------------------
 
-    -- Use Raid-Style Party Frames
     builder:AddToggle({
         label = "Use Raid-Style Party Frames",
         description = "Uses compact raid-style frames for party. Enables additional customization options.",
@@ -405,7 +394,6 @@ function GF.RenderParty(panel, scrollContent)
         infoIcon = GF.TOOLTIPS.raidStyleParty,
     })
 
-    -- Show Party Frame Background (Traditional only)
     local isRaidStyle = GF.isRaidStyleParty()
     if not isRaidStyle then
         builder:AddToggle({
@@ -437,7 +425,6 @@ function GF.RenderParty(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             if isRaidStyle then
-                -- Use Horizontal Layout
                 inner:AddToggle({
                     label = "Use Horizontal Layout",
                     get = function()
@@ -455,7 +442,6 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                 })
 
-                -- Sort By
                 inner:AddSelector({
                     label = "Sort By",
                     values = GF.partySortByValues,
@@ -491,7 +477,6 @@ function GF.RenderParty(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             if isRaidStyle then
-                -- Frame Width
                 inner:AddSlider({
                     label = "Frame Width",
                     min = 72,
@@ -511,7 +496,6 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                 })
 
-                -- Frame Height
                 inner:AddSlider({
                     label = "Frame Height",
                     min = 36,
@@ -531,7 +515,6 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                 })
             else
-                -- Traditional style: Frame Size (scale)
                 inner:AddSlider({
                     label = "Frame Size (Scale)",
                     min = 100,
@@ -607,7 +590,6 @@ function GF.RenderParty(panel, scrollContent)
                 inner:AddSpacer(12)
                 inner:AddLabel("Health Bar Borders")
 
-                -- Health Bar Border Style
                 inner:AddBarBorderSelector({
                     label = "Border Style",
                     includeNone = true,
@@ -623,7 +605,6 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                 })
 
-                -- Health Bar Border Tint
                 inner:AddToggleColorPicker({
                     label = "Border Tint",
                     get = function()
@@ -650,7 +631,6 @@ function GF.RenderParty(panel, scrollContent)
                     hasAlpha = true,
                 })
 
-                -- Health Bar Border Thickness
                 inner:AddSlider({
                     label = "Border Thickness",
                     min = 1,
@@ -669,7 +649,6 @@ function GF.RenderParty(panel, scrollContent)
                     end,
                 })
 
-                -- Health Bar Border Inset
                 inner:AddSlider({
                     label = "Border Inset",
                     min = -4,

@@ -146,7 +146,7 @@ local function suppressBlizzardVisuals(runeButton)
 		pcall(blizzCD.SetAlpha, blizzCD, 0)
 	end
 
-	-- Track that we suppressed this rune button (for safe restore guard)
+	-- Track that this rune button was suppressed (for safe restore guard)
 	setProp(runeButton, "scooterRuneSuppressed", true)
 end
 

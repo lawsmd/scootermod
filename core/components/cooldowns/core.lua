@@ -4,36 +4,17 @@ local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
 --------------------------------------------------------------------------------
--- Cooldown Manager (CDM) Component — Shared Infrastructure
---------------------------------------------------------------------------------
--- This module provides all CDM styling using an overlay-based approach that
--- avoids taint on Blizzard's protected CooldownViewer frames.
---
--- Key principle: We create our own frames (parented to UIParent) and position
--- them relative to CDM icons via anchoring. Hooks are safe; frame modifications
--- on Blizzard frames are not.
---
--- Supported customizations:
---   - Border styling (color, thickness, inset) via overlays
---   - Text styling (cooldown timer, charge/stack count) via overlay FontStrings
---   - TrackedBars (bar textures, icon borders, text) - direct styling is safe
---
--- See ADDONCONTEXT/Docs/COOLDOWNMANAGER/CDMREADME.md for full documentation.
+-- Cooldown Manager (CDM) — Overlay-based icon styling for CooldownViewer frames
 --------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------
--- CDM Taint Mitigation (12.0)
---------------------------------------------------------------------------------
--- In 12.0, CooldownViewer icon frames are semi-protected. We cannot style them
--- directly. However, SetAlpha on viewer CONTAINER frames is safe (verified Jan 15).
--- This enables opacity settings (in-combat, out-of-combat, with-target).
---------------------------------------------------------------------------------
+-- CooldownViewer icon frames are semi-protected in 12.0; overlay-only styling.
+-- SetAlpha on viewer containers is safe and drives the opacity settings.
 addon.CDM_TAINT_DIAG = addon.CDM_TAINT_DIAG or {
     skipAllCDM = true,  -- Always true in 12.0+; overlay-based styling only
 }
 
 --------------------------------------------------------------------------------
--- CDM Viewer Mappings (promoted to addon namespace for cross-file access)
+-- CDM Viewer Mappings
 --------------------------------------------------------------------------------
 
 addon.CDM_VIEWERS = {
@@ -46,7 +27,7 @@ addon.CDM_VIEWERS = {
 local CDM_VIEWERS = addon.CDM_VIEWERS
 
 --------------------------------------------------------------------------------
--- Shared Utility Functions (promoted to addon namespace for cross-file access)
+-- Shared Utility Functions
 --------------------------------------------------------------------------------
 
 local function getDefaultFontFace()
@@ -79,16 +60,8 @@ addon.ResolveCDMColor = resolveCDMColor
 --------------------------------------------------------------------------------
 -- Icon Centering Support
 --------------------------------------------------------------------------------
--- When users enable centering features, we reposition icons within the viewer
--- so they expand symmetrically from the center instead of growing from one
--- edge. This makes the visual center stable across characters with different
--- icon counts.
---
--- Approach: Hook RefreshLayout, collect visible icons, calculate centered
--- offsets, reposition via ClearAllPoints() + SetPoint().
---
--- Risk: Icon repositioning may cause taint in 12.0. If taint errors occur
--- (secret value comparisons in Blizzard code), this feature should be reverted.
+-- Repositions CDM icons symmetrically within the viewer after Blizzard layout.
+-- Hooks RefreshLayout, then clears/sets points on visible icons.
 --------------------------------------------------------------------------------
 
 -- Center icons within a CDM viewer by repositioning them after Blizzard's layout
@@ -304,7 +277,6 @@ end
 addon.CDMOverlays = addon.CDMOverlays or {}
 local Overlays = addon.CDMOverlays
 
--- Pool of overlay frames for reuse
 local overlayPool = {}
 local activeOverlays = {}  -- Map from CDM icon frame to overlay frame
 
@@ -344,11 +316,10 @@ end
 --------------------------------------------------------------------------------
 
 local function createOverlayFrame(parent)
-    -- Create a frame parented to the CDM icon
-    -- This ensures proper frame level ordering with SpellActivationAlert (proc glow)
-    -- Creating a child frame doesn't cause taint - only modifying protected properties does
+    -- Child frame for frame level ordering with SpellActivationAlert (proc glow)
+    -- Creating a child frame doesn't cause taint; only modifying protected properties does
     local overlay = CreateFrame("Frame", nil, parent or UIParent)
-    overlay:EnableMouse(false)  -- Don't intercept mouse events
+    overlay:EnableMouse(false)
 
     -- Create border edges using BORDER layer (renders below OVERLAY where proc glow lives)
     overlay.borderEdges = {
@@ -397,7 +368,7 @@ local function releaseOverlay(overlay)
     if not overlay then return end
     overlay:Hide()
     overlay:ClearAllPoints()
-    overlay:SetParent(UIParent)  -- Re-parent to UIParent so we don't hold CDM icon reference
+    overlay:SetParent(UIParent)  -- Prevents holding CDM icon reference
     overlay:SetAlpha(1.0)  -- Reset alpha when returning to pool
     if overlay.cooldownText then
         overlay.cooldownText:SetText("")
@@ -415,7 +386,7 @@ local function releaseOverlay(overlay)
 end
 
 --------------------------------------------------------------------------------
--- Border Application (on our own frames, not Blizzard's)
+-- Border Application (overlay frames, not Blizzard's)
 --------------------------------------------------------------------------------
 
 -- Hide edge-based square border textures
@@ -498,11 +469,9 @@ local function applyAtlasBorder(overlay, opts, styleDef)
     end
     local r, g, b, a = col[1] or 1, col[2] or 1, col[3] or 1, col[4] or 1
 
-    -- Get the atlas name
     local atlasName = styleDef.atlas
     if not atlasName then return end
 
-    -- Set atlas
     atlasTex:SetAtlas(atlasName, true)
     atlasTex:SetVertexColor(r, g, b, a)
 
@@ -546,7 +515,7 @@ local function hideBorderOnOverlay(overlay)
 end
 
 --------------------------------------------------------------------------------
--- Text Overlay Application (on our own FontStrings, not Blizzard's)
+-- Text Overlay Application (overlay FontStrings, not Blizzard's)
 --------------------------------------------------------------------------------
 
 local function applyTextStyleToFontString(fontString, cfg, defaultSize)
@@ -572,17 +541,10 @@ local function applyTextStyleToFontString(fontString, cfg, defaultSize)
 end
 
 --------------------------------------------------------------------------------
--- DIRECT TEXT STYLING (12.0 Compatible)
---
--- Key insight from Neph UI: You CAN modify the appearance of Blizzard's text
--- (SetFont, SetTextColor, SetShadowOffset), you just CAN'T read its content
--- (GetText returns secret values).
---
--- Approach:
--- 1. Hook CooldownFrame_Set to intercept cooldown updates (safe)
--- 2. Find the FontString inside the Cooldown frame's regions
--- 3. Apply SetFont/SetTextColor/SetShadowOffset directly (no GetText)
--- 4. Wrap in pcall and defer with C_Timer.After for combat safety
+-- Direct Text Styling (12.0)
+--------------------------------------------------------------------------------
+-- SetFont/SetTextColor/SetShadowOffset work on protected FontStrings.
+-- Hooks CooldownFrame_Set, finds the FontString, and styles it directly.
 --------------------------------------------------------------------------------
 
 local directTextStyleHooked = false
@@ -718,9 +680,7 @@ local function applyFontStyleDirect(fontString, cfg, opts)
         end)
     end
 
-    -- Apply position offset if specified
-    -- This repositions the FontString relative to its parent using the configured anchor and offset
-    -- We always reposition if cfg.offset exists (even if values are 0) to ensure proper reset behavior
+    -- Always reposition if cfg.offset exists (even if values are 0) to ensure proper reset behavior
     if cfg.offset or cfg.anchor then
         local offsetX = (cfg.offset and tonumber(cfg.offset.x)) or 0
         local offsetY = (cfg.offset and tonumber(cfg.offset.y)) or 0
@@ -789,7 +749,6 @@ local function applyCooldownTextStyle(cooldownFrame)
             local chargeFS = getChargeCountFontString(parent)
             if chargeFS then
                 -- Charge/stack text uses BOTTOMRIGHT anchor by default
-                -- Find the icon texture to anchor to (same as Neph UI approach)
                 local iconTexture = parent.Icon or parent.icon
                 applyFontStyleDirect(chargeFS, chargeCfg, {
                     isChargeText = true,
@@ -813,7 +772,7 @@ local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, ena
     if enable and enable ~= 0 and start and start > 0 and duration and duration > MIN_COOLDOWN_FOR_DIMMING then
         cooldownEndTimes[cdmIcon] = start + duration
     else
-        -- Don't clear if we have an existing longer cooldown still running
+        -- Don't clear if an existing longer cooldown is still running
         -- (GCD shouldn't override a real cooldown that's already tracked)
         local existingEndTime = cooldownEndTimes[cdmIcon]
         if not existingEndTime or GetTime() >= existingEndTime then
@@ -826,8 +785,7 @@ local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, ena
         if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
             -- updateIconCooldownOpacity is defined later in the file
             if addon.RefreshCDMCooldownOpacity then
-                -- Can't call the local directly since it's defined later,
-                -- but we can update this icon specifically
+                -- Forward-declared local; update this icon directly
                 local componentId = nil
                 local parent = cdmIcon:GetParent()
                 if parent then
@@ -938,14 +896,14 @@ end
 
 -- Legacy stub functions (kept for compatibility but no longer used)
 local function applyCooldownTextToOverlay(overlay, cdmIcon, cfg)
-    -- Overlay text approach replaced by direct styling
+    -- Legacy stub; direct styling handles text now
     if overlay and overlay.cooldownText then
         overlay.cooldownText:Hide()
     end
 end
 
 local function applyChargeTextToOverlay(overlay, cdmIcon, cfg)
-    -- Overlay text approach replaced by direct styling
+    -- Legacy stub; direct styling handles text now
     if overlay and overlay.chargeText then
         overlay.chargeText:Hide()
     end
@@ -1120,12 +1078,10 @@ function Overlays.HideOverlay(cdmIcon)
 end
 
 --------------------------------------------------------------------------------
--- Icon Sizing (12.0 Compatible)
+-- Icon Sizing (12.0)
 --------------------------------------------------------------------------------
--- NephUI reference: Direct SetSize() on CDM icons works if we:
---   1. Set values directly from settings (don't read current size)
---   2. Wrap in pcall for safety
---   3. Adjust texture coordinates to prevent stretching
+-- SetSize() on CDM icons is safe when writing from settings (no reads).
+-- Texture coordinates are adjusted to prevent stretching on non-square sizes.
 --------------------------------------------------------------------------------
 
 -- Resize SpellActivationAlert and its ProcStartFlipbook to match custom icon dimensions.
@@ -1485,7 +1441,7 @@ end
 local function runCombinedCleanup()
     runOverlayCleanup()
     -- Check for expired cooldowns and restore full opacity
-    -- checkCooldownExpirations is defined later, so we inline the logic here
+    -- checkCooldownExpirations is forward-declared; inline the logic here
     local now = GetTime()
     for cdmIcon, endTime in pairs(cooldownEndTimes) do
         if now >= endTime then
@@ -1546,8 +1502,7 @@ function Overlays.Initialize()
 
     startCleanupTicker()
 
-    -- Initialize direct text styling (12.0 compatible approach)
-    -- This hooks CooldownFrame_Set to style text directly on Blizzard's FontStrings
+    -- Hook CooldownFrame_Set for direct text styling (12.0)
     hookCooldownTextStyling()
     hookProcGlowResizing()
 
@@ -1591,15 +1546,10 @@ function Overlays.ScheduleRetry()
 end
 
 --------------------------------------------------------------------------------
--- Viewer-Level Opacity System (12.0 Safe)
+-- Viewer-Level Opacity System (12.0)
 --------------------------------------------------------------------------------
--- SetAlpha on viewer container frames (not individual icons) is safe in 12.0.
--- Verified Jan 15 2026: No taint errors in combat with viewer-level SetAlpha.
---
--- This system implements the opacity settings from each CDM component:
---   - opacity: Alpha when in combat (from Edit Mode, stored as 50-100)
---   - opacityOutOfCombat: Alpha when not in combat
---   - opacityWithTarget: Alpha when player has a target
+-- SetAlpha on viewer containers is safe. Drives combat, out-of-combat, and
+-- with-target opacity settings (stored as 50-100, converted to 0.0-1.0).
 --------------------------------------------------------------------------------
 
 -- All viewers that support opacity (including trackedBars)
@@ -1678,11 +1628,9 @@ function addon.RefreshCDMViewerOpacity(componentId)
 end
 
 --------------------------------------------------------------------------------
--- Per-Icon Cooldown Opacity System (12.0 Compatible)
+-- Per-Icon Cooldown Opacity
 --------------------------------------------------------------------------------
--- This system dims individual icons when their ability is on cooldown.
--- Uses SetAlpha on CDM icons (verified safe Jan 2026).
--- Per-icon alpha multiplies with viewer-level alpha via WoW's alpha inheritance.
+-- Dims icons on cooldown via SetAlpha. Stacks with viewer-level alpha.
 --------------------------------------------------------------------------------
 
 -- Check if an icon is currently on cooldown
@@ -1892,7 +1840,7 @@ addon.RefreshCDMOverlays = function(componentId)
         end
     end
 
-    -- Also refresh direct text styling (12.0 compatible approach)
+    -- Refresh direct text styling (12.0)
     if addon.RefreshCDMTextStyling then
         C_Timer.After(0.1, function()
             addon.RefreshCDMTextStyling()

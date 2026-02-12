@@ -207,7 +207,7 @@ UF.TOOLTIPS = {
     },
     offScreenDragging = {
         title = "Steam Deck / Large UI",
-        text = "We've added this checkbox so that we may move the Unit Frame closer to the edge of the screen than is normally allowed in Edit Mode for the purpose of our Steam Deck UI. On a normally-sized screen, you probably shouldn't use this setting.",
+        text = "Allows moving the Unit Frame closer to the edge of the screen than is normally allowed in Edit Mode, intended for Steam Deck or similar handheld UIs. On a normally-sized screen, this setting is likely unnecessary.",
     },
     visibilityPriority = {
         title = "Opacity Priority",

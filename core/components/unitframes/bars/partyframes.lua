@@ -25,7 +25,7 @@ local PartyFrames = addon.BarsPartyFrames
 -- (like Edit Mode), breaking Blizzard's own code (frame.outOfRange becomes secret).
 --
 -- Solution: Store all ScooterMod state in a separate lookup table keyed by frame.
--- This avoids modifying Blizzard's frames while preserving our overlay functionality.
+-- This avoids modifying Blizzard's frames while preserving overlay functionality.
 --------------------------------------------------------------------------------
 local PartyFrameState = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
 
@@ -102,7 +102,7 @@ end
 
 -- Update overlay dimensions based on health bar fill texture
 -- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
--- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
+-- This avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
@@ -117,7 +117,7 @@ local function updateHealthOverlay(bar)
 
     -- SECRET-SAFE: Anchor overlay to the status bar fill texture.
     -- Blizzard's fill texture is sized internally without exposing secret values.
-    -- By anchoring to it, our overlay automatically matches the fill dimensions.
+    -- By anchoring to it, the overlay automatically matches the fill dimensions.
     local fill = bar:GetStatusBarTexture()
     if not fill then
         overlay:Hide()
@@ -125,7 +125,7 @@ local function updateHealthOverlay(bar)
     end
 
     -- Anchor overlay to match the fill texture exactly.
-    -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
+    -- Don't check fill dimensions - if fill has zero width (0% health), the overlay
     -- will correctly have zero width too. This avoids reading GetWidth() which can
     -- return secret values.
     overlay:ClearAllPoints()
@@ -299,7 +299,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     if state and not state.healthOverlay then
         -- IMPORTANT: This overlay must NOT be parented to the StatusBar.
         -- WoW draws all parent frame layers first, then all child frame layers.
-        -- If we parent to the health bar (child), our overlay can draw *above*
+        -- If parented to the health bar (child), the overlay can draw *above*
         -- CompactUnitFrame parent-layer elements like roleIcon (ARTWORK) and
         -- readyCheckIcon (OVERLAY), effectively hiding them.
         --
@@ -356,13 +356,13 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             end
             -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
             -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
-            -- calls SetStatusBarColor(green), our hook fires IMMEDIATELY after and re-applies
-            -- our value-based color. No frame gap = no blink.
+            -- calls SetStatusBarColor(green), the hook fires IMMEDIATELY after and re-applies
+            -- the value-based color. No frame gap = no blink.
             _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
                 local st = getState(self)
                 if not st or not st.overlayActive then return end
                 -- Recursion guard: Check the SAME flag that applyValueBasedColor uses in addon.FrameState
-                -- to prevent infinite loops when we call SetStatusBarColor from applyValueBasedColor.
+                -- to prevent infinite loops when SetStatusBarColor is called from applyValueBasedColor.
                 local fs = addon.FrameState and addon.FrameState.Get(self)
                 if fs and fs.applyingValueBasedColor then return end
                 local db = addon and addon.db and addon.db.profile
@@ -418,11 +418,11 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
 
     -- If config hasn't changed and styling was already applied, skip re-styling.
     -- This prevents visual blinking when ApplyStyles() is called for unrelated
-    -- settings (e.g., CDM, Action Bars). We track stylingApplied separately from
+    -- settings (e.g., CDM, Action Bars). stylingApplied is tracked separately from
     -- overlay dimensions because GetWidth() can return <= 1 due to secret values.
     if state.lastAppliedFingerprint == fingerprint and state.stylingApplied then
         -- FIX: With sticky visibility in place (Fix 1), the overlay won't be hidden
-        -- due to secret values, so we don't need an aggressive recovery loop.
+        -- due to secret values, so an aggressive recovery loop is unnecessary.
         -- The SetValue hook will update dimensions when values become available.
         -- Only attempt a single deferred update if overlay isn't visible yet.
         local overlay = state.healthOverlay
@@ -453,7 +453,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     -- NOTE: This retry loop only runs on initial setup (fingerprint check above
     -- prevents re-entry on subsequent ApplyStyles calls).
     -- FIX: Reduced from 5 to 3 attempts and removed re-styling in retry loop.
-    -- With anchor-based sizing, we just need to ensure updateHealthOverlay runs
+    -- With anchor-based sizing, updateHealthOverlay just needs to run
     -- after the fill texture is ready. A single deferred call should suffice.
     if _G.C_Timer and _G.C_Timer.After then
         C_Timer.After(0.1, function()
@@ -488,10 +488,10 @@ end
 -- Layer order on a single frame:
 -- 1. Health bar (StatusBar)
 -- 2. Health overlay texture (BORDER sublevel 7)
--- 3. ScooterMod border textures (OVERLAY sublevel -8) <- our borders
+-- 3. ScooterMod border textures (OVERLAY sublevel -8)
 -- 4. Selection highlight (OVERLAY sublevel 0+) <- Blizzard's highlight draws on top
 --
--- Note: We use OVERLAY layer with the lowest sublevel (-8) so borders appear
+-- Note: OVERLAY layer with the lowest sublevel (-8) is used so borders appear
 -- above the health bar content but below the selection highlight.
 --
 -- The previous SetBackdrop() approach on a child frame caused borders to draw
@@ -754,8 +754,8 @@ end
 
 -- EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
 -- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
--- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
--- frame type), the addon code in the execution context can cause UnitInRange() and
+-- Arena/Party/Raid frames. If hooks run during this flow (even just to check
+-- frame type), addon code in the execution context can cause UnitInRange() and
 -- similar APIs to return secret values, breaking Blizzard's own code.
 local function isEditModeActive()
     if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
@@ -850,7 +850,7 @@ function PartyFrames.installHooks()
     end
 
     -- Hook CompactUnitFrame_UpdateHealthColor for "Color by Value" mode
-    -- This hook fires after every health update, allowing us to update dynamic colors
+    -- This hook fires after every health update, enabling dynamic color updates
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealthColor then
         _G.hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(frame)
             -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
@@ -876,9 +876,9 @@ function PartyFrames.installHooks()
 
             -- FIX 1: Conditional deferral to prevent blinking during health regen.
             -- The blink occurs because:
-            --   1. SetValue hook applies our color
+            --   1. SetValue hook applies the custom color
             --   2. Blizzard's CompactUnitFrame_UpdateHealthColor resets to default green
-            --   3. Our deferred callback re-applies our color (1 frame later = visible flicker)
+            --   3. The deferred callback re-applies the custom color (1 frame later = visible flicker)
             --
             -- Solution: Only defer when overlay doesn't exist yet (initialization).
             -- When overlay is ready and shown, apply immediately (synchronously).
@@ -1043,7 +1043,7 @@ local function applyTextToPartyFrame(frame, cfg)
         pcall(nameFS.SetJustifyH, nameFS, Utils.getJustifyHFromAnchor(anchor))
     end
 
-    -- Capture baseline position on first application so we can restore later
+    -- Capture baseline position on first application for later restoration
     local nameState = ensureState(nameFS)
     if nameState and not nameState.originalPoint then
         local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
@@ -1072,8 +1072,8 @@ local function applyTextToPartyFrame(frame, cfg)
     end
 
     -- Preserve Blizzard's truncation/clipping behavior: explicitly constrain the name FontString width.
-    -- Blizzard normally constrains this via a dual-anchor layout (TOPLEFT + TOPRIGHT). Our single-point
-    -- anchor (for 9-way alignment) removes that implicit width, so we restore it with SetWidth.
+    -- Blizzard normally constrains this via a dual-anchor layout (TOPLEFT + TOPRIGHT). The single-point
+    -- anchor (for 9-way alignment) removes that implicit width, so SetWidth restores it.
     if nameFS.SetMaxLines then
         pcall(nameFS.SetMaxLines, nameFS, 1)
     end
@@ -1149,8 +1149,8 @@ end
 --------------------------------------------------------------------------------
 -- Creates addon-owned FontString overlays on party frames that visually replace
 -- Blizzard's name text. These overlays can be styled during initial setup and
--- their text content can be updated during combat without taint because we only
--- manipulate our own FontStrings.
+-- their text content can be updated during combat without taint because only
+-- addon-owned FontStrings are manipulated.
 --
 -- Pattern: Mirror text via SetText hook, style on setup, hide Blizzard's element.
 --------------------------------------------------------------------------------
@@ -1251,7 +1251,7 @@ local function stylePartyNameOverlay(frame, cfg)
     -- The baseHOffset shifts text horizontally based on alignment preference.
     overlay:ClearAllPoints()
     overlay:SetPoint(vertAnchor, container, vertAnchor, offsetX + baseHOffset, offsetY)
-    -- NOTE: We intentionally do NOT set an explicit width on the overlay.
+    -- NOTE: An explicit width is intentionally NOT set on the overlay.
     -- The container's SetClipsChildren(true) will hard-clip the text at the
     -- right edge without adding Blizzard's "..." ellipsis.
 end
@@ -1365,7 +1365,7 @@ local function ensurePartyNameOverlay(frame, cfg)
         state.overlayText = overlay
 
         -- Install SetText hook on Blizzard's name FontString to mirror text
-        -- Store hook state in our lookup table, not on Blizzard's frame
+        -- Store hook state in the addon lookup table, not on Blizzard's frame
         if frame.name and not state.textMirrorHooked and _G.hooksecurefunc then
             state.textMirrorHooked = true
             -- Capture state reference for the closure
@@ -1410,7 +1410,7 @@ local function ensurePartyNameOverlay(frame, cfg)
     stylePartyNameOverlay(frame, cfg)
     hideBlizzardPartyNameText(frame)
 
-    -- Copy current text from Blizzard's FontString to our overlay
+    -- Copy current text from Blizzard's FontString to the overlay
     -- Wrap in pcall as GetText() can return secrets
     if frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
@@ -1465,7 +1465,7 @@ function addon.ApplyPartyFrameNameOverlays()
             if not (InCombatLockdown and InCombatLockdown()) then
                 ensurePartyNameOverlay(frame, cfg)
             elseif state and state.overlayText then
-                -- Already have overlay, just update styling (safe during combat for our FontString)
+                -- Already have overlay, just update styling (safe during combat for addon-owned FontString)
                 stylePartyNameOverlay(frame, cfg)
             end
         end

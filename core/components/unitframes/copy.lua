@@ -482,7 +482,7 @@ function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)
 
     -- Cast Bar settings are intentionally NOT copied between unit frames.
     -- Each unit frame's cast bar settings are independent and must be configured separately.
-    -- Pet does not have a cast bar, so we clear its castBar table if copying to Pet.
+    -- Pet does not have a cast bar, so its castBar table is cleared when copying to Pet.
     if not dstCap.hasCastBar then
         dstCfg.castBar = nil
     end

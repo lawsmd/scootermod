@@ -8,14 +8,7 @@ local resolveCDMColor = addon.ResolveCDMColor
 local getDefaultFontFace = addon.GetDefaultFontFace
 local CDM_VIEWERS = addon.CDM_VIEWERS
 
---------------------------------------------------------------------------------
--- TrackedBars Styling
---------------------------------------------------------------------------------
--- TrackedBars (BuffBarCooldownViewer) support two modes:
---   Default: Overlay-based bar styling (fill overlay anchored to StatusBar fill)
---   Vertical: Addon-owned vertical stack frames with mirrored data
--- Text styling (SetFont/SetTextColor) remains direct — always safe.
---------------------------------------------------------------------------------
+-- TrackedBars: Default mode uses fill overlays; Vertical mode uses addon-owned stack frames.
 
 -- Default mode overlay tracking (weak keys for GC)
 local trackedBarOverlays = setmetatable({}, { __mode = "k" })
@@ -898,7 +891,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
 
                 overlay:Show()
 
-                -- Hide Blizzard fill texture so our overlay shows through
+                -- Hide Blizzard fill texture so the overlay shows through
                 local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
                 if blizzFill then pcall(blizzFill.SetAlpha, blizzFill, 0) end
                 -- Hide Blizzard background

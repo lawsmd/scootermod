@@ -378,7 +378,7 @@ function Navigation:Create(parent)
     separator:SetColorTexture(ar, ag, ab, 0.4)
     navFrame._separator = separator
 
-    -- Create custom scroll frame (no template - we build our own)
+    -- Custom scroll frame (no template - built from scratch)
     local scrollFrame = CreateFrame("ScrollFrame", "ScooterNavScrollFrame", navFrame)
     scrollFrame:SetPoint("TOPLEFT", navFrame, "TOPLEFT", PADDING_LEFT, -PADDING_TOP)
     scrollFrame:SetPoint("BOTTOMRIGHT", navFrame, "BOTTOMRIGHT", -(SCROLLBAR_RIGHT_MARGIN + SCROLLBAR_WIDTH + 4), PADDING_TOP)

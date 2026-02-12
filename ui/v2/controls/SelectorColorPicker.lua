@@ -14,9 +14,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local SELECTOR_HEIGHT = 28
 local SELECTOR_ARROW_WIDTH = 28
@@ -36,32 +34,7 @@ local LABEL_LINE_HEIGHT = 16      -- Approximate label height
 local DESC_PADDING_TOP = 2        -- Space between label and description
 local DESC_PADDING_BOTTOM = 40    -- Space below description to border (increased for center-anchored layout)
 
---------------------------------------------------------------------------------
--- SelectorColorPicker: Selector with inline color swatch (visible when custom)
---------------------------------------------------------------------------------
--- Creates a selector control with:
---   - Left arrow button for previous option
---   - Right arrow button for next option
---   - Centered value display (clickable to open dropdown)
---   - Color swatch visible when current value equals customValue
---   - Label text above or beside the selector
---
--- Options table:
---   label       : Setting label text (string)
---   description : Optional description text below (string)
---   values      : Table of { key = "Display Text" } pairs
---   order       : Optional array of keys for display order (otherwise alphabetical)
---   get         : Function returning current key
---   set         : Function(newKey) to save value
---   getColor    : Function returning r, g, b, a for the swatch
---   setColor    : Function(r, g, b, a) to save color
---   customValue : Key that triggers swatch visibility (default "custom")
---   hasAlpha    : Whether color picker should have alpha (default false)
---   parent      : Parent frame (required)
---   width       : Selector width (optional, default 270)
---   name        : Global frame name (optional)
---   syncCooldown: Optional cooldown in seconds for Edit Mode sync protection
---------------------------------------------------------------------------------
+-- SelectorColorPicker: Selector with inline color swatch (visible when custom value selected)
 
 function Controls:CreateSelectorColorPicker(options)
     local theme = GetTheme()

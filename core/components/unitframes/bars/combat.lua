@@ -70,8 +70,8 @@ end
 --------------------------------------------------------------------------------
 -- Raid/Party Frame Combat Deferral
 --------------------------------------------------------------------------------
--- We must NEVER apply CompactUnitFrame (raid/party) cosmetic changes during combat,
--- and we must avoid doing synchronous work inside Blizzard's CompactUnitFrame update chains.
+-- CompactUnitFrame (raid/party) cosmetic changes must NEVER be applied during combat,
+-- and synchronous work inside Blizzard's CompactUnitFrame update chains must be avoided.
 
 local pendingRaidFrameReapply = false
 local pendingPartyFrameReapply = false

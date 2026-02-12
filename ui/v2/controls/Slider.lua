@@ -39,9 +39,7 @@ local function GetGlobalSyncPendingValue()
     return Controls.GetGlobalSyncPendingValue
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local BORDER_WIDTH = 2
 local SLIDER_HEIGHT = 20
@@ -64,32 +62,7 @@ local LABEL_LINE_HEIGHT = 16      -- Approximate label height
 local DESC_PADDING_TOP = 2        -- Space between label and description
 local DESC_PADDING_BOTTOM = 36    -- Space below description to border (doubled for center-anchored layout)
 
---------------------------------------------------------------------------------
 -- Slider: Numeric slider with arrows, text input, and optional end labels
---------------------------------------------------------------------------------
--- Creates a slider control with:
---   - Left/right arrow buttons for decrement/increment
---   - Draggable slider track with thumb
---   - Text input field for direct value entry (right side)
---   - Optional tiny labels under left/right ends of slider
---   - Label text on the left
---
--- Options table:
---   label         : Setting label text (string)
---   description   : Optional description text below (string)
---   min           : Minimum value (number, required)
---   max           : Maximum value (number, required)
---   step          : Step increment (number, default 1)
---   get           : Function returning current value
---   set           : Function(newValue) to save value
---   minLabel      : Optional tiny label under left end (string)
---   maxLabel      : Optional tiny label under right end (string)
---   parent        : Parent frame (required)
---   width         : Slider track width (optional, default 200)
---   inputWidth    : Text input width (optional, default 50)
---   precision     : Decimal places for display (number, default 0)
---   name          : Global frame name (optional)
---------------------------------------------------------------------------------
 
 function Controls:CreateSlider(options)
     local theme = GetTheme()

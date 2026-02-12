@@ -42,7 +42,7 @@ end
     Implementation strategy:
       The original working slider called SetClampedToScreen(false), 
       SetClampRectInsets(0,0,0,0), and SetIgnoreFramePositionManager(true).
-      We replicate this behavior with a checkbox instead of a slider.
+      This behavior is replicated with a checkbox instead of a slider.
       
       NOTE: ReanchorFrame/SetPoint approaches were tried and caused the frame to
       snap to the right side of the screen. Do NOT call position-changing APIs.
@@ -97,7 +97,7 @@ local function _AddUniqueFrame(list, seen, f)
 	list[#list + 1] = f
 end
 
--- Prefer a narrow target set: we only want to affect the unit frame Edit Mode
+-- Prefer a narrow target set: only affect the unit frame Edit Mode
 -- manages, without unintentionally touching related managed frames (totems/class
 -- resources) that can change the effective bounds and make corner placement worse.
 local function _CollectCandidateFrames(unit)
@@ -125,7 +125,7 @@ local function _ReadAllowOffscreen(unit)
 	end
 	-- Legacy compatibility: prior slider stored `containerOffsetX`. Any non-zero value
 	-- effectively meant "unlock off-screen drag", but also applied a positional delta.
-	-- We now treat non-zero legacy values as "enabled" WITHOUT moving the frame.
+	-- Non-zero legacy values are now treated as "enabled" WITHOUT moving the frame.
 	local legacy = tonumber(rawget(misc, "containerOffsetX") or 0) or 0
 	return legacy ~= 0
 end
@@ -231,10 +231,10 @@ local function _InstallOffscreenEnforcementHooks(frame)
 	setProp(frame, "offscreenHooksInstalled", true)
 
 	-- When the setting is enabled, keep clamping OFF even if Blizzard/Edit Mode
-	-- tries to re-enable it after our apply pass.
+	-- tries to re-enable it after the apply pass.
 	--
 	-- NOTE: On some unit frames, IsClampedToScreen stays true regardless. In those
-	-- cases, our effective unlock is achieved via expanded clamp rect insets.
+	-- cases, the effective unlock is achieved via expanded clamp rect insets.
 	if frame.SetClampedToScreen and frame.IsClampedToScreen then
 		_G.hooksecurefunc(frame, "SetClampedToScreen", function(self, clamped)
 			if not getProp(self, "offscreenEnforceEnabled") then return end
@@ -295,9 +295,9 @@ local function applyFor(unit)
 		return true
 	end
 
-	-- Important: do NOT rely solely on our cached flag here.
+	-- Important: do NOT rely solely on the cached flag here.
 	-- Blizzard can re-enable clamping later (notably when entering Edit Mode),
-	-- so we re-check the live frame state and re-enforce if needed.
+	-- so the live frame state is re-checked and re-enforced if needed.
 
 	local didWork = false
 
@@ -404,7 +404,7 @@ local function applyAll()
 	end
 end
 
--- Edit Mode can reapply clamping as it enters; enforce our state right after entry.
+-- Edit Mode can reapply clamping as it enters; enforce the unclamped state right after entry.
 local _editModeHooksInstalled = false
 local function installEditModeHooks()
 	if _editModeHooksInstalled then return end
@@ -414,7 +414,7 @@ local function installEditModeHooks()
 	if not mgr then return end
 	if type(mgr.EnterEditMode) == "function" then
 		_G.hooksecurefunc(mgr, "EnterEditMode", function()
-			-- Reset nudge tracking on Edit Mode entry so we re-apply the nudge
+			-- Reset nudge tracking on Edit Mode entry so the nudge is re-applied
 			_ResetNudgeTracking()
 			if C_Timer and C_Timer.After then
 				C_Timer.After(0, function()

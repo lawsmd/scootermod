@@ -37,16 +37,9 @@ local ICON_BORDER_DEFINITIONS = {
 
 }
 
--- Implementation notes (2025-11-23):
---  * Always apply borders through addon.ApplyIconBorderStyle. That helper clears all
---    existing ScooterMod border attachments before painting the new style, preventing
---    “stuck” atlas/texture overlays when swapping between custom assets and the square
---    default. (See Buffs > Borders postmortem and the Unit Frame Cast Bar icon fix.)
---  * Never call addon.Borders.Apply* directly on icon textures—let ApplyIconBorderStyle
---    wrap textures in a container frame when needed so cleanup remains centralised.
---
--- Keeping this reminder here (next to the style catalog) helps future additions avoid
--- reintroducing the ghost-border regression that required Buffs’ 2025-11-23 hotfix.
+-- Always apply borders through addon.ApplyIconBorderStyle, not addon.Borders.Apply* directly.
+-- ApplyIconBorderStyle clears existing border attachments before applying new styles,
+-- preventing stuck overlays when swapping between border types.
 
 local STYLE_MAP = {}
 for _, def in ipairs(ICON_BORDER_DEFINITIONS) do

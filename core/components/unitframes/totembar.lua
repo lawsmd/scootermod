@@ -205,7 +205,7 @@ local function applyTimerTextStyling(duration, cfg)
     local offsetY = cfg.offset and cfg.offset.y or 0
     if offsetX ~= 0 or offsetY ~= 0 then
         -- Duration is typically anchored to BOTTOM of the button
-        -- We adjust using ClearAllPoints + SetPoint
+        -- Adjusted using ClearAllPoints + SetPoint
         local parent = duration:GetParent()
         if parent then
             pcall(function()

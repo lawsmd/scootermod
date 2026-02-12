@@ -44,7 +44,7 @@ end
 
 -- Pre-emptive hide for Target frame elements (ReputationColor, FrameTexture, Flash)
 -- This runs SYNCHRONOUSLY from PLAYER_TARGET_CHANGED, BEFORE Blizzard's TargetFrame_Update.
--- The texture might not exist yet at this moment, so we also schedule a micro-delay follow-up.
+-- The texture might not exist yet at this moment, so a micro-delay follow-up is also scheduled.
 function Preemptive.hideTargetElements()
     local db = addon and addon.db and addon.db.profile
     local unitFrames = db and rawget(db, "unitFrames")
@@ -91,7 +91,7 @@ function Preemptive.hideTargetElements()
         end
 
         -- Schedule a micro-delay follow-up to catch the texture if Blizzard creates it
-        -- AFTER our synchronous pre-emptive hide but BEFORE the main deferred styling pass.
+        -- AFTER the synchronous pre-emptive hide but BEFORE the main deferred styling pass.
         -- This closes the timing gap where ReputationColor becomes visible briefly.
         if _G.C_Timer and _G.C_Timer.After then
             _G.C_Timer.After(0, hideRepColor)
@@ -109,7 +109,7 @@ end
 
 -- Pre-emptive hide for Focus frame elements (ReputationColor, FrameTexture, Flash)
 -- This runs SYNCHRONOUSLY from PLAYER_FOCUS_CHANGED, BEFORE Blizzard's FocusFrame_Update.
--- The texture might not exist yet at this moment, so we also schedule a micro-delay follow-up.
+-- The texture might not exist yet at this moment, so a micro-delay follow-up is also scheduled.
 function Preemptive.hideFocusElements()
     local db = addon and addon.db and addon.db.profile
     local unitFrames = db and rawget(db, "unitFrames")
@@ -156,7 +156,7 @@ function Preemptive.hideFocusElements()
         end
 
         -- Schedule a micro-delay follow-up to catch the texture if Blizzard creates it
-        -- AFTER our synchronous pre-emptive hide but BEFORE the main deferred styling pass.
+        -- AFTER the synchronous pre-emptive hide but BEFORE the main deferred styling pass.
         -- This closes the timing gap where ReputationColor becomes visible briefly.
         if _G.C_Timer and _G.C_Timer.After then
             _G.C_Timer.After(0, hideRepColor)
@@ -253,7 +253,7 @@ function Preemptive.installEarlyAlphaHooks()
 
     -- Install hooks on Blizzard's TargetFrame_Update and FocusFrame_Update to catch
     -- any updates that might show ReputationColor during combat or target changes.
-    -- These run AFTER Blizzard's update, so we re-hide immediately.
+    -- These run AFTER Blizzard's update, so elements are re-hidden immediately.
     if _G.hooksecurefunc and type(_G.TargetFrame_Update) == "function" then
         if not addon._ScootTargetFrameUpdateHooked then
             addon._ScootTargetFrameUpdateHooked = true
@@ -307,7 +307,7 @@ function Preemptive.installEarlyAlphaHooks()
     --------------------------------------------------------------------------------
     -- When UNIT_FACTION fires (e.g., neutral mob becomes hostile), Blizzard calls
     -- CheckFaction() and CheckLevel() DIRECTLY - NOT through Update(). This means
-    -- our TargetFrame_Update hook never fires. We must hook these methods directly.
+    -- the TargetFrame_Update hook never fires. These methods must be hooked directly.
 
     -- Helper to re-hide elements after CheckFaction/CheckLevel
     -- This handles ReputationColor, Flash, AND LevelText/NameText
@@ -342,7 +342,7 @@ function Preemptive.installEarlyAlphaHooks()
         end
 
         -- Re-hide LevelText (if levelTextHidden is enabled)
-        -- CheckLevel() calls levelText:Show() which overrides our hiding
+        -- CheckLevel() calls levelText:Show() which overrides the hidden state
         if cfg.levelTextHidden == true then
             local levelFS = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
                 and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
@@ -394,7 +394,7 @@ function Preemptive.installEarlyAlphaHooks()
         end
 
         -- Re-hide LevelText (if levelTextHidden is enabled)
-        -- CheckLevel() calls levelText:Show() which overrides our hiding
+        -- CheckLevel() calls levelText:Show() which overrides the hidden state
         if cfg.levelTextHidden == true then
             local levelFS = _G.FocusFrame and _G.FocusFrame.TargetFrameContent
                 and _G.FocusFrame.TargetFrameContent.TargetFrameContentMain
@@ -440,11 +440,11 @@ function Preemptive.installEarlyAlphaHooks()
     end
 
     --------------------------------------------------------------------------------
-    -- Hook SetVertexColor on ReputationColor for extra robustness
+    -- Hook SetVertexColor on ReputationColor for extra coverage
     --------------------------------------------------------------------------------
     -- CheckFaction calls SetVertexColor to change the reputation strip color.
-    -- If Blizzard changes the color, we know they're updating the texture,
-    -- so we should re-enforce our alpha hiding.
+    -- If Blizzard changes the color, it means the texture is being updated,
+    -- so alpha hiding should be re-enforced.
 
     local targetRepColor = _G.TargetFrame and _G.TargetFrame.TargetFrameContent
         and _G.TargetFrame.TargetFrameContent.TargetFrameContentMain
@@ -487,7 +487,7 @@ end
 -- Boss frames (Boss1TargetFrame through Boss5TargetFrame) can appear/update
 -- during combat. Unlike Target/Focus which have dedicated PLAYER_X_CHANGED events,
 -- Boss frames update via INSTANCE_ENCOUNTER_ENGAGE_UNIT and UPDATE_BOSS_FRAMES.
--- These events fire during combat, but our handlers currently skip applying
+-- These events fire during combat, but the handlers currently skip applying
 -- during combat lockdown. These functions provide direct hooks to catch updates.
 
 -- Pre-emptive hide for all Boss frame elements (ReputationColor, FrameTexture, Flash)
@@ -556,7 +556,7 @@ function Preemptive.hideBossElements()
         end
 
         -- Schedule a micro-delay follow-up to catch textures if Blizzard creates them
-        -- AFTER our synchronous pre-emptive hide
+        -- AFTER the synchronous pre-emptive hide
         if _G.C_Timer and _G.C_Timer.After then
             _G.C_Timer.After(0, function()
                 for i = 1, 5 do
@@ -651,7 +651,7 @@ function Preemptive.installBossFrameHooks()
                 _G.hooksecurefunc(bossFrame, "CheckFaction", rehideBossElements)
             end
 
-            -- Hook SetVertexColor on ReputationColor for extra robustness
+            -- Hook SetVertexColor on ReputationColor for extra coverage
             local repColor = bossFrame.TargetFrameContent
                 and bossFrame.TargetFrameContent.TargetFrameContentMain
                 and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor

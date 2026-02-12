@@ -487,7 +487,7 @@ function GameMenu:InstallHook()
     end)
 
     -- When GameMenuFrame hides during alpha-hidden state (ESC in combat),
-    -- also close our custom menu for single-ESC-press behavior
+    -- also close the custom menu for single-ESC-press behavior
     GameMenuFrame:HookScript("OnHide", function()
         if blizzMenuAlphaHidden then
             RestoreBlizzardGameMenu()

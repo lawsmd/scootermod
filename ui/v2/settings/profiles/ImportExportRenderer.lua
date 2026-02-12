@@ -75,7 +75,7 @@ local function performImport(envelope, targetLayoutName, editModeStr)
         return
     end
 
-    -- Determine if we're creating a new Edit Mode layout
+    -- Check whether the target layout already exists
     local isNewLayout = not (addon.Profiles._layoutLookup and addon.Profiles._layoutLookup[targetLayoutName])
 
     if isNewLayout then

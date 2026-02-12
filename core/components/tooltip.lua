@@ -12,10 +12,10 @@ local addonName, addon = ...
 -- - GameTooltipMoneyFrame1, GameTooltipMoneyFrame2, etc.
 -- - Each has PrefixText ("Sell Price:"), GoldButton.Text, SilverButton.Text, CopperButton.Text
 --
--- NOTE: We intentionally do NOT customize:
+-- NOTE: The following are intentionally NOT customized:
 -- - Color: Tooltip text is dynamically colored by the game (item quality, spell schools, etc.)
 -- - Position: Tooltip layout is static and repositioning text would break the layout
--- - Alignment: See TOOLTIPGAME.md - alignment requires width expansion which causes infinite
+-- - Alignment: alignment requires width expansion which causes infinite
 --   growth on spell/ability tooltips that update continuously for cooldowns/charges.
 --
 -- SUPPORTED CUSTOMIZATIONS:
@@ -55,7 +55,7 @@ local function CleanupTextConfig(cfg)
     if not cfg then return end
     cfg.color = nil
     cfg.offset = nil
-    cfg.alignment = nil -- Removed feature - see TOOLTIPGAME.md
+    cfg.alignment = nil -- Removed feature (causes infinite tooltip growth)
 end
 
 local function ShallowCopyFontConfig(src)
@@ -215,7 +215,7 @@ local function ApplyBorderTint(tooltip, db)
     end
 end
 
--- Track whether we've registered the TooltipDataProcessor hook
+-- Track whether the TooltipDataProcessor hook has been registered
 local tooltipProcessorHooked = false
 
 -- Register the TooltipDataProcessor post-call hook (runs after ALL tooltip data is processed)
@@ -228,7 +228,7 @@ local function RegisterTooltipPostProcessor()
 
     tooltipProcessorHooked = true
 
-    -- Register for ALL tooltip types so we catch every tooltip update
+    -- Register for ALL tooltip types to catch every tooltip update
     TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, tooltipData)
         local comp = addon.Components and addon.Components.tooltip
         if not comp or not comp.db then return end

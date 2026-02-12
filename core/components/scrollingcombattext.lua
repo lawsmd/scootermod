@@ -6,7 +6,7 @@ local Component = addon.ComponentPrototype
 local sctDamageState = {
     initialLoadComplete = false,
     lastKnownFont = nil,
-    damageTextFontApplied = false, -- Track if we've set DAMAGE_TEXT_FONT this session
+    damageTextFontApplied = false, -- Track if DAMAGE_TEXT_FONT has been set this session
 }
 
 -- Show combat font restart warning using ScooterMod's custom dialog system

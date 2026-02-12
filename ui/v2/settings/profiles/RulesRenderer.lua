@@ -343,7 +343,7 @@ local function ShowSpecPicker(anchor, rule, callback)
             end
         end
 
-        -- Move to next row if we didn't complete the last row
+        -- Advance to next row if the last row was incomplete
         if colCount > 0 then
             yOffset = yOffset - specRowHeight
         end

@@ -1,6 +1,5 @@
 local addonName, addon = ...
 
--- Import FrameState helpers from core.lua (promoted via addon.ComponentsUtil._*)
 local getState = addon.ComponentsUtil._getState
 
 local Util = addon.ComponentsUtil
@@ -181,15 +180,11 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
     local baseExpandX = styleDef.expandX or 0
     local baseExpandY = styleDef.expandY or baseExpandX
-    -- Get the borderInset from opts (negative = expand outward, positive = shrink inward)
     local insetValue = tonumber(opts and opts.inset) or 0
     local insetAdjust = 0
     if styleDef.allowThicknessInset then
-        -- For custom art borders: use borderInset directly (thickness no longer affects expand)
-        -- Positive inset = shrink border inward (reduce expand), negative = expand outward
         insetAdjust = -insetValue
     else
-        -- For square borders: inset also applies
         insetAdjust = -insetValue
     end
     local expandX = clamp(baseExpandX + insetAdjust, -8, 8)

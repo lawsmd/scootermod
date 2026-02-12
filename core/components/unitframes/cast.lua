@@ -118,7 +118,7 @@ do
 		local isPlayer = (unit == "Player")
 
 		-- For the Player cast bar, read the current Edit Mode "Lock to Player Frame" setting so
-		-- we only override position when the bar is locked underneath the Player frame. When the
+		-- only overrides position when the bar is locked underneath the Player frame. When the
 		-- bar is unlocked and freely positioned in Edit Mode, ScooterMod should not fight that.
 		local isLockedToPlayerFrame = false
 		if isPlayer and addon and addon.EditMode and addon.EditMode.GetSetting then
@@ -143,7 +143,7 @@ do
 				-- Ignore ScooterMod's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
-					-- Mark this as a visual-only refresh so we can safely reapply
+					-- Mark this as a visual-only refresh to safely reapply
 					-- textures/colors in combat without re-anchoring secure frames.
 					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
@@ -158,11 +158,11 @@ do
 				end
 			end)
 			-- Hook SetPoint to detect when Blizzard re-anchors the cast bar and re-apply
-			-- our custom anchoring if we have a non-default anchor mode active.
+			-- custom anchoring if there is a non-default anchor mode active.
 			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
-				-- Ignore our own SetPoint calls (flagged to prevent infinite loops)
+				-- Ignore ScooterMod's SetPoint calls (flagged to prevent infinite loops)
 				if getProp(self, "ignoreSetPoint") then return end
-				-- Only re-apply if we have a custom anchor mode active for this unit
+				-- Only re-apply if a custom anchor exists mode active for this unit
 				local mode = activeAnchorModes[hookUnit]
 				if mode and mode ~= "default" then
 					-- Schedule a re-apply on the next frame to avoid recursive issues
@@ -174,7 +174,7 @@ do
 							-- NOTE: Combat lockdown check removed for Target/Focus cast bars.
 							-- TargetFrameSpellBar and FocusFrameSpellBar are visual StatusBars,
 							-- not protected action frames. SetPoint on them does not taint
-							-- secure execution, so we can safely reposition during combat.
+							-- secure execution, to safely reposition during combat.
 							if addon and addon.ApplyUnitFrameCastBarFor then
 								addon.ApplyUnitFrameCastBarFor(hookUnit)
 							end
@@ -189,7 +189,7 @@ do
 			-- on every UNIT_AURA event, which happens frequently during combat.
 			if (hookUnit == "Target" or hookUnit == "Focus") and frame.AdjustPosition then
 				_G.hooksecurefunc(frame, "AdjustPosition", function(self)
-					-- Only re-apply if we have a custom anchor mode active
+					-- Only re-apply if a custom anchor exists mode active
 					local mode = activeAnchorModes[hookUnit]
 					if mode and mode ~= "default" then
 						-- Re-apply immediately (synchronously) to eliminate flicker.
@@ -205,7 +205,7 @@ do
 
 		-- Capture baseline anchor:
 		-- - Player: capture a baseline that represents the Edit Mode "under Player" layout,
-		--   but avoid rebasing while ScooterMod offsets are non-zero so we don't compound
+		--   but avoid rebasing while ScooterMod offsets are non-zero to avoid compounding
 		--   offsets on every apply. This keeps slider behaviour linear.
 		-- - Target/Focus: capture once so offsets remain relative to stock layout.
 		if frame.GetPoint then
@@ -215,8 +215,8 @@ do
 					local hasOffsets =
 						(tonumber(cfg.offsetX) or 0) ~= 0 or
 						(tonumber(cfg.offsetY) or 0) ~= 0
-					-- When offsets are zero and the bar is locked to the Player frame, we
-					-- treat the current layout as the new baseline. Otherwise, we keep the
+					-- When offsets are zero and the bar is locked to the Player frame,
+					-- treats the current layout as the new baseline. Otherwise, keeps the
 					-- previous baseline so offset sliders remain stable.
 					if (not hasOffsets and isLockedToPlayerFrame) or not originalPositions[frame] then
 						originalPositions[frame] = {
@@ -308,7 +308,7 @@ do
 		local iconDisabled = cfg.iconDisabled == true
 
 		local function apply()
-			-- When we are being invoked from a SetStatusBarTexture/SetStatusBarColor hook
+			-- When this is invoked from a SetStatusBarTexture/SetStatusBarColor hook
 			-- during combat, treat this as a "visual-only" refresh: apply textures/colors
 			-- but avoid re-anchoring secure frames or changing layout, which can taint.
 			local inCombat = InCombatLockdown and InCombatLockdown()
@@ -372,7 +372,7 @@ do
 								local castBarPoint = (anchorEdge == "top") and "BOTTOM" or "TOP"
 								local anchorPoint = (anchorEdge == "top") and "TOP" or "BOTTOM"
 
-								-- Flag to prevent our SetPoint hook from triggering a re-apply loop
+								-- Flag to prevent the SetPoint hook from triggering a re-apply loop
 								setProp(frame, "ignoreSetPoint", true)
 								frame:ClearAllPoints()
 								frame:SetPoint(
@@ -498,7 +498,7 @@ do
 
 			-- Apply foreground and background styling via shared bar helpers
 			-- When visualOnly is true (combat + hook path from SetStatusBarTexture/SetStatusBarColor),
-			-- we allow texture/color application so custom styling persists through Blizzard's updates.
+			-- texture/color is allowed so custom styling persists through Blizzard's updates.
 			-- Layout changes are already skipped above when visualOnly is true.
 			if (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
 				local db = addon and addon.db and addon.db.profile
@@ -550,7 +550,7 @@ do
 					local tintTbl = type(cfg.castBarSparkTint) == "table" and cfg.castBarSparkTint or {1,1,1,1}
 
 					-- Determine effective color from mode:
-					-- - "default": use the stock vertex color we captured above.
+					-- - "default": use the stock vertex color captured above.
 					-- - "custom": apply the user tint (RGBA) on top of the spark.
 					local base = originalSparkVertexColor[spark] or {1,1,1,1}
 					local r, g, b, a = base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1
@@ -565,7 +565,7 @@ do
 						pcall(spark.SetVertexColor, spark, r, g, b, a)
 					end
 
-					-- Visibility: hide the spark via alpha so we do not fight internal Show/Hide logic.
+					-- Visibility: hide the spark via alpha to avoid fighting internal Show/Hide logic.
 					if sparkHidden then
 						if spark.SetAlpha then
 							pcall(spark.SetAlpha, spark, 0)
@@ -594,7 +594,7 @@ do
 				local thickness = tonumber(cfg.castBarBorderThickness) or 1
 				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
 
-				-- User-controlled inset plus a small thickness-derived term; we bias the Default (square)
+				-- User-controlled inset plus a small thickness-derived term; biases the Default (square)
 				-- style outward slightly, with per-unit tuning.
 				local userInset = tonumber(cfg.castBarBorderInset) or 0
 				if userInset < -4 then userInset = -4 elseif userInset > 4 then userInset = 4 end
@@ -776,7 +776,7 @@ do
 				local spellFS = frame.Text
 				if spellFS then
 					-- Capture a stable baseline anchor once per session so offsets are relative.
-					-- For the cast bar, we always treat the spell name as centered within the bar,
+					-- For the cast bar, always treats the spell name as centered within the bar,
 					-- regardless of whether the bar is locked to the Player frame or free-floating.
 					local function ensureSpellBaseline(fs, key)
 						addon._ufCastSpellNameBaselines[key] = addon._ufCastSpellNameBaselines[key] or {}
@@ -923,10 +923,10 @@ do
 		end
 
 		local inCombat = InCombatLockdown and InCombatLockdown()
-		-- For normal styling passes triggered by profile changes or /reload, we avoid
+		-- For normal styling passes triggered by profile changes or /reload, avoids
 		-- touching secure cast bar anchors during combat and defer until combat ends.
 		-- For visual-only refreshes triggered from SetStatusBarTexture/Color hooks,
-		-- we allow apply() to run in combat so custom textures/colors remain active.
+		-- allows apply() to run in combat so custom textures/colors remain active.
 		if inCombat and not getProp(frame, "castVisualOnly") then
 			if _G.C_Timer and _G.C_Timer.After then
 				_G.C_Timer.After(0.1, function()
@@ -1075,9 +1075,9 @@ do
 			end)
 			-- Hook SetPoint to re-apply custom anchoring when Blizzard overrides it
 			_G.hooksecurefunc(frame, "SetPoint", function(self, ...)
-				-- Ignore our own SetPoint calls (flagged to prevent infinite loops)
+				-- Ignore ScooterMod's SetPoint calls (flagged to prevent infinite loops)
 				if getProp(self, "ignoreSetPoint") then return end
-				-- Only re-apply if we have a custom anchor mode active for this Boss cast bar
+				-- Only re-apply if a custom anchor exists mode active for this Boss cast bar
 				local mode = bossActiveAnchorModes[hookIndex]
 				if mode and mode ~= "default" then
 					if not bossPendingReapply[hookIndex] then
@@ -1237,7 +1237,7 @@ do
 					end
 				else
 					-- Restore default positioning (original anchor)
-					-- Only restore if we previously had a custom anchor mode active
+					-- Only restore if it previously had a custom anchor mode active
 					-- This prevents fighting with Blizzard's layout when user has "default" selected
 					if getProp(frame, "hadCustomAnchor") then
 						local orig = bossOriginalCastBarAnchors[frame]
@@ -1257,7 +1257,7 @@ do
 					end
 				end
 
-				-- Track that we've applied a custom anchor (for restoration when switching back to default)
+				-- Track that a custom anchor has been applied (for restoration when switching back to default)
 				if anchorMode ~= "default" then
 					setProp(frame, "hadCustomAnchor", true)
 				end

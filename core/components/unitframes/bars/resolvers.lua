@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- bars/resolvers.lua
 -- Frame resolver functions for unit frame bar styling
--- Uses deterministic paths from Framestack findings
+-- Uses deterministic paths verified via /framestack
 --------------------------------------------------------------------------------
 
 local addonName, addon = ...
@@ -113,7 +113,7 @@ end
 --------------------------------------------------------------------------------
 
 function Resolvers.resolveHealthBar(frame, unit)
-    -- Deterministic paths from Framestack findings; fallback to conservative search only if missing
+    -- Deterministic paths verified via /framestack; fallback to conservative search only if missing
     if unit == "Pet" then return _G.PetFrameHealthBar end
     if unit == "TargetOfTarget" then
         local tot = _G.TargetFrameToT
@@ -136,7 +136,7 @@ function Resolvers.resolveHealthBar(frame, unit)
         local hb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
         if hb then return hb end
     elseif unit == "Boss" then
-        -- Boss frames: ALWAYS use the deterministic path from Framestack findings.
+        -- Boss frames: ALWAYS use the deterministic path verified via /framestack.
         -- The `healthbar` property may point to a StatusBar with wrong dimensions (spanning
         -- the entire frame content area rather than just the visible health bar region).
         local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
@@ -204,7 +204,7 @@ function Resolvers.resolvePowerBar(frame, unit)
         local mb = getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
         if mb then return mb end
     elseif unit == "Boss" then
-        -- Boss frames: ALWAYS use the deterministic path from Framestack findings.
+        -- Boss frames: ALWAYS use the deterministic path verified via /framestack.
         -- The `manabar` property may point to a StatusBar with wrong dimensions.
         local explicit = getNested(frame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
         if explicit and explicit.GetObjectType and explicit:GetObjectType() == "StatusBar" then
@@ -400,7 +400,7 @@ end
 -- Resolve the ManaBar for Boss frames for border anchoring.
 -- Unlike HealthBar, ManaBar is NOT inside a container - it's directly under TargetFrameContentMain.
 -- The ManaBar StatusBar should have correct bounds (it's a sibling of HealthBarsContainer).
--- However, for consistency with the Health Bar pattern, we use the same anchor frame approach.
+-- However, for consistency with the Health Bar pattern, the same anchor frame technique is used.
 function Resolvers.resolveBossManaBar(bossFrame)
     -- Try explicit path first (most reliable)
     local mb = getNested(bossFrame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")

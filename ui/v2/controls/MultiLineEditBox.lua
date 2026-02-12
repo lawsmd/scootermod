@@ -13,9 +13,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local BORDER_WIDTH = 1
 local BORDER_ALPHA_NORMAL = 0.6
@@ -26,9 +24,7 @@ local SCROLLBAR_THUMB_MIN_HEIGHT = 20
 local SCROLLBAR_MARGIN = 4
 local DEFAULT_FONT_SIZE = 12
 
---------------------------------------------------------------------------------
 -- MultiLineEditBox
---------------------------------------------------------------------------------
 
 function Controls:CreateMultiLineEditBox(options)
     local theme = GetTheme()
@@ -60,9 +56,7 @@ function Controls:CreateMultiLineEditBox(options)
     container._isFocused = false
     container._readOnly = readOnly
 
-    ----------------------------------------------------------------------------
     -- Optional label
-    ----------------------------------------------------------------------------
     if labelText then
         local label = container:CreateFontString(nil, "OVERLAY")
         local fontPath = theme:GetFont("LABEL")
@@ -73,9 +67,7 @@ function Controls:CreateMultiLineEditBox(options)
         container._label = label
     end
 
-    ----------------------------------------------------------------------------
-    -- Bordered frame (dark bg + accent border)
-    ----------------------------------------------------------------------------
+    -- Bordered frame
     local bordered = CreateFrame("Frame", nil, container)
     bordered:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -labelHeight)
     bordered:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
@@ -122,9 +114,7 @@ function Controls:CreateMultiLineEditBox(options)
     bordered._border = border
     container._bordered = bordered
 
-    ----------------------------------------------------------------------------
     -- ScrollFrame + EditBox
-    ----------------------------------------------------------------------------
     local scrollFrame = CreateFrame("ScrollFrame", nil, bordered)
     scrollFrame:SetPoint("TOPLEFT", bordered, "TOPLEFT", BORDER_WIDTH + CONTENT_PADDING, -(BORDER_WIDTH + CONTENT_PADDING))
     scrollFrame:SetPoint("BOTTOMRIGHT", bordered, "BOTTOMRIGHT", -(BORDER_WIDTH + CONTENT_PADDING + SCROLLBAR_WIDTH + SCROLLBAR_MARGIN), BORDER_WIDTH + CONTENT_PADDING)
@@ -152,9 +142,7 @@ function Controls:CreateMultiLineEditBox(options)
         end
     end)
 
-    ----------------------------------------------------------------------------
     -- Placeholder text
-    ----------------------------------------------------------------------------
     if placeholder then
         local placeholderFS = bordered:CreateFontString(nil, "OVERLAY")
         placeholderFS:SetFont(fontPath, fontSize, "")
@@ -179,9 +167,7 @@ function Controls:CreateMultiLineEditBox(options)
         UpdatePlaceholder()
     end
 
-    ----------------------------------------------------------------------------
     -- Scrollbar
-    ----------------------------------------------------------------------------
     local scrollbar = CreateFrame("Frame", nil, bordered)
     scrollbar:SetWidth(SCROLLBAR_WIDTH)
     scrollbar:SetPoint("TOPRIGHT", bordered, "TOPRIGHT", -(BORDER_WIDTH + SCROLLBAR_MARGIN), -(BORDER_WIDTH + CONTENT_PADDING))
@@ -297,9 +283,7 @@ function Controls:CreateMultiLineEditBox(options)
         UpdateScrollbar()
     end)
 
-    ----------------------------------------------------------------------------
     -- Focus / border highlight
-    ----------------------------------------------------------------------------
     local function SetBorderAlpha(alpha)
         for _, tex in pairs(bordered._border) do
             local r, g, b = GetTheme():GetAccentColor()
@@ -336,9 +320,7 @@ function Controls:CreateMultiLineEditBox(options)
         end
     end)
 
-    ----------------------------------------------------------------------------
     -- Read-only mode: allow Ctrl+A / Ctrl+C but block typing
-    ----------------------------------------------------------------------------
     if readOnly then
         editBox:SetScript("OnChar", function(self)
             -- Block all character input
@@ -370,9 +352,7 @@ function Controls:CreateMultiLineEditBox(options)
         end)
     end
 
-    ----------------------------------------------------------------------------
     -- Theme subscription
-    ----------------------------------------------------------------------------
     local subscribeKey = "MultiLineEditBox_" .. tostring(container)
     container._subscribeKey = subscribeKey
 
@@ -386,9 +366,7 @@ function Controls:CreateMultiLineEditBox(options)
         end
     end)
 
-    ----------------------------------------------------------------------------
     -- Public API
-    ----------------------------------------------------------------------------
 
     function container:GetText()
         return self._editBox:GetText()

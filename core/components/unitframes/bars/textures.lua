@@ -103,7 +103,7 @@ end
 -- units are muted and damaged units stand out.
 --
 -- Gradient: Dark Gray (100%) -> Yellow (50%) -> Red (0%)
--- The 0.23 gray value matches ElvUI's default health color for visual consistency.
+-- The 0.23 gray value is a standard dark health bar tint for visual consistency.
 --------------------------------------------------------------------------------
 
 local healthValueDarkCurve = nil
@@ -134,7 +134,7 @@ local function getHealthValueDarkCurve()
         -- Add color points: Red at 0%, Yellow at 50%, Green at 99.99%, Dark Gray at 100%
         -- The 99.99% green point ensures the curve matches the regular curve for virtually
         -- all values. Only exactly 100% shows dark gray - the 0.01% transition is imperceptible.
-        -- Dark gray (0.23, 0.23, 0.23) matches ElvUI's default health color
+        -- Dark gray (0.23, 0.23, 0.23) is a standard dark health bar tint
         if healthValueDarkCurve.AddPoint and _G.CreateColor then
             local ok1, err1 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 0.0, CreateColor(1, 0, 0, 1))       -- Red at 0%
             local ok2, err2 = pcall(healthValueDarkCurve.AddPoint, healthValueDarkCurve, 0.5, CreateColor(1, 1, 0, 1))       -- Yellow at 50%
@@ -191,7 +191,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
         return
     end
 
-    -- Check if we got a color object or a number
+    -- Check if the result is a color object or a number
     if type(color) == "number" then
         if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: got number " .. color .. " instead of color") end
         return
@@ -307,7 +307,7 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
     -- SIMPLIFIED APPROACH: Due to secret value issues, color comparison is unreliable.
     -- Instead of smart validation, use a brute-force approach:
     -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
-    -- This ensures we eventually apply the correct color even if UnitHealthPercent
+    -- This ensures the correct color is eventually applied even if UnitHealthPercent
     -- is initially stale (e.g., when healing to exactly 100%).
     -- Extended delays to catch edge cases where API updates are slow.
     local delays = { 0.05, 0.1, 0.2, 0.35, 0.5 }  -- 50ms, 100ms, 200ms, 350ms, 500ms
@@ -396,9 +396,9 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
     
     -- Power bars with default texture + default color: be completely hands-off.
     -- Blizzard dynamically updates power bar texture AND vertex color when power type changes
-    -- (e.g., Druid switching between Mana/Energy forms). If we touch ANYTHING here, we risk
-    -- overwriting Blizzard's correctly-set state with our stale captured values. By returning
-    -- early, we let Blizzard's native system handle everything.
+    -- (e.g., Druid switching between Mana/Energy forms). Touching ANYTHING here risks
+    -- overwriting Blizzard's correctly-set state with stale captured values. By returning
+    -- early, Blizzard's native system handles everything.
     local isDefaultTexture = (textureKey == nil or textureKey == "" or textureKey == "default")
     local isDefaultColor = (colorMode == nil or colorMode == "" or colorMode == "default")
     if (barKind == "power" or barKind == "altpower") and isDefaultTexture and isDefaultColor then
@@ -543,20 +543,20 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         return
     end
     
-    -- Ensure we have a background texture frame at an appropriate sublevel so it appears
+    -- Ensure a background texture frame exists at an appropriate sublevel so it appears
     -- behind the status bar fill but remains visible for cast bars.
     --
-    -- For generic unit frame bars (health/power), we keep the background very low in the
+    -- For generic unit frame bars (health/power), the background is kept very low in the
     -- BACKGROUND stack (-8) so any stock art sits above it if present.
     --
     -- For CastingBarFrame-based bars (Player/Target/Focus cast bars), Blizzard defines a
     -- `Background` texture at BACKGROUND subLevel=2 (see CastingBarFrameBaseTemplate in
-    -- wow-ui-source). Our earlier implementation created ScooterModBG at subLevel=-8,
-    -- which meant the stock Background completely covered our overlay and made Scooter
+    -- Blizzard source). An earlier implementation created ScooterModBG at subLevel=-8,
+    -- which meant the stock Background completely covered the overlay and made Scooter
     -- backgrounds effectively invisible even though the region existed in Framestack.
     --
     -- To keep behaviour consistent with other bars while making cast bar backgrounds
-    -- visible, we render ScooterModBG above the stock Background (subLevel=3) but still
+    -- visible, ScooterModBG is rendered above the stock Background (subLevel=3) but still
     -- on the BACKGROUND layer so the status bar fill and FX remain on top.
     if not bar.ScooterModBG then
         local layer = "BACKGROUND"
@@ -571,7 +571,7 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         bar.ScooterModBG = bar:CreateTexture(nil, layer, nil, sublevel)
         bar.ScooterModBG:SetAllPoints(bar)
     elseif barKind == "cast" then
-        -- If we created ScooterModBG earlier (e.g., before cast styling was enabled),
+        -- If ScooterModBG was created earlier (e.g., before cast styling was enabled),
         -- make sure it sits above the stock Background for CastingBarFrame.
         local _, currentSub = bar.ScooterModBG:GetDrawLayer()
         if currentSub == nil or currentSub < 3 then
@@ -618,21 +618,21 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         -- Hide Blizzard's stock Background texture when using a custom texture.
         -- CastingBarFrame-based bars (Player/Target/Focus cast bars) have a stock
         -- Background texture at BACKGROUND sublevel 2. Without hiding it, the stock
-        -- background shows through since our ScooterModBG sits at sublevel 3.
+        -- background shows through since ScooterModBG sits at sublevel 3.
         -- Use SetAlpha(0) instead of Hide() to avoid fighting Blizzard's internal logic.
         if bar.Background and bar.Background.SetAlpha then
             pcall(bar.Background.SetAlpha, bar.Background, 0)
         end
         -- CompactUnitFrame-style health bars (party/raid frames) have the background
         -- on the PARENT frame (frame.background), not on the health bar itself.
-        -- We need to hide that too, otherwise it covers our ScooterModBG.
+        -- That must be hidden too, otherwise it covers ScooterModBG.
         local parentFrame = bar.GetParent and bar:GetParent()
         if parentFrame and parentFrame.background and parentFrame.background.SetAlpha then
             pcall(parentFrame.background.SetAlpha, parentFrame.background, 0)
         end
     else
-        -- Default: always show our background with default black color
-        -- We don't rely on Blizzard's stock Background texture since it's hidden by default
+        -- Default: always show the addon background with default black color
+        -- Blizzard's stock Background texture is not relied upon since it's hidden by default
         pcall(bar.ScooterModBG.SetTexture, bar.ScooterModBG, nil)
         
         local r, g, b, a = Utils.getDefaultBackgroundColor(unit, barKind)
@@ -648,8 +648,8 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         bar.ScooterModBG:Show()
 
         -- Hide Blizzard's stock Background textures when applying custom opacity.
-        -- Even with "default" texture, our ScooterModBG provides the background with
-        -- the user's configured opacity - we can't let Blizzard's opaque backgrounds
+        -- Even with "default" texture, ScooterModBG provides the background with
+        -- the user's configured opacity - Blizzard's opaque backgrounds must not
         -- cover it.
         if bar.Background and bar.Background.SetAlpha then
             pcall(bar.Background.SetAlpha, bar.Background, 0)

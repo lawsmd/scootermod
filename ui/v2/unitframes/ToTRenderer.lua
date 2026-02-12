@@ -277,14 +277,11 @@ end
 --------------------------------------------------------------------------------
 
 function UF.RenderToT(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Store reference for re-rendering on changes
     builder:SetOnRefresh(function()
         UF.RenderToT(panel, scrollContent)
     end)
@@ -310,7 +307,6 @@ function UF.RenderToT(panel, scrollContent)
     -- Parent-Level Settings
     --------------------------------------------------------------------------------
 
-    -- Emphasized "Hide Blizzard Frame Art & Animations" toggle
     builder:AddToggle({
         label = "Hide Blizzard Frame Art & Animations",
         description = "REQUIRED for custom borders. Hides default frame art.",
@@ -328,7 +324,7 @@ function UF.RenderToT(panel, scrollContent)
         infoIcon = UF.TOOLTIPS.hideBlizzardArt,
     })
 
-    -- Scale slider (ToT is not in Edit Mode, so we control scale directly)
+    -- Not in Edit Mode; scale is controlled directly
     builder:AddSlider({
         label = "Scale",
         description = "Overall scale of the Target of Target frame.",
@@ -350,7 +346,6 @@ function UF.RenderToT(panel, scrollContent)
         minLabel = "0.5x", maxLabel = "2.0x",
     })
 
-    -- Position Offset dual slider
     builder:AddDualSlider({
         label = "Position Offset",
         sliderA = {
@@ -480,21 +475,18 @@ function UF.RenderToT(panel, scrollContent)
         sectionKey = "nameText",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Disable Name Text checkbox
             inner:AddToggle({
                 label = "Disable Name Text",
                 get = function() local t = ensureToTDB() or {}; return not not t.nameTextHidden end,
                 set = function(v) local t = ensureToTDB(); if t then t.nameTextHidden = not not v; applyNameText() end end,
             })
 
-            -- Font selector
             inner:AddFontSelector({
                 label = "Font",
                 get = function() local t = ensureNameTextDB() or {}; return t.fontFace or "FRIZQT__" end,
                 set = function(v) local t = ensureNameTextDB(); if t then t.fontFace = v or "FRIZQT__"; applyNameText() end end,
             })
 
-            -- Font Style selector
             inner:AddSelector({
                 label = "Style",
                 values = UF.fontStyleValues, order = UF.fontStyleOrder,
@@ -502,7 +494,6 @@ function UF.RenderToT(panel, scrollContent)
                 set = function(v) local t = ensureNameTextDB(); if t then t.style = v or "OUTLINE"; applyNameText() end end,
             })
 
-            -- Font Size slider
             inner:AddSlider({
                 label = "Size",
                 min = 6, max = 24, step = 1,
@@ -510,7 +501,6 @@ function UF.RenderToT(panel, scrollContent)
                 set = function(v) local t = ensureNameTextDB(); if t then t.size = tonumber(v) or 10; applyNameText() end end,
             })
 
-            -- Color selector with custom color picker
             inner:AddSelectorColorPicker({
                 label = "Color",
                 values = UF.fontColorValues, order = UF.fontColorOrder,
@@ -521,7 +511,6 @@ function UF.RenderToT(panel, scrollContent)
                 customValue = "custom", hasAlpha = true,
             })
 
-            -- Alignment selector
             inner:AddSelector({
                 label = "Alignment",
                 values = UF.alignmentValues, order = UF.alignmentOrder,
@@ -529,7 +518,6 @@ function UF.RenderToT(panel, scrollContent)
                 set = function(v) local t = ensureNameTextDB(); if t then t.alignment = v or "LEFT"; applyNameText() end end,
             })
 
-            -- Offset dual slider
             inner:AddDualSlider({
                 label = "Offset",
                 sliderA = {

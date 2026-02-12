@@ -105,7 +105,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:Finalize()
                     end,
                     style = function(cf, tabInner)
-                        -- Foreground Texture
                         tabInner:AddBarTextureSelector({
                             label = "Foreground Texture",
                             get = function()
@@ -120,7 +119,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Foreground Color
                         tabInner:AddSelectorColorPicker({
                             label = "Foreground Color",
                             values = UF.healthColorValues,
@@ -152,7 +150,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
 
                         tabInner:AddSpacer(8)
 
-                        -- Background Texture
                         tabInner:AddBarTextureSelector({
                             label = "Background Texture",
                             get = function()
@@ -167,7 +164,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Background Color
                         tabInner:AddSelectorColorPicker({
                             label = "Background Color",
                             values = UF.bgColorValues,
@@ -197,7 +193,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             hasAlpha = true,
                         })
 
-                        -- Background Opacity
                         tabInner:AddSlider({
                             label = "Background Opacity",
                             min = 0, max = 100, step = 1,
@@ -438,7 +433,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:Finalize()
                     end,
                     percentText = function(cf, tabInner)
-                        -- Font
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function()
@@ -453,7 +447,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Style
                         tabInner:AddSelector({
                             label = "Style",
                             values = UF.fontStyleValues,
@@ -470,7 +463,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Size
                         tabInner:AddSlider({
                             label = "Size",
                             min = 6, max = 48, step = 1,
@@ -486,7 +478,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Color
                         tabInner:AddSelectorColorPicker({
                             label = "Color",
                             values = UF.fontColorPowerValues,
@@ -516,7 +507,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             hasAlpha = true,
                         })
 
-                        -- Alignment
                         tabInner:AddSelector({
                             label = "Alignment",
                             values = UF.alignmentValues,
@@ -572,7 +562,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:Finalize()
                     end,
                     valueText = function(cf, tabInner)
-                        -- Font
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function()
@@ -587,7 +576,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Style
                         tabInner:AddSelector({
                             label = "Style",
                             values = UF.fontStyleValues,
@@ -604,7 +592,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Size
                         tabInner:AddSlider({
                             label = "Size",
                             min = 6, max = 48, step = 1,
@@ -620,7 +607,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        -- Color
                         tabInner:AddSelectorColorPicker({
                             label = "Color",
                             values = UF.fontColorPowerValues,
@@ -650,7 +636,6 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             hasAlpha = true,
                         })
 
-                        -- Alignment
                         tabInner:AddSelector({
                             label = "Alignment",
                             values = UF.alignmentValues,

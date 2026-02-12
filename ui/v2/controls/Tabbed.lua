@@ -14,9 +14,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local TAB_HEIGHT = 26
 local TAB_PADDING = 16  -- Horizontal padding per side of tab text
@@ -28,9 +26,7 @@ local TABBED_BORDER_ALPHA = 0.6
 local TABBED_CONTENT_PADDING = 8
 local MAX_TABS_PER_ROW = 5
 
---------------------------------------------------------------------------------
 -- Session storage for selected tab state
---------------------------------------------------------------------------------
 
 addon.UI._tabStates = addon.UI._tabStates or {}
 
@@ -48,25 +44,7 @@ local function SetTabState(componentId, sectionKey, tabKey)
     addon.UI._tabStates[componentId][sectionKey] = tabKey
 end
 
---------------------------------------------------------------------------------
 -- TabbedSection: Horizontal tabs for organizing sub-settings
---------------------------------------------------------------------------------
--- Creates a tabbed section with:
---   - Horizontal tab bar at top (supports up to 9 tabs in 2 rows)
---   - Each tab has its own content frame
---   - Dynamic height based on selected tab's content
---   - UI aesthetic (accent color borders, hover effects)
---
--- Options table:
---   tabs          : Array of { key = "uniqueKey", label = "Display Label" }
---   parent        : Parent frame (required)
---   componentId   : Component identifier for state storage
---   sectionKey    : Section identifier for state storage
---   defaultTab    : Key of tab to show by default (optional, defaults to first tab)
---   onTabChange   : Callback function(newTabKey, oldTabKey) (optional)
---   onHeightChange: Callback function(newHeight) when section height changes (optional)
---   name          : Global frame name (optional)
---------------------------------------------------------------------------------
 
 function Controls:CreateTabbedSection(options)
     local theme = GetTheme()
@@ -118,18 +96,14 @@ function Controls:CreateTabbedSection(options)
     section._tabContents = {}
     section._contentHeights = {}
 
-    ----------------------------------------------------------------------------
     -- Tab bar container
-    ----------------------------------------------------------------------------
     local tabBar = CreateFrame("Frame", nil, section)
     tabBar:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
     tabBar:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, 0)
     tabBar:SetHeight(tabBarHeight)
     section._tabBar = tabBar
 
-    ----------------------------------------------------------------------------
     -- Content container (below tab bar)
-    ----------------------------------------------------------------------------
     local contentContainer = CreateFrame("Frame", nil, section)
     contentContainer:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
     contentContainer:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, 0)
@@ -180,9 +154,7 @@ function Controls:CreateTabbedSection(options)
     contentBg:SetColorTexture(0, 0, 0, 0.15)
     section._contentBg = contentBg
 
-    ----------------------------------------------------------------------------
     -- Create tab buttons and content frames
-    ----------------------------------------------------------------------------
     local INFO_ICON_SIZE = 12
     local INFO_ICON_SPACING = 4
 
@@ -344,9 +316,7 @@ function Controls:CreateTabbedSection(options)
         section._contentHeights[tabData.key] = 100  -- Default, updated by builder
     end
 
-    ----------------------------------------------------------------------------
     -- Position tabs (with multi-row support)
-    ----------------------------------------------------------------------------
     local function LayoutTabs()
         local allTabs = {}
         for _, tabData in ipairs(tabs) do
@@ -392,9 +362,7 @@ function Controls:CreateTabbedSection(options)
 
     LayoutTabs()
 
-    ----------------------------------------------------------------------------
     -- Tab selection state update
-    ----------------------------------------------------------------------------
     local function UpdateTabVisuals()
         for key, tabBtn in pairs(section._tabButtons) do
             local isSelected = (key == section._selectedTabKey)
@@ -435,9 +403,7 @@ function Controls:CreateTabbedSection(options)
     UpdateTabVisuals()
     UpdateSectionHeight()
 
-    ----------------------------------------------------------------------------
     -- Theme subscription
-    ----------------------------------------------------------------------------
     local subscribeKey = "TabbedSection_" .. componentId .. "_" .. sectionKey
     section._subscribeKey = subscribeKey
 
@@ -471,9 +437,7 @@ function Controls:CreateTabbedSection(options)
         end
     end)
 
-    ----------------------------------------------------------------------------
     -- Public methods
-    ----------------------------------------------------------------------------
     function section:SelectTab(tabKey)
         if tabKey == self._selectedTabKey then return end
 

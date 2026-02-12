@@ -3,7 +3,7 @@
 -- Alpha enforcement helpers for unit frame styling
 -- 
 -- IMPORTANT (taint): Avoid SetShown/Show/Hide and avoid SetScript overrides on Blizzard frames.
--- We enforce "hidden" visuals via SetAlpha(0/1) + a deferred Show hook. See DEBUG.md.
+-- "Hidden" visuals are enforced via SetAlpha(0/1) + a deferred Show hook.
 --------------------------------------------------------------------------------
 
 local addonName, addon = ...
@@ -102,7 +102,7 @@ end
 function Alpha.EnforceVehicleFrameTextureVisibility()
     -- PlayerFrame's VehicleTexture overlay. This sits above the custom border layer and
     -- normally shows a vehicle-specific atlas when mounted. If useCustomBorders is true,
-    -- we hide it so the user's custom border art is visible instead.
+    -- it is hidden so the user's custom border art is visible instead.
     local vehicleTex = _G.PlayerFrame
         and _G.PlayerFrame.PlayerFrameContainer
         and _G.PlayerFrame.PlayerFrameContainer.VehicleTexture

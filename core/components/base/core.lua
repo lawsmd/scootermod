@@ -4,7 +4,6 @@ addon.Components = addon.Components or {}
 addon.ComponentInitializers = addon.ComponentInitializers or {}
 addon.ComponentsUtil = addon.ComponentsUtil or {}
 
--- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
 local FS = nil
 local function ensureFS()
     if not FS then FS = addon.FrameState end
@@ -48,10 +47,7 @@ local function CopyDefaultValue(value)
     return copy
 end
 
--- Attach a lightweight defaults metatable to a component's db table so that
--- reading an unset key automatically returns the setting's registered default.
--- This eliminates the need for manual "or self.settings[key].default" fallbacks
--- scattered across every component file.
+-- Metatable fallback: unset keys return their registered defaults.
 local function attachSettingsDefaults(db, component)
     if not db or not component then return end
     local settings = component.settings
@@ -115,8 +111,7 @@ function addon:InitializeComponents()
 end
 
 function addon:LinkComponentsToDB()
-    -- Zero‑Touch: do not create per-component SavedVariables tables just by linking.
-    -- Only assign existing persisted tables; otherwise leave component.db nil.
+    -- Zero-Touch: only assign pre-existing persisted tables.
     local profile = self.db and self.db.profile
     local components = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
@@ -125,8 +120,7 @@ function addon:LinkComponentsToDB()
             component.db = persisted
             attachSettingsDefaults(persisted, component)
         else
-            -- Provide a lightweight proxy so UI code can read/write without nil checks.
-            -- Reads return nil (so UI falls back to defaults). First write creates the real table.
+            -- Proxy: reads return nil, first write materializes the real table.
             if not component._ScootDBProxy then
                 local proxy = {}
                 setmetatable(proxy, {
@@ -186,15 +180,14 @@ function addon:EnsureComponentDB(componentOrId)
 end
 
 function addon:ClearFrameLevelState()
-    -- Best-effort hot cleanup when switching into a Zero‑Touch/empty profile without reload.
-    -- This cannot fully restore Blizzard baselines (only a reload can), but it prevents
-    -- our persistent hook flags from continuing to enforce hidden states.
+    -- Best-effort cleanup on profile switch. Clears hook flags so hidden states
+    -- stop being enforced (full restore requires reload).
     local function safeAlpha(fs)
         if fs and fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
     end
     local function clearTextFlags(fs)
         if not fs then return end
-        -- Clear FrameState hidden flags (uses lookup table instead of writing to frames)
+        -- Clear FrameState hidden flags
         local fstate = ensureFS()
         if fstate then
             fstate.SetHidden(fs, "healthText", false)
@@ -207,7 +200,6 @@ function addon:ClearFrameLevelState()
         safeAlpha(fs)
     end
 
-    -- Clear cached fontstring references and their flags (if available this session).
     if self._ufHealthTextFonts then
         for _, cache in pairs(self._ufHealthTextFonts) do
             clearTextFlags(cache and cache.leftFS)
@@ -223,7 +215,6 @@ function addon:ClearFrameLevelState()
         end
     end
 
-    -- Clear some well-known globals defensively (covers cases where caches weren't built).
     clearTextFlags(_G.PlayerFrameHealthBarTextLeft)
     clearTextFlags(_G.PlayerFrameHealthBarTextRight)
     clearTextFlags(_G.PlayerFrameManaBarTextLeft)
@@ -233,7 +224,6 @@ function addon:ClearFrameLevelState()
     clearTextFlags(_G.PetFrameManaBarTextLeft)
     clearTextFlags(_G.PetFrameManaBarTextRight)
 
-    -- Clear baseline caches so future applies recapture from the current Blizzard state.
     self._ufTextBaselines = nil
     self._ufPowerTextBaselines = nil
     self._ufNameLevelTextBaselines = nil
@@ -241,22 +231,17 @@ function addon:ClearFrameLevelState()
     self._ufNameBackdropBaseWidth = nil
     self._ufToTNameTextBaseline = nil
 
-    -- Drop caches so visibility-only hooks won't run expensive work and will re-resolve later.
     self._ufHealthTextFonts = nil
     self._ufPowerTextFonts = nil
 end
 
 function addon:ApplyStyles()
-    -- CRITICAL: Do NOT apply styles during combat - many styling functions call
-    -- SetStatusBarTexture, SetVertexColor, SetShown, etc. on protected Blizzard frames,
-    -- which taints them and causes "blocked from an action" errors.
+    -- CRITICAL: Styling during combat taints protected frames ("blocked from an action").
     if InCombatLockdown and InCombatLockdown() then
-        -- Ensure cast bar persistence hooks are installed even if we defer full styling.
-        -- This is a visual-only hook path and is safe to install during combat.
+        -- Cast bar hooks are visual-only and safe during combat.
         if addon.EnsureAllUnitFrameCastBarHooks then
             addon.EnsureAllUnitFrameCastBarHooks()
         end
-        -- Defer styling until combat ends
         if not self._pendingApplyStyles then
             self._pendingApplyStyles = true
             self:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -266,8 +251,7 @@ function addon:ApplyStyles()
     local profile = self.db and self.db.profile
     local componentsCfg = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
-        -- Zero‑Touch: only apply component styling when the component has an explicit
-        -- SavedVariables table (i.e., the user has configured it).
+        -- Zero-Touch: skip unconfigured components.
         local hasConfig = componentsCfg and rawget(componentsCfg, id) ~= nil
         if hasConfig and component.ApplyStyling then
             component:ApplyStyling()
@@ -515,7 +499,6 @@ function addon:SyncAllEditModeSettings()
     return anyChanged
 end
 
--- Promote FrameState helpers for cross-file use within the base/ decomposition
 addon.ComponentsUtil._ensureFS = ensureFS
 addon.ComponentsUtil._getState = getState
 addon.ComponentsUtil._getProp = getProp

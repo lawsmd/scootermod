@@ -19,7 +19,7 @@ local safePointToken = SS.safePointToken
 local safeGetWidth = SS.safeGetWidth
 
 -- Helper to get a usable width for FontString alignment.
--- StatusBars return nil from safeGetWidth (to avoid secret value issues), so we need
+-- StatusBars return nil from safeGetWidth (to avoid secret value issues), so it needs
 -- alternative strategies: try the FontString itself, try the grandparent (which is
 -- typically NOT a StatusBar), or fall back to a reasonable default.
 local function getBarWidthForAlignment(fs)
@@ -165,7 +165,7 @@ do
     end
 
     -- Helper: determine whether the current player can ever have an Alternate Power Bar.
-    -- We intentionally key off spec IDs where possible so the check is cheap and future‑proof.
+    -- Intentionally keyed off spec IDs where possible so the check is cheap and future‑proof.
     --
     -- IMPORTANT (Druid nuance):
     -- Some classes (notably DRUID) can surface the global AlternatePowerBar based on form/talents
@@ -173,7 +173,7 @@ do
     -- Example: Restoration Druid can talent into Moonkin Form, causing Astral Power to become the
     -- main bar and mana to appear on the AlternatePowerBar.
     --
-    -- Because the Settings UI should allow pre-configuration, we treat DRUID as class-capable.
+    -- Because the Settings UI should allow pre-configuration, DRUID is treated as class-capable.
     -- Specs covered (per user guidance):
     --   - Balance Druid      (specID = 102, class = DRUID)
     --   - Shadow Priest      (specID = 258, class = PRIEST)
@@ -217,7 +217,7 @@ do
     addon.UnitFrames_PlayerHasAlternatePowerBar = playerHasAlternatePowerBar
 
     -- Hook UpdateTextString to reapply visibility after Blizzard's updates.
-    -- IMPORTANT: Use hooksecurefunc so we don't replace the method and taint
+    -- IMPORTANT: Use hooksecurefunc to avoid replacing the method and taint
     -- secure StatusBar instances used by Blizzard (Combat Log, unit frames, etc.).
     local function hookHealthBarUpdateTextString(bar, unit)
         local fs = ensureFS()
@@ -314,7 +314,7 @@ do
         local size = tonumber(styleCfg.size) or 14
         local outline = tostring(styleCfg.style or "OUTLINE")
 
-        -- Set flag to prevent our SetFont hook from triggering a reapply loop
+        -- Set flag to prevent the SetFont hook from triggering a reapply loop
         local fstate = ensureFS()
         if fstate then fstate.SetProp(fs, "applyingFont", true) end
         if addon.ApplyFontStyle then
@@ -555,7 +555,7 @@ do
         if leftFS then applyTextStyle(leftFS, cfg.textHealthPercent or {}, unit .. ":left", frame) end
         if rightFS then applyTextStyle(rightFS, cfg.textHealthValue or {}, unit .. ":right", frame) end
         -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
-        -- Always apply styling if we have text customizations; handle visibility separately
+        -- Always apply styling if text customizations exist; handle visibility separately
         if textStringFS then
             -- Handle visibility only when explicitly configured
             if cfg.healthValueHidden ~= nil then
@@ -579,7 +579,7 @@ do
 
     -- Boss frames: Apply Health % (LeftText) and Value (RightText/Center) styling.
     -- Boss frames are not returned by EditModeManagerFrame's UnitFrame system indices like Player/Target/Focus/Pet,
-    -- so we resolve Boss1..Boss5 deterministically using their global names.
+    -- so Boss1..Boss5 are resolved deterministically using their global names.
     function addon.ApplyBossHealthTextStyling()
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -719,7 +719,7 @@ do
 
         local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unit]
         if not cache then
-            -- If we haven't resolved fonts yet this session, skip work here.
+            -- If fonts haven't been resolved yet this session, skip work here.
             -- They will be resolved during the next ApplyStyles() pass.
             return
         end
@@ -910,7 +910,7 @@ do
 	end
 
 	-- Hook UpdateTextString to reapply visibility after Blizzard's updates.
-	-- Use hooksecurefunc so we don't replace the method and taint secure StatusBars.
+	-- Use hooksecurefunc to avoid replacing the method and taint secure StatusBars.
 	local function hookPowerBarUpdateTextString(bar, unit)
 		local fstate = ensureFS()
 		if not bar or not fstate then return end
@@ -1003,7 +1003,7 @@ do
 		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
-		-- Set flag to prevent our SetFont hook from triggering a reapply loop
+		-- Set flag to prevent the SetFont hook from triggering a reapply loop
 		local fst = ensureFS()
 		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
@@ -1254,7 +1254,7 @@ do
 		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left", frame) end
 		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right", frame) end
         -- Style center TextString using Value settings (used in NUMERIC display mode and Character Pane)
-        -- Always apply styling if we have text customizations; handle visibility separately
+        -- Always apply styling if text customizations exist; handle visibility separately
         if textStringFS then
             -- Handle visibility only when explicitly configured
             local centerHiddenSetting = nil
@@ -1285,7 +1285,7 @@ do
 
     -- Boss frames: Apply Power % (LeftText) and Value (RightText) styling.
     -- Boss frames are not returned by EditModeManagerFrame's UnitFrame system indices like Player/Target/Focus/Pet,
-    -- so we resolve Boss1..Boss5 deterministically using their global names.
+    -- so Boss1..Boss5 are resolved deterministically using their global names.
     function addon.ApplyBossPowerTextStyling()
         local db = addon and addon.db and addon.db.profile
         if not db then return end
@@ -1422,7 +1422,7 @@ do
 
         local cache = addon._ufPowerTextFonts and addon._ufPowerTextFonts[unit]
         if not cache then
-            -- If we haven't resolved fonts yet this session, skip work here.
+            -- If fonts haven't been resolved yet this session, skip work here.
             -- They will be resolved during the next ApplyStyles() pass.
             return
         end
@@ -1635,9 +1635,9 @@ do
 		-- Boss frames are a multi-frame system (Boss1..Boss5). They do not map cleanly
 		-- to a single "unit frame" for baseline/child resolution. Handle as a special case.
 		if unit == "Boss" then
-			-- Ensure we get a first application pass when the boss system becomes visible.
+			-- Ensure a first application pass when the boss system becomes visible.
 			-- Boss frames often become relevant only after the container shows (e.g., in instances),
-			-- so we hook the container once to trigger a reapply and install per-frame hooks.
+			-- so the container is hooked once to trigger a reapply and install per-frame hooks.
 			if _G and _G.hooksecurefunc then
 				local container = _G.BossTargetFrameContainer
 				local cState = getState(container)
@@ -1646,8 +1646,7 @@ do
 					if type(container.OnShow) == "function" then
 						_G.hooksecurefunc(container, "OnShow", function()
 							-- IMPORTANT (taint): This hook executes inside Blizzard's boss-frame show/layout flow.
-							-- Do not run styling synchronously here; defer to break the execution context chain
-							-- (see DEBUG.md "Global Mixin Hooks" + general deferral guidance).
+							-- Do not run styling synchronously here; defer to break the execution context chain.
 							local function doApply()
 								if InCombatLockdown and InCombatLockdown() then
 									-- Boss frames show/hide during encounters; defer the heavy work until out of combat.
@@ -1669,7 +1668,7 @@ do
 			end
 
 			-- Apply to all five boss frames when any Boss name/backdrop setting is configured.
-			-- Zero‑Touch remains intact because we only reach this block when cfg exists AND
+			-- Zero‑Touch remains intact because this block is only reached when cfg exists AND
 			-- at least one relevant setting was explicitly set above.
 			local function resolveBossFrame(i)
 				return _G and _G["Boss" .. i .. "TargetFrame"] or nil
@@ -1823,7 +1822,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If we can't safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -1913,7 +1912,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If we can't safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						borderFrame:Hide()
 						return
@@ -2191,7 +2190,7 @@ do
 			local point, relTo, relPoint, xOff, yOff =
 				baseline.point, baseline.relTo, baseline.relPoint, baseline.x, baseline.y
 
-			-- If we can find the canonical ReputationColor strip, keep right margin stable
+			-- If the canonical ReputationColor strip is found, keep right margin stable
 			-- by nudging the TOPLEFT X offset leftwards as width grows.
 			local main = resolveUFContentMain_NLT(unitKey)
 			local rep = main and main.ReputationColor or nil
@@ -2256,7 +2255,7 @@ do
 		local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
-		-- Set flag to prevent our SetFont hook from triggering a reapply loop
+		-- Set flag to prevent the SetFont hook from triggering a reapply loop
 		local fst = ensureFS()
 		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
@@ -2312,7 +2311,7 @@ do
 		applyNameContainerWidth(unit, nameFS)
 
 		-- For Target/Focus name text with class color, Blizzard resets the color on target change.
-		-- Install hooks to immediately re-apply our class color, preventing visible flash.
+		-- Install hooks to immediately re-apply the class color, preventing visible flash.
 		if (unit == "Target" or unit == "Focus") and cfg.textName and cfg.textName.colorMode == "class" then
 			local nameState = getState(nameFS)
 			local unitFrame = unit == "Target" and _G.TargetFrame or _G.FocusFrame
@@ -2322,11 +2321,11 @@ do
 				nameState.textColorHooked = true
 
 				hooksecurefunc(nameFS, "SetTextColor", function(self, r, g, b, a)
-					-- Guard against recursion since we call SetTextColor inside the hook
+					-- Guard against recursion since SetTextColor is called inside the hook
 					local st = getState(self)
 					if st and st.applyingTextColor then return end
 
-					-- Check if we have class color configured for this unit
+					-- Check if class color is configured for this unit
 					local db = addon and addon.db and addon.db.profile
 					local unitKey = unit -- captured from outer scope
 					local unitCfg = db and db.unitFrames and db.unitFrames[unitKey]
@@ -2336,7 +2335,7 @@ do
 						local unitToken = unitKey == "Target" and "target" or "focus"
 						local cr, cg, cb = addon.GetClassColorRGB(unitToken)
 						if cr and cg and cb then
-							-- Re-apply our class color (overrides what Blizzard just set)
+							-- Re-apply the class color (overrides what Blizzard just set)
 							if st then st.applyingTextColor = true end
 							pcall(self.SetTextColor, self, cr, cg, cb, 1)
 							if st then st.applyingTextColor = nil end
@@ -2349,7 +2348,7 @@ do
 			-- Hook the unit frame's OnShow to catch the "frame freshly drawn" case.
 			-- When going from no target to having a target, the frame shows and unit data
 			-- may not be available during the initial SetTextColor call.
-			-- Strategy: Hide the name text immediately on show, apply our color, then reveal it.
+			-- Strategy: Hide the name text immediately on show, apply the color, then reveal it.
 			-- This prevents any flash of the wrong color.
 			local frameState = getState(unitFrame)
 			if unitFrame and frameState and not frameState.onShowClassColorHooked then
@@ -2389,10 +2388,9 @@ do
 		applyTextStyle(levelFS, cfg.textLevel or {}, unit .. ":level")
 		
 		-- For Player level text, Blizzard uses SetVertexColor (not SetTextColor!) which requires special handling
-		-- Blizzard constantly resets the level color, so we use hooksecurefunc to re-apply our custom color
-		-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
-		-- cause taint that spreads through the execution context, blocking protected functions
-		-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
+		-- Blizzard constantly resets the level color, so hooksecurefunc re-applies the custom color
+		-- CRITICAL: hooksecurefunc avoids taint. Method overrides cause taint that spreads
+		-- through the execution context, blocking protected functions like SetTargetClampingInsets().
 		if unit == "Player" and levelFS then
 			-- Install hook once (hooksecurefunc runs AFTER Blizzard's SetVertexColor)
 			local levelState = getState(levelFS)
@@ -2400,15 +2398,15 @@ do
 				levelState.vertexColorHooked = true
 				
 				hooksecurefunc(levelFS, "SetVertexColor", function(self, r, g, b, a)
-					-- Guard against recursion since we call SetVertexColor inside the hook
+					-- Guard against recursion since SetVertexColor is called inside the hook
 					local st = getState(self)
 					if st and st.applyingVertexColor then return end
 					
-					-- Check if we have a custom color configured
+					-- Check if a custom color is configured
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames.Player and db.unitFrames.Player.textLevel and db.unitFrames.Player.textLevel.color then
 						local c = db.unitFrames.Player.textLevel.color
-						-- Re-apply our custom color (overrides what Blizzard just set)
+						-- Re-apply the custom color (overrides what Blizzard just set)
 						if st then st.applyingVertexColor = true end
 						pcall(self.SetVertexColor, self, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
 						if st then st.applyingVertexColor = nil end
@@ -2417,7 +2415,7 @@ do
 				end)
 			end
 			
-			-- Apply our color immediately if configured
+			-- Apply the custom color immediately if configured
 			if cfg.textLevel and cfg.textLevel.color then
 				local c = cfg.textLevel.color
 				local st = getState(levelFS)
@@ -2473,7 +2471,7 @@ do
 							addon._ufNameBackdropBaseWidth[unit] = base
 						end
 					end
-					-- If we can't safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -2575,7 +2573,7 @@ do
 						addon._ufNameBackdropBaseWidth[unit] = base
 					end
 				end
-				-- If we can't safely read a width (secret-value environment), skip cosmetics.
+				-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
 				if not base or base <= 0 then
 					borderFrame:Hide()
 					return
@@ -2666,10 +2664,10 @@ do
 	-- to reapply name/level text styling (including visibility and alignment) after
 	-- Blizzard's updates reset properties.
 	--
-	-- IMPORTANT (pop-in): We must reapply immediately (same frame) to avoid visible
+	-- IMPORTANT (pop-in): Reapply immediately (same frame) to avoid visible
 	-- "flash" when acquiring a target. hooksecurefunc already runs AFTER Blizzard's
 	-- update completes, so an additional one-frame defer is not required for correctness.
-	-- We still optionally schedule a second reapply on the next tick as a safety net.
+	-- A second reapply is optionally scheduled on the next tick as a safety net.
 	local _nameLevelTextHooksInstalled = false
 	local function installNameLevelTextHooks()
 		if _nameLevelTextHooksInstalled then return end
@@ -2690,7 +2688,7 @@ do
 		end
 
 		-- Player frame hooks: PlayerFrame_Update and PlayerFrame_UpdateRolesAssigned
-		-- can reset level text visibility. Hook both to ensure our settings persist.
+		-- can reset level text visibility. Hook both to ensure custom settings persist.
 		if _G.hooksecurefunc then
 			-- PlayerFrame_Update calls PlayerFrame_UpdateLevel which sets the level text
 			if type(_G.PlayerFrame_Update) == "function" then
@@ -2845,7 +2843,7 @@ end
 -- Character Frame Hook: Reapply Player text styling when Character Pane opens
 --------------------------------------------------------------------------------
 -- Opening the Character Pane (default keybind: 'C') causes Blizzard to reset
--- Player unit frame text fonts. This hook ensures our custom styling persists.
+-- Player unit frame text fonts. This hook ensures custom styling persists.
 -- NOTE: Simplified to use single deferred callbacks to avoid performance issues.
 --------------------------------------------------------------------------------
 do
@@ -2926,7 +2924,7 @@ do
 		end
 	end)
 
-	-- Hook PaperDollFrame.VisibilityUpdated event for robust reapplication
+	-- Hook PaperDollFrame.VisibilityUpdated event for reliable reapplication
 	-- This fires when the Character Pane (PaperDollFrame) is shown or hidden
 	-- Using EventRegistry is more reliable than HookScript as it uses Blizzard's official event system
 	if _G.EventRegistry and _G.EventRegistry.RegisterCallback then

@@ -16,9 +16,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local DEFAULT_ICON_SIZE = 16
 local TOOLTIP_FONT_SIZE = 11
@@ -29,11 +27,7 @@ local TOOLTIP_MAX_WIDTH = 280
 local HOVER_ALPHA = 0.25
 local BORDER_WIDTH = 1
 
---------------------------------------------------------------------------------
--- Custom TUI Tooltip Frame
---------------------------------------------------------------------------------
--- A reusable tooltip frame styled to match the TUI theme.
--- Uses Matrix green border, dark background, JetBrains Mono fonts.
+-- Custom TUI Tooltip Frame (themed border, dark background, monospace fonts)
 
 local ScooterTooltip = nil
 
@@ -44,7 +38,6 @@ local function GetOrCreateTooltip()
     local ar, ag, ab = theme:GetAccentColor()
     local bgR, bgG, bgB = theme:GetBackgroundSolidColor()
 
-    -- Create the tooltip frame
     local tooltip = CreateFrame("Frame", "ScooterInfoTooltip", UIParent)
     tooltip:SetFrameStrata("TOOLTIP")
     tooltip:SetFrameLevel(100)
@@ -112,7 +105,6 @@ local function GetOrCreateTooltip()
     bodyText:SetWordWrap(true)
     tooltip._bodyText = bodyText
 
-    -- Subscribe to theme updates
     theme:Subscribe("ScooterInfoTooltip", function(r, g, b)
         for _, tex in pairs(tooltip._border) do
             tex:SetColorTexture(r, g, b, 1)
@@ -120,7 +112,6 @@ local function GetOrCreateTooltip()
         tooltip._titleText:SetTextColor(r, g, b, 1)
     end)
 
-    -- Methods
     function tooltip:SetContent(title, body)
         if title and title ~= "" then
             self._titleText:SetText(title)
@@ -134,7 +125,6 @@ local function GetOrCreateTooltip()
 
         self._bodyText:SetText(body or "")
 
-        -- Calculate size
         local titleHeight = (title and title ~= "") and (self._titleText:GetStringHeight() + 4) or 0
         local bodyHeight = self._bodyText:GetStringHeight()
         local totalHeight = TOOLTIP_PADDING * 2 + TOOLTIP_BORDER_WIDTH * 2 + titleHeight + bodyHeight
@@ -157,21 +147,8 @@ local function GetOrCreateTooltip()
     return tooltip
 end
 
---------------------------------------------------------------------------------
--- InfoIcon: Compact help icon with tooltip
---------------------------------------------------------------------------------
--- Creates a small info icon ("i" or "?") that displays a tooltip on hover.
--- Designed for use in tabs, headers, section titles, and other compact spaces.
--- DEFAULT POSITION: Left side of labels (use CreateInfoIconForLabel)
---
--- Options table:
---   parent        : Parent frame (required)
---   tooltipText   : Text to display in tooltip (required)
---   tooltipTitle  : Optional title line for tooltip
---   size          : Icon size in pixels (default 16)
---   iconType      : "info" (i) or "help" (?) - default "info"
---   name          : Optional global frame name
---------------------------------------------------------------------------------
+-- InfoIcon: Small "i" or "?" icon that shows a tooltip on hover.
+-- Default position: left side of labels (use CreateInfoIconForLabel).
 
 function Controls:CreateInfoIcon(options)
     local theme = GetTheme()
@@ -189,27 +166,21 @@ function Controls:CreateInfoIcon(options)
     local iconType = options.iconType or "info"
     local name = options.name
 
-    -- Get theme colors
     local ar, ag, ab = theme:GetAccentColor()
     local bgR, bgG, bgB, bgA = theme:GetBackgroundSolidColor()
 
-    -- Create the icon button frame
     local icon = CreateFrame("Button", name, parent)
     icon:SetSize(size, size)
     icon:EnableMouse(true)
 
-    -- Elevate frame level to ensure it receives mouse input
     local parentLevel = parent:GetFrameLevel() or 1
     icon:SetFrameLevel(parentLevel + 10)
 
-    -- Background (circular appearance via texture)
-    -- Using a simple square with low opacity as base
     local bg = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints(icon)
     bg:SetColorTexture(bgR, bgG, bgB, 0.6)
     icon._bg = bg
 
-    -- Border (simple square outline, accent color at lower opacity)
     local border = {}
 
     local top = icon:CreateTexture(nil, "BORDER", nil, -1)
@@ -250,7 +221,6 @@ function Controls:CreateInfoIcon(options)
     hoverBg:Hide()
     icon._hoverBg = hoverBg
 
-    -- Icon text ("i" or "?")
     local iconText = icon:CreateFontString(nil, "OVERLAY")
     local fontPath = theme:GetFont("BUTTON")
     local fontSize = math.max(size - 4, 8)  -- Scale font with icon size
@@ -260,67 +230,53 @@ function Controls:CreateInfoIcon(options)
     iconText:SetTextColor(ar, ag, ab, 1)
     icon._iconText = iconText
 
-    -- Store tooltip info
     icon._tooltipText = tooltipText
     icon._tooltipTitle = tooltipTitle
 
-    -- Hover handlers
     icon:SetScript("OnEnter", function(self)
-        -- Show hover highlight
         local r, g, b = theme:GetAccentColor()
         self._hoverBg:SetColorTexture(r, g, b, HOVER_ALPHA)
         self._hoverBg:Show()
 
-        -- Brighten border
         for _, tex in pairs(self._border) do
             tex:SetColorTexture(r, g, b, 1)
         end
 
-        -- Show custom TUI tooltip (positioned ABOVE icon to avoid cursor blocking)
+        -- Position above icon to avoid cursor blocking
         local tooltip = GetOrCreateTooltip()
         tooltip:SetContent(self._tooltipTitle, self._tooltipText)
         tooltip:ShowAtAnchor(self, "BOTTOMLEFT", "TOPLEFT", 0, 4)
     end)
 
     icon:SetScript("OnLeave", function(self)
-        -- Hide hover highlight
         self._hoverBg:Hide()
-
-        -- Restore border opacity
         local r, g, b = theme:GetAccentColor()
         for _, tex in pairs(self._border) do
             tex:SetColorTexture(r, g, b, 0.6)
         end
 
-        -- Hide tooltip
         local tooltip = GetOrCreateTooltip()
         tooltip:Hide()
     end)
 
-    -- Generate unique subscription key
     local subscribeKey = "InfoIcon_" .. (name or tostring(icon))
     icon._subscribeKey = subscribeKey
 
-    -- Subscribe to theme updates
     theme:Subscribe(subscribeKey, function(r, g, b)
-        -- Update border
         if icon._border then
             local alpha = icon:IsMouseOver() and 1 or 0.6
             for _, tex in pairs(icon._border) do
                 tex:SetColorTexture(r, g, b, alpha)
             end
         end
-        -- Update hover background
         if icon._hoverBg then
             icon._hoverBg:SetColorTexture(r, g, b, HOVER_ALPHA)
         end
-        -- Update icon text
         if icon._iconText then
             icon._iconText:SetTextColor(r, g, b, 1)
         end
     end)
 
-    -- Public methods
     function icon:SetTooltipText(text)
         self._tooltipText = text
     end
@@ -342,21 +298,7 @@ function Controls:CreateInfoIcon(options)
     return icon
 end
 
---------------------------------------------------------------------------------
--- Convenience: Create info icon anchored to a FontString label
---------------------------------------------------------------------------------
--- Default position: LEFT side of the label (before the text).
--- This matches the TUI convention for info icons.
---
--- Options table:
---   label         : FontString to anchor to (required)
---   tooltipText   : Tooltip text (required)
---   tooltipTitle  : Optional title line
---   size          : Icon size (default 14)
---   offsetX       : X offset from label (default -4, negative = further left)
---   offsetY       : Y offset (default 0)
---   position      : "left" (default) or "right" - which side of label
---------------------------------------------------------------------------------
+-- Create info icon anchored to a FontString label (default: left side)
 
 function Controls:CreateInfoIconForLabel(options)
     if not options or not options.label then
@@ -374,7 +316,6 @@ function Controls:CreateInfoIconForLabel(options)
     local position = options.position or "left"
     local iconSize = options.size or 14
 
-    -- Create the icon with parent frame
     local icon = self:CreateInfoIcon({
         parent = parent,
         tooltipText = options.tooltipText,
@@ -386,25 +327,16 @@ function Controls:CreateInfoIconForLabel(options)
 
     if not icon then return nil end
 
-    -- Anchor to label (default: left side)
     if position == "right" then
-        -- Right side of label (legacy behavior if needed)
         icon:SetPoint("LEFT", label, "RIGHT", math.abs(offsetX), offsetY)
     else
-        -- Left side of label (default TUI convention)
         icon:SetPoint("RIGHT", label, "LEFT", offsetX, offsetY)
     end
 
     return icon
 end
 
---------------------------------------------------------------------------------
--- Convenience: Quick info icon creation for tabs/headers
---------------------------------------------------------------------------------
--- Minimal API for the most common use case: a small icon with tooltip.
---
--- Controls:QuickInfoIcon(parent, text, size)
---------------------------------------------------------------------------------
+-- Quick info icon creation for tabs/headers
 
 function Controls:QuickInfoIcon(parent, tooltipText, size)
     return self:CreateInfoIcon({

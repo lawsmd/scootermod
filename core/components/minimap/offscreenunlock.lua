@@ -88,7 +88,7 @@ local combatWatcher
 -- The clamp rect insets value to use when unlocked
 local CLAMP_ZERO = 0
 
--- Track whether we've applied the nudge this Edit Mode session
+-- Track whether the nudge has been applied this Edit Mode session
 local _nudgeApplied = false
 
 local function _ApplySliderStyleNudge(frame)
@@ -164,7 +164,7 @@ local function _InstallOffscreenEnforcementHooks(frame)
     setProp(frame, "minimapOffscreenHooksInstalled", true)
 
     -- When the setting is enabled, keep clamping OFF even if Blizzard/Edit Mode
-    -- tries to re-enable it after our apply pass.
+    -- tries to re-enable it after the apply pass.
     if frame.SetClampedToScreen and frame.IsClampedToScreen then
         _G.hooksecurefunc(frame, "SetClampedToScreen", function(self, clamped)
             if not getProp(self, "minimapOffscreenEnforceEnabled") then return end
@@ -315,7 +315,7 @@ local function applyMinimapOffscreenUnlock()
     return didWork
 end
 
--- Edit Mode can reapply clamping as it enters; enforce our state right after entry.
+-- Edit Mode can reapply clamping as it enters; enforce the desired state right after entry.
 local _editModeHooksInstalled = false
 local function installEditModeHooks()
     if _editModeHooksInstalled then return end
@@ -325,7 +325,7 @@ local function installEditModeHooks()
     if not mgr then return end
     if type(mgr.EnterEditMode) == "function" then
         _G.hooksecurefunc(mgr, "EnterEditMode", function()
-            -- Reset nudge tracking on Edit Mode entry so we re-apply the nudge
+            -- Reset nudge tracking on Edit Mode entry so the nudge is re-applied
             _ResetNudgeTracking()
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()

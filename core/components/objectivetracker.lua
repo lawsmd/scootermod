@@ -103,7 +103,7 @@ local function ResolveQuestNameFontString(block)
 
     -- Preferred (framestack-confirmed): quest title fontstring is `block.HeaderText`.
     -- Some templates make the entire block clickable via `HeaderButton`, which can contain
-    -- objective text regions; do NOT scan button regions or we may accidentally target
+    -- objective text regions; do NOT scan button regions to avoid accidentally targeting
     -- `block.lastRegion.Text` and highlight objectives.
     local fs = block.HeaderText
     if fs and type(fs.SetTextColor) == "function" then return fs end
@@ -142,7 +142,7 @@ local function GetObjectiveTrackerTextSize(componentSelf, preferLiveFontObject)
     -- Objective Tracker Text Size is owned by Edit Mode (system 12, setting 2 by default).
     --
     -- During Edit Mode live preview, the persisted values (DB and GetSetting) are stale.
-    -- We must read the live size from a captured FontObject instead.
+    -- The live size must be read from a captured FontObject instead.
     if preferLiveFontObject or IsEditModeActive() then
         local liveSize = GetLiveTextSizeFromFontObject()
         if liveSize and liveSize > 0 then
@@ -215,7 +215,7 @@ local function ApplyColorWithDefaultRestore(fs, cfg)
     end
 
     -- Color is a mode selector (Default/Custom).
-    -- In Default mode, we do not set a color at all; Blizzard remains the source of truth.
+    -- In Default mode, no color is set; Blizzard remains the source of truth.
     if cfg.colorMode ~= "custom" then
         return
     end
@@ -309,7 +309,7 @@ local function IterateModuleBlocks(module, fn)
     end
 
     -- AdventureObjectiveTracker (Collections): blocks are keyed under ContentsFrame with dynamic keys.
-    -- Framestack example:
+    -- Example frame paths:
     -- - AdventureObjectiveTracker.ContentsFrame.<dynamicKey>.HeaderText
     -- - AdventureObjectiveTracker.ContentsFrame.<dynamicKey>.objective.Text
     -- These are not exposed via firstBlock/usedBlocks on some client builds.
@@ -372,7 +372,7 @@ local function ApplyObjectiveTrackerTextStyling(self)
 
     -- Use the Edit Mode Text Size (live) rather than the fontstring's current size.
     -- Important: ScooterMod uses SetFont which detaches from FontObjects; by explicitly using the
-    -- Edit Mode size here, we preserve live behavior when Edit Mode updates the system.
+    -- Edit Mode size here, preserving live behavior when Edit Mode updates the system.
     local textSize = GetObjectiveTrackerTextSize(self)
 
     -- Root header (ObjectiveTrackerFrame.Header.Text)
@@ -644,11 +644,11 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     local configured = ClampPercent0To100(db.opacityInInstanceCombat)
     local shouldApply = inCombat and inInstance
 
-    -- NOTE: We intentionally do NOT set alpha on ObjectiveTrackerFrame itself.
-    -- Alpha is multiplicative through the frame tree; if we faded the parent, children like
+    -- NOTE: Alpha is intentionally NOT set on ObjectiveTrackerFrame itself.
+    -- Alpha is multiplicative through the frame tree; fading the parent means children like
     -- ScenarioObjectiveTracker (Mythic+ progress / scenario UI) could not remain at full opacity.
     --
-    -- Instead we fade each module (Header + ContentsFrame) except ScenarioObjectiveTracker.
+    -- Instead, each module (Header + ContentsFrame) is faded except ScenarioObjectiveTracker.
     local function ForEachCombatOpacityTargetFrame(fn)
         -- Root header (the "Objectives" header bar) should fade along with modules.
         if tracker.Header and tracker.Header.SetAlpha then
@@ -697,7 +697,7 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
         local frameState = getState(frame)
         if not frameState then return end
 
-        -- Capture baseline alpha once so we can restore it after combat.
+        -- Capture baseline alpha once to allow restoring it after combat.
         if frameState.combatOpacityBaseAlpha == nil and frame.GetAlpha then
             local ok, a = pcall(frame.GetAlpha, frame)
             if ok and a ~= nil then
@@ -723,7 +723,7 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     end
 
     -- Not in qualifying combat (either out of combat, or in combat but not in a dungeon/raid):
-    -- restore baseline if we applied an override previously.
+    -- restore baseline if an override was applied previously.
     ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
 end
 
@@ -785,7 +785,7 @@ local function InstallObjectiveTrackerHooks(self)
 
     -- IMPORTANT: `ObjectiveTrackerFrame.modules` can be nil or incomplete if ScooterMod installs hooks
     -- before the ObjectiveTrackerManager assigns modules (e.g., early in the login flow on some clients).
-    -- When modules are later added to the container, ensure we attach our EndLayout hook then too.
+    -- When modules are later added to the container, the EndLayout hook must be attached then too.
     if type(tracker.AddModule) == "function" then
         hooksecurefunc(tracker, "AddModule", function(_, module)
             EnsureModuleEndLayoutHook(module)
@@ -794,18 +794,18 @@ local function InstallObjectiveTrackerHooks(self)
         end)
     end
 
-    -- Critical: Text Size changes are applied via UpdateSystemSettingTextSize(). If ScooterMod has
-    -- detached fontstrings from FontObjects (via SetFont), we must re-apply using the new size.
+    -- Text Size changes are applied via UpdateSystemSettingTextSize(). If ScooterMod has
+    -- detached fontstrings from FontObjects (via SetFont), styling must be re-applied with the new size.
     --
     -- This hook fires for BOTH:
     -- - ScooterMod slider changes (flag is set)
     -- - Edit Mode live preview (flag is NOT set, but FontObject has the live size)
     --
-    -- We read the live size from the captured FontObject (which Blizzard just updated) and
-    -- re-apply our styling with that size. This enables live Edit Mode preview to work.
+    -- The live size is read from the captured FontObject (which Blizzard just updated) and
+    -- styling is re-applied with that size. This enables live Edit Mode preview to work.
     if type(tracker.UpdateSystemSettingTextSize) == "function" then
         hooksecurefunc(tracker, "UpdateSystemSettingTextSize", function()
-            -- Always re-apply styling - we now read the live size from the FontObject
+            -- Always re-apply styling - the live size is read from the FontObject
             requestApply()
         end)
     end

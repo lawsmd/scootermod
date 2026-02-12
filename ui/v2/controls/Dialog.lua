@@ -1,5 +1,4 @@
 -- Dialog.lua - TUI-styled modal dialog system
--- Replaces the old dialog system with proper styling and strata for the v2 UI
 local addonName, addon = ...
 
 addon.UI = addon.UI or {}
@@ -185,7 +184,7 @@ local function CreateListContainer(parent, height)
     -- Border
     container._border = CreateBorder(container, 1, ar, ag, ab, 0.6)
 
-    -- Scroll frame for items (no template - we'll build our own scrollbar)
+    -- Scroll frame for items (no template - custom scrollbar built below)
     local scrollFrame = CreateFrame("ScrollFrame", nil, container)
     scrollFrame:SetPoint("TOPLEFT", 2, -2)
     scrollFrame:SetPoint("BOTTOMRIGHT", -(SCROLLBAR_WIDTH + SCROLLBAR_MARGIN + 4), 2)
@@ -1118,8 +1117,7 @@ integrationFrame:SetScript("OnEvent", function(self, event, loadedAddon)
             -- Copy existing registrations
             if originalDialogs and type(originalDialogs) == "table" then
                 -- The original dialogs.lua stores registrations in a local table
-                -- We need to re-register the pre-registered dialogs in our system
-                -- This happens automatically when Show is called with a registered name
+                -- Pre-registered dialogs are re-registered automatically when Show is called
             end
         end)
         self:UnregisterEvent("ADDON_LOADED")

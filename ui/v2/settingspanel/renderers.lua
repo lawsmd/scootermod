@@ -5,11 +5,8 @@ addon.UI = addon.UI or {}
 addon.UI.SettingsPanel = addon.UI.SettingsPanel or {}
 local UIPanel = addon.UI.SettingsPanel
 
---------------------------------------------------------------------------------
 -- Renderer Registry
---------------------------------------------------------------------------------
--- Renderer files self-register by calling RegisterRenderer() at load time.
--- Only the debugMenu renderer lives here (it has no external module).
+-- Renderer files self-register via RegisterRenderer() at load time.
 
 UIPanel._renderers = {}
 
@@ -17,15 +14,12 @@ function UIPanel:RegisterRenderer(key, renderFn)
     self._renderers[key] = renderFn
 end
 
---------------------------------------------------------------------------------
--- Debug Menu (inline renderer - no external module)
---------------------------------------------------------------------------------
+-- Debug Menu (inline renderer)
 
 UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
     local Controls = addon.UI.Controls
     local Theme = addon.UI.Theme
 
-    -- Track controls for cleanup on the PANEL so ClearContent() can find them
     self._debugMenuControls = self._debugMenuControls or {}
     for _, ctrl in ipairs(self._debugMenuControls) do
         if ctrl.Cleanup then ctrl:Cleanup() end
@@ -34,7 +28,6 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
     end
     self._debugMenuControls = {}
 
-    -- Section header
     local headerLabel = scrollContent:CreateFontString(nil, "OVERLAY")
     Theme:ApplyLabelFont(headerLabel, 14)
     headerLabel:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, 0)
@@ -45,7 +38,6 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
 
     local yOffset = -30
 
-    -- Description
     local descLabel = scrollContent:CreateFontString(nil, "OVERLAY")
     Theme:ApplyValueFont(descLabel, 11)
     descLabel:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, yOffset)
@@ -58,7 +50,6 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
 
     yOffset = yOffset - 50
 
-    -- Force Secret Restrictions toggle
     local secretCVars = {
         "secretCombatRestrictionsForced",
         "secretChallengeModeRestrictionsForced",
@@ -88,7 +79,6 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
 
     yOffset = yOffset - 70
 
-    -- Keep BugSack Button Separate toggle
     local bugSackToggle = Controls:CreateToggle({
         parent = scrollContent,
         label = "Keep BugSack Button Separate",
@@ -99,7 +89,6 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
         set = function(enabled)
             if addon.db and addon.db.profile then
                 addon.db.profile.bugSackButtonSeparate = enabled
-                -- Re-apply minimap styling to update button visibility
                 local minimapComp = addon.Components and addon.Components["minimapStyle"]
                 if minimapComp and minimapComp.ApplyStyling then
                     minimapComp:ApplyStyling()
@@ -113,6 +102,5 @@ UIPanel:RegisterRenderer("debugMenu", function(self, scrollContent)
 
     yOffset = yOffset - 70
 
-    -- Set content height
     scrollContent:SetHeight(math.abs(yOffset) + 20)
 end)

@@ -43,7 +43,7 @@ local function ensureClassResourceZoneWatcher()
 end
 
 -- Baseline storage for managed frame offsets
--- NOTE: We do NOT capture frame scales because frames may retain our previously-applied
+-- NOTE: Frame scales are not captured because frames may retain a previously-applied
 -- scale across reloads. Class resource frames have no Edit Mode scale, so baseline is always 1.0.
 local originalPaddings = setmetatable({}, { __mode = "k" })
 local hookedFrames = setmetatable({}, { __mode = "k" })
@@ -168,7 +168,7 @@ local function resolveClassResourceFrames()
 end
 
 -- Capture original padding values for managed frames
--- NOTE: We do NOT capture scale because frames may retain our applied scale across reloads.
+-- NOTE: Scale is not captured because frames may retain a previously-applied scale across reloads.
 -- Class resource frames have no Edit Mode scale setting, so baseline is always 1.0.
 local function captureBaselines(frame)
 	if not frame then return end
@@ -206,9 +206,9 @@ local function clampScale(value)
 end
 
 -- Hook visibility-restoring functions on a frame to maintain hidden state
--- CRITICAL: We use hooksecurefunc to avoid taint. Method overrides on Blizzard frames
+-- CRITICAL: hooksecurefunc is used to avoid taint. Method overrides on Blizzard frames
 -- cause taint that spreads through the execution context, blocking protected functions
--- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
+-- like SetTargetClampingInsets() during nameplate setup.
 local function ensureVisibilityHooks(frame, cfg)
 	if not frame or hookedFrames[frame] then return end
 	hookedFrames[frame] = true
@@ -232,7 +232,7 @@ local function ensureVisibilityHooks(frame, cfg)
 	end
 	
 	-- Hook SetAlpha to re-enforce hidden state (runs AFTER Blizzard's SetAlpha)
-	-- Uses a guard flag to prevent infinite recursion since we call SetAlpha inside the hook
+	-- Uses a guard flag to prevent infinite recursion since SetAlpha is called inside the hook
 	-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
 	if frame.SetAlpha then
 		hooksecurefunc(frame, "SetAlpha", function(self, alpha)

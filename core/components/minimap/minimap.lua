@@ -108,7 +108,7 @@ end
 -- Shape Application
 --------------------------------------------------------------------------------
 
--- Track if we've ever applied square mode (to know when to restore)
+-- Track if square mode has ever been applied (to know when to restore)
 local hasAppliedSquare = false
 
 -- Circular mask texture (same as what HybridMinimap uses)
@@ -158,7 +158,7 @@ local function ApplyMinimapShape(db)
             end)
         end
     elseif hasAppliedSquare then
-        -- Only restore if we previously applied square mode
+        -- Only restore if square mode was previously applied
         -- This maintains Zero-Touch for users who never changed the shape
         minimap:SetMaskTexture(CIRCLE_MASK)
         shapeChanged = true
@@ -187,7 +187,7 @@ local function ApplyMinimapShape(db)
     if shapeChanged then
         C_Timer.After(0.1, RefreshMinimapButtonPositions)
     end
-    -- If db is nil or mapShape is "default" and we never applied square,
+    -- If db is nil or mapShape is "default" and square was never applied,
     -- leave the minimap completely untouched (Zero-Touch principle)
 end
 
@@ -556,12 +556,12 @@ local function ApplyZoneTextStyle(db)
     local minimap = _G.Minimap
     if not minimap then return end
 
-    -- Hide our overlay if user chose to hide zone text
+    -- Hide the overlay if user chose to hide zone text
     if not db or db.zoneTextHide then
         if overlays.zoneText then
             overlays.zoneText:Hide()
         end
-        -- When hiding, also hide Blizzard's if we're managing it
+        -- When hiding, also hide Blizzard's if it's being managed
         if db then
             HideBlizzardZoneText()
         end
@@ -576,16 +576,16 @@ local function ApplyZoneTextStyle(db)
         if not db.dockHide then
             ShowBlizzardZoneText()
         end
-        -- Apply our font/color settings to Blizzard's FontString
+        -- Apply custom font/color settings to Blizzard's FontString
         ApplyFontToBlizzardZoneText(db)
-        -- Hide our overlay
+        -- Hide the overlay
         if overlays.zoneText then
             overlays.zoneText:Hide()
         end
         return
     end
 
-    -- Custom position: Hide Blizzard's zone text, show our overlay
+    -- Custom position: Hide Blizzard's zone text, show the custom overlay
     HideBlizzardZoneText()
 
     local frame = overlays.zoneText or CreateZoneTextOverlay()
@@ -651,7 +651,7 @@ local function UpdateClockText()
     local db = getMinimapDB()
     if not db or db.clockHide then return end
 
-    -- If position is "dock", we don't update our overlay (Blizzard handles it)
+    -- If position is "dock", the overlay is not updated (Blizzard handles it)
     local position = db.clockPosition or db.clockAnchor or "dock"
     if position == "dock" then return end
 
@@ -739,12 +739,12 @@ local function ApplyClockStyle(db)
         clockTimer = nil
     end
 
-    -- Hide our overlay if user chose to hide clock
+    -- Hide the overlay if user chose to hide clock
     if not db or db.clockHide then
         if overlays.clock then
             overlays.clock:Hide()
         end
-        -- When hiding, also hide Blizzard's if we're managing it
+        -- When hiding, also hide Blizzard's if it's being managed
         if db then
             HideBlizzardClock()
         end
@@ -759,16 +759,16 @@ local function ApplyClockStyle(db)
         if not db.dockHide then
             ShowBlizzardClock()
         end
-        -- Apply our font/color settings to Blizzard's FontString
+        -- Apply custom font/color settings to Blizzard's FontString
         ApplyFontToBlizzardClock(db)
-        -- Hide our overlay
+        -- Hide the overlay
         if overlays.clock then
             overlays.clock:Hide()
         end
         return
     end
 
-    -- Custom position: Hide Blizzard's clock, show our overlay
+    -- Custom position: Hide Blizzard's clock, show the custom overlay
     HideBlizzardClock()
 
     local frame = overlays.clock or CreateClockOverlay()
@@ -1136,7 +1136,7 @@ local function CreateMenuEntry(parent, buttonInfo, index)
                 origButton:GetScript("OnClick")(origButton, mouseButton)
             end
 
-            -- Re-hide if we showed it
+            -- Re-hide if it was temporarily shown
             if wasHidden then
                 origButton:Hide()
             end
@@ -1154,7 +1154,7 @@ local function CreateMenuEntry(parent, buttonInfo, index)
         if origButton then
             -- Copy tooltip behavior from original
             if origButton:GetScript("OnEnter") then
-                -- Position tooltip at our entry
+                -- Position tooltip at this entry
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 -- Try to get tooltip from original
                 local origOnEnter = origButton:GetScript("OnEnter")
@@ -1404,7 +1404,7 @@ local function ApplyButtonContainerStyle(db)
     -- Update menu content
     UpdateButtonContainerMenu()
 
-    -- Show container if we have managed buttons
+    -- Show container if there are managed buttons
     if next(managedButtons) then
         container:Show()
     else
@@ -1440,7 +1440,7 @@ local function ApplyAddonButtonBorderStyle(db)
             if border then border:SetAlpha(0) end
             -- Hide background circle mask
             if background then background:SetAlpha(0) end
-            -- Clear hover highlight (get texture directly for robustness)
+            -- Clear hover highlight (get texture directly for reliability)
             local highlight = button:GetHighlightTexture()
             if highlight then
                 highlight:SetAlpha(0)

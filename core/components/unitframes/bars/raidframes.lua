@@ -117,7 +117,7 @@ end
 
 -- Update overlay dimensions based on health bar fill texture
 -- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
--- This avoids secret value issues because we anchor to Blizzard's fill texture directly,
+-- This avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
@@ -132,7 +132,7 @@ local function updateHealthOverlay(bar)
 
     -- SECRET-SAFE: Anchor overlay to the status bar fill texture.
     -- Blizzard's fill texture is sized internally without exposing secret values.
-    -- By anchoring to it, our overlay automatically matches the fill dimensions.
+    -- By anchoring to it, the overlay automatically matches the fill dimensions.
     local fill = bar:GetStatusBarTexture()
     if not fill then
         overlay:Hide()
@@ -140,7 +140,7 @@ local function updateHealthOverlay(bar)
     end
 
     -- Anchor overlay to match the fill texture exactly.
-    -- Don't check fill dimensions - if fill has zero width (0% health), our overlay
+    -- Don't check fill dimensions - if fill has zero width (0% health), the overlay
     -- will correctly have zero width too. This avoids reading GetWidth() which can
     -- return secret values.
     overlay:ClearAllPoints()
@@ -303,7 +303,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     if state and not state.healthOverlay then
         -- IMPORTANT: This overlay must NOT be parented to the StatusBar.
         -- WoW draws all parent frame layers first, then all child frame layers.
-        -- If we parent to the health bar (child), our overlay can draw *above*
+        -- If parented to the health bar (child), the overlay can draw *above*
         -- CompactUnitFrame parent-layer elements like roleIcon (ARTWORK) and
         -- readyCheckIcon (OVERLAY), effectively hiding them.
         --
@@ -354,13 +354,13 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
             end)
             -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
             -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
-            -- calls SetStatusBarColor(green), our hook fires IMMEDIATELY after and re-applies
-            -- our value-based color. No frame gap = no blink.
+            -- calls SetStatusBarColor(green), the hook fires IMMEDIATELY after and re-applies
+            -- the value-based color. No frame gap = no blink.
             _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
                 local st = getState(self)
                 if not st or not st.overlayActive then return end
                 -- Recursion guard: Check the SAME flag that applyValueBasedColor uses in addon.FrameState
-                -- to prevent infinite loops when we call SetStatusBarColor from applyValueBasedColor.
+                -- to prevent infinite loops when SetStatusBarColor is called from applyValueBasedColor.
                 local fs = addon.FrameState and addon.FrameState.Get(self)
                 if fs and fs.applyingValueBasedColor then return end
                 local db = addon and addon.db and addon.db.profile
@@ -437,7 +437,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
 
     -- Queue a single deferred update to handle cases where the fill texture
     -- isn't ready immediately (e.g., on UI reload). With anchor-based sizing,
-    -- we don't need a retry loop - the overlay will automatically match the
+    -- a retry loop is unnecessary - the overlay will automatically match the
     -- fill texture dimensions once anchored.
     if _G.C_Timer and _G.C_Timer.After then
         C_Timer.After(0.1, function()
@@ -818,8 +818,8 @@ end
 
 -- EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
 -- When ScooterMod triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
--- Arena/Party/Raid frames. If our hooks run during this flow (even just to check
--- frame type), the addon code in the execution context can cause UnitInRange() and
+-- Arena/Party/Raid frames. If hooks run during this flow (even just to check
+-- frame type), addon code in the execution context can cause UnitInRange() and
 -- similar APIs to return secret values, breaking Blizzard's own code.
 local function isEditModeActive()
     if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
@@ -914,7 +914,7 @@ function RaidFrames.installHooks()
     end
 
     -- Hook CompactUnitFrame_UpdateHealthColor for "Color by Value" mode
-    -- This hook fires after every health update, allowing us to update dynamic colors
+    -- This hook fires after every health update, enabling dynamic color updates
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealthColor then
         _G.hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(frame)
             -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
@@ -940,9 +940,9 @@ function RaidFrames.installHooks()
 
             -- FIX: Conditional deferral to prevent blinking during health regen.
             -- The blink occurs because:
-            --   1. SetValue hook applies our color
+            --   1. SetValue hook applies the custom color
             --   2. Blizzard's CompactUnitFrame_UpdateHealthColor resets to default green
-            --   3. Our deferred callback re-applies our color (1 frame later = visible flicker)
+            --   3. The deferred callback re-applies the custom color (1 frame later = visible flicker)
             --
             -- Solution: Only defer when overlay doesn't exist yet (initialization).
             -- When overlay is ready and shown, apply immediately (synchronously).
@@ -1038,7 +1038,7 @@ local function applyTextToRaidFrame(frame, cfg)
         pcall(nameFS.SetJustifyH, nameFS, Utils.getJustifyHFromAnchor(anchor))
     end
 
-    -- Capture baseline position on first application so we can restore later
+    -- Capture baseline position on first application for later restoration
     local nameState = ensureState(nameFS)
     if nameState and not nameState.originalPoint then
         local point, relativeTo, relativePoint, x, y = nameFS:GetPoint(1)
@@ -1123,7 +1123,7 @@ function addon.ApplyRaidFrameTextStyle()
     end
 
     -- Deprecated: Raid Player Name styling is now driven by overlay FontStrings
-    -- (see ApplyRaidFrameNameOverlays). We must avoid moving Blizzard's `frame.name`
+    -- (see ApplyRaidFrameNameOverlays). Moving Blizzard's `frame.name` must be avoided
     -- because the overlay clipping container copies its anchor geometry to preserve
     -- truncation. Touching `frame.name` here reintroduces leaking/incorrect clipping.
     if addon.ApplyRaidFrameNameOverlays then
@@ -1145,8 +1145,8 @@ end
 --------------------------------------------------------------------------------
 -- Creates addon-owned FontString overlays on raid frames that visually replace
 -- Blizzard's name text. These overlays can be styled during initial setup and
--- their text content can be updated during combat without taint because we only
--- manipulate our own FontStrings.
+-- their text content can be updated during combat without taint because only
+-- addon-owned FontStrings are manipulated.
 --
 -- Pattern: Mirror text via SetText hook, style on setup, hide Blizzard's element.
 --------------------------------------------------------------------------------
@@ -1245,7 +1245,7 @@ local function styleRaidNameOverlay(frame, cfg)
     -- The baseHOffset shifts text horizontally based on alignment preference.
     overlay:ClearAllPoints()
     overlay:SetPoint(vertAnchor, container, vertAnchor, offsetX + baseHOffset, offsetY)
-    -- NOTE: We intentionally do NOT set an explicit width on the overlay.
+    -- NOTE: An explicit width is intentionally NOT set on the overlay.
     -- The container's SetClipsChildren(true) will hard-clip the text at the
     -- right edge without adding Blizzard's "..." ellipsis.
 end
@@ -1636,7 +1636,7 @@ local function applyTextToFontString_StatusText(fs, ownerFrame, cfg)
         pcall(fs.SetJustifyH, fs, Utils.getJustifyHFromAnchor(anchor))
     end
 
-    -- Capture baseline position on first application so we can restore later
+    -- Capture baseline position on first application for later restoration
     local fsState = ensureState(fs)
     if fsState and not fsState.originalPointStatus then
         local point, relativeTo, relativePoint, x, y = fs:GetPoint(1)
@@ -1926,7 +1926,7 @@ function addon.ApplyRaidFrameGroupTitlesStyle()
         return
     end
 
-    -- If we have text config, check if it has custom settings
+    -- If text config exists, check if it has custom settings
     -- Numbers-only mode alone is enough to proceed
     if cfg and not Utils.hasCustomTextSettings(cfg) and not numbersOnly then
         return

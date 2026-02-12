@@ -83,14 +83,12 @@ function PowerBar.Render(panel, scrollContent)
         sectionKey = "style",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Foreground Texture
             inner:AddBarTextureSelector({
                 label = "Foreground Texture",
                 get = function() return getSetting("styleForegroundTexture") or "default" end,
                 set = function(v) setSetting("styleForegroundTexture", v) end,
             })
 
-            -- Foreground Color
             inner:AddSelectorColorPicker({
                 label = "Foreground Color",
                 values = {
@@ -114,14 +112,12 @@ function PowerBar.Render(panel, scrollContent)
 
             inner:AddSpacer(8)
 
-            -- Background Texture
             inner:AddBarTextureSelector({
                 label = "Background Texture",
                 get = function() return getSetting("styleBackgroundTexture") or "default" end,
                 set = function(v) setSetting("styleBackgroundTexture", v) end,
             })
 
-            -- Background Color
             inner:AddSelectorColorPicker({
                 label = "Background Color",
                 values = {
@@ -142,7 +138,6 @@ function PowerBar.Render(panel, scrollContent)
                 hasAlpha = true,
             })
 
-            -- Background Opacity
             inner:AddSlider({
                 label = "Background Opacity",
                 min = 0, max = 100, step = 1,

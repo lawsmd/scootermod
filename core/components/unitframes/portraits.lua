@@ -140,7 +140,7 @@ do
 
 	-- Store original positions (per frame, not per unit, to handle frame recreation)
 	local originalPositions = {}
-	-- NOTE: We do NOT capture original scales because frames may retain our applied scale across reloads.
+	-- NOTE: Does NOT capture original scales because frames may retain the applied scale across reloads.
 	-- Portrait frames have no Edit Mode scale setting, so baseline is always 1.0.
 	-- Store original texture coordinates (per frame, not per unit, to handle frame recreation)
 	local originalTexCoords = {}
@@ -158,7 +158,7 @@ do
 		-- Enforce Pet overlay alpha to 0 IMMEDIATELY (synchronously).
 		-- PetAttackModeTexture pulses via SetVertexColor in PetFrame:OnUpdate every frame.
 		-- Deferred enforcement (C_Timer.After(0)) would lose the race and cause visible flashing.
-		-- We only write alpha/vertex alpha (no Hide/Show/SetShown calls) to avoid taint.
+		-- Only writes alpha/vertex alpha (no Hide/Show/SetShown calls) to avoid taint.
 		-- The pet overlay enforcing flag guards against infinite recursion.
 		local function enforceHiddenNow(tex)
 			local st = getState(tex)
@@ -190,9 +190,9 @@ do
 		if texState and not texState.petOverlayHooked and _G.hooksecurefunc then
 			texState.petOverlayHooked = true
 
-			-- If Blizzard shows the texture, force alpha back to 0 when we want it hidden.
-			-- We enforce immediately (not deferred) to prevent any visible flash.
-			-- Our enforcement only calls SetAlpha/SetVertexColor (not Hide/Show), which are
+			-- If Blizzard shows the texture, force alpha back to 0 when it should be hidden.
+			-- Enforced immediately (not deferred) to prevent any visible flash.
+			-- Enforcement only calls SetAlpha/SetVertexColor (not Hide/Show), which are
 			-- not protected functions and won't cause taint.
 			_G.hooksecurefunc(texture, "Show", function(self)
 				local st = getState(self)
@@ -222,8 +222,8 @@ do
 			-- Blizzard often drives glow visibility via vertex alpha (SetVertexColor's 4th param),
 			-- not frame alpha (SetAlpha). Example: PetAttackModeTexture pulses in PetFrame:OnUpdate.
 			-- CRITICAL: PetFrame:OnUpdate calls SetVertexColor EVERY FRAME to create the pulse.
-			-- We must enforce alpha=0 IMMEDIATELY (not deferred) or the texture will flash visible
-			-- for one frame before our deferred correction runs, then flash again next frame, etc.
+			-- Must enforce alpha=0 IMMEDIATELY (not deferred) or the texture will flash visible
+			-- for one frame before the deferred correction runs, then flash again next frame, etc.
 			-- The _ScooterPetOverlayEnforcing flag guards against infinite recursion.
 			if texture.SetVertexColor then
 				_G.hooksecurefunc(texture, "SetVertexColor", function(self, r, g, b, a)
@@ -247,7 +247,7 @@ do
 		end
 
 		-- Apply current desired state immediately (and set the sticky flag).
-		-- We always enforce immediately (even during combat) because SetAlpha/SetVertexColor
+		-- Always enforced immediately (even during combat) because SetAlpha/SetVertexColor
 		-- are not protected functions and won't cause taint. This ensures the texture is
 		-- hidden before the frame renders.
 		if hidden then
@@ -275,8 +275,8 @@ do
 
 	local function EnforcePetOverlays()
 		-- PetFrame is managed/protected by Edit Mode.
-		-- We still flag pending when combat-locked (so we re-assert again on combat end),
-		-- but we also allow the experimental in-combat alpha enforcement to keep PetFrameFlash hidden.
+		-- Still flags pending when combat-locked (to re-assert again on combat end),
+		-- but also allows the experimental in-combat alpha enforcement to keep PetFrameFlash hidden.
 		if InCombatLockdown and InCombatLockdown() then
 			addon._pendingPetOverlaysEnforce = true
 		end
@@ -340,7 +340,7 @@ do
 			applyStickyOverlayAlpha(petFrameFlash, hidden, visibleAlpha)
 
 			-- Some builds drive the red glow via sub-texture regions under PetFrameFlash.
-			-- Enforce sticky alpha on immediate texture regions too (cheap + robust).
+			-- Enforce sticky alpha on immediate texture regions too (cheap + thorough).
 			if petFrameFlash.GetRegions then
 				for _, region in ipairs({ petFrameFlash:GetRegions() }) do
 					if region and region.GetObjectType and region:GetObjectType() == "Texture" then
@@ -534,7 +534,7 @@ do
 		local origCornerIcon = cornerIconFrame and originalPositions[cornerIconFrame] or nil
 
 		-- NOTE: Portrait scale baseline is always 1.0 (no Edit Mode scale setting for portraits)
-		-- We do NOT capture frame:GetScale() because the frame may retain our applied scale across reloads
+		-- Does NOT capture frame:GetScale() because the frame may retain the applied scale across reloads
 
 		-- Get portrait texture
 		-- For unit frames, the portraitFrame IS the texture itself (not a frame containing a texture)
@@ -667,7 +667,7 @@ do
 
 				-- Move mask frame if it exists
 				-- For Target/Focus/Pet, anchor mask to portrait to keep them locked together
-				-- Pet's mask is already anchored to portrait in XML, so we maintain that relationship
+				-- Pet's mask is already anchored to portrait in XML, so that relationship is maintained
 				-- For Player, use original anchor to maintain proper positioning
 				if maskFrame and origMask then
 					maskFrame:ClearAllPoints()
@@ -755,7 +755,7 @@ do
 
 			-- Calculate zoom: 100% = no change, > 100% = zoom in (crop edges), < 100% = zoom out (limited)
 			-- For zoom in: crop equal amounts from all sides
-			-- For zoom out: we can't show beyond texture bounds, so we'll limit it
+			-- For zoom out: can't show beyond texture bounds, so limit it
 			local zoomFactor = zoomPct / 100.0
 			
 			if zoomFactor == 1.0 then
@@ -783,12 +783,12 @@ do
 			else
 				-- Zoom out: show more (limited by texture bounds)
 				-- LIMITATION: If original coordinates are already at full bounds (0,1,0,1),
-				-- we cannot zoom out because there are no additional pixels to show.
+				-- cannot zoom out because there are no additional pixels to show.
 				-- The texture coordinate system is clamped to [0,1] range.
 				local origWidth = origCoords.right - origCoords.left
 				local origHeight = origCoords.bottom - origCoords.top
 				
-				-- Check if we're already at full bounds - if so, zoom out is not possible
+				-- Check if already at full bounds - if so, zoom out is not possible
 				local isFullBounds = (origCoords.left <= 0.001 and origCoords.right >= 0.999 and 
 				                      origCoords.top <= 0.001 and origCoords.bottom >= 0.999)
 				
@@ -803,7 +803,7 @@ do
 						print(string.format("ScooterMod: Portrait zoom out %d%% for %s - limited by full texture bounds (0,1,0,1)", zoomPct, unit))
 					end
 				else
-					-- Original coordinates are NOT at full bounds, so we can expand within available space
+					-- Original coordinates are NOT at full bounds, so can expand within available space
 					local origCenterX = origCoords.left + (origWidth / 2.0)
 					local origCenterY = origCoords.top + (origHeight / 2.0)
 					local newWidth = origWidth / zoomFactor
@@ -1103,7 +1103,7 @@ do
 			
 			-- Instead of hiding the frame (which breaks Blizzard's CombatFeedback system),
 			-- set alpha to 0 to make it invisible when disabled. This prevents the feedbackStartTime nil error.
-			-- We use alpha instead of SetShown because Blizzard's CombatFeedback_OnUpdate expects the frame
+			-- Uses alpha instead of SetShown because Blizzard's CombatFeedback_OnUpdate expects the frame
 			-- to exist and be managed by their system.
 			if damageTextDisabled then
 				if damageTextFrame.SetAlpha then
@@ -1115,10 +1115,9 @@ do
 
 			local damageTextCfg = cfg.damageText or {}
 			
-			-- Hook SetTextHeight to re-apply our custom font size after Blizzard changes it
-			-- CRITICAL: We use hooksecurefunc instead of method override to avoid taint. Method overrides
-			-- cause taint that spreads through the execution context, blocking protected functions
-			-- like SetTargetClampingInsets() during nameplate setup. See DEBUG.md for details.
+			-- Hook SetTextHeight to re-apply the custom font size after Blizzard changes it
+			-- CRITICAL: hooksecurefunc avoids taint. Method overrides cause taint that spreads
+			-- through the execution context, blocking protected functions like SetTargetClampingInsets().
 			-- Store the unit key in FrameState so the hook knows which config to read
 			local dtState = getState(damageTextFrame)
 			if dtState then dtState.unitKey = unit end
@@ -1126,11 +1125,11 @@ do
 				dtState.setTextHeightHooked = true
 				
 				hooksecurefunc(damageTextFrame, "SetTextHeight", function(self, height)
-					-- Guard against recursion (though we use SetFont, not SetTextHeight, to apply)
+					-- Guard against recursion (though SetFont is used, not SetTextHeight, to apply)
 					local st = getState(self)
 					if st and st.applyingTextHeight then return end
 					
-					-- Check if we have custom settings (use stored unit key)
+					-- Check if custom settings exist (use stored unit key)
 					local unitKey = (st and st.unitKey) or "Player"
 					local db = addon and addon.db and addon.db.profile
 					if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
@@ -1138,7 +1137,7 @@ do
 						local damageTextCfg = cfg.damageText or {}
 						local customSize = tonumber(damageTextCfg.size)
 						if customSize then
-							-- Re-apply our custom size using SetFont (overrides what Blizzard just set)
+							-- Re-apply the custom size using SetFont (overrides what Blizzard just set)
 							local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 							local customStyle = tostring(damageTextCfg.style or "OUTLINE")
 							if st then st.applyingTextHeight = true end
@@ -1290,7 +1289,7 @@ do
 	end
 
 	-- Hook Blizzard's CombatFeedback system to prevent showing damage text when disabled
-	-- We need to hook both OnCombatEvent (when damage happens) and OnUpdate (animation loop)
+	-- Need to hook both OnCombatEvent (when damage happens) and OnUpdate (animation loop)
 	-- CombatFeedback_OnCombatEvent receives PlayerFrame/PetFrame as 'self', and frame.feedbackText is the HitText
 	-- CombatFeedback_OnUpdate also receives PlayerFrame/PetFrame as 'self'
 	if _G.CombatFeedback_OnCombatEvent then
@@ -1317,9 +1316,9 @@ do
 							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
 						end
 					else
-						-- Override Blizzard's font size with our custom size
+						-- Override Blizzard's font size with the custom size
 						-- Blizzard calls SetTextHeight(fontHeight) which sets the text region height
-						-- We need to use SetFont() with our custom size instead, which sets the actual font size
+						-- Uses SetFont() with the custom size instead, which sets the actual font size
 						-- SetFont will properly scale the text, while SetTextHeight just scales the region (causing pixelation)
 						local damageTextCfg = cfg.damageText or {}
 						local customSize = tonumber(damageTextCfg.size) or 14
@@ -1340,7 +1339,7 @@ do
 	end
 
 	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
-	-- This is critical because OnUpdate runs every frame and will override our alpha setting
+	-- This is critical because OnUpdate runs every frame and will override the alpha setting
 	-- OnUpdate receives PlayerFrame only - PetFrame is excluded (see CombatFeedback_OnCombatEvent comment)
 	if _G.CombatFeedback_OnUpdate then
 		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)

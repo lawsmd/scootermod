@@ -362,14 +362,11 @@ end
 --------------------------------------------------------------------------------
 
 function GF.RenderRaid(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Store reference for re-rendering on changes
     builder:SetOnRefresh(function()
         GF.RenderRaid(panel, scrollContent)
     end)
@@ -377,7 +374,6 @@ function GF.RenderRaid(panel, scrollContent)
     local EM = _G.Enum and _G.Enum.EditModeUnitFrameSetting
     local RGD = _G.Enum and _G.Enum.RaidGroupDisplayType
 
-    -- Check if we're in Separate or Combine groups mode
     local isSeparateGroups = GF.isRaidSeparateGroups()
     local isCombineGroups = not isSeparateGroups
 
@@ -391,7 +387,6 @@ function GF.RenderRaid(panel, scrollContent)
         sectionKey = "positioning",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Groups dropdown
             if EM and EM.RaidGroupDisplayType and RGD and #GF.raidGroupsOrder > 0 then
                 inner:AddSelector({
                     label = "Groups",
@@ -414,7 +409,6 @@ function GF.RenderRaid(panel, scrollContent)
                 })
             end
 
-            -- Sort By (Combine Groups only)
             if isCombineGroups then
                 if EM and EM.SortPlayersBy then
                     inner:AddSelector({
@@ -435,7 +429,6 @@ function GF.RenderRaid(panel, scrollContent)
                     })
                 end
 
-                -- Column Size (Combine Groups only)
                 if EM and EM.RowSize then
                     inner:AddSlider({
                         label = "Column Size",
@@ -474,7 +467,6 @@ function GF.RenderRaid(panel, scrollContent)
         sectionKey = "sizing",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Frame Width
             if EM and EM.FrameWidth then
                 inner:AddSlider({
                     label = "Frame Width",
@@ -494,7 +486,6 @@ function GF.RenderRaid(panel, scrollContent)
                 })
             end
 
-            -- Frame Height
             if EM and EM.FrameHeight then
                 inner:AddSlider({
                     label = "Frame Height",
@@ -568,7 +559,6 @@ function GF.RenderRaid(panel, scrollContent)
             inner:AddSpacer(12)
             inner:AddLabel("Health Bar Borders")
 
-            -- Health Bar Border Style
             inner:AddBarBorderSelector({
                 label = "Border Style",
                 includeNone = true,
@@ -584,7 +574,6 @@ function GF.RenderRaid(panel, scrollContent)
                 end,
             })
 
-            -- Health Bar Border Tint
             inner:AddToggleColorPicker({
                 label = "Border Tint",
                 get = function()
@@ -611,7 +600,6 @@ function GF.RenderRaid(panel, scrollContent)
                 hasAlpha = true,
             })
 
-            -- Health Bar Border Thickness
             inner:AddSlider({
                 label = "Border Thickness",
                 min = 1,
@@ -630,7 +618,6 @@ function GF.RenderRaid(panel, scrollContent)
                 end,
             })
 
-            -- Health Bar Border Inset
             inner:AddSlider({
                 label = "Border Inset",
                 min = -4,

@@ -24,7 +24,6 @@ function Buffs.Render(panel, scrollContent)
     local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
     local syncEditModeSetting = h.sync
 
-    -- Helper to apply styles after value change
     local function applyStyles()
         if addon and addon.ApplyAuraFrameVisualsFor then
             C_Timer.After(0, function()
@@ -217,7 +216,6 @@ function Buffs.Render(panel, scrollContent)
                 hasAlpha = true,
             })
 
-            -- Border Style selector
             local borderStyleValues, borderStyleOrder = Helpers.getIconBorderOptions()
 
             inner:AddSelector({

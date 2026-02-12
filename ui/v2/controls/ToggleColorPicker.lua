@@ -14,9 +14,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local BORDER_WIDTH = 2
 local TOGGLE_HEIGHT = 36
@@ -37,9 +35,7 @@ local LABEL_LINE_HEIGHT = 16      -- Approximate label height
 local DESC_PADDING_TOP = 2        -- Space between label and description
 local DESC_PADDING_BOTTOM = 36    -- Space below description to border (doubled for center-anchored layout)
 
---------------------------------------------------------------------------------
 -- ToggleColorPicker: Toggle with inline color swatch (visible when ON)
---------------------------------------------------------------------------------
 
 function Controls:CreateToggleColorPicker(options)
     local theme = GetTheme()

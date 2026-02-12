@@ -1296,12 +1296,8 @@ function addon.EditMode.RefreshSyncAndNotify(origin)
         addon.Profiles:RefreshFromEditMode(origin)
     end
 
-    -- UI NOTE (2025‑11‑17):
-    -- We intentionally DO NOT auto-refresh the ScooterMod settings list here.
-    -- Full category re-renders (SettingsList:Display) are reserved for STRUCTURAL
-    -- changes only (category switch, schema change). Routine Edit Mode saves are
-    -- reflected via Settings control bindings and per-row helpers without
-    -- rebuilding the entire right-hand pane to avoid visible flicker.
+    -- Settings list is not refreshed here; routine Edit Mode saves are reflected
+    -- via control bindings and per-row helpers to avoid right-pane flicker.
 
     if addon._dbgSync and origin then
         print("ScooterMod RefreshSyncAndNotify origin=" .. tostring(origin))

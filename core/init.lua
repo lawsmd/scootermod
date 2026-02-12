@@ -460,7 +460,7 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     -- method overrides cause PERSISTENT TAINT that propagates to unrelated Blizzard code.
     -- In 11.2.7, this taint was blocking ActionButton:SetAttribute() calls in the new
     -- "press and hold" system. The cosmetic benefit of suppressing announcements is not worth
-    -- breaking core action bar functionality. See DEBUG.md "Golden Rules for Taint Prevention".
+    -- breaking core action bar functionality.
     
     -- Use centralized sync function (if available)
     if addon.EditMode and addon.EditMode.RefreshSyncAndNotify then

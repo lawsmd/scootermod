@@ -169,10 +169,9 @@ local function ensureComponentFontStructures(profile)
         end
     end
 
-    -- NOTE: Scrolling Combat Text (sctDamage) is intentionally excluded from Apply All.
-    -- SCT font changes require a full game restart (not just /reload), so users must
-    -- change SCT fonts directly via the Scrolling Combat Text settings panel to see
-    -- the restart warning. See SCROLLINGCOMBATTEXT.md for details.
+    -- NOTE: sctDamage is excluded from Apply All because SCT font changes
+    -- require a full game restart (not /reload). Users must change SCT fonts
+    -- directly via the SCT settings panel to see the restart warning.
     
     -- Tooltip component (text settings tables)
     profile.components.tooltip = profile.components.tooltip or {}

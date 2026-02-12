@@ -230,7 +230,7 @@ function Controls:CreateButton(options)
     -- Click handler (avoid overriding secure OnClick)
     if options.onClick then
         if options.secureAction then
-            -- Use PostClick so the secure action fires before we run addon code.
+            -- Use PostClick so the secure action fires before addon code runs.
             btn:HookScript("PostClick", function(self, mouseButton, down)
                 options.onClick(self, mouseButton)
             end)

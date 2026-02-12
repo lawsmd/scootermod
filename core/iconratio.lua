@@ -1,16 +1,7 @@
 local addonName, addon = ...
 
---------------------------------------------------------------------------------
--- Icon Ratio Utility
---------------------------------------------------------------------------------
--- Provides centralized ratio-based icon dimension calculations for all
--- icon-based components (CDM, Auras, UF Buffs/Debuffs).
---
--- The tallWideRatio slider ranges from -67 to +67:
---   - Center (0): Square icons (1:1)
---   - Far Left (-67): Icons 3x wider than tall (height = baseSize * 0.33)
---   - Far Right (+67): Icons 3x taller than wide (width = baseSize * 0.33)
---------------------------------------------------------------------------------
+-- Icon Ratio Utility: centralized ratio-based icon dimension calculations.
+-- tallWideRatio slider: -67 (3x wide) to 0 (square) to +67 (3x tall).
 
 addon.IconRatio = addon.IconRatio or {}
 local IconRatio = addon.IconRatio

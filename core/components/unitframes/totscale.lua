@@ -4,13 +4,13 @@ local addonName, addon = ...
     Target of Target (ToT) and Focus Target (FoT) Positioning and Scaling
 
     These frames are NOT Edit Mode managed - Blizzard creates them as children
-    of Target/Focus frames. We CAN safely use SetScale() and SetPoint() outside
+    of Target/Focus frames. SetScale() and SetPoint() can safely be used outside
     combat with proper guards.
 
     Key considerations:
     - TargetFrameToT: Never re-anchored during gameplay, positioning persists
     - FocusFrameToT: Re-anchored by FocusFrameMixin:SetSmallSize() when toggling
-      Focus frame size - requires SetPoint hook to persist our custom position
+      Focus frame size - requires SetPoint hook to persist the custom position
 ]]
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -217,7 +217,7 @@ local function applyToTPosition()
 
     -- Apply position with offsets from original anchor
     if frame.ClearAllPoints and frame.SetPoint then
-        -- Flag to prevent hook re-triggering if we add one later
+        -- Flag to prevent hook re-triggering
         setProp(frame, "ignoreSetPoint", true)
 
         local ok, err = pcall(function()
@@ -332,10 +332,10 @@ local function applyFocusTargetPosition()
     if not focusToTHookInstalled and hooksecurefunc then
         focusToTHookInstalled = true
         hooksecurefunc(frame, "SetPoint", function(self, ...)
-            -- Ignore our own SetPoint calls
+            -- Ignore SetPoint calls from this addon
             if getProp(self, "ignoreSetPoint") then return end
 
-            -- Check if we have position config to re-apply
+            -- Check if position config exists to re-apply
             local c = getFocusTargetDB()
             if not c then return end
             local ox = tonumber(c.offsetX)

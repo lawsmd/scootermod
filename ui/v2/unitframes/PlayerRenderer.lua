@@ -166,14 +166,11 @@ end
 --------------------------------------------------------------------------------
 
 function UF.RenderPlayer(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Store reference for re-rendering on changes
     builder:SetOnRefresh(function()
         UF.RenderPlayer(panel, scrollContent)
     end)
@@ -182,7 +179,6 @@ function UF.RenderPlayer(panel, scrollContent)
     -- Parent-Level Settings
     --------------------------------------------------------------------------------
 
-    -- Hide Blizzard Frame Art (emphasized master toggle)
     builder:AddToggle({
         label = "Hide Blizzard Frame Art & Animations",
         description = "REQUIRED for custom borders. Hides default frame art.",
@@ -207,7 +203,6 @@ function UF.RenderPlayer(panel, scrollContent)
         infoIcon = UF.TOOLTIPS.hideBlizzardArt,
     })
 
-    -- Frame Size (Edit Mode scale)
     builder:AddSlider({
         label = "Frame Size (Scale)",
         description = "Blizzard's Edit Mode scale (100-200%).",
@@ -225,7 +220,6 @@ function UF.RenderPlayer(panel, scrollContent)
         infoIcon = UF.TOOLTIPS.frameSize,
     })
 
-    -- Scale Multiplier (addon-only)
     builder:AddSlider({
         label = "Scale Multiplier",
         description = "Addon multiplier on top of Edit Mode scale.",

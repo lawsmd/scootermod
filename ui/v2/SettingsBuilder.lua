@@ -41,7 +41,7 @@ function Builder:CreateFor(scrollContent)
         _controls = {},         -- Track created controls for cleanup
         _controlsByKey = {},    -- Track controls by key for dynamic updates
         _sections = {},         -- Track section headers
-        _inSection = false,     -- Are we inside a section?
+        _inSection = false,     -- Currently inside a section?
         _useLightDim = false,   -- Use lighter dim text (for collapsible section interiors)
         _parentCollapsible = nil, -- Reference to parent collapsible section (if inside one)
     }
@@ -873,7 +873,7 @@ function Builder:AddTabbedSection(options)
     -- Store reference to onRefresh callback if set
     local onRefresh = self._onRefresh
 
-    -- Reference to parent collapsible (if we're inside one)
+    -- Reference to parent collapsible (if nested inside one)
     local parentCollapsible = self._parentCollapsible
 
     -- Create the tabbed section control
@@ -942,11 +942,11 @@ function Builder:AddTabbedSection(options)
     -- Add gap after section
     self._currentY = self._currentY - ITEM_SPACING
 
-    -- If we're inside a collapsible, set up dynamic height updates
-    -- This must be done AFTER _currentY is updated so we can capture the correct initial height
+    -- If inside a collapsible, set up dynamic height updates
+    -- This must be done AFTER _currentY is updated to capture the correct initial height
     if parentCollapsible and section then
         -- Track the initial tabbed section height
-        -- We'll compute content height from the current builder state
+        -- Content height is computed from the current builder state
         local lastTabbedHeight = section:GetHeight()
 
         section:SetOnHeightChange(function(newTabbedHeight)

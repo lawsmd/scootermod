@@ -3,7 +3,7 @@ local addonName, addon = ...
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
--- Alpha driver: hooks SetAlpha to enforce our opacity settings over Blizzard's visibility transitions
+-- Alpha driver: hooks SetAlpha to enforce addon opacity settings over Blizzard's visibility transitions
 local actionBarState = {}  -- per-frame state (component, baseOpacity, isMousedOver, desiredAlpha)
 local actionBarHooked = {} -- frames with OnEnter/OnLeave hooks
 local alphaHooked = {}     -- frames with SetAlpha hooks

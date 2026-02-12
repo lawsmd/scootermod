@@ -157,12 +157,8 @@ local function ResolveSettingId(frame, logicalKey)
     end
     -- Prefer stable enum constants only for Cooldown Viewer systems
     --
-    -- CRITICAL NAMING CONVENTION (January 2026 bug fix):
-    -- Callers use BOTH snake_case ("icon_size") and camelCase ("iconSize") for logical keys.
-    -- If you only match one convention, the other will silently fail - settings will appear
-    -- to save but won't apply visually until Edit Mode is manually toggled.
-    -- ALWAYS add BOTH variants when adding new keys. See ADDONCONTEXT/Docs/EDITMODE.md
-    -- → "CRITICAL: ResolveSettingId logical key naming conventions" for details.
+    -- Callers use both snake_case ("icon_size") and camelCase ("iconSize").
+    -- Both variants must be handled; missing one causes silent save failures.
     --
     local EM = _G.Enum and _G.Enum.EditModeCooldownViewerSetting
     if EM and frame and frame.system == (_G.Enum and _G.Enum.EditModeSystem and _G.Enum.EditModeSystem.CooldownViewer) then
@@ -407,7 +403,6 @@ end
 
 -- Write a setting to Edit Mode via LibEditModeOverride.
 -- Debug logging: Enable with `/run ScooterMod._dbgEditMode = true` to trace writes.
--- See ADDONCONTEXT/Docs/EDITMODE.md → "Edit Mode sync debug logging" for usage.
 function addon.EditMode.SetSetting(frame, settingId, value)
     if not LEO or not LEO.SetFrameSetting then
         if addon._dbgEditMode then print("|cFFFF0000[EM.SetSetting]|r LEO not available") end
@@ -562,7 +557,6 @@ end
 -- Persist Edit Mode settings and trigger visual refresh via deferred SetActiveLayout.
 -- This is the primary "apply settings visually" entry point for ScooterMod writes.
 -- Debug logging: Enable with `/run ScooterMod._dbgEditMode = true` to trace save calls.
--- See ADDONCONTEXT/Docs/EDITMODE.md → "Edit Mode sync debug logging" for usage.
 --
 -- IMPORTANT: The visual refresh depends on LEO:SaveOnly() calling SetActiveLayout in a
 -- deferred context. If settings save but don't apply visually, check:

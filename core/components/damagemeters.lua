@@ -297,7 +297,7 @@ local function UpdateTitleRightClickState(sessionWindow, enabled)
 end
 
 -- Apply JiberishIcons class icon to replace spec icon using overlay approach
--- Uses our own overlay texture to prevent flickering from Blizzard's icon resets
+-- Uses a separate overlay texture to prevent flickering from Blizzard's icon resets
 local function ApplyJiberishIconsStyle(entry, db)
     if not entry or not db then return end
 
@@ -310,7 +310,7 @@ local function ApplyJiberishIconsStyle(entry, db)
         if blizzardIcon then
             pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
         end
-        -- Hide our overlay
+        -- Hide the overlay
         local overlay = iconFrame and iconFrame._scooterJiberishOverlay
         if overlay then
             overlay:Hide()
@@ -343,7 +343,7 @@ local function ApplyJiberishIconsStyle(entry, db)
         pcall(blizzardIcon.SetAlpha, blizzardIcon, 0)
     end
 
-    -- CREATE/UPDATE our overlay texture
+    -- CREATE/UPDATE the overlay texture
     local overlay = iconFrame._scooterJiberishOverlay
     if not overlay then
         overlay = iconFrame:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -351,7 +351,7 @@ local function ApplyJiberishIconsStyle(entry, db)
         iconFrame._scooterJiberishOverlay = overlay
     end
 
-    -- Apply JiberishIcons to OUR overlay (not Blizzard's)
+    -- Apply JiberishIcons to the addon overlay (not Blizzard's)
     pcall(overlay.SetTexture, overlay, fullPath)
     pcall(overlay.SetTexCoord, overlay, unpack(classData.texCoords))
     overlay:Show()
@@ -623,13 +623,13 @@ local function ApplySingleEntryStyle(entry, db)
 
             -- Icon border - custom overlay approach for damage meter icons
             -- Blizzard's spec icons use TexCoords (0.0625 inset) creating a rectangular visible area
-            -- We create our own border overlay to handle this properly
+            -- A custom border overlay handles this properly
             if db.iconBorderEnable then
                 local thickness = db.iconBorderThickness or 1
                 local insetH = db.iconBorderInsetH or 0  -- Horizontal inset (left/right)
                 local insetV = db.iconBorderInsetV or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
 
-                -- Get or create our border overlay frame
+                -- Get or create the border overlay frame
                 local borderOverlay = iconFrame._scooterBorderOverlay
                 if not borderOverlay then
                     borderOverlay = CreateFrame("Frame", nil, iconFrame)
@@ -1005,9 +1005,9 @@ end
 
 -- Apply button icon overlay styling
 -- When enabled:
---   Button 1: Hide Blizzard arrow, show our overlay arrow
+--   Button 1: Hide Blizzard arrow, show the overlay arrow
 --   Button 2: Just hide the background (keep letter visible)
---   Button 3: Hide Blizzard gear, show our overlay gear
+--   Button 3: Hide Blizzard gear, show the overlay gear
 -- When disabled:
 --   Restore all Blizzard visuals
 local function ApplyButtonIconOverlays(sessionWindow, db)
@@ -1030,7 +1030,7 @@ local function ApplyButtonIconOverlays(sessionWindow, db)
 
     if overlaysEnabled then
         -- === Button 1: DamageMeterTypeDropdown ===
-        -- Hide Blizzard's arrow, show our overlay
+        -- Hide Blizzard's arrow, show the overlay
         local typeDropdown = sessionWindow.DamageMeterTypeDropdown
         if typeDropdown and typeDropdown.Arrow then
             pcall(typeDropdown.Arrow.SetAlpha, typeDropdown.Arrow, 0)
@@ -1057,7 +1057,7 @@ local function ApplyButtonIconOverlays(sessionWindow, db)
         end
 
         -- === Button 3: SettingsDropdown ===
-        -- Hide Blizzard's gear icon, show our overlay
+        -- Hide Blizzard's gear icon, show the overlay
         local settingsDropdown = sessionWindow.SettingsDropdown
         if settingsDropdown and settingsDropdown.Icon then
             pcall(settingsDropdown.Icon.SetAlpha, settingsDropdown.Icon, 0)
@@ -1076,7 +1076,7 @@ local function ApplyButtonIconOverlays(sessionWindow, db)
             end
         end
 
-        return true  -- Signal that we handled button styling
+        return true  -- Signal that button styling was handled
     else
         -- === Restore all Blizzard visuals ===
 

@@ -21,7 +21,7 @@ local BAR_TEXTURES = {
 	fadeBottom             = BAR_MEDIA_PREFIX .. "fade-bottom.png",
 	fadeLeft               = BAR_MEDIA_PREFIX .. "fade-left.png",
 	blizzardCastBar        = BAR_MEDIA_PREFIX .. "blizzard-cast-bar.png",
-	-- Blizzard resource bar textures (from ElvUI_EltreumUI)
+	-- Blizzard resource bar textures (bundled art assets)
 	blizzardEbonMight      = BAR_MEDIA_PREFIX .. "EvokerEbonMight.tga",
 	blizzardEnergy         = BAR_MEDIA_PREFIX .. "BlizzardUnitframe1.tga",
 	blizzardFocus          = BAR_MEDIA_PREFIX .. "BlizzardUnitframe2.tga",

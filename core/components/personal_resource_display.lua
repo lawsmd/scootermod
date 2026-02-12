@@ -96,17 +96,17 @@ local updateAllPRDOpacities
 
 -- PRD re-application via events.
 --
--- CRITICAL: We cannot use hooksecurefunc on any nameplate-related functions because
+-- CRITICAL: hooksecurefunc cannot be used on any nameplate-related functions because
 -- hook callbacks that run during Blizzard's nameplate setup chain taint the execution
 -- context, causing SetTargetClampingInsets() to be blocked.
 --
--- Instead, we use EVENT HANDLERS to re-apply styling. Events fire in separate execution
--- contexts and don't cause taint. We use:
+-- Instead, EVENT HANDLERS are used to re-apply styling. Events fire in separate execution
+-- contexts and don't cause taint. The events used are:
 -- - NAME_PLATE_UNIT_ADDED: Fires when a nameplate appears (after setup completes)
 -- - PLAYER_TARGET_CHANGED: PRD may move when targeting changes
 -- - PLAYER_REGEN_DISABLED/ENABLED: PRD visibility often changes with combat state
 --
--- We use C_Timer.After(0, ...) to defer styling to the next frame, ensuring we're
+-- C_Timer.After(0, ...) defers styling to the next frame, ensuring execution is
 -- completely outside any Blizzard execution chain.
 
 local prdEventFrame = nil
@@ -193,7 +193,7 @@ local defaultBottomInset = (GetCVarDefault and GetCVarDefault("nameplateSelfBott
 
 -- Power Bar height management.
 --
--- CRITICAL: We no longer hook OnSizeChanged or any other nameplate-related methods.
+-- CRITICAL: OnSizeChanged and other nameplate-related methods are no longer hooked.
 --
 -- The problem: ANY hooksecurefunc callback that runs during Blizzard's nameplate setup
 -- chain (including OnSizeChanged which fires when SetShown() is called) will taint the
@@ -300,7 +300,7 @@ local function clearBarBorder(bar)
     if addon.Borders and addon.Borders.HideAll then
         addon.Borders.HideAll(bar)
     end
-    -- Restore Blizzard's native border when our border is cleared
+    -- Restore Blizzard's native border when the custom border is cleared
     setBlizzardBorderVisible(bar, true)
 end
 
@@ -1114,7 +1114,7 @@ local function applyPRDBarBorder(component, statusBar)
         return
     end
     -- Hide Blizzard's native border edges (Left/Right/Top/Bottom textures)
-    -- since we are applying our own border to this bar.
+    -- since a custom border is being applied to this bar.
     setBlizzardBorderVisible(statusBar, false)
     local tintEnabled = db.borderTintEnable and true or false
     local tintColor = ensureColorSetting(component, "borderTintColor", {1, 1, 1, 1})
@@ -1536,7 +1536,7 @@ end
 
 local function applyHealthOffsets(component)
     -- PRD is PersonalResourceDisplayFrame (parented to UIParent), not a nameplate.
-    -- Positioning is handled by Edit Mode; we apply sizing, styling, and visibility.
+    -- Positioning is handled by Edit Mode; this function applies sizing, styling, and visibility.
     if not isPRDEnabledByCVar() then
         -- PRD is disabled; clear any existing borders/overlays and bail out
         local container = getHealthContainer()
@@ -1709,7 +1709,7 @@ end
 
 local function applyClassResourceOffsets(component)
     -- Class resource is inside PersonalResourceDisplayFrame.ClassFrameContainer.
-    -- Positioning is handled by Blizzard; we apply scale and visibility.
+    -- Positioning is handled by Blizzard; this function applies scale and visibility.
     if not isPRDEnabledByCVar() then
         return
     end

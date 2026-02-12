@@ -119,10 +119,10 @@ do
 			if not pool or not pool.EnumerateActive then return end
 
 			for auraFrame in pool:EnumerateActive() do
-				-- Apply uniform scale so we can shrink/grow icons without fighting
+				-- Apply uniform scale to shrink/grow icons without fighting
 				-- Blizzard's internal aura-row math. This affects the visual size
 				-- while leaving the logical layout width/height unchanged.
-				-- Let Blizzard determine the base icon size; we only multiply by scale.
+				-- Let Blizzard determine the base icon size; only multiplied by scale.
 				-- iconScale=100 means 1.0x (Blizzard default), 50 means 0.5x, 200 means 2.0x.
 				if auraFrame and auraFrame.SetScale then
 					auraFrame:SetScale(scaleMultiplier)
@@ -321,7 +321,7 @@ do
 	end
 
 	-- Hook aura updates so ScooterMod re-applies styling after Blizzard layouts.
-	-- During combat, we use visualOnly mode to apply cosmetic styling (borders, sizing)
+	-- During combat, visualOnly mode applies cosmetic styling (borders, sizing)
 	-- while deferring layout operations (container positioning) until combat ends.
 	if _G.TargetFrame and _G.TargetFrame.UpdateAuras and _G.hooksecurefunc then
 		_G.hooksecurefunc(_G.TargetFrame, "UpdateAuras", function(self)

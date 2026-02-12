@@ -6,9 +6,9 @@ local addonName, addon = ...
     Layers an addon-only scale multiplier on top of Edit Mode's existing scale.
     This allows users to scale unit frames beyond the 200% Edit Mode limit.
     
-    Key insight: We must NOT read baseline from frame:GetScale() because the frame
-    may retain our previously-applied multiplied scale across reloads. Instead, we
-    read the Edit Mode scale value directly and compute: emScale * multiplier.
+    Key insight: The baseline must NOT be read from frame:GetScale() because the frame
+    may retain a previously-applied multiplied scale across reloads. Instead, the
+    Edit Mode scale value is read directly and the result computed: emScale * multiplier.
 ]]
 
 -- Debug helper (disabled by default)
@@ -115,12 +115,12 @@ local function applyScaleMultFor(unit)
     local scaleMult = clampScaleMult(cfg.scaleMult)
     
     -- Read Edit Mode's scale value directly (100-200) and convert to scale factor
-    -- This is the KEY fix: we do NOT trust frame:GetScale() because it may contain
-    -- our previously-applied multiplier from before reload
+    -- KEY: frame:GetScale() is not trusted because it may contain
+    -- a previously-applied multiplier from before reload
     local emScaleValue = getEditModeScale(unit) or 100
     local emScaleFactor = emScaleValue / 100  -- 100 → 1.0, 200 → 2.0
     
-    -- Calculate new scale: Edit Mode scale × our multiplier
+    -- Calculate new scale: Edit Mode scale x addon multiplier
     local newScale = emScaleFactor * scaleMult
     
     -- Skip ALL scale changes during combat - SetScale on unit frames triggers
@@ -154,7 +154,7 @@ local function onLayoutsUpdated()
     -- Defer application slightly to let Edit Mode finish its updates
     if C_Timer and C_Timer.After then
         C_Timer.After(0.1, function()
-            -- Skip if we entered combat during the delay
+            -- Skip if combat started during the delay
             if InCombatLockdown and InCombatLockdown() then
                 return
             end
@@ -173,8 +173,8 @@ addon.ApplyUnitFrameScaleMultFor = applyScaleMultFor
 addon.ApplyAllUnitFrameScaleMults = applyAllScaleMults
 addon.OnUnitFrameScaleMultLayoutsUpdated = onLayoutsUpdated
 
--- Legacy function kept for compatibility (no-op now since we read Edit Mode directly)
+-- Legacy function kept for compatibility (no-op now since Edit Mode is read directly)
 addon.InvalidateUnitFrameScaleMultBaselines = function()
-    debugPrint("InvalidateUnitFrameScaleMultBaselines called (no-op, we read Edit Mode directly)")
+    debugPrint("InvalidateUnitFrameScaleMultBaselines called (no-op, Edit Mode is read directly)")
 end
 

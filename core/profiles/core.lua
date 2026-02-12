@@ -344,7 +344,7 @@ local function notifyUI()
     -- RefreshCurrentCategoryDeferred here to prevent right-pane flicker.
 end
 
--- Schedule robust, multi-pass sync after layout mutations to avoid stale lists
+-- Multi-pass sync after layout mutations to avoid stale lists
 local function postMutationSync(self, reason)
     if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
     if type(GetTime) == "function" then
@@ -483,7 +483,7 @@ local function applyComponentEditModeViaLibrary(component)
         local v = (db.orientation or component.settings.orientation.default or "H")
         local emv = (v == "H") and 0 or 1
         set((EM and EM.Orientation) or 0, emv)
-        -- NOTE: UpdateSystemSetting* calls removed to prevent taint (see TAINT.md Rule 2).
+        -- UpdateSystemSetting* calls removed to prevent taint.
         -- Visual updates now come from the deferred SetActiveLayout() in SaveOnly().
     end
 

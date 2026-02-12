@@ -15,7 +15,7 @@ function addon.UIFixes.ApplyDropdownStepperFixes()
     -- CRITICAL: All hook actions are deferred via C_Timer.After(0, ...) to break the
     -- execution context chain. Without this deferral, taint can propagate to unrelated
     -- Blizzard UI systems (e.g., Spell Book) causing "blocked from an action" errors
-    -- on protected functions like Frame:SetWidth(). See DEBUG.md for details.
+    -- on protected functions like Frame:SetWidth().
 
     -- Ensure dropdown steppers (left/right arrows) refresh enable/disable state after selection changes
     do

@@ -13,9 +13,7 @@ local postMutationSync = addon.Profiles._postMutationSync
 local addLayoutToCache = addon.Profiles._addLayoutToCache
 local prepareManager = addon.Profiles._prepareManager
 
--- NOTE: StaticPopupDialogs-based popups were removed to prevent taint.
--- All layout management dialogs now use addon.Dialogs (ui/panel/dialogs.lua).
--- See SCOOTERMOD_CLONE_PRESET, SCOOTERMOD_RENAME_LAYOUT, etc. in dialogs.lua.
+-- Layout dialogs use addon.Dialogs (see dialogs.lua).
 
 local function layoutExists(name)
     return addon.Profiles._layoutLookup and addon.Profiles._layoutLookup[name]
@@ -237,7 +235,7 @@ function Profiles:ClonePresetLayout(data, rawName)
     -- Save directly via C_EditMode (no manager frame involvement)
     C_EditMode.SaveLayouts(layoutInfo)
 
-    -- Reload library state and schedule robust sync
+    -- Reload library state and schedule sync
     if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
     postMutationSync(self, "ClonePreset")
 
@@ -376,8 +374,7 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
     if self._layoutLookup and self._layoutLookup[newName] then
         return false, "A layout with that name already exists." end
 
-    -- COMPLETELY AVOID EditModeManagerFrame - use only C_EditMode APIs
-    -- This approach never touches the manager frame, avoiding all taint issues
+    -- Use only C_EditMode APIs (no EditModeManagerFrame) to avoid taint
 
     if not C_EditMode or not C_EditMode.GetLayouts or not C_EditMode.SaveLayouts then
         return false, "C_EditMode API unavailable." end
@@ -387,7 +384,7 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
     if not layoutInfo or not layoutInfo.layouts then
         return false, "Unable to read layouts." end
 
-	-- Find the source layout in the structure (robustly after recent renames)
+	-- Find the source layout in the structure (handles recent renames)
 	local sourceLayout = nil
 	for _, layout in ipairs(layoutInfo.layouts) do
 		if layout.layoutName == sourceName then

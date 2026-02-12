@@ -1,18 +1,4 @@
---------------------------------------------------------------------------------
--- bars.lua
--- Unit Frame Bar Styling (Main File)
---
--- This file orchestrates bar styling for all unit frames. The functionality
--- has been modularized into separate files in the bars/ subdirectory:
---   - bars/utils.lua       - Shared utility functions
---   - bars/combat.lua      - Combat deferral systems
---   - bars/resolvers.lua   - Frame resolution helpers
---   - bars/textures.lua    - Texture application functions
---   - bars/alpha.lua       - Alpha enforcement helpers
---   - bars/preemptive.lua  - Pre-emptive hiding and early hooks
---   - bars/raidframes.lua  - Raid frame styling
---   - bars/partyframes.lua - Party frame styling
---------------------------------------------------------------------------------
+-- bars.lua: Unit Frame bar styling orchestrator. Delegates to bars/ submodules.
 
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
@@ -83,14 +69,7 @@ local queueUnitFrameTextureReapply = Combat.queueUnitFrameTextureReapply
 local queueRaidFrameReapply = Combat.queueRaidFrameReapply
 local queuePartyFrameReapply = Combat.queuePartyFrameReapply
 
---------------------------------------------------------------------------------
--- Power Bar Custom Position Debug Trace
---------------------------------------------------------------------------------
--- Commands:
---   /scoot debug powerbar trace on   - Enable tracing (buffers messages)
---   /scoot debug powerbar trace off  - Disable tracing
---   /scoot debug powerbar log        - Show buffered trace in copyable window
---   /scoot debug powerbar clear      - Clear the trace buffer
+-- Power Bar position trace: /scoot debug powerbar trace on|off|log|clear
 
 local powerBarDebugTraceEnabled = false
 local powerBarTraceBuffer = {}
@@ -101,7 +80,6 @@ addon.SetPowerBarDebugTrace = function(enabled)
     if enabled then
         print("|cff00ff00[ScooterMod]|r Power bar trace ENABLED (buffering to log)")
         print("|cff00ff00[ScooterMod]|r Use '/scoot debug powerbar log' to view, '/scoot debug powerbar clear' to clear")
-        -- Add a start marker
         table.insert(powerBarTraceBuffer, "=== Trace started at " .. date("%Y-%m-%d %H:%M:%S") .. " ===")
     else
         print("|cff00ff00[ScooterMod]|r Power bar trace DISABLED")
@@ -137,29 +115,16 @@ local function debugTracePowerBar(message, ...)
     if select("#", ...) > 0 then
         formatted = string.format(formatted, ...)
     end
-    
-    -- Add to buffer
+
     table.insert(powerBarTraceBuffer, formatted)
-    
-    -- Trim buffer if too large
+
     while #powerBarTraceBuffer > POWERBAR_TRACE_MAX_LINES do
         table.remove(powerBarTraceBuffer, 1)
     end
 end
 
---------------------------------------------------------------------------------
--- Power Bar Custom Position (DEPRECATED)
---------------------------------------------------------------------------------
--- The Custom Position feature has been deprecated in favor of PRD (Personal
--- Resource Display) with overlay enhancements. PRD supports Edit Mode
--- positioning, eliminating all the problems with repositioning the Player UF
--- ManaBar (combat lockdown, position resets, taint issues).
---
--- See ADDONCONTEXT/Docs/PERSONALRESOURCEDISPLAY.md for the new approach.
--- See ADDONCONTEXT/Docs/UNITFRAMES/UFPOWERBAR.md for deprecation history.
---
--- This function is retained only for backwards compatibility with saved configs.
--- It now always returns false (no-op).
+-- Power Bar Custom Position (DEPRECATED): replaced by PRD with Edit Mode positioning.
+-- Retained for backward compatibility; always returns false.
 
 local function applyCustomPowerBarPosition(unit, pb, cfg)
     -- Feature deprecated - always return false
@@ -586,35 +551,10 @@ do
             end
             -- No overlay frame creation: respect stock-frame reuse policy
         end
-        -- (experimental text reparent/strata bump removed; see HOLDING.md 2025-11-07)
     end
 
-    -- ============================================================================
-    -- BOSS FRAME RECTANGULAR OVERLAYS
-    -- ============================================================================
-    -- Boss frames have unique structural chips (missing corners) caused by
-    -- Blizzard's frame art overlap with the bar masks:
-    --   - Health Bar: Top-left corner chip
-    --   - Power Bar: Bottom-right corner chip
-    --
-    -- When "Hide Blizzard Frame Art & Animations" (useCustomBorders) is enabled,
-    -- these chips become visible gaps. We fill them using the same overlay pattern
-    -- as Player/Target/Focus frames (see ensureRectHealthOverlay below).
-    --
-    -- Key differences from standard unit frames:
-    --   1. Boss frames use separate overlay keys per bar type:
-    --      - Health: ScooterRectFillHealth
-    --      - Power: ScooterRectFillPower
-    --   2. Boss bars always fill left-to-right (no reverse fill support)
-    --   3. Overlays activate ONLY when useCustomBorders == true
-    --   4. There are 5 Boss frames (Boss1-Boss5), each styled independently
-    --
-    -- See ADDONCONTEXT/Docs/UNITFRAMES/UFBOSS.md for full architecture details.
-    -- ============================================================================
-
-    -- Boss frame rectangular overlays: fill chips in health bar (top-left) and power bar (bottom-right)
-    -- when "Hide Blizzard Frame Art & Animations" is enabled (useCustomBorders).
-    -- Unlike Target/Focus (which have portrait chips), Boss frames have mask chips caused by frame art overlap.
+    -- Boss rectangular overlays: fill mask chips in health bar (top-left) and power bar (bottom-right)
+    -- when useCustomBorders is enabled.
     local function updateBossRectOverlay(bar, overlayKey)
         local st = getState(bar)
         local overlay = st and st[overlayKey] or nil
@@ -818,24 +758,12 @@ do
         end
         overlay:SetVertexColor(r, g, b, a)
 
-        -- Initial update to match current bar state
         updateBossRectOverlay(bar, overlayKey)
     end
 
-    -- Height clipping container for health bar overlays with reduced height (healthBarOverlayHeightPct).
-    -- Instead of shrinking the overlay (which would expose Blizzard's bar above/below), we:
-    -- 1. Keep the overlay at FULL HEIGHT to completely occlude Blizzard's bar
-    -- 2. Use a clipping container with SetClipsChildren(true) to crop the visible portion
-    -- This prevents flash of Blizzard's bar on target change, combat entry, and frame updates.
-    --
-    -- UNIFIED CLIPPING ARCHITECTURE:
-    -- The clipping container is the "master" frame that contains ALL visual elements at reduced height:
-    --   heightClipContainer (Frame, positioned at reduced height, clips children)
-    --     ├─ heightClipBackground (Texture, BACKGROUND layer, matches CONTAINER size)
-    --     └─ rectFill (Texture, OVERLAY layer, full bar height - gets clipped)
-    --   Border is applied to the CLIPPING CONTAINER (via anchor frames that SetAllPoints to it)
-    --   bar.ScooterModBG is hidden when height clip is active
-    --   Text on bar renders above container (higher frame level)
+    -- The overlay remains at full height to occlude Blizzard's bar.
+    -- A clipping container with SetClipsChildren(true) crops the visible portion.
+    -- All reduced-height elements (background, rectFill) parent to the clip container.
     local function ensureHeightClipContainer(bar, unit, cfg)
         local st = getState(bar)
         if not st then return nil end
@@ -859,10 +787,10 @@ do
         if not st.heightClipContainer then
             local container = CreateFrame("Frame", nil, bar:GetParent() or bar)
             container:SetClipsChildren(true)
-            -- Frame level BELOW bar so text (which is on the bar) renders above our overlay.
-            -- Blizzard's fill texture is hidden (alpha 0), so even though it's "above" our
-            -- overlay in frame level terms, our overlay still shows through.
-            -- This ensures: background < our overlay < Blizzard's hidden fill < text
+            -- Frame level BELOW bar so text (which is on the bar) renders above the custom overlay.
+            -- Blizzard's fill texture is hidden (alpha 0), so even though it's "above" the custom
+            -- overlay in frame level terms, the custom overlay still shows through.
+            -- This ensures: background < the custom overlay < Blizzard's hidden fill < text
             container:SetFrameLevel(math.max(1, (bar:GetFrameLevel() or 1) - 1))
             st.heightClipContainer = container
         end
@@ -997,9 +925,8 @@ do
             return
         end
         -- Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
-        -- "secret values", we anchor directly to the StatusBarTexture. The StatusBarTexture
+        -- "secret values", the overlay anchors directly to the StatusBarTexture. The StatusBarTexture
         -- is the actual "fill" portion of the StatusBar and automatically scales with health value.
-        -- Anchor to existing elements, don't read values.
         if not statusBarTex then
             overlay:Hide()
             return
@@ -1213,7 +1140,7 @@ do
         end
 
         -- Copy the configured health bar texture/tint so the overlay visually matches.
-        -- We use the CONFIGURED texture from the DB rather than reading from the bar,
+        -- The CONFIGURED texture from the DB is used rather than reading from the bar,
         -- because GetTexture() can return a number (texture ID) instead of a string path
         -- after SetStatusBarTexture(), which caused the overlay to fall back to WHITE.
         local texKey = cfg.healthBarTexture or "default"
@@ -1226,7 +1153,7 @@ do
                 overlay:SetTexture(resolvedPath)
             end
         else
-            -- Default texture - try to copy from bar, with robust fallback
+            -- Default texture - try to copy from bar, with fallback chain
             -- CRITICAL: GetTexture() can return an atlas token STRING. Passing an atlas token
             -- to SetTexture() causes the entire spritesheet to render (see UNITFRAMES.md).
             -- We must check if the string is an atlas and use SetAtlas() instead.
@@ -2107,7 +2034,7 @@ do
         -- Boss unit frames commonly appear/update during combat (e.g., INSTANCE_ENCOUNTER_ENGAGE_UNIT / UPDATE_BOSS_FRAMES).
         -- IMPORTANT (taint): Even "cosmetic-only" writes to Boss unit frame regions (including SetAlpha on textures)
         -- can taint the Boss system and later block protected layout calls like BossTargetFrameContainer:SetSize().
-        -- Per DEBUG.md: do not mutate protected unit frame regions during combat. If Boss needs a re-assertion,
+        -- Do not mutate protected unit frame regions during combat. If Boss needs a re-assertion,
         -- queue a post-combat reapply instead.
         if unit == "Boss" then
             if InCombatLockdown and InCombatLockdown() then
@@ -3591,7 +3518,7 @@ do
             -- (e.g., AlternatePowerBar:Hide()).
             --
             -- Also IMPORTANT: Defer work with C_Timer.After(0) to break Blizzard's execution chain
-            -- (see DEBUG.md: global hook taint propagation lessons).
+            -- to break Blizzard's execution chain and avoid taint propagation.
             if unit == "Player" and _G.hooksecurefunc then
                 if not getProp(pb, "powerTextureHooked") then
                     setProp(pb, "powerTextureHooked", true)
@@ -4662,14 +4589,14 @@ do
                 -- NOTE: Spark height adjustment code was removed. The previous implementation
                 -- of shrinking the spark to prevent it from extending below custom borders
                 -- was causing worse visual artifacts than the original minor issue.
-                -- Letting Blizzard manage the spark naturally is the better approach.
+                -- Letting Blizzard manage the spark naturally produces better results.
             end
         end
 
         -- Nudge Blizzard to re-evaluate atlases/masks immediately after restoration
         -- NOTE: Pet is excluded because PetFrame is a managed/protected frame. Calling
         -- PetFrame_Update from addon code taints the frame, causing Edit Mode's
-        -- InitSystemAnchors to be blocked from calling SetPoint on PetFrame. (see DEBUG.md)
+        -- InitSystemAnchors to be blocked from calling SetPoint on PetFrame.
         local function refresh(unitKey)
             if unitKey == "Player" then
                 if _G.PlayerFrame_Update then pcall(_G.PlayerFrame_Update) end
@@ -4959,13 +4886,7 @@ do
         safeApply("FocusTarget")
     end
 
-    -- =========================================================================
-    -- Vehicle and Alternate Power Frame Texture Visibility Enforcement
-    -- =========================================================================
-    -- When entering/exiting vehicles, Blizzard's PlayerFrame_ToVehicleArt() and
-    -- PlayerFrame_ToPlayerArt() explicitly show/hide VehicleFrameTexture and
-    -- AlternatePowerFrameTexture. These helpers re-enforce hiding when
-    -- "Use Custom Borders" is enabled.
+    -- Re-enforce Vehicle/AlternatePower frame texture hiding after Blizzard art transitions.
 
     -- Enforce VehicleFrameTexture visibility based on Use Custom Borders setting
     local function EnforceVehicleFrameTextureVisibility()
@@ -5004,8 +4925,6 @@ do
         local function defer(unit)
             if _G.C_Timer and _G.C_Timer.After then _G.C_Timer.After(0, function() ensureTextAndBorderOrdering(unit) end) else ensureTextAndBorderOrdering(unit) end
         end
-        -- NOTE: Texture re-application hooks were removed (2025-11-14) as dead code.
-        -- The z-order enforcement hooks remain active via installUFZOrderHooks().
     end
 
     if not addon._UFZOrderHooksInstalled then
@@ -5014,11 +4933,7 @@ do
         installUFZOrderHooks()
     end
 
-    -- =========================================================================
-    -- Vehicle/Alternate Power Frame Texture Visibility Hooks
-    -- =========================================================================
-    -- Hook Blizzard's vehicle art transition functions to re-enforce hiding
-    -- when "Use Custom Borders" is enabled.
+    -- Hook Blizzard's vehicle art transitions to re-enforce hiding.
 
     if not addon._VehicleArtHooksInstalled then
         addon._VehicleArtHooksInstalled = true
@@ -5047,7 +4962,7 @@ do
             end)
         end
 
-        -- Install Show() hooks directly on the textures for extra robustness.
+        -- Install Show() hooks directly on the textures for extra coverage.
         -- This catches ANY Show() call, not just those from known Blizzard functions.
         local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
         
@@ -5089,7 +5004,7 @@ do
 
     -- Note: Portal/Vehicle event handlers for power bar custom positioning have been
     -- removed. The Custom Position feature is deprecated in favor of PRD (Personal
-    -- Resource Display) with Edit Mode positioning. See PERSONALRESOURCEDISPLAY.md.
+    -- Resource Display) with Edit Mode positioning.
 
 end
 
@@ -5111,13 +5026,7 @@ end
 -- addon.RestorePartyFrameNameOverlays, addon.ApplyPartyFrameTitleStyle
 
 
---------------------------------------------------------------------------------
--- Party Frame Overlay Restore (Profile Switch / Category Reset)
---------------------------------------------------------------------------------
--- Centralized function to restore all party frames to stock Blizzard appearance.
--- Called during profile switches when the new profile has no party frame config,
--- or when the user explicitly resets the Party Frames category to defaults.
---------------------------------------------------------------------------------
+-- Restore all party frames to stock Blizzard appearance (profile switch / category reset).
 
 function addon.RestoreAllPartyFrameOverlays()
     -- Restore health bar overlays
@@ -5130,13 +5039,7 @@ function addon.RestoreAllPartyFrameOverlays()
     end
 end
 
---------------------------------------------------------------------------------
--- Raid Frame Overlay Restore (Profile Switch / Category Reset)
---------------------------------------------------------------------------------
--- Centralized function to restore all raid frames to stock Blizzard appearance.
--- Called during profile switches when the new profile has no raid frame config,
--- or when the user explicitly resets the Raid Frames category to defaults.
---------------------------------------------------------------------------------
+-- Restore all raid frames to stock Blizzard appearance (profile switch / category reset).
 
 function addon.RestoreAllRaidFrameOverlays()
     -- Restore health bar overlays
@@ -5149,17 +5052,8 @@ function addon.RestoreAllRaidFrameOverlays()
     end
 end
 
---------------------------------------------------------------------------------
--- Unit Frame "Color by Value" Dynamic Update System
---------------------------------------------------------------------------------
--- For unit frames (Player, Target, Focus, Boss), we use a UNIT_HEALTH event
--- handler to update value-based health bar colors. This is separate from
--- party/raid frames which use CompactUnitFrame_UpdateHealthColor hooks.
---
--- The applyValueBasedColor function uses the secret-safe pattern:
--- UnitHealthPercent(unit, false, colorCurve) returns a non-secret color
--- by having Blizzard internally evaluate the secret health percentage.
---------------------------------------------------------------------------------
+-- UNIT_HEALTH event handler for value-based health bar coloring.
+-- Uses UnitHealthPercent(unit, false, colorCurve) for secret-safe color computation.
 
 do
     -- Map unit tokens to their health bar frames

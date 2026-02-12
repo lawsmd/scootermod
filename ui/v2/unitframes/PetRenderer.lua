@@ -77,7 +77,6 @@ end
 --------------------------------------------------------------------------------
 
 local function buildHealthStyleTab(inner)
-    -- Foreground Texture
     inner:AddBarTextureSelector({
         label = "Foreground Texture",
         get = function()
@@ -92,7 +91,6 @@ local function buildHealthStyleTab(inner)
         end,
     })
 
-    -- Foreground Color
     inner:AddSelectorColorPicker({
         label = "Foreground Color",
         values = UF.healthColorValues,
@@ -125,7 +123,6 @@ local function buildHealthStyleTab(inner)
 
     inner:AddSpacer(8)
 
-    -- Background Texture
     inner:AddBarTextureSelector({
         label = "Background Texture",
         get = function()
@@ -140,7 +137,6 @@ local function buildHealthStyleTab(inner)
         end,
     })
 
-    -- Background Color
     inner:AddSelectorColorPicker({
         label = "Background Color",
         values = UF.bgColorValues,
@@ -170,7 +166,6 @@ local function buildHealthStyleTab(inner)
         hasAlpha = true,
     })
 
-    -- Background Opacity
     inner:AddSlider({
         label = "Background Opacity",
         min = 0,
@@ -192,13 +187,11 @@ local function buildHealthStyleTab(inner)
 end
 
 local function buildHealthBorderTab(inner)
-    -- Check if custom borders are enabled
     local function isEnabled()
         local t = ensureUFDB() or {}
         return not not t.useCustomBorders
     end
 
-    -- Border Style
     inner:AddBarBorderSelector({
         label = "Border Style",
         includeNone = true,
@@ -214,7 +207,6 @@ local function buildHealthBorderTab(inner)
         end,
     })
 
-    -- Border Tint
     inner:AddToggleColorPicker({
         label = "Border Tint",
         get = function()
@@ -241,7 +233,6 @@ local function buildHealthBorderTab(inner)
         hasAlpha = true,
     })
 
-    -- Border Thickness
     inner:AddSlider({
         label = "Border Thickness",
         min = 1,
@@ -261,7 +252,6 @@ local function buildHealthBorderTab(inner)
         end,
     })
 
-    -- Border Inset
     inner:AddSlider({
         label = "Border Inset",
         min = -4,
@@ -283,7 +273,6 @@ local function buildHealthBorderTab(inner)
 end
 
 local function buildHealthPercentTextTab(inner)
-    -- Disable % Text
     inner:AddToggle({
         label = "Disable % Text",
         get = function()
@@ -298,7 +287,6 @@ local function buildHealthPercentTextTab(inner)
         end,
     })
 
-    -- Font
     inner:AddFontSelector({
         label = "% Text Font",
         get = function()
@@ -314,7 +302,6 @@ local function buildHealthPercentTextTab(inner)
         end,
     })
 
-    -- Style
     inner:AddSelector({
         label = "% Text Style",
         values = UF.fontStyleValues,
@@ -332,7 +319,6 @@ local function buildHealthPercentTextTab(inner)
         end,
     })
 
-    -- Size
     inner:AddSlider({
         label = "% Text Size",
         min = 6,
@@ -351,7 +337,6 @@ local function buildHealthPercentTextTab(inner)
         end,
     })
 
-    -- Color
     inner:AddSelectorColorPicker({
         label = "% Text Color",
         values = UF.fontColorValues,
@@ -383,7 +368,6 @@ local function buildHealthPercentTextTab(inner)
         hasAlpha = true,
     })
 
-    -- Alignment
     inner:AddSelector({
         label = "% Text Alignment",
         values = UF.alignmentValues,
@@ -443,7 +427,6 @@ local function buildHealthPercentTextTab(inner)
 end
 
 local function buildHealthValueTextTab(inner)
-    -- Disable Value Text
     inner:AddToggle({
         label = "Disable Value Text",
         get = function()
@@ -458,7 +441,6 @@ local function buildHealthValueTextTab(inner)
         end,
     })
 
-    -- Font
     inner:AddFontSelector({
         label = "Value Text Font",
         get = function()
@@ -474,7 +456,6 @@ local function buildHealthValueTextTab(inner)
         end,
     })
 
-    -- Style
     inner:AddSelector({
         label = "Value Text Style",
         values = UF.fontStyleValues,
@@ -492,7 +473,6 @@ local function buildHealthValueTextTab(inner)
         end,
     })
 
-    -- Size
     inner:AddSlider({
         label = "Value Text Size",
         min = 6,
@@ -511,7 +491,6 @@ local function buildHealthValueTextTab(inner)
         end,
     })
 
-    -- Color
     inner:AddSelectorColorPicker({
         label = "Value Text Color",
         values = UF.fontColorValues,
@@ -543,7 +522,6 @@ local function buildHealthValueTextTab(inner)
         hasAlpha = true,
     })
 
-    -- Alignment
     inner:AddSelector({
         label = "Value Text Alignment",
         values = UF.alignmentValues,
@@ -607,14 +585,11 @@ end
 --------------------------------------------------------------------------------
 
 function UF.RenderPet(panel, scrollContent)
-    -- Clear existing content
     panel:ClearContent()
 
-    -- Create builder
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    -- Store reference for re-rendering on changes
     builder:SetOnRefresh(function()
         UF.RenderPet(panel, scrollContent)
     end)
@@ -623,7 +598,6 @@ function UF.RenderPet(panel, scrollContent)
     -- Parent-Level Settings (no X/Y Position - handled by Edit Mode)
     --------------------------------------------------------------------------------
 
-    -- Hide Blizzard Frame Art (emphasized master toggle)
     builder:AddToggle({
         label = "Hide Blizzard Frame Art & Animations",
         description = "REQUIRED for custom borders. Hides default frame art.",
@@ -642,7 +616,6 @@ function UF.RenderPet(panel, scrollContent)
         infoIcon = UF.TOOLTIPS.hideBlizzardArt,
     })
 
-    -- Frame Size (Edit Mode scale)
     builder:AddSlider({
         label = "Frame Size (Scale)",
         description = "Blizzard's Edit Mode scale (100-200%).",
@@ -660,7 +633,6 @@ function UF.RenderPet(panel, scrollContent)
         infoIcon = UF.TOOLTIPS.frameSize,
     })
 
-    -- Scale Multiplier (addon-only)
     builder:AddSlider({
         label = "Scale Multiplier",
         description = "Addon multiplier on top of Edit Mode scale.",
@@ -998,7 +970,6 @@ function UF.RenderPet(panel, scrollContent)
 
     -- Portrait tab builders
     local function buildPortraitSizingTab(inner)
-        -- Portrait Scale slider (50-200%)
         inner:AddSlider({
             label = "Portrait Size (Scale)",
             min = 50,
@@ -1019,7 +990,6 @@ function UF.RenderPet(panel, scrollContent)
     end
 
     local function buildPortraitZoomTab(inner)
-        -- Portrait Zoom slider (100-200%)
         inner:AddSlider({
             label = "Portrait Zoom",
             min = 100,
@@ -1040,7 +1010,6 @@ function UF.RenderPet(panel, scrollContent)
     end
 
     local function buildPortraitBorderTab(inner)
-        -- Enable Custom Border toggle
         inner:AddToggle({
             label = "Use Custom Border",
             get = function()
@@ -1053,7 +1022,6 @@ function UF.RenderPet(panel, scrollContent)
             end,
         })
 
-        -- Border Style selector
         local borderStyleValues = {
             texture_c = "Circle",
             texture_s = "Circle with Corner",
@@ -1080,7 +1048,6 @@ function UF.RenderPet(panel, scrollContent)
             end,
         })
 
-        -- Border Inset slider
         inner:AddSlider({
             label = "Border Inset",
             min = 1,
@@ -1098,7 +1065,6 @@ function UF.RenderPet(panel, scrollContent)
             end,
         })
 
-        -- Border Color selector + picker
         local colorModeValues = {
             texture = "Texture Original",
             class = "Class Color",
@@ -1135,7 +1101,6 @@ function UF.RenderPet(panel, scrollContent)
     end
 
     local function buildPortraitVisibilityTab(inner)
-        -- Hide Portrait toggle
         inner:AddToggle({
             label = "Hide Portrait",
             get = function()
@@ -1148,7 +1113,6 @@ function UF.RenderPet(panel, scrollContent)
             end,
         })
 
-        -- Portrait Opacity slider
         inner:AddSlider({
             label = "Portrait Opacity",
             min = 1,
@@ -1203,7 +1167,6 @@ function UF.RenderPet(panel, scrollContent)
         sectionKey = "visibility",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Hide Entire Pet Frame
             inner:AddToggle({
                 label = "Hide Entire Pet Frame",
                 description = "Completely hides the Pet frame. Useful for ConsolePort users who prefer the Pet Ring.",
@@ -1241,7 +1204,6 @@ function UF.RenderPet(panel, scrollContent)
                 infoIcon = UF.TOOLTIPS.visibilityPriority,
             })
 
-            -- In Combat Opacity
             inner:AddSlider({
                 label = "Opacity - In Combat",
                 description = "Opacity when in combat.",
@@ -1260,7 +1222,6 @@ function UF.RenderPet(panel, scrollContent)
                 end,
             })
 
-            -- With Target Opacity
             inner:AddSlider({
                 label = "Opacity - With Target",
                 description = "Opacity when you have a target.",

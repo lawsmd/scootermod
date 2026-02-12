@@ -25,7 +25,7 @@ local TAB_HEIGHT = 32
 local TITLE_HEIGHT = 30
 local PADDING = 12
 
--- 3-column grid layout (as requested)
+-- 3-column grid layout
 local TEXTURES_PER_ROW = 3
 local TEXTURE_BUTTON_WIDTH = 160
 local TEXTURE_BUTTON_HEIGHT = 46  -- Height for name + preview with clear gap
@@ -615,7 +615,7 @@ end
 -- BarTextureSelector Row Control (for SettingsBuilder integration)
 --------------------------------------------------------------------------------
 -- Creates a selector row that opens the bar texture picker popup
--- Shows only the texture NAME (no inline preview) per user request
+-- Shows only the texture NAME (no inline preview)
 
 local BAR_TEXTURE_SELECTOR_HEIGHT = 28
 local BAR_TEXTURE_SELECTOR_ROW_HEIGHT = 42

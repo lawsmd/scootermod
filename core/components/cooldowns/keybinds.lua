@@ -1,13 +1,6 @@
 local addonName, addon = ...
 
---------------------------------------------------------------------------------
--- Keybind Resolution Engine
---------------------------------------------------------------------------------
--- Scans action bars to find which keybind activates each spell, then provides
--- formatted keybind text for display on CDM icon overlays.
---
--- Applies to Essential and Utility cooldowns only (not TrackedBuffs/TrackedBars).
---------------------------------------------------------------------------------
+-- Keybind resolution: maps action bar keybinds to CDM icon overlays (Essential/Utility only).
 
 addon.SpellBindings = addon.SpellBindings or {}
 local SpellBindings = addon.SpellBindings
@@ -446,12 +439,6 @@ eventFrame:SetScript("OnEvent", OnEvent)
 --------------------------------------------------------------------------------
 
 function SpellBindings.Initialize()
-    -- Get reference to activeOverlays from the overlay system
-    -- CDMOverlays stores active overlays internally; we access them through the module
-    -- We need the actual activeOverlays table, which is local to core.lua
-    -- Instead, we'll use addon.CDMOverlays to check for overlays
-
-    -- Register events
     eventFrame:RegisterEvent("UPDATE_BINDINGS")
     eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")

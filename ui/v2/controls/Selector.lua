@@ -14,9 +14,7 @@ local function GetTheme()
     return Theme
 end
 
---------------------------------------------------------------------------------
 -- Constants
---------------------------------------------------------------------------------
 
 local SELECTOR_HEIGHT = 28
 local SELECTOR_ARROW_WIDTH = 28
@@ -39,30 +37,7 @@ local DESC_PADDING_TOP = 2        -- Space between label and description
 local DESC_PADDING_TOP_EMPH = 4   -- Space for emphasized controls
 local DESC_PADDING_BOTTOM = 36    -- Space below description to border (doubled for center-anchored layout)
 
---------------------------------------------------------------------------------
 -- Selector: Dropdown/selector with arrow buttons on each side
---------------------------------------------------------------------------------
--- Creates a selector control with:
---   - Left arrow button for previous option
---   - Right arrow button for next option
---   - Centered value display (clickable to open dropdown)
---   - Label text above or beside the selector
---
--- Options table:
---   label       : Setting label text (string)
---   description : Optional description text below (string)
---   values      : Table of { key = "Display Text" } pairs
---   order       : Optional array of keys for display order (otherwise alphabetical)
---   get         : Function returning current key
---   set         : Function(newKey) to save value
---   parent      : Parent frame (required)
---   width       : Selector width (optional, default 180)
---   name        : Global frame name (optional)
---   syncCooldown: Optional cooldown in seconds (e.g., 0.4) to prevent rapid changes
---                 during Edit Mode sync. When set, arrows are locked after each
---                 change until the cooldown expires.
---   emphasized  : Boolean, use "Hero" styling for master controls
---------------------------------------------------------------------------------
 
 function Controls:CreateSelector(options)
     local theme = GetTheme()
