@@ -331,4 +331,8 @@ function ObjectiveTracker.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("objectiveTracker", function(panel, scrollContent)
+    ObjectiveTracker.Render(panel, scrollContent)
+end)
+
 return ObjectiveTracker

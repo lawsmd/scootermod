@@ -348,4 +348,8 @@ function Presets.Render(panel, scrollContent)
     scrollContent:SetHeight(totalHeight)
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("profilesPresets", function(panel, scrollContent)
+    Presets.Render(panel, scrollContent)
+end)
+
 return Presets

@@ -578,6 +578,11 @@ function UF.RenderFocusTarget(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("ufFocusTarget", function(panel, scrollContent)
+    UF.RenderFocusTarget(panel, scrollContent)
+end)
+
 -- Return renderer for registration
 --------------------------------------------------------------------------------
 

@@ -733,4 +733,8 @@ function UtilityCooldowns.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("utilityCooldowns", function(panel, scrollContent)
+    UtilityCooldowns.Render(panel, scrollContent)
+end)
+
 return UtilityCooldowns

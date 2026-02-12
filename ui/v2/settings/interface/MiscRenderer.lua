@@ -49,6 +49,11 @@ function Misc.Render(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("misc", function(panel, scrollContent)
+    Misc.Render(panel, scrollContent)
+end)
+
 -- Return module
 --------------------------------------------------------------------------------
 

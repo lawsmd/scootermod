@@ -1404,4 +1404,8 @@ function Rules.Render(panel, scrollContent)
     scrollContent:SetHeight(totalHeight)
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("profilesRules", function(panel, scrollContent)
+    Rules.Render(panel, scrollContent)
+end)
+
 return Rules

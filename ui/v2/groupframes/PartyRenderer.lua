@@ -757,3 +757,7 @@ function GF.RenderParty(panel, scrollContent)
 
     builder:Finalize()
 end
+
+addon.UI.SettingsPanel:RegisterRenderer("gfParty", function(panel, scrollContent)
+    GF.RenderParty(panel, scrollContent)
+end)

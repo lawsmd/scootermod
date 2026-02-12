@@ -247,4 +247,8 @@ function UF.RenderBoss(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("ufBoss", function(panel, scrollContent)
+    UF.RenderBoss(panel, scrollContent)
+end)
+
 return UF.RenderBoss

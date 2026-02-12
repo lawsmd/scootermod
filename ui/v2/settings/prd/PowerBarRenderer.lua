@@ -458,4 +458,8 @@ function PowerBar.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("prdPowerBar", function(panel, scrollContent)
+    PowerBar.Render(panel, scrollContent)
+end)
+
 return PowerBar

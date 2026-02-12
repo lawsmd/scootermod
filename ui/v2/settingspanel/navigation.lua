@@ -20,54 +20,17 @@ local CONTENT_PADDING = UIPanel._CONTENT_PADDING
 -- Marks the affected component for refresh and triggers re-render if visible.
 --------------------------------------------------------------------------------
 
--- Lookup table mapping componentId to navigation key
-local COMPONENT_TO_NAV_KEY = {
-    essentialCooldowns = "essentialCooldowns",
-    utilityCooldowns   = "utilityCooldowns",
-    trackedBuffs       = "trackedBuffs",
-    trackedBars        = "trackedBars",
-    cdmQoL             = "cdmQoL",
-    -- Unit Frames
-    ufPlayer = "ufPlayer",
-    ufTarget = "ufTarget",
-    ufFocus  = "ufFocus",
-    ufPet    = "ufPet",
-    ufToT    = "ufToT",
-    ufBoss   = "ufBoss",
-    -- Buffs/Debuffs
-    buffs   = "buffs",
-    debuffs = "debuffs",
-    -- Group Frames
-    gfParty = "gfParty",
-    gfRaid  = "gfRaid",
-    -- Action Bars (actual componentIds from editmode are actionBar1-8, not ab1-8)
-    actionBar1 = "actionBar1",
-    actionBar2 = "actionBar2",
-    actionBar3 = "actionBar3",
-    actionBar4 = "actionBar4",
-    actionBar5 = "actionBar5",
-    actionBar6 = "actionBar6",
-    actionBar7 = "actionBar7",
-    actionBar8 = "actionBar8",
-    -- Micro/Menu bar
-    microBar = "microBar",
-    -- Damage Meter
-    damageMeter = "damageMeter",
-    -- Objective Tracker
-    objectiveTracker = "objectiveTracker",
-}
-
 function UIPanel:HandleEditModeBackSync(componentId, settingId)
     if not componentId then return end
 
     -- Mark component as needing refresh
     self._pendingBackSync[componentId] = true
 
-    -- Map componentId to navigation key via lookup table
-    local categoryKey = COMPONENT_TO_NAV_KEY[componentId]
+    -- componentId is the navigation key directly (identity mapping)
+    local categoryKey = componentId
 
     -- If currently viewing this category, trigger refresh
-    if categoryKey and self._currentCategoryKey == categoryKey then
+    if self._currentCategoryKey == categoryKey then
         -- Defer to avoid mid-render issues
         C_Timer.After(0, function()
             if self.frame and self.frame:IsShown() then
@@ -671,61 +634,48 @@ Navigation key: "%s"
 end
 
 --------------------------------------------------------------------------------
--- Get Category Display Title
+-- Get Category Display Title (auto-derived from NavModel)
 --------------------------------------------------------------------------------
+
+-- Sections whose children get a "Prefix: " in the title.
+-- Value is the display prefix (allows abbreviation vs NavModel label).
+local TITLE_PREFIX = {
+    cdm        = "CDM",
+    unitFrames = "Unit Frames",
+    prd        = "Personal Resource",
+    applyAll   = "Apply All",
+    sct        = "SCT",
+}
+
+-- Hard overrides for children whose title doesn't match "prefix: child.label"
+local TITLE_OVERRIDES = {
+    ufToT         = "Unit Frames: ToT",
+    ufFocusTarget = "Unit Frames: ToF",
+}
+
+local _titleCache
+
+local function buildTitleCache()
+    if _titleCache then return _titleCache end
+    _titleCache = { home = "Home" }
+    for _, section in ipairs(Navigation.NavModel) do
+        local prefix = TITLE_PREFIX[section.key]
+        if section.children then
+            for _, child in ipairs(section.children) do
+                if TITLE_OVERRIDES[child.key] then
+                    _titleCache[child.key] = TITLE_OVERRIDES[child.key]
+                elseif prefix then
+                    _titleCache[child.key] = prefix .. ": " .. child.label
+                else
+                    _titleCache[child.key] = child.label
+                end
+            end
+        end
+    end
+    return _titleCache
+end
 
 function UIPanel:GetCategoryTitle(key)
     if not key then return "Home" end
-
-    -- Map navigation keys to display titles
-    local titles = {
-        home = "Home",
-        profilesManage = "Manage Profiles",
-        profilesPresets = "Presets",
-        profilesRules = "Rules",
-        profilesImportExport = "Import/Export",
-        applyAllFonts = "Apply All: Fonts",
-        applyAllTextures = "Apply All: Bar Textures",
-        damageMeter = "Damage Meters",
-        tooltip = "Tooltip",
-        objectiveTracker = "Objective Tracker",
-        minimap = "Minimap",
-        chat = "Chat",
-        misc = "Misc.",
-        cdmQoL = "CDM: Quality of Life",
-        essentialCooldowns = "CDM: Essential Cooldowns",
-        utilityCooldowns = "CDM: Utility Cooldowns",
-        trackedBuffs = "CDM: Tracked Buffs",
-        trackedBars = "CDM: Tracked Bars",
-        actionBar1 = "Action Bar 1",
-        actionBar2 = "Action Bar 2",
-        actionBar3 = "Action Bar 3",
-        actionBar4 = "Action Bar 4",
-        actionBar5 = "Action Bar 5",
-        actionBar6 = "Action Bar 6",
-        actionBar7 = "Action Bar 7",
-        actionBar8 = "Action Bar 8",
-        petBar = "Pet Bar",
-        stanceBar = "Stance Bar",
-        microBar = "Micro Bar",
-        extraAbilities = "Extra Abilities",
-        prdGeneral = "Personal Resource: General",
-        prdHealthBar = "Personal Resource: Health Bar",
-        prdPowerBar = "Personal Resource: Power Bar",
-        prdClassResource = "Personal Resource: Class Resource",
-        ufPlayer = "Unit Frames: Player",
-        ufTarget = "Unit Frames: Target",
-        ufFocus = "Unit Frames: Focus",
-        ufPet = "Unit Frames: Pet",
-        ufToT = "Unit Frames: ToT",
-        ufFocusTarget = "Unit Frames: ToF",
-        ufBoss = "Unit Frames: Boss",
-        gfParty = "Party Frames",
-        gfRaid = "Raid Frames",
-        buffs = "Buffs",
-        debuffs = "Debuffs",
-        sctDamage = "SCT: Damage Numbers",
-    }
-
-    return titles[key] or key
+    return buildTitleCache()[key] or key
 end

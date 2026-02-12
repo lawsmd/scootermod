@@ -935,4 +935,8 @@ function UF.RenderFocus(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("ufFocus", function(panel, scrollContent)
+    UF.RenderFocus(panel, scrollContent)
+end)
+
 return UF.RenderFocus

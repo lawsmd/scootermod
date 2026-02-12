@@ -103,4 +103,8 @@ end
 -- Return module
 --------------------------------------------------------------------------------
 
+addon.UI.SettingsPanel:RegisterRenderer("cdmQoL", function(panel, scrollContent)
+    QoL.Render(panel, scrollContent)
+end)
+
 return QoL

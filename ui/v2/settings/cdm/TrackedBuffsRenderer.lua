@@ -521,4 +521,8 @@ function TrackedBuffs.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("trackedBuffs", function(panel, scrollContent)
+    TrackedBuffs.Render(panel, scrollContent)
+end)
+
 return TrackedBuffs

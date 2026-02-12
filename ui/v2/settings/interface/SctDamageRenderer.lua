@@ -66,6 +66,11 @@ function SctDamage.Render(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("sctDamage", function(panel, scrollContent)
+    SctDamage.Render(panel, scrollContent)
+end)
+
 -- Return module
 --------------------------------------------------------------------------------
 

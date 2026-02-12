@@ -671,4 +671,8 @@ function TrackedBars.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("trackedBars", function(panel, scrollContent)
+    TrackedBars.Render(panel, scrollContent)
+end)
+
 return TrackedBars

@@ -804,6 +804,13 @@ function ActionBar.Render(panel, scrollContent, componentId)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel (all bar variants)
+for _, barKey in ipairs({"actionBar1", "actionBar2", "actionBar3", "actionBar4", "actionBar5", "actionBar6", "actionBar7", "actionBar8", "petBar", "stanceBar"}) do
+    addon.UI.SettingsPanel:RegisterRenderer(barKey, function(panel, scrollContent)
+        ActionBar.Render(panel, scrollContent, barKey)
+    end)
+end
+
 -- Return module
 --------------------------------------------------------------------------------
 

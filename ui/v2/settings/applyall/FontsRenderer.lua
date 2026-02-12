@@ -122,4 +122,8 @@ function Fonts.Render(panel, scrollContent)
     scrollContent:SetHeight(400)
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("applyAllFonts", function(panel, scrollContent)
+    Fonts.Render(panel, scrollContent)
+end)
+
 return Fonts

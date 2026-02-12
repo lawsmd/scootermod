@@ -596,3 +596,7 @@ function ImportExport.Render(panel, scrollContent)
     local totalPageHeight = math.abs(yOffset) + CONTENT_PADDING + 20
     scrollContent:SetHeight(totalPageHeight)
 end
+
+addon.UI.SettingsPanel:RegisterRenderer("profilesImportExport", function(panel, scrollContent)
+    ImportExport.Render(panel, scrollContent)
+end)

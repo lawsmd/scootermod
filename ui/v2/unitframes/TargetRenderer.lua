@@ -1283,6 +1283,11 @@ function UF.RenderTarget(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("ufTarget", function(panel, scrollContent)
+    UF.RenderTarget(panel, scrollContent)
+end)
+
 -- Return renderer for registration
 --------------------------------------------------------------------------------
 

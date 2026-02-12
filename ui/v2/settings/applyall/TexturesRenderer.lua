@@ -123,4 +123,8 @@ function Textures.Render(panel, scrollContent)
     scrollContent:SetHeight(400)
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("applyAllTextures", function(panel, scrollContent)
+    Textures.Render(panel, scrollContent)
+end)
+
 return Textures

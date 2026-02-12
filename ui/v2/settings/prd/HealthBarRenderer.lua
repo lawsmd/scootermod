@@ -440,4 +440,8 @@ function HealthBar.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("prdHealthBar", function(panel, scrollContent)
+    HealthBar.Render(panel, scrollContent)
+end)
+
 return HealthBar

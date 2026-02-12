@@ -469,4 +469,8 @@ function Manage.Render(panel, scrollContent)
     scrollContent:SetHeight(totalHeight)
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("profilesManage", function(panel, scrollContent)
+    Manage.Render(panel, scrollContent)
+end)
+
 return Manage

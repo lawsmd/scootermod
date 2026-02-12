@@ -137,4 +137,8 @@ function ClassResource.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("prdClassResource", function(panel, scrollContent)
+    ClassResource.Render(panel, scrollContent)
+end)
+
 return ClassResource

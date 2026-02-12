@@ -459,4 +459,8 @@ function Debuffs.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("debuffs", function(panel, scrollContent)
+    Debuffs.Render(panel, scrollContent)
+end)
+
 return Debuffs

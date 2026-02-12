@@ -56,6 +56,11 @@ function Chat.Render(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("chat", function(panel, scrollContent)
+    Chat.Render(panel, scrollContent)
+end)
+
 -- Return module
 --------------------------------------------------------------------------------
 

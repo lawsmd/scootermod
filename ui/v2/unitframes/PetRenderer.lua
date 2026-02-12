@@ -1291,6 +1291,11 @@ function UF.RenderPet(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("ufPet", function(panel, scrollContent)
+    UF.RenderPet(panel, scrollContent)
+end)
+
 -- Return renderer for registration
 --------------------------------------------------------------------------------
 

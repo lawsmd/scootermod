@@ -378,6 +378,11 @@ function ExtraAbilities.Render(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("extraAbilities", function(panel, scrollContent)
+    ExtraAbilities.Render(panel, scrollContent)
+end)
+
 -- Return module
 --------------------------------------------------------------------------------
 

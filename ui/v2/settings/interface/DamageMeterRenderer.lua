@@ -1043,4 +1043,8 @@ function DamageMeter.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("damageMeter", function(panel, scrollContent)
+    DamageMeter.Render(panel, scrollContent)
+end)
+
 return DamageMeter

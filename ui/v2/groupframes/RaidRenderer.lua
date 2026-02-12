@@ -721,3 +721,7 @@ function GF.RenderRaid(panel, scrollContent)
 
     builder:Finalize()
 end
+
+addon.UI.SettingsPanel:RegisterRenderer("gfRaid", function(panel, scrollContent)
+    GF.RenderRaid(panel, scrollContent)
+end)

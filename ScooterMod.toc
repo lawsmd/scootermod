@@ -112,6 +112,7 @@ ui/v2/Window.lua
 ui/v2/Navigation.lua
 ui/v2/SettingsBuilder.lua
 ui/v2/settings/Helpers.lua
+ui/v2/settingspanel/renderers.lua
 ui/v2/settings/cdm/QoLRenderer.lua
 ui/v2/settings/cdm/EssentialCooldownsRenderer.lua
 ui/v2/settings/cdm/UtilityCooldownsRenderer.lua
@@ -155,7 +156,6 @@ ui/v2/groupframes/RaidRenderer.lua
 ui/v2/settingspanel/ascii.lua
 ui/v2/settingspanel/core.lua
 ui/v2/settingspanel/navigation.lua
-ui/v2/settingspanel/renderers.lua
 ui/v2/GameMenu.lua
 
 core/ui_fixes.lua

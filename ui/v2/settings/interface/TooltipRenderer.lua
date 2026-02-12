@@ -294,4 +294,8 @@ function Tooltip.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("tooltip", function(panel, scrollContent)
+    Tooltip.Render(panel, scrollContent)
+end)
+
 return Tooltip

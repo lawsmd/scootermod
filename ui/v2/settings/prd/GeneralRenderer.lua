@@ -89,6 +89,11 @@ function General.Render(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("prdGeneral", function(panel, scrollContent)
+    General.Render(panel, scrollContent)
+end)
+
 -- Return module
 --------------------------------------------------------------------------------
 

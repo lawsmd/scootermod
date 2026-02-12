@@ -578,6 +578,11 @@ function UF.RenderToT(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("ufToT", function(panel, scrollContent)
+    UF.RenderToT(panel, scrollContent)
+end)
+
 -- Return renderer for registration
 --------------------------------------------------------------------------------
 

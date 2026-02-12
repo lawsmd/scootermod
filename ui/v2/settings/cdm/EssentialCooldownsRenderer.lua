@@ -843,4 +843,8 @@ function EssentialCooldowns.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("essentialCooldowns", function(panel, scrollContent)
+    EssentialCooldowns.Render(panel, scrollContent)
+end)
+
 return EssentialCooldowns

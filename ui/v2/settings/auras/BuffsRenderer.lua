@@ -545,4 +545,8 @@ function Buffs.Render(panel, scrollContent)
     builder:Finalize()
 end
 
+addon.UI.SettingsPanel:RegisterRenderer("buffs", function(panel, scrollContent)
+    Buffs.Render(panel, scrollContent)
+end)
+
 return Buffs

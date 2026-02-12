@@ -1691,6 +1691,11 @@ function UF.RenderPlayer(panel, scrollContent)
 end
 
 --------------------------------------------------------------------------------
+-- Self-register with settings panel
+addon.UI.SettingsPanel:RegisterRenderer("ufPlayer", function(panel, scrollContent)
+    UF.RenderPlayer(panel, scrollContent)
+end)
+
 -- Return renderer for registration
 --------------------------------------------------------------------------------
 
