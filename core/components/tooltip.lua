@@ -203,6 +203,18 @@ local function ApplyComparisonTooltipText(tooltip, db)
     end
 end
 
+local function ApplyBorderTint(tooltip, db)
+    if not tooltip then return end
+    local nineSlice = tooltip.NineSlice
+    if not nineSlice or not nineSlice.SetBorderColor then return end
+    if db.borderTintEnable then
+        local c = db.borderTintColor or {1, 1, 1, 1}
+        nineSlice:SetBorderColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+    else
+        nineSlice:SetBorderColor(1, 1, 1, 1)
+    end
+end
+
 -- Track whether we've registered the TooltipDataProcessor hook
 local tooltipProcessorHooked = false
 
@@ -254,6 +266,9 @@ local function RegisterTooltipPostProcessor()
             return
         end
 
+        -- Apply border tint
+        ApplyBorderTint(tooltip, db)
+
         -- Hide health bar if setting is enabled (must be done on every tooltip show)
         if tooltip == GameTooltip and db.hideHealthBar then
             local statusBar = _G["GameTooltipStatusBar"]
@@ -283,6 +298,13 @@ local function ApplyTooltipStyling(self)
     ApplyComparisonTooltipText(_G["ShoppingTooltip2"], db)
     ApplyComparisonTooltipText(_G["ItemRefShoppingTooltip1"], db)
     ApplyComparisonTooltipText(_G["ItemRefShoppingTooltip2"], db)
+
+    -- Apply border tint
+    ApplyBorderTint(tooltip, db)
+    ApplyBorderTint(_G["ShoppingTooltip1"], db)
+    ApplyBorderTint(_G["ShoppingTooltip2"], db)
+    ApplyBorderTint(_G["ItemRefShoppingTooltip1"], db)
+    ApplyBorderTint(_G["ItemRefShoppingTooltip2"], db)
 
     -- Apply visibility settings: Hide/Show GameTooltipStatusBar (health bar)
     local statusBar = _G["GameTooltipStatusBar"]
@@ -356,6 +378,10 @@ addon:RegisterComponentInitializer(function(self)
 
             -- Tooltip scale setting
             tooltipScale = { type = "addon", default = 1.0 },
+
+            -- Border tint settings
+            borderTintEnable = { type = "addon", default = false },
+            borderTintColor = { type = "addon", default = {1, 1, 1, 1} },
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

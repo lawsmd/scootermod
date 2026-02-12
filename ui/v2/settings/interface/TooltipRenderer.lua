@@ -152,6 +152,30 @@ function Tooltip.Render(panel, scrollContent)
         end,
     })
 
+    -- Collapsible section: Border
+    builder:AddCollapsibleSection({
+        title = "Border",
+        componentId = "tooltip",
+        sectionKey = "border",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggleColorPicker({
+                label = "Border Tint",
+                get = function() return getSetting("borderTintEnable") or false end,
+                set = function(v) setSetting("borderTintEnable", v) end,
+                getColor = function()
+                    local c = getSetting("borderTintColor") or {1, 1, 1, 1}
+                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end,
+                setColor = function(r, g, b, a)
+                    setSetting("borderTintColor", {r, g, b, a})
+                end,
+                hasAlpha = true,
+            })
+            inner:Finalize()
+        end,
+    })
+
     -- Collapsible section: Text (with tabbed sub-sections)
     builder:AddCollapsibleSection({
         title = "Text",
