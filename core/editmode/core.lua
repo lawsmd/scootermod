@@ -8,7 +8,7 @@ local function _SafePCall(method, frame, useSecure)
     if not (frame and type(method) == "string") then return end
     local fn = frame[method]
     if type(fn) ~= "function" then return end
-    if useSecure and type(securecallfunction) == "function" then
+    if useSecure then
         securecallfunction(fn, frame)
     else
         pcall(fn, frame)
@@ -679,7 +679,7 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
                 local target = u.frame or frame
                 local method = u.method
                 if target and type(method) == "string" and type(target[method]) == "function" then
-                    if useSecureUpdaters and type(securecallfunction) == "function" then
+                    if useSecureUpdaters then
                         securecallfunction(target[method], target)
                     else
                         pcall(target[method], target)

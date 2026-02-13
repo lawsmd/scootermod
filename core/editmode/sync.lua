@@ -550,9 +550,7 @@ local function _AuraBackfillLog(fmt, ...)
     if not _AuraBackfillDebugEnabled() then return end
     addon.EditMode._auraIconSizeLog = addon.EditMode._auraIconSizeLog or {}
     local prefix = ""
-    if type(GetTime) == "function" then
-        prefix = string.format("[%.3f] ", GetTime())
-    end
+    prefix = string.format("[%.3f] ", GetTime())
     local message = fmt and string.format(fmt, ...) or ""
     table.insert(addon.EditMode._auraIconSizeLog, prefix .. message)
 end
@@ -1127,7 +1125,7 @@ function addon.EditMode.SyncComponentPositionFromEditMode(component)
     -- steal focus from the text box shortly after the user edits it.
     local recent = component._recentPositionWrite
     if recent and (recent.x ~= nil and recent.y ~= nil) then
-        local now = type(GetTime) == "function" and GetTime() or nil
+        local now = GetTime()
         if now and recent.time and (now - recent.time) <= 0.6 then
             if recent.x == offsetX and recent.y == offsetY then
                 return false

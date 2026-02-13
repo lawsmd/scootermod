@@ -32,13 +32,10 @@ local function PlayerInCombat()
     if addon and addon.ComponentsUtil and type(addon.ComponentsUtil.PlayerInCombat) == "function" then
         return addon.ComponentsUtil.PlayerInCombat()
     end
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+    if InCombatLockdown() then
         return true
     end
-    if type(UnitAffectingCombat) == "function" then
-        return UnitAffectingCombat("player") and true or false
-    end
-    return false
+    return UnitAffectingCombat("player") and true or false
 end
 
 local function GetClassColor(classToken)

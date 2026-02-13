@@ -108,21 +108,19 @@ local function HookFrame(self, name, frame)
     self._hooked[name] = true
 
     -- If Blizzard (or another addon) tries to show chat, immediately re-hide if desired.
-    if type(hooksecurefunc) == "function" then
-        if frame.Show then
-            hooksecurefunc(frame, "Show", function()
-                if addon and addon.Chat and addon.Chat.IsHidden and addon.Chat:IsHidden() then
-                    ApplyHidden(addon.Chat, name, frame)
-                end
-            end)
-        end
-        if frame.SetShown then
-            hooksecurefunc(frame, "SetShown", function(_, shown)
-                if shown and addon and addon.Chat and addon.Chat.IsHidden and addon.Chat:IsHidden() then
-                    ApplyHidden(addon.Chat, name, frame)
-                end
-            end)
-        end
+    if frame.Show then
+        hooksecurefunc(frame, "Show", function()
+            if addon and addon.Chat and addon.Chat.IsHidden and addon.Chat:IsHidden() then
+                ApplyHidden(addon.Chat, name, frame)
+            end
+        end)
+    end
+    if frame.SetShown then
+        hooksecurefunc(frame, "SetShown", function(_, shown)
+            if shown and addon and addon.Chat and addon.Chat.IsHidden and addon.Chat:IsHidden() then
+                ApplyHidden(addon.Chat, name, frame)
+            end
+        end)
     end
 end
 

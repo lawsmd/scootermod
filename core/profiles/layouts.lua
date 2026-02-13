@@ -588,9 +588,7 @@ function Profiles:PerformCreateLayout(rawNewName)
         pcall(C_EditMode.SaveLayouts, li)
     end
 
-    if type(ReloadUI) == "function" then
-        ReloadUI()
-    end
+    ReloadUI()
 
     return true
 end

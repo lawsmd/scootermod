@@ -209,16 +209,12 @@ function Presets:ApplyPresetFromUI(preset)
                         return
                     end
                     addon:Print(("Preset '%s' was created. Reloading UI to activate it..."):format(presetName))
-                    if type(ReloadUI) == "function" then
-                        -- If ReloadUI is blocked on this client, the user will see Blizzard's yellow warning.
-                        -- The preset activation is still queued and will apply on the next successful reload/login.
-                        ReloadUI()
-                        C_Timer.After(1.0, function()
-                            addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
-                        end)
-                    else
-                        addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
-                    end
+                    -- If ReloadUI is blocked on this client, the user will see Blizzard's yellow warning.
+                    -- The preset activation is still queued and will apply on the next successful reload/login.
+                    ReloadUI()
+                    C_Timer.After(1.0, function()
+                        addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
+                    end)
                 end
 
                 local wantsConsolePortPrompt = (d.preset and d.preset.consolePortProfile ~= nil) or (d.preset and d.preset.requiresConsolePort)
@@ -249,14 +245,10 @@ function Presets:ApplyPresetFromUI(preset)
                         return
                     end
                     addon:Print(("Preset '%s' applied to '%s'. Reloading UI to activate..."):format(presetName, d.targetLayout))
-                    if type(ReloadUI) == "function" then
-                        ReloadUI()
-                        C_Timer.After(1.0, function()
-                            addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
-                        end)
-                    else
-                        addon:Print("ReloadUI API unavailable on this client. Please type /reload to activate the preset.")
-                    end
+                    ReloadUI()
+                    C_Timer.After(1.0, function()
+                        addon:Print("If your UI did not reload, please type /reload. The preset is queued and will activate on next load.")
+                    end)
                 end,
             })
         end, nil)

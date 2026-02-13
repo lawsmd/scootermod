@@ -346,9 +346,7 @@ end
 -- Multi-pass sync after layout mutations to avoid stale lists
 local function postMutationSync(self, reason)
     if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
-    if type(GetTime) == "function" then
-        self._postCopySuppressUntil = (GetTime() or 0) + 0.3
-    end
+    self._postCopySuppressUntil = GetTime() + 0.3
     if C_Timer and C_Timer.After then
         C_Timer.After(0.05, function()
             if self and self.RefreshFromEditMode and ensureLayoutsLoaded() then
@@ -375,13 +373,13 @@ end
 -- library does in its ApplyChanges path. Safe out of combat; no-ops in combat.
 local function clearDropdownTaint()
     if InCombatLockdown and InCombatLockdown() then return end
-    if type(CloseDropDownMenus) == "function" then pcall(CloseDropDownMenus) end
-    if _G.AddonList and type(ShowUIPanel) == "function" and type(HideUIPanel) == "function" then
+    pcall(CloseDropDownMenus)
+    if _G.AddonList then
         pcall(ShowUIPanel, _G.AddonList)
         pcall(HideUIPanel, _G.AddonList)
     end
     -- Also bounce Edit Mode Manager to clear potential stale state before user opens it
-    if _G.EditModeManagerFrame and type(ShowUIPanel) == "function" and type(HideUIPanel) == "function" then
+    if _G.EditModeManagerFrame then
         pcall(ShowUIPanel, _G.EditModeManagerFrame)
         pcall(HideUIPanel, _G.EditModeManagerFrame)
     end
@@ -650,9 +648,7 @@ function Profiles:PromptReloadToProfile(layoutName, meta)
                 persistAceProfileKeyForChar(addon.db, layoutName)
             end
             persistEditModeActiveLayoutByName(layoutName)
-            if type(ReloadUI) == "function" then
-                ReloadUI()
-            end
+            ReloadUI()
         end,
         onCancel = function()
             -- Abandon: clear pending activation so we don't surprise-reload on next load.

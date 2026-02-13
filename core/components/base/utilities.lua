@@ -80,12 +80,11 @@ end
 Util.ToggleDefaultIconOverlay = ToggleDefaultIconOverlay
 
 local function PlayerInCombat()
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+    if InCombatLockdown() then
         return true
     end
-    if type(UnitAffectingCombat) == "function" then
-        local inCombat = UnitAffectingCombat("player")
-        if inCombat then return true end
+    if UnitAffectingCombat("player") then
+        return true
     end
     return false
 end
@@ -292,7 +291,7 @@ local function ApplyFullPowerSpikeScale(ownerFrame, heightScale)
         applyState()
     end
 
-    if type(hooksecurefunc) == "function" and not getProp(fullPowerFrame, "fullPowerHooks") then
+    if not getProp(fullPowerFrame, "fullPowerHooks") then
         setProp(fullPowerFrame, "fullPowerHooks", true)
         -- CRITICAL: Frame modifications during combat taint the execution context. Defer to PLAYER_REGEN_ENABLED.
         local function reapply()

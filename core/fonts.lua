@@ -32,14 +32,7 @@ local function AppendWorldTextFontLog(stage, info)
         log = {}
         addon.WorldTextFontLog = log
     end
-    local timestamp
-    if type(debugprofilestop) == "function" then
-        timestamp = string.format("%.1fms", debugprofilestop())
-    elseif type(GetTime) == "function" then
-        timestamp = string.format("%.2fs", GetTime())
-    else
-        timestamp = tostring(#log + 1)
-    end
+    local timestamp = string.format("%.1fms", debugprofilestop())
     local snapshot = string.format("DAMAGE_TEXT_FONT=%s | CombatTextFont=%s | CombatTextFontOutline=%s",
         tostring(_G.DAMAGE_TEXT_FONT),
         SnapshotFontObject(_G.CombatTextFont),

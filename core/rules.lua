@@ -147,7 +147,7 @@ local function buildSpecCache()
                 specs = {},
             }
 
-            local count = type(GetNumSpecializationsForClassID) == "function" and GetNumSpecializationsForClassID(classID) or 0
+            local count = GetNumSpecializationsForClassID(classID) or 0
             for specIndex = 1, count do
                 local specID, specName, _, specIcon = GetSpecializationInfoForClassID(classID, specIndex)
                 if specID then

@@ -35,7 +35,7 @@ function addon:OpenCooldownManagerSettings()
             if frame.TogglePanel then
                 opened = pcall(frame.TogglePanel, frame) or opened
             end
-            if not opened and type(ShowUIPanel) == "function" then
+            if not opened then
                 opened = pcall(ShowUIPanel, frame) or opened
             end
             if not opened and frame.Show then
