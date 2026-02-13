@@ -121,6 +121,14 @@ function Tooltip.Render(panel, scrollContent)
         tabBuilder:Finalize()
     end
 
+    -- Parent-level toggle: Show Tooltip IDs
+    builder:AddToggle({
+        label = "Show Tooltip IDs",
+        description = "Display spell, item, quest, and other IDs in tooltips.",
+        get = function() return getSetting("showTooltipIDs") or false end,
+        set = function(val) setSetting("showTooltipIDs", val) end,
+    })
+
     -- Collapsible section: Sizing
     builder:AddCollapsibleSection({
         title = "Sizing",

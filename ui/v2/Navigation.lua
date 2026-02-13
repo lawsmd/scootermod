@@ -69,6 +69,14 @@ Navigation.NavModel = {
         },
     },
     {
+        key = "qol",
+        label = "Quality of Life",
+        collapsible = true,
+        children = {
+            { key = "qolLootVendors", label = "Loot & Vendors" },
+        },
+    },
+    {
         key = "cdm",
         label = "Cooldown Manager",
         collapsible = true,

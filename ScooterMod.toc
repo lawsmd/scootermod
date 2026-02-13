@@ -82,6 +82,7 @@ core/components/unitframes/offscreenunlock.lua
 core/components/minimap/minimap.lua
 core/components/minimap/offscreenunlock.lua
 core/components/tooltip.lua
+core/qol.lua
 core/components/objectivetracker.lua
 core/components/damagemeters.lua
 core/debug.lua
@@ -132,6 +133,7 @@ ui/v2/settings/interface/SctDamageRenderer.lua
 ui/v2/settings/interface/TooltipRenderer.lua
 ui/v2/settings/interface/DamageMeterRenderer.lua
 ui/v2/settings/interface/ObjectiveTrackerRenderer.lua
+ui/v2/settings/qol/LootVendorsRenderer.lua
 ui/v2/settings/profiles/ManageRenderer.lua
 ui/v2/settings/profiles/PresetsRenderer.lua
 ui/v2/settings/profiles/RulesRenderer.lua

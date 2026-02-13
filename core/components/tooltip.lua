@@ -281,6 +281,259 @@ local function RegisterTooltipPostProcessor()
     return true
 end
 
+--------------------------------------------------------------------------------
+-- Tooltip ID Display System
+--------------------------------------------------------------------------------
+
+local tooltipIDsInitialized = false
+
+local function isTooltipIDsEnabled()
+    local comp = addon.Components and addon.Components.tooltip
+    if not comp or not comp.db then return false end
+    return comp.db.showTooltipIDs or false
+end
+
+-- ID type labels for display
+local ID_LABELS = {
+    SpellID = "Spell ID",
+    ItemID = "Item ID",
+    QuestID = "Quest ID",
+    AchievementID = "Achievement ID",
+    CurrencyID = "Currency ID",
+    ArtifactPowerID = "Artifact Power ID",
+    AzeriteEssenceID = "Azerite Essence ID",
+    MountID = "Mount ID",
+    CompanionPetID = "Pet ID",
+    MacroID = "Macro ID",
+    EquipmentSetID = "Equipment Set ID",
+    VisualID = "Visual ID",
+    RecipeID = "Recipe ID",
+    NpcID = "NPC ID",
+    UnitAuraID = "Aura ID",
+    EnchantID = "Enchant ID",
+    BonusIDs = "Bonus IDs",
+    GemIDs = "Gem IDs",
+    SetID = "Set ID",
+    ExpansionID = "Expansion ID",
+}
+
+-- Map Blizzard TooltipDataType enums to our kind strings
+local TOOLTIP_DATA_TYPE_MAP = {}
+local function buildTooltipDataTypeMap()
+    if not Enum or not Enum.TooltipDataType then return end
+    local mapping = {
+        [Enum.TooltipDataType.Spell] = "SpellID",
+        [Enum.TooltipDataType.Item] = "ItemID",
+        [Enum.TooltipDataType.Quest] = "QuestID",
+        [Enum.TooltipDataType.Achievement] = "AchievementID",
+        [Enum.TooltipDataType.Currency] = "CurrencyID",
+        [Enum.TooltipDataType.Mount] = "MountID",
+        [Enum.TooltipDataType.CompanionPet] = "CompanionPetID",
+        [Enum.TooltipDataType.EquipmentSet] = "EquipmentSetID",
+        [Enum.TooltipDataType.RecipeRankInfo] = "RecipeID",
+        [Enum.TooltipDataType.UnitAura] = "UnitAuraID",
+    }
+    for k, v in pairs(mapping) do
+        TOOLTIP_DATA_TYPE_MAP[k] = v
+    end
+end
+
+-- Re-entrancy guard: AddDoubleLine can trigger another data processor cycle,
+-- which would wipe+re-add in an infinite loop. This flag prevents that.
+local isAddingIDs = false
+
+-- Dedup within a single processor pass (prevents same ID appearing twice)
+local addedLines = {}
+
+local function addIDLine(tooltip, id, kind)
+    if not tooltip or not id or not kind then return end
+    if not tooltip.AddDoubleLine then return end
+
+    -- Guard against secret values
+    if issecurevalue and issecurevalue(id) then return end
+    if issecretvalue and issecretvalue(id) then return end
+
+    -- Dedup: don't add the same kind+id twice within one pass
+    local dedupKey = kind .. ":" .. tostring(id)
+    if addedLines[dedupKey] then return end
+    addedLines[dedupKey] = true
+
+    local label = ID_LABELS[kind] or kind
+    pcall(tooltip.AddDoubleLine, tooltip, label .. ":", tostring(id), 0.5, 0.5, 1.0, 1, 1, 1)
+end
+
+-- Parse item link for extra detail IDs
+local function addItemDetailIDs(tooltip, itemLink)
+    if not itemLink or type(itemLink) ~= "string" then return end
+
+    -- Item link format: |Hitem:itemID:enchantID:gem1:gem2:gem3:gem4:suffixID:uniqueID:level:specID:upgradeTypeID:instanceDifficultyID:numBonusIDs:bonusID1:bonusID2:...|h
+    local linkData = itemLink:match("|Hitem:([^|]+)|h")
+    if not linkData then return end
+
+    local parts = {}
+    for part in linkData:gmatch("[^:]*") do
+        parts[#parts + 1] = part
+    end
+
+    -- parts[1] = itemID (already shown), parts[2] = enchantID
+    local enchantID = tonumber(parts[2])
+    if enchantID and enchantID > 0 then
+        addIDLine(tooltip, enchantID, "EnchantID")
+    end
+
+    -- parts[3..6] = gem IDs
+    local gems = {}
+    for i = 3, 6 do
+        local gemID = tonumber(parts[i])
+        if gemID and gemID > 0 then
+            gems[#gems + 1] = tostring(gemID)
+        end
+    end
+    if #gems > 0 then
+        addIDLine(tooltip, table.concat(gems, ", "), "GemIDs")
+    end
+
+    -- parts[13] = numBonusIDs, parts[14..] = bonus IDs
+    local numBonus = tonumber(parts[13])
+    if numBonus and numBonus > 0 then
+        local bonuses = {}
+        for i = 14, 13 + numBonus do
+            if parts[i] and parts[i] ~= "" then
+                bonuses[#bonuses + 1] = parts[i]
+            end
+        end
+        if #bonuses > 0 then
+            addIDLine(tooltip, table.concat(bonuses, ", "), "BonusIDs")
+        end
+    end
+end
+
+local function InitTooltipIDs()
+    if tooltipIDsInitialized then return end
+    tooltipIDsInitialized = true
+
+    buildTooltipDataTypeMap()
+
+    -- Main data processor hook: catches spells, items, quests, achievements, etc.
+    -- Uses re-entrancy guard: each time Blizzard re-processes tooltip data (e.g.
+    -- spells with cooldowns refresh continuously), the tooltip lines are rebuilt
+    -- from scratch. We wipe dedup and re-add IDs on every non-reentrant call.
+    if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
+        TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
+            if not isTooltipIDsEnabled() then return end
+            if not data then return end
+            -- Re-entrancy guard: AddDoubleLine may trigger another processor cycle
+            if isAddingIDs then return end
+            isAddingIDs = true
+            -- Wipe dedup so IDs are re-added after Blizzard rebuilds tooltip lines
+            -- (spells with cooldowns/charges refresh continuously)
+            wipe(addedLines)
+
+            local kind = TOOLTIP_DATA_TYPE_MAP[data.type]
+            local id = data.id
+
+            if kind and id then
+                addIDLine(tooltip, id, kind)
+
+                -- For items, also extract detail IDs from the hyperlink
+                if kind == "ItemID" and data.hyperlink then
+                    addItemDetailIDs(tooltip, data.hyperlink)
+                end
+            end
+
+            isAddingIDs = false
+        end)
+    end
+
+    -- Hook SetAction for action bar spell/item IDs
+    if GameTooltip and GameTooltip.SetAction then
+        hooksecurefunc(GameTooltip, "SetAction", function(tooltip, actionSlot)
+            if not isTooltipIDsEnabled() then return end
+            if not actionSlot then return end
+
+            local ok, actionType, id = pcall(GetActionInfo, actionSlot)
+            if ok and id then
+                if actionType == "spell" then
+                    addIDLine(tooltip, id, "SpellID")
+                elseif actionType == "item" then
+                    addIDLine(tooltip, id, "ItemID")
+                elseif actionType == "macro" then
+                    addIDLine(tooltip, id, "MacroID")
+                end
+            end
+        end)
+    end
+
+    -- Hook SetHyperlink for linked items/spells in chat
+    if GameTooltip and GameTooltip.SetHyperlink then
+        hooksecurefunc(GameTooltip, "SetHyperlink", function(tooltip, hyperlink)
+            if not isTooltipIDsEnabled() then return end
+            if not hyperlink or type(hyperlink) ~= "string" then return end
+
+            local kind, id = hyperlink:match("(%a+):(%d+)")
+            if kind and id then
+                id = tonumber(id)
+                if kind == "spell" then
+                    addIDLine(tooltip, id, "SpellID")
+                elseif kind == "item" then
+                    addIDLine(tooltip, id, "ItemID")
+                    addItemDetailIDs(tooltip, hyperlink)
+                elseif kind == "quest" then
+                    addIDLine(tooltip, id, "QuestID")
+                elseif kind == "achievement" then
+                    addIDLine(tooltip, id, "AchievementID")
+                elseif kind == "currency" then
+                    addIDLine(tooltip, id, "CurrencyID")
+                end
+            end
+        end)
+    end
+
+    -- Hook ItemRefTooltip for shift-clicked links
+    if ItemRefTooltip and ItemRefTooltip.SetHyperlink then
+        hooksecurefunc(ItemRefTooltip, "SetHyperlink", function(tooltip, hyperlink)
+            if not isTooltipIDsEnabled() then return end
+            if not hyperlink or type(hyperlink) ~= "string" then return end
+
+            local kind, id = hyperlink:match("(%a+):(%d+)")
+            if kind and id then
+                id = tonumber(id)
+                if kind == "spell" then
+                    addIDLine(tooltip, id, "SpellID")
+                elseif kind == "item" then
+                    addIDLine(tooltip, id, "ItemID")
+                    addItemDetailIDs(tooltip, hyperlink)
+                elseif kind == "quest" then
+                    addIDLine(tooltip, id, "QuestID")
+                elseif kind == "achievement" then
+                    addIDLine(tooltip, id, "AchievementID")
+                elseif kind == "currency" then
+                    addIDLine(tooltip, id, "CurrencyID")
+                end
+            end
+        end)
+    end
+
+    -- Hook for NPC IDs from unit GUID
+    if GameTooltip then
+        GameTooltip:HookScript("OnTooltipSetUnit", function(tooltip)
+            if not isTooltipIDsEnabled() then return end
+
+            local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
+            if not ok or not unitToken then return end
+
+            local guidOk, guid = pcall(UnitGUID, unitToken)
+            if not guidOk or not guid or type(guid) ~= "string" then return end
+
+            -- GUID format: Creature-0-xxxx-xxxx-xxxx-npcID-xxxx
+            local npcID = guid:match("Creature%-.-%-.-%-.-%-.-%-(%d+)")
+            if npcID then
+                addIDLine(tooltip, tonumber(npcID), "NpcID")
+            end
+        end)
+    end
+end
+
 local function ApplyTooltipStyling(self)
     local tooltip = _G["GameTooltip"]
     if not tooltip then return end
@@ -291,6 +544,9 @@ local function ApplyTooltipStyling(self)
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()
+
+    -- Initialize tooltip ID system (lazy, one-time)
+    InitTooltipIDs()
 
     -- Apply styling to any already-built tooltip lines
     ApplyGameTooltipText(db)
@@ -382,6 +638,9 @@ addon:RegisterComponentInitializer(function(self)
             -- Border tint settings
             borderTintEnable = { type = "addon", default = false },
             borderTintColor = { type = "addon", default = {1, 1, 1, 1} },
+
+            -- Tooltip IDs
+            showTooltipIDs = { type = "addon", default = false },
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },
