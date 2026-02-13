@@ -93,7 +93,6 @@ do
 		end
 		-- If no index was resolved (older builds lacking EM.Pet), try known globals
 		if unit == "Pet" then return _G.PetFrame end
-		return nil
     end
 
     local function findFontStringByNameHint(root, hint)
@@ -161,7 +160,6 @@ do
                 return root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
             end
         end
-        return nil
     end
 
     -- Helper: determine whether the current player can ever have an Alternate Power Bar.
@@ -794,7 +792,6 @@ do
 			return mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
 		end
 		if unit == "Pet" then return _G.PetFrame end
-		return nil
 	end
 
 	local function findFontStringByNameHint(root, hint)
@@ -847,7 +844,6 @@ do
 		elseif unit == "Pet" then
 			return _G.PetFrame
 		end
-		return nil
 	end
 
 	-- Resolve the Health Bar status bar for anchoring name backdrop
@@ -878,7 +874,6 @@ do
 				and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
 				or nil
 		end
-		return nil
 	end
 
 	-- Resolve power bar for this unit
@@ -906,7 +901,6 @@ do
 				return root.TargetFrameContent.TargetFrameContentMain.ManaBar
 			end
 		end
-		return nil
 	end
 
 	-- Hook UpdateTextString to reapply visibility after Blizzard's updates.
@@ -1519,7 +1513,6 @@ do
 		elseif unit == "Pet" then
 			return _G.PetFrame
 		end
-		return nil
 	end
 
 	local function resolveHealthBar_NLT(unit)
@@ -1549,7 +1542,6 @@ do
 				and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar
 				or nil
 		end
-		return nil
 	end
 
 	local function findFontStringByNameHint(root, hint)

@@ -702,7 +702,6 @@ local function _SafeCopyGlobal(name)
         -- Preserve non-table values, but keep the payload valid.
         return v
     end
-    return nil
 end
 
 function addon.DebugExportConsolePortProfile()
@@ -781,7 +780,6 @@ end
 local function SafeCall(fn, ...)
     local ok, a, b, c, d = pcall(fn, ...)
     if ok then return a, b, c, d end
-    return nil
 end
 
 -- Secret value handling: some getters return "secret" values that cannot be
@@ -859,7 +857,6 @@ local function GetDebugNameSafe(obj)
     if ok and result then
         return result
     end
-    return nil
 end
 
 local function TableInspectorBuildDump(focusedTable)
@@ -1159,7 +1156,6 @@ local function ExtractFrameStackTooltipText()
         local ok, result = pcall(table.concat, lines, "\n")
         return ok and result or nil
     end
-    return nil
 end
 
 -- Track if button is attached

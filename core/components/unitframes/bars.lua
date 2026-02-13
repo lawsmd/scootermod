@@ -2318,13 +2318,11 @@ do
                     local parent = hb:GetParent()
                     if parent and parent.HealthBarMask then return parent.HealthBarMask end
                 end
-                return nil
             end
             local function resolveBossPowerMask(bossFrame)
                 -- Get mask from the mana bar directly
                 local mb = bossFrame and bossFrame.manabar
                 if mb and mb.ManaBarMask then return mb.ManaBarMask end
-                return nil
             end
 
             for i = 1, 5 do
@@ -5115,7 +5113,6 @@ do
             local fot = _G.FocusFrameToT
             return (fot and fot.HealthBar or nil), (colorMode == "valueDark")
         end
-        return nil, nil
     end
 
     -- Helper to get the value color overlay for a bar (if active)
@@ -5124,7 +5121,6 @@ do
         if st and st.rectActive and st.valueColorOverlay then
             return st.valueColorOverlay
         end
-        return nil
     end
 
     -- UNIT_HEALTH event handler for value-based coloring

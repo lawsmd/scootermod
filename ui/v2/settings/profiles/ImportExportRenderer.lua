@@ -26,7 +26,6 @@ local function getActiveProfileKey()
     if addon.db and addon.db.GetCurrentProfile then
         return addon.db:GetCurrentProfile()
     end
-    return nil
 end
 
 local function buildProfileDropdownData()

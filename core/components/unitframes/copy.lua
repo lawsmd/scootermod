@@ -64,7 +64,6 @@ local function canonicalUnit(unit)
     if lower == "pet"    then return "Pet"    end
     if lower == "targetoftarget" then return "TargetOfTarget" end
     if lower == "focustarget" then return "FocusTarget" end
-    return nil
 end
 
 local unitCaps = {

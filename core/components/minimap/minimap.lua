@@ -83,7 +83,6 @@ local function getMinimapDB()
         end
         return comp.db
     end
-    return nil
 end
 
 local function getClassColor()
@@ -1012,8 +1011,6 @@ local function FindButtonBorderTexture(button)
             end
         end
     end
-
-    return nil
 end
 
 -- Get the icon texture from an addon button
@@ -1042,8 +1039,6 @@ local function GetButtonIconTexture(button)
             end
         end
     end
-
-    return nil
 end
 
 -- Create the container button (shown on minimap)

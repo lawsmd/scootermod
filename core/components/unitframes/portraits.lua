@@ -36,7 +36,6 @@ do
 			local fot = _G.FocusFrameToT
 			return fot and fot.Portrait or nil
 		end
-		return nil
 	end
 
 	-- Resolve portrait mask frame for a given unit
@@ -60,7 +59,6 @@ do
 			local fot = _G.FocusFrameToT
 			return fot and fot.PortraitMask or nil
 		end
-		return nil
 	end
 
 	-- Resolve portrait corner icon frame for a given unit (Player-only)
@@ -70,7 +68,6 @@ do
 			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentContextual and root.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon or nil
 		end
 		-- Target/Focus/Pet don't appear to have corner icons
-		return nil
 	end
 
 	-- Resolve portrait rest loop frame for a given unit (Player-only)
@@ -80,7 +77,6 @@ do
 			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentContextual and root.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop or nil
 		end
 		-- Target/Focus/Pet don't appear to have rest loops
-		return nil
 	end
 
 	-- Resolve portrait status texture frame for a given unit (Player-only)
@@ -90,7 +86,6 @@ do
 			return root and root.PlayerFrameContent and root.PlayerFrameContent.PlayerFrameContentMain and root.PlayerFrameContent.PlayerFrameContentMain.StatusTexture or nil
 		end
 		-- Target/Focus/Pet don't appear to have status textures
-		return nil
 	end
 
 	-- Resolve damage text (HitText) frame for a given unit (Player and Pet)
@@ -103,7 +98,6 @@ do
 			return _G.PetHitIndicator or (_G.PetFrame and _G.PetFrame.feedbackText)
 		end
 		-- Target/Focus don't have damage text
-		return nil
 	end
 
 	-- Resolve boss portrait frame texture for a given unit (Target/Focus only)
@@ -117,7 +111,6 @@ do
 			return root and root.TargetFrameContainer and root.TargetFrameContainer.BossPortraitFrameTexture or nil
 		end
 		-- Player/Pet don't have BossPortraitFrameTexture
-		return nil
 	end
 
 	-- Resolve pet attack mode texture (Pet only)
@@ -126,7 +119,6 @@ do
 		if unit == "Pet" then
 			return _G.PetAttackModeTexture
 		end
-		return nil
 	end
 
 	-- Resolve pet frame flash (Pet only)
@@ -135,7 +127,6 @@ do
 		if unit == "Pet" then
 			return _G.PetFrameFlash
 		end
-		return nil
 	end
 
 	-- Store original positions (per frame, not per unit, to handle frame recreation)

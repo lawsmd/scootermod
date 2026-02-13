@@ -51,7 +51,6 @@ local function getPRDConfig()
 	if comp and comp.db then
 		return comp.db
 	end
-	return nil
 end
 
 --------------------------------------------------------------------------------
@@ -141,7 +140,6 @@ local function getConfigForContext(context)
 	elseif context == "prd" then
 		return getPRDConfig()
 	end
-	return nil
 end
 
 local function resolveChargeContext(chargeFrame)
@@ -168,7 +166,6 @@ local function resolveChargeContext(chargeFrame)
 		parent = parent:GetParent()
 	end
 
-	return nil
 end
 
 local function installChargeHooks(chargeFrame)

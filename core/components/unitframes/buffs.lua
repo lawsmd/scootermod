@@ -47,7 +47,6 @@ do
 		elseif unit == "Focus" then
 			return _G.FocusFrame
 		end
-		return nil
 	end
 
 	-- Internal implementation that accepts a visualOnly flag for combat-safe styling

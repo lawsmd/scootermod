@@ -129,7 +129,6 @@ function addon:LinkComponentsToDB()
                         if real and real ~= proxy then
                             return real[key]
                         end
-                        return nil
                     end,
                     __newindex = function(_, key, value)
                         local realDb = addon:EnsureComponentDB(component)

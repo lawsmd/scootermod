@@ -82,7 +82,6 @@ function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
         if u == "target" then return "Target" end
         if u == "focus"  then return "Focus" end
         if u == "pet"    then return "Pet" end
-        return nil
     end
     local src = norm(sourceUnit)
     local dst = norm(destUnit)
@@ -107,7 +106,6 @@ function addon.EditMode.CopyUnitFrameFrameSize(sourceUnit, destUnit)
         if unit == "Target" then return EM.Target end
         if unit == "Focus"  then return EM.Focus end
         if unit == "Pet"    then return EM.Pet end
-        return nil
     end
 
     local srcIdx = idxFor(src)

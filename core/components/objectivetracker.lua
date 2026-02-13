@@ -58,7 +58,6 @@ local function GetLiveTextSizeFromFontObject()
             end
         end
     end
-    return nil
 end
 
 local function SafeSetTextColor(fs, r, g, b, a)
@@ -78,8 +77,6 @@ local function GetButtonFontString(button)
     if button.Text and type(button.Text.SetTextColor) == "function" then return button.Text end
     if button.text and type(button.text.SetTextColor) == "function" then return button.text end
     if button.TextString and type(button.TextString.SetTextColor) == "function" then return button.TextString end
-
-    return nil
 end
 
 local function BrightenRGBTowardsWhite(r, g, b, factor)
@@ -113,8 +110,6 @@ local function ResolveQuestNameFontString(block)
     local btn = block.HeaderButton
     local btnFS = GetButtonFontString(btn)
     if btnFS then return btnFS end
-
-    return nil
 end
 
 local function GetCurrentFont(fs)

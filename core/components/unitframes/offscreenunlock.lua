@@ -87,7 +87,6 @@ local function _GetFrameForUnit(unit)
 	-- Fallback: globals (may not be the same frame Edit Mode moves in some builds)
 	if unit == "Player" then return _G.PlayerFrame end
 	if unit == "Target" then return _G.TargetFrame end
-	return nil
 end
 
 local function _AddUniqueFrame(list, seen, f)

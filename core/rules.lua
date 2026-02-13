@@ -594,7 +594,6 @@ function Rules:GetRuleById(ruleId)
             return rule
         end
     end
-    return nil
 end
 
 -- Check if a specific rule is currently active (trigger conditions match)
@@ -858,7 +857,6 @@ local function gatherActionMenu()
                 return node
             end
         end
-        return nil
     end
 
     for _, action in pairs(ACTIONS) do
@@ -954,8 +952,6 @@ function Rules:GetActionIdForPath(fullPath)
             end
         end
     end
-
-    return nil
 end
 
 -- Get the path segments for a given actionId

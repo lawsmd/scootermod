@@ -572,8 +572,6 @@ local function getCooldownFontString(cooldownFrame)
             end
         end
     end
-
-    return nil
 end
 
 -- Find the charge/stack count FontString inside an icon frame
@@ -609,8 +607,6 @@ local function getChargeCountFontString(iconFrame)
             end
         end
     end
-
-    return nil
 end
 
 -- Identify which CDM viewer a cooldown belongs to
@@ -628,8 +624,6 @@ local function identifyCooldownSource(cooldownFrame)
             return CDM_VIEWER_NAMES[viewerName]
         end
     end
-
-    return nil
 end
 
 -- Get text settings for a component

@@ -99,7 +99,6 @@ local function GetBorderTexturePath(key)
             return style.texture
         end
     end
-    return nil
 end
 
 local function GetBorderEdgeSize(key)

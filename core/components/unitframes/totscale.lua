@@ -129,7 +129,6 @@ local function captureOriginalAnchor(frame, frameKey)
             return originalAnchors[frameKey]
         end
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------

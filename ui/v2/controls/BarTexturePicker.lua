@@ -97,7 +97,6 @@ local function GetTexturePath(key)
     if addon.Media and addon.Media.ResolveBarTexturePath then
         return addon.Media.ResolveBarTexturePath(key)
     end
-    return nil
 end
 
 local function GetCategoryForTexture(textureKey)

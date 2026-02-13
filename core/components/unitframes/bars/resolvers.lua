@@ -48,7 +48,6 @@ function Resolvers.getUnitFrameFor(unit)
     if unit == "Pet" then return _G.PetFrame end
     -- Fallback for Boss if EM.Boss is unavailable
     if unit == "Boss" then return _G.Boss1TargetFrame end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -231,7 +230,6 @@ function Resolvers.resolveAlternatePowerBar()
     if bar and bar.GetObjectType and bar:GetObjectType() == "StatusBar" then
         return bar
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -263,7 +261,6 @@ function Resolvers.resolveHealthMask(unit)
         local fot = _G.FocusFrameToT
         return fot and fot.HealthBar and fot.HealthBar.HealthBarMask or nil
     end
-    return nil
 end
 
 function Resolvers.resolvePowerMask(unit)
@@ -292,7 +289,6 @@ function Resolvers.resolvePowerMask(unit)
         local fot = _G.FocusFrameToT
         return fot and fot.ManaBar and fot.ManaBar.ManaBarMask or nil
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -317,7 +313,6 @@ function Resolvers.resolveUFContentMain(unit)
     elseif unit == "FocusTarget" then
         return _G.FocusFrameToT
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -347,7 +342,6 @@ function Resolvers.resolveUnitFrameFrameTexture(unit)
         local fot = _G.FocusFrameToT
         return fot and fot.FrameTexture or nil
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -360,13 +354,11 @@ function Resolvers.resolveBossHealthMask(bossFrame)
         local parent = hb:GetParent()
         if parent and parent.HealthBarMask then return parent.HealthBarMask end
     end
-    return nil
 end
 
 function Resolvers.resolveBossPowerMask(bossFrame)
     local mb = bossFrame and bossFrame.manabar
     if mb and mb.ManaBarMask then return mb.ManaBarMask end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -390,7 +382,6 @@ function Resolvers.resolveBossHealthBarsContainer(bossFrame)
         -- Verify it's the HealthBarsContainer by checking for HealthBarMask child
         if parent and parent.HealthBarMask then return parent end
     end
-    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -413,7 +404,6 @@ function Resolvers.resolveBossManaBar(bossFrame)
     if manabar and manabar.GetObjectType and manabar:GetObjectType() == "StatusBar" then
         return manabar
     end
-    return nil
 end
 
 return Resolvers

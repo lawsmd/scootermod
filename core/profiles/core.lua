@@ -269,7 +269,6 @@ function Profiles:FindLayoutIndex(layoutName)
             return index, layout
         end
     end
-    return nil
 end
 
 function Profiles:RestoreDropdownSelection(dropdown, key, displayText)

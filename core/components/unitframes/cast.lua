@@ -42,7 +42,6 @@ do
 		elseif unit == "Focus" then
 			return _G.FocusFrameSpellBar
 		end
-		return nil
 	end
 
 	-- Helper to traverse nested keys safely (copied from bars.lua pattern)
@@ -66,7 +65,6 @@ do
 			local root = _G.FocusFrame
 			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
 		end
-		return nil
 	end
 
 	-- Resolve Power Bar (ManaBar) for Target/Focus (deterministic paths from framestack findings)
@@ -78,7 +76,6 @@ do
 			local root = _G.FocusFrame
 			return getNested(root, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
 		end
-		return nil
 	end
 
 	-- Track which cast bars have custom anchor mode active, so the SetPoint hook knows when to re-apply

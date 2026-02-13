@@ -260,7 +260,6 @@ local function ApplyExtraAbilitiesStyling(self)
                         if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
                     end
                 end
-                return nil
             end
             cdText = findFS(cdOwner)
         end

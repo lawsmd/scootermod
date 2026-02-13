@@ -1078,7 +1078,6 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 if found then return found end
             end
         end
-        return nil
     end
 
     local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")

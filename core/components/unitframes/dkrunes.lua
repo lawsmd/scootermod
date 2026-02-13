@@ -69,7 +69,6 @@ local function getPRDConfig()
 	if comp and comp.db then
 		return comp.db
 	end
-	return nil
 end
 
 --------------------------------------------------------------------------------
@@ -292,7 +291,6 @@ local function resolveRuneContext(runeButton)
 		return "prd", parent
 	end
 
-	return nil, nil
 end
 
 local function getConfigForContext(context)
@@ -301,7 +299,6 @@ local function getConfigForContext(context)
 	elseif context == "prd" then
 		return getPRDConfig()
 	end
-	return nil
 end
 
 --------------------------------------------------------------------------------

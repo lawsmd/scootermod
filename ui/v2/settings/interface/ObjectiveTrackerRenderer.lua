@@ -34,7 +34,6 @@ function ObjectiveTracker.Render(panel, scrollContent)
         if db and type(db[key]) == "table" then
             return db[key]
         end
-        return nil
     end
 
     local function ensureTextConfig(key, defaults)

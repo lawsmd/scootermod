@@ -32,7 +32,6 @@ local function getUnitFrameFor(unit)
     elseif unit == "Pet" then
         return _G.PetFrame
     end
-    return nil
 end
 
 -- Get the Edit Mode registered frame for a unit

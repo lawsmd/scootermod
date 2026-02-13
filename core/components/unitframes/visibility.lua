@@ -50,7 +50,6 @@ do
         end
         -- If no index was resolved (older builds lacking EM.Pet), try known globals
         if unit == "Pet" then return _G.PetFrame end
-        return nil
     end
 
     local function applyVisibilityForUnit(unit)

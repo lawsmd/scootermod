@@ -157,7 +157,6 @@ function GF.getEditModeSetting(frame, settingId)
     if addon and addon.EditMode and addon.EditMode.GetSetting then
         return addon.EditMode.GetSetting(frame, settingId)
     end
-    return nil
 end
 
 function GF.setEditModeSetting(frame, settingId, value, options)

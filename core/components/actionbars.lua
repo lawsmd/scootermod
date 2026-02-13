@@ -233,7 +233,6 @@ local function ApplyActionBarStyling(self)
                 end
             end
         end
-        return nil
     end
 
     -- Icon shape (non-uniform aspect ratio)
@@ -488,7 +487,6 @@ local function ApplyActionBarStyling(self)
                             if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
                         end
                     end
-                    return nil
                 end
                 cdText = findFS(cdOwner)
             end

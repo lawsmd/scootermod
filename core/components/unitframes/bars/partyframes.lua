@@ -963,8 +963,6 @@ local function getPartyHealthBarForUnit(unit)
             end
         end
     end
-
-    return nil, nil, nil
 end
 
 local partyHealthColorEventFrame = CreateFrame("Frame")

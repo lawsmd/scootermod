@@ -63,7 +63,6 @@ function Manage.Render(panel, scrollContent)
         if addon.db and addon.db.GetCurrentProfile then
             return addon.db:GetCurrentProfile()
         end
-        return nil
     end
 
     -- Helper: Build layout menu entries
