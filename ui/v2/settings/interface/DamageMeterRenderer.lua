@@ -73,8 +73,8 @@ function DamageMeter.Render(panel, scrollContent)
     end
 
     builder:AddToggle({
-        label = "Enable Damage Meters Per-Profile",
-        description = "When enabled, the Damage Meter will be active for this profile. This overrides the character-wide Blizzard setting.",
+        label = "Enable Damage Meter",
+        description = "Show or hide the Damage Meter on this profile. Overrides Blizzard's per-character setting in Options > Gameplay > Combat.",
         get = function()
             local s = getProfileDamageMeterSettings()
             if s and s.enableDamageMeter ~= nil then
@@ -932,9 +932,9 @@ function DamageMeter.Render(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Show Border",
                             description = "Display a border around the damage meter window.",
-                            get = function() return getSetting("windowBorderEnabled") end,
+                            get = function() return getSetting("windowShowBorder") end,
                             set = function(value)
-                                setSetting("windowBorderEnabled", value)
+                                setSetting("windowShowBorder", value)
                             end,
                         })
                         tabInner:AddBarBorderSelector({
@@ -979,27 +979,27 @@ function DamageMeter.Render(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Custom Backdrop",
                             description = "Use a custom backdrop texture instead of the default.",
-                            get = function() return getSetting("customBackdrop") end,
+                            get = function() return getSetting("windowCustomBackdrop") end,
                             set = function(value)
-                                setSetting("customBackdrop", value)
+                                setSetting("windowCustomBackdrop", value)
                             end,
                         })
                         tabInner:AddBarTextureSelector({
                             label = "Backdrop Texture",
-                            get = function() return getSetting("backdropTexture") or "pointed" end,
+                            get = function() return getSetting("windowBackdropTexture") or "pointed" end,
                             set = function(value)
-                                setSetting("backdropTexture", value)
+                                setSetting("windowBackdropTexture", value)
                             end,
                         })
                         tabInner:AddColorPicker({
                             label = "Backdrop Color",
                             get = function()
-                                local c = getSetting("backdropColor")
+                                local c = getSetting("windowBackdropColor")
                                 if c then return c.r, c.g, c.b, c.a end
                                 return 0.1, 0.1, 0.1, 0.9
                             end,
                             set = function(r, g, b, a)
-                                setSetting("backdropColor", { r = r, g = g, b = b, a = a or 1 })
+                                setSetting("windowBackdropColor", { r = r, g = g, b = b, a = a or 1 })
                             end,
                             hasAlpha = true,
                         })

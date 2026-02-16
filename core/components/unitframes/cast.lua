@@ -786,8 +786,8 @@ do
 						return b
 					end
 
-					-- Player has a "Disable Spell Name Text" toggle; Target/Focus do not
-					local disabled = (unit == "Player") and (not not cfg.spellNameTextDisabled) or false
+					-- All units use the same "Hide Spell Name" toggle key
+					local disabled = not not cfg.castBarSpellNameHidden
 
 					-- Visibility: use alpha instead of Show/Hide to avoid fighting Blizzard logic
 					if spellFS.SetAlpha then

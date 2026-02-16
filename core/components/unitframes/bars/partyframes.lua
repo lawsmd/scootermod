@@ -765,6 +765,11 @@ local function isEditModeActive()
     return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
 end
 
+-- Forward declarations for functions defined later but referenced in installHooks() closures
+local ensureHealPredictionClipping
+local applyHealPredictionVisibility
+local applyAbsorbBarsVisibility
+
 function PartyFrames.installHooks()
     if addon._PartyFrameHooksInstalled then return end
     addon._PartyFrameHooksInstalled = true
@@ -910,6 +915,33 @@ function PartyFrames.installHooks()
                     elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         -- No overlay, apply to status bar texture directly
                         addon.BarsTextures.applyValueBasedColor(healthBar, unit, nil, useDark)
+                    end
+                end)
+            end
+        end)
+    end
+
+    -- Hook CompactUnitFrame_UpdateHealPrediction to reapply masks + visibility
+    -- after Blizzard repositions prediction/absorb textures
+    if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealPrediction then
+        _G.hooksecurefunc("CompactUnitFrame_UpdateHealPrediction", function(frame)
+            if isEditModeActive() then return end
+            if not frame or not Utils.isPartyFrame(frame) then return end
+
+            local db = addon.db and addon.db.profile
+            local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+            if not partyCfg then return end
+
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    -- Reapply clipping masks
+                    ensureHealPredictionClipping(frame)
+                    -- Reapply visibility if toggled
+                    if partyCfg.hideHealPrediction then
+                        applyHealPredictionVisibility(frame, true)
+                    end
+                    if partyCfg.hideAbsorbBars then
+                        applyAbsorbBarsVisibility(frame, true)
                     end
                 end)
             end
@@ -1892,6 +1924,196 @@ end
 
 -- Export to addon namespace
 addon.ApplyPartyOverAbsorbGlowVisibility = PartyFrames.ApplyOverAbsorbGlowVisibility
+
+--------------------------------------------------------------------------------
+-- Generic Texture Visibility Helper
+--------------------------------------------------------------------------------
+-- Parameterized version of the OverAbsorbGlow pattern.
+-- Uses SetAlpha(0) with persistent hooks on SetAlpha/Show (deferred via C_Timer.After).
+-- stateKey: unique string per texture type to avoid colliding with other state flags.
+--------------------------------------------------------------------------------
+
+local function applyTextureVisibility(texture, shouldHide, stateKey)
+    if not texture then return end
+
+    local state = ensureState(texture)
+    if not state then return end
+
+    local hiddenKey = stateKey .. "Hidden"
+    local hookedKey = stateKey .. "Hooked"
+
+    if shouldHide then
+        state[hiddenKey] = true
+        if texture.SetAlpha then pcall(texture.SetAlpha, texture, 0) end
+
+        -- Install persistence hooks (only once)
+        if not state[hookedKey] and _G.hooksecurefunc then
+            state[hookedKey] = true
+            _G.hooksecurefunc(texture, "SetAlpha", function(self, alpha)
+                local st = getState(self)
+                if alpha and alpha > 0 and st and st[hiddenKey] then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, function()
+                            local st2 = getState(self)
+                            if st2 and st2[hiddenKey] and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+            _G.hooksecurefunc(texture, "Show", function(self)
+                local st = getState(self)
+                if st and st[hiddenKey] and self.SetAlpha then
+                    pcall(self.SetAlpha, self, 0)
+                end
+            end)
+        end
+    else
+        state[hiddenKey] = false
+        -- Restore visibility (let Blizzard control alpha)
+        if texture.SetAlpha then pcall(texture.SetAlpha, texture, 1) end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Heal Prediction Visibility
+--------------------------------------------------------------------------------
+-- Hides or shows myHealPrediction and otherHealPrediction textures on party frames.
+-- Frame: CompactPartyFrameMember[1-5].myHealPrediction / .otherHealPrediction
+--------------------------------------------------------------------------------
+
+applyHealPredictionVisibility = function(frame, shouldHide)
+    if not frame then return end
+    applyTextureVisibility(frame.myHealPrediction, shouldHide, "healPred")
+    applyTextureVisibility(frame.otherHealPrediction, shouldHide, "healPred")
+end
+
+function PartyFrames.ApplyHealPredictionVisibility()
+    local db = addon.db and addon.db.profile
+    local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not partyCfg then return end
+
+    local shouldHide = partyCfg.hideHealPrediction or false
+    if not shouldHide then return end
+
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame then
+            applyHealPredictionVisibility(frame, shouldHide)
+        end
+    end
+end
+
+addon.ApplyPartyHealPredictionVisibility = PartyFrames.ApplyHealPredictionVisibility
+
+--------------------------------------------------------------------------------
+-- Absorb Bars Visibility
+--------------------------------------------------------------------------------
+-- Hides or shows absorb-related textures on party frames.
+-- Textures: totalAbsorb, totalAbsorbOverlay, myHealAbsorb,
+--           myHealAbsorbLeftShadow, myHealAbsorbRightShadow, overHealAbsorbGlow
+--------------------------------------------------------------------------------
+
+applyAbsorbBarsVisibility = function(frame, shouldHide)
+    if not frame then return end
+    applyTextureVisibility(frame.totalAbsorb, shouldHide, "absorbBar")
+    applyTextureVisibility(frame.totalAbsorbOverlay, shouldHide, "absorbBar")
+    applyTextureVisibility(frame.myHealAbsorb, shouldHide, "absorbBar")
+    applyTextureVisibility(frame.myHealAbsorbLeftShadow, shouldHide, "absorbBar")
+    applyTextureVisibility(frame.myHealAbsorbRightShadow, shouldHide, "absorbBar")
+    applyTextureVisibility(frame.overHealAbsorbGlow, shouldHide, "absorbBar")
+end
+
+function PartyFrames.ApplyAbsorbBarsVisibility()
+    local db = addon.db and addon.db.profile
+    local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not partyCfg then return end
+
+    local shouldHide = partyCfg.hideAbsorbBars or false
+    if not shouldHide then return end
+
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame then
+            applyAbsorbBarsVisibility(frame, shouldHide)
+        end
+    end
+end
+
+addon.ApplyPartyAbsorbBarsVisibility = PartyFrames.ApplyAbsorbBarsVisibility
+
+--------------------------------------------------------------------------------
+-- Heal Prediction Clipping (MaskTexture)
+--------------------------------------------------------------------------------
+-- Clips all prediction/absorb textures to healthBar bounds using MaskTexture.
+-- This prevents textures (especially otherHealPrediction) from extending past
+-- the right edge of the health bar at 100% health.
+--
+-- Only activates when user has configured party frames (zero-touch compliant).
+-- Mask is anchored to healthBar (stable frame) and persists across repositioning.
+--------------------------------------------------------------------------------
+
+local healPredictionTextureKeys = {
+    "myHealPrediction",
+    "otherHealPrediction",
+    "totalAbsorb",
+    "totalAbsorbOverlay",
+    "myHealAbsorb",
+    "myHealAbsorbLeftShadow",
+    "myHealAbsorbRightShadow",
+    "overHealAbsorbGlow",
+}
+
+ensureHealPredictionClipping = function(frame)
+    if not frame then return end
+    local healthBar = frame.healthBar
+    if not healthBar then return end
+
+    local state = ensureState(frame)
+    if not state then return end
+
+    -- Create mask once per frame, anchored to healthBar
+    if not state.healPredClipMask then
+        local ok, mask = pcall(healthBar.CreateMaskTexture, healthBar)
+        if not ok or not mask then return end
+        pcall(mask.SetTexture, mask, "Interface\\BUTTONS\\WHITE8X8", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        pcall(mask.SetAllPoints, mask, healthBar)
+        state.healPredClipMask = mask
+    end
+
+    local mask = state.healPredClipMask
+    if not mask then return end
+
+    -- Apply mask to each prediction/absorb texture
+    for _, key in ipairs(healPredictionTextureKeys) do
+        local tex = frame[key]
+        if tex and tex.AddMaskTexture then
+            pcall(tex.AddMaskTexture, tex, mask)
+        end
+    end
+end
+
+function PartyFrames.ApplyHealPredictionClipping()
+    local db = addon.db and addon.db.profile
+    local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+
+    -- Zero-Touch: if no party config exists, don't touch party frames at all
+    if not partyCfg then return end
+
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame then
+            ensureHealPredictionClipping(frame)
+        end
+    end
+end
+
+addon.ApplyPartyHealPredictionClipping = PartyFrames.ApplyHealPredictionClipping
 
 --------------------------------------------------------------------------------
 -- Text Hook Installation

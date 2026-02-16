@@ -53,8 +53,8 @@ function QoL.Render(panel, scrollContent)
     panel._currentBuilder = builder
 
     builder:AddToggle({
-        label = "Enable the Cooldown Manager Per-Profile",
-        description = "When enabled, the Cooldown Manager will be active for this profile. This overrides the character-wide Blizzard setting.",
+        label = "Enable Cooldown Manager",
+        description = "Show or hide the Cooldown Manager on this profile. Overrides Blizzard's per-character setting in Options > Gameplay > Combat.",
         get = function()
             local q = getProfileQoL()
             if q and q.enableCDM ~= nil then

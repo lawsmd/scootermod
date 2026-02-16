@@ -64,6 +64,23 @@ local uiUnitsToPixels = Utils.uiUnitsToPixels
 local clampScreenCoordinate = Utils.clampScreenCoordinate
 local getFrameScreenOffsets = Utils.getFrameScreenOffsets
 
+-- Round a UI-unit value DOWN to the nearest physical screen pixel.
+-- At non-1.0 UI scales, integer UI units don't land on pixel boundaries.
+-- This ensures clip container edges snap to exact pixels so clipping
+-- and border rendering agree on the same boundary (fixes sub-pixel gaps).
+local function pixelFloor(uiValue, frame)
+    local scale = 1
+    if frame and frame.GetEffectiveScale then
+        local ok, es = pcall(frame.GetEffectiveScale, frame)
+        if ok and type(es) == "number" and es > 0 then
+            scale = es
+        end
+    else
+        scale = getUiScale()
+    end
+    return math.floor(uiValue * scale) / scale
+end
+
 local queuePowerBarReapply = Combat.queuePowerBarReapply
 local queueUnitFrameTextureReapply = Combat.queueUnitFrameTextureReapply
 local queueRaidFrameReapply = Combat.queueRaidFrameReapply
@@ -799,7 +816,7 @@ do
         local container = st.heightClipContainer
         local barHeight = bar:GetHeight()
         local targetHeight = barHeight * (heightPct / 100)
-        local inset = (barHeight - targetHeight) / 2
+        local inset = pixelFloor((barHeight - targetHeight) / 2, bar)
 
         container:ClearAllPoints()
         container:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, -inset)
@@ -1116,7 +1133,7 @@ do
                         local heightPct = ufCfg and ufCfg.healthBarOverlayHeightPct or 100
                         local barHeight = self:GetHeight()
                         local targetHeight = barHeight * (heightPct / 100)
-                        local inset = (barHeight - targetHeight) / 2
+                        local inset = pixelFloor((barHeight - targetHeight) / 2, self)
                         s.heightClipContainer:ClearAllPoints()
                         s.heightClipContainer:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -inset)
                         s.heightClipContainer:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, inset)
@@ -2967,15 +2984,13 @@ do
                 pcall(hb.SetReverseFill, hb, shouldReverse)
             end
             
-            -- Hide/Show Over Absorb Glow (Player only)
-            -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.OverAbsorbGlow
-            if unit == "Player" and hb and Util and Util.SetOverAbsorbGlowHidden then
+            -- Hide/Show Over Absorb Glow (Player/Target/Focus)
+            if (unit == "Player" or unit == "Target" or unit == "Focus") and hb and Util and Util.SetOverAbsorbGlowHidden then
                 Util.SetOverAbsorbGlowHidden(hb, cfg.healthBarHideOverAbsorbGlow == true)
             end
 
-            -- Hide/Show Heal Prediction (Player only)
-            -- Frame: PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBar.MyHealPredictionBar
-            if unit == "Player" and hb and Util and Util.SetHealPredictionHidden then
+            -- Hide/Show Heal Prediction (Player/Target/Focus)
+            if (unit == "Player" or unit == "Target" or unit == "Focus") and hb and Util and Util.SetHealPredictionHidden then
                 Util.SetHealPredictionHidden(hb, cfg.healthBarHideHealPrediction == true)
             end
 

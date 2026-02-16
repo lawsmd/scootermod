@@ -186,6 +186,43 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
 
     holder:Show()
 
+    -- Create/update gasket textures that fill the 1px gap between the
+    -- fill area and the border's visible inner edge (BackdropTemplate
+    -- edge textures don't extend to their mathematical boundary)
+    if not bfState.gaskets then
+        local g = {}
+        for _, side in ipairs({"top", "bottom", "left", "right"}) do
+            g[side] = holder:CreateTexture(nil, "BACKGROUND", nil, -8)
+        end
+        bfState.gaskets = g
+    end
+    local g = bfState.gaskets
+    -- Top: 1px strip just outside anchor's top edge
+    g.top:ClearAllPoints()
+    g.top:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, 0)
+    g.top:SetPoint("BOTTOMRIGHT", anchorFrame, "TOPRIGHT", 0, 0)
+    g.top:SetHeight(1)
+    -- Bottom: 1px strip just outside anchor's bottom edge
+    g.bottom:ClearAllPoints()
+    g.bottom:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, 0)
+    g.bottom:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+    g.bottom:SetHeight(1)
+    -- Left: 1px strip just outside anchor's left edge
+    g.left:ClearAllPoints()
+    g.left:SetPoint("TOPRIGHT", anchorFrame, "TOPLEFT", 0, 0)
+    g.left:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMLEFT", 0, 0)
+    g.left:SetWidth(1)
+    -- Right: 1px strip just outside anchor's right edge
+    g.right:ClearAllPoints()
+    g.right:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", 0, 0)
+    g.right:SetPoint("BOTTOMLEFT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+    g.right:SetWidth(1)
+    -- Color gaskets to match border
+    for _, tex in pairs(g) do
+        tex:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        tex:Show()
+    end
+
     if not skipStateUpdate then
         bfState.state = {
             styleKey = style.key,
@@ -344,6 +381,11 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
         bfState.anchorTarget = options.anchorTarget
     else
         bfState.anchorTarget = nil
+    end
+    if type(options) == "table" and type(options.padAdjust) == "table" then
+        bfState.padAdjust = options.padAdjust
+    else
+        bfState.padAdjust = nil
     end
 
     return applyStyle(barFrame, style, color, thickness, false, bfState.inset)

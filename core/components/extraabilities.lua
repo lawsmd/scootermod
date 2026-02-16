@@ -95,7 +95,51 @@ local function ApplyExtraAbilitiesStyling(self)
     local state = getContainerState()
     state.component = self
     state.baseOpacity = appliedOp / 100
-    setContainerDesiredAlpha(container, appliedOp / 100)
+
+    -- Hover-to-full-opacity: hook OnEnter/OnLeave on each button
+    local function onMouseEnter()
+        local s = getContainerState()
+        s.isMousedOver = true
+        setContainerDesiredAlpha(container, 1)
+    end
+    local function onMouseLeave()
+        local s = getContainerState()
+        local isOverButton = false
+        for _, btn in ipairs(enumerateExtraAbilityButtons()) do
+            if btn.IsMouseOver and btn:IsMouseOver() then
+                isOverButton = true
+                break
+            end
+        end
+        if not isOverButton then
+            s.isMousedOver = false
+            setContainerDesiredAlpha(container, s.baseOpacity or 1)
+        end
+    end
+
+    for _, btn in ipairs(enumerateExtraAbilityButtons()) do
+        if not buttonsHooked[btn] then
+            btn:HookScript("OnEnter", onMouseEnter)
+            btn:HookScript("OnLeave", onMouseLeave)
+            buttonsHooked[btn] = true
+        end
+    end
+
+    -- Preserve hover state: if mouse is currently over, keep full opacity
+    local function isMouseCurrentlyOver()
+        for _, btn in ipairs(enumerateExtraAbilityButtons()) do
+            if btn.IsMouseOver and btn:IsMouseOver() then return true end
+        end
+        return false
+    end
+
+    if isMouseCurrentlyOver() then
+        state.isMousedOver = true
+        setContainerDesiredAlpha(container, 1)
+    else
+        state.isMousedOver = false
+        setContainerDesiredAlpha(container, appliedOp / 100)
+    end
 
     -- Get settings
     local hideBlizzardArt = self.db and self.db.hideBlizzardArt

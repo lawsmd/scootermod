@@ -169,7 +169,7 @@ function HealthBar.Render(panel, scrollContent)
                     custom = "Custom",
                 },
                 order = { "default", "custom" },
-                get = function() return getSetting("styleForegroundColorMode") or "default" end,
+                get = function() return getSetting("styleBackgroundColorMode") or "default" end,
                 set = function(v) setSetting("styleBackgroundColorMode", v) end,
                 getColor = function()
                     local c = getSetting("styleBackgroundTint") or {0, 0, 0, 1}

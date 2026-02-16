@@ -56,8 +56,8 @@ function General.Render(panel, scrollContent)
     end
 
     builder:AddToggle({
-        label = "Enable the PRD Per-Profile",
-        description = "When enabled, the Personal Resource Display will be active for this profile. This overrides the character-wide Blizzard setting.",
+        label = "Enable Personal Resource Display",
+        description = "Show or hide the Personal Resource Display on this profile. Overrides Blizzard's per-character setting in Options > Gameplay > Interface.",
         get = function()
             local s = getProfilePRDSettings()
             if s and s.enablePRD ~= nil then

@@ -71,6 +71,21 @@ function ObjectiveTracker.Render(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddSlider({
+                label = "Scale",
+                description = "Scale the entire Objective Tracker frame.",
+                min = 0.5,
+                max = 1.5,
+                step = 0.05,
+                get = function() return getSetting("scale") or 1.0 end,
+                set = function(v) setSetting("scale", v) end,
+                minLabel = "50%",
+                maxLabel = "150%",
+                precision = 0,
+                displayMultiplier = 100,
+                displaySuffix = "%",
+            })
+
+            inner:AddSlider({
                 label = "Height",
                 description = "Maximum height of the Objective Tracker frame.",
                 min = 200,
@@ -90,13 +105,13 @@ function ObjectiveTracker.Render(panel, scrollContent)
             inner:AddSlider({
                 label = "Text Size",
                 description = "Size of text in the Objective Tracker.",
-                min = 10,
-                max = 24,
+                min = 12,
+                max = 20,
                 step = 1,
                 get = function() return getSetting("textSize") or 14 end,
                 set = function(v) setSetting("textSize", v) end,
-                minLabel = "10",
-                maxLabel = "24",
+                minLabel = "12",
+                maxLabel = "20",
                 debounceKey = "UI_objectiveTracker_textSize",
                 debounceDelay = 0.2,
                 onEditModeSync = function(newValue)

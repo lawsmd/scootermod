@@ -350,7 +350,7 @@ function UF.RenderToT(panel, scrollContent)
         label = "Position Offset",
         sliderA = {
             axisLabel = "X",
-            min = -150, max = 150, step = 1,
+            min = -300, max = 300, step = 1,
             get = function()
                 local t = ensureToTDB() or {}
                 return tonumber(t.offsetX) or 0
@@ -361,7 +361,7 @@ function UF.RenderToT(panel, scrollContent)
         },
         sliderB = {
             axisLabel = "Y",
-            min = -150, max = 150, step = 1,
+            min = -300, max = 300, step = 1,
             get = function()
                 local t = ensureToTDB() or {}
                 return tonumber(t.offsetY) or 0

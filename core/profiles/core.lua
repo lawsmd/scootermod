@@ -256,6 +256,48 @@ local function ApplyDamageMeterEnabledForActiveProfile(reason)
     Debug("Applied damageMeterEnabled from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
 end
 
+local function ApplyActionBarsEnabledForActiveProfile(reason)
+    local profile = addon and addon.db and addon.db.profile
+    local s = profile and profile.actionBarSettings
+    if not s then
+        return  -- Zero-touch: no actionBarSettings subtable at all
+    end
+
+    local function applyBar(barNum)
+        local key = "enableBar" .. barNum
+        local desired = s[key]
+        if desired == nil then
+            return  -- Not explicitly set for this bar; don't override
+        end
+
+        local function applySettingsAPI()
+            if not Settings or not Settings.GetSetting then return end
+            local settingName = "PROXY_SHOW_ACTIONBAR_" .. barNum
+            local ok, setting = pcall(Settings.GetSetting, settingName)
+            if ok and setting and setting.SetValue then
+                pcall(setting.SetValue, setting, desired)
+            end
+        end
+
+        if InCombatLockdown and InCombatLockdown() then
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self)
+                self:UnregisterAllEvents()
+                applySettingsAPI()
+            end)
+        else
+            applySettingsAPI()
+        end
+    end
+
+    for barNum = 2, 8 do
+        applyBar(barNum)
+    end
+
+    Debug("Applied actionBarSettings from profile", reason and ("reason=" .. tostring(reason)) or "")
+end
+
 local function getLayouts()
     if not C_EditMode or not C_EditMode.GetLayouts then return nil end
     return C_EditMode.GetLayouts()
@@ -736,6 +778,7 @@ function Profiles:Initialize()
     ApplyCooldownViewerEnabledForActiveProfile("Initialize")
     ApplyPRDEnabledForActiveProfile("Initialize")
     ApplyDamageMeterEnabledForActiveProfile("Initialize")
+    ApplyActionBarsEnabledForActiveProfile("Initialize")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:Initialize")
     end
@@ -759,6 +802,7 @@ function Profiles:OnProfileChanged(_, _, newProfileKey)
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileChanged")
     ApplyPRDEnabledForActiveProfile("OnProfileChanged")
     ApplyDamageMeterEnabledForActiveProfile("OnProfileChanged")
+    ApplyActionBarsEnabledForActiveProfile("OnProfileChanged")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileChanged")
     end
@@ -772,6 +816,7 @@ function Profiles:OnProfileCopied(_, _, sourceKey)
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileCopied")
     ApplyPRDEnabledForActiveProfile("OnProfileCopied")
     ApplyDamageMeterEnabledForActiveProfile("OnProfileCopied")
+    ApplyActionBarsEnabledForActiveProfile("OnProfileCopied")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileCopied")
     end
@@ -784,6 +829,7 @@ function Profiles:OnProfileReset()
     ApplyCooldownViewerEnabledForActiveProfile("OnProfileReset")
     ApplyPRDEnabledForActiveProfile("OnProfileReset")
     ApplyDamageMeterEnabledForActiveProfile("OnProfileReset")
+    ApplyActionBarsEnabledForActiveProfile("OnProfileReset")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:OnProfileReset")
     end
@@ -922,6 +968,7 @@ function Profiles:_setActiveProfile(profileKey, opts)
     ApplyCooldownViewerEnabledForActiveProfile("_setActiveProfile")
     ApplyPRDEnabledForActiveProfile("_setActiveProfile")
     ApplyDamageMeterEnabledForActiveProfile("_setActiveProfile")
+    ApplyActionBarsEnabledForActiveProfile("_setActiveProfile")
     if addon and addon.Chat and addon.Chat.ApplyFromProfile then
         addon.Chat:ApplyFromProfile("Profiles:_setActiveProfile")
     end

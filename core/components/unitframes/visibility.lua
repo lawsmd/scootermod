@@ -67,13 +67,13 @@ do
         end
 
         -- Zero‑Touch: only apply opacity if the user explicitly configured any opacity key.
-        local hasAnyOpacitySetting = (cfg.opacity ~= nil) or (cfg.opacityOutOfCombat ~= nil) or (cfg.opacityWithTarget ~= nil)
+        local hasAnyOpacitySetting = (cfg.opacityInCombat ~= nil) or (cfg.opacityOutOfCombat ~= nil) or (cfg.opacityWithTarget ~= nil)
         if not hasAnyOpacitySetting then
             return
         end
 
         -- Base opacity (combat) uses the same 50–100 semantics as Cooldown Manager groups
-        local baseRaw = cfg.opacity
+        local baseRaw = cfg.opacityInCombat
         if baseRaw == nil then baseRaw = 100 end
         local baseOpacity = ClampOpacity(baseRaw, 50)
 

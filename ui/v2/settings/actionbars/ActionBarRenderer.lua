@@ -46,6 +46,73 @@ function ActionBar.Render(panel, scrollContent, componentId)
     local hasBorder = true  -- All bars including Stance Bar have border settings
 
     ---------------------------------------------------------------------------
+    -- Enable Action Bar Toggle (bars 2-8 only)
+    ---------------------------------------------------------------------------
+    if isBar2to8 then
+        local barNum = tonumber(componentId:match("actionBar(%d)"))
+
+        -- Settings API helpers
+        local function getBarEnabledFromSettings()
+            if not Settings or not Settings.GetSetting then return true end
+            local ok, setting = pcall(Settings.GetSetting, "PROXY_SHOW_ACTIONBAR_" .. barNum)
+            if ok and setting and setting.GetValue then
+                local vOk, val = pcall(setting.GetValue, setting)
+                if vOk then return val end
+            end
+            return true
+        end
+
+        local function setBarEnabledInSettings(enabled)
+            if not Settings or not Settings.GetSetting then return end
+            local ok, setting = pcall(Settings.GetSetting, "PROXY_SHOW_ACTIONBAR_" .. barNum)
+            if ok and setting and setting.SetValue then
+                pcall(setting.SetValue, setting, enabled)
+            end
+        end
+
+        -- Profile data helpers
+        local function getProfileActionBarSettings()
+            local profile = addon and addon.db and addon.db.profile
+            return profile and profile.actionBarSettings
+        end
+
+        local function ensureProfileActionBarSettings()
+            if not (addon and addon.db and addon.db.profile) then return nil end
+            addon.db.profile.actionBarSettings = addon.db.profile.actionBarSettings or {}
+            return addon.db.profile.actionBarSettings
+        end
+
+        builder:AddToggle({
+            label = "Enable Action Bar " .. barNum,
+            get = function()
+                local s = getProfileActionBarSettings()
+                local key = "enableBar" .. barNum
+                if s and s[key] ~= nil then
+                    return s[key]
+                end
+                return getBarEnabledFromSettings()
+            end,
+            set = function(value)
+                local s = ensureProfileActionBarSettings()
+                if not s then return end
+                s["enableBar" .. barNum] = value
+                setBarEnabledInSettings(value)
+                if addon and addon.ApplyStyles then
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0, function()
+                            if addon and addon.ApplyStyles then
+                                addon:ApplyStyles()
+                            end
+                        end)
+                    else
+                        addon:ApplyStyles()
+                    end
+                end
+            end,
+        })
+    end
+
+    ---------------------------------------------------------------------------
     -- Positioning Section
     ---------------------------------------------------------------------------
     builder:AddCollapsibleSection({

@@ -113,6 +113,19 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyRaidFrameHealthBarBorders then
                 addon.ApplyRaidFrameHealthBarBorders()
             end
+            -- Apply visibility settings
+            if addon.ApplyRaidOverAbsorbGlowVisibility then
+                addon.ApplyRaidOverAbsorbGlowVisibility()
+            end
+            if addon.ApplyRaidHealPredictionVisibility then
+                addon.ApplyRaidHealPredictionVisibility()
+            end
+            if addon.ApplyRaidAbsorbBarsVisibility then
+                addon.ApplyRaidAbsorbBarsVisibility()
+            end
+            if addon.ApplyRaidHealPredictionClipping then
+                addon.ApplyRaidHealPredictionClipping()
+            end
         end
 
         if doParty then
@@ -129,9 +142,18 @@ local function ensureRaidFrameCombatWatcher()
             if addon.ApplyPartyFrameNameOverlays then
                 addon.ApplyPartyFrameNameOverlays()
             end
-            -- Apply visibility settings (over absorb glow, etc.)
+            -- Apply visibility settings (over absorb glow, heal prediction, absorb bars)
             if addon.ApplyPartyOverAbsorbGlowVisibility then
                 addon.ApplyPartyOverAbsorbGlowVisibility()
+            end
+            if addon.ApplyPartyHealPredictionVisibility then
+                addon.ApplyPartyHealPredictionVisibility()
+            end
+            if addon.ApplyPartyAbsorbBarsVisibility then
+                addon.ApplyPartyAbsorbBarsVisibility()
+            end
+            if addon.ApplyPartyHealPredictionClipping then
+                addon.ApplyPartyHealPredictionClipping()
             end
             -- Apply health bar borders
             if addon.ApplyPartyFrameHealthBarBorders then

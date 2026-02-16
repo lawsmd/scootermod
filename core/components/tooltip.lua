@@ -441,6 +441,20 @@ local function InitTooltipIDs()
                 end
             end
 
+            -- For unit tooltips, extract NPC ID from GUID
+            if data.type == (Enum.TooltipDataType.Unit or -1) then
+                local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
+                if ok and unitToken then
+                    local guidOk, guid = pcall(UnitGUID, unitToken)
+                    if guidOk and guid and type(guid) == "string" then
+                        local npcID = guid:match("Creature%-.-%-.-%-.-%-.-%-(%d+)")
+                        if npcID then
+                            addIDLine(tooltip, tonumber(npcID), "NpcID")
+                        end
+                    end
+                end
+            end
+
             isAddingIDs = false
         end)
     end
@@ -514,24 +528,6 @@ local function InitTooltipIDs()
         end)
     end
 
-    -- Hook for NPC IDs from unit GUID
-    if GameTooltip then
-        GameTooltip:HookScript("OnTooltipSetUnit", function(tooltip)
-            if not isTooltipIDsEnabled() then return end
-
-            local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
-            if not ok or not unitToken then return end
-
-            local guidOk, guid = pcall(UnitGUID, unitToken)
-            if not guidOk or not guid or type(guid) ~= "string" then return end
-
-            -- GUID format: Creature-0-xxxx-xxxx-xxxx-npcID-xxxx
-            local npcID = guid:match("Creature%-.-%-.-%-.-%-.-%-(%d+)")
-            if npcID then
-                addIDLine(tooltip, tonumber(npcID), "NpcID")
-            end
-        end)
-    end
 end
 
 local function ApplyTooltipStyling(self)

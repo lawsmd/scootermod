@@ -60,6 +60,14 @@ function UF.ensureCastBarDB(unitKey)
     return t.castBar
 end
 
+-- Ensure misc settings sub-table exists
+function UF.ensureMiscDB(unitKey)
+    local t = UF.ensureUFDB(unitKey)
+    if not t then return nil end
+    t.misc = t.misc or {}
+    return t.misc
+end
+
 --------------------------------------------------------------------------------
 -- Apply Functions
 --------------------------------------------------------------------------------
@@ -384,6 +392,7 @@ function UF.getHealthBarTabs(componentId)
             { key = "direction", label = "Direction" },
             { key = "style", label = "Style" },
             { key = "border", label = "Border" },
+            { key = "visibility", label = "Visibility" },
             { key = "percentText", label = "% Text" },
             { key = "valueText", label = "Value Text" },
         }

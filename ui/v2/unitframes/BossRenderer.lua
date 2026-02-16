@@ -18,6 +18,10 @@ local function ensureUFDB()
     return UF.ensureUFDB(UNIT_KEY)
 end
 
+local function ensureCastBarDB()
+    return UF.ensureCastBarDB(UNIT_KEY)
+end
+
 local function ensureTextDB(key)
     return UF.ensureTextDB(UNIT_KEY, key)
 end
@@ -38,24 +42,25 @@ end
 -- Shared Tab Builders
 --------------------------------------------------------------------------------
 
-local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder, colorInfoIcons)
+local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder, colorInfoIcons, dbFn)
     colorValues = colorValues or UF.healthColorValues
     colorOrder = colorOrder or UF.healthColorOrder
     colorInfoIcons = colorInfoIcons or UF.healthColorInfoIcons
+    dbFn = dbFn or ensureUFDB
 
     inner:AddBarTextureSelector({
         label = "Foreground Texture",
-        get = function() local t = ensureUFDB() or {}; return t[barPrefix .. "Texture"] or "default" end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "Texture"] = v or "default"; applyFn() end end,
+        get = function() local t = dbFn() or {}; return t[barPrefix .. "Texture"] or "default" end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "Texture"] = v or "default"; applyFn() end end,
     })
 
     inner:AddSelectorColorPicker({
         label = "Foreground Color",
         values = colorValues, order = colorOrder, optionInfoIcons = colorInfoIcons,
-        get = function() local t = ensureUFDB() or {}; return t[barPrefix .. "ColorMode"] or "default" end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "ColorMode"] = v or "default"; applyFn() end end,
-        getColor = function() local t = ensureUFDB() or {}; local c = t[barPrefix .. "Tint"] or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-        setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t[barPrefix .. "Tint"] = {r or 1, g or 1, b or 1, a or 1}; applyFn() end end,
+        get = function() local t = dbFn() or {}; return t[barPrefix .. "ColorMode"] or "default" end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "ColorMode"] = v or "default"; applyFn() end end,
+        getColor = function() local t = dbFn() or {}; local c = t[barPrefix .. "Tint"] or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+        setColor = function(r,g,b,a) local t = dbFn(); if t then t[barPrefix .. "Tint"] = {r or 1, g or 1, b or 1, a or 1}; applyFn() end end,
         customValue = "custom", hasAlpha = true,
     })
 
@@ -63,59 +68,61 @@ local function buildStyleTab(inner, barPrefix, applyFn, colorValues, colorOrder,
 
     inner:AddBarTextureSelector({
         label = "Background Texture",
-        get = function() local t = ensureUFDB() or {}; return t[barPrefix .. "BackgroundTexture"] or "default" end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BackgroundTexture"] = v or "default"; applyFn() end end,
+        get = function() local t = dbFn() or {}; return t[barPrefix .. "BackgroundTexture"] or "default" end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BackgroundTexture"] = v or "default"; applyFn() end end,
     })
 
     inner:AddSelectorColorPicker({
         label = "Background Color",
         values = UF.bgColorValues, order = UF.bgColorOrder,
-        get = function() local t = ensureUFDB() or {}; return t[barPrefix .. "BackgroundColorMode"] or "default" end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BackgroundColorMode"] = v or "default"; applyFn() end end,
-        getColor = function() local t = ensureUFDB() or {}; local c = t[barPrefix .. "BackgroundTint"] or {0,0,0,1}; return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 end,
-        setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t[barPrefix .. "BackgroundTint"] = {r or 0, g or 0, b or 0, a or 1}; applyFn() end end,
+        get = function() local t = dbFn() or {}; return t[barPrefix .. "BackgroundColorMode"] or "default" end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BackgroundColorMode"] = v or "default"; applyFn() end end,
+        getColor = function() local t = dbFn() or {}; local c = t[barPrefix .. "BackgroundTint"] or {0,0,0,1}; return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 end,
+        setColor = function(r,g,b,a) local t = dbFn(); if t then t[barPrefix .. "BackgroundTint"] = {r or 0, g or 0, b or 0, a or 1}; applyFn() end end,
         customValue = "custom", hasAlpha = true,
     })
 
     inner:AddSlider({
         label = "Background Opacity",
         min = 0, max = 100, step = 1,
-        get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BackgroundOpacity"]) or 50 end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BackgroundOpacity"] = tonumber(v) or 50; applyFn() end end,
+        get = function() local t = dbFn() or {}; return tonumber(t[barPrefix .. "BackgroundOpacity"]) or 50 end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BackgroundOpacity"] = tonumber(v) or 50; applyFn() end end,
     })
 
     inner:Finalize()
 end
 
-local function buildBorderTab(inner, barPrefix, applyFn)
+local function buildBorderTab(inner, barPrefix, applyFn, dbFn)
+    dbFn = dbFn or ensureUFDB
+
     inner:AddBarBorderSelector({
         label = "Border Style",
         includeNone = true,
-        get = function() local t = ensureUFDB() or {}; return t[barPrefix .. "BorderStyle"] or "square" end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderStyle"] = v or "square"; applyFn() end end,
+        get = function() local t = dbFn() or {}; return t[barPrefix .. "BorderStyle"] or "square" end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderStyle"] = v or "square"; applyFn() end end,
     })
 
     inner:AddToggleColorPicker({
         label = "Border Tint",
-        get = function() local t = ensureUFDB() or {}; return not not t[barPrefix .. "BorderTintEnable"] end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderTintEnable"] = not not v; applyFn() end end,
-        getColor = function() local t = ensureUFDB() or {}; local c = t[barPrefix .. "BorderTintColor"] or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-        setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t[barPrefix .. "BorderTintColor"] = {r or 1, g or 1, b or 1, a or 1}; applyFn() end end,
+        get = function() local t = dbFn() or {}; return not not t[barPrefix .. "BorderTintEnable"] end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderTintEnable"] = not not v; applyFn() end end,
+        getColor = function() local t = dbFn() or {}; local c = t[barPrefix .. "BorderTintColor"] or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+        setColor = function(r,g,b,a) local t = dbFn(); if t then t[barPrefix .. "BorderTintColor"] = {r or 1, g or 1, b or 1, a or 1}; applyFn() end end,
         hasAlpha = true,
     })
 
     inner:AddSlider({
         label = "Border Thickness",
         min = 1, max = 8, step = 0.5, precision = 1,
-        get = function() local t = ensureUFDB() or {}; local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
+        get = function() local t = dbFn() or {}; local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
     })
 
     inner:AddSlider({
         label = "Border Inset",
         min = -4, max = 4, step = 1,
-        get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderInset"] = tonumber(v) or 0; applyFn() end end,
+        get = function() local t = dbFn() or {}; return tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
+        set = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderInset"] = tonumber(v) or 0; applyFn() end end,
     })
 
     inner:Finalize()
@@ -236,8 +243,8 @@ function UF.RenderBoss(panel, scrollContent)
                 componentId = COMPONENT_ID,
                 sectionKey = "castBar_tabs",
                 buildContent = {
-                    style = function(cf, tabInner) buildStyleTab(tabInner, "castBar", applyBarTextures) end,
-                    border = function(cf, tabInner) buildBorderTab(tabInner, "castBar", applyBarTextures) end,
+                    style = function(cf, tabInner) buildStyleTab(tabInner, "castBar", applyBarTextures, nil, nil, nil, ensureCastBarDB) end,
+                    border = function(cf, tabInner) buildBorderTab(tabInner, "castBar", applyBarTextures, ensureCastBarDB) end,
                 },
             })
             inner:Finalize()

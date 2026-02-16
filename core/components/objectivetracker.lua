@@ -719,9 +719,22 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
     ForEachCombatOpacityTargetFrame(RestoreFrameBaseline)
 end
 
+local function ApplyObjectiveTrackerScale(self)
+    local tracker = _G.ObjectiveTrackerFrame
+    if not tracker or not tracker.SetScale then return end
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+    local db = self.db
+    if type(db) ~= "table" then return end
+    local scale = tonumber(db.scale)
+    if not scale then return end  -- nil = untouched (Zero-Touch)
+    if scale < 0.5 then scale = 0.5 elseif scale > 1.5 then scale = 1.5 end
+    pcall(tracker.SetScale, tracker, scale)
+end
+
 local function ApplyObjectiveTrackerStylingAll(self)
     ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     ApplyObjectiveTrackerTextStyling(self)
+    ApplyObjectiveTrackerScale(self)
 end
 
 local function InstallObjectiveTrackerHooks(self)
@@ -820,6 +833,9 @@ addon:RegisterComponentInitializer(function(self)
             -- Applies only when the player is in combat AND in a dungeon/raid instance.
             -- ScenarioObjectiveTracker is intentionally excluded so Mythic+/Scenario progress remains readable.
             opacityInInstanceCombat = { type = "addon", ui = { hidden = true } },
+
+            -- Addon-only: global scale for the entire Objective Tracker frame (0.5..1.5). Nil means untouched (Zero-Touch).
+            scale = { type = "addon", default = 1.0, ui = { hidden = true } },
 
             -- Addon-only text styling. UI is custom (tabbed section), so hide in generic renderer.
             textHeader = { type = "addon", default = {

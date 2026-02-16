@@ -447,6 +447,67 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
 end
 
 --------------------------------------------------------------------------------
+-- Health Bar Visibility Tab (Target/Focus: 3 toggles, no Health Loss Animation)
+--------------------------------------------------------------------------------
+
+local function buildHealthVisibilityTab(inner)
+    inner:AddToggle({
+        label = "Hide the Bar but not its Text",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideTextureOnly
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideTextureOnly = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = {
+            tooltipTitle = "Hide the Bar but not its Text",
+            tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of health.",
+        },
+    })
+
+    inner:AddToggle({
+        label = "Hide Over Absorb Glow",
+        description = "Hides the glow effect when absorb shields exceed max health.",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideOverAbsorbGlow
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideOverAbsorbGlow = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = UF.TOOLTIPS.hideOverAbsorbGlow,
+    })
+
+    inner:AddToggle({
+        label = "Hide Heal Prediction",
+        description = "Hides the green heal prediction bar when healing is incoming.",
+        get = function()
+            local t = ensureUFDB() or {}
+            return not not t.healthBarHideHealPrediction
+        end,
+        set = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarHideHealPrediction = v and true or false
+            applyBarTextures()
+        end,
+        infoIcon = {
+            tooltipTitle = "Hide Heal Prediction",
+            tooltipText = "Hides the green heal prediction bar that appears on the health bar when a heal is incoming.",
+        },
+    })
+
+    inner:Finalize()
+end
+
+--------------------------------------------------------------------------------
 -- Direction Tab (Target/Focus only)
 --------------------------------------------------------------------------------
 
@@ -593,6 +654,9 @@ function UF.RenderTarget(panel, scrollContent)
                     end,
                     border = function(cf, tabInner)
                         buildBorderTab(tabInner, "healthBar", applyBarTextures)
+                    end,
+                    visibility = function(cf, tabInner)
+                        buildHealthVisibilityTab(tabInner)
                     end,
                     percentText = function(cf, tabInner)
                         buildTextTab(tabInner, "textHealthPercent", applyHealthText, "LEFT")
@@ -1033,8 +1097,8 @@ function UF.RenderTarget(panel, scrollContent)
                             label = "Border Color", values = UF.portraitBorderColorValues, order = UF.portraitBorderColorOrder,
                             get = function() local t = ensurePortraitDB() or {}; return t.portraitBorderColorMode or "texture" end,
                             set = function(v) local t = ensurePortraitDB(); if t then t.portraitBorderColorMode = v or "texture"; applyPortrait() end end,
-                            getColor = function() local t = ensurePortraitDB() or {}; local c = t.portraitBorderTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensurePortraitDB(); if t then t.portraitBorderTint = {r,g,b,a}; applyPortrait() end end,
+                            getColor = function() local t = ensurePortraitDB() or {}; local c = t.portraitBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensurePortraitDB(); if t then t.portraitBorderTintColor = {r,g,b,a}; applyPortrait() end end,
                             customValue = "custom", hasAlpha = true,
                         })
                         tabInner:Finalize()
@@ -1042,8 +1106,8 @@ function UF.RenderTarget(panel, scrollContent)
                     visibility = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Portrait",
-                            get = function() local t = ensurePortraitDB() or {}; return not not t.hidden end,
-                            set = function(v) local t = ensurePortraitDB(); if t then t.hidden = v and true or false; applyPortrait() end end,
+                            get = function() local t = ensurePortraitDB() or {}; return not not t.hidePortrait end,
+                            set = function(v) local t = ensurePortraitDB(); if t then t.hidePortrait = v and true or false; applyPortrait() end end,
                         })
                         tabInner:Finalize()
                     end,

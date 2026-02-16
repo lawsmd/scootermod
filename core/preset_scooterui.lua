@@ -2718,7 +2718,7 @@ Presets:Register({
       },
     },
     essentialCooldowns = {
-      alignGroupCenter = true,
+      centerAnchor = true,
       borderEnable = true,
       borderInset = -0,
       borderStyle = "blizzard",
@@ -2850,7 +2850,7 @@ Presets:Register({
     objectiveTracker = {
       height = 400,
       opacity = -0,
-      opacityInCombat = 10,
+      opacityInInstanceCombat = 10,
       textHeader = {
         color = {
           -0,
@@ -3214,7 +3214,7 @@ Presets:Register({
       positionY = -154,
       showTimer = true,
       showTooltip = true,
-      styleBackgroundColor = {
+      styleBackgroundTint = {
         1,
         1,
         1,
@@ -3223,7 +3223,7 @@ Presets:Register({
       styleBackgroundOpacity = 50,
       styleBackgroundTexture = "a1",
       styleEnableCustom = true,
-      styleForegroundColor = {
+      styleForegroundTint = {
         1,
         1,
         1,
@@ -3312,7 +3312,7 @@ Presets:Register({
       visibilityMode = "always",
     },
     utilityCooldowns = {
-      alignGroupCenter = true,
+      centerAnchor = true,
       borderEnable = true,
       borderInset = -0,
       borderStyle = "blizzard",

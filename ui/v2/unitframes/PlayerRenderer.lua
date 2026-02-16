@@ -29,6 +29,10 @@ local function ensureCastBarDB()
     return UF.ensureCastBarDB(UNIT_KEY)
 end
 
+local function ensureMiscDB()
+    return UF.ensureMiscDB(UNIT_KEY)
+end
+
 local function ensureNameLevelDB(textKey)
     local t = UF.ensureUFDB(UNIT_KEY)
     if not t then return nil end
@@ -1010,13 +1014,13 @@ function UF.RenderPlayer(panel, scrollContent)
                             end,
                             getColor = function()
                                 local t = ensurePortraitDB() or {}
-                                local c = t.portraitBorderTint or {1, 1, 1, 1}
+                                local c = t.portraitBorderTintColor or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
                             setColor = function(r, g, b, a)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.portraitBorderTint = {r, g, b, a}
+                                t.portraitBorderTintColor = {r, g, b, a}
                                 applyPortrait()
                             end,
                             customValue = "custom",
@@ -1110,12 +1114,12 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Hide Portrait",
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                return not not t.hidden
+                                return not not t.hidePortrait
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.hidden = v and true or false
+                                t.hidePortrait = v and true or false
                                 applyPortrait()
                             end,
                         })
@@ -1152,12 +1156,12 @@ function UF.RenderPlayer(panel, scrollContent)
                                 min = -200, max = 200, step = 1,
                                 get = function()
                                     local t = ensureCastBarDB() or {}
-                                    return tonumber(t.castBarOffsetX) or 0
+                                    return tonumber(t.offsetX) or 0
                                 end,
                                 set = function(v)
                                     local t = ensureCastBarDB()
                                     if not t then return end
-                                    t.castBarOffsetX = tonumber(v) or 0
+                                    t.offsetX = tonumber(v) or 0
                                     applyCastBar()
                                 end,
                             },
@@ -1166,12 +1170,12 @@ function UF.RenderPlayer(panel, scrollContent)
                                 min = -200, max = 200, step = 1,
                                 get = function()
                                     local t = ensureCastBarDB() or {}
-                                    return tonumber(t.castBarOffsetY) or 0
+                                    return tonumber(t.offsetY) or 0
                                 end,
                                 set = function(v)
                                     local t = ensureCastBarDB()
                                     if not t then return end
-                                    t.castBarOffsetY = tonumber(v) or 0
+                                    t.offsetY = tonumber(v) or 0
                                     applyCastBar()
                                 end,
                             },
@@ -1180,16 +1184,16 @@ function UF.RenderPlayer(panel, scrollContent)
                     end,
                     sizing = function(cf, tabInner)
                         tabInner:AddSlider({
-                            label = "Width",
-                            min = 50, max = 400, step = 1,
+                            label = "Width %",
+                            min = 50, max = 150, step = 1,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarWidth) or 195
+                                return tonumber(t.widthPct) or 100
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castBarWidth = tonumber(v) or 195
+                                t.widthPct = tonumber(v) or 100
                                 applyCastBar()
                             end,
                         })
@@ -1277,12 +1281,12 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Hide Icon",
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                return not not t.castBarIconHidden
+                                return not not t.iconDisabled
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castBarIconHidden = v and true or false
+                                t.iconDisabled = v and true or false
                                 applyCastBar()
                             end,
                         })
@@ -1291,12 +1295,13 @@ function UF.RenderPlayer(panel, scrollContent)
                             min = 10, max = 64, step = 1,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                return tonumber(t.castBarIconSize) or 24
+                                return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castBarIconSize = tonumber(v) or 24
+                                t.iconWidth = tonumber(v) or 24
+                                t.iconHeight = tonumber(v) or 24
                                 applyCastBar()
                             end,
                         })
@@ -1351,14 +1356,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Spell Name Font",
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.spellName or {}
+                                local s = t.spellNameText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.spellName = t.spellName or {}
-                                t.spellName.fontFace = v
+                                t.spellNameText = t.spellNameText or {}
+                                t.spellNameText.fontFace = v
                                 applyCastBar()
                             end,
                         })
@@ -1368,14 +1373,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             order = UF.fontStyleOrder,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.spellName or {}
+                                local s = t.spellNameText or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.spellName = t.spellName or {}
-                                t.spellName.style = v
+                                t.spellNameText = t.spellNameText or {}
+                                t.spellNameText.style = v
                                 applyCastBar()
                             end,
                         })
@@ -1384,14 +1389,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             min = 6, max = 32, step = 1,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.spellName or {}
+                                local s = t.spellNameText or {}
                                 return tonumber(s.size) or 12
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.spellName = t.spellName or {}
-                                t.spellName.size = tonumber(v) or 12
+                                t.spellNameText = t.spellNameText or {}
+                                t.spellNameText.size = tonumber(v) or 12
                                 applyCastBar()
                             end,
                         })
@@ -1399,15 +1404,15 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Spell Name Color",
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.spellName or {}
+                                local s = t.spellNameText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
                             set = function(r, g, b, a)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.spellName = t.spellName or {}
-                                t.spellName.color = {r, g, b, a}
+                                t.spellNameText = t.spellNameText or {}
+                                t.spellNameText.color = {r, g, b, a}
                                 applyCastBar()
                             end,
                             hasAlpha = true,
@@ -1432,14 +1437,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Cast Time Font",
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.castTime or {}
+                                local s = t.castTimeText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castTime = t.castTime or {}
-                                t.castTime.fontFace = v
+                                t.castTimeText = t.castTimeText or {}
+                                t.castTimeText.fontFace = v
                                 applyCastBar()
                             end,
                         })
@@ -1449,14 +1454,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             order = UF.fontStyleOrder,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.castTime or {}
+                                local s = t.castTimeText or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castTime = t.castTime or {}
-                                t.castTime.style = v
+                                t.castTimeText = t.castTimeText or {}
+                                t.castTimeText.style = v
                                 applyCastBar()
                             end,
                         })
@@ -1465,14 +1470,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             min = 6, max = 32, step = 1,
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.castTime or {}
+                                local s = t.castTimeText or {}
                                 return tonumber(s.size) or 12
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castTime = t.castTime or {}
-                                t.castTime.size = tonumber(v) or 12
+                                t.castTimeText = t.castTimeText or {}
+                                t.castTimeText.size = tonumber(v) or 12
                                 applyCastBar()
                             end,
                         })
@@ -1480,15 +1485,15 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Cast Time Color",
                             get = function()
                                 local t = ensureCastBarDB() or {}
-                                local s = t.castTime or {}
+                                local s = t.castTimeText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
                             set = function(r, g, b, a)
                                 local t = ensureCastBarDB()
                                 if not t then return end
-                                t.castTime = t.castTime or {}
-                                t.castTime.color = {r, g, b, a}
+                                t.castTimeText = t.castTimeText or {}
+                                t.castTimeText.color = {r, g, b, a}
                                 applyCastBar()
                             end,
                             hasAlpha = true,
@@ -1630,11 +1635,11 @@ function UF.RenderPlayer(panel, scrollContent)
             inner:AddToggle({
                 label = "Hide Role Icon",
                 get = function()
-                    local t = ensureUFDB() or {}
+                    local t = ensureMiscDB() or {}
                     return not not t.hideRoleIcon
                 end,
                 set = function(v)
-                    local t = ensureUFDB()
+                    local t = ensureMiscDB()
                     if not t then return end
                     t.hideRoleIcon = v and true or false
                     applyStyles()
@@ -1644,11 +1649,11 @@ function UF.RenderPlayer(panel, scrollContent)
             inner:AddToggle({
                 label = "Hide Group Number",
                 get = function()
-                    local t = ensureUFDB() or {}
+                    local t = ensureMiscDB() or {}
                     return not not t.hideGroupNumber
                 end,
                 set = function(v)
-                    local t = ensureUFDB()
+                    local t = ensureMiscDB()
                     if not t then return end
                     t.hideGroupNumber = v and true or false
                     applyStyles()
@@ -1659,13 +1664,13 @@ function UF.RenderPlayer(panel, scrollContent)
                 label = "Allow Off-Screen Dragging",
                 description = "Allows moving frames closer to screen edges.",
                 get = function()
-                    local t = ensureUFDB() or {}
-                    return not not t.allowOffScreenDragging
+                    local t = ensureMiscDB() or {}
+                    return not not t.allowOffscreenDrag
                 end,
                 set = function(v)
-                    local t = ensureUFDB()
+                    local t = ensureMiscDB()
                     if not t then return end
-                    t.allowOffScreenDragging = v and true or false
+                    t.allowOffscreenDrag = v and true or false
                     if addon.ApplyOffScreenUnlock then
                         addon.ApplyOffScreenUnlock(UNIT_KEY, v)
                     end

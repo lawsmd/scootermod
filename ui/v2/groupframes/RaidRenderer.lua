@@ -684,6 +684,36 @@ function GF.RenderRaid(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddToggle({
+                label = "Hide Heal Prediction",
+                description = "Hides incoming heal prediction bars (both your heals and others' heals).",
+                get = function()
+                    local db = GF.ensureRaidDB()
+                    return db and db.hideHealPrediction or false
+                end,
+                set = function(v)
+                    local db = GF.ensureRaidDB()
+                    if db then
+                        db.hideHealPrediction = v
+                    end
+                    GF.applyRaidStyles()
+                end,
+            })
+            inner:AddToggle({
+                label = "Hide Absorb Bars",
+                description = "Hides absorb shield overlays and related glow effects on health bars.",
+                get = function()
+                    local db = GF.ensureRaidDB()
+                    return db and db.hideAbsorbBars or false
+                end,
+                set = function(v)
+                    local db = GF.ensureRaidDB()
+                    if db then
+                        db.hideAbsorbBars = v
+                    end
+                    GF.applyRaidStyles()
+                end,
+            })
+            inner:AddToggle({
                 label = "Hide Over Absorb Glow",
                 description = "Hides the glow effect when absorb shields exceed health bar width.",
                 get = function()
