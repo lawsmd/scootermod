@@ -1,4 +1,4 @@
-﻿local addonName, addon = ...
+local addonName, addon = ...
 
 local Presets = addon.Presets
 if not Presets or not Presets.Register then
@@ -10,7 +10,7 @@ Presets:Register({
     name = "ScooterDeck",
     description = "Controller-first handheld layout optimized for Steam Deck and couch play.",
     wowBuild = "12.0.0",
-    version = "2026.02.01",
+    version = "2026.02.16",
     screenClass = "handheld",
     recommendedInput = "ConsolePort",
     requiresConsolePort = true,
@@ -19,7 +19,7 @@ Presets:Register({
     previewThumbnail = "Interface\\AddOns\\ScooterMod\\media\\presets\\ScooterDeck",
     designedFor = { "Steam Deck and 7-8 inch handhelds", "Controller gameplay" },
     recommends = { "ConsolePort" },
-    lastUpdated = "2026-02-01",
+    lastUpdated = "2026-02-16",
 
     -- Edit Mode layout payload (raw layoutInfo table).
     -- Capture/update via: /scoot debug editmode export "ScooterDeck"
@@ -371,11 +371,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -4,
-        offsetY = 0,
-        point = "BOTTOMRIGHT",
-        relativePoint = "BOTTOMLEFT",
-        relativeTo = "MultiBarLeft",
+        offsetX = 75.199996948242,
+        offsetY = -782,
+        point = "TOPLEFT",
+        relativePoint = "TOPLEFT",
+        relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
       settings = {
@@ -490,10 +490,10 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 477.5,
-        offsetY = -2,
-        point = "TOP",
-        relativePoint = "TOP",
+        offsetX = 11.5,
+        offsetY = 53.299999237061,
+        point = "TOPRIGHT",
+        relativePoint = "TOPRIGHT",
         relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
@@ -508,7 +508,7 @@ Presets:Register({
         },
         {
           setting = 2,
-          value = 9,
+          value = 10,
         },
       },
       system = 2,
@@ -796,10 +796,10 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -457,
-        offsetY = 402,
-        point = "BOTTOM",
-        relativePoint = "BOTTOM",
+        offsetX = -317,
+        offsetY = -601.5,
+        point = "TOP",
+        relativePoint = "TOP",
         relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
@@ -1016,11 +1016,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -904.70001220703,
-        offsetY = 802,
-        point = "BOTTOM",
-        relativePoint = "BOTTOM",
-        relativeTo = "UIParent",
+        offsetX = -3.5999999046326,
+        offsetY = 0.40000000596046,
+        point = "TOPRIGHT",
+        relativePoint = "TOPLEFT",
+        relativeTo = "EncounterTimeline",
       },
       isInDefaultPosition = false,
       settings = {
@@ -1157,11 +1157,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 0,
-        offsetY = -4,
-        point = "TOPRIGHT",
-        relativePoint = "BOTTOMRIGHT",
-        relativeTo = "DurabilityFrame",
+        offsetX = 264,
+        offsetY = -0,
+        point = "TOPLEFT",
+        relativePoint = "TOPLEFT",
+        relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
       settings = {
@@ -1436,13 +1436,13 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -457,
-        offsetY = 336,
-        point = "BOTTOMRIGHT",
-        relativePoint = "BOTTOM",
+        offsetX = -364.5,
+        offsetY = -2,
+        point = "TOP",
+        relativePoint = "TOP",
         relativeTo = "UIParent",
       },
-      isInDefaultPosition = true,
+      isInDefaultPosition = false,
       settings = {
         {
           setting = 0,
@@ -1483,6 +1483,22 @@ Presets:Register({
         {
           setting = 9,
           value = 1,
+        },
+        {
+          setting = 10,
+          value = 0,
+        },
+        {
+          setting = 11,
+          value = 0,
+        },
+        {
+          setting = 12,
+          value = 50,
+        },
+        {
+          setting = 13,
+          value = 2,
         },
       },
       system = 22,
@@ -1654,12 +1670,21 @@ Presets:Register({
   },
     },
     -- EDITMODE_LAYOUT_END
-    editModeSha256 = "PENDING",
+    editModeSha256 = "298d411755dca045607edbbf9846824b21b20c51f5c55d000e4f100cade086d6",
 
     -- ScooterMod profile snapshot (captured from authoring machine).
-    profileSha256 = "PENDING",
+    profileSha256 = "66f7bca769b2fb20e9dbed6efbba81a0fad8dec60fa01929c0ac41612a43f920",
     -- SCOOTER_PROFILE_START
     scooterProfile = {
+  __preset = true,
+  __presetLayout = "ScooterDeck",
+  __presetSource = "scooterui",
+  __presetVersion = "2026.01.31",
+  actionBarSettings = {
+    enableBar4 = false,
+    enableBar5 = false,
+    enableBar6 = false,
+  },
   applyAll = {
     barTexturePending = "default",
     fontPending = "default",
@@ -1669,6 +1694,7 @@ Presets:Register({
       value = "ROBOTO_SEMICOND_BLACK",
     },
   },
+  bugSackButtonSeparate = true,
   cdmQoL = {
     enableCDM = false,
     enableSlashCDM = true,
@@ -1693,8 +1719,6 @@ Presets:Register({
       barOpacity = 10,
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -1716,6 +1740,7 @@ Presets:Register({
       positionX = -26,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -1729,7 +1754,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1776,7 +1801,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar2 = {
@@ -1796,8 +1821,6 @@ Presets:Register({
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -1817,6 +1840,7 @@ Presets:Register({
       positionX = 124,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -1830,7 +1854,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1877,7 +1901,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar3 = {
@@ -1897,8 +1921,6 @@ Presets:Register({
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -1918,6 +1940,7 @@ Presets:Register({
       positionX = 274,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -1931,7 +1954,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -1978,7 +2001,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar4 = {
@@ -1998,8 +2021,6 @@ Presets:Register({
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -2016,9 +2037,10 @@ Presets:Register({
       mouseoverMode = true,
       numIcons = 12,
       orientation = "H",
-      positionX = -176,
+      positionX = -150,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2032,7 +2054,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2079,7 +2101,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar5 = {
@@ -2099,8 +2121,6 @@ Presets:Register({
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -2117,9 +2137,10 @@ Presets:Register({
       mouseoverMode = true,
       numIcons = 12,
       orientation = "H",
-      positionX = -326,
+      positionX = -300,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2133,7 +2154,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2180,7 +2201,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar6 = {
@@ -2200,8 +2221,6 @@ Presets:Register({
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 100,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = -1,
       borderStyle = "blizzard",
       borderThickness = 4.6,
@@ -2218,9 +2237,10 @@ Presets:Register({
       mouseoverMode = true,
       numIcons = 12,
       orientation = "H",
-      positionX = 519,
+      positionX = 570,
       positionY = -377,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2234,7 +2254,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2281,7 +2301,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     actionBar7 = {
@@ -2301,10 +2321,8 @@ Presets:Register({
       barOpacityOutOfCombat = 100,
       barOpacityWithTarget = 100,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = false,
       borderInset = 0,
-      borderStyle = "square",
+      borderStyle = "off",
       borderThickness = 1,
       borderTintColor = {
         1,
@@ -2319,9 +2337,10 @@ Presets:Register({
       mouseoverMode = false,
       numIcons = 12,
       orientation = "H",
-      positionX = -26,
-      positionY = 134,
+      positionX = 0,
+      positionY = 150,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2402,10 +2421,8 @@ Presets:Register({
       barOpacityOutOfCombat = 100,
       barOpacityWithTarget = 100,
       barVisibility = "always",
-      borderDisableAll = false,
-      borderEnable = false,
       borderInset = 0,
-      borderStyle = "square",
+      borderStyle = "off",
       borderThickness = 1,
       borderTintColor = {
         1,
@@ -2420,9 +2437,10 @@ Presets:Register({
       mouseoverMode = false,
       numIcons = 12,
       orientation = "H",
-      positionX = -26,
-      positionY = 184,
+      positionX = 0,
+      positionY = 200,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2509,8 +2527,8 @@ Presets:Register({
       opacityOutOfCombat = 100,
       opacityWithTarget = 100,
       orientation = "H",
-      positionX = 101,
-      positionY = 323,
+      positionX = 93,
+      positionY = 325,
       supportsText = true,
       tallWideRatio = -40,
       textCount = {
@@ -2542,7 +2560,7 @@ Presets:Register({
         offset = {
         },
         size = 14,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     damageMeter = {
@@ -2647,6 +2665,17 @@ Presets:Register({
         scaleMultiplier = 1,
       },
       textSize = 100,
+      textTimer = {
+        color = {
+          1,
+          0.82,
+          0,
+          1,
+        },
+        colorMode = "default",
+        fontFace = "FRIZQT__",
+        fontStyle = "OUTLINE",
+      },
       textTitle = {
         color = {
           1,
@@ -2692,8 +2721,8 @@ Presets:Register({
       opacityOutOfCombat = 100,
       opacityWithTarget = 100,
       orientation = "H",
-      positionX = 143,
-      positionY = 178,
+      positionX = 135,
+      positionY = 180,
       supportsText = true,
       tallWideRatio = -40,
       textCount = {
@@ -2722,7 +2751,7 @@ Presets:Register({
       },
     },
     essentialCooldowns = {
-      centerAnchor = true,
+      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderStyle = "blizzard",
@@ -2734,6 +2763,8 @@ Presets:Register({
         1,
       },
       borderTintEnable = true,
+      centerAdditionalRows = false,
+      centerAnchor = false,
       columns = 15,
       direction = "right",
       iconHeight = 32,
@@ -2756,7 +2787,7 @@ Presets:Register({
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 24,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -2777,7 +2808,7 @@ Presets:Register({
           y = 32,
         },
         size = 18,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -2785,8 +2816,6 @@ Presets:Register({
       barOpacity = 100,
       barOpacityOutOfCombat = 20,
       barOpacityWithTarget = 100,
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = -2,
       borderStyle = "wowlabs",
       borderThickness = 8,
@@ -2842,6 +2871,81 @@ Presets:Register({
       positionX = -608,
       positionY = -14,
     },
+    minimapStyle = {
+      addonButtonBorderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      addonButtonBorderTintEnabled = false,
+      addonButtonContainerAnchor = "BOTTOMLEFT",
+      addonButtonContainerEnabled = true,
+      addonButtonContainerOffsetX = 0,
+      addonButtonContainerOffsetY = 0,
+      allowOffScreenDragging = true,
+      borderColor = {
+        0,
+        0,
+        0,
+        1,
+      },
+      borderEnabled = true,
+      borderThickness = 2,
+      borderTintEnabled = false,
+      clockAnchor = "BOTTOM",
+      clockColorMode = "default",
+      clockCustomColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      clockFont = "ROBOTO_SEMICOND_BLACK",
+      clockFontSize = 20,
+      clockFontStyle = "SHADOWTHICKOUTLINE",
+      clockHide = false,
+      clockOffsetX = 0,
+      clockOffsetY = 0,
+      clockPosition = "BOTTOMLEFT",
+      clockTimeSource = "local",
+      clockUse24Hour = false,
+      dockHide = true,
+      hideAddonButtonBorders = true,
+      mapShape = "square",
+      scooterModButtonSeparate = true,
+      systemDataAnchor = "BOTTOMRIGHT",
+      systemDataColorMode = "default",
+      systemDataCustomColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      systemDataFont = "ROBOTO_SEMICOND_BLACK",
+      systemDataFontSize = 20,
+      systemDataFontStyle = "SHADOWTHICKOUTLINE",
+      systemDataLatencySource = "home",
+      systemDataOffsetX = 0,
+      systemDataOffsetY = -0,
+      systemDataShowFPS = true,
+      systemDataShowLatency = false,
+      zoneTextAnchor = "TOP",
+      zoneTextColorMode = "pvp",
+      zoneTextCustomColor = {
+        1,
+        0.82,
+        0,
+        1,
+      },
+      zoneTextFont = "ROBOTO_SEMICOND_BLACK",
+      zoneTextFontSize = 18,
+      zoneTextFontStyle = "SHADOWTHICKOUTLINE",
+      zoneTextHide = false,
+      zoneTextOffsetX = 0,
+      zoneTextOffsetY = 0,
+      zoneTextPosition = "TOP",
+    },
     nameplatesUnit = {
       _nameplatesColorMigrated = true,
       _nameplatesTextMigrated = true,
@@ -2854,7 +2958,8 @@ Presets:Register({
     objectiveTracker = {
       height = 400,
       opacity = -0,
-      opacityInInstanceCombat = 10,
+      opacityInCombat = 10,
+      scale = 0.8,
       textHeader = {
         color = {
           -0,
@@ -2913,8 +3018,6 @@ Presets:Register({
       barOpacity = 100,
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 10,
-      borderDisableAll = false,
-      borderEnable = true,
       borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
@@ -2933,6 +3036,7 @@ Presets:Register({
       positionX = -426,
       positionY = -393,
       supportsText = true,
+      tallWideRatio = 0,
       textCooldown = {
         color = {
           1,
@@ -2946,7 +3050,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHotkey = {
         color = {
@@ -2993,7 +3097,7 @@ Presets:Register({
           y = 0,
         },
         size = 16,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     prdClassResource = {
@@ -3133,18 +3237,37 @@ Presets:Register({
       barOpacity = 20,
       barOpacityOutOfCombat = 10,
       barOpacityWithTarget = 20,
+      borderInset = 0,
+      borderStyle = "off",
+      borderThickness = 1,
+      borderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      borderTintEnable = false,
       columns = 1,
       iconPadding = 2,
       iconSize = 60,
       mouseoverMode = true,
       orientation = "H",
-      positionX = -485,
+      positionX = -469,
       positionY = -391,
+      tallWideRatio = 0,
     },
     tooltip = {
+      borderTintColor = {
+        -0,
+        -0,
+        -0,
+        0.22395823895931,
+      },
+      borderTintEnable = true,
       classColorPlayerNames = true,
       fontFace = "ROBOTO_SEMICOND_BLACK",
       hideHealthBar = true,
+      showTooltipIDs = true,
       supportsText = true,
       textComparison = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3182,8 +3305,10 @@ Presets:Register({
       tooltipScale = 0.8,
     },
     trackedBars = {
-      barWidth = 170,
+      barMode = "default",
+      barWidth = 150,
       borderEnable = true,
+      borderInset = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -3197,7 +3322,8 @@ Presets:Register({
       hideWhenInactive = true,
       iconBarPadding = 5,
       iconBorderEnable = true,
-      iconBorderStyle = "square",
+      iconBorderInset = 0,
+      iconBorderStyle = "none",
       iconBorderThickness = 2,
       iconBorderTintColor = {
         1,
@@ -3218,7 +3344,7 @@ Presets:Register({
       positionY = -154,
       showTimer = true,
       showTooltip = true,
-      styleBackgroundTint = {
+      styleBackgroundColor = {
         1,
         1,
         1,
@@ -3227,7 +3353,7 @@ Presets:Register({
       styleBackgroundOpacity = 50,
       styleBackgroundTexture = "a1",
       styleEnableCustom = true,
-      styleForegroundTint = {
+      styleForegroundColor = {
         1,
         1,
         1,
@@ -3243,16 +3369,16 @@ Presets:Register({
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textName = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 12,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textStacks = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -3290,7 +3416,7 @@ Presets:Register({
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 18,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textDuration = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3311,12 +3437,12 @@ Presets:Register({
           y = 5,
         },
         size = 20,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
     utilityCooldowns = {
-      centerAnchor = true,
+      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderStyle = "blizzard",
@@ -3328,6 +3454,8 @@ Presets:Register({
         1,
       },
       borderTintEnable = true,
+      centerAdditionalRows = false,
+      centerAnchor = false,
       columns = 5,
       direction = "right",
       hideWhenInactive = true,
@@ -3371,7 +3499,7 @@ Presets:Register({
           y = 12,
         },
         size = 14,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       visibilityMode = "always",
     },
@@ -3394,9 +3522,10 @@ Presets:Register({
         0.54760926961899,
       },
       healthBarBorderTintEnable = true,
-      healthBarColorMode = "value",
+      healthBarColorMode = "valueDark",
       healthBarPadding = 6,
       healthBarTexture = "a3",
+      hideHealPrediction = true,
       hideOverAbsorbGlow = true,
       textPartyTitle = {
         color = {
@@ -3499,12 +3628,21 @@ Presets:Register({
       },
     },
   },
+  keepFriendlyNameplatesDisabled = true,
   minimap = {
     hide = false,
-    minimapPos = 151.07274938198,
+    minimapPos = 209.24882296246,
+  },
+  misc = {
+    customGameMenu = false,
   },
   prdSettings = {
     enablePRD = false,
+  },
+  qol = {
+    autoRepairMode = "personal",
+    quickLoot = true,
+    sellGreyItems = true,
   },
   ruleBaselines = {
     ["prdPower.hideBar"] = false,
@@ -3666,6 +3804,7 @@ Presets:Register({
         1,
       },
       healthBarBorderTintEnable = true,
+      healthBarColorMode = "valueDark",
       healthBarTexture = "a2",
       levelTextHidden = true,
       misc = {
@@ -3687,7 +3826,7 @@ Presets:Register({
         offset = {
         },
         size = 8,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "RIGHT",
@@ -3713,7 +3852,7 @@ Presets:Register({
         colorMode = "custom",
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 10,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textName = {
         alignment = "RIGHT",
@@ -3724,11 +3863,11 @@ Presets:Register({
           y = -0,
         },
         size = 10,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textPowerValue = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -3886,9 +4025,14 @@ Presets:Register({
         },
         hideChannelingShadow = true,
         hideTextBorder = true,
+        spellName = {
+          fontFace = "ROBOTO_SEMICOND_BLACK",
+          size = 15,
+          style = "SHADOWTHICKOUTLINE",
+        },
         spellNameText = {
           fontFace = "ROBOTO_SEMICOND_BLACK",
-          size = 12,
+          size = 15,
           style = "SHADOWTHICKOUTLINE",
         },
         widthPct = 100,
@@ -3910,10 +4054,11 @@ Presets:Register({
         1,
       },
       healthBarBorderTintEnable = true,
-      healthBarColorMode = "value",
+      healthBarColorMode = "valueDark",
       healthBarHideBorder = false,
       healthBarHideHealPrediction = true,
       healthBarHideOverAbsorbGlow = true,
+      healthBarHideTextureOnly = false,
       healthBarOverlayHeightPct = 65,
       healthBarTexture = "a2",
       levelTextHidden = true,
@@ -3969,7 +4114,7 @@ Presets:Register({
           y = -0,
         },
         size = 8,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "LEFT",
@@ -3999,7 +4144,7 @@ Presets:Register({
           y = 1,
         },
         size = 10,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textName = {
         colorMode = "class",
@@ -4009,7 +4154,7 @@ Presets:Register({
           y = 2,
         },
         size = 12,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         alignment = "RIGHT",
@@ -4026,7 +4171,7 @@ Presets:Register({
         colorMode = "default",
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 8,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       totemBar = {
         iconBorders = {
@@ -4080,6 +4225,9 @@ Presets:Register({
         iconWidth = 21,
         offsetX = -0,
         offsetY = -0,
+        spellName = {
+          fontFace = "ROBOTO_SEMICOND_BLACK",
+        },
         spellNameText = {
           fontFace = "ROBOTO_SEMICOND_BLACK",
           offset = {
@@ -4091,6 +4239,7 @@ Presets:Register({
         widthPct = 70,
       },
       healthBarBackgroundTexture = "a2",
+      healthBarBorderInset = -0,
       healthBarBorderStyle = "mmtYBorder",
       healthBarBorderThickness = 1,
       healthBarBorderTintColor = {
@@ -4100,8 +4249,10 @@ Presets:Register({
         1,
       },
       healthBarBorderTintEnable = true,
-      healthBarColorMode = "value",
+      healthBarColorMode = "valueDark",
       healthBarHideBorder = false,
+      healthBarHideHealPrediction = true,
+      healthBarHideOverAbsorbGlow = true,
       healthBarOverlayHeightPct = 65,
       healthBarReverseFill = true,
       healthBarTexture = "a2",
@@ -4127,7 +4278,7 @@ Presets:Register({
         offset = {
         },
         size = 8,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textHealthValue = {
         alignment = "RIGHT",
@@ -4156,7 +4307,7 @@ Presets:Register({
           y = 1,
         },
         size = 10,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textName = {
         alignment = "RIGHT",
@@ -4174,11 +4325,11 @@ Presets:Register({
           y = -0,
         },
         size = 12,
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        style = "SHADOWTHICKOUTLINE",
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
       textPowerValue = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -4190,15 +4341,15 @@ Presets:Register({
       healthBarBackgroundTexture = "a2",
       healthBarBorderStyle = "default",
       healthBarBorderThickness = 1,
-      healthBarColorMode = "value",
+      healthBarColorMode = "valueDark",
       healthBarTexture = "a2",
-      offsetX = -30,
-      offsetY = 75,
+      offsetX = -190,
+      offsetY = 190,
       portrait = {
         hidePortrait = true,
       },
       powerBarHidden = true,
-      scale = 0.75,
+      scale = 0.5,
       textName = {
         alignment = "CENTER",
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -4212,7 +4363,7 @@ Presets:Register({
     -- SCOOTER_PROFILE_END
     -- ConsolePort profile payload (optional, user opt-in during apply).
     -- Capture/update via: /scoot debug consoleport export
-    consolePortSha256 = "PENDING",
+    consolePortSha256 = "533ee820d508f15e7f6a0ec7326956e030b8516da30f117b8d13a589868b3e48",
     -- CONSOLEPORT_PROFILE_START
     consolePortProfile = {
   ConsolePortBindingIcons = {
