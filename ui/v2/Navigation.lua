@@ -86,6 +86,9 @@ Navigation.NavModel = {
             { key = "utilityCooldowns", label = "Utility Cooldowns" },
             { key = "trackedBuffs", label = "Tracked Buffs" },
             { key = "trackedBars", label = "Tracked Bars" },
+            { key = "customGroup1", label = "Custom Group 1" },
+            { key = "customGroup2", label = "Custom Group 2" },
+            { key = "customGroup3", label = "Custom Group 3" },
         },
     },
     {

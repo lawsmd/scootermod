@@ -17,6 +17,7 @@ libs/AceConsole-3.0/AceConsole-3.0.xml
 libs/AceGUI-3.0/AceGUI-3.0.xml
 libs/AceConfig-3.0/AceConfig-3.0.xml
 libs/LibEditModeOverride/LibEditModeOverride.xml
+libs/LibEditMode/embed.xml
 libs/LibDataBroker-1.1/LibDataBroker-1.1.lua
 libs/LibDBIcon-1.0/lib.xml
 libs/AceSerializer-3.0/AceSerializer-3.0.xml
@@ -52,6 +53,7 @@ core/components/cooldowns/essential.lua
 core/components/cooldowns/utility.lua
 core/components/cooldowns/trackedbuffs.lua
 core/components/cooldowns/trackedbars.lua
+core/components/cooldowns/customgroups.lua
 core/components/actionbars.lua
 core/components/extraabilities.lua
 core/components/auras.lua
@@ -119,6 +121,8 @@ ui/v2/settings/cdm/EssentialCooldownsRenderer.lua
 ui/v2/settings/cdm/UtilityCooldownsRenderer.lua
 ui/v2/settings/cdm/TrackedBuffsRenderer.lua
 ui/v2/settings/cdm/TrackedBarsRenderer.lua
+ui/v2/settings/cdm/CustomGroupsRenderer.lua
+ui/v2/settings/cdm/CustomGroupsTab.lua
 ui/v2/settings/actionbars/ActionBarRenderer.lua
 ui/v2/settings/actionbars/MicroBarRenderer.lua
 ui/v2/settings/actionbars/ExtraAbilitiesRenderer.lua
