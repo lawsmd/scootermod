@@ -7,6 +7,7 @@ local SpellBindings = addon.SpellBindings
 
 -- Cached mappings
 local spellKeys = {}  -- spellID -> formatted keybind string
+local itemKeys = {}   -- itemID -> formatted keybind string
 local iconSpellCache = setmetatable({}, { __mode = "k" })  -- cdmIcon -> spellID
 
 -- Throttle state
@@ -152,6 +153,7 @@ local function RebuildSpellKeyMap()
     end
 
     wipe(spellKeys)
+    wipe(itemKeys)
 
     for slot, command in pairs(slotBindingCommands) do
         local key1, key2 = GetBindingKey(command)
@@ -183,6 +185,11 @@ local function RebuildSpellKeyMap()
                                 StoreSpellKey(macroSpellID, formatted)
                             end
                         end)
+                    elseif actionType == "item" and id and id ~= 0 then
+                        local existing = itemKeys[id]
+                        if not existing or #formatted < #existing then
+                            itemKeys[id] = formatted
+                        end
                     end
                 end
             end
@@ -272,6 +279,60 @@ local function GetBindingForIcon(cdmIcon)
     end)
 
     return binding
+end
+
+--------------------------------------------------------------------------------
+-- GetBindingForSpellID — Direct spell ID lookup (for Custom Groups)
+--------------------------------------------------------------------------------
+
+function SpellBindings.GetBindingForSpellID(spellID)
+    if not spellID then return nil end
+
+    -- Direct match
+    local binding = spellKeys[spellID]
+    if binding then return binding end
+
+    -- Override match
+    pcall(function()
+        if not binding and C_Spell and C_Spell.GetOverrideSpell then
+            local overrideID = C_Spell.GetOverrideSpell(spellID)
+            if overrideID and overrideID ~= 0 then
+                binding = spellKeys[overrideID]
+            end
+        end
+    end)
+    if binding then return binding end
+
+    -- Base match
+    pcall(function()
+        if not binding and FindBaseSpellByID then
+            local baseID = FindBaseSpellByID(spellID)
+            if baseID and baseID ~= 0 then
+                binding = spellKeys[baseID]
+            end
+        end
+    end)
+
+    return binding
+end
+
+--------------------------------------------------------------------------------
+-- GetBindingForItemID — Direct item ID lookup (for Custom Groups)
+--------------------------------------------------------------------------------
+
+function SpellBindings.GetBindingForItemID(itemID)
+    if not itemID then return nil end
+    return itemKeys[itemID]
+end
+
+--------------------------------------------------------------------------------
+-- Refresh Callbacks — Notify external consumers when bindings change
+--------------------------------------------------------------------------------
+
+local refreshCallbacks = {}
+
+function SpellBindings.RegisterRefreshCallback(fn)
+    table.insert(refreshCallbacks, fn)
 end
 
 --------------------------------------------------------------------------------
@@ -407,6 +468,9 @@ local function ScheduleRebuild()
         rebuildScheduled = false
         RebuildSpellKeyMap()
         SpellBindings.RefreshAllIcons()
+        for _, fn in ipairs(refreshCallbacks) do
+            pcall(fn)
+        end
     end)
 end
 

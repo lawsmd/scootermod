@@ -160,6 +160,11 @@ local function CreateIconFrame(parent)
     icon.CountText:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -2, 2)
     icon.CountText:Hide()
 
+    icon.keybindText = icon:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    icon.keybindText:SetDrawLayer("OVERLAY", 7)
+    icon.keybindText:SetPoint("TOPLEFT", icon, "TOPLEFT", 2, -2)
+    icon.keybindText:Hide()
+
     -- Square border edges
     icon.borderEdges = {
         Top = icon:CreateTexture(nil, "OVERLAY", nil, 1),
@@ -202,6 +207,10 @@ local function ReleaseIcon(groupIndex, icon)
     icon.Cooldown:Clear()
     icon.CountText:SetText("")
     icon.CountText:Hide()
+    if icon.keybindText then
+        icon.keybindText:SetText("")
+        icon.keybindText:Hide()
+    end
     icon:SetAlpha(1.0)
     -- Hide borders
     for _, tex in pairs(icon.borderEdges) do
@@ -592,7 +601,7 @@ local function GetEntryTexture(entry)
 end
 
 -- Forward declarations
-local LayoutIcons, ApplyBordersToGroup, ApplyTextToGroup, UpdateGroupOpacity
+local LayoutIcons, ApplyBordersToGroup, ApplyTextToGroup, ApplyKeybindTextToGroup, UpdateGroupOpacity
 
 local function RebuildGroup(groupIndex)
     if not cgInitialized then return end
@@ -670,6 +679,7 @@ local function RebuildAllGroups()
         RebuildGroup(i)
         ApplyBordersToGroup(i)
         ApplyTextToGroup(i)
+        ApplyKeybindTextToGroup(i)
         UpdateGroupOpacity(i)
         UpdateGroupCooldownOpacities(i)
     end
@@ -891,6 +901,71 @@ ApplyTextToGroup = function(groupIndex)
 end
 
 --------------------------------------------------------------------------------
+-- Keybind Text for Groups
+--------------------------------------------------------------------------------
+
+ApplyKeybindTextToGroup = function(groupIndex)
+    local component = addon.Components and addon.Components["customGroup" .. groupIndex]
+    if not component or not component.db then return end
+
+    local db = component.db
+    local cfg = db.textBindings
+    local icons = activeIcons[groupIndex]
+
+    if not cfg or not cfg.enabled then
+        for _, icon in ipairs(icons) do
+            if icon.keybindText then
+                icon.keybindText:Hide()
+            end
+        end
+        return
+    end
+
+    local SpellBindings = addon.SpellBindings
+    if not SpellBindings or not SpellBindings.GetBindingForSpellID then return end
+
+    for _, icon in ipairs(icons) do
+        if not icon.keybindText then
+            -- Pooled icon from before this feature; skip until reload
+        elseif icon.entry and icon.entry.type == "spell" then
+            local binding = SpellBindings.GetBindingForSpellID(icon.entry.id)
+            if binding then
+                icon.keybindText:SetText(binding)
+                ApplyTextStyle(icon.keybindText, cfg, 12)
+
+                local anchor = cfg.anchor or "TOPLEFT"
+                local ox = (cfg.offset and cfg.offset.x) or 0
+                local oy = (cfg.offset and cfg.offset.y) or 0
+                icon.keybindText:ClearAllPoints()
+                icon.keybindText:SetPoint(anchor, icon, anchor, ox, oy)
+                icon.keybindText:Show()
+            else
+                icon.keybindText:SetText("")
+                icon.keybindText:Hide()
+            end
+        elseif icon.entry and icon.entry.type == "item" then
+            local binding = SpellBindings.GetBindingForItemID(icon.entry.id)
+            if binding then
+                icon.keybindText:SetText(binding)
+                ApplyTextStyle(icon.keybindText, cfg, 12)
+
+                local anchor = cfg.anchor or "TOPLEFT"
+                local ox = (cfg.offset and cfg.offset.x) or 0
+                local oy = (cfg.offset and cfg.offset.y) or 0
+                icon.keybindText:ClearAllPoints()
+                icon.keybindText:SetPoint(anchor, icon, anchor, ox, oy)
+                icon.keybindText:Show()
+            else
+                icon.keybindText:SetText("")
+                icon.keybindText:Hide()
+            end
+        else
+            icon.keybindText:Hide()
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Container-Level Opacity
 --------------------------------------------------------------------------------
 
@@ -1093,6 +1168,16 @@ CG.RegisterCallback(function()
     end
 end)
 
+-- Refresh keybind text when bindings/talents/action bars change
+if addon.SpellBindings and addon.SpellBindings.RegisterRefreshCallback then
+    addon.SpellBindings.RegisterRefreshCallback(function()
+        if not cgInitialized then return end
+        for i = 1, 3 do
+            ApplyKeybindTextToGroup(i)
+        end
+    end)
+end
+
 --------------------------------------------------------------------------------
 -- ApplyStyling Implementation
 --------------------------------------------------------------------------------
@@ -1105,6 +1190,7 @@ local function CustomGroupApplyStyling(component)
     RebuildGroup(groupIndex)
     ApplyBordersToGroup(groupIndex)
     ApplyTextToGroup(groupIndex)
+    ApplyKeybindTextToGroup(groupIndex)
     UpdateGroupOpacity(groupIndex)
     UpdateGroupCooldownOpacities(groupIndex)
 end
@@ -1185,6 +1271,7 @@ local function CreateCustomGroupSettings()
         -- Text
         textStacks = { type = "addon", default = {} },
         textCooldown = { type = "addon", default = {} },
+        textBindings = { type = "addon", default = {} },
         supportsText = { type = "addon", default = true },
 
         -- Visibility
