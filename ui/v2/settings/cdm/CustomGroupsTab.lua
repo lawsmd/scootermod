@@ -521,9 +521,9 @@ local function CreateCategoryFrame(parent, groupIndex)
     header:SetPoint("TOPLEFT", cat, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", cat, "TOPRIGHT", 0, 0)
 
-    header:SetHeaderText("Custom CDM Group " .. groupIndex)
     header:SetTitleColor(false, NORMAL_FONT_COLOR)
     header:SetTitleColor(true, NORMAL_FONT_COLOR)
+    header:SetHeaderText("Custom CDM Group " .. groupIndex)
     header:UpdateCollapsedState(false)  -- start expanded
 
     -- Item count overlay (positioned to the left of the Right atlas)

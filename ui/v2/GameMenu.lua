@@ -67,8 +67,8 @@ local function CleanupButtons()
     for _, btn in ipairs(buttons) do
         if btn then
             if btn.Cleanup then btn:Cleanup() end
-            btn:Hide()
-            btn:SetParent(nil)
+            pcall(btn.Hide, btn)
+            pcall(btn.SetParent, btn, nil)
         end
     end
     wipe(buttons)
@@ -434,8 +434,10 @@ function GameMenu:Show()
         return
     end
 
-    -- Rebuild buttons each time (conditional buttons may change)
-    BuildButtons()
+    -- Skip rebuild during combat if buttons already exist (button set is stable mid-combat)
+    if not InCombatLockdown() or #buttons == 0 then
+        BuildButtons()
+    end
 
     -- Re-center (in case resolution changed)
     frame:ClearAllPoints()

@@ -219,7 +219,7 @@ local function CreateCustomGroupRenderer(groupIndex)
                     min = -4,
                     max = 4,
                     step = 1,
-                    get = function() return getSetting("borderInset") or -1 end,
+                    get = function() return getSetting("borderInset") or 0 end,
                     set = function(v) h.setAndApply("borderInset", v) end,
                     minLabel = "-4",
                     maxLabel = "+4",

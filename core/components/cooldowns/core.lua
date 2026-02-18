@@ -71,7 +71,6 @@ addon.ResolveCDMColor = resolveCDMColor
 local function CenterIconsInViewer(viewerFrame, componentId)
     if not viewerFrame then return end
     if viewerFrame.IsForbidden and viewerFrame:IsForbidden() then return end
-    if InCombatLockdown() then return end
 
     local component = addon.Components and addon.Components[componentId]
     if not component or not component.db then return end
@@ -1379,7 +1378,6 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
     if viewer.RefreshLayout then
         hooksecurefunc(viewer, "RefreshLayout", function()
-            if InCombatLockdown and InCombatLockdown() then return end
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
                     Overlays.ApplyToViewer(viewerFrameName, componentId)
@@ -1746,6 +1744,11 @@ local function throttledRefresh(viewerName, componentId)
 
     C_Timer.After(0.05, function()
         Overlays.ApplyToViewer(viewerName, componentId)
+        -- Re-apply centering (handles spell overrides during combat)
+        local viewer = _G[viewerName]
+        if viewer then
+            CenterIconsInViewer(viewer, componentId)
+        end
     end)
 end
 
@@ -1778,6 +1781,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended: update viewer opacities to out-of-combat values
         updateAllViewerOpacities()
+        -- Re-apply centering after combat ends (safety net)
+        C_Timer.After(0.1, function()
+            for viewerName, componentId in pairs(CDM_VIEWERS) do
+                local viewer = _G[viewerName]
+                if viewer then
+                    CenterIconsInViewer(viewer, componentId)
+                end
+            end
+        end)
 
     elseif event == "UNIT_AURA" then
         if arg1 == "player" then

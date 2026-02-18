@@ -143,7 +143,7 @@ local cgCooldownEndTimes = setmetatable({}, { __mode = "k" })
 local cgInitialized = false
 
 local function CreateIconFrame(parent)
-    local icon = CreateFrame("Button", nil, parent)
+    local icon = CreateFrame("Frame", nil, parent)
     icon:SetSize(30, 30)
     icon:EnableMouse(false)
 
@@ -162,17 +162,17 @@ local function CreateIconFrame(parent)
 
     -- Square border edges
     icon.borderEdges = {
-        Top = icon:CreateTexture(nil, "BORDER", nil, 1),
-        Bottom = icon:CreateTexture(nil, "BORDER", nil, 1),
-        Left = icon:CreateTexture(nil, "BORDER", nil, 1),
-        Right = icon:CreateTexture(nil, "BORDER", nil, 1),
+        Top = icon:CreateTexture(nil, "OVERLAY", nil, 1),
+        Bottom = icon:CreateTexture(nil, "OVERLAY", nil, 1),
+        Left = icon:CreateTexture(nil, "OVERLAY", nil, 1),
+        Right = icon:CreateTexture(nil, "OVERLAY", nil, 1),
     }
     for _, tex in pairs(icon.borderEdges) do
         tex:Hide()
     end
 
     -- Atlas border
-    icon.atlasBorder = icon:CreateTexture(nil, "BORDER", nil, 1)
+    icon.atlasBorder = icon:CreateTexture(nil, "OVERLAY", nil, 1)
     icon.atlasBorder:Hide()
 
     return icon
@@ -190,12 +190,15 @@ local function AcquireIcon(groupIndex, parent)
     return icon
 end
 
+local ICON_TEXCOORD_INSET = 0.07  -- crop outer ~7% to hide baked-in border art
+
 local function ReleaseIcon(groupIndex, icon)
     icon:Hide()
     icon:ClearAllPoints()
     icon.Icon:SetTexture(nil)
     icon.Icon:SetDesaturated(false)
-    icon.Icon:SetTexCoord(0, 1, 0, 1)
+    icon.Icon:SetTexCoord(ICON_TEXCOORD_INSET, 1 - ICON_TEXCOORD_INSET,
+                           ICON_TEXCOORD_INSET, 1 - ICON_TEXCOORD_INSET)
     icon.Cooldown:Clear()
     icon.CountText:SetText("")
     icon.CountText:Hide()
@@ -248,18 +251,19 @@ end
 
 local function ApplyTexCoord(icon, iconW, iconH)
     local aspectRatio = iconW / iconH
-    local left, right, top, bottom = 0, 1, 0, 1
+    local inset = ICON_TEXCOORD_INSET
+    local left, right, top, bottom = inset, 1 - inset, inset, 1 - inset
 
     if aspectRatio > 1.0 then
         local cropAmount = 1.0 - (1.0 / aspectRatio)
         local offset = cropAmount / 2.0
-        top = offset
-        bottom = 1.0 - offset
+        top = top + offset * (1 - 2 * inset)
+        bottom = bottom - offset * (1 - 2 * inset)
     elseif aspectRatio < 1.0 then
         local cropAmount = 1.0 - aspectRatio
         local offset = cropAmount / 2.0
-        left = offset
-        right = 1.0 - offset
+        left = left + offset * (1 - 2 * inset)
+        right = right - offset * (1 - 2 * inset)
     end
 
     icon.Icon:SetTexCoord(left, right, top, bottom)
@@ -341,9 +345,14 @@ local function ApplyAtlasBorder(icon, opts, styleDef)
     local expandX = baseExpandX - inset
     local expandY = baseExpandY - inset
 
+    local adjL = styleDef.adjustLeft or 0
+    local adjR = styleDef.adjustRight or 0
+    local adjT = styleDef.adjustTop or 0
+    local adjB = styleDef.adjustBottom or 0
+
     atlasTex:ClearAllPoints()
-    atlasTex:SetPoint("TOPLEFT", icon, "TOPLEFT", -expandX, expandY)
-    atlasTex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", expandX, -expandY)
+    atlasTex:SetPoint("TOPLEFT", icon, "TOPLEFT", -expandX - adjL, expandY + adjT)
+    atlasTex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", expandX + adjR, -expandY - adjB)
     atlasTex:Show()
 end
 
@@ -395,38 +404,66 @@ local function RefreshSpellCooldown(icon)
     if not icon.entry or icon.entry.type ~= "spell" then return end
     local spellID = icon.entry.id
 
-    -- Charges
+    -- Charges (all SpellChargeInfo fields can be secret in restricted contexts)
     local chargeInfo = C_Spell.GetSpellCharges(spellID)
-    if chargeInfo and chargeInfo.maxCharges and chargeInfo.maxCharges > 1 then
-        icon.CountText:SetText(chargeInfo.currentCharges)
-        icon.CountText:Show()
-        icon.Icon:SetDesaturated(chargeInfo.currentCharges == 0)
-        if chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
-            icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-            cgCooldownEndTimes[icon] = chargeInfo.cooldownStartTime + chargeInfo.cooldownDuration
+    if chargeInfo then
+        local ok, hasMultiCharges = pcall(function()
+            return chargeInfo.maxCharges > 1
+        end)
+        if ok then
+            if hasMultiCharges then
+                icon.CountText:SetText(chargeInfo.currentCharges)
+                icon.CountText:Show()
+                icon.Icon:SetDesaturated(chargeInfo.currentCharges == 0)
+                if chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
+                    icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
+                    cgCooldownEndTimes[icon] = chargeInfo.cooldownStartTime + chargeInfo.cooldownDuration
+                else
+                    icon.Cooldown:Clear()
+                    cgCooldownEndTimes[icon] = nil
+                end
+                return
+            end
+            icon.CountText:Hide()
         else
-            icon.Cooldown:Clear()
-            cgCooldownEndTimes[icon] = nil
+            -- Secret: SetCooldown + SetText both accept secret values natively
+            icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
+            icon.CountText:SetText(chargeInfo.currentCharges)
+            icon.CountText:Show()
+            return
         end
-        return
     else
         icon.CountText:Hide()
     end
 
     -- Regular cooldown
     local cdInfo = C_Spell.GetSpellCooldown(spellID)
-    if cdInfo and cdInfo.duration and cdInfo.duration > MIN_CD_DURATION and cdInfo.isEnabled then
-        icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-        icon.Icon:SetDesaturated(true)
-        cgCooldownEndTimes[icon] = cdInfo.startTime + cdInfo.duration
-    else
-        icon.Cooldown:Clear()
-        icon.Icon:SetDesaturated(false)
-        -- Don't clear if an existing longer cooldown is still running
-        local existingEnd = cgCooldownEndTimes[icon]
-        if not existingEnd or GetTime() >= existingEnd then
-            cgCooldownEndTimes[icon] = nil
+    if not cdInfo then return end
+
+    -- isOnGCD is NeverSecret — always safe, replaces duration > MIN_CD_DURATION
+    if cdInfo.isOnGCD then return end
+
+    -- Try comparisons (work outside restricted contexts)
+    local ok, isOnCD = pcall(function()
+        return cdInfo.duration and cdInfo.duration > 0 and cdInfo.isEnabled
+    end)
+
+    if ok then
+        if isOnCD then
+            icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
+            icon.Icon:SetDesaturated(true)
+            cgCooldownEndTimes[icon] = cdInfo.startTime + cdInfo.duration
+        else
+            icon.Cooldown:Clear()
+            icon.Icon:SetDesaturated(false)
+            local existingEnd = cgCooldownEndTimes[icon]
+            if not existingEnd or GetTime() >= existingEnd then
+                cgCooldownEndTimes[icon] = nil
+            end
         end
+    else
+        -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
+        icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
     end
 end
 
@@ -435,22 +472,38 @@ local function RefreshItemCooldown(icon)
     local itemID = icon.entry.id
 
     local startTime, duration, isEnabled = C_Container.GetItemCooldown(itemID)
-    if startTime and duration and duration > MIN_CD_DURATION and isEnabled and isEnabled ~= 0 then
-        icon.Cooldown:SetCooldown(startTime, duration)
-        icon.Icon:SetDesaturated(true)
-        cgCooldownEndTimes[icon] = startTime + duration
-    else
-        icon.Cooldown:Clear()
-        icon.Icon:SetDesaturated(false)
-        local existingEnd = cgCooldownEndTimes[icon]
-        if not existingEnd or GetTime() >= existingEnd then
-            cgCooldownEndTimes[icon] = nil
+    local ok, isOnCD = pcall(function()
+        return startTime and duration and duration > MIN_CD_DURATION and isEnabled and isEnabled ~= 0
+    end)
+
+    if ok then
+        if isOnCD then
+            icon.Cooldown:SetCooldown(startTime, duration)
+            icon.Icon:SetDesaturated(true)
+            cgCooldownEndTimes[icon] = startTime + duration
+        else
+            icon.Cooldown:Clear()
+            icon.Icon:SetDesaturated(false)
+            local existingEnd = cgCooldownEndTimes[icon]
+            if not existingEnd or GetTime() >= existingEnd then
+                cgCooldownEndTimes[icon] = nil
+            end
         end
+    elseif startTime and duration then
+        -- Secret fallback: pass directly to SetCooldown
+        icon.Cooldown:SetCooldown(startTime, duration)
     end
 
     -- Stack count
     local count = C_Item.GetItemCount(itemID, false, true)
-    if count and count > 1 then
+    local countOk, showCount = pcall(function()
+        return count and count > 1
+    end)
+    if countOk and showCount then
+        icon.CountText:SetText(count)
+        icon.CountText:Show()
+    elseif not countOk and count then
+        -- Secret: SetText accepts secret values
         icon.CountText:SetText(count)
         icon.CountText:Show()
     else
@@ -716,7 +769,7 @@ ApplyBordersToGroup = function(groupIndex)
         local opts = {
             style = db.borderStyle or "square",
             thickness = tonumber(db.borderThickness) or 1,
-            inset = tonumber(db.borderInset) or -1,
+            inset = tonumber(db.borderInset) or 0,
             color = db.borderTintEnable and db.borderTintColor or {0, 0, 0, 1},
             tintEnabled = db.borderTintEnable,
             tintColor = db.borderTintColor,
@@ -750,6 +803,12 @@ ApplyTextToGroup = function(groupIndex)
                 for _, region in ipairs({cdFrame:GetRegions()}) do
                     if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                         ApplyTextStyle(region, db.textCooldown, 14)
+                        local ox = (db.textCooldown.offset and db.textCooldown.offset.x) or 0
+                        local oy = (db.textCooldown.offset and db.textCooldown.offset.y) or 0
+                        if region.ClearAllPoints and region.SetPoint then
+                            region:ClearAllPoints()
+                            region:SetPoint("CENTER", cdFrame, "CENTER", ox, oy)
+                        end
                         break
                     end
                 end
@@ -759,6 +818,12 @@ ApplyTextToGroup = function(groupIndex)
         -- Charge/stack count text
         if db.textStacks and next(db.textStacks) then
             ApplyTextStyle(icon.CountText, db.textStacks, 12)
+            local ox = (db.textStacks.offset and db.textStacks.offset.x) or 0
+            local oy = (db.textStacks.offset and db.textStacks.offset.y) or 0
+            if icon.CountText and icon.CountText.ClearAllPoints and icon.CountText.SetPoint then
+                icon.CountText:ClearAllPoints()
+                icon.CountText:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -2 + ox, 2 + oy)
+            end
         end
     end
 end
@@ -983,6 +1048,50 @@ local function CustomGroupApplyStyling(component)
 end
 
 --------------------------------------------------------------------------------
+-- Copy From: Custom Group Settings
+--------------------------------------------------------------------------------
+
+function addon.CopyCDMCustomGroupSettings(sourceComponentId, destComponentId)
+    if type(sourceComponentId) ~= "string" or type(destComponentId) ~= "string" then return end
+    if sourceComponentId == destComponentId then return end
+
+    local src = addon.Components and addon.Components[sourceComponentId]
+    local dst = addon.Components and addon.Components[destComponentId]
+    if not src or not dst then return end
+    if not src.db or not dst.db then return end
+
+    -- Destination must be a Custom Group
+    if not destComponentId:match("^customGroup%d$") then return end
+
+    local function deepcopy(v)
+        if type(v) ~= "table" then return v end
+        local out = {}
+        for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+        return out
+    end
+
+    -- When source is Essential/Utility, skip iconSize (% scale vs pixel size)
+    local isEssentialOrUtility = (sourceComponentId == "essentialCooldowns" or sourceComponentId == "utilityCooldowns")
+
+    -- Copy all destination-defined settings from source DB
+    for key, def in pairs(dst.settings or {}) do
+        if key == "supportsText" then -- skip meta flag
+        elseif isEssentialOrUtility and key == "iconSize" then -- skip incompatible
+        else
+            local srcVal = src.db[key]
+            if srcVal ~= nil then
+                dst.db[key] = deepcopy(srcVal)
+            end
+        end
+    end
+
+    -- Apply styling to destination
+    if dst.ApplyStyling then
+        dst:ApplyStyling()
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Component Registration (3 Custom Groups)
 --------------------------------------------------------------------------------
 
@@ -1005,7 +1114,7 @@ local function CreateCustomGroupSettings()
         borderTintColor = { type = "addon", default = {1, 1, 1, 1} },
         borderStyle = { type = "addon", default = "square" },
         borderThickness = { type = "addon", default = 1 },
-        borderInset = { type = "addon", default = -1 },
+        borderInset = { type = "addon", default = 0 },
 
         -- Text
         textStacks = { type = "addon", default = {} },

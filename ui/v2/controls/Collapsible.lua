@@ -113,7 +113,6 @@ function Controls:CreateCollapsibleSection(options)
     header:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, 0)
     header:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
-    header:EnableMouse(true)
     header:RegisterForClicks("AnyUp")
 
     -- Solid gray background (always visible for visual distinction)
@@ -173,7 +172,7 @@ function Controls:CreateCollapsibleSection(options)
     indicator:SetTextColor(ar, ag, ab, 1)
     header._indicator = indicator
 
-    -- Title text (white for readability, indicator stays accent color)
+    -- Title text (white, not accent-colored)
     local titleFS = header:CreateFontString(nil, "OVERLAY")
     local titleFont = theme:GetFont("HEADER")
     titleFS:SetFont(titleFont, 16, "")

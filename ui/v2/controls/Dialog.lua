@@ -1157,6 +1157,12 @@ Controls:RegisterDialog("SCOOTERMOD_COPY_ACTIONBAR_CONFIRM", {
     cancelText = CANCEL or "Cancel",
 })
 
+Controls:RegisterDialog("SCOOTERMOD_COPY_CUSTOMGROUP_CONFIRM", {
+    text = "Copy settings from %s to %s?\nThis will overwrite all settings on the destination.",
+    acceptText = "Copy",
+    cancelText = CANCEL or "Cancel",
+})
+
 Controls:RegisterDialog("SCOOTERMOD_COMBAT_FONT_RESTART", {
     text = "In order for Combat Font changes to take effect, you'll need to fully exit and re-open World of Warcraft.",
     infoOnly = true,

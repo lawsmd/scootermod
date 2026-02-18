@@ -279,6 +279,25 @@ local TOT_FOT_SOURCES = {
     ufFocusTarget = { "ufToT" },
 }
 
+local CUSTOM_GROUP_COPY_TARGETS = {
+    customGroup1 = true,
+    customGroup2 = true,
+    customGroup3 = true,
+}
+
+local CUSTOM_GROUP_NAMES = {
+    customGroup1 = "Custom Group 1",
+    customGroup2 = "Custom Group 2",
+    customGroup3 = "Custom Group 3",
+    essentialCooldowns = "Essential Cooldowns",
+    utilityCooldowns = "Utility Cooldowns",
+}
+
+local CUSTOM_GROUP_SOURCE_ORDER = {
+    "customGroup1", "customGroup2", "customGroup3",
+    "essentialCooldowns", "utilityCooldowns",
+}
+
 function UIPanel:UpdateCopyFromDropdown()
     local frame = self.frame
     if not frame or not frame._contentPane then return end
@@ -329,6 +348,22 @@ function UIPanel:UpdateCopyFromDropdown()
         dropdown:ClearSelection()
         dropdown:Show()
         if label then label:Show() end
+
+    -- Check if this is a Custom Group category
+    elseif key and CUSTOM_GROUP_COPY_TARGETS[key] then
+        local values = {}
+        local order = {}
+        for _, sourceKey in ipairs(CUSTOM_GROUP_SOURCE_ORDER) do
+            if sourceKey ~= key then
+                values[sourceKey] = CUSTOM_GROUP_NAMES[sourceKey]
+                table.insert(order, sourceKey)
+            end
+        end
+
+        dropdown:SetOptions(values, order)
+        dropdown:ClearSelection()
+        dropdown:Show()
+        if label then label:Show() end
     else
         dropdown:Hide()
         if label then label:Hide() end
@@ -341,6 +376,7 @@ function UIPanel:HandleCopyFrom(sourceKey)
 
     local isActionBar = ACTION_BAR_COPY_TARGETS[destKey]
     local isUnitFrame = UNIT_FRAME_COPY_TARGETS[destKey]
+    local isCustomGroup = CUSTOM_GROUP_COPY_TARGETS[destKey]
 
     local sourceName, destName
 
@@ -350,6 +386,9 @@ function UIPanel:HandleCopyFrom(sourceKey)
     elseif isUnitFrame then
         sourceName = UNIT_FRAME_NAMES[sourceKey] or sourceKey
         destName = UNIT_FRAME_NAMES[destKey] or self:GetCategoryTitle(destKey)
+    elseif isCustomGroup then
+        sourceName = CUSTOM_GROUP_NAMES[sourceKey] or sourceKey
+        destName = CUSTOM_GROUP_NAMES[destKey] or self:GetCategoryTitle(destKey)
     else
         return
     end
@@ -357,7 +396,8 @@ function UIPanel:HandleCopyFrom(sourceKey)
     if addon.Dialogs and addon.Dialogs.Show then
         local panel = self
         local dialogKey = isUnitFrame and "SCOOTERMOD_COPY_UF_CONFIRM"
-                                       or "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
+                       or isCustomGroup and "SCOOTERMOD_COPY_CUSTOMGROUP_CONFIRM"
+                       or "SCOOTERMOD_COPY_ACTIONBAR_CONFIRM"
         addon.Dialogs:Show(dialogKey, {
             formatArgs = { sourceName, destName },
             data = {
@@ -366,18 +406,19 @@ function UIPanel:HandleCopyFrom(sourceKey)
                 sourceName = sourceName,
                 destName = destName,
                 isUnitFrame = isUnitFrame,
+                isCustomGroup = isCustomGroup,
             },
             onAccept = function()
-                panel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
+                panel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame, isCustomGroup)
             end,
         })
     else
         -- Fallback if dialogs not loaded
-        self:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
+        self:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame, isCustomGroup)
     end
 end
 
-function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
+function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame, isCustomGroup)
     if isUnitFrame then
         if addon and addon.CopyUnitFrameSettings then
             local sourceUnit = UNIT_FRAME_KEYS[sourceKey]
@@ -401,6 +442,19 @@ function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame)
                     addon:Print("Copy failed: " .. (err or "unknown error"))
                 end
             end
+        end
+    elseif isCustomGroup then
+        if addon and addon.CopyCDMCustomGroupSettings then
+            addon.CopyCDMCustomGroupSettings(sourceKey, destKey)
+
+            C_Timer.After(0.1, function()
+                local panel = addon.UI and addon.UI.SettingsPanel
+                if panel and panel._currentCategoryKey == destKey then
+                    panel:OnNavigationSelect(destKey, destKey)
+                end
+            end)
+
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         end
     else
         if addon and addon.CopyActionBarSettings then
