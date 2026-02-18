@@ -145,7 +145,7 @@ local cgInitialized = false
 local function CreateIconFrame(parent)
     local icon = CreateFrame("Frame", nil, parent)
     icon:SetSize(30, 30)
-    icon:EnableMouse(false)
+    icon:EnableMouse(true)
 
     icon.Icon = icon:CreateTexture(nil, "ARTWORK")
     icon.Icon:SetAllPoints()
@@ -164,6 +164,22 @@ local function CreateIconFrame(parent)
     icon.keybindText:SetDrawLayer("OVERLAY", 7)
     icon.keybindText:SetPoint("TOPLEFT", icon, "TOPLEFT", 2, -2)
     icon.keybindText:Hide()
+
+    -- Tooltip scripts
+    icon:SetScript("OnEnter", function(self)
+        if not self.entry then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.entry.type == "spell" then
+            GameTooltip:SetSpellByID(self.entry.id)
+        elseif self.entry.type == "item" then
+            GameTooltip:SetItemByID(self.entry.id)
+        end
+        GameTooltip:Show()
+    end)
+
+    icon:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
 
     -- Square border edges
     icon.borderEdges = {
@@ -191,6 +207,7 @@ local function AcquireIcon(groupIndex, parent)
     else
         icon:SetParent(parent)
     end
+    icon:EnableMouse(true)
     icon:Show()
     return icon
 end
@@ -199,6 +216,7 @@ local ICON_TEXCOORD_INSET = 0.07  -- crop outer ~7% to hide baked-in border art
 
 local function ReleaseIcon(groupIndex, icon)
     icon:Hide()
+    icon:EnableMouse(false)
     icon:ClearAllPoints()
     icon.Icon:SetTexture(nil)
     icon.Icon:SetDesaturated(false)
