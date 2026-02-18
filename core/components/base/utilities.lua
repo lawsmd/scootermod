@@ -50,7 +50,7 @@ local function HideDefaultBarTextures(barFrame, restore)
         return false
     end
     local mediaState = addon.Media and addon.Media.GetBarFrameState and addon.Media.GetBarFrameState(barFrame)
-    local scooterModBG = (mediaState and mediaState.bg) or barFrame.ScooterModBG
+    local scooterModBG = (mediaState and mediaState.bg) or getProp(barFrame, "ScooterModBG")
     local borderHolder = (addon.BarBorders and addon.BarBorders.GetBorderHolder and addon.BarBorders.GetBorderHolder(barFrame)) or barFrame.ScooterStyledBorder
     for _, region in ipairs({ barFrame:GetRegions() }) do
         if region and region ~= scooterModBG and region ~= borderHolder and region ~= (borderHolder and borderHolder.Texture) then
@@ -564,10 +564,13 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             installAlphaHook(manaCostPredictionBar, "powerBarManaCostPredHidden")
         end
 
-        if ownerFrame.ScooterModBG then
-            setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", true)
-            if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
-            installAlphaHook(ownerFrame.ScooterModBG, "powerBarScootBGHidden")
+        do
+            local scBG = getProp(ownerFrame, "ScooterModBG")
+            if scBG then
+                setProp(scBG, "powerBarScootBGHidden", true)
+                if scBG.SetAlpha then pcall(scBG.SetAlpha, scBG, 0) end
+                installAlphaHook(scBG, "powerBarScootBGHidden")
+            end
         end
 
         -- Also hide the power foreground overlay if present
@@ -593,9 +596,12 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
             end
         end
 
-        if ownerFrame.ScooterModBG then
-            setProp(ownerFrame.ScooterModBG, "powerBarScootBGHidden", false)
-            -- Don't restore alpha here - let the background styling code handle it
+        do
+            local scBG = getProp(ownerFrame, "ScooterModBG")
+            if scBG then
+                setProp(scBG, "powerBarScootBGHidden", false)
+                -- Don't restore alpha here - let the background styling code handle it
+            end
         end
 
         -- Restore power foreground overlay if it's active
@@ -662,10 +668,13 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
             installAlphaHook(bgTex, "healthBarBGHidden")
         end
 
-        if ownerFrame.ScooterModBG then
-            setProp(ownerFrame.ScooterModBG, "healthBarScootBGHidden", true)
-            if ownerFrame.ScooterModBG.SetAlpha then pcall(ownerFrame.ScooterModBG.SetAlpha, ownerFrame.ScooterModBG, 0) end
-            installAlphaHook(ownerFrame.ScooterModBG, "healthBarScootBGHidden")
+        do
+            local scBG = getProp(ownerFrame, "ScooterModBG")
+            if scBG then
+                setProp(scBG, "healthBarScootBGHidden", true)
+                if scBG.SetAlpha then pcall(scBG.SetAlpha, scBG, 0) end
+                installAlphaHook(scBG, "healthBarScootBGHidden")
+            end
         end
     else
         if fillTex then
@@ -678,8 +687,11 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
         end
 
-        if ownerFrame.ScooterModBG then
-            setProp(ownerFrame.ScooterModBG, "healthBarScootBGHidden", false)
+        do
+            local scBG = getProp(ownerFrame, "ScooterModBG")
+            if scBG then
+                setProp(scBG, "healthBarScootBGHidden", false)
+            end
         end
     end
 end

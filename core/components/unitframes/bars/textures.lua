@@ -558,7 +558,8 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
     -- To keep behaviour consistent with other bars while making cast bar backgrounds
     -- visible, ScooterModBG is rendered above the stock Background (subLevel=3) but still
     -- on the BACKGROUND layer so the status bar fill and FX remain on top.
-    if not bar.ScooterModBG then
+    local scooterBG = getProp(bar, "ScooterModBG")
+    if not scooterBG then
         local layer = "BACKGROUND"
         local sublevel = -8
         if barKind == "cast" then
@@ -568,20 +569,21 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
             -- Use sublevel 1 to draw above it (combined with hiding parent bg).
             sublevel = 1
         end
-        bar.ScooterModBG = bar:CreateTexture(nil, layer, nil, sublevel)
-        bar.ScooterModBG:SetAllPoints(bar)
+        scooterBG = bar:CreateTexture(nil, layer, nil, sublevel)
+        setProp(bar, "ScooterModBG", scooterBG)
+        scooterBG:SetAllPoints(bar)
     elseif barKind == "cast" then
         -- If ScooterModBG was created earlier (e.g., before cast styling was enabled),
         -- make sure it sits above the stock Background for CastingBarFrame.
-        local _, currentSub = bar.ScooterModBG:GetDrawLayer()
+        local _, currentSub = scooterBG:GetDrawLayer()
         if currentSub == nil or currentSub < 3 then
-            bar.ScooterModBG:SetDrawLayer("BACKGROUND", 3)
+            scooterBG:SetDrawLayer("BACKGROUND", 3)
         end
     elseif unit == "Party" or unit == "Raid" then
         -- Ensure party/raid frames use the correct sublevel
-        local _, currentSub = bar.ScooterModBG:GetDrawLayer()
+        local _, currentSub = scooterBG:GetDrawLayer()
         if currentSub == nil or currentSub < 1 then
-            bar.ScooterModBG:SetDrawLayer("BACKGROUND", 1)
+            scooterBG:SetDrawLayer("BACKGROUND", 1)
         end
     end
     
@@ -595,8 +597,8 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
     
     if isCustomTexture and resolvedPath then
         -- Apply custom texture
-        pcall(bar.ScooterModBG.SetTexture, bar.ScooterModBG, resolvedPath)
-        
+        pcall(scooterBG.SetTexture, scooterBG, resolvedPath)
+
         -- Apply color based on mode
         local r, g, b, a = 1, 1, 1, 1
         if backgroundColorMode == "custom" and type(backgroundTint) == "table" then
@@ -607,13 +609,13 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         elseif backgroundColorMode == "default" then
             r, g, b, a = Utils.getDefaultBackgroundColor(unit, barKind)
         end
-        
+
         -- Multiply tint alpha by opacity for correct transparency
         local finalAlpha = (a or 1) * opacity
-        if bar.ScooterModBG.SetVertexColor then
-            pcall(bar.ScooterModBG.SetVertexColor, bar.ScooterModBG, r, g, b, finalAlpha)
+        if scooterBG.SetVertexColor then
+            pcall(scooterBG.SetVertexColor, scooterBG, r, g, b, finalAlpha)
         end
-        bar.ScooterModBG:Show()
+        scooterBG:Show()
         
         -- Hide Blizzard's stock Background texture when using a custom texture.
         -- CastingBarFrame-based bars (Player/Target/Focus cast bars) have a stock
@@ -633,19 +635,19 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
     else
         -- Default: always show the addon background with default black color
         -- Blizzard's stock Background texture is not relied upon since it's hidden by default
-        pcall(bar.ScooterModBG.SetTexture, bar.ScooterModBG, nil)
-        
+        pcall(scooterBG.SetTexture, scooterBG, nil)
+
         local r, g, b, a = Utils.getDefaultBackgroundColor(unit, barKind)
         if backgroundColorMode == "custom" and type(backgroundTint) == "table" then
             r, g, b, a = backgroundTint[1] or 1, backgroundTint[2] or 1, backgroundTint[3] or 1, backgroundTint[4] or 1
         end
-        
+
         -- Multiply tint alpha by opacity for correct transparency
         local finalAlpha = (a or 1) * opacity
-        if bar.ScooterModBG.SetColorTexture then
-            pcall(bar.ScooterModBG.SetColorTexture, bar.ScooterModBG, r, g, b, finalAlpha)
+        if scooterBG.SetColorTexture then
+            pcall(scooterBG.SetColorTexture, scooterBG, r, g, b, finalAlpha)
         end
-        bar.ScooterModBG:Show()
+        scooterBG:Show()
 
         -- Hide Blizzard's stock Background textures when applying custom opacity.
         -- Even with "default" texture, ScooterModBG provides the background with

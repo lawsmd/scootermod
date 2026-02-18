@@ -89,6 +89,17 @@ local function getWindowState(sessionWindow)
     return windowState[sessionWindow]
 end
 
+-- Per-element state (icons, status bars, overlays) — avoids writing _scooter* fields
+-- directly onto Blizzard child frames which can propagate taint to the parent system frame.
+local elementState = setmetatable({}, { __mode = "k" })
+
+local function getElementState(frame)
+    if not elementState[frame] then
+        elementState[frame] = {}
+    end
+    return elementState[frame]
+end
+
 -- Module-level hook guard for the main DamageMeter frame (avoids writing to dmFrame)
 local dmFrameHooked = false
 
@@ -308,7 +319,7 @@ local function ApplyJiberishIconsStyle(entry, db)
             pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
         end
         -- Hide the overlay
-        local overlay = iconFrame and iconFrame._scooterJiberishOverlay
+        local overlay = iconFrame and getElementState(iconFrame).jiberishOverlay
         if overlay then
             overlay:Hide()
         end
@@ -341,11 +352,12 @@ local function ApplyJiberishIconsStyle(entry, db)
     end
 
     -- CREATE/UPDATE the overlay texture
-    local overlay = iconFrame._scooterJiberishOverlay
+    local elSt = getElementState(iconFrame)
+    local overlay = elSt.jiberishOverlay
     if not overlay then
         overlay = iconFrame:CreateTexture(nil, "ARTWORK", nil, 1)
         overlay:SetAllPoints(iconFrame)  -- Match icon frame size
-        iconFrame._scooterJiberishOverlay = overlay
+        elSt.jiberishOverlay = overlay
     end
 
     -- Apply JiberishIcons to the addon overlay (not Blizzard's)
@@ -439,8 +451,8 @@ local function ApplySingleEntryStyle(entry, db)
         end
 
         -- Hide square border overlay if it exists
-        if statusBar._scooterSquareBorderOverlay then
-            statusBar._scooterSquareBorderOverlay:Hide()
+        if getElementState(statusBar).squareBorderOverlay then
+            getElementState(statusBar).squareBorderOverlay:Hide()
         end
 
     elseif borderStyle == "none" then
@@ -456,8 +468,8 @@ local function ApplySingleEntryStyle(entry, db)
         end
 
         -- Hide square border overlay if it exists
-        if statusBar._scooterSquareBorderOverlay then
-            statusBar._scooterSquareBorderOverlay:Hide()
+        if getElementState(statusBar).squareBorderOverlay then
+            getElementState(statusBar).squareBorderOverlay:Hide()
         end
 
     elseif borderStyle == "square" then
@@ -474,11 +486,11 @@ local function ApplySingleEntryStyle(entry, db)
         end
 
         -- Get or create square border overlay
-        local borderOverlay = statusBar._scooterSquareBorderOverlay
+        local borderOverlay = getElementState(statusBar).squareBorderOverlay
         if not borderOverlay then
             borderOverlay = CreateFrame("Frame", nil, statusBar)
             borderOverlay:SetFrameLevel((statusBar:GetFrameLevel() or 0) + 2)
-            statusBar._scooterSquareBorderOverlay = borderOverlay
+            getElementState(statusBar).squareBorderOverlay = borderOverlay
 
             -- Create 4 edge textures
             borderOverlay.edges = {
@@ -538,8 +550,8 @@ local function ApplySingleEntryStyle(entry, db)
         end
 
         -- Hide square border overlay if it exists
-        if statusBar._scooterSquareBorderOverlay then
-            statusBar._scooterSquareBorderOverlay:Hide()
+        if getElementState(statusBar).squareBorderOverlay then
+            getElementState(statusBar).squareBorderOverlay:Hide()
         end
 
         -- Apply textured border
@@ -627,11 +639,11 @@ local function ApplySingleEntryStyle(entry, db)
                 local insetV = db.iconBorderInsetV or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
 
                 -- Get or create the border overlay frame
-                local borderOverlay = iconFrame._scooterBorderOverlay
+                local borderOverlay = getElementState(iconFrame).borderOverlay
                 if not borderOverlay then
                     borderOverlay = CreateFrame("Frame", nil, iconFrame)
                     borderOverlay:SetFrameLevel((iconFrame:GetFrameLevel() or 0) + 2)
-                    iconFrame._scooterBorderOverlay = borderOverlay
+                    getElementState(iconFrame).borderOverlay = borderOverlay
 
                     -- Create 4 edge textures for the border
                     borderOverlay.edges = {
@@ -696,7 +708,7 @@ local function ApplySingleEntryStyle(entry, db)
                 borderOverlay:Show()
             else
                 -- Hide custom border overlay
-                local borderOverlay = iconFrame._scooterBorderOverlay
+                local borderOverlay = getElementState(iconFrame).borderOverlay
                 if borderOverlay then
                     borderOverlay:Hide()
                 end
@@ -953,7 +965,7 @@ local function CreateButtonIconOverlay(parent, atlasName, anchorTo, size, yOffse
     -- Set the atlas
     overlay:SetAtlas(atlasName, false)  -- false = don't use atlas size, we set it manually
 
-    overlay._scooterOverlay = true
+    getElementState(overlay).isScooterOverlay = true
     overlay:Hide()  -- Start hidden
     return overlay
 end

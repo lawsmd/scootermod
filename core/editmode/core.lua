@@ -752,18 +752,17 @@ local function _ForceObjectiveTrackerRelayout(frame, origin)
             st.relayoutOrigin = nil
         end
 
-        -- Mark modules dirty so the next Update pass recomputes block heights/anchors safely.
-        if type(frame.ForEachModule) == "function" then
-            pcall(frame.ForEachModule, frame, function(module)
-                if type(module) ~= "table" then return end
-                if type(module.MarkDirty) == "function" then pcall(module.MarkDirty, module) end
-            end)
+        -- Method calls on ObjectiveTrackerFrame (ForEachModule, MarkDirty, UpdateLayout,
+        -- UpdateSystem, Update) REMOVED — calling methods on registered Edit Mode system
+        -- frames from addon context permanently taints them. The ExitEditMode flow already
+        -- triggers UpdateSystems → UpdateSystem on all frames through Blizzard's clean path.
+        -- Trigger a clean C-side rebuild instead.
+        if C_EditMode and C_EditMode.GetLayouts and C_EditMode.SetActiveLayout then
+            local li = C_EditMode.GetLayouts()
+            if li and li.activeLayout then
+                pcall(C_EditMode.SetActiveLayout, li.activeLayout)
+            end
         end
-
-        -- Nudge the system through its standard update path (Blizzard owns actual anchoring).
-        if type(frame.UpdateLayout) == "function" then pcall(frame.UpdateLayout, frame) end
-        if type(frame.UpdateSystem) == "function" then pcall(frame.UpdateSystem, frame) end
-        if type(frame.Update) == "function" then pcall(frame.Update, frame) end
     end)
 end
 

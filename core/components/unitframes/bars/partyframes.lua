@@ -505,8 +505,9 @@ local function clearHealthBarBorder(bar)
     local unitFrame = bar.GetParent and bar:GetParent()
     if not unitFrame then return end
 
-    -- Hide edge textures if they exist
-    local edges = unitFrame.ScooterModBorderEdges
+    -- Hide edge textures if they exist (stored in PartyFrameState, not on frame)
+    local ufState = getState(unitFrame)
+    local edges = ufState and ufState.ScooterModBorderEdges
     if edges then
         for _, tex in pairs(edges) do
             if tex and tex.Hide then
@@ -540,7 +541,9 @@ local function applyHealthBarBorder(bar, cfg)
     -- Create edge textures on the CompactUnitFrame if they don't exist
     -- Use OVERLAY layer with lowest sublevel (-8) to appear above health bar
     -- content but below selection highlight (which uses higher sublevels)
-    local edges = unitFrame.ScooterModBorderEdges
+    -- Stored in PartyFrameState (not on unitFrame) to avoid tainting the system frame.
+    local ufState = ensureState(unitFrame)
+    local edges = ufState.ScooterModBorderEdges
     if not edges then
         edges = {
             Top = unitFrame:CreateTexture(nil, "OVERLAY", nil, -8),
@@ -557,7 +560,7 @@ local function applyHealthBarBorder(bar, cfg)
                 tex:SetTexelSnappingBias(0)
             end
         end
-        unitFrame.ScooterModBorderEdges = edges
+        ufState.ScooterModBorderEdges = edges
     end
 
     -- Get border settings

@@ -66,20 +66,9 @@ local function ensureEditModeFrame()
     return EditModeManagerFrame
 end
 
-local function prepareManager()
-    local manager = ensureEditModeFrame()
-    if not manager then return nil end
-    local layouts = C_EditMode and C_EditMode.GetLayouts and C_EditMode.GetLayouts()
-    if manager.UpdateLayoutInfo and layouts then
-        manager:UpdateLayoutInfo(layouts, true)
-    elseif layouts then
-        manager.layoutInfo = layouts
-    end
-    if manager.CreateLayoutTbls then
-        manager:CreateLayoutTbls()
-    end
-    return manager
-end
+-- prepareManager() REMOVED — calling methods on EditModeManagerFrame from addon context
+-- taints ALL registered system frames at once (via UpdateSystems → secureexecuterange).
+-- All callers replaced with direct C_EditMode API reads (GetLayouts/SaveLayouts).
 
 -- Apply the profile's CDM override (if explicitly set) to the Blizzard CVar.
 -- This is character-scoped in Blizzard, so we enforce per-profile by setting it
@@ -411,21 +400,7 @@ local function postMutationSync(self, reason)
     end
 end
 
--- Attempt to clear legacy dropdown taint by bouncing a UI panel the same way the
--- library does in its ApplyChanges path. Safe out of combat; no-ops in combat.
-local function clearDropdownTaint()
-    if InCombatLockdown and InCombatLockdown() then return end
-    pcall(CloseDropDownMenus)
-    if _G.AddonList then
-        pcall(ShowUIPanel, _G.AddonList)
-        pcall(HideUIPanel, _G.AddonList)
-    end
-    -- Also bounce Edit Mode Manager to clear potential stale state before user opens it
-    if _G.EditModeManagerFrame then
-        pcall(ShowUIPanel, _G.EditModeManagerFrame)
-        pcall(HideUIPanel, _G.EditModeManagerFrame)
-    end
-end
+-- clearDropdownTaint() REMOVED — dead code (defined but never called).
 
 -- Copy all Edit Mode system settings (including anchors) from one layout to another
 local function copyLayoutSettingsByName(sourceName, destName)
@@ -1201,7 +1176,6 @@ addon.Profiles._normalizeName = normalizeName
 addon.Profiles._notifyUI = notifyUI
 addon.Profiles._postMutationSync = postMutationSync
 addon.Profiles._addLayoutToCache = addLayoutToCache
-addon.Profiles._prepareManager = prepareManager
 addon.Profiles._getCurrentSpecID = getCurrentSpecID
 
 return Profiles

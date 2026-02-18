@@ -791,9 +791,10 @@ do
             if st.heightClipContainer then
                 st.heightClipContainer:Hide()
             end
-            -- Restore original background (bar.ScooterModBG, not st.backgroundTex)
-            if st.heightClipBackgroundHidden and bar.ScooterModBG then
-                bar.ScooterModBG:Show()
+            -- Restore original background (ScooterModBG via FrameState, not st.backgroundTex)
+            local scooterBG_r = getProp(bar, "ScooterModBG")
+            if st.heightClipBackgroundHidden and scooterBG_r then
+                scooterBG_r:Show()
                 st.heightClipBackgroundHidden = false
             end
             st.heightClipActive = false
@@ -833,8 +834,8 @@ do
         bg:ClearAllPoints()
         bg:SetAllPoints(container)  -- Match container, NOT full bar
 
-        -- Copy from original background (bar.ScooterModBG) OR use sensible default
-        local origBg = bar.ScooterModBG
+        -- Copy from original background (ScooterModBG via FrameState) OR use sensible default
+        local origBg = getProp(bar, "ScooterModBG")
         if origBg then
             local tex = origBg:GetTexture()
             if tex then
@@ -1067,9 +1068,10 @@ do
             if st.heightClipContainer then
                 st.heightClipContainer:Hide()
             end
-            -- Restore original background if it was hidden (bar.ScooterModBG, not st.backgroundTex)
-            if st.heightClipBackgroundHidden and bar.ScooterModBG then
-                bar.ScooterModBG:Show()
+            -- Restore original background if it was hidden (ScooterModBG via FrameState, not st.backgroundTex)
+            local scooterBG_rst = getProp(bar, "ScooterModBG")
+            if st.heightClipBackgroundHidden and scooterBG_rst then
+                scooterBG_rst:Show()
                 st.heightClipBackgroundHidden = false
             end
             st.heightClipActive = false
@@ -2594,7 +2596,7 @@ do
 
                             if powerBarHidden then
                                 if pb.SetAlpha then pcall(pb.SetAlpha, pb, 0) end
-                                if pb.ScooterModBG and pb.ScooterModBG.SetAlpha then pcall(pb.ScooterModBG.SetAlpha, pb.ScooterModBG, 0) end
+                                do local bg = getProp(pb, "ScooterModBG"); if bg and bg.SetAlpha then pcall(bg.SetAlpha, bg, 0) end end
                                 if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
                                 if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                                 if Util and Util.SetPowerBarTextureOnlyHidden then Util.SetPowerBarTextureOnlyHidden(pb, false) end
@@ -3389,9 +3391,7 @@ do
 				if pb.SetAlpha then
 					pcall(pb.SetAlpha, pb, 0)
 				end
-				if pb.ScooterModBG and pb.ScooterModBG.SetAlpha then
-					pcall(pb.ScooterModBG.SetAlpha, pb.ScooterModBG, 0)
-				end
+				do local bg = getProp(pb, "ScooterModBG"); if bg and bg.SetAlpha then pcall(bg.SetAlpha, bg, 0) end end
 				if addon.BarBorders and addon.BarBorders.ClearBarFrame then
 					addon.BarBorders.ClearBarFrame(pb)
 				end
@@ -4606,21 +4606,11 @@ do
             end
         end
 
-        -- Nudge Blizzard to re-evaluate atlases/masks immediately after restoration
-        -- NOTE: Pet is excluded because PetFrame is a managed/protected frame. Calling
-        -- PetFrame_Update from addon code taints the frame, causing Edit Mode's
-        -- InitSystemAnchors to be blocked from calling SetPoint on PetFrame.
-        local function refresh(unitKey)
-            if unitKey == "Player" then
-                if _G.PlayerFrame_Update then pcall(_G.PlayerFrame_Update) end
-            elseif unitKey == "Target" then
-                if _G.TargetFrame_Update then pcall(_G.TargetFrame_Update, _G.TargetFrame) end
-            elseif unitKey == "Focus" then
-                if _G.FocusFrame_Update then pcall(_G.FocusFrame_Update, _G.FocusFrame) end
-            -- Pet intentionally excluded: PetFrame is a managed frame; calling PetFrame_Update
-            -- from addon code taints the frame and breaks Edit Mode positioning.
-            end
-        end
+        -- PlayerFrame_Update / TargetFrame_Update / FocusFrame_Update calls REMOVED —
+        -- calling these global Blizzard update functions from addon context taints the
+        -- registered system frames (PlayerFrame, TargetFrame, FocusFrame), causing secret
+        -- value errors when Edit Mode later iterates them. Blizzard's own event-driven
+        -- refresh cycle handles atlas/mask updates.
 
         -- Stock frame art (includes the health bar border)
         do
@@ -4876,7 +4866,6 @@ do
                 end
             end
         end
-        refresh(unit)
     end
 
     function addon.ApplyUnitFrameBarTexturesFor(unit)

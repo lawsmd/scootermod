@@ -11,7 +11,6 @@ local normalizeName = addon.Profiles._normalizeName
 local notifyUI = addon.Profiles._notifyUI
 local postMutationSync = addon.Profiles._postMutationSync
 local addLayoutToCache = addon.Profiles._addLayoutToCache
-local prepareManager = addon.Profiles._prepareManager
 
 -- Layout dialogs use addon.Dialogs (see dialogs.lua).
 
@@ -412,22 +411,9 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
 		sourceLayout = layoutInfo.layouts[layoutInfo.activeLayout]
 	end
 
-	-- Fallback: consult the manager's reconciled list
-	if not sourceLayout then
-		local mgr = prepareManager()
-		if mgr and mgr.UpdateLayoutInfo then
-			mgr:UpdateLayoutInfo(C_EditMode.GetLayouts(), true)
-			local li2 = mgr.layoutInfo
-			if li2 and li2.layouts then
-				for _, layout in ipairs(li2.layouts) do
-					if layout.layoutName == sourceName then
-						sourceLayout = layout
-						break
-					end
-				end
-			end
-		end
-	end
+	-- prepareManager() fallback REMOVED — calling methods on EditModeManagerFrame from
+	-- addon context taints all registered system frames. The C_EditMode + preset fallbacks
+	-- above are sufficient to locate any source layout.
 
     -- If source is a preset, check the preset manager as well
     if not sourceLayout and EditModePresetLayoutManager and EditModePresetLayoutManager.GetCopyOfPresetLayouts then
@@ -630,28 +616,30 @@ function Profiles:PerformDeleteLayout(layoutName)
         self:SwitchToProfile(fallback, { reason = "DeleteFallback", force = true })
     end
 
-    -- Delete via Blizzard's Edit Mode manager using a combined index to avoid preset offsets
-    local li = C_EditMode and C_EditMode.GetLayouts and C_EditMode.GetLayouts()
+    -- Delete using direct C_EditMode APIs (no EditModeManagerFrame interaction to avoid taint).
+    -- Pattern follows LibEditModeOverride:DeleteLayout().
+    if not (C_EditMode and C_EditMode.GetLayouts and C_EditMode.SaveLayouts and C_EditMode.OnLayoutDeleted) then
+        return false, "C_EditMode API unavailable."
+    end
+    local li = C_EditMode.GetLayouts()
     if not li or not li.layouts then return false, "Unable to read layouts." end
-    local mgr = prepareManager()
-    if not mgr or not mgr.DeleteLayout or not mgr.UpdateLayoutInfo then return false, "Edit Mode manager unavailable." end
-    mgr:UpdateLayoutInfo(li, true)
-    local combinedIndex
-    local targetInfo
-    for i, info in ipairs(mgr.layoutInfo and mgr.layoutInfo.layouts or {}) do
+    local deleteIndex
+    for i, info in ipairs(li.layouts) do
         if info.layoutName == layoutName then
-            targetInfo = info
-            if info.layoutType ~= Enum.EditModeLayoutType.Preset then combinedIndex = i break end
+            if info.layoutType == Enum.EditModeLayoutType.Preset then
+                return false, "Preset layouts cannot be deleted."
+            end
+            deleteIndex = i
+            break
         end
     end
-    if targetInfo and targetInfo.layoutType == Enum.EditModeLayoutType.Preset then return false, "Preset layouts cannot be deleted." end
-    if not combinedIndex then return false, "Layout not found in manager list." end
-    mgr:DeleteLayout(combinedIndex)
-    -- Verify via fresh read
-    li = C_EditMode.GetLayouts()
-    local still = false
-    for _, info in ipairs(li.layouts or {}) do if info.layoutName == layoutName then still = true break end end
-    if still then return false, "Delete failed to persist; layout still exists." end
+    if not deleteIndex then return false, "Layout not found." end
+    table.remove(li.layouts, deleteIndex)
+    C_EditMode.SaveLayouts(li)
+    -- Defer OnLayoutDeleted to a clean execution context (adjusts activeLayout + fires event)
+    C_Timer.After(0, function()
+        pcall(C_EditMode.OnLayoutDeleted, deleteIndex)
+    end)
 
     -- Refresh library/cache and UI after successful delete
     if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end

@@ -275,17 +275,24 @@ local function BuildButtons()
         }))
     end
 
-    -- 7. Edit Mode (conditional)
+    -- 7. Edit Mode (conditional) - uses SecureHandlerClickTemplate to open Edit Mode
+    -- in a secure (untainted) context, preventing secret value errors during EditModeFrameSetup
     if EditModeManagerFrame and EditModeManagerFrame.CanEnterEditMode and EditModeManagerFrame:CanEnterEditMode() then
-        AddButton(Controls:CreateButton({
+        local editModeBtn = Controls:CreateButton({
             parent = frame,
             text = "Edit Mode",
             width = BUTTON_WIDTH,
             height = BUTTON_HEIGHT,
-            onClick = MakeButtonAction(function()
-                ShowUIPanel(EditModeManagerFrame)
-            end),
-        }))
+            template = "SecureActionButtonTemplate, SecureHandlerClickTemplate",
+            secureAction = {},
+            onClick = function()
+                pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION)
+                if frame then frame:Hide() end
+            end,
+        })
+        SecureHandlerSetFrameRef(editModeBtn, "em", EditModeManagerFrame)
+        editModeBtn:SetAttribute("_onclick", [[ self:GetFrameRef("em"):Show() ]])
+        AddButton(editModeBtn)
     end
 
     -- 8. Cooldown Manager
