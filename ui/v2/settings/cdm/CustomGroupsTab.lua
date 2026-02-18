@@ -524,14 +524,132 @@ local function CreateCategoryFrame(parent, groupIndex)
 
     header:SetTitleColor(false, NORMAL_FONT_COLOR)
     header:SetTitleColor(true, NORMAL_FONT_COLOR)
-    header:SetHeaderText("Custom CDM Group " .. groupIndex)
+    header:SetHeaderText(CG.GetGroupDisplayName(groupIndex))
     header:UpdateCollapsedState(false)  -- start expanded
 
-    -- Item count overlay (positioned to the left of the Right atlas)
-    local countText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    countText:SetPoint("RIGHT", header.Right, "LEFT", -4, 0)
-    countText:SetTextColor(0.6, 0.6, 0.6)
-    cat._countText = countText
+    -- Subtitle: "Custom Group X" (only visible when a custom name is set)
+    local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    subtitle:SetTextColor(0.5, 0.5, 0.5)
+    subtitle:SetText("(Custom Group " .. groupIndex .. ")")
+    if CG.GetGroupName(groupIndex) then
+        subtitle:Show()
+    else
+        subtitle:Hide()
+    end
+    cat._subtitle = subtitle
+
+    -- Rename button — pencil icon, parented to cat (above the header Button's click region)
+    local renameBtn = CreateFrame("Button", nil, cat)
+    renameBtn:SetSize(16, HEADER_HEIGHT)
+    renameBtn:SetFrameLevel(header:GetFrameLevel() + 10)
+
+    local renameIcon = renameBtn:CreateTexture(nil, "ARTWORK")
+    renameIcon:SetAtlas("Pencil-Icon")
+    renameIcon:SetSize(16, 16)
+    renameIcon:SetPoint("CENTER", 0, 0)
+    renameIcon:SetAlpha(0.35)
+    renameBtn._icon = renameIcon
+
+    -- Position rename button right after the header text content
+    local function UpdateRenamePosition()
+        renameBtn:ClearAllPoints()
+        local textWidth = header.Name and header.Name:GetStringWidth() or 100
+        renameBtn:SetPoint("LEFT", header, "LEFT", 10 + textWidth + 4, 0)
+    end
+    cat._updateRenamePosition = UpdateRenamePosition
+    UpdateRenamePosition()
+
+    renameBtn:SetScript("OnEnter", function(self)
+        self._icon:SetAlpha(0.8)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Rename Group", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    renameBtn:SetScript("OnLeave", function(self)
+        self._icon:SetAlpha(0.35)
+        GameTooltip:Hide()
+    end)
+    cat._renameBtn = renameBtn
+
+    -- Anchor subtitle to the right side of the header (where countText used to be)
+    subtitle:SetPoint("RIGHT", header.Right, "LEFT", -4, 0)
+
+    -- Inline EditBox for renaming (hidden by default)
+    local editBox = CreateFrame("EditBox", nil, header, "InputBoxTemplate")
+    editBox:SetSize(160, 20)
+    editBox:SetPoint("LEFT", header.Name, "LEFT", -2, 0)
+    editBox:SetAutoFocus(false)
+    editBox:SetMaxLetters(32)
+    editBox:SetFrameLevel(header:GetFrameLevel() + 10)
+
+    -- Match header font
+    local fontPath, fontSize = header.Name:GetFont()
+    if fontPath then
+        editBox:SetFont(fontPath, fontSize or 13, "")
+    end
+
+    -- Hide the chrome (InputBoxTemplate has Left/Right/Middle textures)
+    if editBox.Left then editBox.Left:Hide() end
+    if editBox.Right then editBox.Right:Hide() end
+    if editBox.Middle then editBox.Middle:Hide() end
+
+    editBox:Hide()
+    cat._editBox = editBox
+
+    local function BeginRename()
+        local currentName = CG.GetGroupName(groupIndex) or ""
+        editBox:SetText(currentName)
+        header.Name:Hide()
+        renameBtn:Hide()
+        subtitle:Hide()
+        editBox:Show()
+        editBox:SetFocus()
+        editBox:HighlightText()
+    end
+
+    local function CommitRename()
+        local newName = editBox:GetText()
+        editBox:ClearFocus()
+        editBox:Hide()
+        CG.SetGroupName(groupIndex, newName)
+        header:SetHeaderText(CG.GetGroupDisplayName(groupIndex))
+        header.Name:Show()
+        renameBtn:Show()
+        UpdateRenamePosition()
+        if CG.GetGroupName(groupIndex) then
+            subtitle:Show()
+        else
+            subtitle:Hide()
+        end
+    end
+
+    local function CancelRename()
+        editBox:ClearFocus()
+        editBox:Hide()
+        header.Name:Show()
+        renameBtn:Show()
+        if CG.GetGroupName(groupIndex) then
+            subtitle:Show()
+        end
+    end
+
+    renameBtn:SetScript("OnClick", function()
+        BeginRename()
+    end)
+
+    editBox:SetScript("OnEnterPressed", function()
+        CommitRename()
+    end)
+
+    editBox:SetScript("OnEscapePressed", function()
+        CancelRename()
+    end)
+
+    editBox:SetScript("OnEditFocusLost", function()
+        if editBox:IsShown() then
+            CancelRename()
+        end
+    end)
 
     -- Click to toggle collapse
     header:SetClickHandler(function()
@@ -641,8 +759,6 @@ local function LayoutGrid(groupIndex)
     -- Category total height = header + gap + container
     cat:SetHeight(HEADER_HEIGHT + 10 + containerHeight)
 
-    -- Update item count
-    cat._countText:SetText(#entries > 0 and (#entries .. " tracked") or "")
 end
 
 RefreshCategory = function(groupIndex)
@@ -725,6 +841,23 @@ local function CreateContentFrame(cdmFrame)
 
     -- Register for data change callbacks
     CG.RegisterCallback(function()
+        -- Update header texts, subtitles, and rename button positions for all 3 categories
+        for i = 1, 3 do
+            local cat = categoryFrames[i]
+            if cat and cat._header then
+                cat._header:SetHeaderText(CG.GetGroupDisplayName(i))
+                if cat._subtitle then
+                    if CG.GetGroupName(i) then
+                        cat._subtitle:Show()
+                    else
+                        cat._subtitle:Hide()
+                    end
+                end
+                if cat._updateRenamePosition then
+                    cat._updateRenamePosition()
+                end
+            end
+        end
         if f:IsShown() then
             RefreshAllCategories()
         end
@@ -734,6 +867,23 @@ local function CreateContentFrame(cdmFrame)
     f:SetScript("OnShow", function()
         -- Ensure scroll child width matches
         scrollChild:SetWidth(f:GetWidth() or 300)
+        -- Refresh header texts (handles profile switches)
+        for i = 1, 3 do
+            local cat = categoryFrames[i]
+            if cat and cat._header then
+                cat._header:SetHeaderText(CG.GetGroupDisplayName(i))
+                if cat._subtitle then
+                    if CG.GetGroupName(i) then
+                        cat._subtitle:Show()
+                    else
+                        cat._subtitle:Hide()
+                    end
+                end
+                if cat._updateRenamePosition then
+                    cat._updateRenamePosition()
+                end
+            end
+        end
         RefreshAllCategories()
     end)
 

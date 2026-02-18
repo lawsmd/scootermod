@@ -15,9 +15,9 @@ local SettingsBuilder = addon.UI.SettingsBuilder
 
 local function CreateCustomGroupRenderer(groupIndex)
     local componentId = "customGroup" .. groupIndex
-    local groupLabel = "Custom Group " .. groupIndex
 
     return function(panel, scrollContent)
+        local groupLabel = addon.CustomGroups and addon.CustomGroups.GetGroupDisplayName(groupIndex) or ("Custom Group " .. groupIndex)
         panel:ClearContent()
 
         local builder = SettingsBuilder:CreateFor(scrollContent)

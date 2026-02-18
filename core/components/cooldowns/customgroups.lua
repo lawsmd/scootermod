@@ -118,6 +118,40 @@ function CG.FireCallback()
     end
 end
 
+--- Get the custom name for a group (nil if not set).
+--- @param groupIndex number
+--- @return string|nil
+function CG.GetGroupName(groupIndex)
+    local groups = EnsureGroupsDB()
+    if not groups or not groups[groupIndex] then return nil end
+    return groups[groupIndex].name
+end
+
+--- Set a custom name for a group. Stores trimmed name; nil/empty clears it.
+--- @param groupIndex number
+--- @param name string|nil
+function CG.SetGroupName(groupIndex, name)
+    local groups = EnsureGroupsDB()
+    if not groups or not groups[groupIndex] then return end
+    if name and type(name) == "string" then
+        name = strtrim(name)
+        if name == "" then name = nil end
+    else
+        name = nil
+    end
+    groups[groupIndex].name = name
+    CG.FireCallback()
+end
+
+--- Get the display name for a group: custom name or fallback "Custom Group X".
+--- @param groupIndex number
+--- @return string
+function CG.GetGroupDisplayName(groupIndex)
+    local customName = CG.GetGroupName(groupIndex)
+    if customName then return customName end
+    return "Custom Group " .. groupIndex
+end
+
 --------------------------------------------------------------------------------
 -- HUD Frame Pool + Creation Helpers
 --------------------------------------------------------------------------------
@@ -660,7 +694,12 @@ local function RebuildGroup(groupIndex)
 
     -- Manage item ticker
     if totalItems > 0 and not itemTicker then
-        itemTicker = C_Timer.NewTicker(0.25, RefreshAllItemCooldowns)
+        itemTicker = C_Timer.NewTicker(0.25, function()
+            RefreshAllItemCooldowns()
+            for i = 1, 3 do
+                UpdateGroupCooldownOpacities(i)
+            end
+        end)
     elseif totalItems == 0 and itemTicker then
         itemTicker:Cancel()
         itemTicker = nil
@@ -1054,6 +1093,15 @@ local function RestoreGroupPosition(groupIndex, layoutName)
     end
 end
 
+local function UpdateEditModeNames()
+    for i = 1, 3 do
+        local container = containers[i]
+        if container then
+            container.editModeName = CG.GetGroupDisplayName(i)
+        end
+    end
+end
+
 local function InitializeEditMode()
     local lib = LibStub("LibEditMode", true)
     if not lib then return end
@@ -1061,6 +1109,7 @@ local function InitializeEditMode()
     for i = 1, 3 do
         local container = containers[i]
         if container then
+            container.editModeName = CG.GetGroupDisplayName(i)
             lib:AddFrame(container, function(frame, layoutName, point, x, y)
                 if point and x and y then
                     frame:ClearAllPoints()
@@ -1073,7 +1122,7 @@ local function InitializeEditMode()
                 point = "CENTER",
                 x = 0,
                 y = -100 + (i - 1) * -60,
-            }, "Custom Group " .. i)
+            }, nil)
         end
     end
 
@@ -1082,6 +1131,8 @@ local function InitializeEditMode()
             RestoreGroupPosition(i, layoutName)
         end
     end)
+
+    CG.RegisterCallback(UpdateEditModeNames)
 end
 
 --------------------------------------------------------------------------------

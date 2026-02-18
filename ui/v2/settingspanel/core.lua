@@ -661,6 +661,15 @@ function UIPanel:CreateContentPane()
     headerTitle:SetText("Home")  -- Default
     contentPane._headerTitle = headerTitle
 
+    local headerSubtitle = header:CreateFontString(nil, "OVERLAY")
+    local subtitleFont = Theme:GetFont("LABEL")
+    headerSubtitle:SetFont(subtitleFont, 11, "")
+    local sr, sg, sb = Theme:GetAccentColor()
+    headerSubtitle:SetTextColor(sr, sg, sb, 0.5)
+    headerSubtitle:SetPoint("LEFT", headerTitle, "RIGHT", 8, 0)
+    headerSubtitle:Hide()
+    contentPane._headerSubtitle = headerSubtitle
+
     local panel = self
     local collapseAllBtn = Controls:CreateButton({
         parent = header,
@@ -835,6 +844,9 @@ function UIPanel:CreateContentPane()
         end
         if contentPane._headerTitle then
             contentPane._headerTitle:SetTextColor(r, g, b, 1)
+        end
+        if contentPane._headerSubtitle then
+            contentPane._headerSubtitle:SetTextColor(r, g, b, 0.5)
         end
         if contentPane._copyFromLabel then
             contentPane._copyFromLabel:SetTextColor(r, g, b, 0.8)

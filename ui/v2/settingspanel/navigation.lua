@@ -285,13 +285,22 @@ local CUSTOM_GROUP_COPY_TARGETS = {
     customGroup3 = true,
 }
 
-local CUSTOM_GROUP_NAMES = {
-    customGroup1 = "Custom Group 1",
-    customGroup2 = "Custom Group 2",
-    customGroup3 = "Custom Group 3",
+local CUSTOM_GROUP_STATIC_NAMES = {
     essentialCooldowns = "Essential Cooldowns",
     utilityCooldowns = "Utility Cooldowns",
 }
+
+local function GetCopySourceName(key)
+    local i = key and key:match("^customGroup(%d)$")
+    if i then
+        local CG = addon.CustomGroups
+        if CG and CG.GetGroupDisplayName then
+            return CG.GetGroupDisplayName(tonumber(i))
+        end
+        return "Custom Group " .. i
+    end
+    return CUSTOM_GROUP_STATIC_NAMES[key] or key
+end
 
 local CUSTOM_GROUP_SOURCE_ORDER = {
     "customGroup1", "customGroup2", "customGroup3",
@@ -355,7 +364,7 @@ function UIPanel:UpdateCopyFromDropdown()
         local order = {}
         for _, sourceKey in ipairs(CUSTOM_GROUP_SOURCE_ORDER) do
             if sourceKey ~= key then
-                values[sourceKey] = CUSTOM_GROUP_NAMES[sourceKey]
+                values[sourceKey] = GetCopySourceName(sourceKey)
                 table.insert(order, sourceKey)
             end
         end
@@ -387,8 +396,8 @@ function UIPanel:HandleCopyFrom(sourceKey)
         sourceName = UNIT_FRAME_NAMES[sourceKey] or sourceKey
         destName = UNIT_FRAME_NAMES[destKey] or self:GetCategoryTitle(destKey)
     elseif isCustomGroup then
-        sourceName = CUSTOM_GROUP_NAMES[sourceKey] or sourceKey
-        destName = CUSTOM_GROUP_NAMES[destKey] or self:GetCategoryTitle(destKey)
+        sourceName = GetCopySourceName(sourceKey)
+        destName = GetCopySourceName(destKey)
     else
         return
     end
@@ -497,6 +506,9 @@ function UIPanel:OnNavigationSelect(key, previousKey)
         if contentPane._collapseAllBtn then
             contentPane._collapseAllBtn:Hide()
         end
+        if contentPane._headerSubtitle then
+            contentPane._headerSubtitle:Hide()
+        end
         if contentPane._copyFromDropdown then
             contentPane._copyFromDropdown:Hide()
         end
@@ -544,6 +556,21 @@ function UIPanel:OnNavigationSelect(key, previousKey)
         if contentPane._headerTitle then
             contentPane._headerTitle:SetText(self:GetCategoryTitle(key))
             contentPane._headerTitle:Show()
+        end
+        -- Subtitle for custom groups: show "Custom Group X" when a custom name is set
+        if contentPane._headerSubtitle then
+            local gi = key and key:match("^customGroup(%d)$")
+            if gi then
+                local CG = addon.CustomGroups
+                if CG and CG.GetGroupName and CG.GetGroupName(tonumber(gi)) then
+                    contentPane._headerSubtitle:SetText("(Custom Group " .. gi .. ")")
+                    contentPane._headerSubtitle:Show()
+                else
+                    contentPane._headerSubtitle:Hide()
+                end
+            else
+                contentPane._headerSubtitle:Hide()
+            end
         end
         if contentPane._headerSep then
             contentPane._headerSep:Show()
@@ -631,5 +658,48 @@ end
 
 function UIPanel:GetCategoryTitle(key)
     if not key then return "Home" end
+    -- For custom groups, always use dynamic display name (bypasses cache)
+    local gi = key and key:match("^customGroup(%d)$")
+    if gi then
+        local CG = addon.CustomGroups
+        if CG and CG.GetGroupDisplayName then
+            local prefix = TITLE_PREFIX["cdm"] or "CDM"
+            return prefix .. ": " .. CG.GetGroupDisplayName(tonumber(gi))
+        end
+    end
     return buildTitleCache()[key] or key
+end
+
+function UIPanel:InvalidateTitleCache()
+    _titleCache = nil
+end
+
+-- Invalidate title cache and refresh header when custom group names change
+do
+    local CG = addon.CustomGroups
+    if CG and CG.RegisterCallback then
+        CG.RegisterCallback(function()
+            UIPanel:InvalidateTitleCache()
+            -- If currently viewing a custom group, refresh the header title and subtitle
+            local key = UIPanel._currentCategoryKey
+            if key and key:match("^customGroup%d$") then
+                local frame = UIPanel.frame
+                if frame and frame._contentPane then
+                    local contentPane = frame._contentPane
+                    if contentPane._headerTitle and contentPane._headerTitle:IsShown() then
+                        contentPane._headerTitle:SetText(UIPanel:GetCategoryTitle(key))
+                    end
+                    if contentPane._headerSubtitle then
+                        local gi = tonumber(key:match("^customGroup(%d)$"))
+                        if gi and CG.GetGroupName and CG.GetGroupName(gi) then
+                            contentPane._headerSubtitle:SetText("(Custom Group " .. gi .. ")")
+                            contentPane._headerSubtitle:Show()
+                        else
+                            contentPane._headerSubtitle:Hide()
+                        end
+                    end
+                end
+            end
+        end)
+    end
 end
