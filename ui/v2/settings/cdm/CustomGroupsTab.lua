@@ -13,6 +13,7 @@ local CATEGORY_SPACING = 18
 local DROP_TARGET_ICON = "Interface\\PaperDollInfoFrame\\Character-Plus"
 
 local injected = false
+local isScooterTabActive = false
 
 --------------------------------------------------------------------------------
 -- Utility: Resolve icon texture for a spell or item
@@ -801,77 +802,31 @@ local function CreateTabButton(cdmFrame)
 end
 
 --------------------------------------------------------------------------------
--- SetDisplayMode wrapper
+-- Main injection (taint-safe: no method overrides, no property writes,
+-- no Blizzard array mutation, no method calls on system frames)
 --------------------------------------------------------------------------------
 
-local function HookSetDisplayMode(cdmFrame, contentFrameRef, origSetDisplayMode)
-    -- Elements to hide/show when toggling our tab
-    local blizzElements = {
-        cdmFrame.CooldownScroll,
-        cdmFrame.SearchBox,
-        cdmFrame.SettingsDropdown,
-        cdmFrame.UndoButton,
-    }
+local function ActivateScooterTab(cdmFrame, contentFrameRef, blizzElements, tab)
+    if isScooterTabActive then return end
+    isScooterTabActive = true
 
-    cdmFrame.SetDisplayMode = function(self, displayMode)
-        if displayMode == DISPLAY_MODE then
-            -- Entering ScooterMod tab
-            if self.displayMode == displayMode then
-                return
-            end
-            self.displayMode = displayMode
-
-            -- Update tab checked states
-            for _, frame in ipairs(self.TabButtons) do
-                frame:SetChecked(frame.displayMode == displayMode)
-            end
-
-            -- Clear Blizzard category content
-            self.currentCategories = {}
-            self:ClearDisplayCategories()
-            self:RemoveScrollFramePadding()
-
-            -- Hide Blizzard UI elements
-            for _, element in ipairs(blizzElements) do
-                if element then element:Hide() end
-            end
-
-            -- Show our content
-            contentFrameRef:Show()
-
-            -- Set portrait to ScooterMod icon
-            self:SetPortraitToAsset(SCOOTERMOD_ICON)
-        else
-            -- Leaving ScooterMod tab: restore Blizzard elements
-            contentFrameRef:Hide()
-            for _, element in ipairs(blizzElements) do
-                if element then element:Show() end
-            end
-
-            -- Delegate to original
-            if self.displayMode == DISPLAY_MODE then
-                self.displayMode = nil
-            end
-            origSetDisplayMode(self, displayMode)
-        end
+    -- Uncheck all Blizzard tabs (C-side widget ops — safe)
+    for _, btn in ipairs(cdmFrame.TabButtons) do
+        btn:SetChecked(false)
     end
+    tab:SetChecked(true)
+
+    -- Hide Blizzard content elements (C-side widget ops — safe)
+    for _, el in ipairs(blizzElements) do
+        if el then el:Hide() end
+    end
+
+    -- Show our content
+    contentFrameRef:Show()
+
+    -- Set portrait (C-side texture op — safe, avoids calling frame method)
+    cdmFrame.PortraitContainer.portrait:SetTexture(SCOOTERMOD_ICON)
 end
-
---------------------------------------------------------------------------------
--- Portrait hook: re-apply ScooterMod icon when RefreshLayout resets the portrait
---------------------------------------------------------------------------------
-
-local function HookRefreshLayout(cdmFrame)
-    hooksecurefunc(cdmFrame, "RefreshLayout", function(self)
-        if self.displayMode == DISPLAY_MODE then
-            self:SetPortraitToAsset(SCOOTERMOD_ICON)
-        end
-    end)
-end
-
---------------------------------------------------------------------------------
--- Main injection
---------------------------------------------------------------------------------
 
 local function InjectScooterModTab()
     if injected then return end
@@ -883,28 +838,62 @@ local function InjectScooterModTab()
 
     injected = true
 
+    -- Elements to hide/show when toggling our tab
+    local blizzElements = {
+        cdmFrame.CooldownScroll,
+        cdmFrame.SearchBox,
+        cdmFrame.SettingsDropdown,
+        cdmFrame.UndoButton,
+    }
+
     -- Create content frame
     local content = CreateContentFrame(cdmFrame)
 
     -- Create tab button
     local tab = CreateTabButton(cdmFrame)
 
-    -- Register tab click handler (same pattern as Blizzard's SetupTabs)
+    -- Tab click: activate our tab (NO call to cdmFrame:SetDisplayMode — avoids taint)
     tab:SetCustomOnMouseUpHandler(function(t, button, upInside)
         if button == "LeftButton" and upInside then
-            cdmFrame:SetDisplayMode(t.displayMode)
+            ActivateScooterTab(cdmFrame, content, blizzElements, tab)
         end
     end)
 
-    -- Insert into TabButtons array
-    table.insert(cdmFrame.TabButtons, tab)
+    -- DO NOT insert tab into cdmFrame.TabButtons (would mutate Blizzard array)
+    -- Tab is already anchored below AurasTab in CreateTabButton
 
-    -- Hook SetDisplayMode
-    local origSetDisplayMode = cdmFrame.SetDisplayMode
-    HookSetDisplayMode(cdmFrame, content, origSetDisplayMode)
+    -- Hook SetDisplayMode for deactivation (replaces method override — taint-safe)
+    hooksecurefunc(cdmFrame, "SetDisplayMode", function(self, displayMode)
+        if isScooterTabActive then
+            isScooterTabActive = false
+            content:Hide()
+            tab:SetChecked(false)
+            -- Blizzard's SetDisplayMode already ran and restored its content.
+            -- Re-show the elements we hid as a safety measure:
+            for _, el in ipairs(blizzElements) do
+                if el then el:Show() end
+            end
+        end
+    end)
 
-    -- Hook RefreshLayout for portrait
-    HookRefreshLayout(cdmFrame)
+    -- Hook RefreshLayout for portrait (taint-safe)
+    hooksecurefunc(cdmFrame, "RefreshLayout", function(self)
+        if isScooterTabActive then
+            cdmFrame.PortraitContainer.portrait:SetTexture(SCOOTERMOD_ICON)
+        end
+    end)
+
+    -- Cleanup on CDM window close
+    cdmFrame:HookScript("OnHide", function()
+        if isScooterTabActive then
+            isScooterTabActive = false
+            content:Hide()
+            tab:SetChecked(false)
+            for _, el in ipairs(blizzElements) do
+                if el then el:Show() end
+            end
+        end
+    end)
 end
 
 --------------------------------------------------------------------------------

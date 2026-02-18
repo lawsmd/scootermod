@@ -296,15 +296,10 @@ function lib:LoadLayouts()
   assert(lib:IsReady(), READY_ERROR)
   layoutInfo = C_EditMode.GetLayouts()
 
-  if not reconciledLayouts then
-    local anyChanged = false
-    for _, layout in ipairs(layoutInfo.layouts) do
-      anyChanged = anyChanged or EditModeManagerFrame:ReconcileWithModern(layout)
-    end
-    if not anyChanged then
-      reconciledLayouts = true
-    end
-  end
+  -- ReconcileWithModern removed: calling it from addon context taints
+  -- EditModeManagerFrame. Blizzard handles reconciliation internally
+  -- via UpdateLayoutInfo when SetActiveLayout fires EDIT_MODE_LAYOUTS_UPDATED.
+  reconciledLayouts = true
 
   local tmp = EditModePresetLayoutManager:GetCopyOfPresetLayouts()
   tAppendAll(tmp, layoutInfo.layouts);
