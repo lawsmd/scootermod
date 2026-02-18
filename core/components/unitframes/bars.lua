@@ -1583,7 +1583,7 @@ do
                 "powerBarTexture", "powerBarColorMode", "powerBarTint",
                 "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
                 "powerBarHidden",
-                "borderStyle", "borderThickness", "borderInset", "borderTintEnable", "borderTintColor",
+                "borderStyle", "borderThickness", "borderInset", "borderInsetH", "borderInsetV", "borderTintEnable", "borderTintColor",
                 "healthBarReverseFill",
             })
         local altCfg = rawget(cfg, "altPowerBar")
@@ -1679,7 +1679,8 @@ do
                     } or {1, 1, 1, 1}
                     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                    local inset = tonumber(cfg.healthBarBorderInset) or 0
+                    local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                    local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
                     -- Clear old borders first
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -1693,8 +1694,8 @@ do
                     if addon.Borders and addon.Borders.ApplySquare then
                         local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                         local baseOffset = 1
-                        local expandX = baseOffset - inset
-                        local expandY = baseOffset - inset
+                        local expandX = baseOffset - insetH
+                        local expandY = baseOffset - insetV
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                         addon.Borders.ApplySquare(anchorFrame, {
@@ -1842,7 +1843,8 @@ do
                     } or {1, 1, 1, 1}
                     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                    local inset = tonumber(cfg.healthBarBorderInset) or 0
+                    local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                    local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
                     -- Clear old borders first
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -1856,8 +1858,8 @@ do
                     if addon.Borders and addon.Borders.ApplySquare then
                         local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                         local baseOffset = 1
-                        local expandX = baseOffset - inset
-                        local expandY = baseOffset - inset
+                        local expandX = baseOffset - insetH
+                        local expandY = baseOffset - insetV
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                         addon.Borders.ApplySquare(anchorFrame, {
@@ -2002,7 +2004,8 @@ do
                     } or {1, 1, 1, 1}
                     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                    local inset = tonumber(cfg.healthBarBorderInset) or 0
+                    local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                    local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
                     -- Clear old borders first
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -2016,8 +2019,8 @@ do
                     if addon.Borders and addon.Borders.ApplySquare then
                         local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                         local baseOffset = 1
-                        local expandX = baseOffset - inset
-                        local expandY = baseOffset - inset
+                        local expandX = baseOffset - insetH
+                        local expandY = baseOffset - insetV
                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                         addon.Borders.ApplySquare(anchorFrame, {
@@ -2406,7 +2409,8 @@ do
                                 } or {1, 1, 1, 1}
                                 local thickness = tonumber(cfg.healthBarBorderThickness) or 1
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                                local inset = tonumber(cfg.healthBarBorderInset) or 0
+                                local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                                local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
                                 -- Resolve HealthBarsContainer which has correct bounds (just health bar area)
                                 local hbContainer = resolveBossHealthBarsContainer(bossFrame)
@@ -2487,8 +2491,8 @@ do
                                             local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                                             local baseY = 1
                                             local baseX = 1
-                                            local expandY = baseY - inset
-                                            local expandX = baseX - inset
+                                            local expandY = baseY - insetV
+                                            local expandX = baseX - insetH
                                             if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                             if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                             addon.Borders.ApplySquare(anchorFrame, {
@@ -2674,7 +2678,8 @@ do
                                 } or {1, 1, 1, 1}
                                 local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
                                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                                local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
+                                local insetH = (cfg.powerBarBorderInsetH ~= nil) and tonumber(cfg.powerBarBorderInsetH) or (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                                local insetV = (cfg.powerBarBorderInsetV ~= nil) and tonumber(cfg.powerBarBorderInsetV) or (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
                                 -- Resolve ManaBar for correct bounds
                                 local mbResolved = resolveBossManaBar(bossFrame)
@@ -2749,8 +2754,8 @@ do
                                             local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                                             local baseY = 1
                                             local baseX = 1
-                                            local expandY = baseY - inset
-                                            local expandX = baseX - inset
+                                            local expandY = baseY - insetV
+                                            local expandX = baseX - insetH
                                             if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                             if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                             addon.Borders.ApplySquare(anchorFrame, {
@@ -3018,7 +3023,8 @@ do
 				} or {1, 1, 1, 1}
                 local thickness = tonumber(cfg.healthBarBorderThickness) or 1
 				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                local inset = tonumber(cfg.healthBarBorderInset) or 0
+                local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 				-- Only draw custom border when Use Custom Borders is enabled
 				if hb then
 					if cfg.useCustomBorders then
@@ -3052,7 +3058,8 @@ do
                                     thickness = thickness,
                                     levelOffset = 1, -- just above bar fill; text will be raised above holder
                                     containerParent = (hb and hb:GetParent()) or nil,
-                                    inset = inset,
+                                    insetH = insetH,
+                                    insetV = insetV,
                                     anchorTarget = borderAnchorTarget, -- anchor to clipping container if active
                                 })
 							end
@@ -3064,8 +3071,8 @@ do
                                     -- Always extend border by 1 pixel to cover any texture bleeding above the frame
                                     local baseY = 1
                                     local baseX = 1
-                                    local expandY = baseY - inset
-                                    local expandX = baseX - inset
+                                    local expandY = baseY - insetV
+                                    local expandX = baseX - insetH
                                     if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                     if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                     -- Pet is already excluded by the outer guard
@@ -3773,13 +3780,16 @@ do
                                 or 1
                             if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
 
-                            local inset
-                            if acfg.borderInset ~= nil then
-                                inset = tonumber(acfg.borderInset) or 0
-                            elseif cfg.powerBarBorderInset ~= nil then
-                                inset = tonumber(cfg.powerBarBorderInset) or 0
+                            local insetH, insetV
+                            if acfg.borderInsetH ~= nil or acfg.borderInsetV ~= nil then
+                                insetH = tonumber(acfg.borderInsetH) or tonumber(acfg.borderInset) or 0
+                                insetV = tonumber(acfg.borderInsetV) or tonumber(acfg.borderInset) or 0
+                            elseif cfg.powerBarBorderInsetH ~= nil or cfg.powerBarBorderInsetV ~= nil or cfg.powerBarBorderInset ~= nil then
+                                insetH = tonumber(cfg.powerBarBorderInsetH) or tonumber(cfg.powerBarBorderInset) or 0
+                                insetV = tonumber(cfg.powerBarBorderInsetV) or tonumber(cfg.powerBarBorderInset) or 0
                             else
-                                inset = tonumber(cfg.healthBarBorderInset) or 0
+                                insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                                insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
                             end
 
                             if styleKey == "none" or styleKey == nil then
@@ -3806,7 +3816,8 @@ do
                                         thickness = thickness,
                                         levelOffset = 1,
                                         containerParent = (apb and apb:GetParent()) or nil,
-                                        inset = inset,
+                                        insetH = insetH,
+                                        insetV = insetV,
                                     })
                                 end
 
@@ -3816,8 +3827,8 @@ do
                                         local sqColor = tintEnabled and tintColor or { 0, 0, 0, 1 }
                                         local baseY = (thickness <= 1) and 0 or 1
                                         local baseX = 1
-                                        local expandY = baseY - inset
-                                        local expandX = baseX - inset
+                                        local expandY = baseY - insetV
+                                        local expandX = baseX - insetH
                                         if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                         if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                         addon.Borders.ApplySquare(apb, {
@@ -4530,7 +4541,8 @@ do
                 } or {1, 1, 1, 1}
                 local thickness = tonumber(cfg.powerBarBorderThickness) or tonumber(cfg.healthBarBorderThickness) or 1
                 if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-                local inset = (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInset) or 0
+                local insetH = (cfg.powerBarBorderInsetH ~= nil) and tonumber(cfg.powerBarBorderInsetH) or (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                local insetV = (cfg.powerBarBorderInsetV ~= nil) and tonumber(cfg.powerBarBorderInsetV) or (cfg.powerBarBorderInset ~= nil) and tonumber(cfg.powerBarBorderInset) or tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
                 -- PetFrame is managed/protected: do not create or level custom border frames.
                 -- Skip border application when bar texture is hidden (number-only display).
                 -- Skip border application when power bar is fully hidden.
@@ -4558,7 +4570,8 @@ do
                                 thickness = thickness,
                                 levelOffset = 1,
                                 containerParent = (pb and pb:GetParent()) or nil,
-                                inset = inset,
+                                insetH = insetH,
+                                insetV = insetV,
                             })
                         end
                         if not handled then
@@ -4567,8 +4580,8 @@ do
                                 local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
                                 local baseY = (thickness <= 1) and 0 or 1
                                 local baseX = 1
-                                local expandY = baseY - inset
-                                local expandX = baseX - inset
+                                local expandY = baseY - insetV
+                                local expandX = baseX - insetH
                                 if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
                                 if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
                                 -- Pet is already excluded by the outer guard

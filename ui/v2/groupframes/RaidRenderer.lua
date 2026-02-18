@@ -618,21 +618,36 @@ function GF.RenderRaid(panel, scrollContent)
                 end,
             })
 
-            inner:AddSlider({
+            inner:AddDualSlider({
                 label = "Border Inset",
-                min = -4,
-                max = 4,
-                step = 1,
-                get = function()
-                    local cfg = ensureDB() or {}
-                    return tonumber(cfg.healthBarBorderInset) or 0
-                end,
-                set = function(v)
-                    local cfg = ensureDB()
-                    if not cfg then return end
-                    cfg.healthBarBorderInset = tonumber(v) or 0
-                    GF.applyRaidHealthBarBorders()
-                end,
+                sliderA = {
+                    axisLabel = "H", min = -4, max = 4, step = 1,
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderInsetH = tonumber(v) or 0
+                        GF.applyRaidHealthBarBorders()
+                    end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
+                sliderB = {
+                    axisLabel = "V", min = -4, max = 4, step = 1,
+                    get = function()
+                        local cfg = ensureDB() or {}
+                        return tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
+                    end,
+                    set = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderInsetV = tonumber(v) or 0
+                        GF.applyRaidHealthBarBorders()
+                    end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
             })
 
             inner:Finalize()

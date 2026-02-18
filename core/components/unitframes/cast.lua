@@ -593,25 +593,25 @@ do
 
 				-- User-controlled inset plus a small thickness-derived term; biases the Default (square)
 				-- style outward slightly, with per-unit tuning.
-				local userInset = tonumber(cfg.castBarBorderInset) or 0
-				if userInset < -4 then userInset = -4 elseif userInset > 4 then userInset = 4 end
+				local userInsetH = tonumber(cfg.castBarBorderInsetH) or tonumber(cfg.castBarBorderInset) or 0
+				local userInsetV = tonumber(cfg.castBarBorderInsetV) or tonumber(cfg.castBarBorderInset) or 0
+				if userInsetH < -4 then userInsetH = -4 elseif userInsetH > 4 then userInsetH = 4 end
+				if userInsetV < -4 then userInsetV = -4 elseif userInsetV > 4 then userInsetV = 4 end
 				local derivedInset = math.floor((thickness - 1) * 0.5)
 				local baseInset = 0
 				if styleKey == "square" then
 					if unit == "Player" then
-						-- Player cast bar: slightly outward, then user inset pulls in to an even frame.
 						baseInset = -1
 					elseif unit == "Target" then
-						-- Target cast bar: a bit more outward to start; side/top nudges handled separately.
 						baseInset = -2
 					elseif unit == "Focus" then
-						-- Focus cast bar: start closer in so the default inset=1 look is tighter on all sides.
 						baseInset = 0
 					else
 						baseInset = -2
 					end
 				end
-				local combinedInset = baseInset + userInset + derivedInset
+				local combinedInsetH = baseInset + userInsetH + derivedInset
+				local combinedInsetV = baseInset + userInsetV + derivedInset
 
 				-- Clear any prior border when disabled
 				if not enabled or styleKey == "none" then
@@ -657,7 +657,8 @@ do
 							color = color,
 							thickness = thickness,
 							levelOffset = 1,
-							inset = combinedInset,
+							insetH = combinedInsetH,
+							insetV = combinedInsetV,
 						})
 					end
 
@@ -668,8 +669,8 @@ do
 							local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
 							local baseY = (thickness <= 1) and 0 or 1
 							local baseX = 1
-							local expandY = baseY - combinedInset
-							local expandX = baseX - combinedInset
+							local expandY = baseY - combinedInsetV
+							local expandX = baseX - combinedInsetH
 							if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
 							if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
 
@@ -1396,11 +1397,14 @@ do
 				local thickness = tonumber(cfg.castBarBorderThickness) or 1
 				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
 
-				local userInset = tonumber(cfg.castBarBorderInset) or 0
-				if userInset < -4 then userInset = -4 elseif userInset > 4 then userInset = 4 end
+				local userInsetH = tonumber(cfg.castBarBorderInsetH) or tonumber(cfg.castBarBorderInset) or 0
+				local userInsetV = tonumber(cfg.castBarBorderInsetV) or tonumber(cfg.castBarBorderInset) or 0
+				if userInsetH < -4 then userInsetH = -4 elseif userInsetH > 4 then userInsetH = 4 end
+				if userInsetV < -4 then userInsetV = -4 elseif userInsetV > 4 then userInsetV = 4 end
 				local derivedInset = math.floor((thickness - 1) * 0.5)
 				local baseInset = (styleKey == "square") and -2 or 0
-				local combinedInset = baseInset + userInset + derivedInset
+				local combinedInsetH = baseInset + userInsetH + derivedInset
+				local combinedInsetV = baseInset + userInsetV + derivedInset
 
 				if not enabled or styleKey == "none" then
 					if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
@@ -1441,7 +1445,8 @@ do
 						color = color,
 						thickness = thickness,
 						levelOffset = 1,
-						inset = combinedInset,
+						insetH = combinedInsetH,
+						insetV = combinedInsetV,
 					})
 					end
 
@@ -1451,8 +1456,8 @@ do
 						local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
 						local baseY = (thickness <= 1) and 0 or 1
 						local baseX = 1
-						local expandY = baseY - combinedInset
-						local expandX = baseX - combinedInset
+						local expandY = baseY - combinedInsetV
+						local expandX = baseX - combinedInsetH
 						if expandX < -6 then expandX = -6 elseif expandX > 6 then expandX = 6 end
 						if expandY < -6 then expandY = -6 elseif expandY > 6 then expandY = 6 end
 

@@ -193,21 +193,36 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
         end,
     })
 
-    inner:AddSlider({
+    inner:AddDualSlider({
         label = "Border Inset",
-        min = -4,
-        max = 4,
-        step = 1,
-        get = function()
-            local t = ensureDBFn() or {}
-            return tonumber(t[barPrefix .. "BorderInset"]) or 0
-        end,
-        set = function(v)
-            local t = ensureDBFn()
-            if not t then return end
-            t[barPrefix .. "BorderInset"] = tonumber(v) or 0
-            applyFn()
-        end,
+        sliderA = {
+            axisLabel = "H", min = -4, max = 4, step = 1,
+            get = function()
+                local t = ensureDBFn() or {}
+                return tonumber(t[barPrefix .. "BorderInsetH"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0
+            end,
+            set = function(v)
+                local t = ensureDBFn()
+                if not t then return end
+                t[barPrefix .. "BorderInsetH"] = tonumber(v) or 0
+                applyFn()
+            end,
+            minLabel = "-4", maxLabel = "+4",
+        },
+        sliderB = {
+            axisLabel = "V", min = -4, max = 4, step = 1,
+            get = function()
+                local t = ensureDBFn() or {}
+                return tonumber(t[barPrefix .. "BorderInsetV"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0
+            end,
+            set = function(v)
+                local t = ensureDBFn()
+                if not t then return end
+                t[barPrefix .. "BorderInsetV"] = tonumber(v) or 0
+                applyFn()
+            end,
+            minLabel = "-4", maxLabel = "+4",
+        },
     })
 end
 

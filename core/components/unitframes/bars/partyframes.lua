@@ -567,24 +567,30 @@ local function applyHealthBarBorder(bar, cfg)
     local tintEnabled = cfg.healthBarBorderTintEnable
     local tintColor = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
-    local inset = tonumber(cfg.healthBarBorderInset) or 0
+    local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+    local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
     -- Calculate edge size and padding based on style
     local style = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
-    local edgeSize, pad, texturePath
+    local edgeSize, padH, padV, texturePath
 
     if styleKey == "square" then
         -- Simple square border using solid color texture
         edgeSize = math.max(1, math.floor(thickness + 0.5))
-        pad = 1 - inset
-        if pad < 0 then pad = 0 end
+        padH = 1 - insetH
+        padV = 1 - insetV
+        if padH < 0 then padH = 0 end
+        if padV < 0 then padV = 0 end
         texturePath = "Interface\\Buttons\\WHITE8x8"
     elseif style and style.texture then
         -- Traditional border style with texture
         edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
         local paddingMult = style.paddingMultiplier or 0.5
-        pad = math.floor(edgeSize * paddingMult + 0.5) - inset
-        if pad < 0 then pad = 0 end
+        local basePad = math.floor(edgeSize * paddingMult + 0.5)
+        padH = basePad - insetH
+        padV = basePad - insetV
+        if padH < 0 then padH = 0 end
+        if padV < 0 then padV = 0 end
         texturePath = style.texture
     else
         -- Unknown style, hide border
@@ -596,23 +602,23 @@ local function applyHealthBarBorder(bar, cfg)
     -- Horizontal edges span full width including corners
     -- Vertical edges are trimmed by edge thickness to avoid corner overlap
     edges.Top:ClearAllPoints()
-    edges.Top:SetPoint("TOPLEFT", bar, "TOPLEFT", -pad, pad)
-    edges.Top:SetPoint("TOPRIGHT", bar, "TOPRIGHT", pad, pad)
+    edges.Top:SetPoint("TOPLEFT", bar, "TOPLEFT", -padH, padV)
+    edges.Top:SetPoint("TOPRIGHT", bar, "TOPRIGHT", padH, padV)
     edges.Top:SetHeight(edgeSize)
 
     edges.Bottom:ClearAllPoints()
-    edges.Bottom:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -pad, -pad)
-    edges.Bottom:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", pad, -pad)
+    edges.Bottom:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -padH, -padV)
+    edges.Bottom:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padH, -padV)
     edges.Bottom:SetHeight(edgeSize)
 
     edges.Left:ClearAllPoints()
-    edges.Left:SetPoint("TOPLEFT", bar, "TOPLEFT", -pad, pad - edgeSize)
-    edges.Left:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -pad, -pad + edgeSize)
+    edges.Left:SetPoint("TOPLEFT", bar, "TOPLEFT", -padH, padV - edgeSize)
+    edges.Left:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -padH, -padV + edgeSize)
     edges.Left:SetWidth(edgeSize)
 
     edges.Right:ClearAllPoints()
-    edges.Right:SetPoint("TOPRIGHT", bar, "TOPRIGHT", pad, pad - edgeSize)
-    edges.Right:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", pad, -pad + edgeSize)
+    edges.Right:SetPoint("TOPRIGHT", bar, "TOPRIGHT", padH, padV - edgeSize)
+    edges.Right:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padH, -padV + edgeSize)
     edges.Right:SetWidth(edgeSize)
 
     -- Apply texture and color to all edges

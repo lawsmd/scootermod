@@ -420,28 +420,29 @@ local function applySquareBorder(overlay, opts)
     end
 
     -- Inset: positive = move border inward, negative = move outward
-    local inset = (tonumber(opts.inset) or 0)
+    local insetH = tonumber(opts.insetH) or tonumber(opts.inset) or 0
+    local insetV = tonumber(opts.insetV) or tonumber(opts.inset) or 0
 
     -- Horizontal edges span full width; vertical edges trimmed to avoid corner overlap
     edges.Top:ClearAllPoints()
-    edges.Top:SetPoint("TOPLEFT", overlay, "TOPLEFT", -inset, inset)
-    edges.Top:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", inset, inset)
+    edges.Top:SetPoint("TOPLEFT", overlay, "TOPLEFT", -insetH, insetV)
+    edges.Top:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", insetH, insetV)
     edges.Top:SetHeight(thickness)
 
     edges.Bottom:ClearAllPoints()
-    edges.Bottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -inset, -inset)
-    edges.Bottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", inset, -inset)
+    edges.Bottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -insetH, -insetV)
+    edges.Bottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", insetH, -insetV)
     edges.Bottom:SetHeight(thickness)
 
     -- Vertical edges: trimmed by thickness at top/bottom to avoid corner overlap
     edges.Left:ClearAllPoints()
-    edges.Left:SetPoint("TOPLEFT", overlay, "TOPLEFT", -inset, inset - thickness)
-    edges.Left:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -inset, -inset + thickness)
+    edges.Left:SetPoint("TOPLEFT", overlay, "TOPLEFT", -insetH, insetV - thickness)
+    edges.Left:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", -insetH, -insetV + thickness)
     edges.Left:SetWidth(thickness)
 
     edges.Right:ClearAllPoints()
-    edges.Right:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", inset, inset - thickness)
-    edges.Right:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", inset, -inset + thickness)
+    edges.Right:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", insetH, insetV - thickness)
+    edges.Right:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", insetH, -insetV + thickness)
     edges.Right:SetWidth(thickness)
 
     for _, tex in pairs(edges) do
@@ -477,9 +478,10 @@ local function applyAtlasBorder(overlay, opts, styleDef)
     -- Calculate expansion based on style definition and inset
     local baseExpandX = styleDef.expandX or 0
     local baseExpandY = styleDef.expandY or baseExpandX
-    local inset = tonumber(opts.inset) or 0
-    local expandX = baseExpandX - inset
-    local expandY = baseExpandY - inset
+    local insetH = tonumber(opts.insetH) or tonumber(opts.inset) or 0
+    local insetV = tonumber(opts.insetV) or tonumber(opts.inset) or 0
+    local expandX = baseExpandX - insetH
+    local expandY = baseExpandY - insetV
 
     -- Position the atlas texture
     atlasTex:ClearAllPoints()
@@ -1240,7 +1242,8 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                         enable = true,
                         style = db.borderStyle or "square",
                         thickness = tonumber(db.borderThickness) or 1,
-                        inset = tonumber(db.borderInset) or -1,
+                        insetH = tonumber(db.borderInsetH) or tonumber(db.borderInset) or -1,
+                        insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or -1,
                         color = db.borderTintEnable and db.borderTintColor or {0, 0, 0, 1},
                         tintEnabled = db.borderTintEnable,
                         tintColor = db.borderTintColor,
@@ -1327,7 +1330,8 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                             enable = true,
                             style = component.db.borderStyle or "square",
                             thickness = tonumber(component.db.borderThickness) or 1,
-                            inset = tonumber(component.db.borderInset) or -1,
+                            insetH = tonumber(component.db.borderInsetH) or tonumber(component.db.borderInset) or -1,
+                            insetV = tonumber(component.db.borderInsetV) or tonumber(component.db.borderInset) or -1,
                             color = component.db.borderTintEnable and component.db.borderTintColor or {0, 0, 0, 1},
                             tintEnabled = component.db.borderTintEnable,
                             tintColor = component.db.borderTintColor,

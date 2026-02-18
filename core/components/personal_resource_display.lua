@@ -1120,10 +1120,13 @@ local function applyPRDBarBorder(component, statusBar)
     local tintColor = ensureColorSetting(component, "borderTintColor", {1, 1, 1, 1})
     local thickness = tonumber(db.borderThickness) or 1
     thickness = clampValue(math.floor(thickness * 2 + 0.5) / 2, 1, 16)
-    local inset = tonumber(db.borderInset) or 0
-    inset = clampValue(math.floor(inset + 0.5), -4, 4)
+    local insetH = tonumber(db.borderInsetH) or tonumber(db.borderInset) or 0
+    local insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or 0
+    insetH = clampValue(math.floor(insetH + 0.5), -4, 4)
+    insetV = clampValue(math.floor(insetV + 0.5), -4, 4)
     setSettingValue(component, "borderThickness", thickness)
-    setSettingValue(component, "borderInset", inset)
+    setSettingValue(component, "borderInsetH", insetH)
+    setSettingValue(component, "borderInsetV", insetV)
     local color
     if tintEnabled then
         color = tintColor
@@ -1143,7 +1146,8 @@ local function applyPRDBarBorder(component, statusBar)
             color = color,
             thickness = thickness,
             levelOffset = 51,
-            inset = inset,
+            insetH = insetH,
+            insetV = insetV,
         })
         if handled then
             -- Hide any old square border that may have been applied previously
@@ -1861,6 +1865,8 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Health Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
@@ -1932,6 +1938,8 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4,
             }},
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Power Bar", widget = "checkbox", section = "Misc", order = 1,
             }},

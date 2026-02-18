@@ -314,30 +314,31 @@ local function ApplySquareBorder(icon, opts)
     local thickness = math.max(1, tonumber(opts.thickness) or 1)
     local col = opts.color or {0, 0, 0, 1}
     local r, g, b, a = col[1] or 0, col[2] or 0, col[3] or 0, col[4] or 1
-    local inset = tonumber(opts.inset) or 0
+    local insetH = tonumber(opts.insetH) or tonumber(opts.inset) or 0
+    local insetV = tonumber(opts.insetV) or tonumber(opts.inset) or 0
 
     for _, tex in pairs(edges) do
         tex:SetColorTexture(r, g, b, a)
     end
 
     edges.Top:ClearAllPoints()
-    edges.Top:SetPoint("TOPLEFT", icon, "TOPLEFT", -inset, inset)
-    edges.Top:SetPoint("TOPRIGHT", icon, "TOPRIGHT", inset, inset)
+    edges.Top:SetPoint("TOPLEFT", icon, "TOPLEFT", -insetH, insetV)
+    edges.Top:SetPoint("TOPRIGHT", icon, "TOPRIGHT", insetH, insetV)
     edges.Top:SetHeight(thickness)
 
     edges.Bottom:ClearAllPoints()
-    edges.Bottom:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -inset, -inset)
-    edges.Bottom:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", inset, -inset)
+    edges.Bottom:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -insetH, -insetV)
+    edges.Bottom:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", insetH, -insetV)
     edges.Bottom:SetHeight(thickness)
 
     edges.Left:ClearAllPoints()
-    edges.Left:SetPoint("TOPLEFT", icon, "TOPLEFT", -inset, inset - thickness)
-    edges.Left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -inset, -inset + thickness)
+    edges.Left:SetPoint("TOPLEFT", icon, "TOPLEFT", -insetH, insetV - thickness)
+    edges.Left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", -insetH, -insetV + thickness)
     edges.Left:SetWidth(thickness)
 
     edges.Right:ClearAllPoints()
-    edges.Right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", inset, inset - thickness)
-    edges.Right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", inset, -inset + thickness)
+    edges.Right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", insetH, insetV - thickness)
+    edges.Right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", insetH, -insetV + thickness)
     edges.Right:SetWidth(thickness)
 
     for _, tex in pairs(edges) do
@@ -368,9 +369,10 @@ local function ApplyAtlasBorder(icon, opts, styleDef)
 
     local baseExpandX = styleDef.expandX or 0
     local baseExpandY = styleDef.expandY or baseExpandX
-    local inset = tonumber(opts.inset) or 0
-    local expandX = baseExpandX - inset
-    local expandY = baseExpandY - inset
+    local insetH = tonumber(opts.insetH) or tonumber(opts.inset) or 0
+    local insetV = tonumber(opts.insetV) or tonumber(opts.inset) or 0
+    local expandX = baseExpandX - insetH
+    local expandY = baseExpandY - insetV
 
     local adjL = styleDef.adjustLeft or 0
     local adjR = styleDef.adjustRight or 0
@@ -859,7 +861,8 @@ ApplyBordersToGroup = function(groupIndex)
         local opts = {
             style = db.borderStyle or "square",
             thickness = tonumber(db.borderThickness) or 1,
-            inset = tonumber(db.borderInset) or 0,
+            insetH = tonumber(db.borderInsetH) or tonumber(db.borderInset) or 0,
+            insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or 0,
             color = db.borderTintEnable and db.borderTintColor or {0, 0, 0, 1},
             tintEnabled = db.borderTintEnable,
             tintColor = db.borderTintColor,
@@ -1285,6 +1288,8 @@ local function CreateCustomGroupSettings()
         borderStyle = { type = "addon", default = "square" },
         borderThickness = { type = "addon", default = 1 },
         borderInset = { type = "addon", default = 0 },
+        borderInsetH = { type = "addon", default = 0 },
+        borderInsetV = { type = "addon", default = 0 },
 
         -- Text
         textStacks = { type = "addon", default = {} },

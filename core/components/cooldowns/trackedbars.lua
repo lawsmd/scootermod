@@ -466,13 +466,15 @@ local function styleVerticalStack(stack, component)
         else
             color = {0, 0, 0, 1}
         end
-        local inset = tonumber(db.borderInset) or 0
+        local insetH = tonumber(db.borderInsetH) or tonumber(db.borderInset) or 0
+        local insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or 0
         local handled = false
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
             handled = addon.BarBorders.ApplyToBarFrame(stack.barRegion, styleKey, {
                 color = color,
                 thickness = thickness,
-                inset = inset,
+                insetH = insetH,
+                insetV = insetV,
             })
         end
         if not handled then
@@ -500,7 +502,8 @@ local function styleVerticalStack(stack, component)
     local iconStyle = tostring(db.iconBorderStyle or "none")
     local iconThickness = tonumber(db.iconBorderThickness) or 1
     iconThickness = math.max(1, math.min(16, iconThickness))
-    local iconBorderInset = tonumber(db.iconBorderInset) or 0
+    local iconBorderInsetH = tonumber(db.iconBorderInsetH) or tonumber(db.iconBorderInset) or 0
+    local iconBorderInsetV = tonumber(db.iconBorderInsetV) or tonumber(db.iconBorderInset) or 0
     local iconTintEnabled = not not db.iconBorderTintEnable
     local tintRaw = db.iconBorderTintColor
     local tintColor = {1, 1, 1, 1}
@@ -510,7 +513,8 @@ local function styleVerticalStack(stack, component)
     if iconBorderEnabled and stack.iconRegion:IsShown() then
         addon.ApplyIconBorderStyle(stack.iconRegion, iconStyle, {
             thickness = iconThickness,
-            inset = iconBorderInset,
+            insetH = iconBorderInsetH,
+            insetV = iconBorderInsetV,
             color = iconTintEnabled and tintColor or nil,
             tintEnabled = iconTintEnabled,
             db = db,
@@ -946,11 +950,13 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
 
         local handled = false
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-            local inset = tonumber(component.db.borderInset) or 0
+            local insetH = tonumber(component.db.borderInsetH) or tonumber(component.db.borderInset) or 0
+            local insetV = tonumber(component.db.borderInsetV) or tonumber(component.db.borderInset) or 0
             handled = addon.BarBorders.ApplyToBarFrame(barFrame, styleKey, {
                 color = color,
                 thickness = thickness,
-                inset = inset,
+                insetH = insetH,
+                insetV = insetV,
             })
         end
 
@@ -990,7 +996,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     local iconStyle = tostring(getSettingValue("iconBorderStyle") or "none")
     local iconThickness = tonumber(getSettingValue("iconBorderThickness")) or 1
     iconThickness = math.max(1, math.min(16, iconThickness))
-    local iconBorderInset = tonumber(getSettingValue("iconBorderInset")) or 0
+    local iconBorderInsetH = tonumber(getSettingValue("iconBorderInsetH")) or tonumber(getSettingValue("iconBorderInset")) or 0
+    local iconBorderInsetV = tonumber(getSettingValue("iconBorderInsetV")) or tonumber(getSettingValue("iconBorderInset")) or 0
     local iconTintEnabled = not not getSettingValue("iconBorderTintEnable")
     local tintRaw = getSettingValue("iconBorderTintColor")
     local tintColor = {1, 1, 1, 1}
@@ -1002,7 +1009,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         Util.ToggleDefaultIconOverlay(iconFrame, false)
         addon.ApplyIconBorderStyle(iconFrame, iconStyle, {
             thickness = iconThickness,
-            inset = iconBorderInset,
+            insetH = iconBorderInsetH,
+            insetV = iconBorderInsetV,
             color = iconTintEnabled and tintColor or nil,
             tintEnabled = iconTintEnabled,
             db = component.db,
@@ -1326,9 +1334,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
-            }},
+            borderInset = { type = "addon", default = 0 },
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             iconTallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Icon", order = 1
             }},
@@ -1353,9 +1361,9 @@ addon:RegisterComponentInitializer(function(self)
             iconBorderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Icon", order = 7
             }},
-            iconBorderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Icon", order = 8
-            }},
+            iconBorderInset = { type = "addon", default = 0 },
+            iconBorderInsetH = { type = "addon", default = 0 },
+            iconBorderInsetV = { type = "addon", default = 0 },
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},

@@ -1617,6 +1617,8 @@ do
 			or cfg.nameBackdropBorderStyle ~= nil
 			or cfg.nameBackdropBorderThickness ~= nil
 			or cfg.nameBackdropBorderInset ~= nil
+			or cfg.nameBackdropBorderInsetH ~= nil
+			or cfg.nameBackdropBorderInsetV ~= nil
 			or cfg.nameBackdropBorderTintEnable ~= nil
 			or cfg.nameBackdropBorderTintColor ~= nil
 		)
@@ -1859,6 +1861,8 @@ do
 					or cfg.nameBackdropBorderStyle ~= nil
 					or cfg.nameBackdropBorderThickness ~= nil
 					or cfg.nameBackdropBorderInset ~= nil
+					or cfg.nameBackdropBorderInsetH ~= nil
+					or cfg.nameBackdropBorderInsetV ~= nil
 					or cfg.nameBackdropBorderTintEnable ~= nil
 					or cfg.nameBackdropBorderTintColor ~= nil
 					or cfg.useCustomBorders ~= nil
@@ -1881,8 +1885,10 @@ do
 				local useBorders = localEnabled and globalEnabled
 				local thickness = tonumber(cfg.nameBackdropBorderThickness) or 1
 				if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-				local inset = tonumber(cfg.nameBackdropBorderInset) or 0
-				if inset < -8 then inset = -8 elseif inset > 8 then inset = 8 end
+				local insetH = tonumber(cfg.nameBackdropBorderInsetH) or tonumber(cfg.nameBackdropBorderInset) or 0
+				local insetV = tonumber(cfg.nameBackdropBorderInsetV) or tonumber(cfg.nameBackdropBorderInset) or 0
+				if insetH < -8 then insetH = -8 elseif insetH > 8 then insetH = 8 end
+				if insetV < -8 then insetV = -8 elseif insetV > 8 then insetV = 8 end
 				local tintEnabled = not not cfg.nameBackdropBorderTintEnable
 				local tintColor = cfg.nameBackdropBorderTintColor or { 1, 1, 1, 1 }
 
@@ -1936,7 +1942,8 @@ do
 								color = tintEnabled and (tintColor or { 1, 1, 1, 1 }) or { 1, 1, 1, 1 },
 								layer = "OVERLAY",
 								layerSublevel = 7,
-								expand = -(inset),
+								expandX = -(insetH),
+								expandY = -(insetV),
 							})
 						end
 						borderFrame:Show()
@@ -1944,13 +1951,14 @@ do
 						if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(borderFrame) end
 						local ok = false
 						if borderFrame.SetBackdrop then
-							local insetPx = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + (tonumber(inset) or 0))
+							local insetPxH = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + insetH)
+							local insetPxV = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + insetV)
 							local bd = {
 								bgFile = nil,
 								edgeFile = styleTexture,
 								tile = false,
 								edgeSize = edgeSize,
-								insets = { left = insetPx, right = insetPx, top = insetPx, bottom = insetPx },
+								insets = { left = insetPxH, right = insetPxH, top = insetPxV, bottom = insetPxV },
 							}
 							ok = pcall(borderFrame.SetBackdrop, borderFrame, bd)
 						end
@@ -2522,6 +2530,8 @@ do
 				or cfg.nameBackdropBorderStyle ~= nil
 				or cfg.nameBackdropBorderThickness ~= nil
 				or cfg.nameBackdropBorderInset ~= nil
+				or cfg.nameBackdropBorderInsetH ~= nil
+				or cfg.nameBackdropBorderInsetV ~= nil
 				or cfg.nameBackdropBorderTintEnable ~= nil
 				or cfg.nameBackdropBorderTintColor ~= nil
 				or cfg.useCustomBorders ~= nil
@@ -2544,8 +2554,10 @@ do
 			local useBorders = localEnabled and globalEnabled
 			local thickness = tonumber(cfg.nameBackdropBorderThickness) or 1
 			if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-			local inset = tonumber(cfg.nameBackdropBorderInset) or 0
-			if inset < -8 then inset = -8 elseif inset > 8 then inset = 8 end
+			local insetH = tonumber(cfg.nameBackdropBorderInsetH) or tonumber(cfg.nameBackdropBorderInset) or 0
+			local insetV = tonumber(cfg.nameBackdropBorderInsetV) or tonumber(cfg.nameBackdropBorderInset) or 0
+			if insetH < -8 then insetH = -8 elseif insetH > 8 then insetH = 8 end
+			if insetV < -8 then insetV = -8 elseif insetV > 8 then insetV = 8 end
 			local tintEnabled = not not cfg.nameBackdropBorderTintEnable
 			local tintColor = cfg.nameBackdropBorderTintColor or {1,1,1,1}
 
@@ -2601,7 +2613,8 @@ do
 							color = tintEnabled and (tintColor or {1,1,1,1}) or {1,1,1,1},
 							layer = "OVERLAY",
 							layerSublevel = 7,
-							expand = -(inset),
+							expandX = -(insetH),
+							expandY = -(insetV),
 						})
 					end
 					borderFrame:Show()
@@ -2610,13 +2623,14 @@ do
 					if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(borderFrame) end
 					local ok = false
 					if borderFrame.SetBackdrop then
-						local insetPx = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + (tonumber(inset) or 0))
+						local insetPxH = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + insetH)
+						local insetPxV = math.max(0, math.floor(edgeSize * 0.65 + 0.5) + insetV)
 						local bd = {
 							bgFile = nil,
 							edgeFile = styleTexture,
 							tile = false,
 							edgeSize = edgeSize,
-							insets = { left = insetPx, right = insetPx, top = insetPx, bottom = insetPx },
+							insets = { left = insetPxH, right = insetPxH, top = insetPxV, bottom = insetPxV },
 						}
 						ok = pcall(borderFrame.SetBackdrop, borderFrame, bd)
 					end
@@ -2743,6 +2757,8 @@ do
 				or cfg.nameBackdropBorderStyle ~= nil
 				or cfg.nameBackdropBorderThickness ~= nil
 				or cfg.nameBackdropBorderInset ~= nil
+				or cfg.nameBackdropBorderInsetH ~= nil
+				or cfg.nameBackdropBorderInsetV ~= nil
 				or cfg.nameBackdropBorderTintEnable ~= nil
 				or cfg.nameBackdropBorderTintColor ~= nil
 				or cfg.useCustomBorders ~= nil

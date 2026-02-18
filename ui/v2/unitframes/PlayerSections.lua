@@ -268,19 +268,36 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             end,
                         })
 
-                        tabInner:AddSlider({
+                        tabInner:AddDualSlider({
                             label = "Border Inset",
-                            min = -4, max = 4, step = 1,
-                            get = function()
-                                local apb = ensureAltPowerBarDB() or {}
-                                return tonumber(apb.borderInset) or 0
-                            end,
-                            set = function(v)
-                                local apb = ensureAltPowerBarDB()
-                                if not apb then return end
-                                apb.borderInset = tonumber(v) or 0
-                                applyBarTexturesFn()
-                            end,
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.borderInsetH) or tonumber(apb.borderInset) or 0
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderInsetH = tonumber(v) or 0
+                                    applyBarTexturesFn()
+                                end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function()
+                                    local apb = ensureAltPowerBarDB() or {}
+                                    return tonumber(apb.borderInsetV) or tonumber(apb.borderInset) or 0
+                                end,
+                                set = function(v)
+                                    local apb = ensureAltPowerBarDB()
+                                    if not apb then return end
+                                    apb.borderInsetV = tonumber(v) or 0
+                                    applyBarTexturesFn()
+                                end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
                         })
 
                         tabInner:Finalize()

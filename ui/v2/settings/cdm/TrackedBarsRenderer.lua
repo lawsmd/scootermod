@@ -227,11 +227,20 @@ function TrackedBars.Render(panel, scrollContent)
                 minLabel = "1", maxLabel = "8",
             })
 
-            inner:AddSlider({
-                label = "Border Inset", min = -4, max = 4, step = 1,
-                get = function() return getSetting("borderInset") or 0 end,
-                set = function(v) setSetting("borderInset", v) end,
-                minLabel = "-4", maxLabel = "4",
+            inner:AddDualSlider({
+                label = "Border Inset",
+                sliderA = {
+                    axisLabel = "H", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("borderInsetH") or getSetting("borderInset") or 0 end,
+                    set = function(v) setSetting("borderInsetH", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
+                sliderB = {
+                    axisLabel = "V", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("borderInsetV") or getSetting("borderInset") or 0 end,
+                    set = function(v) setSetting("borderInsetV", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
             })
 
             inner:Finalize()
@@ -546,13 +555,20 @@ function TrackedBars.Render(panel, scrollContent)
                 minLabel = "1", maxLabel = "8",
             })
 
-            inner:AddSlider({
+            inner:AddDualSlider({
                 label = "Border Inset",
-                description = "Move border inward (positive) or outward (negative).",
-                min = -4, max = 4, step = 1,
-                get = function() return getSetting("iconBorderInset") or 0 end,
-                set = function(v) setSetting("iconBorderInset", v) end,
-                minLabel = "-4", maxLabel = "+4",
+                sliderA = {
+                    axisLabel = "H", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("iconBorderInsetH") or getSetting("iconBorderInset") or 0 end,
+                    set = function(v) setSetting("iconBorderInsetH", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
+                sliderB = {
+                    axisLabel = "V", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("iconBorderInsetV") or getSetting("iconBorderInset") or 0 end,
+                    set = function(v) setSetting("iconBorderInsetV", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
             })
 
             inner:Finalize()

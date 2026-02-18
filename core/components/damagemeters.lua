@@ -635,8 +635,8 @@ local function ApplySingleEntryStyle(entry, db)
             -- A custom border overlay handles this properly
             if db.iconBorderEnable then
                 local thickness = db.iconBorderThickness or 1
-                local insetH = db.iconBorderInsetH or 0  -- Horizontal inset (left/right)
-                local insetV = db.iconBorderInsetV or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
+                local insetH = tonumber(db.iconBorderInsetH) or 0  -- Horizontal inset (left/right)
+                local insetV = tonumber(db.iconBorderInsetV) or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
 
                 -- Get or create the border overlay frame
                 local borderOverlay = getElementState(iconFrame).borderOverlay

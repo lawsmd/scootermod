@@ -175,6 +175,8 @@ local copyKeysRoot = {
     "healthBarBorderTintColor",
     "healthBarBorderThickness",
     "healthBarBorderInset",
+    "healthBarBorderInsetH",
+    "healthBarBorderInsetV",
     "healthBarHideBorder",
     "healthBarHideTextureOnly",
     "healthBarHideOverAbsorbGlow",
@@ -201,6 +203,8 @@ local copyKeysRoot = {
     "powerBarBorderTintColor",
     "powerBarBorderThickness",
     "powerBarBorderInset",
+    "powerBarBorderInsetH",
+    "powerBarBorderInsetV",
     "powerBarHideTextureOnly",
     "powerBarHideFullSpikes",
     "powerBarHideFeedback",
@@ -223,6 +227,8 @@ local copyKeysRoot = {
     "nameBackdropBorderTintColor",
     "nameBackdropBorderThickness",
     "nameBackdropBorderInset",
+    "nameBackdropBorderInsetH",
+    "nameBackdropBorderInsetV",
     -- Name/Level Text
     "nameTextHidden",
     "textName",
@@ -276,6 +282,8 @@ local totCopyKeysRoot = {
     "healthBarBorderTintColor",
     "healthBarBorderThickness",
     "healthBarBorderInset",
+    "healthBarBorderInsetH",
+    "healthBarBorderInsetV",
     -- Power Bar style/border/visibility (no text)
     "powerBarHidden",
     "powerBarTexture",
@@ -290,6 +298,8 @@ local totCopyKeysRoot = {
     "powerBarBorderTintColor",
     "powerBarBorderThickness",
     "powerBarBorderInset",
+    "powerBarBorderInsetH",
+    "powerBarBorderInsetV",
 }
 
 function addon.CopyUnitFrameSettings(sourceUnit, destUnit, opts)

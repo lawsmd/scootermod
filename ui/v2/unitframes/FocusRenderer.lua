@@ -166,11 +166,20 @@ local function buildBorderTab(inner, barPrefix, applyFn)
         set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
     })
 
-    inner:AddSlider({
+    inner:AddDualSlider({
         label = "Border Inset",
-        min = -4, max = 4, step = 1,
-        get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
-        set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderInset"] = tonumber(v) or 0; applyFn() end end,
+        sliderA = {
+            axisLabel = "H", min = -4, max = 4, step = 1,
+            get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BorderInsetH"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
+            set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderInsetH"] = tonumber(v) or 0; applyFn() end end,
+            minLabel = "-4", maxLabel = "+4",
+        },
+        sliderB = {
+            axisLabel = "V", min = -4, max = 4, step = 1,
+            get = function() local t = ensureUFDB() or {}; return tonumber(t[barPrefix .. "BorderInsetV"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
+            set = function(v) local t = ensureUFDB(); if t then t[barPrefix .. "BorderInsetV"] = tonumber(v) or 0; applyFn() end end,
+            minLabel = "-4", maxLabel = "+4",
+        },
     })
 
     inner:Finalize()
@@ -622,9 +631,20 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
                             get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                             set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInset) or 0 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInset = tonumber(v) or 0; applyNameLevelText() end end })
+                        tabInner:AddDualSlider({ label = "Border Inset",
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetH) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetH = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetV) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetV = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     nameText = function(cf, tabInner)
@@ -911,9 +931,20 @@ function UF.RenderFocus(panel, scrollContent)
                         tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
                             get = function() local t = ensureCastBarDB() or {}; local v = tonumber(t.castBarBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyCastBar() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderInset) or 0 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderInset = tonumber(v) or 0; applyCastBar() end end })
+                        tabInner:AddDualSlider({ label = "Border Inset",
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderInsetH) or tonumber(t.castBarBorderInset) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderInsetH = tonumber(v) or 0; applyCastBar() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBorderInsetV) or tonumber(t.castBarBorderInset) or 0 end,
+                                set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderInsetV = tonumber(v) or 0; applyCastBar() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     icon = function(cf, tabInner)

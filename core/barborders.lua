@@ -136,7 +136,7 @@ local function applyBackdrop(holder, style, edgeSize)
     return ok
 end
 
-local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, inset)
+local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, inset, insetH, insetV)
     local holder = ensureBorderFrame(barFrame)
     if not holder then return false end
 
@@ -147,13 +147,16 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
     local edgeSize = computeEdgeSize(barFrame, style, thickness)
     local paddingMultiplier = style and style.paddingMultiplier or 0.5
     local pad = math.floor(edgeSize * paddingMultiplier + 0.5)
-    local insetPx = tonumber(inset) or tonumber(bfState.inset) or 0
+    local insetPxH = tonumber(insetH) or tonumber(bfState.insetH) or tonumber(inset) or tonumber(bfState.inset) or 0
+    local insetPxV = tonumber(insetV) or tonumber(bfState.insetV) or tonumber(inset) or tonumber(bfState.inset) or 0
     -- Positive inset pulls the border inward (smaller padding); negative pushes outward
-    local padAdj = pad - insetPx
-    if padAdj < 0 then padAdj = 0 end
+    local padAdjH = pad - insetPxH
+    local padAdjV = pad - insetPxV
+    if padAdjH < 0 then padAdjH = 0 end
+    if padAdjV < 0 then padAdjV = 0 end
 
     -- Allow per-frame, per-side pad adjustments (used for fine-tuning Cast Bar borders).
-    local padL, padR, padT, padB = padAdj, padAdj, padAdj, padAdj
+    local padL, padR, padT, padB = padAdjH, padAdjH, padAdjV, padAdjV
     local perSide = bfState.padAdjust
     if type(perSide) == "table" then
         padL = padL + (tonumber(perSide.left) or 0)
@@ -228,7 +231,8 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
             styleKey = style.key,
             thickness = thickness,
             color = cloneColor(color),
-            inset = insetPx,
+            insetH = insetPxH,
+            insetV = insetPxV,
         }
     end
 
@@ -244,7 +248,7 @@ local function handleSizeChanged(frame)
     if not style then return end
     local color = cloneColor(state.color)
     local thickness = tonumber(state.thickness) or 1
-    applyStyle(frame, style, color, thickness, true, tonumber(state.inset) or 0)
+    applyStyle(frame, style, color, thickness, true, nil, tonumber(state.insetH) or 0, tonumber(state.insetV) or 0)
 end
 
 local function ensureSizeHook(barFrame)
@@ -375,7 +379,8 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
     else
         bfState.containerParentRef = nil
     end
-    bfState.inset = tonumber(options and options.inset) or 0
+    bfState.insetH = tonumber(options and options.insetH) or tonumber(options and options.inset) or 0
+    bfState.insetV = tonumber(options and options.insetV) or tonumber(options and options.inset) or 0
     -- Allow callers to specify an alternate frame to anchor the border to (e.g., clipping container)
     if type(options) == "table" and options.anchorTarget and options.anchorTarget.GetHeight then
         bfState.anchorTarget = options.anchorTarget
@@ -388,7 +393,7 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
         bfState.padAdjust = nil
     end
 
-    return applyStyle(barFrame, style, color, thickness, false, bfState.inset)
+    return applyStyle(barFrame, style, color, thickness, false, nil, bfState.insetH, bfState.insetV)
 end
 
 function BarBorders.ClearBarFrame(barFrame)

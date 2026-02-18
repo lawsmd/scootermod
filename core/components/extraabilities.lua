@@ -166,7 +166,8 @@ local function ApplyExtraAbilitiesStyling(self)
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
     local thickness = tonumber(self.db and self.db.borderThickness) or 1
     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-    local borderInset = tonumber(self.db and self.db.borderInset) or 0
+    local borderInsetH = tonumber(self.db and self.db.borderInsetH) or tonumber(self.db and self.db.borderInset) or 0
+    local borderInsetV = tonumber(self.db and self.db.borderInsetV) or tonumber(self.db and self.db.borderInset) or 0
     local tintEnabled = self.db and self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
     local tintColor
     if tintEnabled then
@@ -249,27 +250,27 @@ local function ApplyExtraAbilitiesStyling(self)
                     color = col,
                     layer = "OVERLAY",
                     layerSublevel = 7,
-                    expandX = 0 - borderInset,
-                    expandY = 0 - borderInset,
-                    expandTop = 1 - borderInset,
-                    expandBottom = -1 - borderInset,
+                    expandX = 0 - borderInsetH,
+                    expandY = 0 - borderInsetV,
+                    expandTop = 1 - borderInsetV,
+                    expandBottom = -1 - borderInsetV,
                 })
                 local container = btn.ScootSquareBorderContainer or btn
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
                 if edges and edges.Right then
                     edges.Right:ClearAllPoints()
-                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", 0 + borderInset, 0)
-                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", 0 + borderInset, 0)
+                    edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", 0 + borderInsetH, 0)
+                    edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", 0 + borderInsetH, 0)
                 end
                 if edges and edges.Top then
                     edges.Top:ClearAllPoints()
-                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInset, 1 - borderInset)
-                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", 0 + borderInset, 1 - borderInset)
+                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInsetH, 1 - borderInsetV)
+                    edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", 0 + borderInsetH, 1 - borderInsetV)
                 end
                 if edges and edges.Bottom then
                     edges.Bottom:ClearAllPoints()
-                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInset, 0 - borderInset)
-                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", 0 + borderInset, 0 - borderInset)
+                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInsetH, 0 - borderInsetV)
+                    edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", 0 + borderInsetH, 0 - borderInsetV)
                 end
             else
                 addon.ApplyIconBorderStyle(btn, styleKey, {
@@ -279,7 +280,8 @@ local function ApplyExtraAbilitiesStyling(self)
                     db = self.db,
                     thicknessKey = "borderThickness",
                     tintColorKey = "borderTintColor",
-                    inset = borderInset,
+                    insetH = borderInsetH,
+                    insetV = borderInsetV,
                     defaultThickness = (self.settings and self.settings.borderThickness and self.settings.borderThickness.default) or 1,
                 })
             end
@@ -376,9 +378,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
             }},
-            borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
-            }},
+            borderInset = { type = "addon", default = 0 },
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             -- Visibility
             hideBlizzardArt = { type = "addon", default = false, ui = {
                 label = "Hide Blizzard Icon Art", widget = "checkbox", section = "Misc", order = 1

@@ -210,7 +210,8 @@ local function ApplyActionBarStyling(self)
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end
     local thickness = tonumber(self.db and self.db.borderThickness) or 1
     if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-    local borderInset = tonumber(self.db and self.db.borderInset) or 0
+    local borderInsetH = tonumber(self.db and self.db.borderInsetH) or tonumber(self.db and self.db.borderInset) or 0
+    local borderInsetV = tonumber(self.db and self.db.borderInsetV) or tonumber(self.db and self.db.borderInset) or 0
     local tintEnabled = self.db and self.db.borderTintEnable and type(self.db.borderTintColor) == "table"
     local tintColor
     if tintEnabled then
@@ -383,10 +384,10 @@ local function ApplyActionBarStyling(self)
                     color = col,
                     layer = "OVERLAY",
                     layerSublevel = 7,
-                    expandX = 0 - borderInset,
-                    expandY = 0 - borderInset,
-                    expandTop = (shaped and 0 or 1) - borderInset,
-                    expandBottom = (shaped and 0 or -1) - borderInset,
+                    expandX = 0 - borderInsetH,
+                    expandY = 0 - borderInsetV,
+                    expandTop = (shaped and 0 or 1) - borderInsetV,
+                    expandBottom = (shaped and 0 or -1) - borderInsetV,
                     levelOffset = iconRegion and 5 or nil,
                     containerParent = iconRegion and btn or nil,
                     containerAnchorRegion = iconRegion,
@@ -395,22 +396,22 @@ local function ApplyActionBarStyling(self)
                 local edges = (container and container.ScootSquareBorderEdges) or btn.ScootSquareBorderEdges
                 if edges and edges.Right then
                     edges.Right:ClearAllPoints()
-                    local rX = shaped and (0 - borderInset) or (-1 + borderInset)
+                    local rX = shaped and (0 - borderInsetH) or (-1 + borderInsetH)
                     edges.Right:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", rX, 0)
                     edges.Right:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", rX, 0)
                 end
                 if edges and edges.Top then
                     edges.Top:ClearAllPoints()
-                    local tRX = shaped and (0 + borderInset) or (-1 + borderInset)
-                    local tY = shaped and (0 - borderInset) or (1 - borderInset)
-                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInset, tY)
+                    local tRX = shaped and (0 + borderInsetH) or (-1 + borderInsetH)
+                    local tY = shaped and (0 - borderInsetV) or (1 - borderInsetV)
+                    edges.Top:SetPoint("TOPLEFT", container or btn, "TOPLEFT", 0 - borderInsetH, tY)
                     edges.Top:SetPoint("TOPRIGHT", container or btn, "TOPRIGHT", tRX, tY)
                 end
                 if edges and edges.Bottom then
                     edges.Bottom:ClearAllPoints()
-                    local bRX = shaped and (0 + borderInset) or (-1 + borderInset)
-                    local bY = shaped and (0 + borderInset) or (1 - borderInset)
-                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInset, bY)
+                    local bRX = shaped and (0 + borderInsetH) or (-1 + borderInsetH)
+                    local bY = shaped and (0 + borderInsetV) or (1 - borderInsetV)
+                    edges.Bottom:SetPoint("BOTTOMLEFT", container or btn, "BOTTOMLEFT", 0 - borderInsetH, bY)
                     edges.Bottom:SetPoint("BOTTOMRIGHT", container or btn, "BOTTOMRIGHT", bRX, bY)
                 end
             else
@@ -421,7 +422,8 @@ local function ApplyActionBarStyling(self)
                     db = self.db,
                     thicknessKey = "borderThickness",
                     tintColorKey = "borderTintColor",
-                    inset = borderInset,
+                    insetH = borderInsetH,
+                    insetV = borderInsetV,
                     defaultThickness = (self.settings and self.settings.borderThickness and self.settings.borderThickness.default) or 1,
                 })
             end
@@ -740,9 +742,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
             }},
-            borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
-            }},
+            borderInset = { type = "addon", default = 0 },
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             barOpacity = { type = "addon", default = 100, ui = {
                 label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
             }},
@@ -802,9 +804,9 @@ addon:RegisterComponentInitializer(function(self)
                 borderThickness = { type = "addon", default = 1, ui = {
                     label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
                 }},
-                borderInset = { type = "addon", default = 0, ui = {
-                    label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
-                }},
+                borderInset = { type = "addon", default = 0 },
+                borderInsetH = { type = "addon", default = 0 },
+                borderInsetV = { type = "addon", default = 0 },
                 backdropDisable = { type = "addon", default = false, ui = {
                     label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
                 }},
@@ -944,9 +946,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 4
             }},
-            borderInset = { type = "addon", default = 0, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 5
-            }},
+            borderInset = { type = "addon", default = 0 },
+            borderInsetH = { type = "addon", default = 0 },
+            borderInsetV = { type = "addon", default = 0 },
             backdropDisable = { type = "addon", default = false, ui = {
                 label = "Disable Backdrop", widget = "checkbox", section = "Backdrop", order = 1
             }},

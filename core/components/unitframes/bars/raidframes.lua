@@ -533,7 +533,8 @@ local function applyHealthBarBorder(bar, cfg)
     local tintEnabled = cfg.healthBarBorderTintEnable
     local tintColor = cfg.healthBarBorderTintColor or {1, 1, 1, 1}
     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
-    local inset = tonumber(cfg.healthBarBorderInset) or 0
+    local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
+    local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
 
     if addon.BarBorders then
         anchor:ClearAllPoints()
@@ -545,12 +546,14 @@ local function applyHealthBarBorder(bar, cfg)
             local edgeSize = math.max(1, math.floor(thickness * 1.35 * (style.thicknessScale or 1) + 0.5))
             local paddingMult = style.paddingMultiplier or 0.5
             local pad = math.floor(edgeSize * paddingMult + 0.5)
-            local padAdj = pad - inset
-            if padAdj < 0 then padAdj = 0 end
+            local padAdjH = pad - insetH
+            local padAdjV = pad - insetV
+            if padAdjH < 0 then padAdjH = 0 end
+            if padAdjV < 0 then padAdjV = 0 end
 
             anchor:ClearAllPoints()
-            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -padAdj, padAdj)
-            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padAdj, -padAdj)
+            anchor:SetPoint("TOPLEFT", bar, "TOPLEFT", -padAdjH, padAdjV)
+            anchor:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", padAdjH, -padAdjV)
 
             local insetMult = style.insetMultiplier or 0.65
             local backdropInset = math.floor(edgeSize * insetMult + 0.5)
@@ -558,8 +561,8 @@ local function applyHealthBarBorder(bar, cfg)
 
             -- ANCHOR SECRECY FIX: Set explicit size to prevent anchor secrecy from
             -- causing GetWidth() to return secrets inside SetBackdrop
-            -- Size = bar size + padding adjustments (padAdj on each side)
-            anchor:SetSize(barWidth + padAdj * 2, barHeight + padAdj * 2)
+            -- Size = bar size + padding adjustments on each side
+            anchor:SetSize(barWidth + padAdjH * 2, barHeight + padAdjV * 2)
 
             local ok = pcall(anchor.SetBackdrop, anchor, {
                 bgFile = nil,

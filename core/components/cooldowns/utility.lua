@@ -61,9 +61,9 @@ addon:RegisterComponentInitializer(function(self)
             borderThickness = { type = "addon", default = 1, ui = {
                 label = "Border Thickness", widget = "slider", min = 1, max = 8, step = 0.5, section = "Border", order = 5
             }},
-            borderInset = { type = "addon", default = -1, ui = {
-                label = "Border Inset", widget = "slider", min = -4, max = 4, step = 1, section = "Border", order = 6
-            }},
+            borderInset = { type = "addon", default = -1 },
+            borderInsetH = { type = "addon", default = -1 },
+            borderInsetV = { type = "addon", default = -1 },
             visibilityMode = { type = "editmode", default = "always", ui = {
                 label = "Visibility", widget = "dropdown", values = { always = "Always", combat = "Only in Combat", never = "Hidden" }, section = "Misc", order = 1
             }},

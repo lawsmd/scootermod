@@ -252,21 +252,36 @@ local function buildHealthBorderTab(inner)
         end,
     })
 
-    inner:AddSlider({
+    inner:AddDualSlider({
         label = "Border Inset",
-        min = -4,
-        max = 4,
-        step = 1,
-        get = function()
-            local t = ensureUFDB() or {}
-            return tonumber(t.healthBarBorderInset) or 0
-        end,
-        set = function(v)
-            local t = ensureUFDB()
-            if not t then return end
-            t.healthBarBorderInset = tonumber(v) or 0
-            applyBarTextures()
-        end,
+        sliderA = {
+            axisLabel = "H", min = -4, max = 4, step = 1,
+            get = function()
+                local t = ensureUFDB() or {}
+                return tonumber(t.healthBarBorderInsetH) or tonumber(t.healthBarBorderInset) or 0
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t.healthBarBorderInsetH = tonumber(v) or 0
+                applyBarTextures()
+            end,
+            minLabel = "-4", maxLabel = "+4",
+        },
+        sliderB = {
+            axisLabel = "V", min = -4, max = 4, step = 1,
+            get = function()
+                local t = ensureUFDB() or {}
+                return tonumber(t.healthBarBorderInsetV) or tonumber(t.healthBarBorderInset) or 0
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t.healthBarBorderInsetV = tonumber(v) or 0
+                applyBarTextures()
+            end,
+            minLabel = "-4", maxLabel = "+4",
+        },
     })
 
     inner:Finalize()
@@ -761,9 +776,20 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
                             get = function() local t = ensureUFDB() or {}; local v = tonumber(t.powerBarBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyBarTextures() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInset) or 0 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderInset = tonumber(v) or 0; applyBarTextures() end end })
+                        tabInner:AddDualSlider({ label = "Border Inset",
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInsetH) or tonumber(t.powerBarBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderInsetH = tonumber(v) or 0; applyBarTextures() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.powerBarBorderInsetV) or tonumber(t.powerBarBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderInsetV = tonumber(v) or 0; applyBarTextures() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     visibility = function(cf, tabInner)
@@ -880,9 +906,20 @@ function UF.RenderPet(panel, scrollContent)
                         tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
                             get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
                             set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end })
-                        tabInner:AddSlider({ label = "Border Inset", min = -4, max = 4, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInset) or 0 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInset = tonumber(v) or 0; applyNameLevelText() end end })
+                        tabInner:AddDualSlider({ label = "Border Inset",
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetH) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetH = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetV) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetV = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     nameText = function(cf, tabInner)

@@ -169,14 +169,26 @@ function TrackedBuffs.Render(panel, scrollContent)
                 minLabel = "1", maxLabel = "8",
             })
 
-            inner:AddSlider({
-                label = "Border Inset", min = -4, max = 4, step = 1,
-                get = function() return getSetting("borderInset") or -1 end,
-                set = function(v)
-                    setSetting("borderInset", v)
-                    if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
-                end,
-                minLabel = "-4", maxLabel = "+4",
+            inner:AddDualSlider({
+                label = "Border Inset",
+                sliderA = {
+                    axisLabel = "H", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("borderInsetH") or getSetting("borderInset") or -1 end,
+                    set = function(v)
+                        setSetting("borderInsetH", v)
+                        if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
+                    end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
+                sliderB = {
+                    axisLabel = "V", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("borderInsetV") or getSetting("borderInset") or -1 end,
+                    set = function(v)
+                        setSetting("borderInsetV", v)
+                        if addon and addon.ApplyStyles then C_Timer.After(0, function() addon:ApplyStyles() end) end
+                    end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
             })
 
             inner:Finalize()

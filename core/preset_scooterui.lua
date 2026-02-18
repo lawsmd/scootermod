@@ -1692,6 +1692,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -1795,6 +1797,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -1896,6 +1900,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -1997,6 +2003,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -2098,6 +2106,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -2199,6 +2209,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = -1,
+      borderInsetH = -1,
+      borderInsetV = -1,
       borderStyle = "blizzard",
       borderThickness = 4.6,
       borderTintColor = {
@@ -2300,6 +2312,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = false,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 1,
       borderTintColor = {
@@ -2401,6 +2415,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = false,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 1,
       borderTintColor = {
@@ -2721,6 +2737,8 @@ Presets:Register({
       centerAnchor = true,
       borderEnable = true,
       borderInset = -0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "blizzard",
       borderThickness = 2,
       borderTintColor = {
@@ -2784,6 +2802,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = -2,
+      borderInsetH = -2,
+      borderInsetV = -2,
       borderStyle = "wowlabs",
       borderThickness = 8,
       borderTintColor = {
@@ -2912,6 +2932,8 @@ Presets:Register({
       borderDisableAll = false,
       borderEnable = true,
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 2,
       borderTintColor = {
@@ -3003,6 +3025,8 @@ Presets:Register({
     },
     prdHealth = {
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 1,
       borderTintColor = {
@@ -3062,6 +3086,8 @@ Presets:Register({
     },
     prdPower = {
       borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "square",
       borderThickness = 1,
       borderTintColor = {
@@ -3255,6 +3281,8 @@ Presets:Register({
     trackedBuffs = {
       borderEnable = true,
       borderInset = -0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "blizzard",
       borderThickness = 3,
       borderTintColor = {
@@ -3315,6 +3343,8 @@ Presets:Register({
       centerAnchor = true,
       borderEnable = true,
       borderInset = -0,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "blizzard",
       borderThickness = 2,
       borderTintColor = {
@@ -3381,6 +3411,8 @@ Presets:Register({
       healthBarBackgroundOpacity = 50,
       healthBarBackgroundTexture = "a3",
       healthBarBorderInset = -0,
+      healthBarBorderInsetH = -0,
+      healthBarBorderInsetV = -0,
       healthBarBorderStyle = "square",
       healthBarBorderThickness = 2,
       healthBarBorderTintColor = {
@@ -3630,6 +3662,8 @@ Presets:Register({
         castBarBackgroundTexture = "a1",
         castBarBorderEnable = true,
         castBarBorderInset = -0,
+        castBarBorderInsetH = 0,
+        castBarBorderInsetV = 0,
         castBarBorderThickness = 1,
         castBarScale = 125,
         castBarSparkHidden = true,
@@ -3884,6 +3918,8 @@ Presets:Register({
       },
       healthBarBackgroundTexture = "a2",
       healthBarBorderInset = -0,
+      healthBarBorderInsetH = -0,
+      healthBarBorderInsetV = -0,
       healthBarBorderStyle = "mmtYBorder",
       healthBarBorderThickness = 1,
       healthBarBorderTintColor = {
@@ -3917,6 +3953,8 @@ Presets:Register({
       },
       powerBarBackgroundTexture = "a1",
       powerBarBorderInset = -0,
+      powerBarBorderInsetH = -0,
+      powerBarBorderInsetV = -0,
       powerBarBorderStyle = "square",
       powerBarBorderThickness = 1,
       powerBarCustomPositionEnabled = true,
@@ -4036,6 +4074,8 @@ Presets:Register({
         castBarBackgroundTexture = "a1",
         castBarBorderEnable = true,
         castBarBorderInset = 1,
+        castBarBorderInsetH = 1,
+        castBarBorderInsetV = 1,
         castBarBorderThickness = 1,
         castBarScale = 90,
         castBarSparkHidden = true,

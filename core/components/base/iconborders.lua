@@ -180,15 +180,10 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
 
     local baseExpandX = styleDef.expandX or 0
     local baseExpandY = styleDef.expandY or baseExpandX
-    local insetValue = tonumber(opts and opts.inset) or 0
-    local insetAdjust = 0
-    if styleDef.allowThicknessInset then
-        insetAdjust = -insetValue
-    else
-        insetAdjust = -insetValue
-    end
-    local expandX = clamp(baseExpandX + insetAdjust, -8, 8)
-    local expandY = clamp(baseExpandY + insetAdjust, -8, 8)
+    local insetValueH = tonumber(opts and opts.insetH) or tonumber(opts and opts.inset) or 0
+    local insetValueV = tonumber(opts and opts.insetV) or tonumber(opts and opts.inset) or 0
+    local expandX = clamp(baseExpandX + (-insetValueH), -8, 8)
+    local expandY = clamp(baseExpandY + (-insetValueV), -8, 8)
 
     local appliedTexture
 

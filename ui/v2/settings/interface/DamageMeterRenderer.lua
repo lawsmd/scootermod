@@ -847,36 +847,22 @@ function DamageMeter.Render(panel, scrollContent)
                 disabled = iconsDisabled,
             })
 
-            -- Horizontal Inset slider (left/right edges)
-            inner:AddSlider({
-                label = "Horizontal Inset",
-                description = "Move left/right edges inward (positive) or outward (negative).",
-                min = -4,
-                max = 4,
-                step = 1,
-                get = function() return getSetting("iconBorderInsetH") or 0 end,
-                set = function(v)
-                    setSetting("iconBorderInsetH", v)
-                end,
-                minLabel = "-4",
-                maxLabel = "+4",
+            -- Border Inset (H/V)
+            inner:AddDualSlider({
+                label = "Border Inset",
                 disabled = iconsDisabled,
-            })
-
-            -- Vertical Inset slider (top/bottom edges)
-            inner:AddSlider({
-                label = "Vertical Inset",
-                description = "Move top/bottom edges inward (positive) or outward (negative).",
-                min = -4,
-                max = 4,
-                step = 1,
-                get = function() return getSetting("iconBorderInsetV") or 2 end,
-                set = function(v)
-                    setSetting("iconBorderInsetV", v)
-                end,
-                minLabel = "-4",
-                maxLabel = "+4",
-                disabled = iconsDisabled,
+                sliderA = {
+                    axisLabel = "H", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("iconBorderInsetH") or 0 end,
+                    set = function(v) setSetting("iconBorderInsetH", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
+                sliderB = {
+                    axisLabel = "V", min = -4, max = 4, step = 1,
+                    get = function() return getSetting("iconBorderInsetV") or 2 end,
+                    set = function(v) setSetting("iconBorderInsetV", v) end,
+                    minLabel = "-4", maxLabel = "+4",
+                },
             })
 
             -- JiberishIcons Integration

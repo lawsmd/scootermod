@@ -162,11 +162,20 @@ local function buildBorderTab(inner, barPrefix, applyFn)
         set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "BorderThickness"] = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyFn() end end,
     })
 
-    inner:AddSlider({
+    inner:AddDualSlider({
         label = "Border Inset",
-        min = -4, max = 4, step = 1,
-        get = function() local t = ensureFocusTargetDB() or {}; return tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
-        set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "BorderInset"] = tonumber(v) or 0; applyFn() end end,
+        sliderA = {
+            axisLabel = "H", min = -4, max = 4, step = 1,
+            get = function() local t = ensureFocusTargetDB() or {}; return tonumber(t[barPrefix .. "BorderInsetH"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
+            set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "BorderInsetH"] = tonumber(v) or 0; applyFn() end end,
+            minLabel = "-4", maxLabel = "+4",
+        },
+        sliderB = {
+            axisLabel = "V", min = -4, max = 4, step = 1,
+            get = function() local t = ensureFocusTargetDB() or {}; return tonumber(t[barPrefix .. "BorderInsetV"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0 end,
+            set = function(v) local t = ensureFocusTargetDB(); if t then t[barPrefix .. "BorderInsetV"] = tonumber(v) or 0; applyFn() end end,
+            minLabel = "-4", maxLabel = "+4",
+        },
     })
 
     inner:Finalize()
