@@ -45,6 +45,22 @@ local function CreateCustomGroupRenderer(groupIndex)
                 local currentOrientation = getSetting("orientation") or "H"
                 local initialDirValues, initialDirOrder = OrientationPatterns.getDirectionOptions(currentOrientation)
 
+                inner:AddToggle({
+                    key = "centerAnchor",
+                    label = "Center Icons on Edit Mode Anchor",
+                    description = "Centers icons on the anchor point. Useful when sharing profiles across characters with different cooldown counts.",
+                    get = function() return getSetting("centerAnchor") or false end,
+                    set = function(v) h.setAndApply("centerAnchor", v) end,
+                })
+
+                inner:AddToggle({
+                    key = "centerAdditionalRows",
+                    label = "Center Additional Rows",
+                    description = "Centers overflow rows under the first row for a balanced appearance.",
+                    get = function() return getSetting("centerAdditionalRows") or false end,
+                    set = function(v) h.setAndApply("centerAdditionalRows", v) end,
+                })
+
                 inner:AddSelector({
                     key = "orientation",
                     label = "Orientation",

@@ -694,53 +694,115 @@ LayoutIcons = function(groupIndex)
     local direction = db.direction or "right"
     local stride = tonumber(db.columns) or 12
     local padding = tonumber(db.iconPadding) or 2
+    local centerOnAnchor = db.centerAnchor or false
+    local centerRows = db.centerAdditionalRows or false
 
     if stride < 1 then stride = 1 end
 
     local iconW, iconH = GetIconDimensions(db)
 
-    -- Position icons
+    -- Primary axis = direction icons grow along (H=horizontal, V=vertical)
+    -- Secondary axis = direction rows stack along (perpendicular)
+    -- primarySize/secondarySize = icon dimension along each axis
+    local primarySize, secondarySize
+    if orientation == "H" then
+        primarySize = iconW
+        secondarySize = iconH
+    else
+        primarySize = iconH
+        secondarySize = iconW
+    end
+
+    -- Determine reference point and axis signs based on direction
+    -- primarySign: +1 = icons grow in positive direction, -1 = negative
+    -- secondarySign: +1 = rows stack in positive direction, -1 = negative
+    local refPoint, primarySign, secondarySign
+    if orientation == "H" then
+        if direction == "left" then
+            refPoint = "TOPRIGHT"
+            primarySign = -1
+            secondarySign = -1
+        else -- "right"
+            refPoint = "TOPLEFT"
+            primarySign = 1
+            secondarySign = -1
+        end
+    else -- "V"
+        if direction == "up" then
+            refPoint = "BOTTOMLEFT"
+            primarySign = 1
+            secondarySign = 1
+        else -- "down"
+            refPoint = "TOPLEFT"
+            primarySign = -1
+            secondarySign = 1
+        end
+    end
+
+    -- Group icons into rows
+    local count = #icons
+    local numRows = math.ceil(count / stride)
+    local row1Count = math.min(count, stride)
+
+    -- Row 1 span (edge-to-edge, not center-to-center)
+    local row1Span = (row1Count * primarySize) + ((row1Count - 1) * padding)
+
+    -- Row 1 start position (leading edge of first icon, in primary axis units from refPoint)
+    local row1Start
+    if centerOnAnchor then
+        row1Start = -row1Span / 2
+    else
+        row1Start = 0
+    end
+
+    -- Row 1 center for aligning additional rows
+    local row1Center = row1Start + row1Span / 2
+
+    -- Position each icon using CENTER anchor
     for i, icon in ipairs(icons) do
         icon:SetSize(iconW, iconH)
         ApplyTexCoord(icon, iconW, iconH)
 
         local pos = i - 1
-        local major = pos % stride       -- position along primary axis
-        local minor = math.floor(pos / stride) -- row/column index
+        local major = pos % stride       -- index along primary axis
+        local minor = math.floor(pos / stride) -- row index
 
-        local x, y
-        local anchor
-
-        if orientation == "H" then
-            if direction == "left" then
-                anchor = "TOPRIGHT"
-                x = -(major * (iconW + padding))
-                y = -(minor * (iconH + padding))
-            else -- "right"
-                anchor = "TOPLEFT"
-                x = major * (iconW + padding)
-                y = -(minor * (iconH + padding))
-            end
-        else -- "V"
-            if direction == "up" then
-                anchor = "BOTTOMLEFT"
-                x = minor * (iconW + padding)
-                y = major * (iconH + padding)
-            else -- "down"
-                anchor = "TOPLEFT"
-                x = minor * (iconW + padding)
-                y = -(major * (iconH + padding))
+        -- Determine row start for this icon's row
+        local rowStart
+        if minor == 0 then
+            rowStart = row1Start
+        else
+            local rowCount = math.min(count - (minor * stride), stride)
+            local rowSpan = (rowCount * primarySize) + ((rowCount - 1) * padding)
+            if centerRows then
+                rowStart = row1Center - rowSpan / 2
+            else
+                rowStart = row1Start
             end
         end
 
+        -- Icon center along primary axis (from refPoint)
+        local primaryPos = rowStart + (major * (primarySize + padding)) + (primarySize / 2)
+        -- Icon center along secondary axis (from refPoint)
+        local secondaryPos = (minor * (secondarySize + padding)) + (secondarySize / 2)
+
+        -- Map to (x, y) using axis signs
+        local x, y
+        if orientation == "H" then
+            x = primaryPos * primarySign
+            y = secondaryPos * secondarySign
+        else
+            x = secondaryPos * secondarySign
+            y = primaryPos * primarySign
+        end
+
         icon:ClearAllPoints()
-        icon:SetPoint(anchor, container, anchor, x, y)
+        icon:SetPoint("CENTER", container, refPoint, x, y)
     end
 
-    -- Calculate container size
-    local count = #icons
+    -- Calculate container size (unchanged — icons may extend past bounds when centered)
     local majorCount = math.min(count, stride)
-    local minorCount = math.ceil(count / stride)
+    local minorCount = numRows
 
     local totalW, totalH
     if orientation == "H" then
@@ -1103,6 +1165,10 @@ local function CreateCustomGroupSettings()
         direction = { type = "addon", default = "right" },
         columns = { type = "addon", default = 12 },
         iconPadding = { type = "addon", default = 2 },
+
+        -- Centering
+        centerAnchor = { type = "addon", default = false },
+        centerAdditionalRows = { type = "addon", default = false },
 
         -- Sizing
         iconSize = { type = "addon", default = 30 },
