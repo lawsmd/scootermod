@@ -293,6 +293,18 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             state.healthOverlay:Hide()
         end
         showBlizzardFill(bar)
+        -- Restore DispelOverlay to stock frame level (useParentLevel behavior)
+        local unitFrame = bar.GetParent and bar:GetParent()
+        if unitFrame then
+            local parentLevel = 0
+            local okL, lvl = pcall(unitFrame.GetFrameLevel, unitFrame)
+            if okL and type(lvl) == "number" then parentLevel = lvl end
+
+            local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
+            if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
+                pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel)
+            end
+        end
         return
     end
 
@@ -401,6 +413,23 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         end)
     end
 
+    -- Raise DispelOverlay above ScooterMod's overlay so dispel indicators remain visible.
+    -- DispelOverlay uses useParentLevel="true", which means the parent's own regions
+    -- (including our BORDER sublevel 7 overlay) render on top of it. SetFrameLevel
+    -- is a C-side widget operation (taint-safe per Rule 4).
+    -- Runs before the fingerprint check so it re-applies every call.
+    local unitFrame = bar.GetParent and bar:GetParent()
+    if unitFrame then
+        local parentLevel = 0
+        local okL, lvl = pcall(unitFrame.GetFrameLevel, unitFrame)
+        if okL and type(lvl) == "number" then parentLevel = lvl end
+
+        local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
+        if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
+            pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel + 11)
+        end
+    end
+
     -- Build a config fingerprint to detect if settings have actually changed.
     -- This prevents expensive re-styling when ApplyStyles() is called but party
     -- frame settings haven't changed (e.g., when changing Action Bar settings).
@@ -475,6 +504,18 @@ function PartyFrames.disableHealthOverlay(bar)
         state.healthOverlay:Hide()
     end
     showBlizzardFill(bar)
+    -- Restore DispelOverlay to stock frame level (useParentLevel behavior)
+    local unitFrame = bar.GetParent and bar:GetParent()
+    if unitFrame then
+        local parentLevel = 0
+        local okL, lvl = pcall(unitFrame.GetFrameLevel, unitFrame)
+        if okL and type(lvl) == "number" then parentLevel = lvl end
+
+        local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
+        if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
+            pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel)
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
