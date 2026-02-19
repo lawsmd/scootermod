@@ -1320,7 +1320,13 @@ local function styleRaidNameOverlay(frame, cfg)
 
     -- Calculate horizontal offset based on anchor's horizontal component.
     -- This provides approximate CENTER/RIGHT positioning while maintaining left-to-right text flow.
-    local containerWidth = (container.GetWidth and container:GetWidth()) or 0
+    local containerWidth = 0
+    if container.GetWidth then
+        local ok, w = pcall(container.GetWidth, container)
+        if ok and type(w) == "number" and not issecretvalue(w) then
+            containerWidth = w
+        end
+    end
     local baseHOffset = 0
     if anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
         -- For CENTER, shift text toward the horizontal center
@@ -1430,12 +1436,6 @@ local function ensureRaidNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
-        -- FIX: Match parent frame level to prevent roleIcon occlusion
-        local okL, lvl = pcall(frame.GetFrameLevel, frame)
-        if okL and type(lvl) == "number" then
-            pcall(container.SetFrameLevel, container, lvl)
-        end
-
         -- Elevate roleIcon when creating name overlay container
         local okR, roleIcon = pcall(function() return frame.roleIcon end)
         if okR and roleIcon and roleIcon.SetDrawLayer then
@@ -1458,17 +1458,22 @@ local function ensureRaidNameOverlay(frame, cfg)
             local ownerState = frameState
             _G.hooksecurefunc(frame.name, "SetText", function(_, text)
                 if ownerState and ownerState.nameOverlayText and ownerState.nameOverlayActive then
-                    local displayText = text or ""
-                    -- Check for realm stripping setting
-                    local db = addon and addon.db and addon.db.profile
-                    local gf = db and rawget(db, "groupFrames")
-                    local raid = gf and rawget(gf, "raid")
-                    local textCfg = raid and rawget(raid, "textPlayerName")
-                    if textCfg and textCfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
-                        -- Ambiguate with "none" context strips the realm name
-                        displayText = Ambiguate(displayText, "none")
+                    -- text may be a secret value in 12.0; branch on type
+                    if type(text) == "string" then
+                        local displayText = text
+                        -- Check for realm stripping setting
+                        local db = addon and addon.db and addon.db.profile
+                        local gf = db and rawget(db, "groupFrames")
+                        local raid = gf and rawget(gf, "raid")
+                        local textCfg = raid and rawget(raid, "textPlayerName")
+                        if textCfg and textCfg.hideRealm and displayText ~= "" then
+                            displayText = Ambiguate(displayText, "none")
+                        end
+                        ownerState.nameOverlayText:SetText(displayText)
+                    else
+                        -- Secret or other type — SetText handles secrets natively
+                        pcall(ownerState.nameOverlayText.SetText, ownerState.nameOverlayText, text)
                     end
-                    ownerState.nameOverlayText:SetText(displayText)
                 end
             end)
         end
@@ -1508,15 +1513,38 @@ local function ensureRaidNameOverlay(frame, cfg)
     styleRaidNameOverlay(frame, cfg)
     hideBlizzardRaidNameText(frame)
 
+    local textCopied = false
     if frameState and frameState.nameOverlayText and frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
-        if ok and currentText then
+        if ok and type(currentText) == "string" and currentText ~= "" then
             local displayText = currentText
             -- Apply realm stripping if enabled
-            if cfg and cfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+            if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = Ambiguate(displayText, "none")
             end
-            frameState.nameOverlayText:SetText(displayText or "")
+            frameState.nameOverlayText:SetText(displayText)
+            textCopied = true
+        end
+    end
+
+    -- Fallback: if GetText failed (secret/nil), try GetUnitName
+    if not textCopied and frameState and frameState.nameOverlayText and frame.unit then
+        local unitOk, unitName = pcall(GetUnitName, frame.unit, true)
+        if unitOk and type(unitName) == "string" and unitName ~= "" then
+            local displayText = unitName
+            if cfg and cfg.hideRealm and displayText ~= "" then
+                displayText = Ambiguate(displayText, "none")
+            end
+            frameState.nameOverlayText:SetText(displayText)
+            textCopied = true
+        end
+    end
+
+    -- Last resort: if both returned secrets, pass through directly
+    if not textCopied and frameState and frameState.nameOverlayText and frame.name and frame.name.GetText then
+        local ok, rawText = pcall(frame.name.GetText, frame.name)
+        if ok then
+            pcall(frameState.nameOverlayText.SetText, frameState.nameOverlayText, rawText)
         end
     end
 
@@ -2495,5 +2523,35 @@ function RaidFrames.ApplyHealPredictionClipping()
 end
 
 addon.ApplyRaidHealPredictionClipping = RaidFrames.ApplyHealPredictionClipping
+
+--------------------------------------------------------------------------------
+-- Apply Custom Role Icons for Raid Frames
+--------------------------------------------------------------------------------
+-- Re-triggers Blizzard's CompactUnitFrame_UpdateRoleIcon on each raid frame.
+-- Blizzard sets the default atlas, then our post-hook swaps to the custom set.
+
+function addon.ApplyRaidRoleIcons()
+    -- Combined layout: CompactRaidFrame1..40
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame and frame.roleIcon then
+            if _G.CompactUnitFrame_UpdateRoleIcon then
+                pcall(CompactUnitFrame_UpdateRoleIcon, frame)
+            end
+        end
+    end
+
+    -- Group layout: CompactRaidGroup1Member1..CompactRaidGroup8Member5
+    for group = 1, 8 do
+        for member = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. group .. "Member" .. member]
+            if frame and frame.roleIcon then
+                if _G.CompactUnitFrame_UpdateRoleIcon then
+                    pcall(CompactUnitFrame_UpdateRoleIcon, frame)
+                end
+            end
+        end
+    end
+end
 
 return RaidFrames

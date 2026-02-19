@@ -689,6 +689,156 @@ function GF.RenderRaid(panel, scrollContent)
     })
 
     ----------------------------------------------------------------------------
+    -- Collapsible Section: Icons
+    ----------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Icons",
+        componentId = COMPONENT_ID,
+        sectionKey = "icons",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "roleIcons", label = "Role Icons" },
+                    { key = "groupLead", label = "Group Lead" },
+                },
+                componentId = COMPONENT_ID,
+                sectionKey = "icons_tabs",
+                buildContent = {
+                    roleIcons = function(cf, tabInner)
+                        tabInner:AddSelector({
+                            label = "Icon Set",
+                            values = GF.roleIconSetValues,
+                            order = GF.roleIconSetOrder,
+                            get = function()
+                                local db = GF.ensureRaidDB()
+                                return db and db.roleIconSet or "default"
+                            end,
+                            set = function(v)
+                                local db = GF.ensureRaidDB()
+                                if db then
+                                    db.roleIconSet = v
+                                    GF.applyRaidRoleIcons()
+                                end
+                            end,
+                        })
+                        -- Visibility filter
+                        tabInner:AddSelector({
+                            label = "Visibility",
+                            values = {
+                                showAll = "Show All",
+                                hideDPS = "Hide DPS Icons",
+                                hideAll = "Hide All",
+                            },
+                            order = { "showAll", "hideDPS", "hideAll" },
+                            get = function()
+                                local db = GF.ensureRaidDB()
+                                return db and db.roleIconVisibility or "showAll"
+                            end,
+                            set = function(v)
+                                local db = GF.ensureRaidDB()
+                                if db then
+                                    db.roleIconVisibility = v
+                                    GF.applyRaidRoleIcons()
+                                end
+                            end,
+                        })
+
+                        -- Scale slider
+                        tabInner:AddSlider({
+                            label = "Scale",
+                            min = 25,
+                            max = 200,
+                            step = 5,
+                            displaySuffix = "%",
+                            get = function()
+                                local db = GF.ensureRaidDB()
+                                return db and db.roleIconScale or 100
+                            end,
+                            set = function(v)
+                                local db = GF.ensureRaidDB()
+                                if db then
+                                    db.roleIconScale = v
+                                    GF.applyRaidRoleIcons()
+                                end
+                            end,
+                        })
+
+                        -- Position selector (9-point + Default)
+                        local roleAnchorValues = {
+                            default = "Default",
+                            TOPLEFT = "Top-Left", TOP = "Top-Center", TOPRIGHT = "Top-Right",
+                            LEFT = "Left", CENTER = "Center", RIGHT = "Right",
+                            BOTTOMLEFT = "Bottom-Left", BOTTOM = "Bottom-Center", BOTTOMRIGHT = "Bottom-Right",
+                        }
+                        local roleAnchorOrder = { "default", "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+
+                        tabInner:AddSelector({
+                            label = "Position",
+                            values = roleAnchorValues,
+                            order = roleAnchorOrder,
+                            get = function()
+                                local db = GF.ensureRaidDB()
+                                return db and db.roleIconAnchor or "default"
+                            end,
+                            set = function(v)
+                                local db = GF.ensureRaidDB()
+                                if db then
+                                    db.roleIconAnchor = v
+                                    GF.applyRaidRoleIcons()
+                                end
+                            end,
+                        })
+
+                        -- Offset dual slider (X and Y)
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local db = GF.ensureRaidDB()
+                                    return db and db.roleIconOffsetX or 0
+                                end,
+                                set = function(v)
+                                    local db = GF.ensureRaidDB()
+                                    if db then
+                                        db.roleIconOffsetX = v
+                                        GF.applyRaidRoleIcons()
+                                    end
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -50, max = 50, step = 1,
+                                get = function()
+                                    local db = GF.ensureRaidDB()
+                                    return db and db.roleIconOffsetY or 0
+                                end,
+                                set = function(v)
+                                    local db = GF.ensureRaidDB()
+                                    if db then
+                                        db.roleIconOffsetY = v
+                                        GF.applyRaidRoleIcons()
+                                    end
+                                end,
+                            },
+                        })
+
+                        tabInner:Finalize()
+                    end,
+                    groupLead = function(cf, tabInner)
+                        tabInner:AddDescription("Coming soon...")
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
     -- Collapsible Section: Visibility
     ----------------------------------------------------------------------------
 

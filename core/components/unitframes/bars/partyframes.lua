@@ -1010,8 +1010,9 @@ function PartyFrames.installHooks()
         end)
     end
 
-    -- Hook CompactUnitFrame_UpdateRoleIcon to elevate roleIcon draw layer
-    -- so it renders above ScooterMod overlay containers that cover the same area.
+    -- Hook CompactUnitFrame_UpdateRoleIcon to:
+    -- A) Elevate roleIcon draw layer above ScooterMod overlay containers
+    -- B) Swap to custom icon set if configured
     if not addon._RoleIconVisibilityHookInstalled then
         addon._RoleIconVisibilityHookInstalled = true
         if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateRoleIcon then
@@ -1032,19 +1033,105 @@ function PartyFrames.installHooks()
                          or nil
                 if not cfg then return end
 
+                local okR, roleIcon = pcall(function() return frame.roleIcon end)
+                if not okR or not roleIcon then return end
+
+                -- Reset desaturation (may linger from a previous texture-based set)
+                pcall(roleIcon.SetDesaturated, roleIcon, false)
+
+                -- A) Draw layer elevation (only when ScooterMod overlays active)
                 local hasOverlay = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
                                 or (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
                 if not hasOverlay then
                     local textCfg = rawget(cfg, "textPlayerName") or nil
                     hasOverlay = textCfg and Utils.hasCustomTextSettings(textCfg)
                 end
-                if not hasOverlay then return end
-
-                -- Elevate roleIcon to OVERLAY sublevel 6 (below name text at OVERLAY 7).
-                -- SetDrawLayer is taint-safe (C-side widget operation).
-                local okR, roleIcon = pcall(function() return frame.roleIcon end)
-                if okR and roleIcon and roleIcon.SetDrawLayer then
+                if hasOverlay and roleIcon.SetDrawLayer then
                     pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+                end
+
+                -- B) Custom positioning (independent of icon set)
+                do
+                    local anchor = rawget(cfg, "roleIconAnchor")
+                    if anchor and anchor ~= "default" and roleIcon.IsShown and roleIcon:IsShown() then
+                        local offsetX = tonumber(rawget(cfg, "roleIconOffsetX")) or 0
+                        local offsetY = tonumber(rawget(cfg, "roleIconOffsetY")) or 0
+                        pcall(roleIcon.ClearAllPoints, roleIcon)
+                        pcall(roleIcon.SetPoint, roleIcon, anchor, frame, anchor, offsetX, offsetY)
+                    end
+                end
+
+                -- B2) Visibility filtering
+                do
+                    local vis = rawget(cfg, "roleIconVisibility")
+                    if vis and roleIcon.IsShown and roleIcon:IsShown() then
+                        if vis == "hideAll" then
+                            pcall(roleIcon.SetAlpha, roleIcon, 0)
+                            return
+                        elseif vis == "hideDPS" then
+                            local unit
+                            local okU, u = pcall(function() return frame.displayedUnit or frame.unit end)
+                            if okU and u then unit = u end
+                            if unit then
+                                local okRole, role = pcall(UnitGroupRolesAssigned, unit)
+                                if okRole and type(role) == "string" and role == "DAMAGER" then
+                                    pcall(roleIcon.SetAlpha, roleIcon, 0)
+                                    return
+                                end
+                            end
+                            -- Non-DPS role or couldn't determine: ensure visible
+                            pcall(roleIcon.SetAlpha, roleIcon, 1)
+                        elseif vis == "showAll" then
+                            -- Restore from previously hidden state
+                            pcall(roleIcon.SetAlpha, roleIcon, 1)
+                        end
+                    end
+                end
+
+                -- B3) Scale
+                do
+                    local scale = tonumber(rawget(cfg, "roleIconScale"))
+                    if scale then
+                        local size = 17 * scale / 100
+                        pcall(roleIcon.SetSize, roleIcon, size, size)
+                    end
+                end
+
+                -- C) Custom icon set swap (independent of overlay state)
+                local iconSet = rawget(cfg, "roleIconSet")
+                if not iconSet or iconSet == "default" then return end
+                if not roleIcon.IsShown or not roleIcon:IsShown() then return end
+
+                local unit
+                local okU, u = pcall(function() return frame.displayedUnit or frame.unit end)
+                if okU and u then unit = u end
+                if not unit then return end
+
+                -- Don't override vehicle icons
+                local okV, inVehicle = pcall(UnitInVehicle, unit)
+                if okV and inVehicle then
+                    local okVUI, hasVUI = pcall(UnitHasVehicleUI, unit)
+                    if okVUI and hasVUI then return end
+                end
+
+                local okRole, role = pcall(UnitGroupRolesAssigned, unit)
+                if not okRole or type(role) ~= "string" or role == "NONE" then return end
+
+                -- Check texture-based sets first (custom TGA files)
+                local textures = Utils.ROLE_ICON_TEXTURES and Utils.ROLE_ICON_TEXTURES[iconSet]
+                if textures and textures[role] then
+                    pcall(roleIcon.SetTexture, roleIcon, textures[role])
+                    pcall(roleIcon.SetTexCoord, roleIcon, 0, 1, 0, 1)
+                    if textures.desaturated then
+                        pcall(roleIcon.SetDesaturated, roleIcon, true)
+                    end
+                    return
+                end
+
+                -- Then check atlas-based sets (built-in Blizzard atlases)
+                local atlases = Utils.ROLE_ICON_ATLASES and Utils.ROLE_ICON_ATLASES[iconSet]
+                if atlases and atlases[role] then
+                    pcall(roleIcon.SetAtlas, roleIcon, atlases[role])
                 end
             end)
         end
@@ -1053,6 +1140,23 @@ end
 
 -- Install hooks on load
 PartyFrames.installHooks()
+
+--------------------------------------------------------------------------------
+-- Apply Custom Role Icons for Party Frames
+--------------------------------------------------------------------------------
+-- Re-triggers Blizzard's CompactUnitFrame_UpdateRoleIcon on each party frame.
+-- Blizzard sets the default atlas, then our post-hook swaps to the custom set.
+
+function addon.ApplyPartyRoleIcons()
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame and frame.roleIcon then
+            if _G.CompactUnitFrame_UpdateRoleIcon then
+                pcall(CompactUnitFrame_UpdateRoleIcon, frame)
+            end
+        end
+    end
+end
 
 --------------------------------------------------------------------------------
 -- Event-Based Color Updates for Party Frames (Value Mode)
@@ -1369,7 +1473,13 @@ local function stylePartyNameOverlay(frame, cfg)
 
     -- Calculate horizontal offset based on anchor's horizontal component.
     -- This provides approximate CENTER/RIGHT positioning while maintaining left-to-right text flow.
-    local containerWidth = (container.GetWidth and container:GetWidth()) or 0
+    local containerWidth = 0
+    if container.GetWidth then
+        local ok, w = pcall(container.GetWidth, container)
+        if ok and type(w) == "number" and not issecretvalue(w) then
+            containerWidth = w
+        end
+    end
     local baseHOffset = 0
     if anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
         -- For CENTER, shift text toward the horizontal center
@@ -1446,8 +1556,8 @@ end
 -- Show Blizzard's name FontString (for restore/cleanup)
 local function showBlizzardPartyNameText(frame)
     if not frame or not frame.name then return end
-    local state = getState(frame)
-    if state then state.nameHidden = nil end
+    local nameState = getState(frame.name)
+    if nameState then nameState.hidden = nil end
     if frame.name.SetAlpha then
         pcall(frame.name.SetAlpha, frame.name, 1)
     end
@@ -1486,14 +1596,6 @@ local function ensurePartyNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
-        -- FIX: Set container to parent frame level so it doesn't render above
-        -- parent-level textures like roleIcon. Without this, child frames
-        -- auto-get parentLevel+1, causing roleIcon occlusion.
-        local okL, lvl = pcall(frame.GetFrameLevel, frame)
-        if okL and type(lvl) == "number" then
-            pcall(container.SetFrameLevel, container, lvl)
-        end
-
         -- Elevate roleIcon when creating name overlay container
         local okR, roleIcon = pcall(function() return frame.roleIcon end)
         if okR and roleIcon and roleIcon.SetDrawLayer then
@@ -1518,17 +1620,22 @@ local function ensurePartyNameOverlay(frame, cfg)
             local frameState = state
             _G.hooksecurefunc(frame.name, "SetText", function(self, text)
                 if frameState and frameState.overlayText and frameState.overlayActive then
-                    local displayText = text or ""
-                    -- Check for realm stripping setting
-                    local db = addon and addon.db and addon.db.profile
-                    local gf = db and rawget(db, "groupFrames")
-                    local party = gf and rawget(gf, "party")
-                    local textCfg = party and rawget(party, "textPlayerName")
-                    if textCfg and textCfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
-                        -- Ambiguate with "none" context strips the realm name
-                        displayText = Ambiguate(displayText, "none")
+                    -- text may be a secret value in 12.0; branch on type
+                    if type(text) == "string" then
+                        local displayText = text
+                        -- Check for realm stripping setting
+                        local db = addon and addon.db and addon.db.profile
+                        local gf = db and rawget(db, "groupFrames")
+                        local party = gf and rawget(gf, "party")
+                        local textCfg = party and rawget(party, "textPlayerName")
+                        if textCfg and textCfg.hideRealm and displayText ~= "" then
+                            displayText = Ambiguate(displayText, "none")
+                        end
+                        frameState.overlayText:SetText(displayText)
+                    else
+                        -- Secret or other type — SetText handles secrets natively
+                        pcall(frameState.overlayText.SetText, frameState.overlayText, text)
                     end
-                    frameState.overlayText:SetText(displayText)
                 end
             end)
         end
@@ -1570,16 +1677,40 @@ local function ensurePartyNameOverlay(frame, cfg)
     hideBlizzardPartyNameText(frame)
 
     -- Copy current text from Blizzard's FontString to the overlay
-    -- Wrap in pcall as GetText() can return secrets
+    -- Wrap in pcall as GetText() can return secrets in 12.0
+    local textCopied = false
     if frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
-        if ok and currentText then
+        if ok and type(currentText) == "string" and currentText ~= "" then
             local displayText = currentText
             -- Apply realm stripping if enabled
-            if cfg and cfg.hideRealm and type(displayText) == "string" and displayText ~= "" then
+            if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = Ambiguate(displayText, "none")
             end
             state.overlayText:SetText(displayText)
+            textCopied = true
+        end
+    end
+
+    -- Fallback: if GetText failed (secret/nil), try GetUnitName
+    if not textCopied and frame.unit then
+        local unitOk, unitName = pcall(GetUnitName, frame.unit, true)
+        if unitOk and type(unitName) == "string" and unitName ~= "" then
+            local displayText = unitName
+            if cfg and cfg.hideRealm and displayText ~= "" then
+                displayText = Ambiguate(displayText, "none")
+            end
+            state.overlayText:SetText(displayText)
+            textCopied = true
+        end
+    end
+
+    -- Last resort: if both returned secrets, pass through directly
+    -- SetText handles secrets natively (renders correctly, applies Text aspect)
+    if not textCopied and frame.name and frame.name.GetText then
+        local ok, rawText = pcall(frame.name.GetText, frame.name)
+        if ok then
+            pcall(state.overlayText.SetText, state.overlayText, rawText)
         end
     end
 

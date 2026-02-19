@@ -181,6 +181,57 @@ function Utils.deepcopy(v)
 end
 
 --------------------------------------------------------------------------------
+-- Role Icon Set Registry
+--------------------------------------------------------------------------------
+
+-- Ordered list for selector UI
+Utils.ROLE_ICON_SETS = {
+    { key = "default",     label = "Blizzard Default" },
+    { key = "tiny",        label = "Compact" },
+    { key = "groupfinder", label = "Group Finder" },
+    { key = "gm",          label = "Raid Manager" },
+    { key = "pixel",       label = "Pixel Icons" },
+    { key = "pixel_white", label = "Pixel Icons (White)" },
+}
+
+-- Texture file mappings for custom TGA-based sets
+local ROLE_ICON_PATH = "Interface\\AddOns\\ScooterMod\\media\\textures\\role-icons\\"
+
+Utils.ROLE_ICON_TEXTURES = {
+    pixel = {
+        TANK    = ROLE_ICON_PATH .. "TankRoleIcon",
+        HEALER  = ROLE_ICON_PATH .. "HealerRoleIcon",
+        DAMAGER = ROLE_ICON_PATH .. "DPSRoleIcon",
+    },
+    pixel_white = {
+        TANK    = ROLE_ICON_PATH .. "TankRoleIcon",
+        HEALER  = ROLE_ICON_PATH .. "HealerRoleIcon",
+        DAMAGER = ROLE_ICON_PATH .. "DPSRoleIcon",
+        desaturated = true,
+    },
+}
+
+-- Atlas mappings per set (keyed by role: TANK, HEALER, DAMAGER)
+-- "default" is omitted — means "don't swap, use Blizzard's choice"
+Utils.ROLE_ICON_ATLASES = {
+    tiny = {
+        TANK    = "roleicon-tiny-tank",
+        HEALER  = "roleicon-tiny-healer",
+        DAMAGER = "roleicon-tiny-dps",
+    },
+    groupfinder = {
+        TANK    = "groupfinder-icon-role-micro-tank",
+        HEALER  = "groupfinder-icon-role-micro-heal",
+        DAMAGER = "groupfinder-icon-role-micro-dps",
+    },
+    gm = {
+        TANK    = "GM-icon-role-tank",
+        HEALER  = "GM-icon-role-healer",
+        DAMAGER = "GM-icon-role-dps",
+    },
+}
+
+--------------------------------------------------------------------------------
 -- Background Color Default
 --------------------------------------------------------------------------------
 

@@ -154,6 +154,14 @@ function GF.applyRaidText()
     end
 end
 
+function GF.applyPartyRoleIcons()
+    if addon.ApplyPartyRoleIcons then addon.ApplyPartyRoleIcons() end
+end
+
+function GF.applyRaidRoleIcons()
+    if addon.ApplyRaidRoleIcons then addon.ApplyRaidRoleIcons() end
+end
+
 function GF.applyPartyHealthBarBorders()
     if addon and addon.ApplyPartyFrameHealthBarBorders then
         addon.ApplyPartyFrameHealthBarBorders()
@@ -279,6 +287,17 @@ end
 -- Raid Frame: Sort By options (same values as party)
 GF.raidSortByValues = GF.partySortByValues
 GF.raidSortByOrder = GF.partySortByOrder
+
+-- Role Icon Set selector options (built from Utils registry)
+GF.roleIconSetValues = {}
+GF.roleIconSetOrder = {}
+do
+    local sets = addon.BarsUtils and addon.BarsUtils.ROLE_ICON_SETS or {}
+    for _, entry in ipairs(sets) do
+        GF.roleIconSetValues[entry.key] = entry.label
+        table.insert(GF.roleIconSetOrder, entry.key)
+    end
+end
 
 --------------------------------------------------------------------------------
 -- Conditional Helpers
