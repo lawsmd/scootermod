@@ -748,6 +748,38 @@ end
 -- Layout Engine
 --------------------------------------------------------------------------------
 
+local ANCHOR_MODE_MAP = {
+    left   = "TOPLEFT",
+    right  = "TOPRIGHT",
+    center = "CENTER",
+    top    = "TOP",
+    bottom = "BOTTOM",
+}
+
+local function ReanchorContainer(container, anchorPosition)
+    local targetPoint = ANCHOR_MODE_MAP[anchorPosition or "center"]
+    if not targetPoint or not container then return end
+
+    local parent = container:GetParent()
+    if not parent then return end
+    local scale = container:GetScale() or 1
+    local left, top, right, bottom = container:GetLeft(), container:GetTop(), container:GetRight(), container:GetBottom()
+    if not left or not top or not right or not bottom then return end
+
+    left, top, right, bottom = left * scale, top * scale, right * scale, bottom * scale
+    local pw, ph = parent:GetSize()
+
+    local x = targetPoint:find("LEFT") and left
+        or targetPoint:find("RIGHT") and (right - pw)
+        or ((left + right) / 2 - pw / 2)
+    local y = targetPoint:find("BOTTOM") and bottom
+        or targetPoint:find("TOP") and (top - ph)
+        or ((top + bottom) / 2 - ph / 2)
+
+    container:ClearAllPoints()
+    container:SetPoint(targetPoint, x / scale, y / scale)
+end
+
 LayoutIcons = function(groupIndex)
     local icons = activeIcons[groupIndex]
     if #icons == 0 then return end
@@ -763,8 +795,7 @@ LayoutIcons = function(groupIndex)
     local direction = db.direction or "right"
     local stride = tonumber(db.columns) or 12
     local padding = tonumber(db.iconPadding) or 2
-    local centerOnAnchor = db.centerAnchor or false
-    local centerRows = db.centerAdditionalRows or false
+    local anchorPosition = db.anchorPosition or "center"
 
     if stride < 1 then stride = 1 end
 
@@ -817,12 +848,7 @@ LayoutIcons = function(groupIndex)
     local row1Span = (row1Count * primarySize) + ((row1Count - 1) * padding)
 
     -- Row 1 start position (leading edge of first icon, in primary axis units from refPoint)
-    local row1Start
-    if centerOnAnchor then
-        row1Start = -row1Span / 2
-    else
-        row1Start = 0
-    end
+    local row1Start = 0
 
     -- Row 1 center for aligning additional rows
     local row1Center = row1Start + row1Span / 2
@@ -843,10 +869,10 @@ LayoutIcons = function(groupIndex)
         else
             local rowCount = math.min(count - (minor * stride), stride)
             local rowSpan = (rowCount * primarySize) + ((rowCount - 1) * padding)
-            if centerRows then
-                rowStart = row1Center - rowSpan / 2
-            else
+            if anchorPosition == "left" or anchorPosition == "right" then
                 rowStart = row1Start
+            else
+                rowStart = row1Center - rowSpan / 2
             end
         end
 
@@ -882,6 +908,7 @@ LayoutIcons = function(groupIndex)
         totalH = (majorCount * iconH) + ((majorCount - 1) * padding)
     end
 
+    ReanchorContainer(container, anchorPosition)
     container:SetSize(math.max(1, totalW), math.max(1, totalH))
 end
 
@@ -1115,8 +1142,19 @@ local function InitializeEditMode()
                     frame:ClearAllPoints()
                     frame:SetPoint(point, x, y)
                 end
+                -- Re-anchor to match anchorPosition
+                local component = addon.Components and addon.Components["customGroup" .. i]
+                if component and component.db then
+                    ReanchorContainer(frame, component.db.anchorPosition or "center")
+                end
+                -- Save the re-anchored position
                 if layoutName then
-                    SaveGroupPosition(i, layoutName, point, x, y)
+                    local savedPoint, _, _, savedX, savedY = frame:GetPoint(1)
+                    if savedPoint then
+                        SaveGroupPosition(i, layoutName, savedPoint, savedX, savedY)
+                    else
+                        SaveGroupPosition(i, layoutName, point, x, y)
+                    end
                 end
             end, {
                 point = "CENTER",
@@ -1324,9 +1362,8 @@ local function CreateCustomGroupSettings()
         columns = { type = "addon", default = 12 },
         iconPadding = { type = "addon", default = 2 },
 
-        -- Centering
-        centerAnchor = { type = "addon", default = false },
-        centerAdditionalRows = { type = "addon", default = false },
+        -- Anchor position
+        anchorPosition = { type = "addon", default = "center" },
 
         -- Sizing
         iconSize = { type = "addon", default = 30 },

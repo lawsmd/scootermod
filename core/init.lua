@@ -87,6 +87,21 @@ function addon:OnInitialize()
         end
     end
 
+    -- Clean up stale centerAnchor/centerAdditionalRows keys from Custom Groups
+    do
+        local profile = self.db and self.db.profile
+        local components = profile and profile.components
+        if components then
+            for i = 1, 3 do
+                local cgDb = components["customGroup" .. i]
+                if cgDb then
+                    cgDb.centerAnchor = nil
+                    cgDb.centerAdditionalRows = nil
+                end
+            end
+        end
+    end
+
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
