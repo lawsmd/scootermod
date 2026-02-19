@@ -431,6 +431,12 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
             pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel + 11)
         end
+
+        -- Elevate roleIcon above ScooterMod overlay layers (OVERLAY 6, below name text at OVERLAY 7)
+        local okR, roleIcon = pcall(function() return unitFrame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+        end
     end
 
     -- Build a config fingerprint to detect if settings have actually changed.
@@ -494,6 +500,12 @@ function RaidFrames.disableHealthOverlay(bar)
         local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
         if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
             pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel)
+        end
+
+        -- Restore roleIcon to stock draw layer
+        local okR, roleIcon = pcall(function() return unitFrame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "ARTWORK", 0)
         end
     end
 end
@@ -1418,6 +1430,18 @@ local function ensureRaidNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
+        -- FIX: Match parent frame level to prevent roleIcon occlusion
+        local okL, lvl = pcall(frame.GetFrameLevel, frame)
+        if okL and type(lvl) == "number" then
+            pcall(container.SetFrameLevel, container, lvl)
+        end
+
+        -- Elevate roleIcon when creating name overlay container
+        local okR, roleIcon = pcall(function() return frame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+        end
+
         frameState.nameOverlayContainer = container
     end
 
@@ -1511,6 +1535,12 @@ local function disableRaidNameOverlay(frame)
         end
     end
     showBlizzardRaidNameText(frame)
+
+    -- Restore roleIcon to stock draw layer
+    local okR, roleIcon = pcall(function() return frame.roleIcon end)
+    if okR and roleIcon and roleIcon.SetDrawLayer then
+        pcall(roleIcon.SetDrawLayer, roleIcon, "ARTWORK", 0)
+    end
 end
 
 function addon.ApplyRaidFrameNameOverlays()

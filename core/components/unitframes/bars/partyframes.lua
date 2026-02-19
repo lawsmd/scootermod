@@ -428,6 +428,12 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
             pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel + 11)
         end
+
+        -- Elevate roleIcon above ScooterMod overlay layers (OVERLAY 6, below name text at OVERLAY 7)
+        local okR, roleIcon = pcall(function() return unitFrame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+        end
     end
 
     -- Build a config fingerprint to detect if settings have actually changed.
@@ -514,6 +520,12 @@ function PartyFrames.disableHealthOverlay(bar)
         local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
         if okD and dispelOverlay and dispelOverlay.SetFrameLevel then
             pcall(dispelOverlay.SetFrameLevel, dispelOverlay, parentLevel)
+        end
+
+        -- Restore roleIcon to stock draw layer
+        local okR, roleIcon = pcall(function() return unitFrame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "ARTWORK", 0)
         end
     end
 end
@@ -997,6 +1009,46 @@ function PartyFrames.installHooks()
             end
         end)
     end
+
+    -- Hook CompactUnitFrame_UpdateRoleIcon to elevate roleIcon draw layer
+    -- so it renders above ScooterMod overlay containers that cover the same area.
+    if not addon._RoleIconVisibilityHookInstalled then
+        addon._RoleIconVisibilityHookInstalled = true
+        if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateRoleIcon then
+            _G.hooksecurefunc("CompactUnitFrame_UpdateRoleIcon", function(frame)
+                if isEditModeActive() then return end
+                if not frame then return end
+                if frame.IsForbidden and frame:IsForbidden() then return end
+
+                -- Only process frames ScooterMod styles
+                if not Utils.isPartyFrame(frame) and not Utils.isRaidFrame(frame) then return end
+
+                -- Check if ScooterMod has active overlays
+                local db = addon and addon.db and addon.db.profile
+                local groupFrames = db and rawget(db, "groupFrames") or nil
+                if not groupFrames then return end
+                local cfg = Utils.isPartyFrame(frame) and rawget(groupFrames, "party")
+                         or Utils.isRaidFrame(frame) and rawget(groupFrames, "raid")
+                         or nil
+                if not cfg then return end
+
+                local hasOverlay = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
+                                or (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+                if not hasOverlay then
+                    local textCfg = rawget(cfg, "textPlayerName") or nil
+                    hasOverlay = textCfg and Utils.hasCustomTextSettings(textCfg)
+                end
+                if not hasOverlay then return end
+
+                -- Elevate roleIcon to OVERLAY sublevel 6 (below name text at OVERLAY 7).
+                -- SetDrawLayer is taint-safe (C-side widget operation).
+                local okR, roleIcon = pcall(function() return frame.roleIcon end)
+                if okR and roleIcon and roleIcon.SetDrawLayer then
+                    pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+                end
+            end)
+        end
+    end
 end
 
 -- Install hooks on load
@@ -1434,6 +1486,20 @@ local function ensurePartyNameOverlay(frame, cfg)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
         container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
 
+        -- FIX: Set container to parent frame level so it doesn't render above
+        -- parent-level textures like roleIcon. Without this, child frames
+        -- auto-get parentLevel+1, causing roleIcon occlusion.
+        local okL, lvl = pcall(frame.GetFrameLevel, frame)
+        if okL and type(lvl) == "number" then
+            pcall(container.SetFrameLevel, container, lvl)
+        end
+
+        -- Elevate roleIcon when creating name overlay container
+        local okR, roleIcon = pcall(function() return frame.roleIcon end)
+        if okR and roleIcon and roleIcon.SetDrawLayer then
+            pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
+        end
+
         state.overlayContainer = container
     end
 
@@ -1531,6 +1597,12 @@ local function disablePartyNameOverlay(frame)
         end
     end
     showBlizzardPartyNameText(frame)
+
+    -- Restore roleIcon to stock draw layer
+    local okR, roleIcon = pcall(function() return frame.roleIcon end)
+    if okR and roleIcon and roleIcon.SetDrawLayer then
+        pcall(roleIcon.SetDrawLayer, roleIcon, "ARTWORK", 0)
+    end
 end
 
 -- Apply overlays to all party frames
