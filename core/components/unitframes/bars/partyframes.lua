@@ -1427,8 +1427,19 @@ local function ensurePartyNameOverlay(frame, cfg)
         end
     end
 
-    -- Build fingerprint to detect config changes
-    local fingerprint = string.format("%s|%s|%s|%s|%s|%s|%s",
+    -- Build fingerprint to detect config changes AND unit-specific state.
+    -- When colorMode is "class", include the resolved class token so the
+    -- fingerprint changes when unit data becomes available (e.g., zone-in).
+    local fpColorMode = cfg.colorMode or "default"
+    local classKey = ""
+    if fpColorMode == "class" and frame.unit then
+        local ok, _, token = pcall(function() return UnitClass(frame.unit) end)
+        if ok and type(token) == "string" then
+            classKey = token
+        end
+    end
+
+    local fingerprint = string.format("%s|%s|%s|%s|%s|%s|%s|%s|%s",
         tostring(cfg.fontFace or ""),
         tostring(cfg.size or ""),
         tostring(cfg.style or ""),
@@ -1436,7 +1447,9 @@ local function ensurePartyNameOverlay(frame, cfg)
         tostring(cfg.hideRealm or ""),
         cfg.color and string.format("%.2f,%.2f,%.2f,%.2f",
             cfg.color[1] or 1, cfg.color[2] or 1, cfg.color[3] or 1, cfg.color[4] or 1) or "",
-        cfg.offset and string.format("%.1f,%.1f", cfg.offset.x or 0, cfg.offset.y or 0) or ""
+        cfg.offset and string.format("%.1f,%.1f", cfg.offset.x or 0, cfg.offset.y or 0) or "",
+        fpColorMode,
+        classKey
     )
 
     -- Skip re-styling if config hasn't changed and overlay is visible
@@ -1609,6 +1622,38 @@ local function installPartyNameOverlayHooks()
                         ensurePartyNameOverlay(frame, cfg)
                     end)
                 end
+            end
+        end)
+    end
+
+    -- Event-driven re-application for party composition changes.
+    -- When entering a Follower Dungeon (or any party change), unit class data
+    -- may not be ready when CompactUnitFrame hooks first fire.
+    -- GROUP_ROSTER_UPDATE provides a reliable secondary trigger.
+    if not addon._PartyNameRosterEventInstalled then
+        addon._PartyNameRosterEventInstalled = true
+        local rosterFrame = CreateFrame("Frame")
+        rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+        rosterFrame:SetScript("OnEvent", function()
+            if isEditModeActive() then return end
+
+            local db = addon and addon.db and addon.db.profile
+            local partyCfg = db and db.groupFrames and db.groupFrames.party or nil
+            local cfg = partyCfg and partyCfg.textPlayerName or nil
+            if not cfg or (cfg.colorMode or "default") ~= "class" then return end
+            if not Utils.hasCustomTextSettings(cfg) then return end
+
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0.5, function()
+                    if isEditModeActive() then return end
+                    if InCombatLockdown and InCombatLockdown() then
+                        Combat.queuePartyFrameReapply()
+                        return
+                    end
+                    if addon.ApplyPartyFrameNameOverlays then
+                        addon.ApplyPartyFrameNameOverlays()
+                    end
+                end)
             end
         end)
     end
