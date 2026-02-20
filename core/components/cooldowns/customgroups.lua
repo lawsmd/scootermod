@@ -636,7 +636,7 @@ end
 -- Visibility Filtering + Rebuild
 --------------------------------------------------------------------------------
 
-local function IsEntryVisible(entry)
+function CG.IsEntryVisible(entry)
     if entry.type == "spell" then
         return IsPlayerSpell(entry.id) or IsSpellKnown(entry.id)
     elseif entry.type == "item" then
@@ -644,6 +644,7 @@ local function IsEntryVisible(entry)
     end
     return false
 end
+local IsEntryVisible = CG.IsEntryVisible
 
 local function GetEntryTexture(entry)
     if entry.type == "spell" then
@@ -1193,6 +1194,8 @@ end
 -- Event Handling
 --------------------------------------------------------------------------------
 
+local bagUpdatePending = false
+
 local cgEventFrame = CreateFrame("Frame")
 cgEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 cgEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
@@ -1206,6 +1209,7 @@ cgEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cgEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 cgEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 cgEventFrame:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+cgEventFrame:RegisterEvent("BAG_UPDATE")
 
 cgEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -1252,6 +1256,15 @@ cgEventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "PLAYER_REGEN_ENABLED"
         or event == "PLAYER_TARGET_CHANGED" then
         UpdateAllGroupOpacities()
+
+    elseif event == "BAG_UPDATE" then
+        if not bagUpdatePending then
+            bagUpdatePending = true
+            C_Timer.After(0.2, function()
+                bagUpdatePending = false
+                RebuildAllGroups()
+            end)
+        end
 
     elseif event == "ITEM_DATA_LOAD_RESULT" then
         -- Retry textures for items that may have been loading

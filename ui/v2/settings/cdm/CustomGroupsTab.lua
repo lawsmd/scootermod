@@ -296,17 +296,18 @@ end
 -- Drag-and-Drop Reorder System
 --------------------------------------------------------------------------------
 
--- Find the nearest item frame under the cursor across all categories
+-- Find the nearest item frame under the cursor across all categories.
+-- Returns: (group, insertDataIndex, anchorFrame, anchorSide)
+-- insertDataIndex is the position in the full data model (not the filtered pool).
 local function FindNearestTarget(cursorX, cursorY)
     local bestDist = math.huge
-    local bestGroup, bestIndex, bestSide = nil, nil, nil
+    local bestGroup, bestDataIndex, bestAnchorFrame, bestAnchorSide = nil, nil, nil, nil
 
     for gi = 1, 3 do
-        local entries = CG.GetEntries(gi)
         local pool = itemPools[gi]
         if pool then
-            for idx, itemFrame in ipairs(pool) do
-                if itemFrame:IsShown() and idx <= #entries then
+            for _, itemFrame in ipairs(pool) do
+                if itemFrame:IsShown() and itemFrame._entryIndex then
                     local left = itemFrame:GetLeft()
                     local right = itemFrame:GetRight()
                     local top = itemFrame:GetTop()
@@ -315,18 +316,22 @@ local function FindNearestTarget(cursorX, cursorY)
                     if left and right and top and bottom then
                         local cx = (left + right) / 2
                         local cy = (top + bottom) / 2
-                        local dx = cursorX - cx
-                        local dy = cursorY - cy
-
-                        -- Weighted distance (horizontal bias for grid reorder)
-                        local dist = dx * dx + dy * dy
+                        local dist = (cursorX - cx)^2 + (cursorY - cy)^2
 
                         if dist < bestDist then
                             bestDist = dist
                             bestGroup = gi
-                            bestIndex = idx
-                            -- Determine left/right side (insert before or after)
-                            bestSide = (cursorX < cx) and "before" or "after"
+                            if cursorX < cx then
+                                -- Insert before this item
+                                bestDataIndex = itemFrame._entryIndex
+                                bestAnchorFrame = itemFrame
+                                bestAnchorSide = "LEFT"
+                            else
+                                -- Insert after this item
+                                bestDataIndex = itemFrame._entryIndex + 1
+                                bestAnchorFrame = itemFrame
+                                bestAnchorSide = "RIGHT"
+                            end
                         end
                     end
                 end
@@ -347,23 +352,20 @@ local function FindNearestTarget(cursorX, cursorY)
                 if dist < bestDist then
                     bestDist = dist
                     bestGroup = gi
-                    bestIndex = #entries + 1
-                    bestSide = "before"
+                    local allEntries = CG.GetEntries(gi)
+                    bestDataIndex = #allEntries + 1
+                    bestAnchorFrame = dt
+                    bestAnchorSide = "LEFT"
                 end
             end
         end
     end
 
-    -- Calculate insert position from best match
-    if bestGroup and bestIndex then
-        local insertIndex = bestIndex
-        if bestSide == "after" then
-            insertIndex = bestIndex + 1
-        end
-        return bestGroup, insertIndex
+    if bestGroup and bestDataIndex then
+        return bestGroup, bestDataIndex, bestAnchorFrame, bestAnchorSide
     end
 
-    return nil, nil
+    return nil, nil, nil, nil
 end
 
 function BeginDrag(groupIndex, entryIndex, sourceFrame)
@@ -397,41 +399,21 @@ function BeginDrag(groupIndex, entryIndex, sourceFrame)
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
 
-        -- Find nearest target
-        local tGroup, tIndex = FindNearestTarget(x, y)
+        -- Find nearest target (returns data model index + anchor info)
+        local tGroup, tIndex, anchorFrame, anchorSide = FindNearestTarget(x, y)
         DragState.targetGroup = tGroup
         DragState.targetIndex = tIndex
 
-        -- Update reorder marker
-        if tGroup and tIndex then
-            local pool = itemPools[tGroup]
-            local entries = CG.GetEntries(tGroup)
-
-            -- Find the frame to position the marker next to
-            local anchorFrame, anchorSide
-            if tIndex <= #entries and pool and pool[tIndex] and pool[tIndex]:IsShown() then
-                anchorFrame = pool[tIndex]
-                anchorSide = "LEFT"
-            elseif tIndex > 1 and pool and pool[tIndex - 1] and pool[tIndex - 1]:IsShown() then
-                anchorFrame = pool[tIndex - 1]
-                anchorSide = "RIGHT"
-            elseif dropTargets[tGroup] and dropTargets[tGroup]:IsShown() then
-                anchorFrame = dropTargets[tGroup]
-                anchorSide = "LEFT"
-            end
-
-            if anchorFrame then
-                marker:ClearAllPoints()
-                marker:SetParent(anchorFrame:GetParent())
-                if anchorSide == "LEFT" then
-                    marker:SetPoint("RIGHT", anchorFrame, "LEFT", -2, 0)
-                else
-                    marker:SetPoint("LEFT", anchorFrame, "RIGHT", 2, 0)
-                end
-                marker:Show()
+        -- Update reorder marker using anchor info from FindNearestTarget
+        if anchorFrame then
+            marker:ClearAllPoints()
+            marker:SetParent(anchorFrame:GetParent())
+            if anchorSide == "LEFT" then
+                marker:SetPoint("RIGHT", anchorFrame, "LEFT", -2, 0)
             else
-                marker:Hide()
+                marker:SetPoint("LEFT", anchorFrame, "RIGHT", 2, 0)
             end
+            marker:Show()
         else
             marker:Hide()
         end
@@ -696,8 +678,16 @@ local function LayoutGrid(groupIndex)
 
     container:Show()
 
+    -- Filter entries by character access
+    local visibleEntries = {}
+    for dataIdx, entry in ipairs(entries) do
+        if CG.IsEntryVisible(entry) then
+            table.insert(visibleEntries, { entry = entry, dataIndex = dataIdx })
+        end
+    end
+
     -- Ensure we have enough item frames
-    while #pool < #entries do
+    while #pool < #visibleEntries do
         local item = CreateItemFrame(container, groupIndex)
         table.insert(pool, item)
     end
@@ -714,14 +704,14 @@ local function LayoutGrid(groupIndex)
     col = 1
     totalItems = 1
 
-    for i, entry in ipairs(entries) do
+    for i, vis in ipairs(visibleEntries) do
         local item = pool[i]
-        item._entry = entry
-        item._entryIndex = i
+        item._entry = vis.entry
+        item._entryIndex = vis.dataIndex
         item._groupIndex = groupIndex
 
         -- Set texture
-        local tex = GetEntryTexture(entry)
+        local tex = GetEntryTexture(vis.entry)
         if tex then
             item.Icon:SetTexture(tex)
             item.Icon:SetDesaturated(false)
@@ -747,7 +737,7 @@ local function LayoutGrid(groupIndex)
     end
 
     -- Hide excess pool items
-    for i = #entries + 1, #pool do
+    for i = #visibleEntries + 1, #pool do
         pool[i]:Hide()
     end
 
@@ -863,8 +853,33 @@ local function CreateContentFrame(cdmFrame)
         end
     end)
 
+    -- Event-driven refresh for visibility changes (items acquired, spells learned)
+    local refreshEventFrame = CreateFrame("Frame")
+    local refreshPending = false
+
+    local function DebouncedRefresh()
+        if not refreshPending then
+            refreshPending = true
+            C_Timer.After(0.3, function()
+                refreshPending = false
+                if f:IsShown() then
+                    RefreshAllCategories()
+                end
+            end)
+        end
+    end
+
+    refreshEventFrame:SetScript("OnEvent", function()
+        DebouncedRefresh()
+    end)
+
     -- Refresh on show
     f:SetScript("OnShow", function()
+        -- Register visibility events while tab is open
+        refreshEventFrame:RegisterEvent("BAG_UPDATE")
+        refreshEventFrame:RegisterEvent("SPELLS_CHANGED")
+        refreshEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+
         -- Ensure scroll child width matches
         scrollChild:SetWidth(f:GetWidth() or 300)
         -- Refresh header texts (handles profile switches)
@@ -885,6 +900,10 @@ local function CreateContentFrame(cdmFrame)
             end
         end
         RefreshAllCategories()
+    end)
+
+    f:SetScript("OnHide", function()
+        refreshEventFrame:UnregisterAllEvents()
     end)
 
     contentFrame = f
