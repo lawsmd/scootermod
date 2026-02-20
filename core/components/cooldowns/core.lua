@@ -293,8 +293,64 @@ local scooterFontStrings = setmetatable({}, { __mode = "k" })
 -- Track cooldown end times per icon for per-icon opacity feature (weak keys for GC)
 local cooldownEndTimes = setmetatable({}, { __mode = "k" })
 
+-- Track which cooldown frames have had per-frame hooks installed (weak keys for GC)
+local hookedCooldownFrames = setmetatable({}, { __mode = "k" })
+
+-- Cancellable dim timers per icon — used for time-based GCD filtering when all values are secrets (weak keys for GC)
+local pendingDimTokens = setmetatable({}, { __mode = "k" })
+
+-- Path 3 pending dim tokens: cancellable timer identity per icon
+local path3PendingTokens = setmetatable({}, { __mode = "k" })
+
+-- Diagnostic logging for cooldown dimming decisions
+local dimDebugEnabled = false
+local dimDebugBuffer = {}
+local DIM_DEBUG_MAX_LINES = 300
+
+local function dimDebugLog(message, ...)
+    if not dimDebugEnabled then return end
+    local ok, formatted = pcall(string.format, message, ...)
+    if not ok then formatted = message end
+    local timestamp = GetTime and GetTime() or 0
+    local line = string.format("[%.3f] %s", timestamp, formatted)
+    dimDebugBuffer[#dimDebugBuffer + 1] = line
+    if #dimDebugBuffer > DIM_DEBUG_MAX_LINES then
+        table.remove(dimDebugBuffer, 1)
+    end
+end
+
+function addon.SetDimDebugTrace(enabled)
+    dimDebugEnabled = enabled
+    if enabled then
+        addon:Print("Dim debug trace: ON")
+    else
+        addon:Print("Dim debug trace: OFF")
+    end
+end
+
+function addon.ShowDimDebugLog()
+    if #dimDebugBuffer == 0 then
+        addon:Print("Dim debug buffer is empty.")
+        return
+    end
+    local text = table.concat(dimDebugBuffer, "\n")
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Dim Debug Trace", text)
+    else
+        addon:Print("DebugShowWindow not available. Buffer has " .. #dimDebugBuffer .. " lines.")
+    end
+end
+
+function addon.ClearDimDebugLog()
+    wipe(dimDebugBuffer)
+    addon:Print("Dim debug buffer cleared.")
+end
+
 -- Forward declaration (defined in Icon Sizing section, used by hookProcGlowResizing)
 local resizeProcGlow
+
+-- Forward declaration (defined in Cooldown Opacity section, used by Path 3 SetCooldown hook)
+local updateIconCooldownOpacity
 
 -- Check if Blizzard's DebuffBorder is present and visible on a CDM icon
 -- Used to avoid drawing ScooterMod borders over Blizzard's debuff-type borders
@@ -756,52 +812,288 @@ local function applyCooldownTextStyle(cooldownFrame)
     end
 end
 
--- Minimum cooldown duration to trigger dimming (filters out GCD)
--- GCD is typically 1.5s base, can go down to ~0.75s with haste
-local MIN_COOLDOWN_FOR_DIMMING = 1.5
+-- One-time per-frame hook setup for CDM cooldown opacity tracking in combat.
+-- Hooks SetCooldown/Clear/OnCooldownDone on the cooldown widget itself.
+-- These fire AFTER Blizzard evaluates secret values in protected context,
+-- so the mere fact of which method was called tells us cooldown state.
+local function setupCDMCooldownFrameHooks(cooldownFrame)
+    if hookedCooldownFrames[cooldownFrame] then return end
 
--- Helper to track cooldown state and update per-icon opacity
-local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
-    local cdmIcon = cooldownFrame:GetParent()
+    local cdmIcon
+    pcall(function() cdmIcon = cooldownFrame:GetParent() end)
     if not cdmIcon then return end
 
-    -- Track cooldown state (only for cooldowns longer than GCD threshold)
-    if enable and enable ~= 0 and start and start > 0 and duration and duration > MIN_COOLDOWN_FOR_DIMMING then
-        cooldownEndTimes[cdmIcon] = start + duration
-    else
-        -- Don't clear if an existing longer cooldown is still running
-        -- (GCD shouldn't override a real cooldown that's already tracked)
-        local existingEndTime = cooldownEndTimes[cdmIcon]
-        if not existingEndTime or GetTime() >= existingEndTime then
-            cooldownEndTimes[cdmIcon] = nil
+    local componentId = nil
+    pcall(function()
+        local parent = cdmIcon:GetParent()
+        if parent then
+            local parentName = parent.GetName and parent:GetName()
+            componentId = parentName and CDM_VIEWERS[parentName]
         end
-    end
+    end)
+    if componentId ~= "essentialCooldowns" and componentId ~= "utilityCooldowns" then return end
 
-    -- Defer opacity update to next frame for safety
-    C_Timer.After(0, function()
-        if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
-            -- updateIconCooldownOpacity is defined later in the file
-            if addon.RefreshCDMCooldownOpacity then
-                -- Forward-declared local; update this icon directly
-                local componentId = nil
-                local parent = cdmIcon:GetParent()
-                if parent then
-                    local parentName = parent.GetName and parent:GetName()
-                    componentId = parentName and CDM_VIEWERS[parentName]
+    -- Path 3: SetCooldown hook — primary cooldown detection via isOnGCD (5f).
+    -- isOnGCD is NEVER secret (confirmed across 3 combat log sessions).
+    -- When isOnGCD is readable:
+    --   true  → GCD-only → skip dimming
+    --   false → real CD → dim immediately
+    -- When isOnGCD is nil (charge-based spells), falls back to a 2.0s timer.
+    -- If Clear fires before timer expires, icon was GCD-only → no dim.
+    -- Path 2 (CooldownFrame_Set hook) can refine math.huge to exact end time.
+    hooksecurefunc(cooldownFrame, "SetCooldown", function(self)
+        dimDebugLog("Path3 SetCooldown: icon=%s hasEndTime=%s hasPending=%s",
+            tostring(cdmIcon), tostring(cooldownEndTimes[cdmIcon] ~= nil),
+            tostring(path3PendingTokens[cdmIcon] ~= nil))
+
+        -- If a real cooldown is already tracked, Path 3 is unnecessary
+        if cooldownEndTimes[cdmIcon] then
+            dimDebugLog("Path3 SetCooldown: SKIP (cooldownEndTimes already set)")
+            return
+        end
+
+        -- 5f: Fast-path via isOnGCD. CacheCooldownValues() runs BEFORE
+        -- CooldownFrame_Set() in Blizzard's refresh, so isOnGCD is fresh.
+        local isOnGCD = nil
+        local isOnGCDReadable = false
+        pcall(function()
+            isOnGCD = cdmIcon.isOnGCD
+        end)
+        if isOnGCD ~= nil then
+            if issecretvalue and issecretvalue(isOnGCD) then
+                isOnGCDReadable = false
+                dimDebugLog("Path3 isOnGCD: SECRET (unexpected, falling through to timer)")
+            else
+                isOnGCDReadable = true
+            end
+        end
+
+        if isOnGCDReadable then
+            if isOnGCD == true then
+                dimDebugLog("Path3 isOnGCD=true: GCD-only → skip dimming")
+                path3PendingTokens[cdmIcon] = nil
+                return
+            else
+                dimDebugLog("Path3 isOnGCD=false: real CD → dimming immediately")
+                path3PendingTokens[cdmIcon] = nil
+                cooldownEndTimes[cdmIcon] = math.huge
+                updateIconCooldownOpacity(cdmIcon)
+                return
+            end
+        end
+
+        -- isOnGCD=nil: charge-based or aura-display spell.
+        -- For charge-based: SetCooldown only fires when charge recharge is active
+        -- (not for GCD). When charges are full, spell path runs and sets isOnGCD.
+        -- For aura-display: spell is actively in use (channel/buff).
+        -- In both cases, dimming immediately is correct.
+        dimDebugLog("Path3 isOnGCD=nil: charge/aura CD → dimming immediately")
+        path3PendingTokens[cdmIcon] = nil
+        cooldownEndTimes[cdmIcon] = math.huge
+        updateIconCooldownOpacity(cdmIcon)
+    end)
+
+    -- Clear: fires when Blizzard determines cooldown is NOT active
+    hooksecurefunc(cooldownFrame, "Clear", function(self)
+        dimDebugLog("Clear hook fired: icon=%s", tostring(cdmIcon))
+        pendingDimTokens[cdmIcon] = nil
+        path3PendingTokens[cdmIcon] = nil
+        if cooldownEndTimes[cdmIcon] then
+            cooldownEndTimes[cdmIcon] = nil
+            C_Timer.After(0, function()
+                if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+                    pcall(function() cdmIcon:SetAlpha(1.0) end)
                 end
-                if componentId == "essentialCooldowns" or componentId == "utilityCooldowns" then
-                    local component = addon.Components and addon.Components[componentId]
-                    if component and component.db then
-                        local opacitySetting = tonumber(component.db.opacityOnCooldown) or 100
-                        if opacitySetting < 100 then
-                            local endTime = cooldownEndTimes[cdmIcon]
-                            local isOnCD = endTime and GetTime() < endTime
-                            local targetAlpha = isOnCD and (opacitySetting / 100) or 1.0
-                            pcall(function() cdmIcon:SetAlpha(targetAlpha) end)
+            end)
+        end
+    end)
+
+    -- OnCooldownDone: fires when cooldown timer expires naturally (C++ side)
+    cooldownFrame:HookScript("OnCooldownDone", function(self)
+        dimDebugLog("OnCooldownDone fired: icon=%s", tostring(cdmIcon))
+        pendingDimTokens[cdmIcon] = nil
+        if cooldownEndTimes[cdmIcon] then
+            cooldownEndTimes[cdmIcon] = nil
+            C_Timer.After(0, function()
+                if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+                    pcall(function() cdmIcon:SetAlpha(1.0) end)
+                end
+            end)
+        end
+    end)
+
+    hookedCooldownFrames[cooldownFrame] = true
+end
+
+-- Primary cooldown opacity tracking. Two approaches:
+-- 1. Use CooldownFrame_Set hook args directly (when real, non-secret values)
+-- 2. Read Blizzard's pre-computed isOnActualCooldown from the CDM item frame
+--    (CacheCooldownValues sets this in secure context BEFORE CooldownFrame_Set fires)
+local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
+    local cdmIcon
+    pcall(function() cdmIcon = cooldownFrame:GetParent() end)
+    if not cdmIcon then return end
+
+    local componentId = nil
+    pcall(function()
+        local parent = cdmIcon:GetParent()
+        if parent then
+            local parentName = parent.GetName and parent:GetName()
+            componentId = parentName and CDM_VIEWERS[parentName]
+        end
+    end)
+    if componentId ~= "essentialCooldowns" and componentId ~= "utilityCooldowns" then return end
+
+    local argsAreSecrets = issecretvalue and duration ~= nil and issecretvalue(duration)
+
+    dimDebugLog("trackCD: icon=%s component=%s argsAreSecrets=%s",
+        tostring(cdmIcon), tostring(componentId), tostring(argsAreSecrets))
+
+    -- Path 2: Args are secrets (combat). Read Blizzard's cached fields instead.
+    -- CacheCooldownValues() already ran in Blizzard's secure context and set:
+    --   cdmIcon.isOnActualCooldown (boolean: not isOnGCD and cooldownIsActive)
+    --   cdmIcon.cooldownStartTime, cdmIcon.cooldownDuration (real numbers)
+    if argsAreSecrets then
+        local canRead = true
+        if issecrettable then
+            pcall(function() canRead = not issecrettable(cdmIcon) end)
+        end
+        if canaccesstable then
+            pcall(function() canRead = canRead and canaccesstable(cdmIcon) end)
+        end
+
+        dimDebugLog("  Path2: canRead=%s", tostring(canRead))
+
+        if canRead then
+            local isOnActualCD = nil
+            local cdStartTime = nil
+            local cdDuration = nil
+            local isOnGCD = nil
+            pcall(function()
+                isOnActualCD = cdmIcon.isOnActualCooldown
+                cdStartTime = cdmIcon.cooldownStartTime
+                cdDuration = cdmIcon.cooldownDuration
+                isOnGCD = cdmIcon.isOnGCD
+            end)
+
+            -- Log field values with secret detection
+            local function safeFieldStr(name, val)
+                if val == nil then return name .. "=nil" end
+                if issecretvalue and issecretvalue(val) then return name .. "=SECRET" end
+                return name .. "=" .. tostring(val)
+            end
+            dimDebugLog("  Path2 fields: %s %s %s %s",
+                safeFieldStr("isOnActualCD", isOnActualCD),
+                safeFieldStr("cdStartTime", cdStartTime),
+                safeFieldStr("cdDuration", cdDuration),
+                safeFieldStr("isOnGCD", isOnGCD))
+
+            -- Verify we got real (non-secret) values for the primary field
+            local gotReal = isOnActualCD ~= nil
+                and not (issecretvalue and issecretvalue(isOnActualCD))
+
+            -- Supplementary: detect real cooldown during GCD via duration > 2
+            -- Blizzard sets isOnActualCooldown = not isOnGCD and cooldownIsActive,
+            -- so it's false during the GCD even when the spell IS on a real cooldown.
+            -- But cooldownDuration reflects the SPELL's actual CD (e.g. 72s for Ironbark),
+            -- not the GCD duration (~1.5s). duration > 2 distinguishes the two.
+            local durationIsReal = cdDuration ~= nil
+                and type(cdDuration) == "number"
+                and not (issecretvalue and issecretvalue(cdDuration))
+            local isRealCDDuringGCD = durationIsReal and cdDuration > 2
+                and isOnGCD == true
+
+            dimDebugLog("  Path2 decision: gotReal=%s isRealCDDuringGCD=%s",
+                tostring(gotReal), tostring(isRealCDDuringGCD))
+
+            if gotReal or isRealCDDuringGCD then
+                if isOnActualCD or isRealCDDuringGCD then
+                    -- Real cooldown — record end time and dim
+                    dimDebugLog("  Path2 SUCCESS: real CD detected → dimming")
+                    pcall(function()
+                        if cdStartTime and cdDuration
+                           and type(cdStartTime) == "number" and type(cdDuration) == "number" then
+                            cooldownEndTimes[cdmIcon] = cdStartTime + cdDuration
                         else
-                            pcall(function() cdmIcon:SetAlpha(1.0) end)
+                            cooldownEndTimes[cdmIcon] = math.huge
+                        end
+                    end)
+                else
+                    -- GCD only — clear if no active CD is tracked
+                    dimDebugLog("  Path2: GCD only, checking existing endTime")
+                    local existing = cooldownEndTimes[cdmIcon]
+                    if existing then
+                        pcall(function()
+                            if GetTime() >= existing then
+                                cooldownEndTimes[cdmIcon] = nil
+                            end
+                        end)
+                    end
+                end
+
+                -- Cancel Path 3 timer only when Path 2 is confident:
+                -- - Real CD detected (isOnActualCD/isRealCDDuringGCD) → Path 2 handles it
+                -- - cdDuration is real → can confirm GCD-only (duration ≤ 2)
+                -- When cdDuration is SECRET, "GCD only" is uncertain → let Clear decide
+                if isOnActualCD or isRealCDDuringGCD or durationIsReal then
+                    path3PendingTokens[cdmIcon] = nil
+                end
+
+                -- Apply opacity immediately
+                C_Timer.After(0, function()
+                    if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+                        local component = addon.Components and addon.Components[componentId]
+                        if component and component.db then
+                            local opacitySetting = tonumber(component.db.opacityOnCooldown) or 100
+                            if opacitySetting < 100 then
+                                local endTime = cooldownEndTimes[cdmIcon]
+                                local isOnCD = false
+                                pcall(function() isOnCD = endTime and GetTime() < endTime end)
+                                local targetAlpha = isOnCD and (opacitySetting / 100) or 1.0
+                                pcall(function() cdmIcon:SetAlpha(targetAlpha) end)
+                            else
+                                pcall(function() cdmIcon:SetAlpha(1.0) end)
+                            end
                         end
                     end
+                end)
+                return
+            end
+        end
+
+        -- Path 2 failed (table is secret or fields returned secrets).
+        -- Path 3 (SetCooldown/Clear timing hook) handles this case automatically.
+        dimDebugLog("  Path2 FAILED: deferring to Path 3 (SetCooldown/Clear timing)")
+        return
+    end
+
+    -- Path 1: Hook args are real (out of combat). Use duration > 2 to filter GCD.
+    pcall(function()
+        if enable and enable ~= 0 and start and start > 0 and duration and duration > 2 then
+            cooldownEndTimes[cdmIcon] = start + duration
+        else
+            local existingEndTime = cooldownEndTimes[cdmIcon]
+            if not existingEndTime or GetTime() >= existingEndTime then
+                cooldownEndTimes[cdmIcon] = nil
+            end
+        end
+    end)
+
+    C_Timer.After(0, function()
+        if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
+            local component = addon.Components and addon.Components[componentId]
+            if component and component.db then
+                local opacitySetting = tonumber(component.db.opacityOnCooldown) or 100
+                if opacitySetting < 100 then
+                    local endTime = cooldownEndTimes[cdmIcon]
+                    local isOnCD = false
+                    pcall(function()
+                        isOnCD = endTime and GetTime() < endTime
+                    end)
+                    local targetAlpha = isOnCD and (opacitySetting / 100) or 1.0
+                    pcall(function() cdmIcon:SetAlpha(targetAlpha) end)
+                else
+                    pcall(function() cdmIcon:SetAlpha(1.0) end)
                 end
             end
         end
@@ -818,10 +1110,12 @@ local function hookCooldownTextStyling()
             if not cooldownFrame then return end
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
 
+            -- Setup per-frame hooks for CDM opacity tracking (once per frame)
+            setupCDMCooldownFrameHooks(cooldownFrame)
+
             -- Track cooldown state for per-icon opacity feature
-            pcall(function()
-                trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
-            end)
+            -- (handles both real-value and secret-value scenarios)
+            trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
 
             -- Defer text styling to next frame for safety
             pcall(function()
@@ -840,10 +1134,12 @@ local function hookCooldownTextStyling()
             if not cooldownFrame then return end
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
 
+            -- Setup per-frame hooks for CDM opacity tracking (once per frame)
+            setupCDMCooldownFrameHooks(cooldownFrame)
+
             -- Track cooldown state for per-icon opacity feature
-            pcall(function()
-                trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
-            end)
+            -- (handles both real-value and secret-value scenarios)
+            trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, enable)
 
             pcall(function()
                 C_Timer.After(0, function()
@@ -1447,12 +1743,10 @@ end
 local function runCombinedCleanup()
     runOverlayCleanup()
     -- Check for expired cooldowns and restore full opacity
-    -- checkCooldownExpirations is forward-declared; inline the logic here
     local now = GetTime()
     for cdmIcon, endTime in pairs(cooldownEndTimes) do
         if now >= endTime then
             cooldownEndTimes[cdmIcon] = nil
-            -- Restore full opacity
             pcall(function()
                 if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
                     cdmIcon:SetAlpha(1.0)
@@ -1640,10 +1934,13 @@ end
 --------------------------------------------------------------------------------
 
 -- Check if an icon is currently on cooldown
+-- Uses cooldownEndTimes (populated by trackCooldownAndUpdateOpacity with real end times,
+-- or math.huge sentinel from the time-based fallback when all values are secrets)
 local function isIconOnCooldown(cdmIcon)
     local endTime = cooldownEndTimes[cdmIcon]
     if not endTime then return false end
-    return GetTime() < endTime
+    local ok, result = pcall(function() return GetTime() < endTime end)
+    return ok and result
 end
 
 -- Get component ID from a CDM icon frame
@@ -1656,7 +1953,7 @@ local function getIconComponentId(cdmIcon)
 end
 
 -- Update opacity for a single icon based on its cooldown state
-local function updateIconCooldownOpacity(cdmIcon)
+updateIconCooldownOpacity = function(cdmIcon)
     if not cdmIcon then return end
     if cdmIcon.IsForbidden and cdmIcon:IsForbidden() then return end
 
@@ -1711,22 +2008,30 @@ function addon.RefreshCDMCooldownOpacity(componentId)
         end
     end
 
-    -- Also refresh any visible icons in the viewers that may not be tracked yet
+    -- Also sweep visible icons in the viewers that may not be in cooldownEndTimes
+    -- (e.g., combat icons where Phase 1 tracking failed due to secrets)
+    local viewersToSweep = {}
     if componentId then
-        local viewerName
         for vn, cid in pairs(CDM_VIEWERS) do
             if cid == componentId then
-                viewerName = vn
+                viewersToSweep[vn] = true
                 break
             end
         end
-        if viewerName then
-            local viewer = _G[viewerName]
-            if viewer and viewer.GetChildren then
-                for _, child in ipairs({viewer:GetChildren()}) do
-                    if child and child.Cooldown then
-                        updateIconCooldownOpacity(child)
-                    end
+    else
+        -- No componentId: sweep Essential and Utility viewers
+        for vn, cid in pairs(CDM_VIEWERS) do
+            if cid == "essentialCooldowns" or cid == "utilityCooldowns" then
+                viewersToSweep[vn] = true
+            end
+        end
+    end
+    for viewerName in pairs(viewersToSweep) do
+        local viewer = _G[viewerName]
+        if viewer and viewer.GetChildren then
+            for _, child in ipairs({viewer:GetChildren()}) do
+                if child and child.Cooldown then
+                    updateIconCooldownOpacity(child)
                 end
             end
         end
@@ -1744,6 +2049,8 @@ eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")  -- Combat start
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Combat end
+-- UNIT_SPELLCAST_SUCCEEDED removed: SecretWhenUnitSpellCastRestricted makes arg1=="player"
+-- fail silently during combat. Path 3 (SetCooldown/Clear timing) handles this instead.
 
 local lastRefreshTime = {}
 local REFRESH_THROTTLE = 0.1
@@ -1791,6 +2098,28 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- Combat ended: update viewer opacities to out-of-combat values
         updateAllViewerOpacities()
 
+        C_Timer.After(0, function()
+            if addon.RefreshCDMCooldownOpacity then
+                addon.RefreshCDMCooldownOpacity()
+            end
+        end)
+
+        -- Safety net: clear any math.huge sentinels that weren't replaced by real
+        -- end times within 2 seconds of combat exit. By this point, CooldownFrame_Set
+        -- should have fired with real values for any still-active cooldowns.
+        C_Timer.After(2.0, function()
+            local needsRefresh = false
+            for cdmIcon, endTime in pairs(cooldownEndTimes) do
+                if endTime == math.huge then
+                    cooldownEndTimes[cdmIcon] = nil
+                    needsRefresh = true
+                end
+            end
+            if needsRefresh and addon.RefreshCDMCooldownOpacity then
+                addon.RefreshCDMCooldownOpacity()
+            end
+        end)
+
     elseif event == "UNIT_AURA" then
         if arg1 == "player" then
             throttledRefresh("BuffIconCooldownViewer", "trackedBuffs")
@@ -1808,19 +2137,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         throttledRefresh("EssentialCooldownViewer", "essentialCooldowns")
         throttledRefresh("UtilityCooldownViewer", "utilityCooldowns")
 
-        -- Immediately check for expired cooldowns and restore opacity
-        -- This provides faster response than waiting for the ticker
-        local now = GetTime()
-        for cdmIcon, endTime in pairs(cooldownEndTimes) do
-            if now >= endTime then
-                cooldownEndTimes[cdmIcon] = nil
-                pcall(function()
-                    if cdmIcon and not (cdmIcon.IsForbidden and cdmIcon:IsForbidden()) then
-                        cdmIcon:SetAlpha(1.0)
-                    end
-                end)
+        -- Deferred per-icon cooldown opacity refresh
+        C_Timer.After(0.1, function()
+            if addon.RefreshCDMCooldownOpacity then
+                addon.RefreshCDMCooldownOpacity()
             end
-        end
+        end)
+
     end
 end)
 
