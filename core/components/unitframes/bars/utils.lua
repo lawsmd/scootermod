@@ -157,6 +157,52 @@ function Utils.getJustifyHFromAnchor(anchor)
     return "LEFT" -- fallback
 end
 
+-- Reposition a LEFT-justified name overlay to achieve true CENTER/RIGHT alignment.
+-- Uses actual text width (GetStringWidth) to compute the exact horizontal offset.
+-- Long names that exceed the container gracefully degrade to left-aligned (start visible).
+function Utils.repositionNameOverlay(overlay, container, anchor, offsetX, offsetY)
+    if not overlay or not container then return end
+
+    -- Convert 9-way anchor to LEFT-based vertical anchor for right-side truncation
+    local vertAnchor
+    if anchor == "TOPLEFT" or anchor == "TOP" or anchor == "TOPRIGHT" then
+        vertAnchor = "TOPLEFT"
+    elseif anchor == "LEFT" or anchor == "CENTER" or anchor == "RIGHT" then
+        vertAnchor = "LEFT"
+    else -- BOTTOMLEFT, BOTTOM, BOTTOMRIGHT
+        vertAnchor = "BOTTOMLEFT"
+    end
+
+    -- Get container width (addon-owned frame; guarded as defense-in-depth)
+    local containerWidth = 0
+    if container.GetWidth then
+        local ok, w = pcall(container.GetWidth, container)
+        if ok and type(w) == "number" and not issecretvalue(w) then
+            containerWidth = w
+        end
+    end
+
+    -- Get actual rendered text width (addon-owned FontString)
+    local textWidth = 0
+    if overlay.GetStringWidth then
+        local ok, tw = pcall(overlay.GetStringWidth, overlay)
+        if ok and type(tw) == "number" and not issecretvalue(tw) then
+            textWidth = tw
+        end
+    end
+
+    -- Compute dynamic horizontal offset based on alignment intent
+    local baseHOffset = 0
+    if anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
+        baseHOffset = math.max(0, (containerWidth - textWidth) / 2)
+    elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
+        baseHOffset = math.max(0, containerWidth - textWidth)
+    end
+
+    overlay:ClearAllPoints()
+    overlay:SetPoint(vertAnchor, container, vertAnchor, offsetX + baseHOffset, offsetY)
+end
+
 --------------------------------------------------------------------------------
 -- Table/Object Utilities
 --------------------------------------------------------------------------------

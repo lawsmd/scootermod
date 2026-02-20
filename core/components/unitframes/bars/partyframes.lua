@@ -1460,42 +1460,14 @@ local function stylePartyNameOverlay(frame, cfg)
         pcall(overlay.SetMaxLines, overlay, 1)
     end
 
-    -- Convert 9-way anchor to LEFT-based vertical anchor for proper right-side truncation.
-    -- The anchor setting controls vertical position; text always starts from the left.
-    local vertAnchor
-    if anchor == "TOPLEFT" or anchor == "TOP" or anchor == "TOPRIGHT" then
-        vertAnchor = "TOPLEFT"
-    elseif anchor == "LEFT" or anchor == "CENTER" or anchor == "RIGHT" then
-        vertAnchor = "LEFT"
-    else -- BOTTOMLEFT, BOTTOM, BOTTOMRIGHT
-        vertAnchor = "BOTTOMLEFT"
-    end
+    -- Position using dynamic text-width-based alignment.
+    -- repositionNameOverlay computes exact CENTER/RIGHT offset from GetStringWidth().
+    Utils.repositionNameOverlay(overlay, container, anchor, offsetX, offsetY)
 
-    -- Calculate horizontal offset based on anchor's horizontal component.
-    -- This provides approximate CENTER/RIGHT positioning while maintaining left-to-right text flow.
-    local containerWidth = 0
-    if container.GetWidth then
-        local ok, w = pcall(container.GetWidth, container)
-        if ok and type(w) == "number" and not issecretvalue(w) then
-            containerWidth = w
-        end
-    end
-    local baseHOffset = 0
-    if anchor == "TOP" or anchor == "CENTER" or anchor == "BOTTOM" then
-        -- For CENTER, shift text toward the horizontal center
-        baseHOffset = containerWidth * 0.25
-    elseif anchor == "TOPRIGHT" or anchor == "RIGHT" or anchor == "BOTTOMRIGHT" then
-        -- For RIGHT, shift text further toward the right edge
-        baseHOffset = containerWidth * 0.5
-    end
-
-    -- Position within the full-frame clipping container using LEFT-based anchors.
-    -- The baseHOffset shifts text horizontally based on alignment preference.
-    overlay:ClearAllPoints()
-    overlay:SetPoint(vertAnchor, container, vertAnchor, offsetX + baseHOffset, offsetY)
-    -- NOTE: An explicit width is intentionally NOT set on the overlay.
-    -- The container's SetClipsChildren(true) will hard-clip the text at the
-    -- right edge without adding Blizzard's "..." ellipsis.
+    -- Store alignment params so the SetText hook can reposition after text changes.
+    state.nameAnchor = anchor
+    state.nameOffsetX = offsetX
+    state.nameOffsetY = offsetY
 end
 
 -- Hide Blizzard's name FontString and install alpha-enforcement hook
@@ -1634,6 +1606,12 @@ local function ensurePartyNameOverlay(frame, cfg)
                         -- Secret or other type — SetText handles secrets natively
                         pcall(frameState.overlayText.SetText, frameState.overlayText, text)
                     end
+                    -- Reposition after text change so CENTER/RIGHT alignment adapts to new text width
+                    if frameState.nameAnchor then
+                        Utils.repositionNameOverlay(frameState.overlayText,
+                            frameState.overlayContainer or frame,
+                            frameState.nameAnchor, frameState.nameOffsetX or 0, frameState.nameOffsetY or 0)
+                    end
                 end
             end)
         end
@@ -1710,6 +1688,12 @@ local function ensurePartyNameOverlay(frame, cfg)
         if ok then
             pcall(state.overlayText.SetText, state.overlayText, rawText)
         end
+    end
+
+    -- Reposition after initial text copy so CENTER/RIGHT alignment uses actual text width
+    if state.nameAnchor then
+        Utils.repositionNameOverlay(state.overlayText, state.overlayContainer or frame,
+            state.nameAnchor, state.nameOffsetX or 0, state.nameOffsetY or 0)
     end
 
     state.overlayText:Show()
