@@ -293,6 +293,13 @@ local scooterFontStrings = setmetatable({}, { __mode = "k" })
 -- Track cooldown end times per icon for per-icon opacity feature (weak keys for GC)
 local cooldownEndTimes = setmetatable({}, { __mode = "k" })
 
+-- Track whether a CDM icon's swipe color is aura (gold) vs cooldown (black).
+-- SetSwipeColor fires BEFORE SetCooldown in Blizzard's RefreshSpellCooldownInfo,
+-- so this state is ready when Path 3 reads it. Gold swipe = aura/duration display,
+-- not a real cooldown — should not be dimmed.
+local swipeIsAuraColor = setmetatable({}, { __mode = "k" })  -- cdmIcon → boolean
+local hookedSwipeColorFrames = setmetatable({}, { __mode = "k" })  -- cooldownFrame → true
+
 -- Track which cooldown frames have had per-frame hooks installed (weak keys for GC)
 local hookedCooldownFrames = setmetatable({}, { __mode = "k" })
 
@@ -806,6 +813,34 @@ local function applyCooldownTextStyle(cooldownFrame)
     end
 end
 
+-- Lazily hook SetSwipeColor on a CDM cooldown frame to distinguish aura/duration
+-- display (gold swipe, r>0.5) from actual cooldowns (black swipe, r<=0.5).
+-- Blizzard calls SetSwipeColor BEFORE CooldownFrame_Set in RefreshSpellCooldownInfo,
+-- so swipeIsAuraColor is set before our Path 3 SetCooldown hook reads it.
+local function ensureSwipeColorHook(cooldownFrame)
+    if not cooldownFrame then return end
+    if hookedSwipeColorFrames[cooldownFrame] then return end
+
+    hooksecurefunc(cooldownFrame, "SetSwipeColor", function(self, r)
+        local cdmIcon
+        pcall(function() cdmIcon = self:GetParent() end)
+        if not cdmIcon then return end
+
+        -- ITEM_AURA_COLOR.r = 1.0 (gold), ITEM_COOLDOWN_COLOR.r = 0.0 (black)
+        local isAura = false
+        pcall(function()
+            if r and type(r) == "number" then
+                isAura = r > 0.5
+            end
+        end)
+        swipeIsAuraColor[cdmIcon] = isAura
+        dimDebugLog("SetSwipeColor hook: icon=%s r=%s isAura=%s",
+            tostring(cdmIcon), tostring(r), tostring(isAura))
+    end)
+
+    hookedSwipeColorFrames[cooldownFrame] = true
+end
+
 -- One-time per-frame hook setup for CDM cooldown opacity tracking in combat.
 -- Hooks SetCooldown/Clear/OnCooldownDone on the cooldown widget itself.
 -- These fire AFTER Blizzard evaluates secret values in protected context,
@@ -828,14 +863,28 @@ local function setupCDMCooldownFrameHooks(cooldownFrame)
     if componentId ~= "essentialCooldowns" and componentId ~= "utilityCooldowns" then return end
 
     -- Path 3: SetCooldown hook — primary cooldown detection via isOnGCD.
+    -- SetSwipeColor fires first, so swipeIsAuraColor is checked before isOnGCD.
     -- isOnGCD is NEVER secret (derived boolean, confirmed across multiple sessions).
+    --   swipeIsAura → gold swipe (aura/duration) → skip dimming
     --   true  → GCD-only → skip dimming
     --   false → real CD → dim immediately
-    --   nil   → charge-based or aura-display → dim immediately
+    --   nil   → charge-based → dim immediately
     -- Path 2 (CooldownFrame_Set hook) can refine math.huge to exact end time.
+    -- Also install the swipe color hook on this cooldown frame
+    ensureSwipeColorHook(cooldownFrame)
+
     hooksecurefunc(cooldownFrame, "SetCooldown", function(self)
-        dimDebugLog("Path3 SetCooldown: icon=%s hasEndTime=%s",
-            tostring(cdmIcon), tostring(cooldownEndTimes[cdmIcon] ~= nil))
+        dimDebugLog("Path3 SetCooldown: icon=%s hasEndTime=%s swipeIsAura=%s",
+            tostring(cdmIcon), tostring(cooldownEndTimes[cdmIcon] ~= nil),
+            tostring(swipeIsAuraColor[cdmIcon]))
+
+        -- Aura/duration display (gold swipe) — not a real cooldown, don't dim
+        if swipeIsAuraColor[cdmIcon] then
+            dimDebugLog("Path3: swipeIsAuraColor=true → skip dimming (aura/duration)")
+            cooldownEndTimes[cdmIcon] = nil
+            updateIconCooldownOpacity(cdmIcon)
+            return
+        end
 
         -- If a real cooldown is already tracked, Path 3 is unnecessary
         if cooldownEndTimes[cdmIcon] then
@@ -871,12 +920,10 @@ local function setupCDMCooldownFrameHooks(cooldownFrame)
             end
         end
 
-        -- isOnGCD=nil: charge-based or aura-display spell.
-        -- For charge-based: SetCooldown only fires when charge recharge is active
-        -- (not for GCD). When charges are full, spell path runs and sets isOnGCD.
-        -- For aura-display: spell is actively in use (channel/buff).
-        -- In both cases, dimming immediately is correct.
-        dimDebugLog("Path3 isOnGCD=nil: charge/aura CD → dimming immediately")
+        -- isOnGCD=nil: charge-based spell (aura-display already handled above
+        -- by swipeIsAuraColor check). For charge-based: SetCooldown only fires
+        -- when charge recharge is active (not for GCD). Dimming is correct.
+        dimDebugLog("Path3 isOnGCD=nil: charge CD → dimming immediately")
         cooldownEndTimes[cdmIcon] = math.huge
         updateIconCooldownOpacity(cdmIcon)
     end)
@@ -884,6 +931,7 @@ local function setupCDMCooldownFrameHooks(cooldownFrame)
     -- Clear: fires when Blizzard determines cooldown is NOT active
     hooksecurefunc(cooldownFrame, "Clear", function(self)
         dimDebugLog("Clear hook fired: icon=%s", tostring(cdmIcon))
+        swipeIsAuraColor[cdmIcon] = nil
         if cooldownEndTimes[cdmIcon] then
             cooldownEndTimes[cdmIcon] = nil
             C_Timer.After(0, function()
@@ -897,6 +945,7 @@ local function setupCDMCooldownFrameHooks(cooldownFrame)
     -- OnCooldownDone: fires when cooldown timer expires naturally (C++ side)
     cooldownFrame:HookScript("OnCooldownDone", function(self)
         dimDebugLog("OnCooldownDone fired: icon=%s", tostring(cdmIcon))
+        swipeIsAuraColor[cdmIcon] = nil
         if cooldownEndTimes[cdmIcon] then
             cooldownEndTimes[cdmIcon] = nil
             C_Timer.After(0, function()
@@ -1026,6 +1075,14 @@ local function trackCooldownAndUpdateOpacity(cooldownFrame, start, duration, ena
         -- Path 2 failed (table is secret or fields returned secrets).
         -- Path 3 (SetCooldown/Clear timing hook) handles this case automatically.
         dimDebugLog("  Path2 FAILED: deferring to Path 3 (SetCooldown/Clear timing)")
+        return
+    end
+
+    -- Aura/duration display (gold swipe) — not a real cooldown, don't dim
+    if swipeIsAuraColor[cdmIcon] then
+        dimDebugLog("  Path1: swipeIsAuraColor=true → skip dimming (aura/duration)")
+        cooldownEndTimes[cdmIcon] = nil
+        updateIconCooldownOpacity(cdmIcon)
         return
     end
 
@@ -1570,6 +1627,11 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                     if not isValidCDMItemFrame(itemFrame) then return end
                     if not isFrameVisible(itemFrame) then return end
 
+                    -- Pre-install swipe color hook to catch the first SetSwipeColor call
+                    if itemFrame.Cooldown then
+                        ensureSwipeColorHook(itemFrame.Cooldown)
+                    end
+
                     local component = addon.Components and addon.Components[componentId]
                     if not component or not component.db then return end
 
@@ -1627,6 +1689,8 @@ function Overlays.HookViewer(viewerFrameName, componentId)
             if addon.SpellBindings and addon.SpellBindings.ClearIconCache then
                 addon.SpellBindings.ClearIconCache(itemFrame)
             end
+            -- Clear swipe color tracking for released icon
+            swipeIsAuraColor[itemFrame] = nil
             -- Defer cleanup to break Blizzard's call stack and avoid taint propagation
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
@@ -1685,6 +1749,7 @@ local function runCombinedCleanup()
     for cdmIcon, endTime in pairs(cooldownEndTimes) do
         if now >= endTime then
             cooldownEndTimes[cdmIcon] = nil
+            swipeIsAuraColor[cdmIcon] = nil
             updateIconCooldownOpacity(cdmIcon)
         end
     end
@@ -2029,6 +2094,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
             for cdmIcon, endTime in pairs(cooldownEndTimes) do
                 if endTime == math.huge then
                     cooldownEndTimes[cdmIcon] = nil
+                    swipeIsAuraColor[cdmIcon] = nil
                     needsRefresh = true
                 end
             end
