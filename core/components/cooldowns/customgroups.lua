@@ -639,6 +639,7 @@ end
 function CG.IsEntryVisible(entry)
     if entry.type == "spell" then
         return IsPlayerSpell(entry.id) or IsSpellKnown(entry.id)
+            or C_SpellBook.IsSpellInSpellBook(entry.id, Enum.SpellBookSpellBank.Player, true)
     elseif entry.type == "item" then
         return (C_Item.GetItemCount(entry.id) or 0) > 0
     end
