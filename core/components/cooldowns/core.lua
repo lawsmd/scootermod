@@ -247,26 +247,28 @@ function addon.RefreshCDMCenterAnchor(componentId)
 
     local viewerFrame = _G[viewerName]
     if viewerFrame then
-        -- Defer to break call stack and avoid taint
         C_Timer.After(0, function()
-            CenterIconsInViewer(viewerFrame, componentId)
+            local component = addon.Components and addon.Components[componentId]
+            local db = component and component.db
+            if db and not db.centerAnchor and not db.centerAdditionalRows then
+                -- Centering disabled: re-run Layout to restore default positions
+                -- (our Layout hook will early-exit since centering is off)
+                pcall(function() viewerFrame:Layout() end)
+            else
+                CenterIconsInViewer(viewerFrame, componentId)
+            end
         end)
     end
 end
 
 -- Apply center anchor on orientation change (called from Edit Mode sync)
+-- Orientation changes trigger RefreshLayout → Layout() → our Layout hook,
+-- so we just need to re-run Layout to pick up the new orientation.
 function addon.OnCDMOrientationChanged(viewerFrame, componentId)
     if not viewerFrame or not componentId then return end
-
-    local component = addon.Components and addon.Components[componentId]
-    if not component or not component.db then return end
-
-    -- Only re-apply if either centering feature is enabled
-    if component.db.centerAnchor or component.db.centerAdditionalRows then
-        C_Timer.After(0.1, function()
-            CenterIconsInViewer(viewerFrame, componentId)
-        end)
-    end
+    C_Timer.After(0.1, function()
+        pcall(function() viewerFrame:Layout() end)
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -1385,9 +1387,17 @@ function Overlays.HookViewer(viewerFrameName, componentId)
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
                     Overlays.ApplyToViewer(viewerFrameName, componentId)
-                    CenterIconsInViewer(viewer, componentId)
                 end)
             end
+        end)
+    end
+
+    -- Hook Layout to apply centering synchronously (no deferral needed for cosmetic APIs).
+    -- This eliminates the visible "jerk" on spell transforms where icons briefly appear
+    -- at Blizzard's default grid position before snapping to centered position.
+    if viewer.Layout then
+        hooksecurefunc(viewer, "Layout", function()
+            CenterIconsInViewer(viewer, componentId)
         end)
     end
 
@@ -1748,11 +1758,6 @@ local function throttledRefresh(viewerName, componentId)
 
     C_Timer.After(0.05, function()
         Overlays.ApplyToViewer(viewerName, componentId)
-        -- Re-apply centering (handles spell overrides during combat)
-        local viewer = _G[viewerName]
-        if viewer then
-            CenterIconsInViewer(viewer, componentId)
-        end
     end)
 end
 
@@ -1785,15 +1790,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended: update viewer opacities to out-of-combat values
         updateAllViewerOpacities()
-        -- Re-apply centering after combat ends (safety net)
-        C_Timer.After(0.1, function()
-            for viewerName, componentId in pairs(CDM_VIEWERS) do
-                local viewer = _G[viewerName]
-                if viewer then
-                    CenterIconsInViewer(viewer, componentId)
-                end
-            end
-        end)
 
     elseif event == "UNIT_AURA" then
         if arg1 == "player" then
