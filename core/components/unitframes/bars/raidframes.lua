@@ -570,7 +570,7 @@ local function applyHealthBarBorder(bar, cfg)
     -- GetWidth/GetHeight to return secrets. Try pcall, fallback to defaults.
     local barWidth, barHeight = 100, 20  -- Default compact unit frame health bar size
     local okSize, w, h = pcall(function() return bar:GetWidth(), bar:GetHeight() end)
-    if okSize and type(w) == "number" and type(h) == "number" and w > 0 and h > 0 then
+    if okSize and type(w) == "number" and type(h) == "number" and not issecretvalue(w) and not issecretvalue(h) and w > 0 and h > 0 then
         barWidth, barHeight = w, h
     end
 
@@ -1415,7 +1415,10 @@ local function ensureRaidNameOverlay(frame, cfg)
 
     local hasCustom = Utils.hasCustomTextSettings(cfg)
     local frameState = ensureState(frame)
-    if frameState then frameState.nameOverlayActive = hasCustom end
+    if frameState then
+        frameState.nameOverlayActive = hasCustom
+        frameState.hideRealmEnabled = cfg and cfg.hideRealm and true or false
+    end
 
     if not hasCustom then
         if frameState and frameState.nameOverlayText then
@@ -1461,13 +1464,10 @@ local function ensureRaidNameOverlay(frame, cfg)
                     -- text may be a secret value in 12.0; branch on type
                     if type(text) == "string" then
                         local displayText = text
-                        -- Check for realm stripping setting
-                        local db = addon and addon.db and addon.db.profile
-                        local gf = db and rawget(db, "groupFrames")
-                        local raid = gf and rawget(gf, "raid")
-                        local textCfg = raid and rawget(raid, "textPlayerName")
-                        if textCfg and textCfg.hideRealm and displayText ~= "" then
-                            displayText = Ambiguate(displayText, "none")
+                        -- Strip realm suffix: "Name-Realm" → "Name"
+                        -- WoW names cannot contain hyphens; hyphen always delimits realm.
+                        if ownerState.hideRealmEnabled and displayText ~= "" then
+                            displayText = displayText:match("^([^%-]+)") or displayText
                         end
                         ownerState.nameOverlayText:SetText(displayText)
                     else
@@ -1518,9 +1518,9 @@ local function ensureRaidNameOverlay(frame, cfg)
         local ok, currentText = pcall(frame.name.GetText, frame.name)
         if ok and type(currentText) == "string" and currentText ~= "" then
             local displayText = currentText
-            -- Apply realm stripping if enabled
+            -- Strip realm suffix: "Name-Realm" → "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
-                displayText = Ambiguate(displayText, "none")
+                displayText = displayText:match("^([^%-]+)") or displayText
             end
             frameState.nameOverlayText:SetText(displayText)
             textCopied = true
@@ -1532,8 +1532,9 @@ local function ensureRaidNameOverlay(frame, cfg)
         local unitOk, unitName = pcall(GetUnitName, frame.unit, true)
         if unitOk and type(unitName) == "string" and unitName ~= "" then
             local displayText = unitName
+            -- Strip realm suffix: "Name-Realm" → "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
-                displayText = Ambiguate(displayText, "none")
+                displayText = displayText:match("^([^%-]+)") or displayText
             end
             frameState.nameOverlayText:SetText(displayText)
             textCopied = true

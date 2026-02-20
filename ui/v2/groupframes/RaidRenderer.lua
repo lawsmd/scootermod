@@ -667,7 +667,7 @@ function GF.RenderRaid(panel, scrollContent)
             inner:AddTabbedSection({
                 tabs = {
                     { key = "playerName", label = "Player Name" },
-                    { key = "statusText", label = "Status Text" },
+                    { key = "statusText", label = "Health/Status" },
                     { key = "groupNumbers", label = "Group Numbers" },
                 },
                 componentId = COMPONENT_ID,

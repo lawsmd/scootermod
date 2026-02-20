@@ -1574,6 +1574,7 @@ local function ensurePartyNameOverlay(frame, cfg)
     local hasCustom = Utils.hasCustomTextSettings(cfg)
     local state = ensureState(frame)
     state.overlayActive = hasCustom
+    state.hideRealmEnabled = cfg and cfg.hideRealm and true or false
 
     if not hasCustom then
         -- Disable overlay, show Blizzard's text
@@ -1623,13 +1624,10 @@ local function ensurePartyNameOverlay(frame, cfg)
                     -- text may be a secret value in 12.0; branch on type
                     if type(text) == "string" then
                         local displayText = text
-                        -- Check for realm stripping setting
-                        local db = addon and addon.db and addon.db.profile
-                        local gf = db and rawget(db, "groupFrames")
-                        local party = gf and rawget(gf, "party")
-                        local textCfg = party and rawget(party, "textPlayerName")
-                        if textCfg and textCfg.hideRealm and displayText ~= "" then
-                            displayText = Ambiguate(displayText, "none")
+                        -- Strip realm suffix: split on first hyphen (WoW names never contain hyphens).
+                        -- Ambiguate("none") only strips same/connected realms, not cross-realm.
+                        if frameState.hideRealmEnabled and displayText ~= "" then
+                            displayText = displayText:match("^([^%-]+)") or displayText
                         end
                         frameState.overlayText:SetText(displayText)
                     else
@@ -1685,7 +1683,7 @@ local function ensurePartyNameOverlay(frame, cfg)
             local displayText = currentText
             -- Apply realm stripping if enabled
             if cfg and cfg.hideRealm and displayText ~= "" then
-                displayText = Ambiguate(displayText, "none")
+                displayText = displayText:match("^([^%-]+)") or displayText
             end
             state.overlayText:SetText(displayText)
             textCopied = true
@@ -1698,7 +1696,7 @@ local function ensurePartyNameOverlay(frame, cfg)
         if unitOk and type(unitName) == "string" and unitName ~= "" then
             local displayText = unitName
             if cfg and cfg.hideRealm and displayText ~= "" then
-                displayText = Ambiguate(displayText, "none")
+                displayText = displayText:match("^([^%-]+)") or displayText
             end
             state.overlayText:SetText(displayText)
             textCopied = true
