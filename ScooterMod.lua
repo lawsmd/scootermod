@@ -133,7 +133,7 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
 
         if sub1 == "" then
             addon:Print("Usage:")
-            addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|<FrameName>>")
+            addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|<FrameName>>")
             addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
             addon:Print("  /scoot debug consoleport export")
             return
@@ -297,9 +297,42 @@ function SlashCmdList.SCOOTERMOD(msg, editBox)
             return
         end
 
+        -- /scoot debug trackedbars <trace|log|clear|dump>
+        if sub1 == "trackedbars" or sub1 == "tb" then
+            if sub2 == "trace" then
+                local toggle = args[4]
+                if toggle == "on" then
+                    if addon.SetTBTrace then addon.SetTBTrace(true)
+                    else addon:Print("TB trace not available (trackedbars module missing).") end
+                elseif toggle == "off" then
+                    if addon.SetTBTrace then addon.SetTBTrace(false)
+                    else addon:Print("TB trace not available (trackedbars module missing).") end
+                else
+                    addon:Print("Usage: /scoot debug trackedbars trace <on|off>")
+                end
+            elseif sub2 == "log" then
+                if addon.ShowTBTraceLog then addon.ShowTBTraceLog()
+                else addon:Print("TB trace log not available.") end
+            elseif sub2 == "clear" then
+                if addon.ClearTBTrace then addon.ClearTBTrace()
+                else addon:Print("TB trace clear not available.") end
+            elseif sub2 == "dump" then
+                if addon.DumpTBState then addon.DumpTBState()
+                else addon:Print("TB dump not available.") end
+            else
+                addon:Print("Usage: /scoot debug trackedbars <trace|log|clear|dump>")
+                addon:Print("  trace on  - Start tracing bar lifecycle events")
+                addon:Print("  trace off - Stop tracing")
+                addon:Print("  log       - Show trace buffer in copyable window")
+                addon:Print("  clear     - Clear the trace buffer")
+                addon:Print("  dump      - Snapshot current state of all bar items")
+            end
+            return
+        end
+
         local target = args[2]
         if not target or target == "" then
-            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|<FrameName>>")
+            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|<FrameName>>")
             return
         end
         if addon.DebugDump then

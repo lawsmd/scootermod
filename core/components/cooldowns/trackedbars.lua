@@ -13,6 +13,50 @@ local CDM_VIEWERS = addon.CDM_VIEWERS
 -- Default mode overlay tracking (weak keys for GC)
 local trackedBarOverlays = setmetatable({}, { __mode = "k" })
 
+-- Tracked Bars lifecycle debug tracing (matches dim debug pattern)
+local tbTraceEnabled = false
+local tbTraceBuffer = {}
+local TB_TRACE_MAX_LINES = 500
+
+local function tbTrace(message, ...)
+    if not tbTraceEnabled then return end
+    local ok, formatted = pcall(string.format, message, ...)
+    if not ok then formatted = message end
+    local timestamp = GetTime and GetTime() or 0
+    local line = string.format("[%.3f] %s", timestamp, formatted)
+    tbTraceBuffer[#tbTraceBuffer + 1] = line
+    if #tbTraceBuffer > TB_TRACE_MAX_LINES then
+        table.remove(tbTraceBuffer, 1)
+    end
+end
+
+function addon.SetTBTrace(enabled)
+    tbTraceEnabled = enabled
+    if enabled then
+        addon:Print("Tracked Bars trace: ON")
+    else
+        addon:Print("Tracked Bars trace: OFF")
+    end
+end
+
+function addon.ShowTBTraceLog()
+    if #tbTraceBuffer == 0 then
+        addon:Print("Tracked Bars trace buffer is empty.")
+        return
+    end
+    local text = table.concat(tbTraceBuffer, "\n")
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Tracked Bars Trace", text)
+    else
+        addon:Print("DebugShowWindow not available. Buffer has " .. #tbTraceBuffer .. " lines.")
+    end
+end
+
+function addon.ClearTBTrace()
+    wipe(tbTraceBuffer)
+    addon:Print("Tracked Bars trace buffer cleared.")
+end
+
 -- Data mirroring for vertical mode (weak keys for GC)
 local barItemMirror = setmetatable({}, { __mode = "k" })
 local hookedBarItems = setmetatable({}, { __mode = "k" })
@@ -24,9 +68,13 @@ local activeVertStacks = {} -- ordered array of { blizzItem = child, frame = ver
 local vertContainer = nil
 local verticalModeActive = false
 local vertRebuildPending = false
+local scheduleVerticalRebuild  -- forward declaration (defined in TrackedBars Hooks section)
 
 -- Alpha enforcement hooks tracking (weak keys)
 local alphaEnforcedItems = setmetatable({}, { __mode = "k" })
+local prevIsActive = setmetatable({}, { __mode = "k" })
+local recentDeactivation = setmetatable({}, { __mode = "k" })
+local auraRecentlyCleared = setmetatable({}, { __mode = "k" })
 
 
 --------------------------------------------------------------------------------
@@ -178,6 +226,56 @@ local function installDataMirrorHooks(child)
                 end
             end)
         end
+    end
+
+    -- Hook active state changes to trigger vertical rebuild on deactivation
+    if child.SetIsActive then
+        hooksecurefunc(child, "SetIsActive", function(self, active)
+            if tbTraceEnabled then
+                local argSecret = issecretvalue(active)
+                -- Compare against our own previous-value table (not self.isActive,
+                -- which is already updated by the time hooksecurefunc fires)
+                local prev = prevIsActive[self]
+                local changed = prev == nil or argSecret
+                if not changed then
+                    local okCmp, isDiff = pcall(function() return active ~= prev end)
+                    changed = not okCmp or isDiff
+                end
+                if changed then
+                    tbTrace("SetIsActive: arg=%s(secret=%s) prev=%s shown=%s id=%s",
+                        argSecret and "SECRET" or tostring(active), tostring(argSecret),
+                        prev == nil and "nil" or tostring(prev),
+                        tostring(self:IsShown()),
+                        tostring(self):sub(-6))
+                end
+            end
+            -- Update tracking (only store non-secret values)
+            if not issecretvalue(active) then
+                prevIsActive[self] = active
+            else
+                prevIsActive[self] = nil
+            end
+            if verticalModeActive then
+                local comp = addon.Components and addon.Components.trackedBars
+                if comp then
+                    scheduleVerticalRebuild(comp)
+                end
+            else
+                -- Default mode: hide overlay immediately when item deactivates
+                local ok, shouldHide = pcall(function() return not active end)
+                if ok and shouldHide then
+                    recentDeactivation[self] = GetTime()
+                    local ov = trackedBarOverlays[self]
+                    if ov then ov:Hide() end
+                end
+            end
+        end)
+    end
+
+    if child.ClearAuraInstanceInfo then
+        hooksecurefunc(child, "ClearAuraInstanceInfo", function(self)
+            auraRecentlyCleared[self] = GetTime()
+        end)
     end
 end
 
@@ -637,9 +735,28 @@ local function applyVerticalMode(component)
             -- Install data mirror hooks (always, even for hidden items)
             installDataMirrorHooks(child)
 
-            -- Skip hidden/inactive items — respects Blizzard's hideWhenInactive logic
-            if not child:IsShown() then
-                -- Don't create a vertical stack for items Blizzard has hidden
+            -- Ensure SetShown hook is installed for rebuild triggers
+            -- (items acquired before hookTrackedBars may be missing this hook)
+            if not visHookedItems[child] and child.SetShown then
+                hooksecurefunc(child, "SetShown", function()
+                    if verticalModeActive then
+                        scheduleVerticalRebuild(component)
+                    end
+                end)
+                visHookedItems[child] = true
+            end
+
+            -- Skip hidden or inactive items
+            -- With hideWhenInactive=false, inactive items stay shown but should not get stacks
+            local skipItem = not child:IsShown()
+            if not skipItem then
+                local ok, isInactive = pcall(function() return child.isActive == false end)
+                if ok and isInactive then
+                    skipItem = true
+                end
+            end
+            if skipItem then
+                -- Don't create a vertical stack for hidden or inactive items
             else
 
             -- Acquire vertical stack
@@ -893,7 +1010,15 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 overlay.barBg:SetAlpha(opacityVal)
                 overlay.barBg:Show()
 
-                overlay:Show()
+                -- Only show overlay if parent item is visible AND active
+                -- (prevents stale C_Timer.After callbacks from re-showing
+                -- overlays on items that deactivated between queueing and firing)
+                if not child.IsShown or child:IsShown() then
+                    local ok, isInactive = pcall(function() return child.isActive == false end)
+                    if not (ok and isInactive) then
+                        overlay:Show()
+                    end
+                end
 
                 -- Hide Blizzard fill texture so the overlay shows through
                 local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
@@ -1156,6 +1281,19 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
             stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
         end
     end
+
+    -- Trace: overlay state after styling
+    if tbTraceEnabled then
+        local overlay = trackedBarOverlays[child]
+        local oShown = overlay and overlay:IsShown()
+        local bgShown = overlay and overlay.barBg and overlay.barBg:IsShown()
+        local bgAlpha = overlay and overlay.barBg and overlay.barBg:GetAlpha()
+        local ok, iActive = pcall(function() return child.isActive end)
+        tbTrace("Styled: childShown=%s isActive=%s overlay=%s barBg=%s bgAlpha=%s",
+            tostring(child:IsShown()),
+            ok and tostring(iActive) or "ERR",
+            tostring(oShown), tostring(bgShown), tostring(bgAlpha))
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1164,7 +1302,7 @@ end
 
 local trackedBarsHooked = false
 
-local function scheduleVerticalRebuild(component)
+scheduleVerticalRebuild = function(component)
     if vertRebuildPending then return end
     vertRebuildPending = true
     C_Timer.After(0, function()
@@ -1188,9 +1326,76 @@ local function hookTrackedBars(component)
 
             -- Hook visibility changes to refresh vertical layout when buffs activate/deactivate
             if not visHookedItems[itemFrame] and itemFrame.SetShown then
-                hooksecurefunc(itemFrame, "SetShown", function()
+                hooksecurefunc(itemFrame, "SetShown", function(self, shown)
+                    if tbTraceEnabled then
+                        local shownSecret = issecretvalue(shown)
+                        local ok, iActive = pcall(function() return self.isActive end)
+                        local ok2, hwi = pcall(function() return self.hideWhenInactive end)
+                        tbTrace("SetShown: shown=%s(secret=%s) isActive=%s hwi=%s id=%s",
+                            shownSecret and "SECRET" or tostring(shown), tostring(shownSecret),
+                            ok and tostring(iActive) or "ERR",
+                            ok2 and tostring(hwi) or "ERR",
+                            tostring(self):sub(-6))
+                    end
                     if verticalModeActive then
                         scheduleVerticalRebuild(component)
+                    else
+                        -- Default mode: sync overlay visibility with item frame
+                        local overlay = trackedBarOverlays[self]
+                        if overlay then
+                            if shown then
+                                if recentDeactivation[self] == GetTime() then
+                                    -- Same-frame bounce: defer show and verify aura next frame
+                                    C_Timer.After(0, function()
+                                        recentDeactivation[self] = nil
+                                        local ov = trackedBarOverlays[self]
+                                        if not ov then
+                                            if tbTraceEnabled then tbTrace("BounceDefer: noOverlay id=%s", tostring(self):sub(-6)) end
+                                            return
+                                        end
+                                        local ok1, isInactive = pcall(function() return self.isActive == false end)
+                                        if ok1 and isInactive then
+                                            if tbTraceEnabled then tbTrace("BounceDefer: inactive id=%s", tostring(self):sub(-6)) end
+                                            return
+                                        end
+                                        local ok2, stillShown = pcall(function() return self:IsShown() end)
+                                        if ok2 and not stillShown then
+                                            if tbTraceEnabled then tbTrace("BounceDefer: hidden id=%s", tostring(self):sub(-6)) end
+                                            return
+                                        end
+                                        -- v7: Check ClearAuraInstanceInfo signal (direct Blizzard removal hook)
+                                        local skipShow = false
+                                        local clearTime = auraRecentlyCleared[self]
+                                        local auraResult = "no_clear"
+                                        if clearTime then
+                                            local age = GetTime() - clearTime
+                                            if age < 0.15 then
+                                                auraResult = "cleared"
+                                                skipShow = true
+                                            else
+                                                auraResult = "stale_clear"
+                                            end
+                                            auraRecentlyCleared[self] = nil
+                                        end
+                                        if tbTraceEnabled then
+                                            tbTrace("BounceDefer: id=%s result=%s skip=%s",
+                                                tostring(self):sub(-6), auraResult, tostring(skipShow))
+                                        end
+                                        if not skipShow then
+                                            ov:Show()
+                                        end
+                                    end)
+                                else
+                                    recentDeactivation[self] = nil
+                                    local ok, isInactive = pcall(function() return self.isActive == false end)
+                                    if not (ok and isInactive) then
+                                        overlay:Show()
+                                    end
+                                end
+                            else
+                                overlay:Hide()
+                            end
+                        end
                     end
                 end)
                 visHookedItems[itemFrame] = true
@@ -1223,7 +1428,7 @@ local function hookTrackedBars(component)
                     local f = _G[comp.frameName]
                     if not f then return end
                     for _, child in ipairs({ f:GetChildren() }) do
-                        if addon.ApplyTrackedBarVisualsForChild then
+                        if child:IsShown() and addon.ApplyTrackedBarVisualsForChild then
                             addon.ApplyTrackedBarVisualsForChild(comp, child)
                         end
                     end
@@ -1393,4 +1598,46 @@ addon:RegisterComponentInitializer(function(self)
         ApplyStyling = TrackedBarsApplyStyling,
     })
     self:RegisterComponent(trackedBars)
+
+    -- On-demand state dump: /scoot debug trackedbars dump
+    function addon.DumpTBState()
+        local comp = addon.Components and addon.Components.trackedBars
+        if not comp then addon:Print("No trackedBars component") return end
+        local f = _G[comp.frameName]
+        if not f then addon:Print("No viewer frame: " .. tostring(comp.frameName)) return end
+        local lines = {}
+        local function push(s) lines[#lines + 1] = s end
+        push("Tracked Bars State Dump")
+        push(string.rep("-", 50))
+        local ok1, vHWI = pcall(function() return f.hideWhenInactive end)
+        push(("Viewer: %s  hideWhenInactive=%s"):format(comp.frameName, ok1 and tostring(vHWI) or "ERR"))
+        push("")
+        local idx = 0
+        for _, child in ipairs({ f:GetChildren() }) do
+            if child.GetBarFrame or child.Bar then
+                idx = idx + 1
+                local ok2, iActive = pcall(function() return child.isActive end)
+                local activeSecret = ok2 and issecretvalue(iActive) or false
+                local ok3, hwi = pcall(function() return child.hideWhenInactive end)
+                local ok4, allow = pcall(function() return child.allowHideWhenInactive end)
+                local overlay = trackedBarOverlays[child]
+                local oVis = overlay and overlay:IsVisible()
+                local bgVis = overlay and overlay.barBg and overlay.barBg:IsVisible()
+                local bgA = overlay and overlay.barBg and overlay.barBg:GetAlpha()
+                push(("[%d] shown=%s visible=%s isActive=%s(secret=%s)"):format(
+                    idx, tostring(child:IsShown()), tostring(child:IsVisible()),
+                    ok2 and (activeSecret and "SECRET" or tostring(iActive)) or "ERR",
+                    tostring(activeSecret)))
+                push(("     hwi=%s allowHWI=%s overlay=%s bgVis=%s bgAlpha=%s"):format(
+                    ok3 and tostring(hwi) or "ERR",
+                    ok4 and tostring(allow) or "ERR",
+                    tostring(oVis), tostring(bgVis), tostring(bgA)))
+            end
+        end
+        push("")
+        push("Total items: " .. idx)
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("Tracked Bars State", table.concat(lines, "\n"))
+        end
+    end
 end)
