@@ -35,6 +35,7 @@ core/borders.lua
 core/editmode/core.lua
 core/editmode/sync.lua
 core/editmode/nudgearrows.lua
+core/editmode/subgrid.lua
 core/editmode/presets.lua
 core/profiles/core.lua
 core/profiles/layouts.lua

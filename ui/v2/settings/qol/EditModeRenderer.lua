@@ -51,6 +51,23 @@ function EditMode.Render(panel, scrollContent)
         end,
     })
 
+    builder:AddToggle({
+        label = "Enable Sub-Grid",
+        description = "When Blizzard's Show Grid is active, display a finer 10x10 sub-grid within each grid block for precise alignment.",
+        get = function()
+            local q = getQoL()
+            return (q and q.editModeSubGrid) or false
+        end,
+        set = function(value)
+            local q = ensureQoL()
+            if not q then return end
+            q.editModeSubGrid = value
+            if addon.EditMode and addon.EditMode.SetSubGridEnabled then
+                addon.EditMode.SetSubGridEnabled(value)
+            end
+        end,
+    })
+
     builder:Finalize()
 end
 
