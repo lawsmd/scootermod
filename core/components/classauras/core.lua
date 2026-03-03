@@ -721,6 +721,11 @@ local function ApplyStyling(aura)
     -- Reset override tracking so next ScanAura re-evaluates
     state._lastActiveSpellId = nil
 
+    -- CDM borrow: rescan on enable/disable to hide/restore CDM icon
+    if aura.cdmBorrow then
+        C_Timer.After(0, RescanForCDMBorrow)
+    end
+
     -- Enabled check
     if not db.enabled then
         state.container:Hide()
@@ -830,7 +835,7 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
                 pcall(function()
                     local iid = auraData.auraInstanceID
                     if iid and not issecretvalue(iid) then
-                        isMine = not IsAuraFilteredOutByInstanceID(unit, iid, "PLAYER|HARMFUL")
+                        isMine = not IsAuraFilteredOutByInstanceID(unit, iid, filter)
                     end
                 end)
             end
@@ -904,11 +909,6 @@ function CA.ScanAura(aura)
         local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, tracked.unit, tracked.auraInstanceID)
         if not dok or not durObj then
             auraTracking[aura.id] = nil
-        else
-            local zOk, isZ = pcall(durObj.IsZero, durObj)
-            if zOk and not issecretvalue(isZ) and isZ then
-                auraTracking[aura.id] = nil
-            end
         end
     end
 
@@ -1052,12 +1052,6 @@ StartAuraDisplay = function(auraId)
         StopAuraDisplay(auraId)
         return
     end
-    local zOk, isZ = pcall(durObj.IsZero, durObj)
-    if zOk and not issecretvalue(isZ) and isZ then
-        StopAuraDisplay(auraId)
-        return
-    end
-
     -- Set up CooldownFrame for each duration text element (fallback for secret text)
     for _, elem in ipairs(state.elements) do
         if elem.type == "text" and elem.def.source == "duration" then
@@ -1100,12 +1094,6 @@ StartAuraDisplay = function(auraId)
             StopAuraDisplay(auraId)
             return
         end
-        local zk, iz = pcall(dObj.IsZero, dObj)
-        if zk and not issecretvalue(iz) and iz then
-            StopAuraDisplay(auraId)
-            return
-        end
-
         -- === BAR: always accurate (SetValue/SetMinMaxValues accept secrets) ===
         for _, elem in ipairs(state.elements) do
             if elem.type == "bar" and elem.def.source == "duration" then
@@ -1353,22 +1341,19 @@ RescanForCDMBorrow = function()
                             -- Validate CDM frame's auraInstanceID before storing (prevents stale overwrites)
                             local vOk, vDur = pcall(C_UnitAuras.GetAuraDuration, iunit, iid)
                             if vOk and vDur then
-                                local vz, viz = pcall(vDur.IsZero, vDur)
-                                if not (vz and not issecretvalue(viz) and viz) then
-                                    local activeSpell = aura.auraSpellId
-                                    pcall(function()
-                                        local fSpell = itemFrame.auraSpellID
-                                        if fSpell and not issecretvalue(fSpell) and aura.linkedSpellIds then
-                                            for _, lid in ipairs(aura.linkedSpellIds) do
-                                                if fSpell == lid then activeSpell = lid; break end
-                                            end
+                                local activeSpell = aura.auraSpellId
+                                pcall(function()
+                                    local fSpell = itemFrame.auraSpellID
+                                    if fSpell and not issecretvalue(fSpell) and aura.linkedSpellIds then
+                                        for _, lid in ipairs(aura.linkedSpellIds) do
+                                            if fSpell == lid then activeSpell = lid; break end
                                         end
-                                    end)
-                                    local tracked = auraTracking[aura.id]
-                                    if not tracked or tracked.auraInstanceID ~= iid then
-                                        auraTracking[aura.id] = { unit = iunit, auraInstanceID = iid, activeSpellId = activeSpell }
-                                        CacheAuraIdentity(iunit, aura.id, iid, activeSpell)
                                     end
+                                end)
+                                local tracked = auraTracking[aura.id]
+                                if not tracked or tracked.auraInstanceID ~= iid then
+                                    auraTracking[aura.id] = { unit = iunit, auraInstanceID = iid, activeSpellId = activeSpell }
+                                    CacheAuraIdentity(iunit, aura.id, iid, activeSpell)
                                 end
                             end
                         end
@@ -1746,17 +1731,12 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
                         if cached and cached.auraId == aura.id then
                             local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, "target", cached.auraInstanceID)
                             if dok and durObj then
-                                local zk, iz = pcall(durObj.IsZero, durObj)
-                                if not (zk and not issecretvalue(iz) and iz) then
-                                    -- Cache hit: populate tracking immediately
-                                    auraTracking[aura.id] = {
-                                        unit = "target",
-                                        auraInstanceID = cached.auraInstanceID,
-                                        activeSpellId = cached.activeSpellId,
-                                    }
-                                else
-                                    guidCache[tguid] = nil  -- expired
-                                end
+                                -- Cache hit: populate tracking immediately
+                                auraTracking[aura.id] = {
+                                    unit = "target",
+                                    auraInstanceID = cached.auraInstanceID,
+                                    activeSpellId = cached.activeSpellId,
+                                }
                             else
                                 guidCache[tguid] = nil  -- invalid
                             end
