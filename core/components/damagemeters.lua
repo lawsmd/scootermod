@@ -1558,9 +1558,43 @@ addon:RegisterComponentInitializer(function(self)
             windowCustomBackdrop = { type = "addon", default = false, ui = { hidden = true } },
             windowBackdropTexture = { type = "addon", default = "default", ui = { hidden = true } },
             windowBackdropColor = { type = "addon", default = { 0.1, 0.1, 0.1, 0.9 }, ui = { hidden = true } },
+
+            -- Quality of Life settings
+            autoResetData = { type = "addon", default = "off", ui = { hidden = true } },
+            autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
         },
         ApplyStyling = ApplyDamageMeterStyling,
     })
 
     self:RegisterComponent(damageMeter)
+
+    -- Auto-reset data event handler
+    local resetFrame = CreateFrame("Frame")
+    resetFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    resetFrame:SetScript("OnEvent", function(_, event, isInitialLogin, isReloadingUi)
+        if isInitialLogin or isReloadingUi then return end
+
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        local mode = comp.db.autoResetData
+        if mode ~= "instance" then return end
+
+        local inInstance, instanceType = IsInInstance()
+        if not inInstance then return end
+        if instanceType ~= "party" and instanceType ~= "raid" and instanceType ~= "scenario" then return end
+
+        if not C_DamageMeter or not C_DamageMeter.ResetAllCombatSessions then return end
+
+        if comp.db.autoResetPrompt then
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOT_DM_RESET_CONFIRM", {
+                    onAccept = function()
+                        C_DamageMeter.ResetAllCombatSessions()
+                    end,
+                })
+            end
+        else
+            C_DamageMeter.ResetAllCombatSessions()
+        end
+    end)
 end)

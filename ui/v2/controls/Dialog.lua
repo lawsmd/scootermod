@@ -1251,6 +1251,12 @@ Controls:RegisterDialog("SCOOT_IMPORT_CONSOLEPORT", {
     height = 210,
 })
 
+Controls:RegisterDialog("SCOOT_DM_RESET_CONFIRM", {
+    text = "You've entered an instance. Reset all Damage Meter data?",
+    acceptText = "Reset",
+    cancelText = "Keep Data",
+})
+
 Controls:RegisterDialog("SCOOT_EXTERNAL_LAYOUT_DELETED", {
     text = "The Edit Mode layout '%s' was deleted outside of Scoot.\n\nA UI reload is required to properly sync your profile state.",
     acceptText = "Reload UI",

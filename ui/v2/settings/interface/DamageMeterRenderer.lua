@@ -102,6 +102,46 @@ function DamageMeter.Render(panel, scrollContent)
         end,
     })
 
+    -- Quality of Life section
+    builder:AddCollapsibleSection({
+        title = "Quality of Life",
+        componentId = "damageMeter",
+        sectionKey = "qol",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSelector({
+                label = "Automatic Reset Data",
+                description = "Automatically reset all Damage Meter session data when a trigger condition is met.",
+                values = { ["off"] = "Off", ["instance"] = "When Entering an Instance" },
+                order = { "off", "instance" },
+                get = function() return getSetting("autoResetData") or "off" end,
+                set = function(value)
+                    setSetting("autoResetData", value)
+                    -- Re-render to update disabled state of prompt toggle
+                    C_Timer.After(0.05, function()
+                        if panel and DamageMeter.Render then
+                            DamageMeter.Render(panel, scrollContent)
+                        end
+                    end)
+                end,
+            })
+
+            inner:AddToggle({
+                label = "Prompt Me Before Resetting Data",
+                description = "When enabled, a confirmation dialog will appear asking you to approve the data reset before it happens. If disabled, data resets automatically without asking.",
+                get = function()
+                    return getSetting("autoResetPrompt") ~= false
+                end,
+                set = function(value) setSetting("autoResetPrompt", value) end,
+                isDisabled = function()
+                    return (getSetting("autoResetData") or "off") == "off"
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Layout section
     builder:AddCollapsibleSection({
         title = "Layout",
