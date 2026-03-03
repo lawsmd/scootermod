@@ -417,6 +417,7 @@ function Controls:CreatePreview(options)
     ----------------------------------------------------------------------------
 
     local caTextFS
+    local caTextFrame
     if showCAText then
         local caTextFont = readSetting("textFont", "FRIZQT__")
         local caTextSize = readSetting("textSize", 24)
@@ -439,7 +440,9 @@ function Controls:CreatePreview(options)
 
         local resolvedCAFont = addon.ResolveFontFace(caTextFont)
 
-        caTextFS = container:CreateFontString(nil, "OVERLAY")
+        caTextFrame = CreateFrame("Frame", nil, container)
+        caTextFrame:SetAllPoints()
+        caTextFS = caTextFrame:CreateFontString(nil, "OVERLAY")
         addon.ApplyFontStyle(caTextFS, resolvedCAFont, caDisplaySize, caTextStyle)
         caTextFS:SetText("5")
 
@@ -523,6 +526,10 @@ function Controls:CreatePreview(options)
 
     -- Anchor CA text for non-text-only modes (icon must be positioned first)
     if caTextFS and not showTextOnly then
+        -- Boost frame level so text renders above the icon texture
+        if caTextFrame and previewIcon then
+            caTextFrame:SetFrameLevel(previewIcon:GetFrameLevel() + 2)
+        end
         local cfg = container._caTextConfig
         if cfg and previewIcon then
             local txOff = (cfg.offsetX or 0) * (scaleFactor or 1)

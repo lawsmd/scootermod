@@ -328,7 +328,9 @@ local function LayoutElements(aura, state)
         if textElem and showText then
             textElem.widget:ClearAllPoints()
             local offsets = INSIDE_OFFSETS[innerAnchor] or { 0, 0 }
-            textElem.widget:SetPoint(innerAnchor, state.container, innerAnchor, offsets[1], offsets[2])
+            local txOff = tonumber(db and db.textOffsetX) or 0
+            local tyOff = tonumber(db and db.textOffsetY) or 0
+            textElem.widget:SetPoint(innerAnchor, state.container, innerAnchor, offsets[1] + txOff, offsets[2] + tyOff)
             textElem.widget:SetJustifyH("CENTER")
             textElem.widget:Show()
         end
