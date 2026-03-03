@@ -16,7 +16,6 @@ CA._activeAuras = {}    -- [auraId] = { container, elements, component }
 CA._trackedUnits = {}   -- [unitToken] = true — built from registered auras
 
 local spellToAura = {}  -- [spellId] = auraDef — O(1) reverse lookup for UNIT_AURA addedAuras matching
-local spellNames = {}   -- [lowercased spell name] = auraDef — TMW-style name-based matching fallback
 
 local editModeActive = false
 
@@ -71,18 +70,9 @@ function CA.RegisterAuras(classToken, auras)
             CA._trackedUnits[aura.unit] = true
         end
         spellToAura[aura.auraSpellId] = aura
-        -- Cache spell name for TMW-style name-based matching fallback
-        local nameOk, spellName = pcall(C_Spell.GetSpellName, aura.auraSpellId)
-        if nameOk and spellName and type(spellName) == "string" then
-            spellNames[spellName:lower()] = aura
-        end
         if aura.linkedSpellIds then
             for _, linkedId in ipairs(aura.linkedSpellIds) do
                 spellToAura[linkedId] = aura
-                local lnOk, lnName = pcall(C_Spell.GetSpellName, linkedId)
-                if lnOk and lnName and type(lnName) == "string" then
-                    spellNames[lnName:lower()] = aura
-                end
             end
         end
     end
@@ -769,15 +759,15 @@ end
 
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 
--- TMW-aligned aura scanning: broad filter with post-scan ownership + name matching.
--- Mirrors TMW's packed path: GetAuraSlots("HARMFUL|INCLUDE_NAME_PLATE_ONLY") + isMine check.
--- Key differences from old code:
+-- Broad-filter aura scanning: post-scan ownership + name matching.
+-- Strips |PLAYER from the filter, scans all matching auras, then verifies ownership afterward.
+-- Key design points:
 --   1. Filter broadened (strip |PLAYER) — ownership checked post-scan
---   2. Name-based matching fallback (TMW: Hash[strlowerCache[instance.name]])
+--   2. Name-based matching fallback via inline canonName resolution
 --   3. Post-scan ownership via sourceUnit then IsAuraFilteredOutByInstanceID
 local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
-    -- Strip |PLAYER from filter — ownership is checked post-scan via
-    -- IsAuraFilteredOutByInstanceID, matching TMW's broad-scan approach.
+    -- Strip |PLAYER from filter — ownership is verified post-scan via
+    -- sourceUnit or IsAuraFilteredOutByInstanceID instead.
     local broadFilter = filter and filter:gsub("|PLAYER", "") or filter
 
     -- Pre-resolve the canonical spell name for name-based matching
@@ -794,7 +784,7 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
         local matched = false
         local matchedSpell = nil
 
-        -- Primary: spellId match (TMW: Hash[instance.spellId])
+        -- Primary: spellId match
         pcall(function()
             if not issecretvalue(auraData.spellId) then
                 if auraData.spellId == spellId then
@@ -812,7 +802,7 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
             end
         end)
 
-        -- Fallback: name match (TMW: Hash[strlowerCache[instance.name]])
+        -- Fallback: name match
         if not matched and canonName then
             pcall(function()
                 if auraData.name and not issecretvalue(auraData.name) then
@@ -825,17 +815,17 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
         end
 
         if matched then
-            -- Post-scan ownership check (TMW: AugmentInstance isMine logic)
+            -- Post-scan ownership check (tri-state: nil=unknown, true=mine, false=not mine)
             local isMine = nil  -- nil = unknown, true = yes, false = no
 
-            -- Non-secret path: sourceUnit check (TMW Auras.lua:86)
+            -- Non-secret path: sourceUnit check
             pcall(function()
                 if not issecretvalue(auraData.sourceUnit) then
                     isMine = (auraData.sourceUnit == "player" or auraData.sourceUnit == "pet")
                 end
             end)
 
-            -- Secret fallback: IsAuraFilteredOutByInstanceID (TMW Auras.lua:210-212)
+            -- Secret fallback: IsAuraFilteredOutByInstanceID
             if isMine == nil then
                 pcall(function()
                     local iid = auraData.auraInstanceID
@@ -846,7 +836,7 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
             end
 
             -- Accept match if mine or if ownership couldn't be determined
-            -- (mirrors TMW: stores all instances, CDM de-secrets later)
+            -- (unknown ownership accepted; CDM de-secrets later if needed)
             if isMine ~= false then
                 return auraData, matchedSpell
             end
@@ -1666,7 +1656,7 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
                 end
             end
 
-            -- === TMW pattern: process addedAuras for instant identity capture ===
+            -- === Process addedAuras for instant identity capture ===
             -- spellId and auraInstanceID are identity fields in the event payload (non-secret).
             -- pcall ensures zero regression if they happen to be secret in some edge case.
             if updateInfo and updateInfo.addedAuras then
