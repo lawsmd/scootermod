@@ -195,7 +195,7 @@ local function LayoutElements(aura, state)
     local displayMode = (db and db.mode) or "icon"
     local showIcon = (displayMode == "icon" or displayMode == "iconbar")
     local showBar  = (displayMode == "bar" or displayMode == "iconbar")
-    local showText = true  -- text always visible (per text settings)
+    local showText = not (db and db.hideText)
 
     -- Backward compat: treat iconMode "hidden" as mode override
     if db and db.iconMode == "hidden" then
@@ -880,12 +880,16 @@ function CA.ScanAura(aura)
         -- Applications from direct scan
         local ok, apps = pcall(function() return auraData.applications end)
         if ok and apps then
+            local scanDb = GetDB(aura)
+            local scanHideText = scanDb and scanDb.hideText
             local displayApps = (apps == 0) and 1 or apps
             for _, elem in ipairs(state.elements) do
                 if elem.def.source == "applications" then
                     if elem.type == "text" then
-                        pcall(elem.widget.SetText, elem.widget, tostring(displayApps))
-                        pcall(elem.widget.Show, elem.widget)
+                        if not scanHideText then
+                            pcall(elem.widget.SetText, elem.widget, tostring(displayApps))
+                            pcall(elem.widget.Show, elem.widget)
+                        end
                     elseif elem.type == "bar" then
                         pcall(elem.barFill.SetValue, elem.barFill, displayApps)
                     end
@@ -934,18 +938,22 @@ function CA.ScanAura(aura)
 
     -- === Applications via combat-safe API (when direct scan didn't provide them) ===
     if not auraData then
+        local fallbackDb = GetDB(aura)
+        local fallbackHideText = fallbackDb and fallbackDb.hideText
         for _, elem in ipairs(state.elements) do
             if elem.def.source == "applications" then
                 local aok, countStr = pcall(C_UnitAuras.GetAuraApplicationDisplayCount,
                     tracked.unit, tracked.auraInstanceID, 1)
                 if aok and countStr then
                     if elem.type == "text" then
-                        local displayStr = countStr
-                        if not issecretvalue(countStr) and (countStr == "" or countStr == "0") then
-                            displayStr = "1"
+                        if not fallbackHideText then
+                            local displayStr = countStr
+                            if not issecretvalue(countStr) and (countStr == "" or countStr == "0") then
+                                displayStr = "1"
+                            end
+                            pcall(elem.widget.SetText, elem.widget, displayStr)
+                            pcall(elem.widget.Show, elem.widget)
                         end
-                        pcall(elem.widget.SetText, elem.widget, displayStr)
-                        pcall(elem.widget.Show, elem.widget)
                     elseif elem.type == "bar" then
                         if not issecretvalue(countStr) then
                             local num = tonumber(countStr)
@@ -1112,30 +1120,37 @@ StartAuraDisplay = function(auraId)
         end
 
         -- === TEXT: try non-secret custom format, fall back to CooldownFrame ===
+        local htDb = GetDB(auraDef)
+        local hideText = htDb and htDb.hideText
         for _, elem in ipairs(state.elements) do
             if elem.type == "text" and elem.def.source == "duration" then
-                local rok, remaining = pcall(function()
-                    local r = dObj:GetRemainingDuration()
-                    if issecretvalue(r) then return nil end
-                    return r
-                end)
-                if rok and remaining and remaining > 0 then
-                    -- Non-secret: custom formatted text
-                    local text
-                    if remaining >= 60 then
-                        text = string.format("%dm", math.floor(remaining / 60))
-                    elseif remaining >= 10 then
-                        text = string.format("%.0f", remaining)
-                    else
-                        text = string.format("%.1f", remaining)
-                    end
-                    pcall(elem.widget.SetText, elem.widget, text)
-                    pcall(elem.widget.Show, elem.widget)
+                if hideText then
+                    pcall(elem.widget.Hide, elem.widget)
                     if elem._cdFrame then elem._cdFrame:Hide() end
                 else
-                    -- Secret: CooldownFrame handles countdown via C++ rendering
-                    pcall(elem.widget.Hide, elem.widget)
-                    if elem._cdFrame then elem._cdFrame:Show() end
+                    local rok, remaining = pcall(function()
+                        local r = dObj:GetRemainingDuration()
+                        if issecretvalue(r) then return nil end
+                        return r
+                    end)
+                    if rok and remaining and remaining > 0 then
+                        -- Non-secret: custom formatted text
+                        local text
+                        if remaining >= 60 then
+                            text = string.format("%dm", math.floor(remaining / 60))
+                        elseif remaining >= 10 then
+                            text = string.format("%.0f", remaining)
+                        else
+                            text = string.format("%.1f", remaining)
+                        end
+                        pcall(elem.widget.SetText, elem.widget, text)
+                        pcall(elem.widget.Show, elem.widget)
+                        if elem._cdFrame then elem._cdFrame:Hide() end
+                    else
+                        -- Secret: CooldownFrame handles countdown via C++ rendering
+                        pcall(elem.widget.Hide, elem.widget)
+                        if elem._cdFrame then elem._cdFrame:Show() end
+                    end
                 end
             end
         end
@@ -1506,15 +1521,20 @@ local function InitializeEditMode()
                     LayoutElements(aura, st)
                     st.container:Show()
                     -- Set preview for elements and hide CooldownFrame fallback
+                    local emHideText = db.hideText
                     for _, elem in ipairs(st.elements) do
                         if elem._cdFrame then elem._cdFrame:Hide() end
                         if elem.type == "text" and elem.def.source == "applications" then
-                            pcall(elem.widget.SetText, elem.widget, "#")
-                            pcall(elem.widget.Show, elem.widget)
+                            if not emHideText then
+                                pcall(elem.widget.SetText, elem.widget, "#")
+                                pcall(elem.widget.Show, elem.widget)
+                            end
                         end
                         if elem.type == "text" and elem.def.source == "duration" then
-                            pcall(elem.widget.SetText, elem.widget, "8.3")
-                            pcall(elem.widget.Show, elem.widget)
+                            if not emHideText then
+                                pcall(elem.widget.SetText, elem.widget, "8.3")
+                                pcall(elem.widget.Show, elem.widget)
+                            end
                         end
                         -- Bar preview: ~60% fill
                         if elem.type == "bar" and elem.def.source == "applications" then

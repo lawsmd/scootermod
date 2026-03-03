@@ -35,6 +35,7 @@ CA.RegisterAuras("MAGE", {
             textOuterAnchor = { type = "addon", default = "RIGHT" },
             textInnerAnchor = { type = "addon", default = "CENTER" },
             hideFromCDM     = { type = "addon", default = true },
+            hideText        = { type = "addon", default = false },
             textOffsetX     = { type = "addon", default = 0 },
             textOffsetY     = { type = "addon", default = 0 },
             iconShape       = { type = "addon", default = 0 },

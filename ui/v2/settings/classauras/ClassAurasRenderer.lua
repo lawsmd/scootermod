@@ -457,16 +457,41 @@ local function RenderClassAuras(panel, scrollContent, classToken)
 
                 -- Tab 4: Text (only if aura has text elements)
                 local hasText = false
+                local textSource
                 for _, elemDef in ipairs(aura.elements or {}) do
                     if elemDef.type == "text" then
                         hasText = true
+                        textSource = elemDef.source
                         break
                     end
                 end
 
                 if hasText then
-                    table.insert(tabs, { key = "text", label = "Text" })
+                    -- Dynamic tab label based on text element source
+                    local textTabLabel = "Text"
+                    if textSource == "applications" then
+                        textTabLabel = "Stacks Text"
+                    elseif textSource == "duration" then
+                        textTabLabel = "Duration Text"
+                    end
+
+                    table.insert(tabs, { key = "text", label = textTabLabel })
                     buildContent.text = function(tabContent, tabBuilder)
+                        -- Hide Text toggle
+                        local hideLabel = "Hide Text"
+                        if textSource == "applications" then
+                            hideLabel = "Hide Stacks Text"
+                        elseif textSource == "duration" then
+                            hideLabel = "Hide Duration Text"
+                        end
+
+                        tabBuilder:AddToggle({
+                            label = hideLabel,
+                            description = "Hide the text element, showing only the icon and/or bar.",
+                            get = function() return getSetting("hideText") or false end,
+                            set = function(val) h.setAndApply("hideText", val) builder:DeferredRefreshAll() end,
+                        })
+
                         tabBuilder:AddFontSelector({
                             label = "Font",
                             description = "The font used for aura text.",
