@@ -745,6 +745,13 @@ function lib:GetFrameDefaultPosition(frame)
 	return lib.frameDefaults[frame]
 end
 
+function lib:NudgeFrame(frame, dx, dy)
+	local selection = lib.frameSelections[frame]
+	if selection then
+		updatePosition(selection, dx, dy)
+	end
+end
+
 function internal:TriggerCallback(frame, ...)
 	if lib.frameCallbacks[frame] then
 		securecallfunction(lib.frameCallbacks[frame], frame, layoutNames[lib.activeLayout], ...)

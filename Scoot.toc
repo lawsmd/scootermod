@@ -34,6 +34,7 @@ core/preset_scooterdeck.lua
 core/borders.lua
 core/editmode/core.lua
 core/editmode/sync.lua
+core/editmode/nudgearrows.lua
 core/editmode/presets.lua
 core/profiles/core.lua
 core/profiles/layouts.lua
@@ -151,6 +152,7 @@ ui/v2/settings/interface/TooltipRenderer.lua
 ui/v2/settings/interface/NotesRenderer.lua
 ui/v2/settings/interface/DamageMeterRenderer.lua
 ui/v2/settings/interface/ObjectiveTrackerRenderer.lua
+ui/v2/settings/qol/EditModeRenderer.lua
 ui/v2/settings/qol/LootVendorsRenderer.lua
 ui/v2/settings/qol/QuestsRenderer.lua
 ui/v2/settings/profiles/ManageRenderer.lua

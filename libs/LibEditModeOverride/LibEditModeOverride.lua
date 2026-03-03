@@ -268,6 +268,12 @@ function lib:GetFrameSetting(frame, setting)
   return nil
 end
 
+function lib:GetFrameAnchorInfo(frame)
+  local system = GetSystemByFrame(frame)
+  if not system then return nil end
+  return system.anchorInfo
+end
+
 function lib:ReanchorFrame(frame, ...)
   assert(lib:CanEditActiveLayout(), EDIT_ERROR)
   local system = GetSystemByFrame(frame)

@@ -74,6 +74,7 @@ Navigation.NavModel = {
         label = "Quality of Life",
         collapsible = true,
         children = {
+            { key = "qolEditMode", label = "Edit Mode" },
             { key = "qolLootVendors", label = "Loot & Vendors" },
             { key = "qolQuests", label = "Map & Quests" },
         },
