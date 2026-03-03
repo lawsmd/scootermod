@@ -80,9 +80,6 @@ function Presets:CheckDependencies(preset)
     if not preset then
         return false, "Preset not found."
     end
-    if preset.requiresConsolePort and not self:HasConsolePort() then
-        return false, "ConsolePort must be installed to import this preset."
-    end
     return true
 end
 
@@ -217,8 +214,9 @@ function Presets:ApplyPresetFromUI(preset)
                     end)
                 end
 
-                local wantsConsolePortPrompt = (d.preset and d.preset.consolePortProfile ~= nil) or (d.preset and d.preset.requiresConsolePort)
-                if wantsConsolePortPrompt then
+                local hasConsolePortPayload = d.preset and d.preset.consolePortProfile ~= nil
+                local consolePortAvailable = addon.Presets and addon.Presets:HasConsolePort()
+                if hasConsolePortPayload and consolePortAvailable then
                     addon.Dialogs:Show("SCOOT_IMPORT_CONSOLEPORT", {
                         onAccept = function() apply(true) end,
                         onCancel = function() apply(false) end,

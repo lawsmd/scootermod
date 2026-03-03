@@ -318,7 +318,8 @@ function addon.DebugDumpClassAuras()
                     for _, elem in ipairs(state.elements) do
                         if elem.type == "text" then
                             local textOk, text = pcall(function() return elem.widget:GetText() end)
-                            push("  text element [" .. tostring(elem.def.source or "?") .. "]: " .. (textOk and tostring(text or "") or "<secret>"))
+                            local textStr = (not textOk and "<error>") or (issecretvalue and issecretvalue(text) and "<SECRET>") or tostring(text or "")
+                            push("  text element [" .. tostring(elem.def.source or "?") .. "]: " .. textStr)
                         elseif elem.type == "texture" then
                             push("  texture element: shown=" .. tostring(elem.widget:IsShown()))
                         end
@@ -355,17 +356,169 @@ function addon.DebugDumpClassAuras()
         end
     end
 
-    -- safePush: guards against secret values leaking into the lines table.
-    -- In combat, tostring(secret) returns a secret; string concat with a secret
-    -- produces a secret; table.concat then fails on the tainted entry.
+    -- ================================================================
+    -- CDM Viewer Full Dump — list ALL items with all spell ID fields
+    -- ================================================================
+    push("")
+    push("--- CDM Viewer Full Dump ---")
+    push("")
+
+    for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+        local viewer = _G[viewerName]
+        if not viewer then
+            push("[" .. viewerName .. "] NOT FOUND (global is nil)")
+        else
+            push("[" .. viewerName .. "]")
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            if not ok then
+                push("  GetChildren() FAILED: " .. tostring(children))
+            elseif not children or #children == 0 then
+                push("  No children (empty viewer)")
+            else
+                push("  Children count: " .. #children)
+                -- Secret-safe tostring: returns "<SECRET>" instead of propagating taint
+                local function safeStr(val)
+                    if issecretvalue and issecretvalue(val) then return "<SECRET>" end
+                    return tostring(val)
+                end
+
+                for i, child in ipairs(children) do
+                    local line = "  [" .. i .. "] "
+
+                    -- GetBaseSpellID (plain table read: cooldownInfo.spellID)
+                    local baseOk, baseId = pcall(function() return child:GetBaseSpellID() end)
+                    if baseOk then
+                        line = line .. "baseSpellID=" .. safeStr(baseId)
+                    else
+                        line = line .. "baseSpellID=ERROR"
+                    end
+
+                    -- GetSpellID (resolution chain: aura → linked → override → base)
+                    local spellOk, spellId = pcall(function() return child:GetSpellID() end)
+                    if spellOk then
+                        line = line .. " | spellID=" .. safeStr(spellId)
+                    else
+                        line = line .. " | spellID=ERROR"
+                    end
+
+                    -- cooldownInfo deep dump (plain table reads)
+                    local ciOk, ciDump = pcall(function()
+                        local ci = child:GetCooldownInfo()
+                        if not ci then return "nil" end
+                        local parts = {}
+                        table.insert(parts, "spellID=" .. safeStr(ci.spellID))
+                        if ci.linkedSpellIDs then
+                            local ids = {}
+                            for _, lid in ipairs(ci.linkedSpellIDs) do
+                                table.insert(ids, safeStr(lid))
+                            end
+                            table.insert(parts, "linkedSpellIDs={" .. table.concat(ids, ",") .. "}")
+                        end
+                        if ci.linkedSpellID then
+                            table.insert(parts, "linkedSpellID=" .. safeStr(ci.linkedSpellID))
+                        end
+                        if ci.overrideSpellID then
+                            table.insert(parts, "overrideSpellID=" .. safeStr(ci.overrideSpellID))
+                        end
+                        if ci.overrideTooltipSpellID then
+                            table.insert(parts, "overrideTooltipSpellID=" .. safeStr(ci.overrideTooltipSpellID))
+                        end
+                        return table.concat(parts, " | ")
+                    end)
+                    if ciOk and type(ciDump) == "string" then
+                        line = line .. " | ci={" .. ciDump .. "}"
+                    end
+
+                    -- Shown state
+                    local shownOk, isShown = pcall(child.IsShown, child)
+                    if shownOk then
+                        line = line .. " | shown=" .. tostring(isShown)
+                    end
+
+                    push(line)
+                end
+            end
+        end
+        push("")
+    end
+
+    -- Our match attempts (replay the exact logic from FindCDMItemForSpell)
+    push("--- Match Replay for Registered Auras ---")
+    push("")
+    if classAuras then
+        for _, aura in ipairs(classAuras) do
+            if aura.cdmBorrow then
+                local cdmId = aura.cdmSpellId or aura.auraSpellId
+                push("[" .. aura.id .. "] Searching for cdmSpellId=" .. tostring(aura.cdmSpellId) .. ", auraSpellId=" .. tostring(aura.auraSpellId))
+
+                -- Replay primary search (per-child pcall so one secret doesn't abort the loop)
+                local primaryFrame = nil
+                for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+                    local viewer = _G[viewerName]
+                    if viewer then
+                        local childOk, children = pcall(function() return { viewer:GetChildren() } end)
+                        if childOk and children then
+                            for ci, child in ipairs(children) do
+                                local idOk, baseId = pcall(function() return child:GetBaseSpellID() end)
+                                if idOk then
+                                    local isSecret = issecretvalue and issecretvalue(baseId)
+                                    if isSecret then
+                                        push("  " .. viewerName .. " child[" .. ci .. "] baseSpellID=<SECRET> — skipped")
+                                    elseif baseId == cdmId then
+                                        push("  PRIMARY MATCH: " .. viewerName .. " child[" .. ci .. "] baseSpellID=" .. tostring(baseId) .. " == " .. tostring(cdmId))
+                                        primaryFrame = child
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                if not primaryFrame then
+                    push("  PRIMARY: no match for " .. tostring(cdmId))
+                end
+
+                -- Replay fallback search
+                if not primaryFrame and aura.cdmSpellId and aura.auraSpellId then
+                    local fallbackFrame = nil
+                    for _, viewerName in ipairs({ "BuffIconCooldownViewer", "BuffBarCooldownViewer" }) do
+                        local viewer = _G[viewerName]
+                        if viewer then
+                            local childOk, children = pcall(function() return { viewer:GetChildren() } end)
+                            if childOk and children then
+                                for ci, child in ipairs(children) do
+                                    local idOk, baseId = pcall(function() return child:GetBaseSpellID() end)
+                                    if idOk then
+                                        local isSecret = issecretvalue and issecretvalue(baseId)
+                                        if isSecret then
+                                            -- already reported above
+                                        elseif baseId == aura.auraSpellId then
+                                            push("  FALLBACK MATCH: " .. viewerName .. " child[" .. ci .. "] baseSpellID=" .. tostring(baseId) .. " == " .. tostring(aura.auraSpellId))
+                                            fallbackFrame = child
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    if not fallbackFrame then
+                        push("  FALLBACK: no match for " .. tostring(aura.auraSpellId))
+                    end
+                end
+                push("")
+            end
+        end
+    end
+
+    -- safePush: guards against secret/tainted values leaking into the lines table.
+    -- tostring(secret) produces a tainted string that passes normal string ops
+    -- but fails in table.concat. Use table.concat itself as the definitive test.
     local function safePush(s)
-        local ok, safe = pcall(function()
-            if type(s) ~= "string" then return tostring(s) end
-            local _ = s .. "" -- verify string ops work (fails on secrets)
-            return s
+        local ok = pcall(function()
+            if type(s) ~= "string" then s = tostring(s) end
+            table.concat({s}) -- definitive test: fails on tainted strings
         end)
-        if ok and safe and type(safe) == "string" then
-            table.insert(lines, safe)
+        if ok and type(s) == "string" then
+            table.insert(lines, s)
         else
             table.insert(lines, "<secret value>")
         end
@@ -436,24 +589,18 @@ function addon.DebugDumpClassAuras()
             local nameOk, spellName = pcall(function() return result.name end)
             local stackOk, stacks = pcall(function() return result.applications end)
 
-            local spellIdStr = spellOk and tostring(spellId) or "<secret>"
-            local nameStr = nameOk and tostring(spellName) or "<secret>"
-            local stackStr = stackOk and tostring(stacks) or "<secret>"
+            local isSecretSpell = spellOk and issecretvalue and issecretvalue(spellId)
+            local isSecretName = nameOk and issecretvalue and issecretvalue(spellName)
+            local isSecretStack = stackOk and issecretvalue and issecretvalue(stacks)
 
-            -- Check if spellId is secret
-            local isSecretSpell = false
-            if spellOk then
-                pcall(function()
-                    if issecretvalue and issecretvalue(spellId) then
-                        isSecretSpell = true
-                    end
-                end)
-            end
+            local spellIdStr = (not spellOk and "<error>") or (isSecretSpell and "<SECRET>") or tostring(spellId)
+            local nameStr = (not nameOk and "<error>") or (isSecretName and "<SECRET>") or tostring(spellName)
+            local stackStr = (not stackOk and "<error>") or (isSecretStack and "<SECRET>") or tostring(stacks)
 
             safePush("  [" .. i .. "] spellId=" .. spellIdStr .. (isSecretSpell and " (SECRET)" or "") .. " name=" .. nameStr .. " stacks=" .. stackStr)
 
             -- Check for our target spell
-            if spellOk then
+            if spellOk and not isSecretSpell then
                 pcall(function()
                     if spellId == 1221389 then gadiSpell1221389 = true end
                 end)
@@ -482,22 +629,17 @@ function addon.DebugDumpClassAuras()
             local nameOk, spellName = pcall(function() return result.name end)
             local stackOk, stacks = pcall(function() return result.applications end)
 
-            local spellIdStr = spellOk and tostring(spellId) or "<secret>"
-            local nameStr = nameOk and tostring(spellName) or "<secret>"
-            local stackStr = stackOk and tostring(stacks) or "<secret>"
+            local isSecretSpell = spellOk and issecretvalue and issecretvalue(spellId)
+            local isSecretName = nameOk and issecretvalue and issecretvalue(spellName)
+            local isSecretStack = stackOk and issecretvalue and issecretvalue(stacks)
 
-            local isSecretSpell = false
-            if spellOk then
-                pcall(function()
-                    if issecretvalue and issecretvalue(spellId) then
-                        isSecretSpell = true
-                    end
-                end)
-            end
+            local spellIdStr = (not spellOk and "<error>") or (isSecretSpell and "<SECRET>") or tostring(spellId)
+            local nameStr = (not nameOk and "<error>") or (isSecretName and "<SECRET>") or tostring(spellName)
+            local stackStr = (not stackOk and "<error>") or (isSecretStack and "<SECRET>") or tostring(stacks)
 
             safePush("  [" .. i .. "] spellId=" .. spellIdStr .. (isSecretSpell and " (SECRET)" or "") .. " name=" .. nameStr .. " stacks=" .. stackStr)
 
-            if spellOk then
+            if spellOk and not isSecretSpell then
                 pcall(function()
                     if spellId == 1221389 then gddiSpell1221389 = true end
                 end)
@@ -521,7 +663,9 @@ function addon.DebugDumpClassAuras()
         if byIdResult then
             local nameOk, spellName = pcall(function() return byIdResult.name end)
             local stackOk, stacks = pcall(function() return byIdResult.applications end)
-            safePush("  Result: FOUND | name=" .. (nameOk and tostring(spellName) or "<secret>") .. " stacks=" .. (stackOk and tostring(stacks) or "<secret>"))
+            local nameStr = (not nameOk and "<error>") or (issecretvalue and issecretvalue(spellName) and "<SECRET>") or tostring(spellName)
+            local stackStr = (not stackOk and "<error>") or (issecretvalue and issecretvalue(stacks) and "<SECRET>") or tostring(stacks)
+            safePush("  Result: FOUND | name=" .. nameStr .. " stacks=" .. stackStr)
 
             -- Check if fields are secret
             local fields = { "spellId", "name", "applications", "duration", "expirationTime" }
@@ -568,21 +712,15 @@ function addon.DebugDumpClassAuras()
             for i, child in ipairs(cdmChildren) do
                 -- GetBaseSpellID() probe
                 local spellIdOk, spellId = pcall(function() return child:GetBaseSpellID() end)
-                local spellIdStr = spellIdOk and tostring(spellId) or "<error>"
-                local isSecret = false
-                if spellIdOk then
-                    pcall(function()
-                        if issecretvalue and issecretvalue(spellId) then
-                            isSecret = true
-                        end
-                    end)
-                end
+                local isSecret = spellIdOk and issecretvalue and issecretvalue(spellId)
+                local spellIdStr = (not spellIdOk and "<error>") or (isSecret and "<SECRET>") or tostring(spellId)
 
                 -- cooldownInfo.spellID direct table access probe
                 local directOk, directSpellId = pcall(function()
                     return child.cooldownInfo and child.cooldownInfo.spellID
                 end)
-                local directStr = directOk and tostring(directSpellId) or "<error>"
+                local isDirectSecret = directOk and issecretvalue and issecretvalue(directSpellId)
+                local directStr = (not directOk and "<error>") or (isDirectSecret and "<SECRET>") or tostring(directSpellId)
 
                 -- GetApplicationsFontString() probe
                 local fsOk, appFS = pcall(function() return child:GetApplicationsFontString() end)

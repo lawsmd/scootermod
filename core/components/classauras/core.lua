@@ -15,31 +15,50 @@ CA._classAuras = {}     -- [classToken] = { auraDef, auraDef, ... }
 CA._activeAuras = {}    -- [auraId] = { container, elements, component }
 CA._trackedUnits = {}   -- [unitToken] = true — built from registered auras
 
+local spellToAura = {}  -- [spellId] = auraDef — O(1) reverse lookup for UNIT_AURA addedAuras matching
+local spellNames = {}   -- [lowercased spell name] = auraDef — TMW-style name-based matching fallback
+
 local editModeActive = false
 
--- CDM Borrow subsystem: "borrows" display data from Blizzard's CDM Tracked Buffs icons.
--- Instead of detecting auras ourselves (blocked by 12.0 secrets), we hook the FontStrings
--- on CDM icons that Blizzard populates in its untainted context.
--- Prerequisite: User must add the tracked spell to CDM > Tracked Buffs.
+-- CDM Borrow subsystem: hides CDM icons via SetAlphaFromBoolean when Class Auras
+-- takes over display. Duration/timing data comes from DurationObject API (live C++ object).
 local cdmBorrow = {
     hookInstalled = false,
 }
--- Weak-key map: FontString → auraId (avoids writing to Blizzard frame tables)
-local fontStringAuraMap = setmetatable({}, { __mode = "k" })
--- Track which FontStrings/frames already have hooks installed (avoid double-hooking)
-local hookedFontStrings = setmetatable({}, { __mode = "k" })
+-- Track which CDM item frames already have Show/SetShown hooks installed
 local hookedItemFrames = setmetatable({}, { __mode = "k" })
--- Track CDM item frames we've hidden via SetAlpha(0) — itemFrame → auraId
+-- Track CDM item frames we've hidden via SetAlphaFromBoolean — itemFrame → auraId
 local hiddenItemFrames = setmetatable({}, { __mode = "k" })
--- CDM item frames for duration-source auras: [auraId] = itemFrame (weak values)
-local durationCDMItems = setmetatable({}, { __mode = "v" })
+
+-- DurationObject-based aura tracking: maps auraId → { unit, auraInstanceID }
+-- Populated by FindAuraOnUnit (direct scan), CDM SetAuraInstanceInfo hook, and RescanForCDMBorrow.
+-- OnUpdate uses C_UnitAuras.GetAuraDuration(unit, auraInstanceID) to get live DurationObject each frame.
+local auraTracking = {}
+
+-- GUID-based identity cache: persists across target switches for instant re-acquisition.
+-- Populated by any successful aura identification (direct scan, CDM hook, addedAuras, rescan).
+-- Indexed by unit GUID (not "target" token) so cache survives target switching.
+local guidCache = {}  -- [unitGUID] = { auraId, auraInstanceID, activeSpellId }
+
+local function CacheAuraIdentity(unit, auraId, auraInstanceID, activeSpellId)
+    local ok, guid = pcall(UnitGUID, unit)
+    if ok and guid and not issecretvalue(guid) then
+        guidCache[guid] = {
+            auraId = auraId,
+            auraInstanceID = auraInstanceID,
+            activeSpellId = activeSpellId,
+        }
+    end
+end
 
 -- Forward declarations (defined after Layout/Styling sections)
 local FindCDMItemForSpell, BindCDMBorrowTarget, InstallMixinHooks, RescanForCDMBorrow
-local StartDurationTracking, StopDurationTracking
+local StartAuraDisplay, StopAuraDisplay, StyleCooldownText
+local GetActiveOverride
 
 -- Expose for debug command
 CA._cdmBorrow = cdmBorrow
+CA._guidCache = guidCache
 
 function CA.RegisterAuras(classToken, auras)
     if not classToken or not auras then return end
@@ -50,6 +69,21 @@ function CA.RegisterAuras(classToken, auras)
         table.insert(CA._classAuras[classToken], aura)
         if aura.unit then
             CA._trackedUnits[aura.unit] = true
+        end
+        spellToAura[aura.auraSpellId] = aura
+        -- Cache spell name for TMW-style name-based matching fallback
+        local nameOk, spellName = pcall(C_Spell.GetSpellName, aura.auraSpellId)
+        if nameOk and spellName and type(spellName) == "string" then
+            spellNames[spellName:lower()] = aura
+        end
+        if aura.linkedSpellIds then
+            for _, linkedId in ipairs(aura.linkedSpellIds) do
+                spellToAura[linkedId] = aura
+                local lnOk, lnName = pcall(C_Spell.GetSpellName, linkedId)
+                if lnOk and lnName and type(lnName) == "string" then
+                    spellNames[lnName:lower()] = aura
+                end
+            end
         end
     end
 end
@@ -358,16 +392,22 @@ local function ApplyIconMode(aura, state)
             local mode = db.iconMode or "default"
             if not showIcon or mode == "hidden" then
                 elem.widget:Hide()
-            elseif mode == "custom" and elem.def.customPath then
-                elem.widget:SetTexture(elem.def.customPath)
+            elseif mode == "custom" then
+                local override = GetActiveOverride(aura)
+                local path = (override and override.customPath) or elem.def.customPath
+                if path then elem.widget:SetTexture(path) end
                 elem.widget:Show()
             else
-                -- "default": use the spell icon, fallback to customPath
+                -- "default": use the spell icon (override spell or primary), fallback to customPath
+                local override = GetActiveOverride(aura)
+                local spellForTexture = (override and override.overrideSpellId) or aura.auraSpellId
                 local ok, tex = pcall(function()
-                    return C_Spell.GetSpellTexture(aura.auraSpellId)
+                    return C_Spell.GetSpellTexture(spellForTexture)
                 end)
                 if ok and tex then
                     elem.widget:SetTexture(tex)
+                elseif override and override.customPath then
+                    elem.widget:SetTexture(override.customPath)
                 elseif elem.def.customPath then
                     elem.widget:SetTexture(elem.def.customPath)
                 end
@@ -389,7 +429,8 @@ local function ApplyTextStyling(aura, state)
             local size = db.textSize or elem.def.baseSize or 24
             addon.ApplyFontStyle(elem.widget, fontFace, size, fontStyle)
 
-            local color = db.textColor
+            local override = GetActiveOverride(aura)
+            local color = (override and override.textColor) or db.textColor
             if color and type(color) == "table" then
                 elem.widget:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
             end
@@ -550,7 +591,13 @@ local function ApplyBarStyling(aura, state)
                     fgR, fgG, fgB, fgA = classColor.r, classColor.g, classColor.b, 1
                 end
             else -- "custom" (or any fallback)
-                local c = db.barForegroundTint or aura.defaultBarColor or { 1, 1, 1, 1 }
+                local override = GetActiveOverride(aura)
+                local c
+                if override and override.barColor then
+                    c = override.barColor
+                else
+                    c = db.barForegroundTint or aura.defaultBarColor or { 1, 1, 1, 1 }
+                end
                 fgR, fgG, fgB, fgA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end
             local fillTex = elem.barFill:GetStatusBarTexture()
@@ -666,12 +713,23 @@ local function ApplyBarStyling(aura, state)
     end
 end
 
+GetActiveOverride = function(aura)
+    if not aura.spellOverrides then return nil end
+    local tracked = auraTracking[aura.id]
+    if not tracked or not tracked.activeSpellId then return nil end
+    if tracked.activeSpellId == aura.auraSpellId then return nil end
+    return aura.spellOverrides[tracked.activeSpellId]
+end
+
 local function ApplyStyling(aura)
     local state = CA._activeAuras[aura.id]
     if not state then return end
 
     local db = GetDB(aura)
     if not db then return end
+
+    -- Reset override tracking so next ScanAura re-evaluates
+    state._lastActiveSpellId = nil
 
     -- Enabled check
     if not db.enabled then
@@ -706,8 +764,96 @@ local function ApplyStyling(aura)
 end
 
 --------------------------------------------------------------------------------
--- Aura Scanning (stub — visibility driven by CDM borrow hooks)
+-- Aura Scanning
 --------------------------------------------------------------------------------
+
+local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
+
+-- TMW-aligned aura scanning: broad filter with post-scan ownership + name matching.
+-- Mirrors TMW's packed path: GetAuraSlots("HARMFUL|INCLUDE_NAME_PLATE_ONLY") + isMine check.
+-- Key differences from old code:
+--   1. Filter broadened (strip |PLAYER) — ownership checked post-scan
+--   2. Name-based matching fallback (TMW: Hash[strlowerCache[instance.name]])
+--   3. Post-scan ownership via sourceUnit then IsAuraFilteredOutByInstanceID
+local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
+    -- Strip |PLAYER from filter — ownership is checked post-scan via
+    -- IsAuraFilteredOutByInstanceID, matching TMW's broad-scan approach.
+    local broadFilter = filter and filter:gsub("|PLAYER", "") or filter
+
+    -- Pre-resolve the canonical spell name for name-based matching
+    local canonName
+    pcall(function()
+        local n = C_Spell.GetSpellName(spellId)
+        if n and not issecretvalue(n) then canonName = n:lower() end
+    end)
+
+    for i = 1, 40 do
+        local auraData = C_UnitAuras.GetAuraDataByIndex(unit, i, broadFilter)
+        if not auraData then break end
+
+        local matched = false
+        local matchedSpell = nil
+
+        -- Primary: spellId match (TMW: Hash[instance.spellId])
+        pcall(function()
+            if not issecretvalue(auraData.spellId) then
+                if auraData.spellId == spellId then
+                    matched = true
+                    matchedSpell = spellId
+                elseif linkedSpellIds then
+                    for _, linkedId in ipairs(linkedSpellIds) do
+                        if auraData.spellId == linkedId then
+                            matched = true
+                            matchedSpell = linkedId
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- Fallback: name match (TMW: Hash[strlowerCache[instance.name]])
+        if not matched and canonName then
+            pcall(function()
+                if auraData.name and not issecretvalue(auraData.name) then
+                    if auraData.name:lower() == canonName then
+                        matched = true
+                        matchedSpell = spellId  -- attribute to primary spell
+                    end
+                end
+            end)
+        end
+
+        if matched then
+            -- Post-scan ownership check (TMW: AugmentInstance isMine logic)
+            local isMine = nil  -- nil = unknown, true = yes, false = no
+
+            -- Non-secret path: sourceUnit check (TMW Auras.lua:86)
+            pcall(function()
+                if not issecretvalue(auraData.sourceUnit) then
+                    isMine = (auraData.sourceUnit == "player" or auraData.sourceUnit == "pet")
+                end
+            end)
+
+            -- Secret fallback: IsAuraFilteredOutByInstanceID (TMW Auras.lua:210-212)
+            if isMine == nil then
+                pcall(function()
+                    local iid = auraData.auraInstanceID
+                    if iid and not issecretvalue(iid) then
+                        isMine = not IsAuraFilteredOutByInstanceID(unit, iid, "PLAYER|HARMFUL")
+                    end
+                end)
+            end
+
+            -- Accept match if mine or if ownership couldn't be determined
+            -- (mirrors TMW: stores all instances, CDM de-secrets later)
+            if isMine ~= false then
+                return auraData, matchedSpell
+            end
+        end
+    end
+    return nil, nil
+end
 
 function CA.ScanAura(aura)
     local state = CA._activeAuras[aura.id]
@@ -721,27 +867,106 @@ function CA.ScanAura(aura)
 
     if not UnitExists(aura.unit) then
         if not editModeActive then
+            StopAuraDisplay(aura.id)
             state.container:Hide()
         end
         return
     end
 
-    -- For cdmBorrow auras, visibility is driven by CDM borrow hooks
-    -- (BindCDMBorrowTarget installs Show/Hide hooks on CDM icons).
-    if aura.cdmBorrow then return end
+    if not aura.filter or not aura.auraSpellId then return end
 
-    -- Direct scanning for non-CDM auras (e.g. target debuffs)
-    local auraData
-    local ok, result = pcall(C_UnitAuras.GetAuraDataBySpellID, aura.unit, aura.auraSpellId)
-    if ok and result then auraData = result end
-
+    -- === Try direct scan first (works when spellId comparison isn't secret) ===
+    local auraData, matchedSpellId = FindAuraOnUnit(aura.unit, aura.filter, aura.auraSpellId, aura.linkedSpellIds)
     if auraData then
-        LayoutElements(aura, state)
-        state.container:Show()
-        StartDurationTracking(aura, state, auraData)
-    elseif not editModeActive then
-        state.container:Hide()
-        StopDurationTracking(aura.id)
+        -- Capture auraInstanceID + activeSpellId for DurationObject tracking
+        pcall(function()
+            local iid = auraData.auraInstanceID
+            if iid and not issecretvalue(iid) then
+                auraTracking[aura.id] = { unit = aura.unit, auraInstanceID = iid, activeSpellId = matchedSpellId }
+                CacheAuraIdentity(aura.unit, aura.id, iid, matchedSpellId)
+            end
+        end)
+
+        -- Applications from direct scan
+        local ok, apps = pcall(function() return auraData.applications end)
+        if ok and apps then
+            local displayApps = (apps == 0) and 1 or apps
+            for _, elem in ipairs(state.elements) do
+                if elem.def.source == "applications" then
+                    if elem.type == "text" then
+                        pcall(elem.widget.SetText, elem.widget, tostring(displayApps))
+                        pcall(elem.widget.Show, elem.widget)
+                    elseif elem.type == "bar" then
+                        pcall(elem.barFill.SetValue, elem.barFill, displayApps)
+                    end
+                end
+            end
+        end
+    end
+
+    -- === Validate tracked instance (from direct scan, CDM hook, or rescan) ===
+    local tracked = auraTracking[aura.id]
+    if tracked then
+        local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, tracked.unit, tracked.auraInstanceID)
+        if not dok or not durObj then
+            auraTracking[aura.id] = nil
+        else
+            local zOk, isZ = pcall(durObj.IsZero, durObj)
+            if zOk and not issecretvalue(isZ) and isZ then
+                auraTracking[aura.id] = nil
+            end
+        end
+    end
+
+    -- Re-check after validation
+    tracked = auraTracking[aura.id]
+    if not tracked then
+        StopAuraDisplay(aura.id)
+        if not editModeActive then state.container:Hide() end
+        return
+    end
+
+    -- === Start/update display via DurationObject ===
+    StartAuraDisplay(aura.id)
+
+    -- === Detect linked spell override changes (icon/bar/text visual swap) ===
+    local tracked2 = auraTracking[aura.id]
+    if tracked2 and aura.spellOverrides then
+        local prevActive = state._lastActiveSpellId
+        local curActive = tracked2.activeSpellId
+        if prevActive ~= curActive then
+            state._lastActiveSpellId = curActive
+            ApplyIconMode(aura, state)
+            ApplyTextStyling(aura, state)
+            ApplyBarStyling(aura, state)
+        end
+    end
+
+    -- === Applications via combat-safe API (when direct scan didn't provide them) ===
+    if not auraData then
+        for _, elem in ipairs(state.elements) do
+            if elem.def.source == "applications" then
+                local aok, countStr = pcall(C_UnitAuras.GetAuraApplicationDisplayCount,
+                    tracked.unit, tracked.auraInstanceID, 1)
+                if aok and countStr then
+                    if elem.type == "text" then
+                        local displayStr = countStr
+                        if not issecretvalue(countStr) and (countStr == "" or countStr == "0") then
+                            displayStr = "1"
+                        end
+                        pcall(elem.widget.SetText, elem.widget, displayStr)
+                        pcall(elem.widget.Show, elem.widget)
+                    elseif elem.type == "bar" then
+                        if not issecretvalue(countStr) then
+                            local num = tonumber(countStr)
+                            if num then
+                                pcall(elem.barFill.SetValue, elem.barFill, (num == 0) and 1 or num)
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -766,293 +991,235 @@ local function ScanAllAuras()
 end
 
 --------------------------------------------------------------------------------
--- Duration Tracking (used by both direct scanning and CDM Borrow duration auras)
+-- Duration Display (DurationObject-based — unified combat/non-combat)
 --------------------------------------------------------------------------------
+-- Uses C_UnitAuras.GetAuraDuration() to get a live C++ DurationObject each frame.
+-- StatusBar:SetValue/SetMinMaxValues and Cooldown:SetCooldown are AllowedWhenTainted,
+-- so bar fill and countdown text work correctly even with secret values.
 
--- Per-aura duration state: [auraId] = { expirationTime, totalDuration }
-local durationState = {}
-
-StopDurationTracking = function(auraId)
-    durationState[auraId] = nil
+StyleCooldownText = function(elem, auraId)
+    if not elem._cdFrame then return end
+    local fs = elem._cdFrame:GetCountdownFontString()
+    if not fs then return end
+    local auraDef = CA._registry[auraId]
     local state = CA._activeAuras[auraId]
-    if state and state.container then
-        state.container:SetScript("OnUpdate", nil)
+    if not state then return end
+    local db = GetDB(auraDef)
+    if not db then return end
+    local fontKey = db.textFont or "FRIZQT__"
+    local fontFace = addon.ResolveFontFace(fontKey)
+    local fontSize = db.textSize or 24
+    local fontFlags = db.textStyle or "OUTLINE"
+    pcall(fs.SetFont, fs, fontFace, fontSize, fontFlags)
+    local override = GetActiveOverride(CA._registry[auraId])
+    local c = (override and override.textColor) or db.textColor or { 1, 1, 1, 1 }
+    pcall(fs.SetTextColor, fs, c[1], c[2], c[3], c[4])
+end
+
+StopAuraDisplay = function(auraId)
+    auraTracking[auraId] = nil
+    local state = CA._activeAuras[auraId]
+    if not state then return end
+    state._lastActiveSpellId = nil
+    state.container:SetScript("OnUpdate", nil)
+    for _, elem in ipairs(state.elements) do
+        if elem.type == "text" and elem.def.source == "duration" then
+            pcall(elem.widget.SetText, elem.widget, "")
+            pcall(elem.widget.Show, elem.widget)
+        end
+        if elem.type == "bar" and elem.def.source == "duration" then
+            pcall(elem.barFill.SetValue, elem.barFill, 0)
+        end
+    end
+    -- Hide CooldownFrame fallback text if present
+    for _, elem in ipairs(state.elements) do
+        if elem._cdFrame then elem._cdFrame:Hide() end
+    end
+    if not editModeActive then
+        state.container:Hide()
     end
 end
 
-StartDurationTracking = function(aura, state, auraData)
-    -- Extract timing data with secret-safety
-    local expirationTime, totalDuration
-    local ok1, exp = pcall(function() return auraData.expirationTime end)
-    if ok1 and type(exp) == "number" and not issecretvalue(exp) then
-        expirationTime = exp
-    end
-    local ok2, dur = pcall(function() return auraData.duration end)
-    if ok2 and type(dur) == "number" and not issecretvalue(dur) then
-        totalDuration = dur
-    end
+StartAuraDisplay = function(auraId)
+    local state = CA._activeAuras[auraId]
+    if not state then return end
+    local auraDef = CA._registry[auraId]
+    if not auraDef then return end
+    local t = auraTracking[auraId]
+    if not t then return end
 
-    if not expirationTime or not totalDuration or totalDuration <= 0 then
-        StopDurationTracking(aura.id)
+    -- Get initial DurationObject for CooldownFrame setup
+    local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, t.unit, t.auraInstanceID)
+    if not ok or not durObj then
+        StopAuraDisplay(auraId)
+        return
+    end
+    local zOk, isZ = pcall(durObj.IsZero, durObj)
+    if zOk and not issecretvalue(isZ) and isZ then
+        StopAuraDisplay(auraId)
         return
     end
 
-    durationState[aura.id] = {
-        expirationTime = expirationTime,
-        totalDuration = totalDuration,
-    }
-
-    -- Install OnUpdate for smooth countdown
-    state.container:SetScript("OnUpdate", function()
-        local ds = durationState[aura.id]
-        if not ds then
-            state.container:SetScript("OnUpdate", nil)
-            return
-        end
-
-        local remaining = ds.expirationTime - GetTime()
-        if remaining <= 0 then
-            -- Aura expired
-            StopDurationTracking(aura.id)
-            if not editModeActive then
-                state.container:Hide()
+    -- Set up CooldownFrame for each duration text element (fallback for secret text)
+    for _, elem in ipairs(state.elements) do
+        if elem.type == "text" and elem.def.source == "duration" then
+            if not elem._cdFrame then
+                local cdFrame = CreateFrame("Cooldown", nil, state.container, "CooldownFrameTemplate")
+                cdFrame:SetAllPoints(elem.widget)
+                cdFrame:SetDrawSwipe(false)
+                cdFrame:SetDrawEdge(false)
+                cdFrame:SetHideCountdownNumbers(false)
+                elem._cdFrame = cdFrame
             end
+            -- Set the cooldown (accepts secrets via AllowedWhenTainted)
+            local startTime = durObj:GetStartTime()
+            local totalDur = durObj:GetTotalDuration()
+            pcall(elem._cdFrame.SetCooldown, elem._cdFrame, startTime, totalDur)
+            -- Style countdown font to match user settings
+            StyleCooldownText(elem, auraId)
+            elem._cdFrame:Hide()  -- Start hidden; OnUpdate toggles visibility
+        end
+    end
+
+    -- Set initial bar range
+    for _, elem in ipairs(state.elements) do
+        if elem.type == "bar" and elem.def.source == "duration" then
+            pcall(elem.barFill.SetMinMaxValues, elem.barFill, 0, durObj:GetTotalDuration())
+        end
+    end
+
+    LayoutElements(auraDef, state)
+    state.container:Show()
+
+    -- Single unified OnUpdate — uses DurationObject for all timing
+    state.container:SetScript("OnUpdate", function(self)
+        local track = auraTracking[auraId]
+        if not track then self:SetScript("OnUpdate", nil); return end
+
+        -- Fresh DurationObject each frame (live C++ object, always current)
+        local dOk, dObj = pcall(C_UnitAuras.GetAuraDuration, track.unit, track.auraInstanceID)
+        if not dOk or not dObj then
+            StopAuraDisplay(auraId)
+            return
+        end
+        local zk, iz = pcall(dObj.IsZero, dObj)
+        if zk and not issecretvalue(iz) and iz then
+            StopAuraDisplay(auraId)
             return
         end
 
-        -- Update text and bar elements with source = "duration"
+        -- === BAR: always accurate (SetValue/SetMinMaxValues accept secrets) ===
+        for _, elem in ipairs(state.elements) do
+            if elem.type == "bar" and elem.def.source == "duration" then
+                pcall(elem.barFill.SetMinMaxValues, elem.barFill, 0, dObj:GetTotalDuration())
+                local fillMode = elem.def.fillMode or "deplete"
+                if fillMode == "deplete" then
+                    pcall(elem.barFill.SetValue, elem.barFill, dObj:GetRemainingDuration())
+                else
+                    pcall(elem.barFill.SetValue, elem.barFill, dObj:GetElapsedDuration())
+                end
+            end
+        end
+
+        -- === TEXT: try non-secret custom format, fall back to CooldownFrame ===
         for _, elem in ipairs(state.elements) do
             if elem.type == "text" and elem.def.source == "duration" then
-                pcall(elem.widget.SetText, elem.widget, string.format("%.1f", remaining))
-            end
-            if elem.type == "bar" and elem.def.source == "duration" then
-                pcall(elem.barFill.SetMinMaxValues, elem.barFill, 0, ds.totalDuration)
-                pcall(elem.barFill.SetValue, elem.barFill, remaining)
+                local rok, remaining = pcall(function()
+                    local r = dObj:GetRemainingDuration()
+                    if issecretvalue(r) then return nil end
+                    return r
+                end)
+                if rok and remaining and remaining > 0 then
+                    -- Non-secret: custom formatted text
+                    local text
+                    if remaining >= 60 then
+                        text = string.format("%dm", math.floor(remaining / 60))
+                    elseif remaining >= 10 then
+                        text = string.format("%.0f", remaining)
+                    else
+                        text = string.format("%.1f", remaining)
+                    end
+                    pcall(elem.widget.SetText, elem.widget, text)
+                    pcall(elem.widget.Show, elem.widget)
+                    if elem._cdFrame then elem._cdFrame:Hide() end
+                else
+                    -- Secret: CooldownFrame handles countdown via C++ rendering
+                    pcall(elem.widget.Hide, elem.widget)
+                    if elem._cdFrame then elem._cdFrame:Show() end
+                end
             end
         end
     end)
 end
 
 --------------------------------------------------------------------------------
--- CDM Borrow: Hook Blizzard's CDM Tracked Buffs icons
+-- CDM Borrow: Hide CDM icons via SetAlpha(0)
 --------------------------------------------------------------------------------
--- Prerequisite: User must add the tracked spell to CDM > Tracked Buffs.
--- We find the CDM icon for our spell, hook its FontString to forward text
--- (including secret values) to our Class Aura overlay.
+-- When Class Auras takes over display, we hide the corresponding CDM icon
+-- to avoid duplicates. Duration comes from DurationObject, stacks from direct scan or GetAuraApplicationDisplayCount.
+
+local function searchViewer(viewerName, spellId)
+    local viewer = _G[viewerName]
+    if not viewer then return nil end
+    local ok, children = pcall(function() return { viewer:GetChildren() } end)
+    if not ok or not children then return nil end
+    for _, child in ipairs(children) do
+        -- GetBaseSpellID() is a plain Lua table read (self.cooldownInfo.spellID),
+        -- populated by Blizzard's untainted code — returns real data even in combat.
+        local idOk, childSpellId = pcall(function() return child:GetBaseSpellID() end)
+        if idOk and childSpellId == spellId then
+            return child
+        end
+    end
+    -- Fallback: search linkedSpellIDs (e.g., 188389 Flame Shock is linked under base 470411)
+    for _, child in ipairs(children) do
+        local ciOk, found = pcall(function()
+            local ci = child:GetCooldownInfo()
+            if ci and ci.linkedSpellIDs then
+                for _, lid in ipairs(ci.linkedSpellIDs) do
+                    if lid == spellId then return true end
+                end
+            end
+            return false
+        end)
+        if ciOk and found then
+            return child
+        end
+    end
+    return nil
+end
 
 FindCDMItemForSpell = function(spellId)
-    local function searchViewer(viewer)
-        if not viewer then return nil end
-        local ok, children = pcall(function() return { viewer:GetChildren() } end)
-        if not ok or not children then return nil end
-        for _, child in ipairs(children) do
-            -- SpellIDMatchesAnyAssociatedSpellIDs checks all associated IDs:
-            -- base spellID, linkedSpellID, linkedSpellIDs[], overrideSpellID, auraSpellID
-            local matchOk, matches = pcall(child.SpellIDMatchesAnyAssociatedSpellIDs, child, spellId)
-            if matchOk and matches then
-                return child
-            end
-        end
-        return nil
-    end
-
-    return searchViewer(_G.BuffIconCooldownViewer)
-        or searchViewer(_G.BuffBarCooldownViewer)
+    -- Search icon layout first (most common), then bar layout
+    return searchViewer("BuffIconCooldownViewer", spellId)
+        or searchViewer("BuffBarCooldownViewer", spellId)
 end
 
 BindCDMBorrowTarget = function(itemFrame, aura)
-    -- Get the Applications FontString from the CDM icon
-    local ok, fs = pcall(function() return itemFrame:GetApplicationsFontString() end)
-    if not ok or not fs then return end
-
-    -- Update weak mapping: this FontString forwards to this aura
-    fontStringAuraMap[fs] = aura.id
-
-    -- Hook SetText on this FontString (once per FS, never double-hook)
-    if not hookedFontStrings[fs] then
-        hookedFontStrings[fs] = true
-        hooksecurefunc(fs, "SetText", function(self, text)
-            local auraId = fontStringAuraMap[self]
-            if not auraId then return end
-            local state = CA._activeAuras[auraId]
-            if not state then return end
-            -- Blizzard sends "" for 1-stack; show "1" so the isolated aura always has a number
-            local displayText = text
-            if not issecretvalue(displayText) and (not displayText or displayText == "") then
-                displayText = "1"
-            end
-            for _, elem in ipairs(state.elements) do
-                if elem.type == "text" and elem.def.source == "applications" then
-                    pcall(elem.widget.SetText, elem.widget, displayText)
-                end
-                -- Forward to bar elements: SetValue accepts secrets (AllowedWhenTainted)
-                if elem.type == "bar" and elem.def.source == "applications" then
-                    if not issecretvalue(text) and (not text or text == "") then
-                        pcall(elem.barFill.SetValue, elem.barFill, 1)
-                    elseif type(text) == "number" or issecretvalue(text) then
-                        pcall(elem.barFill.SetValue, elem.barFill, text)
-                    else
-                        -- String number from Blizzard (e.g. "5")
-                        local num = tonumber(text)
-                        if num then
-                            pcall(elem.barFill.SetValue, elem.barFill, num)
-                        end
-                    end
-                end
-            end
-            -- Duration capture: SetText fires on every CDM refresh (even for non-stacking auras).
-            -- Piggyback on this as a "CDM data changed" signal to re-capture timing for pandemic refreshes.
-            local cdmItem = durationCDMItems[auraId]
-            if cdmItem then
-                local auraDef = CA._registry[auraId]
-                if auraDef then
-                    local cvOk, expTime, dur = pcall(cdmItem.GetCooldownValues, cdmItem)
-                    if cvOk and type(expTime) == "number" and not issecretvalue(expTime)
-                       and type(dur) == "number" and not issecretvalue(dur) and dur > 0 then
-                        StartDurationTracking(auraDef, state, { expirationTime = expTime, duration = dur })
-                    end
-                end
-            end
-        end)
-    end
-
-    -- Hook Hide/Show on the CDM item frame (once per frame, via weak table)
+    -- Install Show/SetShown hooks to re-apply alpha when CDM redisplays the icon
     if not hookedItemFrames[itemFrame] then
         hookedItemFrames[itemFrame] = true
 
-        hooksecurefunc(itemFrame, "Hide", function(self)
-            local fsOk, iFs = pcall(function() return self:GetApplicationsFontString() end)
-            if not fsOk or not iFs then return end
-            local auraId = fontStringAuraMap[iFs]
-            if not auraId then return end
-            local state = CA._activeAuras[auraId]
-            if state and not editModeActive then
-                state.container:Hide()
-            end
-            StopDurationTracking(auraId)
-        end)
-
         hooksecurefunc(itemFrame, "Show", function(self)
-            local fsOk, iFs = pcall(function() return self:GetApplicationsFontString() end)
-            if not fsOk or not iFs then return end
-            local auraId = fontStringAuraMap[iFs]
-            if not auraId then return end
-            local auraDef = CA._registry[auraId]
-            local state = CA._activeAuras[auraId]
-            if state and auraDef then
-                LayoutElements(auraDef, state)
-                state.container:Show()
-            end
             if hiddenItemFrames[self] then
-                self:SetAlpha(0)
-            end
-            -- Capture duration data on show
-            if auraId and durationCDMItems[auraId] then
-                local cvOk, expTime, dur = pcall(self.GetCooldownValues, self)
-                if cvOk and type(expTime) == "number" and not issecretvalue(expTime)
-                   and type(dur) == "number" and not issecretvalue(dur) and dur > 0 then
-                    local aDef = CA._registry[auraId]
-                    local aState = CA._activeAuras[auraId]
-                    if aDef and aState then
-                        StartDurationTracking(aDef, aState, { expirationTime = expTime, duration = dur })
-                    end
-                end
+                self:SetAlphaFromBoolean(false, 1, 0)
             end
         end)
 
-        -- Hook SetShown: Blizzard's CDM uses SetShown(bool) which does NOT invoke
-        -- the Lua Show/Hide hooks. This directly matches what Blizzard calls.
         hooksecurefunc(itemFrame, "SetShown", function(self, shown)
-            local fsOk, iFs = pcall(function() return self:GetApplicationsFontString() end)
-            if not fsOk or not iFs then return end
-            local auraId = fontStringAuraMap[iFs]
-            if not auraId then return end
-            local state = CA._activeAuras[auraId]
-            if not state then return end
-            if shown then
-                local auraDef = CA._registry[auraId]
-                if auraDef then
-                    LayoutElements(auraDef, state)
-                    state.container:Show()
-                end
-                if hiddenItemFrames[self] then
-                    self:SetAlpha(0)
-                end
-                -- Capture duration data on show
-                if durationCDMItems[auraId] then
-                    local cvOk, expTime, dur = pcall(self.GetCooldownValues, self)
-                    if cvOk and type(expTime) == "number" and not issecretvalue(expTime)
-                       and type(dur) == "number" and not issecretvalue(dur) and dur > 0 then
-                        if auraDef then
-                            StartDurationTracking(auraDef, state, { expirationTime = expTime, duration = dur })
-                        end
-                    end
-                end
-            elseif not editModeActive then
-                state.container:Hide()
-                StopDurationTracking(auraId)
+            if shown and hiddenItemFrames[self] then
+                self:SetAlphaFromBoolean(false, 1, 0)
             end
         end)
     end
 
-    -- Sync initial text state from current CDM icon
-    local textOk, text = pcall(function() return fs:GetText() end)
-    if textOk then
-        local displayText = text
-        if not issecretvalue(displayText) and (not displayText or displayText == "") then
-            displayText = "1"
-        end
-        local state = CA._activeAuras[aura.id]
-        if state then
-            for _, elem in ipairs(state.elements) do
-                if elem.type == "text" and elem.def.source == "applications" then
-                    pcall(elem.widget.SetText, elem.widget, displayText)
-                end
-                -- Sync bar initial value
-                if elem.type == "bar" and elem.def.source == "applications" then
-                    if not issecretvalue(text) and (not text or text == "") then
-                        pcall(elem.barFill.SetValue, elem.barFill, 1)
-                    elseif type(text) == "number" or issecretvalue(text) then
-                        pcall(elem.barFill.SetValue, elem.barFill, text)
-                    else
-                        local num = tonumber(text)
-                        if num then
-                            pcall(elem.barFill.SetValue, elem.barFill, num)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Duration CDM borrow: register item frame for auras with source = "duration" elements
-    local hasDurationSource = false
-    for _, elem in ipairs(aura.elements or {}) do
-        if elem.source == "duration" then
-            hasDurationSource = true
-            break
-        end
-    end
-    if hasDurationSource then
-        durationCDMItems[aura.id] = itemFrame
-        -- Capture initial duration data
-        local state = CA._activeAuras[aura.id]
-        if state then
-            local cvOk, expTime, dur = pcall(itemFrame.GetCooldownValues, itemFrame)
-            if cvOk and type(expTime) == "number" and not issecretvalue(expTime)
-               and type(dur) == "number" and not issecretvalue(dur) and dur > 0 then
-                StartDurationTracking(aura, state, { expirationTime = expTime, duration = dur })
-            end
-        end
-    end
-
-    -- Hide CDM icon via alpha if hideFromCDM is enabled
+    -- Apply or remove CDM icon hiding
     local db = GetDB(aura)
     if db and db.enabled and (db.hideFromCDM ~= false) then
-        itemFrame:SetAlpha(0)
+        itemFrame:SetAlphaFromBoolean(false, 1, 0)
         hiddenItemFrames[itemFrame] = aura.id
     elseif hiddenItemFrames[itemFrame] then
-        itemFrame:SetAlpha(1)
+        itemFrame:SetAlphaFromBoolean(true, 1, 0)
         hiddenItemFrames[itemFrame] = nil
     end
 end
@@ -1060,24 +1227,81 @@ end
 InstallMixinHooks = function()
     if cdmBorrow.hookInstalled then return end
 
-    -- Hook RefreshData to catch icon pool recycling (spell changes on a CDM slot)
+    -- Hook SetAuraInstanceInfo to capture auraInstanceID for combat tracking.
+    -- When CDM processes an aura in its untainted context, this fires and gives
+    -- us the non-secret spellID (from cooldownInfo) and the auraInstanceID.
+    local dataMixin = _G.CooldownViewerItemDataMixin
+    if dataMixin and dataMixin.SetAuraInstanceInfo then
+        hooksecurefunc(dataMixin, "SetAuraInstanceInfo", function(self, auraInfo)
+            local ci = self.cooldownInfo
+            if not ci then return end
+            local spellID = ci.spellID
+            if ci.linkedSpellIDs and ci.linkedSpellIDs[1] then
+                spellID = ci.linkedSpellIDs[1]
+            end
+            if not spellID then return end
+
+            local instanceID = auraInfo and auraInfo.auraInstanceID
+            local unit = self.auraDataUnit
+            if not instanceID or not unit then return end
+
+            local auras = CA._classAuras[playerClassToken]
+            if not auras then return end
+            for _, aura in ipairs(auras) do
+                if aura.cdmBorrow then
+                    local cdmId = aura.cdmSpellId or aura.auraSpellId
+                    local auraSpell = auraInfo and auraInfo.spellId
+                    local matchesAuraSpell = false
+                    if auraSpell then
+                        pcall(function()
+                            if not issecretvalue(auraSpell) then
+                                matchesAuraSpell = (auraSpell == aura.auraSpellId)
+                            end
+                        end)
+                    end
+                    if spellID == cdmId or spellID == aura.auraSpellId or matchesAuraSpell then
+                        -- Determine activeSpellId from auraInfo.spellId (actual debuff spell)
+                        local activeSpell = aura.auraSpellId  -- default to primary
+                        if auraInfo and auraInfo.spellId then
+                            pcall(function()
+                                local infoSpell = auraInfo.spellId
+                                if not issecretvalue(infoSpell) then
+                                    if infoSpell == aura.auraSpellId then
+                                        activeSpell = aura.auraSpellId
+                                    elseif aura.linkedSpellIds then
+                                        for _, lid in ipairs(aura.linkedSpellIds) do
+                                            if infoSpell == lid then activeSpell = lid; break end
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                        local tracked = auraTracking[aura.id]
+                        if not tracked or tracked.auraInstanceID ~= instanceID then
+                            auraTracking[aura.id] = { unit = unit, auraInstanceID = instanceID, activeSpellId = activeSpell }
+                            CacheAuraIdentity(unit, aura.id, instanceID, activeSpell)
+                        end
+                        local auraId = aura.id
+                        C_Timer.After(0, function()
+                            local a = CA._registry[auraId]
+                            if a then CA.ScanAura(a) end
+                        end)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+
+    -- Hook RefreshData to catch icon pool recycling (for CDM icon alpha re-find)
     local buffMixin = _G.CooldownViewerBuffIconItemMixin
     if buffMixin and buffMixin.RefreshData then
         hooksecurefunc(buffMixin, "RefreshData", function()
-            -- Defer to avoid re-entrancy during Blizzard's refresh cycle
             C_Timer.After(0, function() RescanForCDMBorrow() end)
         end)
     end
 
-    -- Hook bar mixin RefreshData (CDM bar layout uses a different mixin)
-    local buffBarMixin = _G.CooldownViewerBuffBarItemMixin
-    if buffBarMixin and buffBarMixin.RefreshData then
-        hooksecurefunc(buffBarMixin, "RefreshData", function()
-            C_Timer.After(0, function() RescanForCDMBorrow() end)
-        end)
-    end
-
-    -- Hook OnAuraInstanceInfoCleared if it exists (aura-gone signal)
+    -- Hook OnAuraInstanceInfoCleared (for CDM icon alpha re-find)
     local baseMixin = _G.CooldownViewerItemMixin
     if baseMixin and baseMixin.OnAuraInstanceInfoCleared then
         hooksecurefunc(baseMixin, "OnAuraInstanceInfoCleared", function()
@@ -1085,13 +1309,15 @@ InstallMixinHooks = function()
         end)
     end
 
+    -- CooldownFrame_Set/Clear hooks removed — duration comes from DurationObject API
+
     cdmBorrow.hookInstalled = true
 end
 
 local function RestoreHiddenCDMFrames(auraId)
     for frame, id in pairs(hiddenItemFrames) do
         if id == auraId then
-            frame:SetAlpha(1)
+            frame:SetAlphaFromBoolean(true, 1, 0)
             hiddenItemFrames[frame] = nil
         end
     end
@@ -1107,28 +1333,44 @@ RescanForCDMBorrow = function()
             if state then
                 local db = GetDB(aura)
                 if not db or not db.enabled then
-                    state.container:Hide()
                     RestoreHiddenCDMFrames(aura.id)
-                elseif not UnitExists(aura.unit) then
-                    if not editModeActive then state.container:Hide() end
-                else
+                elseif UnitExists(aura.unit) then
                     local cdmId = aura.cdmSpellId or aura.auraSpellId
                     local itemFrame = FindCDMItemForSpell(cdmId)
-                    -- Fallback: try auraSpellId if cdmSpellId didn't match
                     if not itemFrame and aura.cdmSpellId and aura.auraSpellId then
                         itemFrame = FindCDMItemForSpell(aura.auraSpellId)
                     end
                     if itemFrame then
-                        BindCDMBorrowTarget(itemFrame, aura)
-                        local showOk, isShown = pcall(itemFrame.IsShown, itemFrame)
-                        if showOk and isShown then
-                            LayoutElements(aura, state)
-                            state.container:Show()
-                        elseif not editModeActive then
-                            state.container:Hide()
+                        -- Capture identity (auraInstanceID + unit + activeSpellId) for DurationObject tracking
+                        local iid = itemFrame.auraInstanceID
+                        local iunit = itemFrame.auraDataUnit
+                        if iid and iunit then
+                            -- Validate CDM frame's auraInstanceID before storing (prevents stale overwrites)
+                            local vOk, vDur = pcall(C_UnitAuras.GetAuraDuration, iunit, iid)
+                            if vOk and vDur then
+                                local vz, viz = pcall(vDur.IsZero, vDur)
+                                if not (vz and not issecretvalue(viz) and viz) then
+                                    local activeSpell = aura.auraSpellId
+                                    pcall(function()
+                                        local fSpell = itemFrame.auraSpellID
+                                        if fSpell and not issecretvalue(fSpell) and aura.linkedSpellIds then
+                                            for _, lid in ipairs(aura.linkedSpellIds) do
+                                                if fSpell == lid then activeSpell = lid; break end
+                                            end
+                                        end
+                                    end)
+                                    local tracked = auraTracking[aura.id]
+                                    if not tracked or tracked.auraInstanceID ~= iid then
+                                        auraTracking[aura.id] = { unit = iunit, auraInstanceID = iid, activeSpellId = activeSpell }
+                                        CacheAuraIdentity(iunit, aura.id, iid, activeSpell)
+                                    end
+                                end
+                            end
                         end
-                    elseif not editModeActive then
-                        state.container:Hide()
+                        BindCDMBorrowTarget(itemFrame, aura)
+                    else
+                        -- Don't clear auraTracking — let ScanAura's GetAuraDuration handle stale instances.
+                        -- CDM icon may be gone due to target switch, but aura may still exist on original target.
                         RestoreHiddenCDMFrames(aura.id)
                     end
                 end
@@ -1273,14 +1515,15 @@ local function InitializeEditMode()
                     ApplyBarStyling(aura, st)
                     LayoutElements(aura, st)
                     st.container:Show()
-                    -- Set preview for elements
+                    -- Set preview for elements and hide CooldownFrame fallback
                     for _, elem in ipairs(st.elements) do
+                        if elem._cdFrame then elem._cdFrame:Hide() end
                         if elem.type == "text" and elem.def.source == "applications" then
                             pcall(elem.widget.SetText, elem.widget, "#")
                             pcall(elem.widget.Show, elem.widget)
                         end
                         if elem.type == "text" and elem.def.source == "duration" then
-                            pcall(elem.widget.SetText, elem.widget, "#")
+                            pcall(elem.widget.SetText, elem.widget, "8.3")
                             pcall(elem.widget.Show, elem.widget)
                         end
                         -- Bar preview: ~60% fill
@@ -1289,13 +1532,11 @@ local function InitializeEditMode()
                             pcall(elem.barFill.SetValue, elem.barFill, math.floor(maxVal * 0.6))
                         end
                         if elem.type == "bar" and elem.def.source == "duration" then
-                            local maxVal = elem.def.maxValue or 18
+                            local maxVal = 20  -- preview value for edit mode
                             pcall(elem.barFill.SetMinMaxValues, elem.barFill, 0, maxVal)
                             pcall(elem.barFill.SetValue, elem.barFill, math.floor(maxVal * 0.6))
                         end
                     end
-                    -- Stop any active duration tracking while in Edit Mode
-                    StopDurationTracking(aura.id)
                 end
             end
         end
@@ -1323,6 +1564,8 @@ local function InitializeEditMode()
                         pcall(elem.barFill.SetValue, elem.barFill, 0)
                     end
                 end
+                -- Stop any active aura display before rescan
+                StopAuraDisplay(aura.id)
             end
             if CA._activeAuras[aura.id] then
                 CA.ScanAura(aura)
@@ -1369,47 +1612,165 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
                 InitializeEditMode()
             end)
 
-            -- CDM Borrow: install mixin hooks and do initial scan after CDM loads
+            -- Install CDM mixin hooks and do initial scans after CDM loads
             C_Timer.After(1.0, function()
                 InstallMixinHooks()
+                ScanAllAuras()
                 RescanForCDMBorrow()
             end)
         else
             RebuildAll()
-            C_Timer.After(0.5, function() RescanForCDMBorrow() end)
+            C_Timer.After(0.5, function()
+                ScanAllAuras()
+                RescanForCDMBorrow()
+            end)
         end
 
     elseif event == "UNIT_AURA" then
-        -- CDM refreshes its icons on UNIT_AURA; our RefreshData mixin hook
-        -- catches that. This rescan is a safety net.
-        -- Filter to units actually tracked by registered auras —
-        -- unfiltered UNIT_AURA fires dozens of times per second in raids.
-        local unit = ...
+        local unit, updateInfo = ...
         if CA._trackedUnits[unit] then
-            RescanForCDMBorrow()
-            ScanAllAurasForUnit(unit)
+            -- Check for removal of tracked instances (NeverSecretContents = true)
+            if updateInfo and updateInfo.removedAuraInstanceIDs then
+                for _, removedID in ipairs(updateInfo.removedAuraInstanceIDs) do
+                    for auraId, tracked in pairs(auraTracking) do
+                        if tracked.auraInstanceID == removedID and tracked.unit == unit then
+                            auraTracking[auraId] = nil
+                            break
+                        end
+                    end
+                    -- Invalidate GUID cache entries referencing the removed instance
+                    for guid, cached in pairs(guidCache) do
+                        if cached.auraInstanceID == removedID then
+                            guidCache[guid] = nil
+                            break
+                        end
+                    end
+                end
+            end
+
+            -- Detect pandemic refresh: re-trigger CooldownFrame setup with fresh DurationObject
+            if updateInfo and updateInfo.updatedAuraInstanceIDs then
+                local auras = CA._classAuras[playerClassToken]
+                if auras then
+                    for _, aura in ipairs(auras) do
+                        local tracked = auraTracking[aura.id]
+                        if tracked and tracked.unit == unit then
+                            for _, updatedID in ipairs(updateInfo.updatedAuraInstanceIDs) do
+                                if updatedID == tracked.auraInstanceID then
+                                    CA.ScanAura(aura)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- === TMW pattern: process addedAuras for instant identity capture ===
+            -- spellId and auraInstanceID are identity fields in the event payload (non-secret).
+            -- pcall ensures zero regression if they happen to be secret in some edge case.
+            if updateInfo and updateInfo.addedAuras then
+                for _, addedAura in ipairs(updateInfo.addedAuras) do
+                    pcall(function()
+                        local sid = addedAura.spellId
+                        if not sid or issecretvalue(sid) then return end
+                        local iid = addedAura.auraInstanceID
+                        if not iid or issecretvalue(iid) then return end
+
+                        local matchedAura = spellToAura[sid]  -- O(1) lookup
+                        if matchedAura and matchedAura.unit == unit and CA._activeAuras[matchedAura.id] then
+                            auraTracking[matchedAura.id] = {
+                                unit = unit,
+                                auraInstanceID = iid,
+                                activeSpellId = sid,
+                            }
+                            CacheAuraIdentity(unit, matchedAura.id, iid, sid)
+                        end
+                    end)
+                end
+            end
+
+            -- === GUID cache cross-reference for isFullUpdate (when spellId is secret) ===
+            if updateInfo.isFullUpdate and updateInfo.addedAuras then
+                local tok2, uguid = pcall(UnitGUID, unit)
+                if tok2 and uguid and not issecretvalue(uguid) then
+                    local auras2 = CA._classAuras[playerClassToken]
+                    if auras2 then
+                        for _, aura in ipairs(auras2) do
+                            if aura.unit == unit and CA._activeAuras[aura.id] and not auraTracking[aura.id] then
+                                local cached = guidCache[uguid]
+                                if cached and cached.auraId == aura.id then
+                                    for _, addedAura in ipairs(updateInfo.addedAuras) do
+                                        pcall(function()
+                                            local iid = addedAura.auraInstanceID
+                                            if not issecretvalue(iid) and iid == cached.auraInstanceID then
+                                                auraTracking[aura.id] = {
+                                                    unit = unit,
+                                                    auraInstanceID = cached.auraInstanceID,
+                                                    activeSpellId = cached.activeSpellId,
+                                                }
+                                            end
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            ScanAllAurasForUnit(unit)   -- Direct scan + DurationObject tracking
+            RescanForCDMBorrow()        -- CDM icon alpha + instanceID capture
+            C_Timer.After(0, function() ScanAllAurasForUnit(unit) end)
         end
 
     elseif event == "PLAYER_TARGET_CHANGED" then
-        -- Target change causes CDM to show/hide different debuffs.
-        -- Staggered rescans: PLAYER_TARGET_CHANGED fires before CDM processes
-        -- UNIT_TARGET, so the immediate scan may see stale CDM state.
-        -- The SetShown hook (above) should handle most cases instantly, but
-        -- these deferred rescans are a cheap safety net.
+        -- GUID cache: instant re-acquisition for previously-seen targets
+        local auras = CA._classAuras[playerClassToken]
+        if auras then
+            local tok, tguid = pcall(UnitGUID, "target")
+            if tok and tguid and not issecretvalue(tguid) then
+                for _, aura in ipairs(auras) do
+                    if aura.unit == "target" and CA._activeAuras[aura.id] then
+                        local cached = guidCache[tguid]
+                        if cached and cached.auraId == aura.id then
+                            local dok, durObj = pcall(C_UnitAuras.GetAuraDuration, "target", cached.auraInstanceID)
+                            if dok and durObj then
+                                local zk, iz = pcall(durObj.IsZero, durObj)
+                                if not (zk and not issecretvalue(iz) and iz) then
+                                    -- Cache hit: populate tracking immediately
+                                    auraTracking[aura.id] = {
+                                        unit = "target",
+                                        auraInstanceID = cached.auraInstanceID,
+                                        activeSpellId = cached.activeSpellId,
+                                    }
+                                else
+                                    guidCache[tguid] = nil  -- expired
+                                end
+                            else
+                                guidCache[tguid] = nil  -- invalid
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        ScanAllAuras()
         RescanForCDMBorrow()
-        ScanAllAurasForUnit("target")
         C_Timer.After(0, function()
+            ScanAllAuras()
             RescanForCDMBorrow()
-            ScanAllAurasForUnit("target")
         end)
         C_Timer.After(0.1, function() RescanForCDMBorrow() end)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Leaving combat: rescan in case CDM state changed while restricted
-        RescanForCDMBorrow()
+        -- Leaving combat: rescan auras and CDM alpha state
         ScanAllAuras()
+        RescanForCDMBorrow()
 
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+        wipe(guidCache)
         if not rebuildPending then
             rebuildPending = true
             C_Timer.After(0.2, function()
