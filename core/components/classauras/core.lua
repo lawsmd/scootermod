@@ -738,6 +738,17 @@ local function ApplyStyling(aura)
     local scale = (db.scale or 100) / 100
     state.container:SetScale(math.max(scale, 0.25))
 
+    -- Opacity (priority: combat > target > out-of-combat)
+    local opacityValue = 100
+    if InCombatLockdown() then
+        opacityValue = tonumber(db.opacityInCombat) or 100
+    elseif UnitExists("target") then
+        opacityValue = tonumber(db.opacityWithTarget) or 100
+    else
+        opacityValue = tonumber(db.opacityOutOfCombat) or 100
+    end
+    state.container:SetAlpha(opacityValue / 100)
+
     -- Icon mode
     ApplyIconMode(aura, state)
 

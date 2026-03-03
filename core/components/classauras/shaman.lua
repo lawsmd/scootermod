@@ -72,6 +72,9 @@ CA.RegisterAuras("SHAMAN", {
             barPosition             = { type = "addon", default = "RIGHT" },
             barOffsetX              = { type = "addon", default = 0 },
             barOffsetY              = { type = "addon", default = 0 },
+            opacityInCombat         = { type = "addon", default = 100 },
+            opacityWithTarget       = { type = "addon", default = 100 },
+            opacityOutOfCombat      = { type = "addon", default = 100 },
         },
     },
 })

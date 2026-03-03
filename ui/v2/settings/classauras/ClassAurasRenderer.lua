@@ -612,6 +612,41 @@ local function RenderClassAuras(panel, scrollContent, classToken)
                     end
                 end
 
+                -- Tab 5: Visibility (always present)
+                table.insert(tabs, { key = "visibility", label = "Visibility" })
+                buildContent.visibility = function(tabContent, tabBuilder)
+                    tabBuilder:AddDescription(
+                        "Priority: With Target > In Combat > Out of Combat",
+                        { color = {1, 0.82, 0}, fontSize = 13, topPadding = 4, bottomPadding = 2 }
+                    )
+
+                    tabBuilder:AddSlider({
+                        label = "Opacity With Target",
+                        min = 0, max = 100, step = 1,
+                        get = function() return getSetting("opacityWithTarget") or 100 end,
+                        set = function(v) h.setAndApply("opacityWithTarget", v) end,
+                        minLabel = "Hidden", maxLabel = "100%",
+                    })
+
+                    tabBuilder:AddSlider({
+                        label = "Opacity in Combat",
+                        min = 0, max = 100, step = 1,
+                        get = function() return getSetting("opacityInCombat") or 100 end,
+                        set = function(v) h.setAndApply("opacityInCombat", v) end,
+                        minLabel = "Hidden", maxLabel = "100%",
+                    })
+
+                    tabBuilder:AddSlider({
+                        label = "Opacity Out of Combat",
+                        min = 0, max = 100, step = 1,
+                        get = function() return getSetting("opacityOutOfCombat") or 100 end,
+                        set = function(v) h.setAndApply("opacityOutOfCombat", v) end,
+                        minLabel = "Hidden", maxLabel = "100%",
+                    })
+
+                    tabBuilder:Finalize()
+                end
+
                 inner:AddTabbedSection({
                     tabs = tabs,
                     componentId = componentId,
