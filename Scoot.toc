@@ -92,6 +92,7 @@ core/components/unitframes/totscale.lua
 core/components/unitframes/offscreenunlock.lua
 core/components/minimap/minimap.lua
 core/components/minimap/offscreenunlock.lua
+core/components/minimap/overlay.lua
 core/components/tooltip.lua
 core/components/notes.lua
 core/qol.lua
@@ -123,6 +124,7 @@ ui/v2/controls/BarBorderPicker.lua
 ui/v2/controls/DualBarStyleRow.lua
 ui/v2/controls/Dialog.lua
 ui/v2/controls/Preview.lua
+ui/v2/controls/ThreeColumnChecklist.lua
 ui/v2/controls/MultiLineEditBox.lua
 ui/v2/controls/SingleLineEditBox.lua
 ui/v2/Window.lua

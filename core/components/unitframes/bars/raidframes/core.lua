@@ -329,6 +329,13 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                 -- atomically in the same frame (no timing gap = no flicker).
                 local st = getState(self)
                 if not st or not st.overlayActive then return end
+                -- Re-raise DispelOverlay above healthBar on every health update.
+                -- Provides continuous enforcement during combat when ensureHealthOverlay
+                -- is unreachable (InCombatLockdown blocks deferred UpdateAll/SetUnit).
+                local dov = st.dispelOverlayRef
+                if dov and dov:IsShown() then
+                    dov:Raise()
+                end
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "raid") or nil
@@ -414,6 +421,21 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
         if okD and dispelOverlay and dispelOverlay.Raise then
             pcall(dispelOverlay.Raise, dispelOverlay)
+        end
+
+        -- Cache DispelOverlay ref for fast access in SetValue hook
+        if state and okD and dispelOverlay then
+            state.dispelOverlayRef = dispelOverlay
+        end
+
+        -- One-time per-frame: Hook DispelOverlay:Show() to re-Raise immediately.
+        -- Show/Hide cycles in CompactUnitFrame_SetDispelOverlayAura reset stacking
+        -- order among useParentLevel siblings.
+        if state and not state.dispelShowHooked and okD and dispelOverlay then
+            state.dispelShowHooked = true
+            hooksecurefunc(dispelOverlay, "Show", function(self)
+                self:Raise()
+            end)
         end
     end
 

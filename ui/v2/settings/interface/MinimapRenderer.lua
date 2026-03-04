@@ -692,6 +692,7 @@ function Minimap.Render(panel, scrollContent)
             inner:AddTabbedSection({
                 tabs = {
                     { key = "addonButtons", label = "Addon Buttons" },
+                    { key = "mail", label = "Mail" },
                     { key = "tracking", label = "Tracking" },
                 },
                 componentId = "minimapStyle",
@@ -828,6 +829,77 @@ function Minimap.Render(panel, scrollContent)
                     end,
 
                     ----------------------------------------------------------------
+                    -- Tab: Mail
+                    ----------------------------------------------------------------
+                    mail = function(tabContent, tabBuilder)
+                        tabBuilder:AddToggle({
+                            label = "Enable Mail Notification Button",
+                            description = "Show a mail notification button near the minimap when you have unread mail. Useful when the dock is hidden.",
+                            get = function()
+                                return getSetting("mailButtonEnabled") or false
+                            end,
+                            set = function(v)
+                                setSetting("mailButtonEnabled", v)
+                                -- Re-render to update disabled states
+                                C_Timer.After(0.05, function()
+                                    if panel and Minimap.Render then
+                                        Minimap.Render(panel, scrollContent)
+                                    end
+                                end)
+                            end,
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Button Position",
+                            description = "Where to place the mail button relative to the minimap.",
+                            values = anchorOptions,
+                            order = anchorOrder,
+                            get = function()
+                                return getSetting("mailButtonAnchor") or "TOPRIGHT"
+                            end,
+                            set = function(v)
+                                setSetting("mailButtonAnchor", v)
+                            end,
+                            isDisabled = function()
+                                return not getSetting("mailButtonEnabled")
+                            end,
+                        })
+
+                        tabBuilder:AddDualSlider({
+                            label = "Button Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    return getSetting("mailButtonOffsetX") or 0
+                                end,
+                                set = function(v)
+                                    setSetting("mailButtonOffsetX", v)
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100,
+                                max = 100,
+                                step = 1,
+                                get = function()
+                                    return getSetting("mailButtonOffsetY") or 0
+                                end,
+                                set = function(v)
+                                    setSetting("mailButtonOffsetY", v)
+                                end,
+                            },
+                            isDisabled = function()
+                                return not getSetting("mailButtonEnabled")
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+
+                    ----------------------------------------------------------------
                     -- Tab: Tracking
                     ----------------------------------------------------------------
                     tracking = function(tabContent, tabBuilder)
@@ -922,6 +994,166 @@ function Minimap.Render(panel, scrollContent)
                 set = function(v)
                     setSetting("allowOffScreenDragging", v)
                 end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
+    ----------------------------------------------------------------------------
+    -- Section 5: Minimap Overlay System
+    ----------------------------------------------------------------------------
+
+    local overlayButtonPositionValues = {
+        TOPLEFT = "Top Left",
+        TOP = "Top",
+        TOPRIGHT = "Top Right",
+        LEFT = "Left",
+        RIGHT = "Right",
+        BOTTOMLEFT = "Bottom Left",
+        BOTTOM = "Bottom",
+        BOTTOMRIGHT = "Bottom Right",
+    }
+    local overlayButtonPositionOrder = {
+        "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
+    }
+
+    builder:AddCollapsibleSection({
+        title = "Minimap Overlay System",
+        componentId = "minimapStyle",
+        sectionKey = "minimapOverlay",
+        defaultExpanded = false,
+        infoIcon = {
+            tooltipTitle = "Minimap Overlay",
+            tooltipText = "Centers the minimap on your screen with terrain hidden, so the game world shows through while tracking blips, nodes, and your player arrow stay visible. Great for node hunting while flying.\n\nBackdrop controls the dark circular backing behind blips (higher = more opaque, lower = more transparent).\n\nNodes controls blip and node brightness.",
+        },
+        buildContent = function(contentFrame, inner)
+
+            -- Master toggle (emphasized)
+            inner:AddToggle({
+                label = "Enable Minimap Overlay",
+                description = "Show a toggle button on the minimap to activate the centered overlay.",
+                emphasized = true,
+                get = function()
+                    return getSetting("overlayEnabled") or false
+                end,
+                set = function(v)
+                    setSetting("overlayEnabled", v)
+                    C_Timer.After(0.05, function()
+                        if panel and Minimap.Render then
+                            Minimap.Render(panel, scrollContent)
+                        end
+                    end)
+                end,
+            })
+
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "overlaySizing", label = "Sizing" },
+                    { key = "overlayVisibility", label = "Visibility" },
+                    { key = "overlayNodes", label = "Nodes" },
+                    { key = "overlayButton", label = "Minimap Button" },
+                },
+                componentId = "minimapStyle",
+                sectionKey = "overlayTabs",
+                buildContent = {
+                    -- Tab: Sizing
+                    overlaySizing = function(tabContent, tabBuilder)
+                        tabBuilder:AddSlider({
+                            label = "Overlay Scale",
+                            description = "Size of the centered minimap overlay.",
+                            min = 50, max = 300, step = 10,
+                            get = function()
+                                return math.floor((getSetting("overlayScale") or 1.0) * 100)
+                            end,
+                            set = function(v)
+                                setSetting("overlayScale", v / 100)
+                            end,
+                            minLabel = "50%", maxLabel = "300%",
+                            isDisabled = function()
+                                return not getSetting("overlayEnabled")
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+
+                    -- Tab: Visibility
+                    overlayVisibility = function(tabContent, tabBuilder)
+                        tabBuilder:AddToggle({
+                            label = "Hide Overlay During Combat",
+                            description = "Automatically deactivate the overlay when entering combat and restore it after.",
+                            get = function()
+                                return getSetting("overlayCombatHide")
+                            end,
+                            set = function(v)
+                                setSetting("overlayCombatHide", v)
+                            end,
+                            isDisabled = function()
+                                return not getSetting("overlayEnabled")
+                            end,
+                        })
+
+                        tabBuilder:AddDualSlider({
+                            label = "Opacity",
+                            sliderA = {
+                                axisLabel = "Backdrop",
+                                min = 0, max = 100, step = 5,
+                                get = function()
+                                    return math.floor((1 - (getSetting("overlayMapOpacity") or 0.85)) * 100)
+                                end,
+                                set = function(v)
+                                    setSetting("overlayMapOpacity", 1 - (v / 100))
+                                end,
+                                minLabel = "0%", maxLabel = "100%",
+                            },
+                            sliderB = {
+                                axisLabel = "Nodes",
+                                min = 0, max = 100, step = 5,
+                                get = function()
+                                    return math.floor((getSetting("overlayNodesOpacity") or 1.0) * 100)
+                                end,
+                                set = function(v)
+                                    setSetting("overlayNodesOpacity", v / 100)
+                                end,
+                                minLabel = "0%", maxLabel = "100%",
+                            },
+                            isDisabled = function()
+                                return not getSetting("overlayEnabled")
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+
+                    -- Tab: Nodes
+                    overlayNodes = function(tabContent, tabBuilder)
+                        tabBuilder:AddDescription("Coming Soon \226\128\148 All minimap tracking nodes are visible by default when the overlay is active. Per-node type filtering will be available in a future update.")
+
+                        tabBuilder:Finalize()
+                    end,
+
+                    -- Tab: Minimap Button
+                    overlayButton = function(tabContent, tabBuilder)
+                        tabBuilder:AddSelector({
+                            label = "Button Position",
+                            description = "Where to place the overlay toggle button relative to the minimap.",
+                            values = overlayButtonPositionValues,
+                            order = overlayButtonPositionOrder,
+                            get = function()
+                                return getSetting("overlayButtonPosition") or "TOPRIGHT"
+                            end,
+                            set = function(v)
+                                setSetting("overlayButtonPosition", v)
+                            end,
+                            isDisabled = function()
+                                return not getSetting("overlayEnabled")
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
             })
 
             inner:Finalize()

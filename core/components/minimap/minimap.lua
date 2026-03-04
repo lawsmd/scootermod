@@ -33,6 +33,10 @@ local buttonShowHooks = {}  -- Track which buttons have Show hooks installed
 -- Tracking button state
 local trackingButtonFrame = nil
 
+-- Mail button state
+local mailButtonFrame = nil
+local mailEventFrame = nil
+
 -- Constants
 local PVP_COLORS = {
     sanctuary = {0.41, 0.8, 0.94, 1},  -- Light blue
@@ -392,15 +396,17 @@ local function CreateBorderOverlay()
     return border
 end
 
-local function UpdateBorderOverlay(db)
+local function UpdateBorderOverlay(db, forceShow)
     local overlays = ensureOverlayTable()
     if not overlays then return end
 
     local minimap = _G.Minimap
     if not minimap then return end
 
-    -- Only show border when square shape AND borderEnabled
-    local showBorder = db and db.mapShape == "square" and db.borderEnabled
+    -- Only show border when square shape AND borderEnabled AND overlay not active
+    -- forceShow bypasses overlayActive check (used when overlay is visually stashed but db.overlayActive still true)
+    local overlayActive = not forceShow and db and db.overlayEnabled and db.overlayActive
+    local showBorder = db and db.mapShape == "square" and db.borderEnabled and not overlayActive
 
     if not showBorder then
         if overlays.border then
@@ -1725,6 +1731,89 @@ local function ApplyTrackingButtonStyle(db)
 end
 
 --------------------------------------------------------------------------------
+-- Custom Mail Notification Button
+--------------------------------------------------------------------------------
+
+local function CreateMailButton()
+    if mailButtonFrame then
+        return mailButtonFrame
+    end
+
+    local btn = CreateFrame("Button", "ScootMailButton", UIParent)
+    btn:SetSize(24, 24)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+
+    -- Mail icon (Blizzard mail atlas), desaturated white
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAtlas("ui-hud-minimap-mail-up")
+    icon:SetSize(24, 24)
+    icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    icon:SetDesaturated(true)
+    icon:SetVertexColor(1, 1, 1, 1)
+    btn.icon = icon
+
+    -- Tooltip (replicates Blizzard's MinimapMailFrameUpdate pattern)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        local senders = { GetLatestThreeSenders() }
+        local headerText = #senders >= 1 and HAVE_MAIL_FROM or HAVE_MAIL
+        FormatUnreadMailTooltip(GameTooltip, headerText, senders)
+        GameTooltip:Show()
+    end)
+
+    btn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    mailButtonFrame = btn
+    return btn
+end
+
+local function ApplyMailButtonStyle(db)
+    if not db or not db.mailButtonEnabled then
+        if mailButtonFrame then
+            mailButtonFrame:Hide()
+        end
+        return
+    end
+
+    -- Check if player has mail (pcall for secret safety)
+    local ok, hasMail = pcall(HasNewMail)
+    if not ok or not hasMail then
+        if mailButtonFrame then
+            mailButtonFrame:Hide()
+        end
+        return
+    end
+
+    local btn = CreateMailButton()
+    local minimap = _G.Minimap
+    if not minimap then return end
+
+    local anchor = db.mailButtonAnchor or "TOPRIGHT"
+    local offsetX = tonumber(db.mailButtonOffsetX) or 0
+    local offsetY = tonumber(db.mailButtonOffsetY) or 0
+
+    btn:ClearAllPoints()
+    btn:SetPoint(anchor, minimap, anchor, offsetX, offsetY)
+    btn:Show()
+end
+
+local function EnsureMailEventHandler()
+    if mailEventFrame then return end
+
+    mailEventFrame = CreateFrame("Frame")
+    mailEventFrame:RegisterEvent("UPDATE_PENDING_MAIL")
+    mailEventFrame:SetScript("OnEvent", function(self, event)
+        local db = getMinimapDB()
+        if db then
+            ApplyMailButtonStyle(db)
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
 -- HybridMinimap Handler
 --------------------------------------------------------------------------------
 
@@ -1797,6 +1886,15 @@ local function ApplyMinimapStyling(self)
 
     -- Apply custom tracking button
     ApplyTrackingButtonStyle(db)
+
+    -- Apply custom mail button
+    EnsureMailEventHandler()
+    ApplyMailButtonStyle(db)
+
+    -- Apply minimap overlay
+    if addon.ApplyMinimapOverlay then
+        addon.ApplyMinimapOverlay(db)
+    end
 
     -- Apply off-screen dragging unlock
     if addon.ApplyMinimapOffscreenUnlock then
@@ -1883,6 +1981,21 @@ addon:RegisterComponentInitializer(function(self)
             trackingButtonOffsetX = { type = "addon", default = 0 },
             trackingButtonOffsetY = { type = "addon", default = 0 },
 
+            -- Mail Button
+            mailButtonEnabled = { type = "addon", default = false },
+            mailButtonAnchor = { type = "addon", default = "TOPRIGHT" },
+            mailButtonOffsetX = { type = "addon", default = 0 },
+            mailButtonOffsetY = { type = "addon", default = 0 },
+
+            -- Minimap Overlay
+            overlayEnabled = { type = "addon", default = false },
+            overlayActive = { type = "addon", default = false },
+            overlayScale = { type = "addon", default = 1.0 },
+            overlayMapOpacity = { type = "addon", default = 0.85 },
+            overlayNodesOpacity = { type = "addon", default = 1.0 },
+            overlayCombatHide = { type = "addon", default = true },
+            overlayButtonPosition = { type = "addon", default = "TOPRIGHT" },
+
             -- Off-Screen Dragging
             allowOffScreenDragging = { type = "addon", default = false },
         },
@@ -1897,6 +2010,45 @@ addon.MinimapAnchorOptions = ANCHOR_OPTIONS
 addon.MinimapAnchorOrder = ANCHOR_ORDER
 addon.MinimapPositionOptions = POSITION_OPTIONS
 addon.MinimapPositionOrder = POSITION_ORDER
+
+-- Export border visibility control for overlay system
+function addon.SetMinimapBorderHidden(hidden)
+    local overlays = ensureOverlayTable()
+    if not overlays then return end
+    if hidden then
+        if overlays.border then
+            overlays.border:Hide()
+        end
+    else
+        local db = getMinimapDB()
+        if db then
+            UpdateBorderOverlay(db, true)
+        end
+    end
+end
+
+-- Hide/show overlay children (clock, FPS, addon buttons) during overlay mode.
+-- Zone text + coords remain visible.
+function addon.SetMinimapOverlayChildrenHidden(hidden)
+    local overlays = ensureOverlayTable()
+    if hidden then
+        if overlays and overlays.clock then overlays.clock:Hide() end
+        if overlays and overlays.systemData then overlays.systemData:Hide() end
+        if buttonContainerFrame then buttonContainerFrame:Hide() end
+        if trackingButtonFrame then trackingButtonFrame:Hide() end
+        if mailButtonFrame then mailButtonFrame:Hide() end
+    else
+        -- Restore by re-applying styles (respects user settings)
+        local db = getMinimapDB()
+        if db then
+            ApplyClockStyle(db)
+            ApplySystemDataStyle(db)
+            ApplyButtonContainerStyle(db)
+            ApplyTrackingButtonStyle(db)
+            ApplyMailButtonStyle(db)
+        end
+    end
+end
 
 --------------------------------------------------------------------------------
 -- Edit Mode Size Helpers (for UI)
