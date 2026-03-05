@@ -183,6 +183,14 @@ Helpers.textColorPowerValues = {
 }
 Helpers.textColorPowerOrder = { "default", "class", "classPower", "custom" }
 
+do
+    local _, playerClass = UnitClass("player")
+    if playerClass == "DEATHKNIGHT" then
+        Helpers.textColorPowerValues.dkSpec = "Death Knight Spec"
+        table.insert(Helpers.textColorPowerOrder, #Helpers.textColorPowerOrder, "dkSpec")
+    end
+end
+
 -- Visibility mode options
 Helpers.visibilityValues = {
     show = "Always Show",

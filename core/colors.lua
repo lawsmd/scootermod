@@ -55,6 +55,19 @@ addon.PowerColors = {
 	[18] = { r = 1.00, g = 0.61176470588235, b = 0.00 }, -- PAIN
 }
 
+addon.DKSpecColors = {
+    [1] = { r = 0.77, g = 0.12, b = 0.23 }, -- Blood
+    [2] = { r = 0.41, g = 0.80, b = 0.94 }, -- Frost
+    [3] = { r = 0.55, g = 0.78, b = 0.25 }, -- Unholy
+}
+
+function addon.GetDKSpecColorRGB()
+    local specIndex = GetSpecialization and GetSpecialization()
+    local c = specIndex and addon.DKSpecColors[specIndex]
+    if c then return c.r, c.g, c.b end
+    return 1, 1, 1
+end
+
 function addon.GetDefaultHealthColorRGB()
 	local c = addon.HealthDefaultColor
 	if c and c.r and c.g and c.b then return c.r, c.g, c.b end

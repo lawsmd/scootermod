@@ -1106,6 +1106,11 @@ do
 				end
 				c = {pr or 1, pg or 1, pb or 1, 1}
 			end
+		elseif colorMode == "dkSpec" then
+			if addon.GetDKSpecColorRGB then
+				local dr, dg, db = addon.GetDKSpecColorRGB()
+				c = {dr or 1, dg or 1, db or 1, 1}
+			end
 		elseif colorMode == "class" then
 			local cr, cg, cb = addon.GetClassColorRGB("player")
 			c = {cr or 1, cg or 1, cb or 1, 1}

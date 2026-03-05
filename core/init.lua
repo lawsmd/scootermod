@@ -913,6 +913,7 @@ function addon:PLAYER_SPECIALIZATION_CHANGED(event, unit)
     if self.Rules and self.Rules.OnPlayerSpecChanged then
         self.Rules:OnPlayerSpecChanged()
     end
+    self:ApplyStyles()
 end
 
 -- Attach copy button to TableAttributeDisplay when debug tools load

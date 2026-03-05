@@ -325,6 +325,14 @@ UF.fontColorPowerValues = {
 }
 UF.fontColorPowerOrder = { "default", "class", "classPower", "custom" }
 
+do
+    local _, playerClass = UnitClass("player")
+    if playerClass == "DEATHKNIGHT" then
+        UF.fontColorPowerValues.dkSpec = "Death Knight Spec"
+        table.insert(UF.fontColorPowerOrder, #UF.fontColorPowerOrder, "dkSpec")
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Build Bar Border Options from addon
 --------------------------------------------------------------------------------

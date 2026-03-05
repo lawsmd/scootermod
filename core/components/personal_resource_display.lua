@@ -568,6 +568,9 @@ local function resolveColorMode(colorMode, rawColor, overlayType)
     elseif colorMode == "classPower" and overlayType == "power" then
         local pr, pg, pb = addon.GetPowerColorRGB("player")
         return {pr or 1, pg or 1, pb or 1, 1}
+    elseif colorMode == "dkSpec" and overlayType == "power" then
+        local dr, dg, db = addon.GetDKSpecColorRGB()
+        return {dr or 1, dg or 1, db or 1, 1}
     elseif colorMode == "custom" then
         return rawColor or {1, 1, 1, 1}
     else
