@@ -16,6 +16,7 @@ CA._activeAuras = {}    -- [auraId] = { container, elements, component }
 CA._trackedUnits = {}   -- [unitToken] = true — built from registered auras
 
 local spellToAura = {}  -- [spellId] = auraDef — O(1) reverse lookup for UNIT_AURA addedAuras matching
+local nameToAura = {}   -- [lowerName] = auraDef — O(1) name-based fallback when spellId is secret
 
 local editModeActive = false
 
@@ -33,6 +34,10 @@ local hiddenItemFrames = setmetatable({}, { __mode = "k" })
 -- Populated by FindAuraOnUnit (direct scan), CDM SetAuraInstanceInfo hook, and RescanForCDMBorrow.
 -- OnUpdate uses C_UnitAuras.GetAuraDuration(unit, auraInstanceID) to get live DurationObject each frame.
 local auraTracking = {}
+
+-- Deferred retry gate: prevents duplicate timers per aura. Separate from state
+-- so StopAuraDisplay can't inadvertently reset it (which caused infinite loops in v1).
+local pendingRetries = {}  -- [auraId] = true
 
 -- GUID-based identity cache: persists across target switches for instant re-acquisition.
 -- Populated by any successful aura identification (direct scan, CDM hook, addedAuras, rescan).
@@ -73,6 +78,19 @@ function CA.RegisterAuras(classToken, auras)
         if aura.linkedSpellIds then
             for _, linkedId in ipairs(aura.linkedSpellIds) do
                 spellToAura[linkedId] = aura
+            end
+        end
+        -- Populate name-based fallback for when spellId is secret in combat
+        local nameOk, spellName = pcall(C_Spell.GetSpellName, aura.auraSpellId)
+        if nameOk and spellName and not issecretvalue(spellName) then
+            nameToAura[spellName:lower()] = aura
+        end
+        if aura.linkedSpellIds then
+            for _, linkedId in ipairs(aura.linkedSpellIds) do
+                local lok, lname = pcall(C_Spell.GetSpellName, linkedId)
+                if lok and lname and not issecretvalue(lname) then
+                    nameToAura[lname:lower()] = aura
+                end
             end
         end
     end
@@ -930,6 +948,18 @@ function CA.ScanAura(aura)
     if not tracked then
         StopAuraDisplay(aura.id)
         if not editModeActive then state.container:Hide() end
+        -- Single deferred retry: catches CDM hook delay + transient secret windows.
+        -- pendingRetries gate prevents duplicate/cascading timers for the same aura.
+        if not pendingRetries[aura.id] and UnitExists(aura.unit) then
+            pendingRetries[aura.id] = true
+            local auraRef = aura
+            C_Timer.After(0.2, function()
+                pendingRetries[auraRef.id] = nil
+                if CA._activeAuras[auraRef.id] and UnitExists(auraRef.unit) then
+                    CA.ScanAura(auraRef)
+                end
+            end)
+        end
         return
     end
 
@@ -1675,24 +1705,42 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
             end
 
             -- === Process addedAuras for instant identity capture ===
-            -- spellId and auraInstanceID are identity fields in the event payload (non-secret).
-            -- pcall ensures zero regression if they happen to be secret in some edge case.
+            -- Two-tier matching: spellId (O(1)), then name fallback (O(1)) when spellId is secret.
+            -- pcall ensures zero regression if fields happen to be secret in some edge case.
             if updateInfo and updateInfo.addedAuras then
                 for _, addedAura in ipairs(updateInfo.addedAuras) do
                     pcall(function()
-                        local sid = addedAura.spellId
-                        if not sid or issecretvalue(sid) then return end
                         local iid = addedAura.auraInstanceID
                         if not iid or issecretvalue(iid) then return end
 
-                        local matchedAura = spellToAura[sid]  -- O(1) lookup
+                        local sid = addedAura.spellId
+                        local matchedAura = nil
+                        local activeSpell = nil
+
+                        -- Primary: spellId match (O(1))
+                        if sid and not issecretvalue(sid) then
+                            matchedAura = spellToAura[sid]
+                            activeSpell = sid
+                        end
+
+                        -- Fallback: name match when spellId is secret (O(1) table lookup)
+                        if not matchedAura then
+                            local auraName = addedAura.name
+                            if auraName and not issecretvalue(auraName) then
+                                matchedAura = nameToAura[auraName:lower()]
+                                if matchedAura then
+                                    activeSpell = matchedAura.auraSpellId
+                                end
+                            end
+                        end
+
                         if matchedAura and matchedAura.unit == unit and CA._activeAuras[matchedAura.id] then
                             auraTracking[matchedAura.id] = {
                                 unit = unit,
                                 auraInstanceID = iid,
-                                activeSpellId = sid,
+                                activeSpellId = activeSpell,
                             }
-                            CacheAuraIdentity(unit, matchedAura.id, iid, sid)
+                            CacheAuraIdentity(unit, matchedAura.id, iid, activeSpell)
                         end
                     end)
                 end
