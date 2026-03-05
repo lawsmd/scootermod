@@ -3043,7 +3043,6 @@ Presets:Register({
     },
     extraAbilities = {
       barOpacity = 100,
-      barOpacityOutOfCombat = 20,
       barOpacityWithTarget = 100,
       borderInset = -2,
       borderInsetH = -1,

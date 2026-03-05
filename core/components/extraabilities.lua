@@ -198,18 +198,18 @@ local function ApplyExtraAbilitiesStyling(self)
         pcall(fn, container, scaleValue)
     end
 
+    -- Migrate: remove defunct OOC opacity setting from saved profiles
+    if self.db.barOpacityOutOfCombat ~= nil then self.db.barOpacityOutOfCombat = nil end
+
     -- Apply opacity
     local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
-
-    local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
-    if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
 
     local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
     if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
 
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
-    local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
+    local appliedOp = hasTarget and tgtOp or baseOp
 
     startAlphaEnforcement(container)
     local state = getContainerState()
@@ -527,10 +527,7 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Hide Blizzard Icon Art", widget = "checkbox", section = "Misc", order = 1
             }},
             barOpacity = { type = "addon", default = 100, ui = {
-                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 2
-            }},
-            barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+                label = "Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 2
             }},
             barOpacityWithTarget = { type = "addon", default = 100, ui = {
                 label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 4
