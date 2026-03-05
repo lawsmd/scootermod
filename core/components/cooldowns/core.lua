@@ -558,6 +558,21 @@ local CDM_VIEWER_NAMES = {
     ["BuffIconCooldownViewer"] = "trackedBuffs",
 }
 
+-- ABE (ActionBarsEnhanced) interop: when loaded, ABE manages its own proc animations
+local abeLoaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("ActionBarsEnhanced")
+
+-- Find the FlipBook animation within an AnimationGroup (duck-type check)
+local function GetFlipBook(animGroup)
+    if not animGroup then return nil end
+    for i = 1, animGroup:GetNumAnimations() do
+        local anim = select(i, animGroup:GetAnimations())
+        if anim and anim.SetFlipBookRows then
+            return anim
+        end
+    end
+    return nil
+end
+
 -- Find the cooldown text FontString inside a Cooldown frame
 local function getCooldownFontString(cooldownFrame)
     if not cooldownFrame then return nil end
@@ -807,8 +822,27 @@ local function hookProcGlowResizing()
     hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
         local sizeInfo = sizedIcons[actionButton]
         if not sizeInfo then return end
-        -- Alert was just created by GetAlertFrame (hooksecurefunc runs after original)
+        -- Alert was just created by GetAlertFrame (hooksecurefunc runs after original).
+        -- SetScale on ProcStartFlipbook is immediate — no need to restart the animation.
         resizeProcGlow(actionButton, sizeInfo.width, sizeInfo.height)
+        -- Hide ProcStart animation if setting enabled and ABE isn't managing it
+        if not abeLoaded then
+            pcall(function()
+                local alert = actionButton.SpellActivationAlert
+                if not alert or not alert.ProcStartFlipbook then return end
+                local viewerFrame = actionButton:GetParent()
+                if not viewerFrame or not viewerFrame.GetName then return end
+                local componentId = CDM_VIEWER_NAMES[viewerFrame:GetName()]
+                if not componentId then return end
+                local component = addon.Components and addon.Components[componentId]
+                if not component or not component.db then return end
+                if component.db.hideProcStart then
+                    local flipAnim = alert.ProcStartAnim and GetFlipBook(alert.ProcStartAnim)
+                    if flipAnim then flipAnim:SetDuration(0) end
+                    alert.ProcStartFlipbook:Hide()
+                end
+            end)
+        end
     end)
 
     procGlowHooked = true
@@ -1020,17 +1054,27 @@ end
 -- Texture coordinates are adjusted to prevent stretching on non-square sizes.
 --------------------------------------------------------------------------------
 
--- Resize SpellActivationAlert and its ProcStartFlipbook to match custom icon dimensions.
--- ProcStartFlipbook defaults to a fixed 150x150 square (per template XML), which causes
--- the intro animation to appear as a small/large square instead of matching the icon.
+-- Resize SpellActivationAlert and its flipbook textures to match custom icon dimensions.
+-- ProcStartFlipbook: use SetScale (immediate render transform) instead of SetSize (deferred
+-- layout property). SetSize mid-FlipBook causes a hitch; SetScale applies in the GPU pass.
+-- ProcLoopFlipbook: explicit sizing is fine — it doesn't start until ProcStartAnim finishes
+-- (0.7s), giving the layout engine time to resolve.
 resizeProcGlow = function(cdmIcon, iconWidth, iconHeight)
     if not cdmIcon.SpellActivationAlert then return end
     pcall(function()
         local alert = cdmIcon.SpellActivationAlert
-        alert:SetSize(iconWidth * 1.4, iconHeight * 1.4)
+        local glowW, glowH = iconWidth * 1.4, iconHeight * 1.4
+        alert:SetSize(glowW, glowH)
+        -- ProcStartFlipbook: SetScale scales the 150x150 flipbook in render space.
+        -- 42 is the standard action button height where scale=1.0 produces the normal glow.
         if alert.ProcStartFlipbook then
-            alert.ProcStartFlipbook:ClearAllPoints()
-            alert.ProcStartFlipbook:SetAllPoints(alert)
+            local scale = math.max(iconWidth, iconHeight) / 42
+            alert.ProcStartFlipbook:SetScale(scale)
+        end
+        if alert.ProcLoopFlipbook then
+            alert.ProcLoopFlipbook:ClearAllPoints()
+            alert.ProcLoopFlipbook:SetSize(glowW, glowH)
+            alert.ProcLoopFlipbook:SetPoint("CENTER", alert, "CENTER")
         end
     end)
 end

@@ -40,6 +40,9 @@ addon:RegisterComponentInitializer(function(self)
             tallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
+            hideProcStart = { type = "addon", default = false, ui = {
+                label = "Hide Proc Start Animation", widget = "checkbox", section = "Animations", order = 1
+            }},
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},

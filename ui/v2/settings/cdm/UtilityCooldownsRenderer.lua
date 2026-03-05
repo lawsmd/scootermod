@@ -193,6 +193,33 @@ function UtilityCooldowns.Render(panel, scrollContent)
         end,
     })
 
+    -- Collapsible section: Animations
+    builder:AddCollapsibleSection({
+        title = "Animations",
+        componentId = "utilityCooldowns",
+        sectionKey = "animations",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                key = "hideProcStart",
+                label = "Hide Proc Start Animation",
+                get = function() return getSetting("hideProcStart") or false end,
+                set = function(v)
+                    setSetting("hideProcStart", v)
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end,
+                infoIcon = {
+                    tooltipTitle = "Proc Start Animation",
+                    tooltipText = "The proc start 'splash' is a brief burst that plays when a spell procs. On non-square icons it may appear as a mismatched square. Hiding it still shows the proc loop border glow that follows.",
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Collapsible section: Border
     builder:AddCollapsibleSection({
         title = "Border",
