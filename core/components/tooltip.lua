@@ -236,8 +236,6 @@ local function RegisterTooltipPostProcessor()
         local db = comp.db
         EnsureNewTooltipTextConfigs(db)
 
-        local tooltipName = tooltip and tooltip.GetName and tooltip:GetName()
-
         if tooltip == GameTooltip then
             ApplyGameTooltipText(db)
 
@@ -260,8 +258,13 @@ local function RegisterTooltipPostProcessor()
                     end
                 end
             end
-        elseif tooltipName and COMPARISON_TOOLTIP_NAMES[tooltipName] then
-            ApplyComparisonTooltipText(tooltip, db)
+        elseif tooltip and tooltip.GetName then
+            local ok, tooltipName = pcall(tooltip.GetName, tooltip)
+            if ok and tooltipName and COMPARISON_TOOLTIP_NAMES[tooltipName] then
+                ApplyComparisonTooltipText(tooltip, db)
+            else
+                return
+            end
         else
             return
         end
