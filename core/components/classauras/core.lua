@@ -60,9 +60,10 @@ local FindCDMItemForSpell, BindCDMBorrowTarget, InstallMixinHooks, RescanForCDMB
 local StartAuraDisplay, StopAuraDisplay, StyleCooldownText
 local GetActiveOverride
 
--- Expose for debug command
+-- Expose for debug command and per-class modules
 CA._cdmBorrow = cdmBorrow
 CA._guidCache = guidCache
+CA._auraTracking = auraTracking
 
 function CA.RegisterAuras(classToken, auras)
     if not classToken or not auras then return end
@@ -153,6 +154,8 @@ function CA.DefaultSettings(overrides)
     for key, value in pairs(overrides) do
         if base[key] then
             base[key].default = value
+        elseif type(value) == "table" and value.type then
+            base[key] = value  -- inject novel settings
         end
     end
     return base
@@ -449,6 +452,7 @@ end
 local function ApplyIconMode(aura, state)
     local db = GetDB(aura)
     if not db then return end
+    if aura.customIconHandling then return end
 
     -- Check if icon should be hidden by display mode
     local displayMode = db.mode or "icon"
@@ -788,6 +792,23 @@ GetActiveOverride = function(aura)
     return aura.spellOverrides[tracked.activeSpellId]
 end
 
+local function ApplyAnchorLinkage(aura, state)
+    if not aura.anchorTo then return end
+    local primaryState = CA._activeAuras[aura.anchorTo]
+    if not primaryState or not primaryState.container then return end
+    -- Read orientation/padding from the primary aura's DB
+    local primaryAura = CA._registry[aura.anchorTo]
+    local primaryDb = primaryAura and GetDB(primaryAura)
+    local orientation = (primaryDb and primaryDb.dotOrientation) or "horizontal"
+    local padding = tonumber(primaryDb and primaryDb.dotPadding) or 4
+    state.container:ClearAllPoints()
+    if orientation == "vertical" then
+        state.container:SetPoint("BOTTOM", primaryState.container, "TOP", 0, padding)
+    else
+        state.container:SetPoint("RIGHT", primaryState.container, "LEFT", -padding, 0)
+    end
+end
+
 local function ApplyStyling(aura)
     local state = CA._activeAuras[aura.id]
     if not state then return end
@@ -803,8 +824,14 @@ local function ApplyStyling(aura)
         C_Timer.After(0, RescanForCDMBorrow)
     end
 
-    -- Enabled check
-    if not db.enabled then
+    -- Enabled check (for linked auras, check primary's enabled state)
+    local isEnabled = db.enabled
+    if not isEnabled and aura.anchorTo then
+        local primaryAura = CA._registry[aura.anchorTo]
+        local primaryDb = primaryAura and GetDB(primaryAura)
+        isEnabled = primaryDb and primaryDb.enabled
+    end
+    if not isEnabled then
         state.container:Hide()
         return
     end
@@ -841,6 +868,9 @@ local function ApplyStyling(aura)
 
     -- Re-layout elements
     LayoutElements(aura, state)
+
+    -- Anchor linkage for secondary auras (e.g., dreadPlague → virulentPlague)
+    ApplyAnchorLinkage(aura, state)
 
     -- Trigger a rescan to show/hide based on current aura state
     CA.ScanAura(aura)
@@ -943,7 +973,14 @@ function CA.ScanAura(aura)
     if not state then return end
 
     local db = GetDB(aura)
-    if not db or not db.enabled then
+    local isEnabled = db and db.enabled
+    -- For linked auras, check primary's enabled state as fallback
+    if not isEnabled and aura.anchorTo then
+        local primaryAura = CA._registry[aura.anchorTo]
+        local primaryDb = primaryAura and GetDB(primaryAura)
+        isEnabled = primaryDb and primaryDb.enabled
+    end
+    if not db or not isEnabled then
         state.container:Hide()
         return
     end
@@ -1004,7 +1041,14 @@ function CA.ScanAura(aura)
     tracked = auraTracking[aura.id]
     if not tracked then
         StopAuraDisplay(aura.id)
-        if not editModeActive then state.container:Hide() end
+        -- keepVisible: leave container shown when target exists (for exclamation animation)
+        if aura.keepVisible and UnitExists(aura.unit) then
+            if not editModeActive then state.container:Show() end
+        else
+            if not editModeActive then state.container:Hide() end
+        end
+        -- Lifecycle hook: aura missing
+        if aura.onAuraMissing then aura.onAuraMissing(aura.id, state) end
         -- Single deferred retry: catches CDM hook delay + transient secret windows.
         -- pendingRetries gate prevents duplicate/cascading timers for the same aura.
         if not pendingRetries[aura.id] and UnitExists(aura.unit) then
@@ -1022,6 +1066,8 @@ function CA.ScanAura(aura)
 
     -- === Start/update display via DurationObject ===
     StartAuraDisplay(aura.id)
+    -- Lifecycle hook: aura found
+    if aura.onAuraFound then aura.onAuraFound(aura.id, state) end
 
     -- === Detect linked spell override changes (icon/bar/text visual swap) ===
     local tracked2 = auraTracking[aura.id]
@@ -1504,6 +1550,11 @@ local function CreateAuraContainer(aura)
         elements = elements,
     }
 
+    -- Optional callback for per-class modules to initialize custom visuals
+    if aura.onContainerCreated then
+        aura.onContainerCreated(aura.id, CA._activeAuras[aura.id])
+    end
+
     return container
 end
 
@@ -1514,6 +1565,14 @@ local function InitializeContainers()
     for _, aura in ipairs(auras) do
         if not CA._activeAuras[aura.id] then
             CreateAuraContainer(aura)
+        end
+    end
+
+    -- Apply anchor linkage for secondary auras after all containers exist
+    for _, aura in ipairs(auras) do
+        if aura.anchorTo then
+            local state = CA._activeAuras[aura.id]
+            if state then ApplyAnchorLinkage(aura, state) end
         end
     end
 end
@@ -1555,31 +1614,33 @@ local function InitializeEditMode()
     if not auras then return end
 
     for _, aura in ipairs(auras) do
-        local state = CA._activeAuras[aura.id]
-        if state and state.container then
-            state.container.editModeName = aura.editModeName or aura.label
+        if not aura.skipEditMode then
+            local state = CA._activeAuras[aura.id]
+            if state and state.container then
+                state.container.editModeName = aura.editModeName or aura.label
 
-            local auraId = aura.id
-            local dp = aura.defaultPosition or { point = "CENTER", x = 0, y = -200 }
+                local auraId = aura.id
+                local dp = aura.defaultPosition or { point = "CENTER", x = 0, y = -200 }
 
-            lib:AddFrame(state.container, function(frame, layoutName, point, x, y)
-                if point and x and y then
-                    frame:ClearAllPoints()
-                    frame:SetPoint(point, x, y)
-                end
-                if layoutName then
-                    local savedPoint, _, _, savedX, savedY = frame:GetPoint(1)
-                    if savedPoint then
-                        SaveAuraPosition(auraId, layoutName, savedPoint, savedX, savedY)
-                    else
-                        SaveAuraPosition(auraId, layoutName, point, x, y)
+                lib:AddFrame(state.container, function(frame, layoutName, point, x, y)
+                    if point and x and y then
+                        frame:ClearAllPoints()
+                        frame:SetPoint(point, x, y)
                     end
-                end
-            end, {
-                point = dp.point,
-                x = dp.x or 0,
-                y = dp.y or 0,
-            }, nil)
+                    if layoutName then
+                        local savedPoint, _, _, savedX, savedY = frame:GetPoint(1)
+                        if savedPoint then
+                            SaveAuraPosition(auraId, layoutName, savedPoint, savedX, savedY)
+                        else
+                            SaveAuraPosition(auraId, layoutName, point, x, y)
+                        end
+                    end
+                end, {
+                    point = dp.point,
+                    x = dp.x or 0,
+                    y = dp.y or 0,
+                }, nil)
+            end
         end
     end
 
@@ -1587,7 +1648,16 @@ local function InitializeEditMode()
         local classAuras = CA._classAuras[playerClassToken]
         if not classAuras then return end
         for _, aura in ipairs(classAuras) do
-            RestoreAuraPosition(aura.id, layoutName)
+            if not aura.skipEditMode then
+                RestoreAuraPosition(aura.id, layoutName)
+            end
+        end
+        -- Re-apply anchor linkage after primary positions restored
+        for _, aura in ipairs(classAuras) do
+            if aura.anchorTo then
+                local st = CA._activeAuras[aura.id]
+                if st then ApplyAnchorLinkage(aura, st) end
+            end
         end
     end)
 
@@ -1599,7 +1669,14 @@ local function InitializeEditMode()
             local st = CA._activeAuras[aura.id]
             if st and st.container then
                 local db = GetDB(aura)
-                if db and db.enabled then
+                -- For linked auras, check primary's enabled state
+                local isEnabled = db and db.enabled
+                if not isEnabled and aura.anchorTo then
+                    local primaryAura = CA._registry[aura.anchorTo]
+                    local primaryDb = primaryAura and GetDB(primaryAura)
+                    isEnabled = primaryDb and primaryDb.enabled
+                end
+                if isEnabled then
                     ApplyIconMode(aura, st)
                     ApplyTextStyling(aura, st)
                     ApplyBarStyling(aura, st)
@@ -1632,7 +1709,16 @@ local function InitializeEditMode()
                             pcall(elem.barFill.SetValue, elem.barFill, math.floor(maxVal * 0.6))
                         end
                     end
+                    -- Per-aura edit mode enter hook
+                    if aura.onEditModeEnter then aura.onEditModeEnter(aura.id, st) end
                 end
+            end
+        end
+        -- Re-apply anchor linkage in edit mode
+        for _, aura in ipairs(classAuras) do
+            if aura.anchorTo then
+                local st = CA._activeAuras[aura.id]
+                if st then ApplyAnchorLinkage(aura, st) end
             end
         end
     end)
@@ -1661,6 +1747,8 @@ local function InitializeEditMode()
                 end
                 -- Stop any active aura display before rescan
                 StopAuraDisplay(aura.id)
+                -- Per-aura edit mode exit hook
+                if aura.onEditModeExit then aura.onEditModeExit(aura.id, st) end
             end
             if CA._activeAuras[aura.id] then
                 CA.ScanAura(aura)
