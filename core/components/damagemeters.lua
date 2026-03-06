@@ -105,16 +105,30 @@ local dmFrameHooked = false
 
 -- Overlay visibility management for UIParent-parented overlays.
 -- UIParent-parented overlays don't auto-hide when entries are hidden/recycled
--- by the ScrollBox. Use a "hide all, then show visible" pattern.
-local allDMOverlays = {}
+-- by the ScrollBox. Use a per-window "hide then show visible" pattern.
+local windowOverlays = setmetatable({}, { __mode = "k" })
 
-local function registerDMOverlay(overlay)
-    allDMOverlays[#allDMOverlays + 1] = overlay
+local function registerDMOverlay(sessionWindow, overlay)
+    if not sessionWindow or not overlay then return end
+    if not windowOverlays[sessionWindow] then
+        windowOverlays[sessionWindow] = {}
+    end
+    windowOverlays[sessionWindow][#windowOverlays[sessionWindow] + 1] = overlay
+end
+
+local function hideWindowOverlays(sessionWindow)
+    local overlays = sessionWindow and windowOverlays[sessionWindow]
+    if not overlays then return end
+    for _, overlay in ipairs(overlays) do
+        overlay:Hide()
+    end
 end
 
 local function hideAllDMOverlays()
-    for _, overlay in ipairs(allDMOverlays) do
-        overlay:Hide()
+    for _, overlays in pairs(windowOverlays) do
+        for _, overlay in ipairs(overlays) do
+            overlay:Hide()
+        end
     end
 end
 
@@ -321,7 +335,7 @@ end
 
 -- Apply JiberishIcons class icon to replace spec icon using overlay approach
 -- Uses a separate overlay texture to prevent flickering from Blizzard's icon resets
-local function ApplyJiberishIconsStyle(entry, db)
+local function ApplyJiberishIconsStyle(entry, db, sessionWindow)
     if not entry or not db then return end
 
     local iconFrame = entry.Icon
@@ -383,7 +397,7 @@ local function ApplyJiberishIconsStyle(entry, db)
             local ok, lvl = pcall(iconFrame.GetFrameLevel, iconFrame)
             container:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 1) or 5)
             elSt.jiberishContainer = container
-            registerDMOverlay(container)
+            registerDMOverlay(sessionWindow, container)
         end
         overlay = container:CreateTexture(nil, "ARTWORK", nil, 1)
         overlay:SetAllPoints(container)
@@ -402,7 +416,7 @@ local function ApplyJiberishIconsStyle(entry, db)
 end
 
 -- Apply styling to a single entry (bar) in the damage meter
-local function ApplySingleEntryStyle(entry, db)
+local function ApplySingleEntryStyle(entry, db, sessionWindow)
     if not entry or not db then return end
 
     local statusBar = entry.StatusBar or entry.bar or entry
@@ -528,7 +542,7 @@ local function ApplySingleEntryStyle(entry, db)
             local ok, lvl = pcall(statusBar.GetFrameLevel, statusBar)
             borderOverlay:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 2) or 7)
             getElementState(statusBar).squareBorderOverlay = borderOverlay
-            registerDMOverlay(borderOverlay)
+            registerDMOverlay(sessionWindow, borderOverlay)
 
             -- Create 4 edge textures
             borderOverlay.edges = {
@@ -605,12 +619,12 @@ local function ApplySingleEntryStyle(entry, db)
             local elSt = getElementState(statusBar)
             local holder = addon.BarBorders.GetBorderHolder(statusBar)
             if holder and not elSt.holderRegistered then
-                registerDMOverlay(holder)
+                registerDMOverlay(sessionWindow, holder)
                 elSt.holderRegistered = true
             end
             local bState = addon.BarBorders.GetBorderState(statusBar)
             if bState and bState.sizeProxy and not elSt.proxyRegistered then
-                registerDMOverlay(bState.sizeProxy)
+                registerDMOverlay(sessionWindow, bState.sizeProxy)
                 elSt.proxyRegistered = true
             end
         end
@@ -699,7 +713,7 @@ local function ApplySingleEntryStyle(entry, db)
                     local ok, lvl = pcall(iconFrame.GetFrameLevel, iconFrame)
                     borderOverlay:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 2) or 7)
                     getElementState(iconFrame).borderOverlay = borderOverlay
-                    registerDMOverlay(borderOverlay)
+                    registerDMOverlay(sessionWindow, borderOverlay)
 
                     -- Create 4 edge textures for the border
                     borderOverlay.edges = {
@@ -771,7 +785,7 @@ local function ApplySingleEntryStyle(entry, db)
             end
 
             -- Apply JiberishIcons class icon replacement (after border handling)
-            ApplyJiberishIconsStyle(entry, db)
+            ApplyJiberishIconsStyle(entry, db, sessionWindow)
         end
     end
 
@@ -1290,10 +1304,10 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
             state._scrollUpdateQueued = nil
             if not component.db then return end
             if not PlayerInCombat() then
-                hideAllDMOverlays()
+                hideWindowOverlays(sessionWindow)
             end
             ForEachVisibleEntry(sessionWindow, function(entryFrame)
-                ApplySingleEntryStyle(entryFrame, component.db)
+                ApplySingleEntryStyle(entryFrame, component.db, sessionWindow)
             end)
         end)
     end)
@@ -1307,7 +1321,7 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
                 if not component.db then return end
                 local localPlayerEntry = self.LocalPlayerEntry
                 if localPlayerEntry then
-                    ApplySingleEntryStyle(localPlayerEntry, component.db)
+                    ApplySingleEntryStyle(localPlayerEntry, component.db, self)
                 end
             end)
         end)
@@ -1381,11 +1395,11 @@ local function ApplyDamageMeterStyling(self)
         return
     end
 
-    -- Reset all UIParent-parented overlays before re-styling visible entries
-    hideAllDMOverlays()
-
     -- Style all session windows and their entries
     for _, sessionWindow in ipairs(windows) do
+
+        -- Reset this window's UIParent-parented overlays before re-styling visible entries
+        hideWindowOverlays(sessionWindow)
 
         -- Apply window styling
         ApplyWindowStyling(sessionWindow, db)
@@ -1423,14 +1437,14 @@ local function ApplyDamageMeterStyling(self)
 
         -- Style all visible entries in this window
         ForEachVisibleEntry(sessionWindow, function(entryFrame)
-            ApplySingleEntryStyle(entryFrame, db)
+            ApplySingleEntryStyle(entryFrame, db, sessionWindow)
         end)
 
         -- Style LocalPlayerEntry (sticky player row at bottom when scrolled past own position)
         -- This entry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
         local localPlayerEntry = sessionWindow.LocalPlayerEntry
         if localPlayerEntry then
-            ApplySingleEntryStyle(localPlayerEntry, db)
+            ApplySingleEntryStyle(localPlayerEntry, db, sessionWindow)
         end
     end
 end
