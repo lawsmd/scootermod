@@ -57,6 +57,11 @@ core/components/cooldowns/trackedbars/default.lua
 core/components/cooldowns/trackedbars/vertical.lua
 core/components/cooldowns/customgroups.lua
 core/components/classauras/core.lua
+core/components/classauras/layout.lua
+core/components/classauras/styling.lua
+core/components/classauras/scanning.lua
+core/components/classauras/cdmborrow.lua
+core/components/classauras/events.lua
 core/components/classauras/mage.lua
 core/components/classauras/shaman.lua
 core/components/classauras/deathknight.lua
