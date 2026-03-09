@@ -25,30 +25,30 @@ local hookedItemFrames = setmetatable({}, { __mode = "k" })
 -- Track CDM item frames we've hidden via SetAlphaFromBoolean -- itemFrame -> auraId
 local hiddenItemFrames = setmetatable({}, { __mode = "k" })
 
-local function searchViewer(viewerName, spellId)
-    local viewer = _G[viewerName]
-    if not viewer then return nil end
-    local ok, children = pcall(function() return { viewer:GetChildren() } end)
-    if not ok or not children then return nil end
+-- Module-level function for pcall: checks if child's linked spells contain spellId
+local function checkLinkedSpells(child, spellId)
+    local ci = child:GetCooldownInfo()
+    if ci and ci.linkedSpellIDs then
+        for _, lid in ipairs(ci.linkedSpellIDs) do
+            if lid == spellId then return true end
+        end
+    end
+    return false
+end
+
+local function searchViewer(children, spellId)
+    if not children then return nil end
     for _, child in ipairs(children) do
         -- GetBaseSpellID() is a plain Lua table read (self.cooldownInfo.spellID),
         -- populated by Blizzard's untainted code -- returns real data even in combat.
-        local idOk, childSpellId = pcall(function() return child:GetBaseSpellID() end)
+        local idOk, childSpellId = pcall(child.GetBaseSpellID, child)
         if idOk and childSpellId == spellId then
             return child
         end
     end
     -- Fallback: search linkedSpellIDs (e.g., 188389 Flame Shock is linked under base 470411)
     for _, child in ipairs(children) do
-        local ciOk, found = pcall(function()
-            local ci = child:GetCooldownInfo()
-            if ci and ci.linkedSpellIDs then
-                for _, lid in ipairs(ci.linkedSpellIDs) do
-                    if lid == spellId then return true end
-                end
-            end
-            return false
-        end)
+        local ciOk, found = pcall(checkLinkedSpells, child, spellId)
         if ciOk and found then
             return child
         end
@@ -56,10 +56,33 @@ local function searchViewer(viewerName, spellId)
     return nil
 end
 
+-- Per-invocation children cache: built once per RescanForCDMBorrow call
+local viewerChildrenCache = {}
+
+local function getViewerChildren(viewerName)
+    if viewerChildrenCache[viewerName] ~= nil then
+        return viewerChildrenCache[viewerName]
+    end
+    local viewer = _G[viewerName]
+    if not viewer then
+        viewerChildrenCache[viewerName] = false
+        return false
+    end
+    local ok, children = pcall(function() return { viewer:GetChildren() } end)
+    if ok and children then
+        viewerChildrenCache[viewerName] = children
+        return children
+    end
+    viewerChildrenCache[viewerName] = false
+    return false
+end
+
 local function FindCDMItemForSpell(spellId)
     -- Search icon layout first (most common), then bar layout
-    return searchViewer("BuffIconCooldownViewer", spellId)
-        or searchViewer("BuffBarCooldownViewer", spellId)
+    local iconChildren = getViewerChildren("BuffIconCooldownViewer")
+    local barChildren = getViewerChildren("BuffBarCooldownViewer")
+    return searchViewer(iconChildren, spellId)
+        or searchViewer(barChildren, spellId)
 end
 
 local function BindCDMBorrowTarget(itemFrame, aura)
@@ -103,6 +126,9 @@ end
 local function RescanForCDMBorrow()
     local auras = CA._classAuras[playerClassToken]
     if not auras then return end
+
+    -- Clear per-invocation children cache (rebuilt lazily via getViewerChildren)
+    wipe(viewerChildrenCache)
 
     for _, aura in ipairs(auras) do
         if aura.cdmBorrow then
@@ -151,6 +177,17 @@ local function RescanForCDMBorrow()
             end
         end
     end
+end
+
+-- Rescan debounce: coalesces multiple CDM events in one frame into a single rescan
+local rescanPending = false
+local function ScheduleRescan()
+    if rescanPending then return end
+    rescanPending = true
+    C_Timer.After(0, function()
+        rescanPending = false
+        RescanForCDMBorrow()
+    end)
 end
 
 local function InstallMixinHooks()
@@ -226,7 +263,7 @@ local function InstallMixinHooks()
     local buffMixin = _G.CooldownViewerBuffIconItemMixin
     if buffMixin and buffMixin.RefreshData then
         hooksecurefunc(buffMixin, "RefreshData", function()
-            C_Timer.After(0, function() RescanForCDMBorrow() end)
+            ScheduleRescan()
         end)
     end
 
@@ -234,7 +271,7 @@ local function InstallMixinHooks()
     local baseMixin = _G.CooldownViewerItemMixin
     if baseMixin and baseMixin.OnAuraInstanceInfoCleared then
         hooksecurefunc(baseMixin, "OnAuraInstanceInfoCleared", function()
-            C_Timer.After(0, function() RescanForCDMBorrow() end)
+            ScheduleRescan()
         end)
     end
 

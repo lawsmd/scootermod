@@ -156,6 +156,9 @@ local function StartAuraDisplay(auraId)
     local t = auraTracking[auraId]
     if not t then return end
 
+    -- Reset text throttle so first frame always updates text
+    state._lastTextUpdate = 0
+
     -- Get initial DurationObject for CooldownFrame setup
     local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, t.unit, t.auraInstanceID)
     if not ok or not durObj then
@@ -218,36 +221,42 @@ local function StartAuraDisplay(auraId)
         end
 
         -- === TEXT: try non-secret custom format, fall back to CooldownFrame ===
-        local htDb = GetDB(auraDef)
-        local hideText = htDb and htDb.hideText
-        for _, elem in ipairs(state.elements) do
-            if elem.type == "text" and elem.def.source == "duration" then
-                if hideText then
-                    pcall(elem.widget.Hide, elem.widget)
-                    if elem._cdFrame then elem._cdFrame:Hide() end
-                else
-                    local rok, remaining = pcall(function()
-                        local r = dObj:GetRemainingDuration()
-                        if issecretvalue(r) then return nil end
-                        return r
-                    end)
-                    if rok and remaining and remaining > 0 then
-                        -- Non-secret: custom formatted text
-                        local text
-                        if remaining >= 60 then
-                            text = string.format("%dm", math.floor(remaining / 60))
-                        elseif remaining >= 10 then
-                            text = string.format("%.0f", remaining)
-                        else
-                            text = string.format("%.1f", remaining)
-                        end
-                        pcall(elem.widget.SetText, elem.widget, text)
-                        pcall(elem.widget.Show, elem.widget)
+        -- Throttle text updates to 0.1s intervals (bar fill remains per-frame for smoothness)
+        local now = GetTime()
+        local textElapsed = now - (state._lastTextUpdate or 0)
+        if textElapsed >= 0.1 then
+            state._lastTextUpdate = now
+            local htDb = GetDB(auraDef)
+            local hideText = htDb and htDb.hideText
+            for _, elem in ipairs(state.elements) do
+                if elem.type == "text" and elem.def.source == "duration" then
+                    if hideText then
+                        pcall(elem.widget.Hide, elem.widget)
                         if elem._cdFrame then elem._cdFrame:Hide() end
                     else
-                        -- Secret: CooldownFrame handles countdown via C++ rendering
-                        pcall(elem.widget.Hide, elem.widget)
-                        if elem._cdFrame then elem._cdFrame:Show() end
+                        local rok, remaining = pcall(function()
+                            local r = dObj:GetRemainingDuration()
+                            if issecretvalue(r) then return nil end
+                            return r
+                        end)
+                        if rok and remaining and remaining > 0 then
+                            -- Non-secret: custom formatted text
+                            local text
+                            if remaining >= 60 then
+                                text = string.format("%dm", math.floor(remaining / 60))
+                            elseif remaining >= 10 then
+                                text = string.format("%.0f", remaining)
+                            else
+                                text = string.format("%.1f", remaining)
+                            end
+                            pcall(elem.widget.SetText, elem.widget, text)
+                            pcall(elem.widget.Show, elem.widget)
+                            if elem._cdFrame then elem._cdFrame:Hide() end
+                        else
+                            -- Secret: CooldownFrame handles countdown via C++ rendering
+                            pcall(elem.widget.Hide, elem.widget)
+                            if elem._cdFrame then elem._cdFrame:Show() end
+                        end
                     end
                 end
             end
