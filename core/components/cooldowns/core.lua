@@ -101,7 +101,10 @@ local function CenterIconsInViewer(viewerFrame, componentId)
     -- Get layout parameters
     local iconLimit = viewerFrame.iconLimit or 12
     local isHorizontal = viewerFrame.isHorizontal ~= false
-    local iconDirection = viewerFrame.iconDirection or 1  -- 1 = normal, -1 = reversed
+    -- Enum.CooldownViewerIconDirection: Left=0, Right=1
+    -- Convert to multiplier: Right/Up = +1 (normal), Left/Down = -1 (reversed)
+    local iconDirectionRaw = viewerFrame.iconDirection
+    local iconDirection = (iconDirectionRaw == 0) and -1 or 1
 
     -- Get icon dimensions and padding from first icon
     local iconWidth = 0
