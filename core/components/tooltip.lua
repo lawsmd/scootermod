@@ -30,24 +30,40 @@ local COMPARISON_TOOLTIP_NAMES = {
     ItemRefShoppingTooltip2 = true,
 }
 
--- Helper: Apply font face/size/style to a FontString
-local function ApplyFontSettings(fontString, config, defaultSize)
+-- Module-level font defaults (avoids per-call table allocation)
+local FONT_DEFAULTS = {
+    size = 14,
+    style = "OUTLINE",
+    fontFace = "FRIZQT__",
+}
+local FONT_DEFAULTS_SMALL = {
+    size = 12,
+    style = "OUTLINE",
+    fontFace = "FRIZQT__",
+}
+
+-- Cached fallback font face (resolved lazily on first use)
+local fallbackFontFace
+
+local function GetFallbackFontFace()
+    if not fallbackFontFace then
+        fallbackFontFace = select(1, _G.GameFontNormal:GetFont())
+    end
+    return fallbackFontFace
+end
+
+-- Resolve font config once: returns face path, size, style string
+local function ResolveFontConfig(cfg, defaults)
+    local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or defaults.fontFace)
+        or GetFallbackFontFace()
+    local size = tonumber(cfg.size) or defaults.size
+    local style = cfg.style or defaults.style
+    return face, size, style
+end
+
+-- Helper: Apply pre-resolved font face/size/style to a FontString
+local function ApplyFontSettings(fontString, face, size, style)
     if not fontString or not fontString.SetFont then return end
-
-    config = config or {}
-    local defaults = {
-        size = defaultSize or 14,
-        style = "OUTLINE",
-        fontFace = "FRIZQT__",
-    }
-
-    -- Resolve font face
-    local face = addon.ResolveFontFace and addon.ResolveFontFace(config.fontFace or defaults.fontFace)
-        or (select(1, _G.GameFontNormal:GetFont()))
-
-    -- Apply font attributes (font face, size, style only)
-    local size = tonumber(config.size) or defaults.size
-    local style = config.style or defaults.style
     pcall(fontString.SetFont, fontString, face, size, style)
 end
 
@@ -67,7 +83,11 @@ local function ShallowCopyFontConfig(src)
     }
 end
 
+-- One-shot flag: migration only needs to run once per session
+local tooltipConfigsMigrated = false
+
 local function EnsureNewTooltipTextConfigs(db)
+    if tooltipConfigsMigrated then return end
     if not db then return end
 
     -- Migration: use old Line 2 settings as the initial value for Everything Else.
@@ -90,60 +110,57 @@ local function EnsureNewTooltipTextConfigs(db)
     CleanupTextConfig(db.textTitle)
     CleanupTextConfig(db.textEverythingElse)
     CleanupTextConfig(db.textComparison)
+
+    tooltipConfigsMigrated = true
 end
 
 local function ApplyGameTooltipText(db)
+    -- Resolve title font once
+    local titleCfg = db.textTitle or FONT_DEFAULTS
+    local titleFace, titleSize, titleStyle = ResolveFontConfig(titleCfg, FONT_DEFAULTS)
+
+    -- Resolve body font once
+    local bodyCfg = db.textEverythingElse or FONT_DEFAULTS_SMALL
+    local bodyFace, bodySize, bodyStyle = ResolveFontConfig(bodyCfg, FONT_DEFAULTS_SMALL)
+
     -- Title / name line (Left1 and Right1 both use title settings)
-    local titleFS = _G["GameTooltipTextLeft1"]
-    if titleFS then
-        ApplyFontSettings(titleFS, db.textTitle or {}, 14)
-    end
-    local titleRightFS = _G["GameTooltipTextRight1"]
-    if titleRightFS then
-        ApplyFontSettings(titleRightFS, db.textTitle or {}, 14)
-    end
+    ApplyFontSettings(_G["GameTooltipTextLeft1"], titleFace, titleSize, titleStyle)
+    ApplyFontSettings(_G["GameTooltipTextRight1"], titleFace, titleSize, titleStyle)
 
     -- Everything else: lines 2..N (both Left and Right)
-    local cfg = db.textEverythingElse or {}
     local i = 2
     while true do
         local leftFS = _G["GameTooltipTextLeft" .. i]
         local rightFS = _G["GameTooltipTextRight" .. i]
         if not leftFS and not rightFS then break end
-        
-        if leftFS then
-            ApplyFontSettings(leftFS, cfg, 12)
-        end
-        if rightFS then
-            ApplyFontSettings(rightFS, cfg, 12)
-        end
+        if leftFS then ApplyFontSettings(leftFS, bodyFace, bodySize, bodyStyle) end
+        if rightFS then ApplyFontSettings(rightFS, bodyFace, bodySize, bodyStyle) end
         i = i + 1
     end
 
     -- Money frames: Sell Price and similar money displays
-    -- GameTooltip can have multiple money frames (GameTooltipMoneyFrame1, GameTooltipMoneyFrame2, etc.)
     local moneyIdx = 1
     while true do
         local moneyFrame = _G["GameTooltipMoneyFrame" .. moneyIdx]
         if not moneyFrame then break end
-        
+
         -- Style the "Sell Price:" prefix text
         local prefixText = moneyFrame.PrefixText or _G["GameTooltipMoneyFrame" .. moneyIdx .. "PrefixText"]
         if prefixText then
-            ApplyFontSettings(prefixText, cfg, 12)
+            ApplyFontSettings(prefixText, bodyFace, bodySize, bodyStyle)
         end
-        
+
         -- Style the gold/silver/copper text (they're ButtonText elements on the denomination buttons)
         if moneyFrame.GoldButton and moneyFrame.GoldButton.Text then
-            ApplyFontSettings(moneyFrame.GoldButton.Text, cfg, 12)
+            ApplyFontSettings(moneyFrame.GoldButton.Text, bodyFace, bodySize, bodyStyle)
         end
         if moneyFrame.SilverButton and moneyFrame.SilverButton.Text then
-            ApplyFontSettings(moneyFrame.SilverButton.Text, cfg, 12)
+            ApplyFontSettings(moneyFrame.SilverButton.Text, bodyFace, bodySize, bodyStyle)
         end
         if moneyFrame.CopperButton and moneyFrame.CopperButton.Text then
-            ApplyFontSettings(moneyFrame.CopperButton.Text, cfg, 12)
+            ApplyFontSettings(moneyFrame.CopperButton.Text, bodyFace, bodySize, bodyStyle)
         end
-        
+
         moneyIdx = moneyIdx + 1
     end
 end
@@ -153,26 +170,30 @@ local function ApplyComparisonTooltipText(tooltip, db)
     local prefix = tooltip:GetName()
     if not prefix or prefix == "" then return end
 
-    -- Line 1 uses Title settings, lines 2+ use Comparison settings
-    local titleCfg = db.textTitle or {}
-    local comparisonCfg = db.textComparison or {}
-    
+    -- Resolve title font once
+    local titleCfg = db.textTitle or FONT_DEFAULTS
+    local titleFace, titleSize, titleStyle = ResolveFontConfig(titleCfg, FONT_DEFAULTS)
+
+    -- Resolve comparison font once
+    local compCfg = db.textComparison or FONT_DEFAULTS_SMALL
+    local compFace, compSize, compStyle = ResolveFontConfig(compCfg, FONT_DEFAULTS_SMALL)
+
     local i = 1
     while true do
         local leftFS = _G[prefix .. "TextLeft" .. i]
         local rightFS = _G[prefix .. "TextRight" .. i]
         if not leftFS and not rightFS then break end
-        
+
         -- Use Title settings for line 1, Comparison settings for everything else
-        local cfg = (i == 1) and titleCfg or comparisonCfg
-        local defaultSize = (i == 1) and 14 or 12
-        
-        if leftFS then
-            ApplyFontSettings(leftFS, cfg, defaultSize)
+        local face, size, style
+        if i == 1 then
+            face, size, style = titleFace, titleSize, titleStyle
+        else
+            face, size, style = compFace, compSize, compStyle
         end
-        if rightFS then
-            ApplyFontSettings(rightFS, cfg, defaultSize)
-        end
+
+        if leftFS then ApplyFontSettings(leftFS, face, size, style) end
+        if rightFS then ApplyFontSettings(rightFS, face, size, style) end
         i = i + 1
     end
 
@@ -181,24 +202,24 @@ local function ApplyComparisonTooltipText(tooltip, db)
     while true do
         local moneyFrame = _G[prefix .. "MoneyFrame" .. moneyIdx]
         if not moneyFrame then break end
-        
+
         -- Style the prefix text (e.g., "Sell Price:")
         local prefixText = moneyFrame.PrefixText or _G[prefix .. "MoneyFrame" .. moneyIdx .. "PrefixText"]
         if prefixText then
-            ApplyFontSettings(prefixText, comparisonCfg, 12)
+            ApplyFontSettings(prefixText, compFace, compSize, compStyle)
         end
-        
+
         -- Style the gold/silver/copper text
         if moneyFrame.GoldButton and moneyFrame.GoldButton.Text then
-            ApplyFontSettings(moneyFrame.GoldButton.Text, comparisonCfg, 12)
+            ApplyFontSettings(moneyFrame.GoldButton.Text, compFace, compSize, compStyle)
         end
         if moneyFrame.SilverButton and moneyFrame.SilverButton.Text then
-            ApplyFontSettings(moneyFrame.SilverButton.Text, comparisonCfg, 12)
+            ApplyFontSettings(moneyFrame.SilverButton.Text, compFace, compSize, compStyle)
         end
         if moneyFrame.CopperButton and moneyFrame.CopperButton.Text then
-            ApplyFontSettings(moneyFrame.CopperButton.Text, comparisonCfg, 12)
+            ApplyFontSettings(moneyFrame.CopperButton.Text, compFace, compSize, compStyle)
         end
-        
+
         moneyIdx = moneyIdx + 1
     end
 end
