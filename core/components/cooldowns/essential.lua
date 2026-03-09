@@ -84,6 +84,7 @@ addon:RegisterComponentInitializer(function(self)
             supportsText = { type = "addon", default = true },
         },
         ApplyStyling = addon.CDMIconApplyStyling,
+        RefreshOpacity = addon.CDMIconRefreshOpacity,
     })
     self:RegisterComponent(essentialCooldowns)
 end)

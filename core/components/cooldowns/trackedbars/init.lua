@@ -505,6 +505,11 @@ addon:RegisterComponentInitializer(function(self)
             supportsText = { type = "addon", default = true },
         },
         ApplyStyling = TrackedBarsApplyStyling,
+        RefreshOpacity = function(component)
+            if addon.RefreshCDMViewerOpacity then
+                addon.RefreshCDMViewerOpacity(component.id)
+            end
+        end,
     })
     self:RegisterComponent(trackedBars)
 

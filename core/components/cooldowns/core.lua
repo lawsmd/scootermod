@@ -296,6 +296,21 @@ local scootFontStrings = setmetatable({}, { __mode = "k" })
 -- Track which FontStrings have been decoupled from parent alpha (weak keys for GC)
 local textAlphaDecoupled = setmetatable({}, { __mode = "k" })
 
+-- Cache GetChildren() results per viewer to avoid temporary table allocation on every pass
+local viewerChildrenCache = {}
+
+local function invalidateChildrenCache(viewerFrameName)
+    viewerChildrenCache[viewerFrameName] = nil
+end
+
+local function getViewerChildren(viewer, viewerFrameName)
+    local cached = viewerChildrenCache[viewerFrameName]
+    if cached then return cached end
+    cached = { viewer:GetChildren() }
+    viewerChildrenCache[viewerFrameName] = cached
+    return cached
+end
+
 -- Forward declarations
 local resizeProcGlow  -- defined in Icon Sizing section, used by hookProcGlowResizing
 local applyPerIconCooldownOpacity  -- defined in Per-Icon Cooldown Opacity section
@@ -1129,7 +1144,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
     if not viewer then return end
 
     if viewer.IsVisible and not viewer:IsVisible() then
-        for _, child in ipairs({ viewer:GetChildren() }) do
+        for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
             Overlays.HideOverlay(child)
         end
         return
@@ -1151,7 +1166,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
         iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
     end
 
-    for _, child in ipairs({ viewer:GetChildren() }) do
+    for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
         if isValidCDMItemFrame(child) then
             if not isFrameVisible(child) then
                 Overlays.HideOverlay(child)
@@ -1241,6 +1256,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
     if viewer.OnAcquireItemFrame then
         hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, itemFrame)
+            invalidateChildrenCache(viewerFrameName)
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
                     if not isValidCDMItemFrame(itemFrame) then return end
@@ -1299,6 +1315,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
     if viewer.OnReleaseItemFrame then
         hooksecurefunc(viewer, "OnReleaseItemFrame", function(_, itemFrame)
+            invalidateChildrenCache(viewerFrameName)
             -- Clear keybind spell cache for released icon
             if addon.SpellBindings and addon.SpellBindings.ClearIconCache then
                 addon.SpellBindings.ClearIconCache(itemFrame)
@@ -1318,6 +1335,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
     if viewer.RefreshLayout then
         hooksecurefunc(viewer, "RefreshLayout", function()
+            invalidateChildrenCache(viewerFrameName)
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
                     Overlays.ApplyToViewer(viewerFrameName, componentId)
@@ -1575,7 +1593,7 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
     -- Compute text dim alpha (absolute, used with SetIgnoreParentAlpha)
     local textDimAlpha = textSetting / 100
 
-    for _, child in ipairs({ viewer:GetChildren() }) do
+    for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
         if isValidCDMItemFrame(child) and isFrameVisible(child) then
             local idOk, spellId = pcall(function() return child:GetBaseSpellID() end)
             if idOk and spellId then
@@ -1695,17 +1713,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         end
 
     elseif event == "PLAYER_TARGET_CHANGED" then
-        -- Update opacity for target state change
+        -- Update opacity for target state change (no styling depends on target)
         updateAllViewerOpacities()
         -- Re-apply per-icon cooldown opacity with new container alpha
         for viewerName, componentId in pairs(CDM_VIEWERS) do
             applyPerIconCooldownOpacity(viewerName, componentId)
-            throttledRefresh(viewerName, componentId)
         end
 
     elseif event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
-        throttledRefresh("EssentialCooldownViewer", "essentialCooldowns")
-        throttledRefresh("UtilityCooldownViewer", "utilityCooldowns")
+        -- Only update per-icon cooldown dimming; icon lifecycle is handled by
+        -- OnAcquireItemFrame/OnReleaseItemFrame hooks, layout by RefreshLayout hook.
+        applyPerIconCooldownOpacity("EssentialCooldownViewer", "essentialCooldowns")
+        applyPerIconCooldownOpacity("UtilityCooldownViewer", "utilityCooldowns")
 
     end
 end)
@@ -1757,6 +1776,24 @@ end
 addon.CDMIconApplyStyling = function(component)
     if addon.RefreshCDMOverlays then
         addon.RefreshCDMOverlays(component.id)
+    end
+end
+
+-- Lightweight opacity-only refresh for icon-based CDM groups.
+-- Used by RefreshOpacityState to avoid full per-icon restyle on combat/target events.
+addon.CDMIconRefreshOpacity = function(component)
+    for viewerName, cid in pairs(CDM_VIEWERS) do
+        if cid == component.id then
+            applyViewerOpacity(viewerName, cid)
+            applyPerIconCooldownOpacity(viewerName, cid)
+            break
+        end
+    end
+    -- Also cover viewers in CDM_OPACITY_VIEWERS but not CDM_VIEWERS (e.g., BuffBarCooldownViewer)
+    for viewerName, cid in pairs(CDM_OPACITY_VIEWERS) do
+        if cid == component.id and not CDM_VIEWERS[viewerName] then
+            applyViewerOpacity(viewerName, cid)
+        end
     end
 end
 

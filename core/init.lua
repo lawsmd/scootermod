@@ -194,7 +194,7 @@ function addon:RefreshOpacityState()
     end
     -- Update all components that have opacity settings (CDM, Action Bars, Auras, etc.)
     for id, component in pairs(self.Components) do
-        if component.ApplyStyling and component.settings then
+        if (component.RefreshOpacity or component.ApplyStyling) and component.settings then
             -- Check for opacity settings with various naming conventions:
             -- - CDM uses: opacity, opacityOutOfCombat, opacityWithTarget
             -- - Action Bars use: barOpacity, barOpacityOutOfCombat, barOpacityWithTarget
@@ -207,7 +207,11 @@ function addon:RefreshOpacityState()
                 component.settings.barOpacityOutOfCombat or
                 component.settings.barOpacityWithTarget
             if hasOpacity then
-                pcall(component.ApplyStyling, component)
+                if component.RefreshOpacity then
+                    pcall(component.RefreshOpacity, component)
+                else
+                    pcall(component.ApplyStyling, component)
+                end
             end
         end
     end
