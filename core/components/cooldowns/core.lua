@@ -299,6 +299,7 @@ local textAlphaDecoupled = setmetatable({}, { __mode = "k" })
 -- Forward declarations
 local resizeProcGlow  -- defined in Icon Sizing section, used by hookProcGlowResizing
 local applyPerIconCooldownOpacity  -- defined in Per-Icon Cooldown Opacity section
+local applyViewerOpacity  -- defined in Viewer Opacity section, used by ApplyToViewer
 
 -- Check if Blizzard's DebuffBorder is present and visible on a CDM icon
 -- Used to avoid drawing Scoot borders over Blizzard's debuff-type borders
@@ -796,22 +797,6 @@ local function hookCooldownTextStyling()
         end)
     end
 
-    -- Also hook CooldownFrame_SetTimer if it exists (legacy API)
-    if CooldownFrame_SetTimer then
-        hooksecurefunc("CooldownFrame_SetTimer", function(cooldownFrame, start, duration, enable, forceShowDrawEdge, modRate)
-            if not cooldownFrame then return end
-            if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
-
-            pcall(function()
-                C_Timer.After(0, function()
-                    if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
-                        pcall(applyCooldownTextStyle, cooldownFrame)
-                    end
-                end)
-            end)
-        end)
-    end
-
     directTextStyleHooked = true
 end
 
@@ -865,27 +850,6 @@ function addon.RefreshCDMTextStyling()
             end
         end
     end
-end
-
--- Legacy stub functions (kept for compatibility but no longer used)
-local function applyCooldownTextToOverlay(overlay, cdmIcon, cfg)
-    -- Legacy stub; direct styling handles text now
-    if overlay and overlay.cooldownText then
-        overlay.cooldownText:Hide()
-    end
-end
-
-local function applyChargeTextToOverlay(overlay, cdmIcon, cfg)
-    -- Legacy stub; direct styling handles text now
-    if overlay and overlay.chargeText then
-        overlay.chargeText:Hide()
-    end
-end
-
-local function hideTextOnOverlay(overlay)
-    if not overlay then return end
-    if overlay.cooldownText then overlay.cooldownText:Hide() end
-    if overlay.chargeText then overlay.chargeText:Hide() end
 end
 
 --------------------------------------------------------------------------------
@@ -994,8 +958,6 @@ function Overlays.ApplyText(cdmIcon, opts)
     if not cdmIcon then return end
 
     if not isFrameVisible(cdmIcon) then
-        local overlay = activeOverlays[cdmIcon]
-        if overlay then hideTextOnOverlay(overlay) end
         return
     end
 
@@ -1003,36 +965,16 @@ function Overlays.ApplyText(cdmIcon, opts)
     if not overlay then return end
 
     if opts then
-        applyCooldownTextToOverlay(overlay, cdmIcon, opts.cooldown)
-        applyChargeTextToOverlay(overlay, cdmIcon, opts.stacks)
         overlay:Show()
-    else
-        hideTextOnOverlay(overlay)
     end
 end
 
 function Overlays.HideText(cdmIcon)
-    if not cdmIcon then return end
-    local overlay = activeOverlays[cdmIcon]
-    if overlay then
-        hideTextOnOverlay(overlay)
-    end
+    -- No-op: overlay text FontStrings are not created in the current codebase
 end
 
 function Overlays.RefreshText(cdmIcon, opts)
-    if not cdmIcon then return end
-    local overlay = activeOverlays[cdmIcon]
-    if not overlay then return end
-
-    if not isFrameVisible(cdmIcon) then
-        hideTextOnOverlay(overlay)
-        return
-    end
-
-    if opts then
-        applyCooldownTextToOverlay(overlay, cdmIcon, opts.cooldown)
-        applyChargeTextToOverlay(overlay, cdmIcon, opts.stacks)
-    end
+    -- No-op: overlay text FontStrings are not created in the current codebase
 end
 
 function Overlays.HideAll()
@@ -1535,7 +1477,7 @@ local function getViewerOpacityForState(componentId)
 end
 
 -- Apply opacity to a single viewer frame and its overlays
-local function applyViewerOpacity(viewerName, componentId)
+applyViewerOpacity = function(viewerName, componentId)
     local viewer = _G[viewerName]
     if not viewer then return end
 

@@ -67,53 +67,6 @@ local function ApplyFontSettings(fontString, face, size, style)
     pcall(fontString.SetFont, fontString, face, size, style)
 end
 
-local function CleanupTextConfig(cfg)
-    if not cfg then return end
-    cfg.color = nil
-    cfg.offset = nil
-    cfg.alignment = nil -- Removed feature (causes infinite tooltip growth)
-end
-
-local function ShallowCopyFontConfig(src)
-    src = src or {}
-    return {
-        fontFace = src.fontFace,
-        size = src.size,
-        style = src.style,
-    }
-end
-
--- One-shot flag: migration only needs to run once per session
-local tooltipConfigsMigrated = false
-
-local function EnsureNewTooltipTextConfigs(db)
-    if tooltipConfigsMigrated then return end
-    if not db then return end
-
-    -- Migration: use old Line 2 settings as the initial value for Everything Else.
-    if db.textEverythingElse == nil then
-        db.textEverythingElse = ShallowCopyFontConfig(db.textLine2 or {
-            fontFace = "FRIZQT__",
-            size = 12,
-            style = "OUTLINE",
-        })
-    end
-
-    if db.textComparison == nil then
-        db.textComparison = {
-            fontFace = "FRIZQT__",
-            size = 12,
-            style = "OUTLINE",
-        }
-    end
-
-    CleanupTextConfig(db.textTitle)
-    CleanupTextConfig(db.textEverythingElse)
-    CleanupTextConfig(db.textComparison)
-
-    tooltipConfigsMigrated = true
-end
-
 local function ApplyGameTooltipText(db)
     -- Resolve title font once
     local titleCfg = db.textTitle or FONT_DEFAULTS
@@ -255,7 +208,6 @@ local function RegisterTooltipPostProcessor()
         if not comp or not comp.db then return end
 
         local db = comp.db
-        EnsureNewTooltipTextConfigs(db)
 
         if tooltip == GameTooltip then
             ApplyGameTooltipText(db)
@@ -559,8 +511,6 @@ local function ApplyTooltipStyling(self)
     if not tooltip then return end
 
     local db = self.db or {}
-
-    EnsureNewTooltipTextConfigs(db)
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()

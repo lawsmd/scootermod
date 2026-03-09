@@ -122,11 +122,7 @@ local function _ReadAllowOffscreen(unit)
 	if enabled then
 		return true
 	end
-	-- Legacy compatibility: prior slider stored `containerOffsetX`. Any non-zero value
-	-- effectively meant "unlock off-screen drag", but also applied a positional delta.
-	-- Non-zero legacy values are now treated as "enabled" WITHOUT moving the frame.
-	local legacy = tonumber(rawget(misc, "containerOffsetX") or 0) or 0
-	return legacy ~= 0
+	return false
 end
 
 local pendingUnits = {}

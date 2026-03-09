@@ -172,8 +172,4 @@ addon.ApplyUnitFrameScaleMultFor = applyScaleMultFor
 addon.ApplyAllUnitFrameScaleMults = applyAllScaleMults
 addon.OnUnitFrameScaleMultLayoutsUpdated = onLayoutsUpdated
 
--- Legacy function kept for compatibility (no-op now since Edit Mode is read directly)
-addon.InvalidateUnitFrameScaleMultBaselines = function()
-    debugPrint("InvalidateUnitFrameScaleMultBaselines called (no-op, Edit Mode is read directly)")
-end
 

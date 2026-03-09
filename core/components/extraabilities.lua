@@ -213,9 +213,6 @@ local function ApplyExtraAbilitiesStyling(self)
         pcall(fn, container, scaleValue)
     end
 
-    -- Migrate: remove defunct OOC opacity setting from saved profiles
-    if self.db.barOpacityOutOfCombat ~= nil then self.db.barOpacityOutOfCombat = nil end
-
     -- Apply opacity
     local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
@@ -250,24 +247,6 @@ local function ApplyExtraAbilitiesStyling(self)
 
     -- Get settings
     local hideBlizzardArt = self.db and self.db.hideBlizzardArt
-
-    -- Migration: convert old toggle settings to unified borderStyle
-    if self.db then
-        if self.db.borderDisableAll then
-            self.db.borderStyle = "hidden"
-            self.db.borderDisableAll = nil
-            self.db.borderEnable = nil
-        elseif self.db.borderEnable then
-            if not self.db.borderStyle or self.db.borderStyle == "off" then
-                self.db.borderStyle = "square"
-            end
-            self.db.borderEnable = nil
-        elseif self.db.borderEnable == false then
-            self.db.borderStyle = self.db.borderStyle or "off"
-            self.db.borderEnable = nil
-            self.db.borderDisableAll = nil
-        end
-    end
 
     local styleKey = (self.db and self.db.borderStyle) or "off"
     if styleKey == "none" then styleKey = "square"; if self.db then self.db.borderStyle = styleKey end end

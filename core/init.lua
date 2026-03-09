@@ -18,48 +18,8 @@ function addon:OnInitialize()
     -- but we ensure its initializer runs if it used the RegisterComponent pattern
 
 
-    -- One-time migration: ScooterModDB → ScootDB
-    if ScooterModDB and not ScootDB then
-        ScootDB = ScooterModDB
-        ScooterModDB = nil
-    end
-
     -- 2. Create the database, using the component list to build defaults
     self.db = LibStub("AceDB-3.0"):New("ScootDB", self:GetDefaults(), true)
-
-    -- Migrate legacy "tui" prefixed global keys to new names (one release cycle)
-    if self.db and self.db.global then
-        local g = self.db.global
-        if g.tuiAccentColor and not g.accentColor then
-            g.accentColor = g.tuiAccentColor
-        end
-        if g.tuiWindowPosition and not g.windowPosition then
-            g.windowPosition = g.tuiWindowPosition
-        end
-        if g.tuiWindowSize and not g.windowSize then
-            g.windowSize = g.tuiWindowSize
-        end
-        -- Keep old keys for one release cycle, then remove in a follow-up
-    end
-
-    -- Migrate profile-level keys: scooterModButtonSeparate → scootButtonSeparate, scooterProfile → scootProfile
-    if self.db and self.db.sv and self.db.sv.profiles then
-        for _, profileData in pairs(self.db.sv.profiles) do
-            -- Minimap component setting
-            if profileData.components and profileData.components.minimapStyle then
-                local mm = profileData.components.minimapStyle
-                if mm.scooterModButtonSeparate ~= nil and mm.scootButtonSeparate == nil then
-                    mm.scootButtonSeparate = mm.scooterModButtonSeparate
-                    mm.scooterModButtonSeparate = nil
-                end
-            end
-            -- Preset profile snapshot key
-            if profileData.scooterProfile ~= nil and profileData.scootProfile == nil then
-                profileData.scootProfile = profileData.scooterProfile
-                profileData.scooterProfile = nil
-            end
-        end
-    end
 
     if self.Profiles and self.Profiles.Initialize then
         self.Profiles:Initialize()
@@ -93,40 +53,6 @@ function addon:OnInitialize()
     -- NOTE: pendingProfileActivation is consumed in Profiles:Initialize() so the new
     -- profile/layout is activated as early as possible (before ApplyStyles runs).
 
-    -- Migrate legacy iconWidth/iconHeight to tallWideRatio for all applicable components
-    self:MigrateIconWidthHeightToRatio()
-
-    -- Migrate legacy pixel-based barWidth to new Edit Mode percentage scale
-    do
-        local profile = self.db and self.db.profile
-        local trackedBarsDb = profile and profile.components and profile.components.trackedBars
-        if trackedBarsDb and trackedBarsDb.barWidth then
-            local old = tonumber(trackedBarsDb.barWidth)
-            if old and old > 49 then
-                -- Old values were pixels (120-480, default 220)
-                -- Convert to approximate percentage: old / 220 * 100
-                local pct = math.floor((old / 220) * 100 + 0.5)
-                if pct < 50 then pct = 50 elseif pct > 200 then pct = 200 end
-                trackedBarsDb.barWidth = pct
-            end
-        end
-    end
-
-    -- Clean up stale centerAnchor/centerAdditionalRows keys from Custom Groups
-    do
-        local profile = self.db and self.db.profile
-        local components = profile and profile.components
-        if components then
-            for i = 1, 3 do
-                local cgDb = components["customGroup" .. i]
-                if cgDb then
-                    cgDb.centerAnchor = nil
-                    cgDb.centerAdditionalRows = nil
-                end
-            end
-        end
-    end
-
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
 
@@ -146,69 +72,6 @@ function addon:OnInitialize()
     end
 
     self:RegisterEvents()
-end
-
--- Migrate legacy iconWidth/iconHeight settings to tallWideRatio
--- This converts saved width/height pairs into the new unified ratio slider value
-function addon:MigrateIconWidthHeightToRatio()
-    if not self.db or not self.db.profile then return end
-    local profile = self.db.profile
-
-    -- Component IDs and their base sizes for migration
-    local componentMigrations = {
-        { id = "essentialCooldowns", baseSize = 50 },
-        { id = "utilityCooldowns", baseSize = 30 },
-        { id = "trackedBuffs", baseSize = 40 },
-        { id = "buffs", baseSize = 30 },
-        { id = "debuffs", baseSize = 30 },
-    }
-
-    -- Migrate component settings
-    profile.components = profile.components or {}
-    for _, info in ipairs(componentMigrations) do
-        local compDb = profile.components[info.id]
-        if compDb then
-            local width = tonumber(compDb.iconWidth)
-            local height = tonumber(compDb.iconHeight)
-            -- Only migrate if iconWidth/iconHeight exist and tallWideRatio doesn't
-            if width and height and compDb.tallWideRatio == nil then
-                local ratio = 0
-                if addon.IconRatio and addon.IconRatio.MigrateFromWidthHeight then
-                    ratio = addon.IconRatio.MigrateFromWidthHeight(width, height, info.baseSize)
-                end
-                compDb.tallWideRatio = ratio
-                compDb.iconWidth = nil
-                compDb.iconHeight = nil
-            end
-        end
-    end
-
-    -- Migrate trackedBars icon settings (uses iconTallWideRatio instead)
-    local trackedBarsDb = profile.components.trackedBars
-    if trackedBarsDb then
-        local width = tonumber(trackedBarsDb.iconWidth)
-        local height = tonumber(trackedBarsDb.iconHeight)
-        if width and height and trackedBarsDb.iconTallWideRatio == nil then
-            local ratio = 0
-            if addon.IconRatio and addon.IconRatio.MigrateFromWidthHeight then
-                ratio = addon.IconRatio.MigrateFromWidthHeight(width, height, 30)
-            end
-            trackedBarsDb.iconTallWideRatio = ratio
-            trackedBarsDb.iconWidth = nil
-            trackedBarsDb.iconHeight = nil
-        end
-    end
-
-    -- Migrate Unit Frame buffs/debuffs (Target and Focus)
-    profile.unitFrames = profile.unitFrames or {}
-    for _, unit in ipairs({ "Target", "Focus" }) do
-        local unitDb = profile.unitFrames[unit]
-        if unitDb and unitDb.buffsDebuffs then
-            local cfg = unitDb.buffsDebuffs
-            -- UF buffs/debuffs didn't have iconWidth/iconHeight before, only iconScale
-            -- But we add tallWideRatio support now - no migration needed, just ensure nil doesn't break
-        end
-    end
 end
 
 function addon:GetDefaults()

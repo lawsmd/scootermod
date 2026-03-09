@@ -140,19 +140,6 @@ local function debugTracePowerBar(message, ...)
     end
 end
 
--- Power Bar Custom Position (DEPRECATED): replaced by PRD with Edit Mode positioning.
--- Retained for backward compatibility; always returns false.
-
-local function applyCustomPowerBarPosition(unit, pb, cfg)
-    -- Feature deprecated - always return false
-    -- Clear any legacy flags that may exist on the frame
-    if pb then
-        setProp(pb, "powerBarCustomActive", nil)
-        setProp(pb, "powerBarCustomPosEnabled", nil)
-    end
-    return false
-end
-
 -- Debug helper:
 -- /scoot debug powerbarpos [simulate]
 -- Shows current Player ManaBar points + Scoot custom-position state.
@@ -4563,8 +4550,7 @@ do
 						
             -- Power Bar positioning offsets / custom positioning (Player only)
             do
-                local customHandled = applyCustomPowerBarPosition(unit, pb, cfg)
-                if not customHandled and not inCombat then
+                if not inCombat then
                     local offsetX = tonumber(cfg.powerBarOffsetX) or 0
                     local offsetY = tonumber(cfg.powerBarOffsetY) or 0
 

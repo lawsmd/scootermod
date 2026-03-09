@@ -579,8 +579,7 @@ local function ApplyZoneTextStyle(db)
         return
     end
 
-    -- Check position setting (support both old zoneTextAnchor and new zoneTextPosition)
-    local position = db.zoneTextPosition or db.zoneTextAnchor or "dock"
+    local position = db.zoneTextPosition or "dock"
 
     if position == "dock" then
         -- Show Blizzard's zone text (unless dock is hidden)
@@ -723,7 +722,7 @@ local function ApplyZoneCoordinatesStyle(db)
     local fontStyle = db.zoneTextFontStyle or "OUTLINE"
     if fontStyle == "NONE" then fontStyle = "" end
 
-    local position = db.zoneTextPosition or db.zoneTextAnchor or "dock"
+    local position = db.zoneTextPosition or "dock"
 
     if position == "dock" then
         -- Dock mode: use dedicated dock overlay anchored below MinimapZoneText
@@ -824,7 +823,7 @@ local function UpdateClockText()
     if not db or db.clockHide then return end
 
     -- If position is "dock", the overlay is not updated (Blizzard handles it)
-    local position = db.clockPosition or db.clockAnchor or "dock"
+    local position = db.clockPosition or "dock"
     if position == "dock" then return end
 
     local overlays = ensureOverlayTable()
@@ -923,8 +922,7 @@ local function ApplyClockStyle(db)
         return
     end
 
-    -- Check position setting (support both old clockAnchor and new clockPosition)
-    local position = db.clockPosition or db.clockAnchor or "dock"
+    local position = db.clockPosition or "dock"
 
     if position == "dock" then
         -- Show Blizzard's clock (unless dock is hidden)
@@ -1943,7 +1941,6 @@ addon:RegisterComponentInitializer(function(self)
             zoneTextFontSize = { type = "addon", default = 12 },
             zoneTextFontStyle = { type = "addon", default = "OUTLINE" },
             zoneCoordinatesEnabled = { type = "addon", default = false },
-            zoneTextAnchor = { type = "addon", default = "TOP" },  -- Legacy, kept for backwards compat
             zoneTextOffsetX = { type = "addon", default = 0 },
             zoneTextOffsetY = { type = "addon", default = 0 },
 
@@ -1957,7 +1954,6 @@ addon:RegisterComponentInitializer(function(self)
             clockFontStyle = { type = "addon", default = "OUTLINE" },
             clockColorMode = { type = "addon", default = "default" },
             clockCustomColor = { type = "addon", default = {1, 1, 1, 1} },
-            clockAnchor = { type = "addon", default = "BOTTOM" },  -- Legacy, kept for backwards compat
             clockOffsetX = { type = "addon", default = 0 },
             clockOffsetY = { type = "addon", default = 0 },
 

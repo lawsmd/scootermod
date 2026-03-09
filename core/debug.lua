@@ -935,10 +935,8 @@ function addon.DebugOffscreenUnlockDump()
         local unitCfg = (type(uf) == "table") and rawget(uf, unitKey) or nil
         local misc = (type(unitCfg) == "table") and rawget(unitCfg, "misc") or nil
         local allow = (type(misc) == "table") and (rawget(misc, "allowOffscreenDrag") == true) or false
-        local legacy = (type(misc) == "table") and (tonumber(rawget(misc, "containerOffsetX") or 0) or 0) or 0
-
         push("== "..unitKey.." ==")
-        push("DB: allowOffscreenDrag="..tostring(allow).."  legacy_containerOffsetX="..tostring(legacy))
+        push("DB: allowOffscreenDrag="..tostring(allow))
 
         local candidates, reg = _CollectOffscreenCandidates(unitKey)
         push("RegisteredSystemFrame: ".._SafeName(reg))

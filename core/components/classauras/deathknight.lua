@@ -769,17 +769,6 @@ initFrame:SetScript("OnEvent", function(self, event)
             if vpComp and vpComp.db and dpComp and dpComp.db then
                 dpComp.db.enabled = vpComp.db.enabled
 
-                -- Migrate legacy string dotIconStyle to boolean
-                if vpComp.db.dotIconStyle == "blizzard" then
-                    vpComp.db.dotIconStyle = false
-                elseif vpComp.db.dotIconStyle == "square" then
-                    vpComp.db.dotIconStyle = true
-                end
-
-                -- Clean up removed dotIconSize setting
-                if vpComp.db.dotIconSize ~= nil then
-                    vpComp.db.dotIconSize = nil
-                end
             end
 
             RefreshBothDots()

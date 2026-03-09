@@ -281,12 +281,7 @@ function Minimap.Render(panel, scrollContent)
                             values = positionValues,
                             order = positionOrder,
                             get = function()
-                                -- Support legacy zoneTextAnchor setting
-                                local pos = getSetting("zoneTextPosition")
-                                if pos then return pos end
-                                local anchor = getSetting("zoneTextAnchor")
-                                if anchor then return anchor end
-                                return "dock"
+                                return getSetting("zoneTextPosition") or "dock"
                             end,
                             set = function(v)
                                 setSetting("zoneTextPosition", v)
@@ -362,7 +357,7 @@ function Minimap.Render(panel, scrollContent)
                         })
 
                         -- Only show offset controls when position is not "dock"
-                        local currentPosition = getSetting("zoneTextPosition") or getSetting("zoneTextAnchor") or "dock"
+                        local currentPosition = getSetting("zoneTextPosition") or "dock"
                         if currentPosition ~= "dock" then
                             tabBuilder:AddDualSlider({
                                 label = "Offset",
@@ -407,12 +402,7 @@ function Minimap.Render(panel, scrollContent)
                             values = positionValues,
                             order = positionOrder,
                             get = function()
-                                -- Support legacy clockAnchor setting
-                                local pos = getSetting("clockPosition")
-                                if pos then return pos end
-                                local anchor = getSetting("clockAnchor")
-                                if anchor then return anchor end
-                                return "dock"
+                                return getSetting("clockPosition") or "dock"
                             end,
                             set = function(v)
                                 setSetting("clockPosition", v)
@@ -512,7 +502,7 @@ function Minimap.Render(panel, scrollContent)
                         })
 
                         -- Only show offset controls when position is not "dock"
-                        local currentPosition = getSetting("clockPosition") or getSetting("clockAnchor") or "dock"
+                        local currentPosition = getSetting("clockPosition") or "dock"
                         if currentPosition ~= "dock" then
                             tabBuilder:AddDualSlider({
                                 label = "Offset",
