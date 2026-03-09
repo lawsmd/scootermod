@@ -166,6 +166,20 @@ local activeIcons = { {}, {}, {} }     -- visible icons per group
 -- GCD threshold: cooldowns shorter than this are ignored (GCD)
 local MIN_CD_DURATION = 1.5
 
+-- OPT-10: Module-level comparator functions (eliminate per-call closure allocation)
+local function checkMultiCharge(ci) return ci.maxCharges > 1 end
+local function checkSpellCD(ci) return ci.duration and ci.duration > 0 and ci.isEnabled end
+local function checkItemCD(st, dur, en) return st and dur and dur > MIN_CD_DURATION and en and en ~= 0 end
+local function checkCountGt1(c) return c and c > 1 end
+
+-- OPT-10: Module-level helper for compound SetAlphaFromBoolean expression
+local function setAlphaFromDurObj(cf, durObj, readyAlpha, cdAlpha)
+    cf:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha)
+end
+
+-- OPT-10: Scratch table for BuildGroupOpacityCtx (reused instead of allocating)
+local opacityCtxScratch = {}
+
 -- Item cooldown ticker handle
 local itemTicker = nil
 local trackedItemCount = 0
@@ -496,9 +510,7 @@ local function RefreshSpellCooldown(icon)
     -- Charges (all SpellChargeInfo fields can be secret in restricted contexts)
     local chargeInfo = C_Spell.GetSpellCharges(spellID)
     if chargeInfo then
-        local ok, hasMultiCharges = pcall(function()
-            return chargeInfo.maxCharges > 1
-        end)
+        local ok, hasMultiCharges = pcall(checkMultiCharge, chargeInfo)
         if ok then
             if hasMultiCharges then
                 icon.CountText:SetText(chargeInfo.currentCharges)
@@ -539,9 +551,7 @@ local function RefreshSpellCooldown(icon)
     end
 
     -- Try comparisons (work outside restricted contexts)
-    local ok, isOnCD = pcall(function()
-        return cdInfo.duration and cdInfo.duration > 0 and cdInfo.isEnabled
-    end)
+    local ok, isOnCD = pcall(checkSpellCD, cdInfo)
 
     if ok then
         if isOnCD then
@@ -563,9 +573,7 @@ local function RefreshItemCooldown(icon)
     local itemID = icon.entry.id
 
     local startTime, duration, isEnabled = C_Container.GetItemCooldown(itemID)
-    local ok, isOnCD = pcall(function()
-        return startTime and duration and duration > MIN_CD_DURATION and isEnabled and isEnabled ~= 0
-    end)
+    local ok, isOnCD = pcall(checkItemCD, startTime, duration, isEnabled)
 
     if ok then
         if isOnCD then
@@ -580,9 +588,7 @@ local function RefreshItemCooldown(icon)
 
     -- Stack count
     local count = C_Item.GetItemCount(itemID, false, true)
-    local countOk, showCount = pcall(function()
-        return count and count > 1
-    end)
+    local countOk, showCount = pcall(checkCountGt1, count)
     if countOk and showCount then
         icon.CountText:SetText(count)
         icon.CountText:Show()
@@ -637,30 +643,30 @@ end
 
 local function applyCGTextAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD)
     if not cooldownFrame then return end
-    pcall(function() cooldownFrame:SetIgnoreParentAlpha(true) end)
+    pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
     if isGCD then
-        pcall(function() cooldownFrame:SetAlpha(containerAlpha) end)
+        pcall(cooldownFrame.SetAlpha, cooldownFrame, containerAlpha)
     else
         local readyAlpha = containerAlpha
         local cdAlpha = math.min(containerAlpha, textDimAlpha)
-        pcall(function() cooldownFrame:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha) end)
+        pcall(setAlphaFromDurObj, cooldownFrame, durObj, readyAlpha, cdAlpha)
     end
 end
 
 local function applyCGTextAlphaItem(cooldownFrame, isOnCD, containerAlpha, textDimAlpha)
     if not cooldownFrame then return end
-    pcall(function() cooldownFrame:SetIgnoreParentAlpha(true) end)
+    pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
     local readyAlpha = containerAlpha
     local cdAlpha = math.min(containerAlpha, textDimAlpha)
-    pcall(function() cooldownFrame:SetAlpha(isOnCD and cdAlpha or readyAlpha) end)
+    pcall(cooldownFrame.SetAlpha, cooldownFrame, isOnCD and cdAlpha or readyAlpha)
 end
 
 local function resetCGTextAlpha(cooldownFrame)
     if cooldownFrame and textAlphaDecoupled[cooldownFrame] then
-        pcall(function() cooldownFrame:SetIgnoreParentAlpha(false) end)
-        pcall(function() cooldownFrame:SetAlpha(1.0) end)
+        pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, false)
+        pcall(cooldownFrame.SetAlpha, cooldownFrame, 1.0)
         textAlphaDecoupled[cooldownFrame] = nil
     end
 end
@@ -682,14 +688,13 @@ local function BuildGroupOpacityCtx(groupIndex)
         iconDimAlpha = math.min(1.0, iconDimAlpha / containerAlpha)
     end
 
-    return {
-        iconSetting = iconSetting,
-        textSetting = textSetting,
-        containerAlpha = containerAlpha,
-        needsTextOverride = (textSetting ~= iconSetting),
-        iconDimAlpha = iconDimAlpha,
-        textDimAlpha = textSetting / 100,
-    }
+    opacityCtxScratch.iconSetting = iconSetting
+    opacityCtxScratch.textSetting = textSetting
+    opacityCtxScratch.containerAlpha = containerAlpha
+    opacityCtxScratch.needsTextOverride = (textSetting ~= iconSetting)
+    opacityCtxScratch.iconDimAlpha = iconDimAlpha
+    opacityCtxScratch.textDimAlpha = textSetting / 100
+    return opacityCtxScratch
 end
 
 -- Apply spell opacity using pre-fetched cdInfo and pre-built ctx.
@@ -762,8 +767,8 @@ end
 
 -- Full opacity application (opacity-only path, fetches its own cooldown state).
 -- Used by UpdateGroupCooldownOpacities for combat/target change events.
-local function ApplyCooldownOpacity(icon, groupIndex)
-    local ctx = BuildGroupOpacityCtx(groupIndex)
+local function ApplyCooldownOpacity(icon, groupIndex, ctx)
+    ctx = ctx or BuildGroupOpacityCtx(groupIndex)
     if not ctx then
         icon:SetAlpha(1.0)
         if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
@@ -783,9 +788,7 @@ local function ApplyCooldownOpacity(icon, groupIndex)
 
     elseif icon.entry.type == "item" then
         local startTime, duration, isEnabled = C_Container.GetItemCooldown(icon.entry.id)
-        local ok, isOnCD = pcall(function()
-            return startTime and duration and duration > 1.5 and isEnabled and isEnabled ~= 0
-        end)
+        local ok, isOnCD = pcall(checkItemCD, startTime, duration, isEnabled)
         ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
     end
 end
@@ -798,7 +801,7 @@ local function UpdateGroupCooldownOpacities(groupIndex)
                 icon:SetAlpha(1.0)
                 if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
             else
-                ApplyCooldownOpacity(icon, groupIndex)
+                ApplyCooldownOpacity(icon, groupIndex, ctx)
             end
         end
     end
