@@ -25,6 +25,9 @@ function Buffs.Render(panel, scrollContent)
     local syncEditModeSetting = h.sync
 
     local function applyStyles()
+        if addon.BumpAuraConfigVersion then
+            addon.BumpAuraConfigVersion("buffs")
+        end
         if addon and addon.ApplyAuraFrameVisualsFor then
             C_Timer.After(0, function()
                 local comp = getComponent()

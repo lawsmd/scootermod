@@ -9,6 +9,13 @@ local PlayerInCombat = Util.PlayerInCombat
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
 
+-- Config version tracking: skip re-styling auras when config hasn't changed (OPT-01)
+local configVersions = {}  -- componentId -> integer
+
+function addon.BumpAuraConfigVersion(componentId)
+    configVersions[componentId] = (configVersions[componentId] or 0) + 1
+end
+
 -- Helper to get or create state for a frame/object
 local function getState(obj)
     if not obj then return nil end
@@ -88,9 +95,6 @@ function addon.ApplyAuraFrameVisualsFor(component)
         hookMethod("SetTextColor")
         hookMethod("SetVertexColor")
         hookMethod("SetFontObject")
-        hookMethod("SetFont")
-        hookMethod("SetFormattedText")
-        hookMethod("SetText")
     end
 
     local function ensureDefaultColor(cfg, fs)
@@ -379,67 +383,111 @@ function addon.ApplyAuraFrameVisualsFor(component)
         end
     end
 
+    local currentVersion = configVersions[componentId] or 0
+
     local processed = {}
     for _, collection in ipairs(auraCollections) do
         for _, aura in ipairs(collection) do
             if aura and not processed[aura] then
                 processed[aura] = true
                 local icon = aura.Icon or aura.icon or aura.IconTexture
-                if icon then
-                    captureDebuffBorderDefaults(aura, icon)
-                end
-                if icon and icon.SetSize and width and height then
-                    icon:SetSize(width, height)
-                    -- Calculate texture coordinates to crop instead of stretch
-                    local aspectRatio = width / height
-                    local left, right, top, bottom = 0, 1, 0, 1
-                    if aspectRatio > 1.0 then
-                        -- Wider than tall - crop top/bottom
-                        local cropAmount = 1.0 - (1.0 / aspectRatio)
-                        local cropOffset = cropAmount / 2.0
-                        top = cropOffset
-                        bottom = 1.0 - cropOffset
-                    elseif aspectRatio < 1.0 then
-                        -- Taller than wide - crop left/right
-                        local cropAmount = 1.0 - aspectRatio
-                        local cropOffset = cropAmount / 2.0
-                        left = cropOffset
-                        right = 1.0 - cropOffset
-                    end
-                    if icon.SetTexCoord then
-                        pcall(icon.SetTexCoord, icon, left, right, top, bottom)
-                    end
-                end
-                if icon then
-                    resizeDebuffBorder(aura, icon, width, height)
-                end
-                if icon then
-                    if borderEnabled then
-                        setDefaultAuraBorderVisible(aura, false)
-                        addon.ApplyIconBorderStyle(icon, borderStyle, {
-                            thickness = borderThickness,
-                            color = tintColor,
-                            tintEnabled = borderTintEnabled,
-                            db = db,
-                            thicknessKey = "borderThickness",
-                            tintColorKey = "borderTintColor",
-                            defaultThickness = settings.borderThickness and settings.borderThickness.default or 1,
-                        })
-                    else
-                        setDefaultAuraBorderVisible(aura, true)
-                        clearCustomBorder(icon)
-                    end
-                end
 
-                local stacksFS = aura.Count or aura.count or aura.Applications
-                if stacksFS and stacksFS.GetObjectType and stacksFS:GetObjectType() == "FontString" then
-                    applyAuraText(stacksFS, "textStacks", 16, aura)
-                end
+                -- OPT-01: Skip auras already styled for the current config version
+                local auraVState = getState(aura)
+                if not auraVState or auraVState.lastStyledVersion ~= currentVersion then
 
-                local durationFS = aura.Duration
-                if durationFS and durationFS.GetObjectType and durationFS:GetObjectType() == "FontString" then
-                    applyAuraText(durationFS, "textDuration", 16, aura)
-                end
+                    if icon then
+                        captureDebuffBorderDefaults(aura, icon)
+                    end
+                    if icon and icon.SetSize and width and height then
+                        icon:SetSize(width, height)
+                        -- Calculate texture coordinates to crop instead of stretch
+                        local aspectRatio = width / height
+                        local left, right, top, bottom = 0, 1, 0, 1
+                        if aspectRatio > 1.0 then
+                            -- Wider than tall - crop top/bottom
+                            local cropAmount = 1.0 - (1.0 / aspectRatio)
+                            local cropOffset = cropAmount / 2.0
+                            top = cropOffset
+                            bottom = 1.0 - cropOffset
+                        elseif aspectRatio < 1.0 then
+                            -- Taller than wide - crop left/right
+                            local cropAmount = 1.0 - aspectRatio
+                            local cropOffset = cropAmount / 2.0
+                            left = cropOffset
+                            right = 1.0 - cropOffset
+                        end
+                        if icon.SetTexCoord then
+                            pcall(icon.SetTexCoord, icon, left, right, top, bottom)
+                        end
+                    end
+                    if icon then
+                        resizeDebuffBorder(aura, icon, width, height)
+                    end
+                    if icon then
+                        -- OPT-01 Opt3: Border param cache — skip ApplyIconBorderStyle when params match
+                        if borderEnabled then
+                            setDefaultAuraBorderVisible(aura, false)
+                            local iconState = getState(icon)
+                            local lb = iconState and iconState.lastBorder
+                            local defaultThick = settings.borderThickness and settings.borderThickness.default or 1
+                            if not lb
+                                or lb.style ~= borderStyle
+                                or lb.thickness ~= borderThickness
+                                or lb.tintEnabled ~= borderTintEnabled
+                                or lb.version ~= currentVersion
+                                or (borderTintEnabled and tintColor and (
+                                    not lb.tintR or lb.tintR ~= tintColor[1]
+                                    or lb.tintG ~= tintColor[2]
+                                    or lb.tintB ~= tintColor[3]
+                                    or lb.tintA ~= tintColor[4]
+                                ))
+                            then
+                                addon.ApplyIconBorderStyle(icon, borderStyle, {
+                                    thickness = borderThickness,
+                                    color = tintColor,
+                                    tintEnabled = borderTintEnabled,
+                                    db = db,
+                                    thicknessKey = "borderThickness",
+                                    tintColorKey = "borderTintColor",
+                                    defaultThickness = defaultThick,
+                                })
+                                if iconState then
+                                    iconState.lastBorder = {
+                                        style = borderStyle,
+                                        thickness = borderThickness,
+                                        tintEnabled = borderTintEnabled,
+                                        tintR = tintColor and tintColor[1],
+                                        tintG = tintColor and tintColor[2],
+                                        tintB = tintColor and tintColor[3],
+                                        tintA = tintColor and tintColor[4],
+                                        version = currentVersion,
+                                    }
+                                end
+                            end
+                        else
+                            setDefaultAuraBorderVisible(aura, true)
+                            clearCustomBorder(icon)
+                            local iconState = getState(icon)
+                            if iconState then iconState.lastBorder = nil end
+                        end
+                    end
+
+                    local stacksFS = aura.Count or aura.count or aura.Applications
+                    if stacksFS and stacksFS.GetObjectType and stacksFS:GetObjectType() == "FontString" then
+                        applyAuraText(stacksFS, "textStacks", 16, aura)
+                    end
+
+                    local durationFS = aura.Duration
+                    if durationFS and durationFS.GetObjectType and durationFS:GetObjectType() == "FontString" then
+                        applyAuraText(durationFS, "textDuration", 16, aura)
+                    end
+
+                    if auraVState then
+                        auraVState.lastStyledVersion = currentVersion
+                    end
+
+                end -- version check
             end
         end
     end
@@ -459,6 +507,9 @@ local function ApplyAuraFrameStyling(self)
         end)
         frameState.auraHooked = true
     end
+
+    -- OPT-01: Bump config version so ApplyStyling (profile switch, etc.) forces full re-style
+    addon.BumpAuraConfigVersion(self.id)
 
     if addon and addon.ApplyAuraFrameVisualsFor then
         addon.ApplyAuraFrameVisualsFor(self)
