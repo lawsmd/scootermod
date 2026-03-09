@@ -1280,6 +1280,9 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
 
     -- Apply per-icon cooldown opacity (uses SetAlphaFromBoolean with secret booleans)
     applyPerIconCooldownOpacity(viewerFrameName, componentId)
+
+    -- Re-apply container-level opacity (may have been reset by Blizzard's RefreshLayout/OnShow)
+    applyViewerOpacity(viewerFrameName, componentId)
 end
 
 --------------------------------------------------------------------------------
