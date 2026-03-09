@@ -245,6 +245,8 @@ local function CreateAuraContainer(aura)
         elements = elements,
     }
 
+    addon.RegisterPetBattleFrame(container)
+
     -- Optional callback for per-class modules to initialize custom visuals
     if aura.onContainerCreated then
         aura.onContainerCreated(aura.id, CA._activeAuras[aura.id])

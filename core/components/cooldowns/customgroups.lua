@@ -1326,6 +1326,7 @@ local function InitializeContainers()
         container:SetPoint("CENTER", 0, -100 + (i - 1) * -60)
         container:Hide()
         containers[i] = container
+        addon.RegisterPetBattleFrame(container)
     end
 end
 

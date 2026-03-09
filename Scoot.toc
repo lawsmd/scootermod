@@ -23,6 +23,7 @@ libs/LibDeflate/LibDeflate.lua
 core/framestate.lua
 core/secretsafe.lua
 core/media.lua
+core/petbattle.lua
 core/colors.lua
 core/fonts.lua
 core/barborders.lua

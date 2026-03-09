@@ -166,6 +166,7 @@ local function CreateNoteFrame(index)
 
     frame:Hide()
     noteFrames[index] = frame
+    addon.RegisterPetBattleFrame(frame)
     return frame
 end
 

@@ -636,6 +636,7 @@ local function ensureVertContainer()
     vertContainer:EnableMouse(false)
     vertContainer:SetSize(1, 1)
     vertContainer:Show()
+    addon.RegisterPetBattleFrame(vertContainer)
     return vertContainer
 end
 

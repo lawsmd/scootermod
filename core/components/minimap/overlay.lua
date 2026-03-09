@@ -59,6 +59,7 @@ local function EnsureDarkeningOverlay()
     darkeningFrame.tex = tex
 
     darkeningFrame:Hide()
+    addon.RegisterPetBattleFrame(darkeningFrame)
     return darkeningFrame
 end
 
@@ -343,6 +344,7 @@ local function CreateOverlayButton(db)
 
     btn:Hide()
     overlayButtonFrame = btn
+    addon.RegisterPetBattleFrame(btn)
     return btn
 end
 

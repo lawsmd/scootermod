@@ -75,6 +75,21 @@ local function startAlphaEnforcement(container)
     alphaEnforceTicker = C_Timer.NewTicker(0.25, function()
         if not container or container:IsForbidden() then return end
 
+        -- Hide overlays during pet battles (container is a system frame hidden by
+        -- Blizzard's FrameLock, but our overlays are parented to UIParent)
+        if addon.IsInPetBattle and addon.IsInPetBattle() then
+            for btn, overlay in pairs(buttonOverlays) do
+                if overlay:IsShown() then
+                    overlay:Hide()
+                    if overlay.hotkeyText then overlay.hotkeyText:Hide() end
+                    if addon.Borders and addon.Borders.HideAll then
+                        addon.Borders.HideAll(overlay)
+                    end
+                end
+            end
+            return
+        end
+
         -- Hide overlays when container is not shown (replaces hooksecurefunc on eac.Hide)
         if not container:IsShown() then
             for btn, overlay in pairs(buttonOverlays) do

@@ -393,6 +393,7 @@ local function CreateBorderOverlay()
     createEdge("right")
 
     overlays.border = border
+    addon.RegisterPetBattleFrame(border)
     return border
 end
 
@@ -495,6 +496,7 @@ local function CreateZoneTextOverlay()
     frame.fontString = fontString
 
     overlays.zoneText = frame
+    addon.RegisterPetBattleFrame(frame)
     return frame
 end
 
@@ -650,6 +652,7 @@ local function CreateZoneCoordsDockOverlay()
     frame.fontString = fontString
 
     overlays.zoneCoordsDock = frame
+    addon.RegisterPetBattleFrame(frame)
     return frame
 end
 
@@ -812,6 +815,7 @@ local function CreateClockOverlay()
     frame.fontString = fontString
 
     overlays.clock = frame
+    addon.RegisterPetBattleFrame(frame)
     return frame
 end
 
@@ -1005,6 +1009,7 @@ local function CreateSystemDataOverlay()
     frame.fontString = fontString
 
     overlays.systemData = frame
+    addon.RegisterPetBattleFrame(frame)
     return frame
 end
 
@@ -1255,6 +1260,7 @@ local function CreateButtonContainer()
     end)
 
     buttonContainerFrame = container
+    addon.RegisterPetBattleFrame(container)
     return container
 end
 
@@ -1374,6 +1380,7 @@ local function CreateButtonContainerMenu()
     menu:Hide()
 
     buttonContainerMenu = menu
+    addon.RegisterPetBattleFrame(menu)
 
     -- Create close listener (fullscreen invisible button)
     if not buttonContainerCloseListener then
@@ -1706,6 +1713,7 @@ local function CreateTrackingButton()
     end)
 
     trackingButtonFrame = btn
+    addon.RegisterPetBattleFrame(btn)
     return btn
 end
 
@@ -1767,6 +1775,7 @@ local function CreateMailButton()
     end)
 
     mailButtonFrame = btn
+    addon.RegisterPetBattleFrame(btn)
     return btn
 end
 
