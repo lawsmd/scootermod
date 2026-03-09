@@ -30,30 +30,41 @@ local CDM_VIEWERS = addon.CDM_VIEWERS
 -- Shared Utility Functions
 --------------------------------------------------------------------------------
 
+local cachedDefaultFontFace
 local function getDefaultFontFace()
-    local face = select(1, GameFontNormal:GetFont())
-    return face
+    if not cachedDefaultFontFace then
+        cachedDefaultFontFace = select(1, GameFontNormal:GetFont())
+    end
+    return cachedDefaultFontFace
 end
 addon.GetDefaultFontFace = getDefaultFontFace
 
-local function resolveCDMColor(cfg)
+-- Internal: returns r, g, b, a directly (no table allocation)
+local function resolveCDMColorRGBA(cfg)
     local colorMode = cfg and cfg.colorMode
-    -- Backward compat: existing custom color without mode = treat as custom if non-white
     if not colorMode then
         local c = cfg and cfg.color
         if c and (c[1] ~= 1 or c[2] ~= 1 or c[3] ~= 1 or (c[4] or 1) ~= 1) then
-            return c
+            return c[1], c[2], c[3], c[4] or 1
         end
-        return {1, 1, 1, 1}
+        return 1, 1, 1, 1
     end
     if colorMode == "class" then
         local cr, cg, cb = addon.GetClassColorRGB("player")
-        return {cr or 1, cg or 1, cb or 1, 1}
+        return cr or 1, cg or 1, cb or 1, 1
     elseif colorMode == "custom" then
-        return (cfg and cfg.color) or {1, 1, 1, 1}
+        local c = cfg and cfg.color
+        if c then return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end
+        return 1, 1, 1, 1
     else
-        return {1, 1, 1, 1}
+        return 1, 1, 1, 1
     end
+end
+
+-- Exported: returns table (backward compat for external consumers)
+local function resolveCDMColor(cfg)
+    local r, g, b, a = resolveCDMColorRGBA(cfg)
+    return {r, g, b, a}
 end
 addon.ResolveCDMColor = resolveCDMColor
 
@@ -680,36 +691,25 @@ local function getChargeTextSettings(componentId)
 end
 
 -- Apply font styling directly to a Blizzard FontString (no GetText!)
--- opts.isChargeText: if true, uses BOTTOMRIGHT anchor; otherwise uses CENTER
--- opts.parentFrame: the frame to anchor to (defaults to fontString's parent)
-local function applyFontStyleDirect(fontString, cfg, opts)
+-- isChargeText: if true, uses BOTTOMRIGHT anchor; otherwise uses CENTER
+-- parentFrame: the frame to anchor to (defaults to fontString's parent)
+local function applyFontStyleDirect(fontString, cfg, isChargeText, parentFrame)
     if not fontString or not cfg then return end
 
-    opts = opts or {}
     local size = tonumber(cfg.size) or 14
     local style = cfg.style or "OUTLINE"
-    local color = resolveCDMColor(cfg)
+    local r, g, b, a = resolveCDMColorRGBA(cfg)
     local fontFace = getDefaultFontFace()
 
     if cfg.fontFace and addon.ResolveFontFace then
         fontFace = addon.ResolveFontFace(cfg.fontFace) or fontFace
     end
 
-    -- Apply font styling directly - this works even on protected frames!
-    pcall(function()
-        fontString:SetFont(fontFace, size, style)
-    end)
+    pcall(fontString.SetFont, fontString, fontFace, size, style)
+    pcall(fontString.SetTextColor, fontString, r, g, b, a)
 
-    pcall(function()
-        local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
-        fontString:SetTextColor(r, g, b, a)
-    end)
-
-    -- Apply shadow if specified
     if cfg.shadowX or cfg.shadowY then
-        pcall(function()
-            fontString:SetShadowOffset(cfg.shadowX or 1, cfg.shadowY or -1)
-        end)
+        pcall(fontString.SetShadowOffset, fontString, cfg.shadowX or 1, cfg.shadowY or -1)
     end
 
     -- Always reposition if cfg.offset exists (even if values are 0) to ensure proper reset behavior
@@ -717,24 +717,14 @@ local function applyFontStyleDirect(fontString, cfg, opts)
         local offsetX = (cfg.offset and tonumber(cfg.offset.x)) or 0
         local offsetY = (cfg.offset and tonumber(cfg.offset.y)) or 0
         local anchor = cfg.anchor
-
-        -- Determine default anchor based on text type
         if not anchor then
-            if opts.isChargeText then
-                anchor = "BOTTOMRIGHT"  -- Default anchor for charge/stack counts
-            else
-                anchor = "CENTER"  -- Default anchor for cooldown text
-            end
+            anchor = isChargeText and "BOTTOMRIGHT" or "CENTER"
         end
-
-        pcall(function()
-            -- Get the parent frame to anchor to
-            local parentFrame = opts.parentFrame or fontString:GetParent()
-            if parentFrame then
-                fontString:ClearAllPoints()
-                fontString:SetPoint(anchor, parentFrame, anchor, offsetX, offsetY)
-            end
-        end)
+        local anchorTo = parentFrame or fontString:GetParent()
+        if anchorTo then
+            pcall(fontString.ClearAllPoints, fontString)
+            pcall(fontString.SetPoint, fontString, anchor, anchorTo, anchor, offsetX, offsetY)
+        end
     end
 end
 
@@ -767,10 +757,7 @@ local function applyCooldownTextStyle(cooldownFrame)
         local fontString = getCooldownFontString(cooldownFrame)
         if fontString then
             -- Cooldown text uses CENTER anchor by default
-            applyFontStyleDirect(fontString, cfg, {
-                isChargeText = false,
-                parentFrame = cooldownFrame
-            })
+            applyFontStyleDirect(fontString, cfg, false, cooldownFrame)
         end
     end
 
@@ -782,10 +769,7 @@ local function applyCooldownTextStyle(cooldownFrame)
             if chargeFS then
                 -- Charge/stack text uses BOTTOMRIGHT anchor by default
                 local iconTexture = parent.Icon or parent.icon
-                applyFontStyleDirect(chargeFS, chargeCfg, {
-                    isChargeText = true,
-                    parentFrame = iconTexture or parent
-                })
+                applyFontStyleDirect(chargeFS, chargeCfg, true, iconTexture or parent)
             end
         end
     end
@@ -802,12 +786,10 @@ local function hookCooldownTextStyling()
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
 
             -- Defer text styling to next frame for safety
-            pcall(function()
-                C_Timer.After(0, function()
-                    if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
-                        pcall(applyCooldownTextStyle, cooldownFrame)
-                    end
-                end)
+            C_Timer.After(0, function()
+                if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
+                    pcall(applyCooldownTextStyle, cooldownFrame)
+                end
             end)
         end)
     end

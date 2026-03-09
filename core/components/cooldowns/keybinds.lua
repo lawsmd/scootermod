@@ -364,7 +364,7 @@ function SpellBindings.ApplyToIcon(cdmIcon, cfg)
 
     -- Apply font styling using the shared function
     if addon.ApplyFontStyleDirect then
-        addon.ApplyFontStyleDirect(overlay.keybindText, cfg, { parentFrame = overlay })
+        addon.ApplyFontStyleDirect(overlay.keybindText, cfg, false, overlay)
     end
 
     overlay.keybindText:Show()
