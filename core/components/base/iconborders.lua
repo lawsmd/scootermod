@@ -16,19 +16,19 @@ local function setIconBorderContainer(frame, container)
     end
 end
 
+local function wipeTexture(tex)
+    if not tex then return end
+    tex:Hide()
+    if tex.SetTexture then pcall(tex.SetTexture, tex, nil) end
+    if tex.SetAtlas then pcall(tex.SetAtlas, tex, nil, true) end
+    if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1, 1, 1, 0) end
+    if tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
+end
+
 local function ResetIconBorderTarget(target)
     if not target then return end
     if addon.Borders and addon.Borders.HideAll then
         addon.Borders.HideAll(target)
-    end
-
-    local function wipeTexture(tex)
-        if not tex then return end
-        tex:Hide()
-        if tex.SetTexture then pcall(tex.SetTexture, tex, nil) end
-        if tex.SetAtlas then pcall(tex.SetAtlas, tex, nil, true) end
-        if tex.SetVertexColor then pcall(tex.SetVertexColor, tex, 1, 1, 1, 0) end
-        if tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
     end
 
     wipeTexture(addon.Borders.GetAtlasBorder and addon.Borders.GetAtlasBorder(target))
@@ -55,20 +55,54 @@ Util.ResetIconBorderTarget = ResetIconBorderTarget
 
 local function CleanupIconBorderAttachments(icon)
     if not icon then return end
-    local seen = {}
-    local function cleanup(target)
-        if target and not seen[target] then
-            seen[target] = true
-            ResetIconBorderTarget(target)
-        end
+    ResetIconBorderTarget(icon)
+    local container = getIconBorderContainer(icon)
+    if container and container ~= icon then
+        ResetIconBorderTarget(container)
     end
-
-    cleanup(icon)
-    cleanup(getIconBorderContainer(icon))
-    cleanup(icon.ScootAtlasBorderContainer)
-    cleanup(icon.ScootTextureBorderContainer)
+    local atlasC = icon.ScootAtlasBorderContainer
+    if atlasC and atlasC ~= icon and atlasC ~= container then
+        ResetIconBorderTarget(atlasC)
+    end
+    local texC = icon.ScootTextureBorderContainer
+    if texC and texC ~= icon and texC ~= container and texC ~= atlasC then
+        ResetIconBorderTarget(texC)
+    end
 end
 Util.CleanupIconBorderAttachments = CleanupIconBorderAttachments
+
+-- Scratch color tables reused across ApplyIconBorderStyle calls. Safe because all
+-- consumers (SetVertexColor, Borders.Apply*) read [1..4] synchronously in the same
+-- call stack. No code stores references to these tables beyond the current call.
+local scratchDefaultColor = {1, 1, 1, 1}
+local scratchBaseColor = {1, 1, 1, 1}
+local scratchTintColor = {1, 1, 1, 1}
+local scratchApplyColor = {1, 1, 1, 1}
+
+local function fillColor(scratch, color)
+    if type(color) ~= "table" then
+        scratch[1], scratch[2], scratch[3], scratch[4] = 1, 1, 1, 1
+    else
+        scratch[1] = color[1] or 1
+        scratch[2] = color[2] or 1
+        scratch[3] = color[3] or 1
+        scratch[4] = color[4] or 1
+    end
+    return scratch
+end
+
+local function clamp(val, min, max)
+    if val < min then return min end
+    if val > max then return max end
+    return val
+end
+
+local function clampSublevel(val)
+    if val == nil then return nil end
+    if val > 7 then return 7 end
+    if val < -8 then return -8 end
+    return val
+end
 
 function addon.ApplyIconBorderStyle(frame, styleKey, opts)
     if not frame then return "none" end
@@ -149,14 +183,7 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
         dbTable[thicknessKey] = thickness
     end
 
-    local function copyColor(color)
-        if type(color) ~= "table" then
-            return {1, 1, 1, 1}
-        end
-        return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
-    end
-
-    local defaultColor = copyColor(styleDef.defaultColor or (styleDef.type == "square" and {0, 0, 0, 1}) or {1, 1, 1, 1})
+    local defaultColor = fillColor(scratchDefaultColor, styleDef.defaultColor or (styleDef.type == "square" and {0, 0, 0, 1}) or {1, 1, 1, 1})
     if type(requestedColor) ~= "table" then
         if dbTable and tintColorKey and type(dbTable[tintColorKey]) == "table" then
             requestedColor = dbTable[tintColorKey]
@@ -165,17 +192,11 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
         end
     end
 
-    local baseColor = copyColor(defaultColor)
-    local tintColor = copyColor(requestedColor)
-    local baseApplyColor = copyColor(baseColor)
+    local baseColor = fillColor(scratchBaseColor, defaultColor)
+    local tintColor = fillColor(scratchTintColor, requestedColor)
+    local baseApplyColor = fillColor(scratchApplyColor, baseColor)
     if styleDef.type == "square" then
         baseApplyColor = tintEnabled and tintColor or baseColor
-    end
-
-    local function clamp(val, min, max)
-        if val < min then return min end
-        if val > max then return max end
-        return val
     end
 
     local baseExpandX = styleDef.expandX or 0
@@ -248,13 +269,6 @@ function addon.ApplyIconBorderStyle(frame, styleKey, opts)
             overlay = addon.Borders.GetAtlasTintOverlay(targetFrame)
         elseif styleDef.type == "texture" then
             overlay = addon.Borders.GetTextureTintOverlay(targetFrame)
-        end
-
-        local function clampSublevel(val)
-            if val == nil then return nil end
-            if val > 7 then return 7 end
-            if val < -8 then return -8 end
-            return val
         end
 
         local function ensureOverlay()

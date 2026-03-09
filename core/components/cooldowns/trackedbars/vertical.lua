@@ -1,6 +1,7 @@
 local addonName, addon = ...
 
 local TB = addon.TB
+local getState = addon.ComponentsUtil._getState
 
 --------------------------------------------------------------------------------
 -- Vertical Mode: Data Mirroring Hooks
@@ -557,24 +558,56 @@ local function styleVerticalStack(stack, component)
     local iconBorderInsetV = tonumber(db.iconBorderInsetV) or tonumber(db.iconBorderInset) or 0
     local iconTintEnabled = not not db.iconBorderTintEnable
     local tintRaw = db.iconBorderTintColor
-    local tintColor = {1, 1, 1, 1}
-    if type(tintRaw) == "table" then
-        tintColor = { tintRaw[1] or 1, tintRaw[2] or 1, tintRaw[3] or 1, tintRaw[4] or 1 }
-    end
     if iconBorderEnabled and stack.iconRegion:IsShown() then
-        addon.ApplyIconBorderStyle(stack.iconRegion, iconStyle, {
-            thickness = iconThickness,
-            insetH = iconBorderInsetH,
-            insetV = iconBorderInsetV,
-            color = iconTintEnabled and tintColor or nil,
-            tintEnabled = iconTintEnabled,
-            db = db,
-            thicknessKey = "iconBorderThickness",
-            tintColorKey = "iconBorderTintColor",
-            defaultThickness = 1,
-        })
+        local iconState = getState(stack.iconRegion)
+        local lb = iconState and iconState.lastIconBorder
+        local tintColor
+        if not lb
+            or lb.style ~= iconStyle
+            or lb.thickness ~= iconThickness
+            or lb.tintEnabled ~= iconTintEnabled
+            or lb.insetH ~= iconBorderInsetH
+            or lb.insetV ~= iconBorderInsetV
+            or (iconTintEnabled and (
+                not lb.tintR or lb.tintR ~= (type(tintRaw) == "table" and tintRaw[1] or 1)
+                or lb.tintG ~= (type(tintRaw) == "table" and tintRaw[2] or 1)
+                or lb.tintB ~= (type(tintRaw) == "table" and tintRaw[3] or 1)
+                or lb.tintA ~= (type(tintRaw) == "table" and tintRaw[4] or 1)
+            ))
+        then
+            tintColor = {1, 1, 1, 1}
+            if type(tintRaw) == "table" then
+                tintColor = { tintRaw[1] or 1, tintRaw[2] or 1, tintRaw[3] or 1, tintRaw[4] or 1 }
+            end
+            addon.ApplyIconBorderStyle(stack.iconRegion, iconStyle, {
+                thickness = iconThickness,
+                insetH = iconBorderInsetH,
+                insetV = iconBorderInsetV,
+                color = iconTintEnabled and tintColor or nil,
+                tintEnabled = iconTintEnabled,
+                db = db,
+                thicknessKey = "iconBorderThickness",
+                tintColorKey = "iconBorderTintColor",
+                defaultThickness = 1,
+            })
+            if iconState then
+                iconState.lastIconBorder = {
+                    style = iconStyle,
+                    thickness = iconThickness,
+                    tintEnabled = iconTintEnabled,
+                    insetH = iconBorderInsetH,
+                    insetV = iconBorderInsetV,
+                    tintR = type(tintRaw) == "table" and tintRaw[1] or 1,
+                    tintG = type(tintRaw) == "table" and tintRaw[2] or 1,
+                    tintB = type(tintRaw) == "table" and tintRaw[3] or 1,
+                    tintA = type(tintRaw) == "table" and tintRaw[4] or 1,
+                }
+            end
+        end
     else
         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(stack.iconRegion) end
+        local iconState = getState(stack.iconRegion)
+        if iconState then iconState.lastIconBorder = nil end
     end
 
     -- Text styling (using shared helper)
