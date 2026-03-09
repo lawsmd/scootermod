@@ -478,8 +478,9 @@ local function ResolveSpellID(baseID)
     return baseID
 end
 
+-- Returns cdInfo (or nil) for use by the merged opacity pipeline.
 local function RefreshSpellCooldown(icon)
-    if not icon.entry or icon.entry.type ~= "spell" then return end
+    if not icon.entry or icon.entry.type ~= "spell" then return nil end
     local spellID = ResolveSpellID(icon.entry.id)
 
     -- Refresh texture to match current override state
@@ -488,6 +489,9 @@ local function RefreshSpellCooldown(icon)
     if currentTexture then
         icon.Icon:SetTexture(currentTexture)
     end
+
+    -- Fetch cdInfo once (used by charge fallthrough and regular path, returned to caller)
+    local cdInfo = C_Spell.GetSpellCooldown(spellID)
 
     -- Charges (all SpellChargeInfo fields can be secret in restricted contexts)
     local chargeInfo = C_Spell.GetSpellCharges(spellID)
@@ -512,7 +516,7 @@ local function RefreshSpellCooldown(icon)
                     -- All charges full
                     icon.Cooldown:Clear()
                 end
-                return
+                return cdInfo
             end
             icon.CountText:Hide()
         else
@@ -520,19 +524,18 @@ local function RefreshSpellCooldown(icon)
             icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
-            return
+            return cdInfo
         end
     else
         icon.CountText:Hide()
     end
 
     -- Regular cooldown
-    local cdInfo = C_Spell.GetSpellCooldown(spellID)
-    if not cdInfo then return end
+    if not cdInfo then return nil end
 
     -- isOnGCD is NeverSecret — always safe
     if cdInfo.isOnGCD then
-        return
+        return cdInfo
     end
 
     -- Try comparisons (work outside restricted contexts)
@@ -550,10 +553,13 @@ local function RefreshSpellCooldown(icon)
         -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
         icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
     end
+
+    return cdInfo
 end
 
+-- Returns (ok, isOnCD) for use by the merged opacity pipeline.
 local function RefreshItemCooldown(icon)
-    if not icon.entry or icon.entry.type ~= "item" then return end
+    if not icon.entry or icon.entry.type ~= "item" then return false, false end
     local itemID = icon.entry.id
 
     local startTime, duration, isEnabled = C_Container.GetItemCooldown(itemID)
@@ -587,6 +593,8 @@ local function RefreshItemCooldown(icon)
     else
         icon.CountText:Hide()
     end
+
+    return ok, isOnCD
 end
 
 --------------------------------------------------------------------------------
@@ -657,31 +665,110 @@ local function resetCGTextAlpha(cooldownFrame)
     end
 end
 
-local function ApplyCooldownOpacity(icon, groupIndex)
+-- Pre-compute per-group opacity constants. Returns nil when both settings are
+-- at 100% (fast path: no opacity work needed for this group).
+local function BuildGroupOpacityCtx(groupIndex)
     local component = addon.Components["customGroup" .. groupIndex]
-    if not component or not component.db then return end
+    if not component or not component.db then return nil end
 
     local iconSetting = tonumber(component.db.opacityOnCooldown) or 100
     local textSetting = tonumber(component.db.opacityOnCooldownText) or 100
 
-    -- Nothing to do if both are at 100%
-    if iconSetting >= 100 and textSetting >= 100 then
-        icon:SetAlpha(1.0)
-        if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
-        return
-    end
+    if iconSetting >= 100 and textSetting >= 100 then return nil end
 
     local containerAlpha = getGroupOpacityForState(groupIndex)
-    local needsTextOverride = (textSetting ~= iconSetting)
-
-    -- Compute icon dim alpha (compensated for container opacity)
     local iconDimAlpha = iconSetting / 100
     if iconSetting < 100 and containerAlpha > 0 and containerAlpha < 1.0 then
         iconDimAlpha = math.min(1.0, iconDimAlpha / containerAlpha)
     end
 
-    -- Compute text dim alpha (absolute, used with SetIgnoreParentAlpha)
-    local textDimAlpha = textSetting / 100
+    return {
+        iconSetting = iconSetting,
+        textSetting = textSetting,
+        containerAlpha = containerAlpha,
+        needsTextOverride = (textSetting ~= iconSetting),
+        iconDimAlpha = iconDimAlpha,
+        textDimAlpha = textSetting / 100,
+    }
+end
+
+-- Apply spell opacity using pre-fetched cdInfo and pre-built ctx.
+-- cdInfo comes from RefreshSpellCooldown's return value.
+local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
+    if not ctx then
+        icon:SetAlpha(1.0)
+        if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
+        return
+    end
+
+    if not cdInfo then
+        icon:SetAlpha(1.0)
+        if ctx.needsTextOverride and icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
+        return
+    end
+
+    local isGCD = cdInfo.isOnGCD
+    -- Always fetch fresh DurationObject (returns live state each frame)
+    local spellID = ResolveSpellID(icon.entry.id)
+    local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
+
+    -- Icon frame opacity
+    if isGCD or ctx.iconSetting >= 100 then
+        icon:SetAlpha(1.0)
+    elseif durObj and durObj.IsZero then
+        icon:SetAlphaFromBoolean(durObj:IsZero(), 1.0, ctx.iconDimAlpha)
+    else
+        icon:SetAlpha(1.0)
+    end
+
+    -- Text opacity (independent when text != icon setting)
+    if ctx.needsTextOverride and icon.Cooldown then
+        if isGCD then
+            applyCGTextAlpha(icon.Cooldown, nil, ctx.containerAlpha, ctx.textDimAlpha, true)
+        elseif durObj and durObj.IsZero then
+            applyCGTextAlpha(icon.Cooldown, durObj, ctx.containerAlpha, ctx.textDimAlpha, false)
+        end
+    elseif not ctx.needsTextOverride and icon.Cooldown then
+        resetCGTextAlpha(icon.Cooldown)
+    end
+end
+
+-- Apply item opacity using pre-fetched state and pre-built ctx.
+local function ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
+    if not ctx then
+        icon:SetAlpha(1.0)
+        if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
+        return
+    end
+
+    -- Icon frame opacity
+    if ok then
+        icon:SetAlpha(isOnCD and ctx.iconDimAlpha or 1.0)
+    else
+        icon:SetAlpha(1.0)
+    end
+
+    -- Text opacity (independent when text != icon setting)
+    if ctx.needsTextOverride and icon.Cooldown then
+        if ok then
+            applyCGTextAlphaItem(icon.Cooldown, isOnCD, ctx.containerAlpha, ctx.textDimAlpha)
+        else
+            resetCGTextAlpha(icon.Cooldown)
+        end
+    elseif not ctx.needsTextOverride and icon.Cooldown then
+        resetCGTextAlpha(icon.Cooldown)
+    end
+end
+
+-- Full opacity application (opacity-only path, fetches its own cooldown state).
+-- Used by UpdateGroupCooldownOpacities for combat/target change events.
+local function ApplyCooldownOpacity(icon, groupIndex)
+    local ctx = BuildGroupOpacityCtx(groupIndex)
+    if not ctx then
+        icon:SetAlpha(1.0)
+        if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
+        return
+    end
 
     if not icon.entry then
         icon:SetAlpha(1.0)
@@ -692,75 +779,38 @@ local function ApplyCooldownOpacity(icon, groupIndex)
     if icon.entry.type == "spell" then
         local spellID = ResolveSpellID(icon.entry.id)
         local cdInfo = C_Spell.GetSpellCooldown(spellID)
-        if not cdInfo then
-            icon:SetAlpha(1.0)
-            if needsTextOverride and icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
-            return
-        end
-
-        local isGCD = cdInfo.isOnGCD
-        local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
-
-        -- Icon frame opacity
-        if isGCD or iconSetting >= 100 then
-            icon:SetAlpha(1.0)
-        elseif durObj and durObj.IsZero then
-            icon:SetAlphaFromBoolean(durObj:IsZero(), 1.0, iconDimAlpha)
-        else
-            icon:SetAlpha(1.0)
-        end
-
-        -- Text opacity (independent when text != icon setting)
-        if needsTextOverride and icon.Cooldown then
-            if isGCD then
-                applyCGTextAlpha(icon.Cooldown, nil, containerAlpha, textDimAlpha, true)
-            elseif durObj and durObj.IsZero then
-                applyCGTextAlpha(icon.Cooldown, durObj, containerAlpha, textDimAlpha, false)
-            end
-        elseif not needsTextOverride and icon.Cooldown then
-            resetCGTextAlpha(icon.Cooldown)
-        end
+        ApplySpellOpacityFromState(icon, cdInfo, ctx)
 
     elseif icon.entry.type == "item" then
         local startTime, duration, isEnabled = C_Container.GetItemCooldown(icon.entry.id)
         local ok, isOnCD = pcall(function()
             return startTime and duration and duration > 1.5 and isEnabled and isEnabled ~= 0
         end)
-
-        -- Icon frame opacity
-        if ok then
-            icon:SetAlpha(isOnCD and iconDimAlpha or 1.0)
-        else
-            icon:SetAlpha(1.0)
-        end
-
-        -- Text opacity (independent when text != icon setting)
-        if needsTextOverride and icon.Cooldown then
-            if ok then
-                applyCGTextAlphaItem(icon.Cooldown, isOnCD, containerAlpha, textDimAlpha)
-            else
-                resetCGTextAlpha(icon.Cooldown)
-            end
-        elseif not needsTextOverride and icon.Cooldown then
-            resetCGTextAlpha(icon.Cooldown)
-        end
+        ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
     end
 end
 
 local function UpdateGroupCooldownOpacities(groupIndex)
+    local ctx = BuildGroupOpacityCtx(groupIndex)
     for _, icon in ipairs(activeIcons[groupIndex]) do
         if icon.entry then
-            ApplyCooldownOpacity(icon, groupIndex)
+            if not ctx then
+                icon:SetAlpha(1.0)
+                if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
+            else
+                ApplyCooldownOpacity(icon, groupIndex)
+            end
         end
     end
 end
 
 local function RefreshAllSpellCooldowns()
     for gi = 1, 3 do
+        local ctx = BuildGroupOpacityCtx(gi)
         for _, icon in ipairs(activeIcons[gi]) do
             if icon.entry and icon.entry.type == "spell" then
-                RefreshSpellCooldown(icon)
-                ApplyCooldownOpacity(icon, gi)
+                local cdInfo = RefreshSpellCooldown(icon)
+                ApplySpellOpacityFromState(icon, cdInfo, ctx)
             end
         end
     end
@@ -768,25 +818,28 @@ end
 
 local function RefreshAllItemCooldowns()
     for gi = 1, 3 do
+        local ctx = BuildGroupOpacityCtx(gi)
         for _, icon in ipairs(activeIcons[gi]) do
             if icon.entry and icon.entry.type == "item" then
-                RefreshItemCooldown(icon)
-                ApplyCooldownOpacity(icon, gi)
+                local ok, isOnCD = RefreshItemCooldown(icon)
+                ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
             end
         end
     end
 end
 
 local function RefreshAllCooldowns(groupIndex)
+    local ctx = BuildGroupOpacityCtx(groupIndex)
     local icons = activeIcons[groupIndex]
     for _, icon in ipairs(icons) do
         if icon.entry then
             if icon.entry.type == "spell" then
-                RefreshSpellCooldown(icon)
+                local cdInfo = RefreshSpellCooldown(icon)
+                ApplySpellOpacityFromState(icon, cdInfo, ctx)
             elseif icon.entry.type == "item" then
-                RefreshItemCooldown(icon)
+                local ok, isOnCD = RefreshItemCooldown(icon)
+                ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
             end
-            ApplyCooldownOpacity(icon, groupIndex)
         end
     end
 end
@@ -1335,6 +1388,8 @@ end
 --------------------------------------------------------------------------------
 
 local bagUpdatePending = false
+local spellCDDirty = false
+local itemCDDirty = false
 
 local cgEventFrame = CreateFrame("Frame")
 cgEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -1365,14 +1420,23 @@ cgEventFrame:SetScript("OnEvent", function(self, event, ...)
             RebuildAllGroups()
         end
 
-    elseif event == "SPELL_UPDATE_COOLDOWN" then
-        RefreshAllSpellCooldowns()
-
-    elseif event == "SPELL_UPDATE_CHARGES" then
-        RefreshAllSpellCooldowns()
+    elseif event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
+        if not spellCDDirty then
+            spellCDDirty = true
+            C_Timer.After(0, function()
+                spellCDDirty = false
+                RefreshAllSpellCooldowns()
+            end)
+        end
 
     elseif event == "BAG_UPDATE_COOLDOWN" then
-        RefreshAllItemCooldowns()
+        if not itemCDDirty then
+            itemCDDirty = true
+            C_Timer.After(0, function()
+                itemCDDirty = false
+                RefreshAllItemCooldowns()
+            end)
+        end
 
     elseif event == "PLAYER_SPECIALIZATION_CHANGED"
         or event == "PLAYER_TALENT_UPDATE"
