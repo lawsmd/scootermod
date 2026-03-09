@@ -97,6 +97,48 @@ local function cloneProfilePayload(preset, layoutName)
     return copy
 end
 
+local function remapPresetPositions(profileCopy, targetLayoutName)
+    if type(profileCopy) ~= "table" or not targetLayoutName then return end
+
+    -- Remap customCDMGroups[i].positions
+    local groups = profileCopy.customCDMGroups
+    if type(groups) == "table" then
+        for _, group in ipairs(groups) do
+            if type(group.positions) == "table" then
+                local pos
+                for key, val in pairs(group.positions) do
+                    if key ~= targetLayoutName then
+                        pos = pos or val  -- take first (only) entry
+                    end
+                end
+                if pos then
+                    wipe(group.positions)
+                    group.positions[targetLayoutName] = pos
+                end
+            end
+        end
+    end
+
+    -- Remap classAuraPositions[auraId]
+    local auraPositions = profileCopy.classAuraPositions
+    if type(auraPositions) == "table" then
+        for auraId, perLayout in pairs(auraPositions) do
+            if type(perLayout) == "table" then
+                local pos
+                for key, val in pairs(perLayout) do
+                    if key ~= targetLayoutName then
+                        pos = pos or val
+                    end
+                end
+                if pos then
+                    wipe(perLayout)
+                    perLayout[targetLayoutName] = pos
+                end
+            end
+        end
+    end
+end
+
 local function _NormalizeLayoutName(name)
     if type(name) ~= "string" then return nil end
     name = name:gsub("^%s+", ""):gsub("%s+$", "")
@@ -297,6 +339,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
         end
         
         -- OVERWRITE the Scoot profile data
+        remapPresetPositions(profileCopy, targetName)
         if type(profileCopy) == "table" then
             profileCopy.__presetLayout = targetName
         end
@@ -425,6 +468,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
     end
     -- Ensure the profile metadata points at the final layout name (ImportLayout may
     -- return a modified name in some edge cases).
+    remapPresetPositions(profileCopy, newLayoutName)
     if type(profileCopy) == "table" then
         profileCopy.__presetLayout = newLayoutName
     end
