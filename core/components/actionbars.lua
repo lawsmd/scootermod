@@ -9,6 +9,7 @@ local actionBarHooked = {} -- frames with OnEnter/OnLeave hooks
 local alphaHooked = {}     -- frames with SetAlpha hooks
 local settingAlpha = {}    -- recursion guard for SetAlpha calls
 local iconShapedButtons = setmetatable({}, { __mode = "k" })  -- tracks buttons modified by icon shape
+local lastAppliedEpoch = {}  -- [componentId] = last epoch when per-button styling ran
 
 local function getBarState(bar)
     if not actionBarState[bar] then
@@ -142,6 +143,14 @@ local function ApplyActionBarStyling(self)
         state.isMousedOver = false
         setBarDesiredAlpha(bar, appliedOp / 100)
     end
+
+    -- OPT-05: Skip per-button visual styling when only opacity changed.
+    -- addon:ApplyStyles() bumps _abStylingEpoch; RefreshOpacityState() does not.
+    local currentEpoch = addon._abStylingEpoch or 0
+    if lastAppliedEpoch[self.id] == currentEpoch then
+        return
+    end
+    lastAppliedEpoch[self.id] = currentEpoch
 
     local function enumerateButtons()
         local buttons = {}
