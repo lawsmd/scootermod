@@ -347,7 +347,20 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
 
             CA._ScanAllAurasForUnit(unit)   -- Direct scan + DurationObject tracking
             CA._RescanForCDMBorrow()        -- CDM icon alpha + instanceID capture
-            C_Timer.After(0, function() CA._ScanAllAurasForUnit(unit) end)
+            -- Targeted deferred retry: only for auras that still lack tracking
+            local aurasForUnit = CA._classAuras[playerClassToken]
+            if aurasForUnit then
+                for _, aura in ipairs(aurasForUnit) do
+                    if aura.unit == unit and CA._activeAuras[aura.id] and not auraTracking[aura.id] then
+                        local retryAura = aura
+                        C_Timer.After(0, function()
+                            if CA._activeAuras[retryAura.id] and not auraTracking[retryAura.id] then
+                                CA.ScanAura(retryAura)
+                            end
+                        end)
+                    end
+                end
+            end
         end
 
     elseif event == "PLAYER_TARGET_CHANGED" then
@@ -379,10 +392,6 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
 
         CA._ScanAllAuras()
         CA._RescanForCDMBorrow()
-        C_Timer.After(0, function()
-            CA._ScanAllAuras()
-            CA._RescanForCDMBorrow()
-        end)
         C_Timer.After(0.1, function() CA._RescanForCDMBorrow() end)
 
     elseif event == "PLAYER_REGEN_ENABLED" then

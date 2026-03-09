@@ -60,9 +60,11 @@ function CA.RegisterAuras(classToken, auras)
             end
         end
         -- Populate name-based fallback for when spellId is secret in combat
+        -- Also store pre-resolved canonical name on the aura def for FindAuraOnUnit
         local nameOk, spellName = pcall(C_Spell.GetSpellName, aura.auraSpellId)
         if nameOk and spellName and not issecretvalue(spellName) then
             nameToAura[spellName:lower()] = aura
+            aura._canonName = spellName:lower()
         end
         if aura.linkedSpellIds then
             for _, linkedId in ipairs(aura.linkedSpellIds) do

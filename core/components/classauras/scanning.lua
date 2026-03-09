@@ -25,17 +25,10 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 --   1. Filter broadened (strip |PLAYER) -- ownership checked post-scan
 --   2. Name-based matching fallback via inline canonName resolution
 --   3. Post-scan ownership via sourceUnit then IsAuraFilteredOutByInstanceID
-local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds)
+local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds, canonName)
     -- Strip |PLAYER from filter -- ownership is verified post-scan via
     -- sourceUnit or IsAuraFilteredOutByInstanceID instead.
     local broadFilter = filter and filter:gsub("|PLAYER", "") or filter
-
-    -- Pre-resolve the canonical spell name for name-based matching
-    local canonName
-    pcall(function()
-        local n = C_Spell.GetSpellName(spellId)
-        if n and not issecretvalue(n) then canonName = n:lower() end
-    end)
 
     for i = 1, 40 do
         local auraData = C_UnitAuras.GetAuraDataByIndex(unit, i, broadFilter)
@@ -293,8 +286,21 @@ function CA.ScanAura(aura)
 
     if not aura.filter or not aura.auraSpellId then return end
 
-    -- === Try direct scan first (works when spellId comparison isn't secret) ===
-    local auraData, matchedSpellId = FindAuraOnUnit(aura.unit, aura.filter, aura.auraSpellId, aura.linkedSpellIds)
+    -- === Skip FindAuraOnUnit when identity is already tracked ===
+    local auraData, matchedSpellId
+    local existingTrack = auraTracking[aura.id]
+    if existingTrack and existingTrack.unit == aura.unit then
+        -- Validate existing tracking — GetAuraDuration confirms instance still alive
+        local vok, vdur = pcall(C_UnitAuras.GetAuraDuration, existingTrack.unit, existingTrack.auraInstanceID)
+        if not vok or not vdur then
+            -- Stale tracking — clear and fall through to full scan
+            auraTracking[aura.id] = nil
+            auraData, matchedSpellId = FindAuraOnUnit(aura.unit, aura.filter, aura.auraSpellId, aura.linkedSpellIds, aura._canonName)
+        end
+        -- else: valid tracking, skip FindAuraOnUnit entirely (auraData stays nil)
+    else
+        auraData, matchedSpellId = FindAuraOnUnit(aura.unit, aura.filter, aura.auraSpellId, aura.linkedSpellIds, aura._canonName)
+    end
 
     if auraData then
         -- Capture auraInstanceID + activeSpellId for DurationObject tracking
