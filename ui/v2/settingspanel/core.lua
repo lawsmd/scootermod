@@ -826,8 +826,8 @@ function UIPanel:CreateContentPane()
     welcomeText:SetFont(labelFont2, 16, "")
     welcomeText:SetText("Welcome to")
     welcomeText:SetTextColor(1, 1, 1, 1)
-    homeMascot:SetPoint("BOTTOM", homeAscii, "TOP", 40, 8)  -- Mascot above ASCII art, shifted right
-    welcomeText:SetPoint("BOTTOMRIGHT", homeMascot, "BOTTOMLEFT", 17, 0)  -- "Welcome to" at bottom-left of mascot
+    homeMascot:SetPoint("BOTTOM", homeAscii, "TOP", 37, 8)  -- Mascot above ASCII art, shifted right
+    welcomeText:SetPoint("BOTTOMRIGHT", homeMascot, "BOTTOMLEFT", 20, 0)  -- "Welcome to" at bottom-left of mascot
 
     C_Timer.After(0.05, function()
         if homeAscii and homeMascot and homeContainer then
