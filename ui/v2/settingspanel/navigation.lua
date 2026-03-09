@@ -481,6 +481,179 @@ function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame, isCustomGroup)
     end
 end
 
+-- Defaults Reset Map
+-- Maps nav keys to their reset strategy. Categories NOT listed get no Defaults button.
+
+local DEFAULTS_RESET_MAP = {
+    -- CDM components
+    essentialCooldowns  = { strategy = "component", id = "essentialCooldowns" },
+    utilityCooldowns    = { strategy = "component", id = "utilityCooldowns" },
+    trackedBuffs        = { strategy = "component", id = "trackedBuffs" },
+    trackedBars         = { strategy = "component", id = "trackedBars" },
+    customGroup1        = { strategy = "component", id = "customGroup1" },
+    customGroup2        = { strategy = "component", id = "customGroup2" },
+    customGroup3        = { strategy = "component", id = "customGroup3" },
+    -- Action Bars
+    actionBar1          = { strategy = "component", id = "actionBar1" },
+    actionBar2          = { strategy = "component", id = "actionBar2" },
+    actionBar3          = { strategy = "component", id = "actionBar3" },
+    actionBar4          = { strategy = "component", id = "actionBar4" },
+    actionBar5          = { strategy = "component", id = "actionBar5" },
+    actionBar6          = { strategy = "component", id = "actionBar6" },
+    actionBar7          = { strategy = "component", id = "actionBar7" },
+    actionBar8          = { strategy = "component", id = "actionBar8" },
+    petBar              = { strategy = "component", id = "petBar" },
+    stanceBar           = { strategy = "component", id = "stanceBar" },
+    microBar            = { strategy = "component", id = "microBar" },
+    extraAbilities      = { strategy = "component", id = "extraAbilities" },
+    -- Buffs/Debuffs
+    buffs               = { strategy = "component", id = "buffs" },
+    debuffs             = { strategy = "component", id = "debuffs" },
+    -- Interface
+    tooltip             = { strategy = "component", id = "tooltip" },
+    objectiveTracker    = { strategy = "component", id = "objectiveTracker" },
+    damageMeter         = { strategy = "component", id = "damageMeter" },
+    minimap             = { strategy = "component", id = "minimapStyle" },
+    chat                = { strategy = "profileData", dataKey = "chat" },
+    -- SCT
+    sctDamage           = { strategy = "component", id = "sctDamage" },
+    -- Personal Resource Display
+    prdGeneral          = { strategy = "component", id = "prdGlobal" },
+    prdHealthBar        = { strategy = "component", id = "prdHealth" },
+    prdPowerBar         = { strategy = "component", id = "prdPower" },
+    prdClassResource    = { strategy = "component", id = "prdClassResource" },
+    -- Unit Frames
+    ufPlayer            = { strategy = "unitFrame", unitKey = "Player" },
+    ufTarget            = { strategy = "unitFrame", unitKey = "Target" },
+    ufFocus             = { strategy = "unitFrame", unitKey = "Focus" },
+    ufPet               = { strategy = "unitFrame", unitKey = "Pet" },
+    ufToT               = { strategy = "unitFrame", unitKey = "TargetOfTarget" },
+    ufFocusTarget       = { strategy = "unitFrame", unitKey = "FocusTarget" },
+    ufBoss              = { strategy = "unitFrame", unitKey = "Boss" },
+    -- Group Frames
+    gfParty             = { strategy = "groupFrame", subKey = "party" },
+    gfRaid              = { strategy = "groupFrame", subKey = "raid" },
+    -- Class Auras
+    classAurasDeathKnight = { strategy = "classAuras", classToken = "DEATHKNIGHT" },
+    classAurasDemonHunter = { strategy = "classAuras", classToken = "DEMONHUNTER" },
+    classAurasDruid       = { strategy = "classAuras", classToken = "DRUID" },
+    classAurasEvoker      = { strategy = "classAuras", classToken = "EVOKER" },
+    classAurasHunter      = { strategy = "classAuras", classToken = "HUNTER" },
+    classAurasMage        = { strategy = "classAuras", classToken = "MAGE" },
+    classAurasMonk        = { strategy = "classAuras", classToken = "MONK" },
+    classAurasPaladin     = { strategy = "classAuras", classToken = "PALADIN" },
+    classAurasPriest      = { strategy = "classAuras", classToken = "PRIEST" },
+    classAurasRogue       = { strategy = "classAuras", classToken = "ROGUE" },
+    classAurasShaman      = { strategy = "classAuras", classToken = "SHAMAN" },
+    classAurasWarlock     = { strategy = "classAuras", classToken = "WARLOCK" },
+    classAurasWarrior     = { strategy = "classAuras", classToken = "WARRIOR" },
+}
+
+-- Update Defaults Button Visibility & Anchoring
+
+function UIPanel:UpdateDefaultsButton()
+    local frame = self.frame
+    if not frame or not frame._contentPane then return end
+
+    local contentPane = frame._contentPane
+    local defaultsBtn = contentPane._defaultsBtn
+    local defaultsInfoIcon = contentPane._defaultsInfoIcon
+    if not defaultsBtn then return end
+
+    local key = self._currentCategoryKey
+    local resetInfo = key and DEFAULTS_RESET_MAP[key]
+
+    if not resetInfo then
+        defaultsBtn:Hide()
+        if defaultsInfoIcon then defaultsInfoIcon:Hide() end
+        return
+    end
+
+    -- Determine anchor based on subtitle visibility
+    defaultsBtn:ClearAllPoints()
+    local subtitle = contentPane._headerSubtitle
+    if subtitle and subtitle:IsShown() then
+        defaultsBtn:SetPoint("LEFT", subtitle, "RIGHT", 12, 0)
+    else
+        defaultsBtn:SetPoint("BOTTOMLEFT", contentPane._header, "BOTTOMLEFT", 16, 8)
+    end
+    defaultsBtn:Show()
+
+    if defaultsInfoIcon then
+        defaultsInfoIcon:ClearAllPoints()
+        defaultsInfoIcon:SetPoint("LEFT", defaultsBtn, "RIGHT", 6, 0)
+        defaultsInfoIcon:Show()
+    end
+end
+
+-- Handle Defaults Button Click
+
+function UIPanel:HandleDefaultsClick()
+    if InCombatLockdown() then return end
+
+    local key = self._currentCategoryKey
+    if not key then return end
+
+    local resetInfo = DEFAULTS_RESET_MAP[key]
+    if not resetInfo then return end
+
+    local categoryTitle = self:GetCategoryTitle(key)
+    local panel = self
+
+    if addon.Dialogs and addon.Dialogs.Show then
+        addon.Dialogs:Show("SCOOT_RESET_DEFAULTS", {
+            formatArgs = { categoryTitle },
+            onAccept = function()
+                panel:ExecuteDefaultsReset(key, resetInfo)
+            end,
+        })
+    end
+end
+
+-- Execute Defaults Reset
+
+function UIPanel:ExecuteDefaultsReset(key, resetInfo)
+    local profile = addon.db and addon.db.profile
+    if not profile then return end
+
+    local strategy = resetInfo.strategy
+
+    if strategy == "component" then
+        if profile.components then
+            profile.components[resetInfo.id] = nil
+        end
+
+    elseif strategy == "unitFrame" then
+        if profile.unitFrames then
+            profile.unitFrames[resetInfo.unitKey] = nil
+        end
+
+    elseif strategy == "groupFrame" then
+        if profile.groupFrames then
+            profile.groupFrames[resetInfo.subKey] = nil
+        end
+
+    elseif strategy == "classAuras" then
+        local CA = addon.ClassAuras
+        if CA and CA.GetClassAuras then
+            local auras = CA.GetClassAuras(resetInfo.classToken)
+            for _, aura in ipairs(auras) do
+                if profile.components then
+                    profile.components["classAura_" .. aura.id] = nil
+                end
+                if profile.classAuraPositions then
+                    profile.classAuraPositions[aura.id] = nil
+                end
+            end
+        end
+
+    elseif strategy == "profileData" then
+        profile[resetInfo.dataKey] = nil
+    end
+
+    ReloadUI()
+end
+
 -- Navigation Selection Handler
 
 function UIPanel:OnNavigationSelect(key, previousKey)
@@ -514,6 +687,12 @@ function UIPanel:OnNavigationSelect(key, previousKey)
         end
         if contentPane._copyFromLabel then
             contentPane._copyFromLabel:Hide()
+        end
+        if contentPane._defaultsBtn then
+            contentPane._defaultsBtn:Hide()
+        end
+        if contentPane._defaultsInfoIcon then
+            contentPane._defaultsInfoIcon:Hide()
         end
 
         self:StopAsciiAnimation()
@@ -615,6 +794,7 @@ Navigation key: "%s"
 
     self:UpdateCollapseAllButton()
     self:UpdateCopyFromDropdown()
+    self:UpdateDefaultsButton()
 end
 
 -- Get Category Display Title (auto-derived from NavModel)

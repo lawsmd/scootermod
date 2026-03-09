@@ -1135,9 +1135,11 @@ Controls:RegisterDialog("SCOOT_DELETE_RULE", {
 })
 
 Controls:RegisterDialog("SCOOT_RESET_DEFAULTS", {
-    text = "Are you sure you want to reset %s to all default settings and location?",
-    acceptText = YES or "Yes",
+    text = "Reset %s to all default settings and location?\n\nThis action is irreversible and requires a UI reload.",
+    acceptText = "Reset & Reload",
+    acceptWidth = 130,
     cancelText = CANCEL or "Cancel",
+    height = 180,
 })
 
 Controls:RegisterDialog("SCOOT_COPY_UF_CONFIRM", {

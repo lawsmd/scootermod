@@ -654,13 +654,13 @@ function UIPanel:CreateContentPane()
     contentPane:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Theme.BORDER_WIDTH, Theme.BORDER_WIDTH)
 
     local header = CreateFrame("Frame", nil, contentPane)
-    header:SetHeight(40)
+    header:SetHeight(66)
     header:SetPoint("TOPLEFT", contentPane, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", contentPane, "TOPRIGHT", 0, 0)
 
     local headerTitle = header:CreateFontString(nil, "OVERLAY")
     Theme:ApplyHeaderFont(headerTitle, 20)
-    headerTitle:SetPoint("LEFT", header, "LEFT", 16, 0)
+    headerTitle:SetPoint("TOPLEFT", header, "TOPLEFT", 16, -10)
     headerTitle:SetText("Home")  -- Default
     contentPane._headerTitle = headerTitle
 
@@ -669,24 +669,53 @@ function UIPanel:CreateContentPane()
     headerSubtitle:SetFont(subtitleFont, 11, "")
     local sr, sg, sb = Theme:GetAccentColor()
     headerSubtitle:SetTextColor(sr, sg, sb, 0.5)
-    headerSubtitle:SetPoint("LEFT", headerTitle, "RIGHT", 8, 0)
+    headerSubtitle:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 16, 8)
     headerSubtitle:Hide()
     contentPane._headerSubtitle = headerSubtitle
+
+    local defaultsBtn = Controls:CreateButton({
+        parent = header,
+        name = "ScootDefaultsBtn",
+        text = "Defaults",
+        height = 17,
+        fontSize = 10,
+        borderWidth = 1,
+        borderAlpha = 0.6,
+        onClick = function()
+            local settingsPanel = addon.UI and addon.UI.SettingsPanel
+            if settingsPanel and settingsPanel.HandleDefaultsClick then
+                settingsPanel:HandleDefaultsClick()
+            end
+        end,
+    })
+    defaultsBtn:Hide()
+    contentPane._defaultsBtn = defaultsBtn
+
+    local defaultsInfoIcon = Controls:CreateInfoIcon({
+        parent = header,
+        tooltipTitle = "Reset to Defaults",
+        tooltipText = "Resets all settings and position for this category to Blizzard defaults. User-curated content (Custom Group spell lists, group names) is preserved.\n\nRequires a UI reload. This action cannot be undone.",
+        size = 12,
+    })
+    if defaultsInfoIcon then
+        defaultsInfoIcon:Hide()
+        contentPane._defaultsInfoIcon = defaultsInfoIcon
+    end
 
     local panel = self
     local collapseAllBtn = Controls:CreateButton({
         parent = header,
         name = "ScootCollapseAllBtn",
         text = "Collapse All",
-        height = 22,
-        fontSize = 11,
+        height = 17,
+        fontSize = 10,
         borderWidth = 1,
         borderAlpha = 0.6,
         onClick = function(btn, mouseButton)
             panel:CollapseAllSections()
         end
     })
-    collapseAllBtn:SetPoint("RIGHT", header, "RIGHT", -8, 0)
+    collapseAllBtn:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -8, 8)
     collapseAllBtn:Hide()  -- Hidden by default, shown when collapsible sections exist
     contentPane._collapseAllBtn = collapseAllBtn
 
@@ -702,7 +731,7 @@ function UIPanel:CreateContentPane()
             panel:HandleCopyFrom(sourceKey)
         end,
     })
-    copyFromDropdown:SetPoint("RIGHT", collapseAllBtn, "LEFT", -12, 0)
+    copyFromDropdown:SetPoint("TOPRIGHT", header, "TOPRIGHT", -8, -9)
     copyFromDropdown:Hide()  -- Hidden by default, shown for Action Bar categories
     contentPane._copyFromDropdown = copyFromDropdown
 
