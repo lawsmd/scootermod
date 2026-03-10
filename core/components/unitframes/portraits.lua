@@ -140,6 +140,48 @@ do
 	-- Store original mask atlas (per frame, not per unit, to handle frame recreation)
 	local originalMaskAtlas = {}
 
+	-- OPT-20: Frame resolution cache (session-stable hierarchy)
+	-- Avoids 5-8 resolve* calls + portraitTexture resolution per applyForUnit invocation.
+	-- NOT cached when resolvePortraitFrame returns nil (Focus/Pet may not exist yet).
+	local resolvedFrameCache = {}
+
+	local function getCachedFrames(unit)
+		local cached = resolvedFrameCache[unit]
+		if cached then return cached end
+
+		local portrait = resolvePortraitFrame(unit)
+		if not portrait then return nil end
+
+		-- Resolve portraitTexture from the portrait frame
+		local portraitTexture = nil
+		if portrait.GetObjectType and portrait:GetObjectType() == "Texture" then
+			portraitTexture = portrait
+		elseif portrait.GetPortrait then
+			portraitTexture = portrait:GetPortrait()
+		elseif portrait.GetRegions then
+			for _, region in ipairs({ portrait:GetRegions() }) do
+				if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+					portraitTexture = region
+					break
+				end
+			end
+		end
+
+		cached = {
+			portrait = portrait,
+			mask = resolvePortraitMaskFrame(unit),
+			cornerIcon = (unit == "Player") and resolvePortraitCornerIconFrame(unit) or nil,
+			restLoop = (unit == "Player") and resolvePortraitRestLoopFrame(unit) or nil,
+			statusTexture = (unit == "Player") and resolvePortraitStatusTextureFrame(unit) or nil,
+			bossPortrait = (unit == "Target" or unit == "Focus") and resolveBossPortraitFrameTexture(unit) or nil,
+			petAttackMode = (unit == "Pet") and resolvePetAttackModeTexture(unit) or nil,
+			petFlash = (unit == "Pet") and resolvePetFrameFlash(unit) or nil,
+			portraitTexture = portraitTexture,
+		}
+		resolvedFrameCache[unit] = cached
+		return cached
+	end
+
 	-- Pet portrait overlays are driven by Blizzard and may re-show/recreate in combat.
 	-- Keep them hidden safely via SetAlpha(0) + hooksecurefunc re-enforcement (no Hide/Show).
 	local function applyStickyOverlayAlpha(texture, hidden, visibleAlpha)
@@ -942,22 +984,17 @@ do
 		local ufCfg = db.unitFrames[unit]
 		local cfg = ufCfg.portrait
 
-		local portraitFrame = resolvePortraitFrame(unit)
-		if not portraitFrame then return end
-
-		local maskFrame = resolvePortraitMaskFrame(unit)
-		-- Corner icon only exists for Player frame
-		local cornerIconFrame = (unit == "Player") and resolvePortraitCornerIconFrame(unit) or nil
-		-- Rest loop only exists for Player frame
-		local restLoopFrame = (unit == "Player") and resolvePortraitRestLoopFrame(unit) or nil
-		-- Status texture only exists for Player frame
-		local statusTextureFrame = (unit == "Player") and resolvePortraitStatusTextureFrame(unit) or nil
-		-- Boss portrait frame texture only exists for Target/Focus frames
-		local bossPortraitFrameTexture = (unit == "Target" or unit == "Focus") and resolveBossPortraitFrameTexture(unit) or nil
-		-- Pet attack mode texture only exists for Pet frame
-		local petAttackModeTexture = (unit == "Pet") and resolvePetAttackModeTexture(unit) or nil
-		-- Pet frame flash only exists for Pet frame
-		local petFrameFlash = (unit == "Pet") and resolvePetFrameFlash(unit) or nil
+		-- OPT-20: Use cached frame resolution (session-stable hierarchy)
+		local frames = getCachedFrames(unit)
+		if not frames then return end
+		local portraitFrame = frames.portrait
+		local maskFrame = frames.mask
+		local cornerIconFrame = frames.cornerIcon
+		local restLoopFrame = frames.restLoop
+		local statusTextureFrame = frames.statusTexture
+		local bossPortraitFrameTexture = frames.bossPortrait
+		local petAttackModeTexture = frames.petAttackMode
+		local petFrameFlash = frames.petFlash
 
 		-- Capture original positions on first access
 		if not originalPositions[portraitFrame] then
@@ -1010,25 +1047,7 @@ do
 		-- NOTE: Portrait scale baseline is always 1.0 (no Edit Mode scale setting for portraits)
 		-- Does NOT capture frame:GetScale() because the frame may retain the applied scale across reloads
 
-		-- Get portrait texture
-		-- For unit frames, the portraitFrame IS the texture itself (not a frame containing a texture)
-		-- Check if it's a Texture directly, otherwise try GetPortrait() or GetRegions()
-		local portraitTexture = nil
-		if portraitFrame.GetObjectType and portraitFrame:GetObjectType() == "Texture" then
-			-- The frame itself is the texture (unit frame portraits)
-			portraitTexture = portraitFrame
-		elseif portraitFrame.GetPortrait then
-			-- PortraitFrameMixin frames have GetPortrait() method
-			portraitTexture = portraitFrame:GetPortrait()
-		elseif portraitFrame.GetRegions then
-			-- Fallback: search regions for a texture
-			for _, region in ipairs({ portraitFrame:GetRegions() }) do
-				if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-					portraitTexture = region
-					break
-				end
-			end
-		end
+		local portraitTexture = frames.portraitTexture
 
 		-- Capture original texture coordinates on first access
 		if portraitTexture and not originalTexCoords[portraitFrame] then
@@ -1176,6 +1195,27 @@ do
 		applyForUnit("FocusTarget")
 	end
 
+	-- OPT-20: Debounce portrait hook invocations
+	-- Both UnitFramePortrait_Update and SetPortraitTexture fire for the same event.
+	-- Coalesce into a single C_Timer.After(0) per unit per frame.
+	local pendingPortraitUnits = {}
+	local portraitTimerScheduled = false
+
+	local function schedulePortraitApply(unitKey)
+		pendingPortraitUnits[unitKey] = true
+		if portraitTimerScheduled then return end
+		portraitTimerScheduled = true
+		if _G.C_Timer and _G.C_Timer.After then
+			_G.C_Timer.After(0, function()
+				portraitTimerScheduled = false
+				for unit in pairs(pendingPortraitUnits) do
+					pendingPortraitUnits[unit] = nil
+					applyForUnit(unit)
+				end
+			end)
+		end
+	end
+
 	-- Hook portrait updates to reapply zoom when Blizzard updates portraits
 	-- Hook UnitFramePortrait_Update which is called when portraits need refreshing
 	if _G.UnitFramePortrait_Update then
@@ -1190,12 +1230,7 @@ do
 				elseif unit == "targettarget" then unitKey = "TargetOfTarget"
 				end
 				if unitKey then
-					-- Defer zoom reapplication to next frame to ensure texture is ready
-					if _G.C_Timer and _G.C_Timer.After then
-						_G.C_Timer.After(0, function()
-							applyForUnit(unitKey)
-						end)
-					end
+					schedulePortraitApply(unitKey)
 				end
 			end
 		end)
@@ -1291,12 +1326,7 @@ do
 				elseif unit == "targettarget" then unitKey = "TargetOfTarget"
 				end
 				if unitKey then
-					-- Defer zoom reapplication to next frame to ensure texture is ready
-					if _G.C_Timer and _G.C_Timer.After then
-						_G.C_Timer.After(0, function()
-							applyForUnit(unitKey)
-						end)
-					end
+					schedulePortraitApply(unitKey)
 				end
 			end
 		end)
