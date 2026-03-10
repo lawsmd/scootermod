@@ -276,6 +276,7 @@ end
 --------------------------------------------------------------------------------
 
 local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
+local COLOR_VALIDATION_DELAYS = { 0.05, 0.1, 0.2, 0.35, 0.5 }
 
 -- Schedule a color validation loop for a health bar
 -- @param bar: The StatusBar frame
@@ -309,23 +310,26 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
     -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
     -- This ensures the correct color is eventually applied even if UnitHealthPercent
     -- is initially stale (e.g., when healing to exactly 100%).
-    -- Extended delays to catch edge cases where API updates are slow.
-    local delays = { 0.05, 0.1, 0.2, 0.35, 0.5 }  -- 50ms, 100ms, 200ms, 350ms, 500ms
-    local completed = 0
-
-    for _, delay in ipairs(delays) do
-        C_Timer.After(delay, function()
-            completed = completed + 1
-            -- Only clear pending flag after all attempts complete
-            if completed >= #delays then
-                pendingValidations[bar] = nil
-            end
-            -- Unconditionally reapply - let applyValueBasedColor handle everything
-            if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
-            end
-        end)
+    -- Intervals: 50ms, 100ms, 200ms, 350ms, 500ms (COLOR_VALIDATION_DELAYS)
+    local step = 0
+    local function runStep()
+        step = step + 1
+        -- Schedule next step BEFORE calling applyValueBasedColor so an error
+        -- doesn't break the chain or leak pendingValidations
+        if step < #COLOR_VALIDATION_DELAYS then
+            C_Timer.After(
+                COLOR_VALIDATION_DELAYS[step + 1] - COLOR_VALIDATION_DELAYS[step],
+                runStep
+            )
+        else
+            pendingValidations[bar] = nil
+        end
+        -- Unconditionally reapply - let applyValueBasedColor handle everything
+        if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
+        end
     end
+    C_Timer.After(COLOR_VALIDATION_DELAYS[1], runStep)
 end
 
 --------------------------------------------------------------------------------
