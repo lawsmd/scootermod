@@ -35,6 +35,7 @@ end
 -- Create module namespace
 addon.BarsTextures = addon.BarsTextures or {}
 local Textures = addon.BarsTextures
+local lastAppliedColor = setmetatable({}, { __mode = "k" }) -- [bar] = { r, g, b }
 
 --------------------------------------------------------------------------------
 -- Health Value Color Curve ("Color by Value" Feature)
@@ -204,9 +205,18 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
 
     local r, g, b = color:GetRGB()
 
-    -- Note: GetRGB() could theoretically return secret values, but
-    -- UnitHealthPercent with a color curve should return a clean color object.
-    -- The pcall wrappers on SetVertexColor below handle any edge cases.
+    -- Note: GetRGB() returns secret values in combat. The SetVertexColor calls below
+    -- are wrapped in pcall (SetVertexColor has AllowedWhenTainted), and the early-exit
+    -- comparison uses issecretvalue() to skip arithmetic on secrets.
+
+    -- Skip redundant texture updates — if color matches last-applied within epsilon,
+    -- the 4 pcall texture calls are unnecessary (cascade early exit)
+    -- Note: GetRGB() returns secret values in combat; skip comparison when secret
+    local isSecret = issecretvalue and issecretvalue(r)
+    local prev = lastAppliedColor[bar]
+    if not isSecret and prev and math.abs(prev[1] - r) < 0.002 and math.abs(prev[2] - g) < 0.002 and math.abs(prev[3] - b) < 0.002 then
+        return
+    end
 
     -- Color ALL relevant textures to handle cases where HealthBarTexture and
     -- GetStatusBarTexture() are different objects, or where multiple textures
@@ -255,28 +265,43 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
 
     if barState then barState.applyingValueBasedColor = nil end
 
+    -- Update color cache (only when values are non-secret; secret values are unusable for comparison)
+    if not isSecret then
+        if prev then
+            prev[1], prev[2], prev[3] = r, g, b
+        else
+            lastAppliedColor[bar] = { r, g, b }
+        end
+    end
+
     if addon.DebugPrint and texturesColored > 0 then
-        addon.DebugPrint(string.format("applyValueBasedColor: colored %d textures for %s (r=%.2f g=%.2f b=%.2f)", texturesColored, unit, r, g, b))
+        if isSecret then
+            addon.DebugPrint(string.format("applyValueBasedColor: colored %d textures for %s (secret color)", texturesColored, unit))
+        else
+            addon.DebugPrint(string.format("applyValueBasedColor: colored %d textures for %s (r=%.2f g=%.2f b=%.2f)", texturesColored, unit, r, g, b))
+        end
     end
 end
 
 --------------------------------------------------------------------------------
 -- Color Reapply Loop (Fix for Stuck Colors at 100%)
 --------------------------------------------------------------------------------
--- Schedules multiple unconditional color reapplies at staggered intervals.
--- This brute-force approach catches timing edge cases where UnitHealthPercent()
--- doesn't reflect the new health value immediately (API timing lag).
+-- Schedules unconditional color reapplies at staggered intervals to catch
+-- timing edge cases where UnitHealthPercent() doesn't reflect the new health
+-- value immediately (API timing lag).
 --
 -- Why brute-force instead of smart validation:
 -- GetVertexColor() returns "secret values" that error on arithmetic,
 -- making color comparison impossible. Unconditional reapply avoids reading colors.
 --
--- Intervals: 50ms, 100ms, 200ms, 350ms, 500ms - ensures at least one reapply
--- occurs after UnitHealthPercent has updated to the correct value.
+-- Intervals: 150ms, 400ms — two checks cover the realistic window where
+-- UnitHealthPercent returns stale data. The early-exit color comparison in
+-- applyValueBasedColor ensures redundant reapplies are near-zero cost.
+-- (Reduced from 5 steps in OPT-16; see OPTIMIZATIONLOG/OPT-16.)
 --------------------------------------------------------------------------------
 
 local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
-local COLOR_VALIDATION_DELAYS = { 0.05, 0.1, 0.2, 0.35, 0.5 }
+local COLOR_VALIDATION_DELAYS = { 0.15, 0.4 }
 
 -- Schedule a color validation loop for a health bar
 -- @param bar: The StatusBar frame
@@ -306,11 +331,11 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
     pendingValidations[bar] = true
 
     -- SIMPLIFIED APPROACH: Due to secret value issues, color comparison is unreliable.
-    -- Instead of smart validation, use a brute-force approach:
-    -- Unconditionally reapply color at multiple intervals to catch timing edge cases.
+    -- Unconditionally reapply color at staggered intervals to catch timing edge cases.
     -- This ensures the correct color is eventually applied even if UnitHealthPercent
     -- is initially stale (e.g., when healing to exactly 100%).
-    -- Intervals: 50ms, 100ms, 200ms, 350ms, 500ms (COLOR_VALIDATION_DELAYS)
+    -- Intervals: 150ms, 400ms (COLOR_VALIDATION_DELAYS) — reduced from 5 steps in OPT-16.
+    -- The early-exit comparison in applyValueBasedColor makes redundant steps near-free.
     local step = 0
     local function runStep()
         step = step + 1
@@ -330,6 +355,15 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
         end
     end
     C_Timer.After(COLOR_VALIDATION_DELAYS[1], runStep)
+end
+
+-- Explicitly invalidate the color cache for a bar (safety valve for callers
+-- that change bar color via non-value paths, e.g., profile switch or color
+-- mode change). The weak table naturally GCs dead bars.
+function Textures.clearColorCache(bar)
+    if bar then
+        lastAppliedColor[bar] = nil
+    end
 end
 
 --------------------------------------------------------------------------------
