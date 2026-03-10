@@ -15,6 +15,8 @@ local pendingRetries = {}  -- [auraId] = true
 
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 
+local broadFilterCache = {}  -- [filter] = filter with "|PLAYER" stripped
+
 --------------------------------------------------------------------------------
 -- Aura Scanning
 --------------------------------------------------------------------------------
@@ -25,10 +27,13 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 --   1. Filter broadened (strip |PLAYER) -- ownership checked post-scan
 --   2. Name-based matching fallback via inline canonName resolution
 --   3. Post-scan ownership via sourceUnit then IsAuraFilteredOutByInstanceID
+--   4. Zero pcall: issecretvalue guards replace pcall closures (OPT-19)
 local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds, canonName)
-    -- Strip |PLAYER from filter -- ownership is verified post-scan via
-    -- sourceUnit or IsAuraFilteredOutByInstanceID instead.
-    local broadFilter = filter and filter:gsub("|PLAYER", "") or filter
+    local broadFilter = broadFilterCache[filter]
+    if not broadFilter then
+        broadFilter = filter and filter:gsub("|PLAYER", "") or filter
+        broadFilterCache[filter] = broadFilter
+    end
 
     for i = 1, 40 do
         local auraData = C_UnitAuras.GetAuraDataByIndex(unit, i, broadFilter)
@@ -37,59 +42,49 @@ local function FindAuraOnUnit(unit, filter, spellId, linkedSpellIds, canonName)
         local matched = false
         local matchedSpell = nil
 
-        -- Primary: spellId match
-        pcall(function()
-            if not issecretvalue(auraData.spellId) then
-                if auraData.spellId == spellId then
-                    matched = true
-                    matchedSpell = spellId
-                elseif linkedSpellIds then
-                    for _, linkedId in ipairs(linkedSpellIds) do
-                        if auraData.spellId == linkedId then
-                            matched = true
-                            matchedSpell = linkedId
-                            break
-                        end
+        -- Primary: spellId match (issecretvalue guard replaces pcall)
+        local auraSpell = auraData.spellId
+        if not issecretvalue(auraSpell) then
+            if auraSpell == spellId then
+                matched = true
+                matchedSpell = spellId
+            elseif linkedSpellIds then
+                for _, linkedId in ipairs(linkedSpellIds) do
+                    if auraSpell == linkedId then
+                        matched = true
+                        matchedSpell = linkedId
+                        break
                     end
                 end
             end
-        end)
+        end
 
         -- Fallback: name match
         if not matched and canonName then
-            pcall(function()
-                if auraData.name and not issecretvalue(auraData.name) then
-                    if auraData.name:lower() == canonName then
-                        matched = true
-                        matchedSpell = spellId  -- attribute to primary spell
-                    end
+            local auraName = auraData.name
+            if auraName and not issecretvalue(auraName) then
+                if auraName:lower() == canonName then
+                    matched = true
+                    matchedSpell = spellId
                 end
-            end)
+            end
         end
 
         if matched then
-            -- Post-scan ownership check (tri-state: nil=unknown, true=mine, false=not mine)
-            local isMine = nil  -- nil = unknown, true = yes, false = no
+            local isMine = nil
 
-            -- Non-secret path: sourceUnit check
-            pcall(function()
-                if not issecretvalue(auraData.sourceUnit) then
-                    isMine = (auraData.sourceUnit == "player" or auraData.sourceUnit == "pet")
-                end
-            end)
-
-            -- Secret fallback: IsAuraFilteredOutByInstanceID
-            if isMine == nil then
-                pcall(function()
-                    local iid = auraData.auraInstanceID
-                    if iid and not issecretvalue(iid) then
-                        isMine = not IsAuraFilteredOutByInstanceID(unit, iid, filter)
-                    end
-                end)
+            local src = auraData.sourceUnit
+            if not issecretvalue(src) then
+                isMine = (src == "player" or src == "pet")
             end
 
-            -- Accept match if mine or if ownership couldn't be determined
-            -- (unknown ownership accepted; CDM de-secrets later if needed)
+            if isMine == nil then
+                local iid = auraData.auraInstanceID
+                if iid and not issecretvalue(iid) then
+                    isMine = not IsAuraFilteredOutByInstanceID(unit, iid, filter)
+                end
+            end
+
             if isMine ~= false then
                 return auraData, matchedSpell
             end
