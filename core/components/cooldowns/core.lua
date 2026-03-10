@@ -1532,21 +1532,22 @@ end
 
 local function applyTextCooldownAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD)
     if not cooldownFrame then return end
-    pcall(function() cooldownFrame:SetIgnoreParentAlpha(true) end)
+    pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
     if isGCD then
-        pcall(function() cooldownFrame:SetAlpha(containerAlpha) end)
+        pcall(cooldownFrame.SetAlpha, cooldownFrame, containerAlpha)
     else
         local readyAlpha = containerAlpha
         local cdAlpha = math.min(containerAlpha, textDimAlpha)
-        pcall(function() cooldownFrame:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha) end)
+        local isZero = durObj:IsZero()
+        pcall(cooldownFrame.SetAlphaFromBoolean, cooldownFrame, isZero, readyAlpha, cdAlpha)
     end
 end
 
 local function resetTextAlpha(cooldownFrame)
     if cooldownFrame and textAlphaDecoupled[cooldownFrame] then
-        pcall(function() cooldownFrame:SetIgnoreParentAlpha(false) end)
-        pcall(function() cooldownFrame:SetAlpha(1.0) end)
+        pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, false)
+        pcall(cooldownFrame.SetAlpha, cooldownFrame, 1.0)
         textAlphaDecoupled[cooldownFrame] = nil
     end
 end
@@ -1577,7 +1578,7 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
 
     for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
         if isValidCDMItemFrame(child) and isFrameVisible(child) then
-            local idOk, spellId = pcall(function() return child:GetBaseSpellID() end)
+            local idOk, spellId = pcall(child.GetBaseSpellID, child)
             if idOk and spellId then
                 -- Resolve override (e.g., Blink → Shimmer) for cooldown lookups
                 if C_Spell.GetOverrideSpell then
@@ -1592,13 +1593,12 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
 
                 -- Icon frame opacity
                 if isGCD or iconSetting >= 100 then
-                    pcall(function() child:SetAlpha(1.0) end)
+                    pcall(child.SetAlpha, child, 1.0)
                 elseif durObj and durObj.IsZero then
-                    pcall(function()
-                        child:SetAlphaFromBoolean(durObj:IsZero(), 1.0, iconDimAlpha)
-                    end)
+                    local isZero = durObj:IsZero()
+                    pcall(child.SetAlphaFromBoolean, child, isZero, 1.0, iconDimAlpha)
                 else
-                    pcall(function() child:SetAlpha(1.0) end)
+                    pcall(child.SetAlpha, child, 1.0)
                 end
 
                 -- Text opacity (independent when text != icon setting)
