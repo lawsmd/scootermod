@@ -103,6 +103,11 @@ end
 -- Module-level hook guard for the main DamageMeter frame (avoids writing to dmFrame)
 local dmFrameHooked = false
 
+-- OPT-18: Style generation counter for dirty-flag caching.
+-- Bumped before every full-pass ForEachVisibleEntry call so that subsequent
+-- per-entry InitEntry calls with matching classToken can skip redundant work.
+local dmStyleGeneration = 0
+
 -- Overlay visibility management for UIParent-parented overlays.
 -- UIParent-parented overlays don't auto-hide when entries are hidden/recycled
 -- by the ScrollBox. Use a per-window "hide then show visible" pattern.
@@ -421,6 +426,16 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
 
     local statusBar = entry.StatusBar or entry.bar or entry
     if not statusBar then return end
+
+    -- OPT-18: Skip restyle if entry appearance hasn't changed since last full pass.
+    -- Cache key is { generation, classToken } — generation invalidates on any full-pass
+    -- restyle (ApplyStyling or ScrollBox:Update), classToken catches per-entry data changes
+    -- (e.g., rank shift assigns a different-class player to this recycled frame).
+    local classToken = entry.classToken or entry.class or (entry.data and entry.data.classToken)
+    local elSt = getElementState(entry)
+    if elSt._cacheGen == dmStyleGeneration and elSt._cacheClass == classToken then
+        return
+    end
 
     -- Bar texture
     if db.barTexture and db.barTexture ~= "default" then
@@ -789,6 +804,9 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
         end
     end
 
+    -- OPT-18: Update cache after successful restyle
+    elSt._cacheGen = dmStyleGeneration
+    elSt._cacheClass = classToken
 end
 
 -- Apply window-level styling (border, background)
@@ -1284,6 +1302,15 @@ local function ForEachVisibleEntry(sessionWindow, callback)
     end
 end
 
+-- OPT-18: Bump generation and restyle all visible entries in one pass.
+-- After this call, per-entry InitEntry hooks with matching classToken will skip.
+local function styleAllVisibleEntries(sessionWindow, db)
+    dmStyleGeneration = dmStyleGeneration + 1
+    ForEachVisibleEntry(sessionWindow, function(entryFrame)
+        ApplySingleEntryStyle(entryFrame, db, sessionWindow)
+    end)
+end
+
 -- Hook ScrollBox for a single session window (if not already hooked)
 -- Returns true if a new hook was installed, false if already hooked or no ScrollBox
 local function HookSessionWindowScrollBox(sessionWindow, component)
@@ -1306,9 +1333,8 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
             if not PlayerInCombat() then
                 hideWindowOverlays(sessionWindow)
             end
-            ForEachVisibleEntry(sessionWindow, function(entryFrame)
-                ApplySingleEntryStyle(entryFrame, component.db, sessionWindow)
-            end)
+            -- OPT-18: Bump generation so subsequent InitEntry calls skip redundant work
+            styleAllVisibleEntries(sessionWindow, component.db)
         end)
     end)
 
@@ -1328,7 +1354,10 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
     end
 
     -- Hook InitEntry to catch UpdateExistingDataProvider path (RetainScrollPosition)
-    -- where ScrollBox:Update doesn't fire but entries get new data via Init
+    -- where ScrollBox:Update doesn't fire but entries get new data via Init.
+    -- OPT-18: Coalesce per-entry C_Timer.After closures into a single deferred batch.
+    -- Instead of one closure per recycled entry, we collect pending frames in a set
+    -- and fire a single timer that processes all of them at end-of-frame.
     if sessionWindow.InitEntry and not state.initEntryHooked then
         state.initEntryHooked = true
         hooksecurefunc(sessionWindow, "InitEntry", function(self, frame, elementData)
@@ -1336,11 +1365,29 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
             local wState = getWindowState(sessionWindow)
             if wState._scrollUpdateQueued then return end
 
-            C_Timer.After(0, function()
-                if not component.db then return end
-                if not frame or not frame.Icon then return end
-                ApplySingleEntryStyle(frame, component.db, sessionWindow)
-            end)
+            -- Collect frame into pending set (deduplicates same-frame re-inits)
+            if not wState._pendingEntries then
+                wState._pendingEntries = {}
+            end
+            wState._pendingEntries[frame] = true
+
+            -- Schedule a single coalesced timer per window per frame
+            if not wState._initEntryCoalesced then
+                wState._initEntryCoalesced = true
+                C_Timer.After(0, function()
+                    wState._initEntryCoalesced = nil
+                    if not component.db then return end
+                    local pending = wState._pendingEntries
+                    if pending then
+                        for entry in pairs(pending) do
+                            if entry and entry.Icon then
+                                ApplySingleEntryStyle(entry, component.db, sessionWindow)
+                            end
+                        end
+                        wipe(pending)
+                    end
+                end)
+            end
         end)
     end
 
@@ -1452,10 +1499,8 @@ local function ApplyDamageMeterStyling(self)
 
         ApplyHeaderBackdropStyling(sessionWindow, db)
 
-        -- Style all visible entries in this window
-        ForEachVisibleEntry(sessionWindow, function(entryFrame)
-            ApplySingleEntryStyle(entryFrame, db, sessionWindow)
-        end)
+        -- OPT-18: Bump generation and style all visible entries in this window
+        styleAllVisibleEntries(sessionWindow, db)
 
         -- Style LocalPlayerEntry (sticky player row at bottom when scrolled past own position)
         -- This entry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
