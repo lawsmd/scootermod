@@ -245,6 +245,43 @@ local function ApplyDamageMeterEnabledForActiveProfile(reason)
     Debug("Applied damageMeterEnabled from profile", tostring(value), reason and ("reason=" .. tostring(reason)) or "")
 end
 
+-- OPT-24: Pre-concatenated key strings for action bar settings (avoid per-call concatenation)
+local AB_SETTING_KEYS = {}   -- [barNum] = "PROXY_SHOW_ACTIONBAR_N"
+local AB_ENABLE_KEYS = {}    -- [barNum] = "enableBarN"
+for i = 2, 8 do
+    AB_SETTING_KEYS[i] = "PROXY_SHOW_ACTIONBAR_" .. i
+    AB_ENABLE_KEYS[i] = "enableBar" .. i
+end
+
+-- OPT-24: Lazy-cache setting objects (session-stable registry entries)
+local settingObjectCache = {} -- [barNum] = setting object or false
+local function getCachedSettingObject(barNum)
+    local cached = settingObjectCache[barNum]
+    if cached ~= nil then
+        return cached  -- false means "looked up but not found"
+    end
+    if not Settings or not Settings.GetSetting then
+        return false
+    end
+    local ok, setting = pcall(Settings.GetSetting, AB_SETTING_KEYS[barNum])
+    local result = (ok and setting) or false
+    settingObjectCache[barNum] = result
+    return result
+end
+
+-- OPT-24: Module-level helper with value-check (skips SetValue when already matching)
+local function applyBarSettingsAPI(barNum, desired)
+    local setting = getCachedSettingObject(barNum)
+    if not setting or not setting.SetValue then return end
+
+    if setting.GetValue then
+        local ok, current = pcall(setting.GetValue, setting)
+        if ok and current == desired then return end
+    end
+
+    pcall(setting.SetValue, setting, desired)
+end
+
 local function ApplyActionBarsEnabledForActiveProfile(reason)
     local profile = addon and addon.db and addon.db.profile
     local s = profile and profile.actionBarSettings
@@ -252,36 +289,21 @@ local function ApplyActionBarsEnabledForActiveProfile(reason)
         return  -- Zero-touch: no actionBarSettings subtable at all
     end
 
-    local function applyBar(barNum)
-        local key = "enableBar" .. barNum
-        local desired = s[key]
-        if desired == nil then
-            return  -- Not explicitly set for this bar; don't override
-        end
-
-        local function applySettingsAPI()
-            if not Settings or not Settings.GetSetting then return end
-            local settingName = "PROXY_SHOW_ACTIONBAR_" .. barNum
-            local ok, setting = pcall(Settings.GetSetting, settingName)
-            if ok and setting and setting.SetValue then
-                pcall(setting.SetValue, setting, desired)
+    for barNum = 2, 8 do
+        local desired = s[AB_ENABLE_KEYS[barNum]]
+        if desired ~= nil then
+            if InCombatLockdown and InCombatLockdown() then
+                local bn, d = barNum, desired
+                local f = CreateFrame("Frame")
+                f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                f:SetScript("OnEvent", function(self)
+                    self:UnregisterAllEvents()
+                    applyBarSettingsAPI(bn, d)
+                end)
+            else
+                applyBarSettingsAPI(barNum, desired)
             end
         end
-
-        if InCombatLockdown and InCombatLockdown() then
-            local f = CreateFrame("Frame")
-            f:RegisterEvent("PLAYER_REGEN_ENABLED")
-            f:SetScript("OnEvent", function(self)
-                self:UnregisterAllEvents()
-                applySettingsAPI()
-            end)
-        else
-            applySettingsAPI()
-        end
-    end
-
-    for barNum = 2, 8 do
-        applyBar(barNum)
     end
 
     Debug("Applied actionBarSettings from profile", reason and ("reason=" .. tostring(reason)) or "")
