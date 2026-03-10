@@ -9,7 +9,53 @@ local actionBarHooked = {} -- frames with OnEnter/OnLeave hooks
 local alphaHooked = {}     -- frames with SetAlpha hooks
 local settingAlpha = {}    -- recursion guard for SetAlpha calls
 local iconShapedButtons = setmetatable({}, { __mode = "k" })  -- tracks buttons modified by icon shape
-local lastAppliedEpoch = {}  -- [componentId] = last epoch when per-button styling ran
+local lastAppliedFingerprint = {}  -- OPT-21: [componentId] = fingerprint of visual DB keys
+local regionClassCache = setmetatable({}, { __mode = "k" })  -- OPT-21: [button] = { classified border/slot regions }
+local fingerprintReady = false  -- OPT-21: Don't guard until Blizzard's action bar init completes
+
+-- OPT-21: Fingerprint covers all DB keys that drive per-button visual work (lines ~200-516).
+-- If you add a new DB key that affects per-button styling, add it here too.
+-- Keys fingerprinted: borderStyle, borderThickness, borderInsetH, borderInsetV, borderInset,
+--   borderTintEnable, borderTintColor, tallWideRatio, backdropDisable, backdropStyle,
+--   backdropOpacity, backdropInset, backdropTintEnable, backdropTintColor,
+--   textHotkeyHidden, textMacroHidden, textStacks, textCooldown, textHotkey, textMacro
+local function textConfigFingerprint(cfg)
+    if not cfg then return "" end
+    return string.format("%s|%s|%s|%.2f,%.2f,%.2f,%.2f|%.1f,%.1f",
+        tostring(cfg.size or ""), tostring(cfg.style or ""), tostring(cfg.fontFace or ""),
+        (cfg.color and cfg.color[1]) or 1, (cfg.color and cfg.color[2]) or 1,
+        (cfg.color and cfg.color[3]) or 1, (cfg.color and cfg.color[4]) or 1,
+        (cfg.offset and cfg.offset.x) or 0, (cfg.offset and cfg.offset.y) or 0)
+end
+
+local function colorFingerprint(c)
+    if not c or type(c) ~= "table" then return "" end
+    return string.format("%.2f,%.2f,%.2f,%.2f", c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+end
+
+local function buildActionBarFingerprint(db)
+    if not db then return "" end
+    local base = string.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+        tostring(db.borderStyle or ""),
+        tostring(db.borderThickness or ""),
+        tostring(db.borderInsetH or db.borderInset or ""),
+        tostring(db.borderInsetV or db.borderInset or ""),
+        tostring(db.borderTintEnable or ""),
+        colorFingerprint(db.borderTintColor),
+        tostring(db.tallWideRatio or ""),
+        tostring(db.backdropDisable or ""),
+        tostring(db.backdropStyle or ""),
+        tostring(db.backdropOpacity or ""),
+        tostring(db.backdropInset or ""),
+        tostring(db.backdropTintEnable or ""),
+        colorFingerprint(db.backdropTintColor),
+        tostring(db.textHotkeyHidden or ""),
+        tostring(db.textMacroHidden or ""),
+        textConfigFingerprint(db.textStacks))
+    return base .. "|" .. textConfigFingerprint(db.textCooldown)
+        .. "|" .. textConfigFingerprint(db.textHotkey)
+        .. "|" .. textConfigFingerprint(db.textMacro)
+end
 
 local function getBarState(bar)
     if not actionBarState[bar] then
@@ -39,6 +85,48 @@ local function hookBarAlpha(bar)
             pcall(self.SetAlpha, self, state.desiredAlpha)
             settingAlpha[self] = nil
         end
+    end)
+end
+
+-- OPT-21: Hoisted from inside ApplyActionBarStyling with region classification caching.
+-- Region cache uses weak keys — entries are GC'd if button is collected (never happens in practice).
+local function toggleDefaultButtonArt(button, restore)
+    if not button or not button.GetRegions then return end
+    if button.GetNormalTexture then
+        local nt = button:GetNormalTexture()
+        if nt and nt.SetAlpha then pcall(nt.SetAlpha, nt, restore and 1 or 0) end
+    end
+    local cached = regionClassCache[button]
+    if not cached then
+        cached = {}
+        for _, r in ipairs({ button:GetRegions() }) do
+            if r and r.GetObjectType and r:GetObjectType() == "Texture" then
+                local nm = r.GetName and (r:GetName() or "") or ""
+                if nm:find("Border", 1, true) or nm:find("SlotArt", 1, true)
+                    or nm:find("SlotBackground", 1, true) or nm:find("NormalTexture", 1, true) then
+                    cached[#cached + 1] = r
+                end
+            end
+        end
+        regionClassCache[button] = cached
+    end
+    local alpha = restore and 1 or 0
+    for _, r in ipairs(cached) do
+        pcall(r.SetAlpha, r, alpha)
+    end
+end
+
+-- OPT-21: Blizzard's action bar init (layout application, EDIT_MODE_LAYOUTS_UPDATED) runs
+-- during/shortly after PLAYER_ENTERING_WORLD and can overwrite Scoot's per-button styling.
+-- Delay fingerprint guard activation so early ApplyStyles() calls always run per-button work.
+do
+    local activator = CreateFrame("Frame")
+    activator:RegisterEvent("PLAYER_ENTERING_WORLD")
+    activator:SetScript("OnEvent", function(self)
+        self:UnregisterAllEvents()
+        C_Timer.After(1, function()
+            fingerprintReady = true
+        end)
     end)
 end
 
@@ -144,13 +232,16 @@ local function ApplyActionBarStyling(self)
         setBarDesiredAlpha(bar, appliedOp / 100)
     end
 
-    -- OPT-05: Skip per-button visual styling when only opacity changed.
-    -- addon:ApplyStyles() bumps _abStylingEpoch; RefreshOpacityState() does not.
-    local currentEpoch = addon._abStylingEpoch or 0
-    if lastAppliedEpoch[self.id] == currentEpoch then
+    -- OPT-21: Skip per-button visual styling when no visual DB keys have changed.
+    -- Subsumes OPT-05 epoch guard: opacity-only changes (RefreshOpacityState) don't alter
+    -- visual keys, so the fingerprint naturally matches and skips.
+    -- Guard is inactive during init (fingerprintReady=false) so Blizzard's layout
+    -- application doesn't permanently block re-styling.
+    local fingerprint = buildActionBarFingerprint(self.db)
+    if fingerprintReady and lastAppliedFingerprint[self.id] == fingerprint then
         return
     end
-    lastAppliedEpoch[self.id] = currentEpoch
+    lastAppliedFingerprint[self.id] = fingerprint
 
     local function enumerateButtons()
         local buttons = {}
@@ -178,23 +269,6 @@ local function ApplyActionBarStyling(self)
             end
         end
         return buttons
-    end
-
-    local function toggleDefaultButtonArt(button, restore)
-        if not button or not button.GetRegions then return end
-        if button.GetNormalTexture then
-            local nt = button:GetNormalTexture()
-            if nt and nt.SetAlpha then pcall(nt.SetAlpha, nt, restore and 1 or 0) end
-        end
-        for _, r in ipairs({ button:GetRegions() }) do
-            if r and r.GetObjectType and r:GetObjectType() == "Texture" then
-                local nm = r.GetName and (r:GetName() or "") or ""
-                if nm:find("Border", 1, true) or nm:find("BorderShadow", 1, true) or nm:find("SlotArt", 1, true)
-                    or nm:find("SlotBackground", 1, true) or nm:find("NormalTexture", 1, true) then
-                    pcall(r.SetAlpha, r, restore and 1 or 0)
-                end
-            end
-        end
     end
 
     local styleKey = (self.db and self.db.borderStyle) or "off"

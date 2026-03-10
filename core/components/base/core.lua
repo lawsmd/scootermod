@@ -247,8 +247,6 @@ function addon:ApplyStyles()
         end
         return
     end
-    -- OPT-05: Bump action bar styling epoch so per-button work runs on genuine restyling
-    self._abStylingEpoch = (self._abStylingEpoch or 0) + 1
     local profile = self.db and self.db.profile
     local componentsCfg = profile and rawget(profile, "components") or nil
     for id, component in pairs(self.Components) do
