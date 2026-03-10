@@ -95,8 +95,17 @@ do
 		if unit == "Pet" then return _G.PetFrame end
     end
 
+    -- OPT-25: weak-key cache for health text FontString lookups
+    local _htFSCache = setmetatable({}, { __mode = "k" })
+
     local function findFontStringByNameHint(root, hint)
         if not root then return nil end
+        -- OPT-25: check cache
+        local rootCache = _htFSCache[root]
+        if rootCache then
+            local cached = rootCache[hint]
+            if cached then return cached end
+        end
         local target
         local function scan(obj)
             if not obj or target then return end
@@ -128,6 +137,13 @@ do
             end
         end
         scan(root)
+        -- OPT-25: cache non-nil results
+        if target then
+            if not _htFSCache[root] then
+                _htFSCache[root] = {}
+            end
+            _htFSCache[root][hint] = target
+        end
         return target
     end
 
@@ -471,58 +487,64 @@ do
         if hb then
             hookHealthBarUpdateTextString(hb, unit)
         end
-        
-		local leftFS
-		local rightFS
-		if unit == "Pet" then
-			leftFS = _G.PetFrameHealthBarTextLeft or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText)
-			rightFS = _G.PetFrameHealthBarTextRight or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText)
-		end
-        -- Full resolution path (may scan children/regions). This should only run during
-        -- explicit styling passes (ApplyStyles), not on every health text update.
-		leftFS = leftFS
-            or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText)
-            or findFontStringByNameHint(frame, "HealthBarsContainer.LeftText")
-            or findFontStringByNameHint(frame, ".LeftText")
-            or findFontStringByNameHint(frame, "HealthBarTextLeft")
-		rightFS = rightFS
-            or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText)
-            or findFontStringByNameHint(frame, "HealthBarsContainer.RightText")
-            or findFontStringByNameHint(frame, ".RightText")
-            or findFontStringByNameHint(frame, "HealthBarTextRight")
 
-        -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
-        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
-        -- Character Pane shows HealthBarText instead of LeftText/RightText
-        local textStringFS
-        if unit == "Pet" then
-            textStringFS = _G.PetFrameHealthBarText
-        elseif unit == "Player" then
-            local root = _G.PlayerFrame
-            textStringFS = root and root.PlayerFrameContent 
-                and root.PlayerFrameContent.PlayerFrameContentMain 
-                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer 
-                and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarText
-        elseif unit == "Target" then
-            local root = _G.TargetFrame
-            textStringFS = root and root.TargetFrameContent 
-                and root.TargetFrameContent.TargetFrameContentMain 
-                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer 
-                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
-        elseif unit == "Focus" then
-            local root = _G.FocusFrame
-            textStringFS = root and root.TargetFrameContent 
-                and root.TargetFrameContent.TargetFrameContentMain 
-                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer 
-                and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
+        -- OPT-25: reuse cached FontStrings if available (frame tree is stable)
+        local leftFS, rightFS, textStringFS
+        local existingCache = addon._ufHealthTextFonts[unit]
+        if existingCache and existingCache.leftFS and existingCache.rightFS then
+            leftFS = existingCache.leftFS
+            rightFS = existingCache.rightFS
+            textStringFS = existingCache.textStringFS
+        else
+            if unit == "Pet" then
+                leftFS = _G.PetFrameHealthBarTextLeft or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText)
+                rightFS = _G.PetFrameHealthBarTextRight or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText)
+            end
+            -- Full resolution path (may scan children/regions). This should only run during
+            -- explicit styling passes (ApplyStyles), not on every health text update.
+            leftFS = leftFS
+                or (frame.HealthBarsContainer and frame.HealthBarsContainer.LeftText)
+                or findFontStringByNameHint(frame, "HealthBarsContainer.LeftText")
+                or findFontStringByNameHint(frame, ".LeftText")
+                or findFontStringByNameHint(frame, "HealthBarTextLeft")
+            rightFS = rightFS
+                or (frame.HealthBarsContainer and frame.HealthBarsContainer.RightText)
+                or findFontStringByNameHint(frame, "HealthBarsContainer.RightText")
+                or findFontStringByNameHint(frame, ".RightText")
+                or findFontStringByNameHint(frame, "HealthBarTextRight")
+
+            -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
+            -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+            -- Character Pane shows HealthBarText instead of LeftText/RightText
+            if unit == "Pet" then
+                textStringFS = _G.PetFrameHealthBarText
+            elseif unit == "Player" then
+                local root = _G.PlayerFrame
+                textStringFS = root and root.PlayerFrameContent
+                    and root.PlayerFrameContent.PlayerFrameContentMain
+                    and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer
+                    and root.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarText
+            elseif unit == "Target" then
+                local root = _G.TargetFrame
+                textStringFS = root and root.TargetFrameContent
+                    and root.TargetFrameContent.TargetFrameContentMain
+                    and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                    and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
+            elseif unit == "Focus" then
+                local root = _G.FocusFrame
+                textStringFS = root and root.TargetFrameContent
+                    and root.TargetFrameContent.TargetFrameContentMain
+                    and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer
+                    and root.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarText
+            end
+
+            -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
+            addon._ufHealthTextFonts[unit] = {
+                leftFS = leftFS,
+                rightFS = rightFS,
+                textStringFS = textStringFS,
+            }
         end
-
-        -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
-        addon._ufHealthTextFonts[unit] = {
-            leftFS = leftFS,
-            rightFS = rightFS,
-            textStringFS = textStringFS,
-        }
 
         -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
         hookHealthTextFontReset(leftFS, unit, "left")
@@ -881,8 +903,17 @@ do
 		if unit == "Pet" then return _G.PetFrame end
 	end
 
+	-- OPT-25: weak-key cache for power text FontString lookups
+	local _ptFSCache = setmetatable({}, { __mode = "k" })
+
 	local function findFontStringByNameHint(root, hint)
 		if not root then return nil end
+		-- OPT-25: check cache
+		local rootCache = _ptFSCache[root]
+		if rootCache then
+			local cached = rootCache[hint]
+			if cached then return cached end
+		end
 		local target
 		local function scan(obj)
 			if not obj or target then return end
@@ -914,6 +945,13 @@ do
 			end
 		end
 		scan(root)
+		-- OPT-25: cache non-nil results
+		if target then
+			if not _ptFSCache[root] then
+				_ptFSCache[root] = {}
+			end
+			_ptFSCache[root][hint] = target
+		end
 		return target
 	end
 
@@ -1188,61 +1226,66 @@ do
 			hookPowerBarUpdateTextString(pb, unit)
 		end
 
-		-- Attempt to resolve power bar text regions
-		local leftFS
-		local rightFS
-		if unit == "Pet" then
-			-- Pet uses standalone globals more often
-			leftFS = _G.PetFrameManaBarTextLeft
-			rightFS = _G.PetFrameManaBarTextRight
+		-- OPT-25: reuse cached FontStrings if available (frame tree is stable)
+		local leftFS, rightFS, textStringFS
+		local existingCache = addon._ufPowerTextFonts[unit]
+		if existingCache and existingCache.leftFS and existingCache.rightFS then
+			leftFS = existingCache.leftFS
+			rightFS = existingCache.rightFS
+			textStringFS = existingCache.textStringFS
+		else
+			if unit == "Pet" then
+				-- Pet uses standalone globals more often
+				leftFS = _G.PetFrameManaBarTextLeft
+				rightFS = _G.PetFrameManaBarTextRight
+			end
+
+			-- Full resolution path (may scan children/regions). This should only run during
+			-- explicit styling passes (ApplyStyles), not on every power text update.
+			leftFS = leftFS
+				or (frame.ManaBar and frame.ManaBar.LeftText)
+				or findFontStringByNameHint(frame, "ManaBar.LeftText")
+				or findFontStringByNameHint(frame, ".LeftText")
+				or findFontStringByNameHint(frame, "ManaBarTextLeft")
+			rightFS = rightFS
+				or (frame.ManaBar and frame.ManaBar.RightText)
+				or findFontStringByNameHint(frame, "ManaBar.RightText")
+				or findFontStringByNameHint(frame, ".RightText")
+				or findFontStringByNameHint(frame, "ManaBarTextRight")
+
+			-- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
+			-- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+			-- Character Pane shows ManaBarText instead of LeftText/RightText
+			if unit == "Pet" then
+				textStringFS = _G.PetFrameManaBarText
+			elseif unit == "Player" then
+				local root = _G.PlayerFrame
+				textStringFS = root and root.PlayerFrameContent
+					and root.PlayerFrameContent.PlayerFrameContentMain
+					and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea
+					and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar
+					and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaBarText
+			elseif unit == "Target" then
+				local root = _G.TargetFrame
+				textStringFS = root and root.TargetFrameContent
+					and root.TargetFrameContent.TargetFrameContentMain
+					and root.TargetFrameContent.TargetFrameContentMain.ManaBar
+					and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
+			elseif unit == "Focus" then
+				local root = _G.FocusFrame
+				textStringFS = root and root.TargetFrameContent
+					and root.TargetFrameContent.TargetFrameContentMain
+					and root.TargetFrameContent.TargetFrameContentMain.ManaBar
+					and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
+			end
+
+			-- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
+			addon._ufPowerTextFonts[unit] = {
+				leftFS = leftFS,
+				rightFS = rightFS,
+				textStringFS = textStringFS,
+			}
 		end
-
-        -- Full resolution path (may scan children/regions). This should only run during
-        -- explicit styling passes (ApplyStyles), not on every power text update.
-		leftFS = leftFS
-			or (frame.ManaBar and frame.ManaBar.LeftText)
-			or findFontStringByNameHint(frame, "ManaBar.LeftText")
-			or findFontStringByNameHint(frame, ".LeftText")
-			or findFontStringByNameHint(frame, "ManaBarTextLeft")
-		rightFS = rightFS
-			or (frame.ManaBar and frame.ManaBar.RightText)
-			or findFontStringByNameHint(frame, "ManaBar.RightText")
-			or findFontStringByNameHint(frame, ".RightText")
-			or findFontStringByNameHint(frame, "ManaBarTextRight")
-
-        -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
-        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
-        -- Character Pane shows ManaBarText instead of LeftText/RightText
-        local textStringFS
-        if unit == "Pet" then
-            textStringFS = _G.PetFrameManaBarText
-        elseif unit == "Player" then
-            local root = _G.PlayerFrame
-            textStringFS = root and root.PlayerFrameContent 
-                and root.PlayerFrameContent.PlayerFrameContentMain 
-                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea 
-                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar 
-                and root.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.ManaBarText
-        elseif unit == "Target" then
-            local root = _G.TargetFrame
-            textStringFS = root and root.TargetFrameContent 
-                and root.TargetFrameContent.TargetFrameContentMain 
-                and root.TargetFrameContent.TargetFrameContentMain.ManaBar 
-                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
-        elseif unit == "Focus" then
-            local root = _G.FocusFrame
-            textStringFS = root and root.TargetFrameContent 
-                and root.TargetFrameContent.TargetFrameContentMain 
-                and root.TargetFrameContent.TargetFrameContentMain.ManaBar 
-                and root.TargetFrameContent.TargetFrameContentMain.ManaBar.ManaBarText
-        end
-
-        -- Cache resolved fontstrings so combat-time hooks can avoid expensive scans.
-        addon._ufPowerTextFonts[unit] = {
-            leftFS = leftFS,
-            rightFS = rightFS,
-            textStringFS = textStringFS,
-        }
 
         -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
         hookPowerTextFontReset(leftFS, unit, "left")
@@ -1636,8 +1679,17 @@ do
 		end
 	end
 
+	-- OPT-25: weak-key cache for name/level text FontString lookups
+	local _nlFSCache = setmetatable({}, { __mode = "k" })
+
 	local function findFontStringByNameHint(root, hint)
 		if not (root and hint) then return nil end
+		-- OPT-25: check cache
+		local rootCache = _nlFSCache[root]
+		if rootCache then
+			local cached = rootCache[hint]
+			if cached then return cached end
+		end
 		local target = nil
 		local function scan(obj)
 			if not obj then return end
@@ -1659,6 +1711,13 @@ do
 			end
 		end
 		scan(root)
+		-- OPT-25: cache non-nil results
+		if target then
+			if not _nlFSCache[root] then
+				_nlFSCache[root] = {}
+			end
+			_nlFSCache[root][hint] = target
+		end
 		return target
 	end
 

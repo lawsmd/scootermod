@@ -5,6 +5,9 @@ local Util = addon.ComponentsUtil
 local getState = Util._getState
 local resolveCDMColor = addon.ResolveCDMColor
 
+-- OPT-25: file-scope weak-key cache for tracked bar FontString lookups
+local _tbFSCache = setmetatable({}, { __mode = "k" })
+
 --------------------------------------------------------------------------------
 -- Default Mode: Bar Overlay Creation
 --------------------------------------------------------------------------------
@@ -339,6 +342,13 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     promoteFontLayer((child.GetDurationLabel and child:GetDurationLabel()) or child.Duration or child.DurationText or child.Timer or child.TimerText)
 
     local function findFontStringByNameHint(root, hint)
+        if not root then return nil end
+        -- OPT-25: check file-scope cache
+        local rootCache = _tbFSCache[root]
+        if rootCache then
+            local cached = rootCache[hint]
+            if cached then return cached end
+        end
         local target = nil
         local function scan(obj)
             if not obj or target then return end
@@ -370,6 +380,13 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
             end
         end
         scan(root)
+        -- OPT-25: cache non-nil results
+        if target then
+            if not _tbFSCache[root] then
+                _tbFSCache[root] = {}
+            end
+            _tbFSCache[root][hint] = target
+        end
         return target
     end
 
