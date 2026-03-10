@@ -25,6 +25,17 @@ local function getState(obj)
     return auraState[obj]
 end
 
+local function setRegionVisible(region, visible)
+    if not region then return end
+    if visible then
+        if region.Show then region:Show() end
+        if region.SetAlpha then region:SetAlpha(1) end
+    else
+        if region.Hide then region:Hide() end
+        if region.SetAlpha then region:SetAlpha(0) end
+    end
+end
+
 function addon.ApplyAuraFrameVisualsFor(component)
     if not component or (component.id ~= "buffs" and component.id ~= "debuffs") then return end
 
@@ -66,8 +77,8 @@ function addon.ApplyAuraFrameVisualsFor(component)
         return cfg
     end
 
-    local function enforceTextColor(fs, key)
-        local state = getState(fs)
+    local function enforceTextColor(fs, key, state)
+        state = state or getState(fs)
         if not fs or not state or state.colorApplying then return end
         local cfg = db[key]
         if type(cfg) ~= "table" then return end
@@ -82,19 +93,18 @@ function addon.ApplyAuraFrameVisualsFor(component)
         if not fs or not hooksecurefunc then return end
         local state = getState(fs)
         if not state then return end
-        state.textHooks = state.textHooks or {}
-        local function hookMethod(method)
-            if state.textHooks[method] or type(fs[method]) ~= "function" then return end
-            state.textHooks[method] = true
-            hooksecurefunc(fs, method, function()
-                local st = getState(fs)
-                if st and st.colorApplying then return end
-                enforceTextColor(fs, key)
-            end)
+        if state.textHooked then return end
+        state.textHooked = true
+
+        local callback = function()
+            local st = auraState[fs]
+            if not st or st.colorApplying then return end
+            enforceTextColor(fs, key, st)
         end
-        hookMethod("SetTextColor")
-        hookMethod("SetVertexColor")
-        hookMethod("SetFontObject")
+
+        if type(fs.SetTextColor) == "function" then hooksecurefunc(fs, "SetTextColor", callback) end
+        if type(fs.SetVertexColor) == "function" then hooksecurefunc(fs, "SetVertexColor", callback) end
+        if type(fs.SetFontObject) == "function" then hooksecurefunc(fs, "SetFontObject", callback) end
     end
 
     local function ensureDefaultColor(cfg, fs)
@@ -138,9 +148,9 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local style = cfg.style or "OUTLINE"
         pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
         if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
+        local state = getState(fs)
         local color = cfg.color
         if color and fs.SetTextColor then
-            local state = getState(fs)
             if state then state.colorApplying = true end
             fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
             if state then state.colorApplying = nil end
@@ -158,7 +168,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
                 (anchor.y or 0) + oy
             )
         end
-        enforceTextColor(fs, key)
+        enforceTextColor(fs, key, state)
     end
 
     local componentId = component and component.id
@@ -269,18 +279,9 @@ function addon.ApplyAuraFrameVisualsFor(component)
 
     local function setDefaultAuraBorderVisible(aura, visible)
         if not aura then return end
-        local targets = { aura.IconBorder, aura.Border, aura.DebuffBorder }
-        for _, region in ipairs(targets) do
-            if region then
-                if visible then
-                    if region.Show then region:Show() end
-                    if region.SetAlpha then region:SetAlpha(1) end
-                else
-                    if region.Hide then region:Hide() end
-                    if region.SetAlpha then region:SetAlpha(0) end
-                end
-            end
-        end
+        setRegionVisible(aura.IconBorder, visible)
+        setRegionVisible(aura.Border, visible)
+        setRegionVisible(aura.DebuffBorder, visible)
     end
 
     local function clearCustomBorder(icon)
