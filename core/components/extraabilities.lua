@@ -477,6 +477,28 @@ local function InstallDynamicHooks(comp)
     end
 end
 
+-- OPT-15: Lightweight opacity-only refresh for RefreshOpacityState dispatch.
+-- Avoids full ApplyExtraAbilitiesStyling (scale, borders, text, button enumeration)
+-- when only the container alpha needs updating.
+local function RefreshExtraAbilitiesOpacity(self)
+    local container = _G.ExtraAbilityContainer
+    if not container then return end
+
+    local baseOp = tonumber(self.db.barOpacity) or 100
+    if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
+    local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
+    if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
+    local hasTarget = (UnitExists and UnitExists("target")) and true or false
+    local appliedOp = hasTarget and tgtOp or baseOp
+
+    local state = getContainerState()
+    state.baseOpacity = appliedOp / 100
+
+    if not state.isMousedOver then
+        setContainerDesiredAlpha(container, appliedOp / 100)
+    end
+end
+
 addon:RegisterComponentInitializer(function(self)
     local extraAbilities = Component:New({
         id = "extraAbilities",
@@ -528,6 +550,7 @@ addon:RegisterComponentInitializer(function(self)
             }},
         },
         ApplyStyling = ApplyExtraAbilitiesStyling,
+        RefreshOpacity = RefreshExtraAbilitiesOpacity,
         OnInitialize = function(comp)
             InstallDynamicHooks(comp)
         end,

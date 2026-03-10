@@ -493,6 +493,23 @@ function addon.ApplyAuraFrameVisualsFor(component)
     end
 end
 
+-- OPT-15: Lightweight opacity-only refresh for RefreshOpacityState dispatch.
+-- Avoids full ApplyAuraFrameStyling (icon iteration, borders, text, version bump)
+-- when only the container alpha needs updating.
+local function RefreshAuraOpacity(self)
+    local frame = _G[self.frameName]
+    if not frame then return end
+    local container = frame.AuraContainer or frame
+    if not container or not container.SetAlpha then return end
+
+    local baseOpacity = ClampOpacity(self.db.opacity, 50)
+    local oocOpacity = ClampOpacity(self.db.opacityOutOfCombat or baseOpacity, 1)
+    local tgtOpacity = ClampOpacity(self.db.opacityWithTarget or baseOpacity, 1)
+    local hasTarget = (UnitExists and UnitExists("target")) and true or false
+    local appliedOpacity = hasTarget and tgtOpacity or (PlayerInCombat() and baseOpacity or oocOpacity)
+    pcall(container.SetAlpha, container, appliedOpacity / 100)
+end
+
 local function ApplyAuraFrameStyling(self)
     local frame = _G[self.frameName]
     if not frame or not frame.AuraContainer then return end
@@ -618,6 +635,7 @@ addon:RegisterComponentInitializer(function(self)
         },
         supportsEmptyVisibilitySection = true,
         ApplyStyling = ApplyAuraFrameStyling,
+        RefreshOpacity = RefreshAuraOpacity,
     })
     self:RegisterComponent(buffs)
 
@@ -681,6 +699,7 @@ addon:RegisterComponentInitializer(function(self)
         },
         supportsEmptyVisibilitySection = true,
         ApplyStyling = ApplyAuraFrameStyling,
+        RefreshOpacity = RefreshAuraOpacity,
     })
     self:RegisterComponent(debuffs)
 end)
