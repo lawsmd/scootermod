@@ -1327,6 +1327,23 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
         end)
     end
 
+    -- Hook InitEntry to catch UpdateExistingDataProvider path (RetainScrollPosition)
+    -- where ScrollBox:Update doesn't fire but entries get new data via Init
+    if sessionWindow.InitEntry and not state.initEntryHooked then
+        state.initEntryHooked = true
+        hooksecurefunc(sessionWindow, "InitEntry", function(self, frame, elementData)
+            -- Skip if ScrollBox:Update already queued a full pass (Path A)
+            local wState = getWindowState(sessionWindow)
+            if wState._scrollUpdateQueued then return end
+
+            C_Timer.After(0, function()
+                if not component.db then return end
+                if not frame or not frame.Icon then return end
+                ApplySingleEntryStyle(frame, component.db, sessionWindow)
+            end)
+        end)
+    end
+
     return true
 end
 
