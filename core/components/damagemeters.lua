@@ -1595,7 +1595,7 @@ addon:RegisterComponentInitializer(function(self)
             autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
         },
         ApplyStyling = ApplyDamageMeterStyling,
-        RefreshOpacity = function() end,  -- OPT-15: Opacity is Edit Mode-managed; no Scoot work needed
+        RefreshOpacity = function() end,  -- OPT-13: Opacity is Edit Mode-managed; no Scoot work needed
     })
 
     self:RegisterComponent(damageMeter)
