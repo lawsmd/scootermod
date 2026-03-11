@@ -124,10 +124,6 @@ partyHealthColorEventFrame:SetScript("OnEvent", function(self, event, unit)
     local overlay = state and state.healthOverlay or nil
     if overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
         addon.BarsTextures.applyValueBasedColor(bar, actualUnit, overlay, useDark)
-        -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
-        if addon.BarsTextures.scheduleColorValidation then
-            addon.BarsTextures.scheduleColorValidation(bar, actualUnit, overlay, useDark)
-        end
     elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
         addon.BarsTextures.applyValueBasedColor(bar, actualUnit, nil, useDark)
     end

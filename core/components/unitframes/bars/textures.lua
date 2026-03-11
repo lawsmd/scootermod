@@ -181,7 +181,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
         return
     end
 
-    local ok, color = pcall(UnitHealthPercent, unit, false, curve)
+    local ok, color = pcall(UnitHealthPercent, unit, true, curve)
     if not ok then
         if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: pcall failed - " .. tostring(color)) end
         return
@@ -218,13 +218,31 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
         return
     end
 
+    -- Fast path: when the overlay system is active and an overlay is provided,
+    -- we only need to color our addon-owned overlay texture. Skip the recursion guard,
+    -- Blizzard texture pcalls, and FrameState overhead entirely.
+    local barState = ensureFS() and ensureFS().Get(bar)
+    local overlaySystemActive = barState and barState.rectActive
+
+    if overlaySystemActive and overlay and overlay.SetVertexColor then
+        overlay:SetVertexColor(r, g, b, 1)
+        -- Update color cache
+        if not isSecret then
+            if prev then
+                prev[1], prev[2], prev[3] = r, g, b
+            else
+                lastAppliedColor[bar] = { r, g, b }
+            end
+        end
+        return
+    end
+
     -- Color ALL relevant textures to handle cases where HealthBarTexture and
     -- GetStatusBarTexture() are different objects, or where multiple textures
     -- need coloring. This fixes the "white layer on top" issue at full opacity.
     local texturesColored = 0
 
     -- Use FrameState to prevent recursion (SetStatusBarColor triggers hooks that call back here)
-    local barState = ensureFS() and ensureFS().Get(bar)
     if barState and barState.applyingValueBasedColor then
         return -- Already applying, prevent recursion
     end
@@ -232,15 +250,13 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
 
     -- 1. Color the overlay if provided
     if overlay and overlay.SetVertexColor then
-        pcall(overlay.SetVertexColor, overlay, r, g, b, 1)
+        overlay:SetVertexColor(r, g, b, 1)
         texturesColored = texturesColored + 1
     end
 
     -- When the overlay system is active (rectActive=true), it handles all visual display.
     -- Skip ALL modifications to Blizzard's textures - touching them triggers internal
     -- re-renders that "wake up" the hidden full-size bar and break height reduction.
-    local overlaySystemActive = barState and barState.rectActive
-
     if not overlaySystemActive then
         -- 2. Color GetStatusBarTexture() result
         local statusBarTex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
@@ -294,14 +310,14 @@ end
 -- GetVertexColor() returns "secret values" that error on arithmetic,
 -- making color comparison impossible. Unconditional reapply avoids reading colors.
 --
--- Intervals: 150ms, 400ms — two checks cover the realistic window where
--- UnitHealthPercent returns stale data. The early-exit color comparison in
--- applyValueBasedColor ensures redundant reapplies are near-zero cost.
--- (Reduced from 5 steps in OPT-16; see OPTIMIZATIONLOG/OPT-16.)
+-- Single safety check at 200ms for non-overlay unit frames where Blizzard's
+-- native coloring may fight our color. Overlay-active bars (party/raid) skip
+-- this entirely since usePredicted=true eliminates the timing lag.
+-- (Reduced from 2 steps; see OPT-16.)
 --------------------------------------------------------------------------------
 
 local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
-local COLOR_VALIDATION_DELAYS = { 0.15, 0.4 }
+local COLOR_VALIDATION_DELAYS = { 0.2 }
 
 -- Schedule a color validation loop for a health bar
 -- @param bar: The StatusBar frame
@@ -330,12 +346,10 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
 
     pendingValidations[bar] = true
 
-    -- SIMPLIFIED APPROACH: Due to secret value issues, color comparison is unreliable.
-    -- Unconditionally reapply color at staggered intervals to catch timing edge cases.
-    -- Ensures the correct color is eventually applied even if UnitHealthPercent
-    -- is initially stale (e.g., when healing to exactly 100%).
-    -- Intervals: 150ms, 400ms (COLOR_VALIDATION_DELAYS) — reduced from 5 steps in OPT-16.
-    -- The early-exit comparison in applyValueBasedColor makes redundant steps near-free.
+    -- Unconditionally reapply color after a short delay to catch timing edge cases
+    -- where Blizzard's native coloring overwrites ours on non-overlay bars.
+    -- Single 200ms check (COLOR_VALIDATION_DELAYS).
+    -- The early-exit comparison in applyValueBasedColor makes redundant calls near-free.
     local step = 0
     local function runStep()
         step = step + 1

@@ -351,10 +351,6 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                     end
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         addon.BarsTextures.applyValueBasedColor(self, unit, overlay, useDark)
-                        -- Schedule validation to catch timing edge cases (stuck colors at 100%)
-                        if addon.BarsTextures.scheduleColorValidation then
-                            addon.BarsTextures.scheduleColorValidation(self, unit, overlay, useDark)
-                        end
                     end
                 end
             end)
@@ -1035,10 +1031,6 @@ function RaidFrames.installHooks()
                 -- Prevents the 1-frame blink where Blizzard's color shows
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                     addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay, useDark)
-                    -- Schedule validation to catch timing edge cases (stuck colors at 100%)
-                    if addon.BarsTextures.scheduleColorValidation then
-                        addon.BarsTextures.scheduleColorValidation(healthBar, unit, overlay, useDark)
-                    end
                 end
             else
                 -- Overlay not ready - defer to ensure initialization completes
@@ -1047,10 +1039,6 @@ function RaidFrames.installHooks()
                     local ov = st and st.healthOverlay or nil
                     if ov and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         addon.BarsTextures.applyValueBasedColor(healthBar, unit, ov, useDark)
-                        -- Schedule validation for deferred case too
-                        if addon.BarsTextures.scheduleColorValidation then
-                            addon.BarsTextures.scheduleColorValidation(healthBar, unit, ov, useDark)
-                        end
                     elseif addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         -- No overlay, apply to status bar texture directly
                         addon.BarsTextures.applyValueBasedColor(healthBar, unit, nil, useDark)

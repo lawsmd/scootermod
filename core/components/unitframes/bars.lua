@@ -5382,10 +5382,11 @@ do
             local overlay = getValueColorOverlay(bar)
             addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
 
-            -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
-            -- UnitHealthPercent can have timing lag, so we reapply at multiple intervals
-            if addon.BarsTextures.scheduleColorValidation then
-                addon.BarsTextures.scheduleColorValidation(bar, unit, overlay, useDark)
+            -- Schedule safety reapply only for non-overlay bars (Player, Target, Focus, Boss)
+            -- where Blizzard's native coloring may fight ours. Overlay-active bars (party/raid)
+            -- don't need this — usePredicted=true eliminates the timing lag.
+            if not overlay and addon.BarsTextures.scheduleColorValidation then
+                addon.BarsTextures.scheduleColorValidation(bar, unit, nil, useDark)
             end
         end
     end)
@@ -5427,12 +5428,6 @@ do
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                     local overlay = getValueColorOverlay(self)
                     addon.BarsTextures.applyValueBasedColor(self, unitToken, overlay, useDark)
-
-                    -- Schedule reapply loop to catch timing edge cases (stuck colors at 100%)
-                    -- UnitHealthPercent can have timing lag, so we reapply at multiple intervals
-                    if addon.BarsTextures.scheduleColorValidation then
-                        addon.BarsTextures.scheduleColorValidation(self, unitToken, overlay, useDark)
-                    end
                 end
             end
         end)
