@@ -1183,6 +1183,86 @@ function UF.RenderPet(panel, scrollContent)
         inner:Finalize()
     end
 
+    local function buildPortraitPersonalTextTab(inner)
+        inner:AddToggle({
+            label = "Hide Personal Text",
+            get = function()
+                local t = ensurePortraitDB() or {}
+                return not not t.damageTextDisabled
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if t then t.damageTextDisabled = v and true or false; applyPortrait() end
+            end,
+        })
+        inner:AddFontSelector({
+            label = "Personal Text Font",
+            get = function()
+                local t = ensurePortraitDB() or {}
+                local s = t.damageText or {}
+                return s.fontFace or "FRIZQT__"
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if not t then return end
+                t.damageText = t.damageText or {}
+                t.damageText.fontFace = v
+                applyPortrait()
+            end,
+        })
+        inner:AddSelector({
+            label = "Personal Text Style",
+            values = UF.fontStyleValues,
+            order = UF.fontStyleOrder,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                local s = t.damageText or {}
+                return s.style or "OUTLINE"
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if not t then return end
+                t.damageText = t.damageText or {}
+                t.damageText.style = v
+                applyPortrait()
+            end,
+        })
+        inner:AddSlider({
+            label = "Personal Text Size",
+            min = 6, max = 48, step = 1,
+            get = function()
+                local t = ensurePortraitDB() or {}
+                local s = t.damageText or {}
+                return tonumber(s.size) or 14
+            end,
+            set = function(v)
+                local t = ensurePortraitDB()
+                if not t then return end
+                t.damageText = t.damageText or {}
+                t.damageText.size = tonumber(v) or 14
+                applyPortrait()
+            end,
+        })
+        inner:AddColorPicker({
+            label = "Personal Text Color",
+            get = function()
+                local t = ensurePortraitDB() or {}
+                local s = t.damageText or {}
+                local c = s.color or {1, 1, 1, 1}
+                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+            end,
+            set = function(r, g, b, a)
+                local t = ensurePortraitDB()
+                if not t then return end
+                t.damageText = t.damageText or {}
+                t.damageText.color = {r, g, b, a}
+                applyPortrait()
+            end,
+            hasAlpha = true,
+        })
+        inner:Finalize()
+    end
+
     builder:AddCollapsibleSection({
         title = "Portrait",
         componentId = COMPONENT_ID,
@@ -1194,6 +1274,7 @@ function UF.RenderPet(panel, scrollContent)
                     { key = "sizing", label = "Sizing" },
                     { key = "zoom", label = "Zoom" },
                     { key = "border", label = "Border" },
+                    { key = "personalText", label = "Personal Text" },
                     { key = "visibility", label = "Visibility" },
                 },
                 componentId = COMPONENT_ID,
@@ -1202,6 +1283,7 @@ function UF.RenderPet(panel, scrollContent)
                     sizing = function(cf, tabInner) buildPortraitSizingTab(tabInner) end,
                     zoom = function(cf, tabInner) buildPortraitZoomTab(tabInner) end,
                     border = function(cf, tabInner) buildPortraitBorderTab(tabInner) end,
+                    personalText = function(cf, tabInner) buildPortraitPersonalTextTab(tabInner) end,
                     visibility = function(cf, tabInner) buildPortraitVisibilityTab(tabInner) end,
                 },
             })

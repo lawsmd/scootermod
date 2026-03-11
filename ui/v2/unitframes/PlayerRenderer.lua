@@ -1033,12 +1033,12 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Hide Personal Text",
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                return not not t.personalTextHidden
+                                return not not t.damageTextDisabled
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.personalTextHidden = v and true or false
+                                t.damageTextDisabled = v and true or false
                                 applyPortrait()
                             end,
                         })
@@ -1046,14 +1046,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Personal Text Font",
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                local s = t.personalText or {}
+                                local s = t.damageText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.personalText = t.personalText or {}
-                                t.personalText.fontFace = v
+                                t.damageText = t.damageText or {}
+                                t.damageText.fontFace = v
                                 applyPortrait()
                             end,
                         })
@@ -1063,14 +1063,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             order = UF.fontStyleOrder,
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                local s = t.personalText or {}
+                                local s = t.damageText or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.personalText = t.personalText or {}
-                                t.personalText.style = v
+                                t.damageText = t.damageText or {}
+                                t.damageText.style = v
                                 applyPortrait()
                             end,
                         })
@@ -1079,14 +1079,14 @@ function UF.RenderPlayer(panel, scrollContent)
                             min = 6, max = 48, step = 1,
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                local s = t.personalText or {}
+                                local s = t.damageText or {}
                                 return tonumber(s.size) or 14
                             end,
                             set = function(v)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.personalText = t.personalText or {}
-                                t.personalText.size = tonumber(v) or 14
+                                t.damageText = t.damageText or {}
+                                t.damageText.size = tonumber(v) or 14
                                 applyPortrait()
                             end,
                         })
@@ -1094,15 +1094,15 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Personal Text Color",
                             get = function()
                                 local t = ensurePortraitDB() or {}
-                                local s = t.personalText or {}
+                                local s = t.damageText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
                             set = function(r, g, b, a)
                                 local t = ensurePortraitDB()
                                 if not t then return end
-                                t.personalText = t.personalText or {}
-                                t.personalText.color = {r, g, b, a}
+                                t.damageText = t.damageText or {}
+                                t.damageText.color = {r, g, b, a}
                                 applyPortrait()
                             end,
                             hasAlpha = true,

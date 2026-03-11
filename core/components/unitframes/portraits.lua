@@ -889,7 +889,7 @@ do
 	end
 
 	local function applyDamageText(unit, cfg)
-		if unit ~= "Player" then return end
+		if unit ~= "Player" and unit ~= "Pet" then return end
 		local damageTextFrame = resolveDamageTextFrame(unit)
 		if not damageTextFrame then return end
 
@@ -905,9 +905,10 @@ do
 		local damageTextCfg = cfg.damageText or {}
 
 		-- Hook SetTextHeight to re-apply the custom font size after Blizzard changes it
+		-- Skip for Pet: PetHitIndicator is a child of PetFrame (Edit Mode system frame) — Rule 11
 		local dtState = getState(damageTextFrame)
 		if dtState then dtState.unitKey = unit end
-		if dtState and not dtState.setTextHeightHooked then
+		if unit ~= "Pet" and dtState and not dtState.setTextHeightHooked then
 			dtState.setTextHeightHooked = true
 
 			hooksecurefunc(damageTextFrame, "SetTextHeight", function(self, height)
@@ -964,13 +965,15 @@ do
 			pcall(damageTextFrame.SetTextColor, damageTextFrame, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
 		end
 
-		-- Apply offset
-		local ox = (damageTextCfg.offset and tonumber(damageTextCfg.offset.x)) or 0
-		local oy = (damageTextCfg.offset and tonumber(damageTextCfg.offset.y)) or 0
-		if damageTextFrame.ClearAllPoints and damageTextFrame.SetPoint then
-			local b = ensureDamageTextBaseline(damageTextFrame, unit .. ":damageText")
-			damageTextFrame:ClearAllPoints()
-			damageTextFrame:SetPoint(b.point or "CENTER", b.relTo or (damageTextFrame.GetParent and damageTextFrame:GetParent()) or nil, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+		-- Apply offset (skip for Pet — ClearAllPoints/SetPoint risky on system frame child)
+		if unit ~= "Pet" then
+			local ox = (damageTextCfg.offset and tonumber(damageTextCfg.offset.x)) or 0
+			local oy = (damageTextCfg.offset and tonumber(damageTextCfg.offset.y)) or 0
+			if damageTextFrame.ClearAllPoints and damageTextFrame.SetPoint then
+				local b = ensureDamageTextBaseline(damageTextFrame, unit .. ":damageText")
+				damageTextFrame:ClearAllPoints()
+				damageTextFrame:SetPoint(b.point or "CENTER", b.relTo or (damageTextFrame.GetParent and damageTextFrame:GetParent()) or nil, b.relPoint or b.point or "CENTER", (b.x or 0) + ox, (b.y or 0) + oy)
+			end
 		end
 	end
 
@@ -1242,26 +1245,30 @@ do
 	-- CombatFeedback_OnUpdate also receives PlayerFrame/PetFrame as 'self'
 	if _G.CombatFeedback_OnCombatEvent then
 		_G.hooksecurefunc("CombatFeedback_OnCombatEvent", function(self, event, flags, amount, type)
-			-- Only handle PlayerFrame - PetFrame is managed/protected by Edit Mode.
-			-- Modifying PetHitIndicator (PetFrame.feedbackText) can taint the frame and
-			-- later cause protected Edit Mode methods (e.g., ClearAllPointsBase) to be blocked.
-			local playerFrame = _G.PlayerFrame
-			if self ~= playerFrame then
+			-- Dispatch: determine unit key and feedback FontString
+			-- For Pet, use _G.PetHitIndicator directly (avoids reading PetFrame's Lua table)
+			local unitKey, feedbackFS
+			if self == _G.PlayerFrame then
+				unitKey = "Player"
+				feedbackFS = self.feedbackText
+			elseif self == _G.PetFrame then
+				unitKey = "Pet"
+				feedbackFS = _G.PetHitIndicator
+			else
 				return
 			end
-			local unitKey = "Player"
 
-			if self.feedbackText then
+			if feedbackFS then
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local cfg = db.unitFrames[unitKey].portrait
 					local damageTextDisabled = cfg.damageTextDisabled == true
-					
+
 					if damageTextDisabled then
 						-- Immediately set alpha to 0 if disabled, preventing it from being visible
 						-- Happens after Blizzard sets feedbackStartTime, so it won't cause nil errors
-						if self.feedbackText.SetAlpha then
-							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
+						if feedbackFS.SetAlpha then
+							pcall(feedbackFS.SetAlpha, feedbackFS, 0)
 						end
 					else
 						-- Override Blizzard's font size with the custom size
@@ -1272,13 +1279,13 @@ do
 						local customSize = tonumber(damageTextCfg.size) or 14
 						local customFace = addon.ResolveFontFace and addon.ResolveFontFace(damageTextCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 						local customStyle = tostring(damageTextCfg.style or "OUTLINE")
-						
+
 						-- Use SetFont to set the actual font size (not SetTextHeight which just scales the region)
 						-- This must be called after Blizzard's SetTextHeight to override it
 						if addon.ApplyFontStyle then
-							addon.ApplyFontStyle(self.feedbackText, customFace, customSize, customStyle)
-						elseif self.feedbackText.SetFont then
-							pcall(self.feedbackText.SetFont, self.feedbackText, customFace, customSize, customStyle)
+							addon.ApplyFontStyle(feedbackFS, customFace, customSize, customStyle)
+						elseif feedbackFS.SetFont then
+							pcall(feedbackFS.SetFont, feedbackFS, customFace, customSize, customStyle)
 						end
 					end
 				end
@@ -1288,25 +1295,29 @@ do
 
 	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
 	-- Critical because OnUpdate runs every frame and will override the alpha setting
-	-- OnUpdate receives PlayerFrame only - PetFrame is excluded (see CombatFeedback_OnCombatEvent comment)
 	if _G.CombatFeedback_OnUpdate then
 		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)
-			-- Only handle PlayerFrame - PetFrame is managed/protected by Edit Mode
-			local playerFrame = _G.PlayerFrame
-			if self ~= playerFrame then
+			-- Dispatch: determine unit key and feedback FontString
+			local unitKey, feedbackFS
+			if self == _G.PlayerFrame then
+				unitKey = "Player"
+				feedbackFS = self.feedbackText
+			elseif self == _G.PetFrame then
+				unitKey = "Pet"
+				feedbackFS = _G.PetHitIndicator
+			else
 				return
 			end
-			local unitKey = "Player"
 
-			if self.feedbackText then
+			if feedbackFS then
 				local db = addon and addon.db and addon.db.profile
 				if db and db.unitFrames and db.unitFrames[unitKey] and db.unitFrames[unitKey].portrait then
 					local damageTextDisabled = db.unitFrames[unitKey].portrait.damageTextDisabled == true
 					if damageTextDisabled then
 						-- Continuously force alpha to 0, overriding Blizzard's animation
 						-- Runs after Blizzard's SetAlpha calls, so it will override them
-						if self.feedbackText.SetAlpha then
-							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
+						if feedbackFS.SetAlpha then
+							pcall(feedbackFS.SetAlpha, feedbackFS, 0)
 						end
 					end
 				end
