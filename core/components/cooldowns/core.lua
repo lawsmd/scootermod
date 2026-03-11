@@ -873,8 +873,8 @@ local function isFrameVisible(frame)
         return false
     end
     if frame.GetWidth and frame.GetHeight then
-        local w, h = frame:GetWidth(), frame:GetHeight()
-        if (w or 0) < 5 or (h or 0) < 5 then
+        local ok, w, h = pcall(function() return frame:GetWidth(), frame:GetHeight() end)
+        if ok and ((w or 0) < 5 or (h or 0) < 5) then
             return false
         end
     end
@@ -978,7 +978,7 @@ function Overlays.HideAll()
     for cdmIcon, overlay in pairs(activeOverlays) do
         releaseOverlay(overlay)
     end
-    activeOverlays = {}
+    wipe(activeOverlays)
 end
 
 function Overlays.HideOverlay(cdmIcon)
@@ -1346,9 +1346,42 @@ end
 local cleanupTicker = nil
 
 local function runOverlayCleanup()
+    -- Part 1: hide overlays for invisible icons
     for cdmIcon, overlay in pairs(activeOverlays) do
         if not isFrameVisible(cdmIcon) then
             overlay:Hide()
+        end
+    end
+
+    -- Part 2: catch-up — detect visible icons that were never styled
+    -- (handles hideWhenInactive icons appearing after initial bootstrap)
+    for viewerName, componentId in pairs(CDM_VIEWERS) do
+        local viewer = _G[viewerName]
+        if viewer and (not viewer.IsVisible or viewer:IsVisible()) then
+            -- Force fresh children list to catch icons added since last cache
+            invalidateChildrenCache(viewerName)
+            local component = addon.Components and addon.Components[componentId]
+            if component and component.db then
+                local db = component.db
+                local hasStyling = db.borderEnable or db.textCooldown or db.textStacks
+                    or (db.textBindings and db.textBindings.enabled)
+                local hasCustomSize = (tonumber(db.tallWideRatio) or 0) ~= 0
+                if hasStyling or hasCustomSize then
+                    local needsRestyle = false
+                    for _, child in ipairs(getViewerChildren(viewer, viewerName)) do
+                        if isValidCDMItemFrame(child) and isFrameVisible(child) then
+                            if (hasStyling and (not activeOverlays[child] or not activeOverlays[child]:IsShown()))
+                                or (hasCustomSize and not sizedIcons[child]) then
+                                needsRestyle = true
+                                break
+                            end
+                        end
+                    end
+                    if needsRestyle then
+                        Overlays.ApplyToViewer(viewerName, componentId)
+                    end
+                end
+            end
         end
     end
 end
