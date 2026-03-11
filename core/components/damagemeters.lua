@@ -369,8 +369,18 @@ local function ApplyJiberishIconsStyle(entry, db, sessionWindow)
     if not JI then return end
 
     -- Get class token from entry
-    local classToken = entry.classToken or entry.class or entry.classFilename
-    if not classToken then return end
+    local classToken = entry.classFilename or entry.classToken or entry.class
+    if not classToken then
+        if blizzardIcon then
+            pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
+        end
+        local elSt = iconFrame and getElementState(iconFrame)
+        if elSt then
+            if elSt.jiberishOverlay then elSt.jiberishOverlay:Hide() end
+            if elSt.jiberishContainer then elSt.jiberishContainer:Hide() end
+        end
+        return
+    end
 
     -- Get texCoords for this class
     local classData = JI.dataHelper and JI.dataHelper.class and JI.dataHelper.class[classToken]
@@ -431,7 +441,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     -- Cache key is { generation, classToken } — generation invalidates on any full-pass
     -- restyle (ApplyStyling or ScrollBox:Update), classToken catches per-entry data changes
     -- (e.g., rank shift assigns a different-class player to this recycled frame).
-    local classToken = entry.classToken or entry.class or (entry.data and entry.data.classToken)
+    local classToken = entry.classFilename or entry.classToken or entry.class or (entry.data and entry.data.classToken)
     local elSt = getElementState(entry)
     if elSt._cacheGen == dmStyleGeneration and elSt._cacheClass == classToken then
         return
@@ -452,7 +462,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
 
     if showClassColor then
         -- Edit Mode class color setting takes priority
-        local classToken = entry.classToken or entry.class or (entry.data and entry.data.classToken)
+        local classToken = entry.classFilename or entry.classToken or entry.class or (entry.data and entry.data.classToken)
         if classToken then
             local r, g, b = GetClassColor(classToken)
             if statusBar.SetStatusBarColor then
