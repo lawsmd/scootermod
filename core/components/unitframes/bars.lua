@@ -2280,11 +2280,17 @@ do
             end
         end
 
-        -- Combat safety: do not touch protected unit frame bars during combat. Queue a post-combat reapply.
-        if InCombatLockdown and InCombatLockdown() then
+        -- Combat safety: Player frame has reparenting operations (AnimatedLossBar, HealPrediction)
+        -- that interact with protected frame state — defer to post-combat.
+        -- Target/Focus use cosmetic-only operations (SetStatusBarTexture, SetVertexColor,
+        -- SetReverseFill, overlay/border creation) which are combat-safe.
+        -- Layout operations (width/height scaling) have their own `inCombat` guards downstream.
+        if unit == "Player" and InCombatLockdown and InCombatLockdown() then
             queueUnitFrameTextureReapply(unit)
             return
         end
+
+        local combatSafe = (unit ~= "Player")
 
         -- Target-of-Target can get refreshed frequently by Blizzard (even out of combat),
         -- which can reset its bar textures. Install a lightweight, throttled hook on the
@@ -2959,8 +2965,8 @@ do
 					Util.SetHealthBarTextureOnlyHidden(hb, false)
 				end
 			end
-            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
-            
+            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId, combatSafe)
+
             -- Apply background texture and color for Health Bar
             do
                 -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
@@ -2988,7 +2994,7 @@ do
                     local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
                     local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
                     local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
-                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
+                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health", combatSafe)
                 end
             end
 
@@ -3525,7 +3531,7 @@ do
             local pbSt = getState(pb)
             if not (pbSt and pbSt.powerOverlayActive) then
                 -- Overlay not active (default+default): use legacy passthrough
-                applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId)
+                applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId, combatSafe)
             end
 
             -- Apply background texture and color for Power Bar
@@ -3555,7 +3561,7 @@ do
                     local bgTexKeyPB = cfg.powerBarBackgroundTexture or "default"
                     local bgColorModePB = cfg.powerBarBackgroundColorMode or "default"
                     local bgOpacityPB = cfg.powerBarBackgroundOpacity or 50
-                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power")
+                    applyBackgroundToBar(pb, bgTexKeyPB, bgColorModePB, cfg.powerBarBackgroundTint, bgOpacityPB, unit, "power", combatSafe)
                 end
             end
             

@@ -573,11 +573,11 @@ end
 --------------------------------------------------------------------------------
 
 -- Apply background texture and color to a bar
-function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind)
+function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColorMode, backgroundTint, backgroundOpacity, unit, barKind, combatSafe)
     if not bar then return end
 
     -- Combat safety: creating/modifying textures on protected frames during combat can taint.
-    if InCombatLockdown and InCombatLockdown() then
+    if not combatSafe and InCombatLockdown and InCombatLockdown() then
         return
     end
     
