@@ -493,7 +493,7 @@ local function applyAtlasBorder(overlay, opts, styleDef)
     local atlasTex = overlay.atlasBorder
 
     -- For atlas borders: use style's default color (typically white) unless tint is enabled
-    -- This lets the atlas texture show its natural colors when tint is off
+    -- Lets the atlas texture show its natural colors when tint is off
     local col
     if opts.tintEnabled and opts.tintColor then
         col = opts.tintColor
@@ -1045,7 +1045,7 @@ function Overlays.ApplyIconSize(cdmIcon, opts)
     if not ok then return end
 
     -- Calculate texture coordinates to crop instead of stretch
-    -- This prevents the icon from looking distorted with non-square dimensions
+    -- Prevents the icon from looking distorted with non-square dimensions
     local aspectRatio = iconWidth / iconHeight
     local left, right, top, bottom = 0, 1, 0, 1
 
@@ -1327,7 +1327,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
     end
 
     -- Hook Layout to apply centering synchronously (no deferral needed for cosmetic APIs).
-    -- This eliminates the visible "jerk" on spell transforms where icons briefly appear
+    -- Eliminates the visible "jerk" on spell transforms where icons briefly appear
     -- at Blizzard's default grid position before snapping to centered position.
     if viewer.Layout then
         hooksecurefunc(viewer, "Layout", function()

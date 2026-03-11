@@ -492,7 +492,7 @@ function Profiles:PerformCreateLayout(rawNewName)
         return false, "C_EditMode API unavailable." end
 
     -- IMPORTANT: Creating a brand-new profile must be Zero‑Touch (stock Blizzard UI).
-    -- We cannot reliably "undo" every frame mutation from a previous profile without
+    -- Cannot reliably "undo" every frame mutation from a previous profile without
     -- tracking Blizzard baselines, so we require a /reload and let Blizzard initialize.
 
     local name = newName
@@ -550,7 +550,7 @@ function Profiles:PerformCreateLayout(rawNewName)
     self._suppressProfileCallback = false
 
     -- EXTRA SAFETY: explicitly persist the profileKeys entry AceDB uses for this character.
-    -- This ensures the newly-created profile is the one selected when the reload snapshot is written.
+    -- Ensures the newly-created profile is the one selected when the reload snapshot is written.
     do
         local sv = rawget(self.db, "sv")
         local charKey = self.db.keys and self.db.keys.char

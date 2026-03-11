@@ -505,7 +505,7 @@ end
 --------------------------------------------------------------------------------
 -- SetOnRefresh: Set a callback to be called when sections expand/collapse
 --------------------------------------------------------------------------------
--- This allows the renderer to re-render the page when layout changes.
+-- Allows the renderer to re-render the page when layout changes.
 --
 -- Usage:
 --   builder:SetOnRefresh(function()

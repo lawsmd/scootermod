@@ -69,7 +69,7 @@ function GF.applyPartyStyles()
         return
     end
     -- Apply only party-specific functions instead of global ApplyStyles
-    -- This prevents party frames from refreshing when unrelated settings change
+    -- Prevents party frames from refreshing when unrelated settings change
     if addon.ApplyPartyFrameHealthBarStyle then
         addon.ApplyPartyFrameHealthBarStyle()
     end
@@ -111,7 +111,7 @@ function GF.applyRaidStyles()
         return
     end
     -- Apply only raid-specific functions instead of global ApplyStyles
-    -- This prevents raid frames from refreshing when unrelated settings change
+    -- Prevents raid frames from refreshing when unrelated settings change
     if addon.ApplyRaidFrameHealthBarStyle then
         addon.ApplyRaidFrameHealthBarStyle()
     end

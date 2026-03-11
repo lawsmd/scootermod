@@ -66,7 +66,7 @@ local getFrameScreenOffsets = Utils.getFrameScreenOffsets
 
 -- Round a UI-unit value DOWN to the nearest physical screen pixel.
 -- At non-1.0 UI scales, integer UI units don't land on pixel boundaries.
--- This ensures clip container edges snap to exact pixels so clipping
+-- Ensures clip container edges snap to exact pixels so clipping
 -- and border rendering agree on the same boundary (fixes sub-pixel gaps).
 local function pixelFloor(uiValue, frame)
     local scale = 1
@@ -577,7 +577,7 @@ do
 
         -- BOSS FIX: Use stored bounds frame for vertical constraints.
         -- Boss HealthBar StatusBar is oversized (spans both health + power areas).
-        -- We anchor LEFT/RIGHT to StatusBarTexture (tracks fill width automatically),
+        -- Anchors LEFT/RIGHT to StatusBarTexture (tracks fill width automatically),
         -- and TOP/BOTTOM to the correct bounds frame (HealthBarsContainer for health,
         -- ManaBar for power).
         local boundsFrame = st.bossRectBoundsFrame
@@ -795,7 +795,7 @@ do
             -- Frame level BELOW bar so text (which is on the bar) renders above the custom overlay.
             -- Blizzard's fill texture is hidden (alpha 0), so even though it's "above" the custom
             -- overlay in frame level terms, the custom overlay still shows through.
-            -- This ensures: background < the custom overlay < Blizzard's hidden fill < text
+            -- Ensures: background < the custom overlay < Blizzard's hidden fill < text
             container:SetFrameLevel(math.max(1, (bar:GetFrameLevel() or 1) - 1))
             st.heightClipContainer = container
         end
@@ -965,7 +965,7 @@ do
     end
 
     -- Optional rectangular overlay for unit frame health bars when the portrait is hidden.
-    -- This is used to visually "fill in" the right-side chip on Target/Focus when the
+    -- Visually "fills in" the right-side chip on Target/Focus when the
     -- circular portrait is hidden, without replacing the stock StatusBar frame.
     -- Also used for "Color by Value" mode to avoid modifying Blizzard's protected textures.
     local function updateRectHealthOverlay(unit, bar)
@@ -1096,7 +1096,7 @@ do
             st.rectReverseFill = false -- FoT health bar always fills left-to-right
         elseif type(unit) == "string" and string.lower(unit) == "pet" then
             -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
-            -- and replace them with a custom border. Use the same overlay approach as Player/ToT.
+            -- and replace them with a custom border. Use the same overlay pattern as Player/ToT.
             shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
             st.rectReverseFill = false -- Pet health bar always fills left-to-right
         else
@@ -1237,7 +1237,7 @@ do
             -- Default texture - try to copy from bar, with fallback chain
             -- CRITICAL: GetTexture() can return an atlas token STRING. Passing an atlas token
             -- to SetTexture() causes the entire spritesheet to render.
-            -- We must check if the string is an atlas and use SetAtlas() instead.
+            -- Must check if the string is an atlas and use SetAtlas() instead.
             local tex = bar:GetStatusBarTexture()
             local applied = false
             if tex then
@@ -1577,7 +1577,7 @@ do
             r, g, b, a = 1, 1, 1, 1
         elseif colorMode == "default" or colorMode == "power" then
             -- Use the addon's power color API as the authoritative source.
-            -- This avoids issues where the fill texture's vertex color may be stale/white
+            -- Avoids issues where the fill texture's vertex color may be stale/white
             -- after Blizzard resets the StatusBarTexture on combat entry.
             if addon.GetPowerColorRGB then
                 local pr, pg, pb = addon.GetPowerColorRGB(unitId)
@@ -1657,9 +1657,9 @@ do
 
         -- PetFrame is a managed/protected unit frame. Direct bar writes (SetStatusBarTexture)
         -- can trigger Blizzard's internal heal prediction update callbacks that error on "secret values".
-        -- For Pet we use the overlay-only approach: ensureRectHealthOverlay() creates an addon-owned
+        -- For Pet, the overlay-only technique is used: ensureRectHealthOverlay() creates an addon-owned
         -- texture that uses SetAllPoints(statusBarTex) anchoring instead of value reads.
-        -- We skip applyToBar() to avoid touching Blizzard's StatusBar directly.
+        -- Skips applyToBar() to avoid touching Blizzard's StatusBar directly.
         if unit == "Pet" then
             -- Hide PetFrameTexture (art hiding) - same pattern as line 3658+
             local ft = resolveUnitFrameFrameTexture(unit)
@@ -1684,7 +1684,7 @@ do
                 ensureRectHealthOverlay(unit, hb, cfg)
             end
 
-            -- Apply background texture (overlay approach only handles foreground)
+            -- Apply background texture (overlay only handles foreground)
             if hb then
                 local bgTexKeyHB = cfg.healthBarBackgroundTexture
                 local bgColorModeHB = cfg.healthBarBackgroundColorMode
@@ -1850,7 +1850,7 @@ do
                 end
             end
 
-            -- Apply background texture (overlay approach only handles foreground)
+            -- Apply background texture (overlay only handles foreground)
             if hb then
                 local bgTexKeyHB = cfg.healthBarBackgroundTexture
                 local bgColorModeHB = cfg.healthBarBackgroundColorMode
@@ -2011,7 +2011,7 @@ do
                 end
             end
 
-            -- Apply background texture (overlay approach only handles foreground)
+            -- Apply background texture (overlay only handles foreground)
             if hb then
                 local bgTexKeyHB = cfg.healthBarBackgroundTexture
                 local bgColorModeHB = cfg.healthBarBackgroundColorMode
@@ -2174,7 +2174,7 @@ do
         end
 
         -- Target/Focus frames can be updated/rebuilt by Blizzard during combat (rapid target swaps, faction updates, etc.).
-        -- We must NEVER touch protected StatusBars/layout during combat, but we CAN safely enforce visual-only overlays
+        -- Protected StatusBars/layout must NEVER be touched during combat, but visual-only overlays CAN safely be enforced
         -- (like ReputationColor) via SetAlpha + alpha enforcers. Do this BEFORE the combat early-return so the element
         -- stays hidden even if Blizzard recreates the region while we're in combat.
         --
@@ -2208,7 +2208,7 @@ do
                 hookAlphaEnforcer(reputationColor, computeUseCustomBordersAlpha)
                 
                 -- Belt-and-suspenders: schedule a follow-up re-hide after Blizzard's updates complete
-                -- This catches cases where Blizzard resets alpha after our initial hide
+                -- Catches cases where Blizzard resets alpha after the initial hide
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         -- Re-resolve in case the texture object changed
@@ -2258,7 +2258,7 @@ do
                         hookAlphaEnforcer(bossRepColor, computeBossUseCustomBordersAlpha)
 
                         -- Belt-and-suspenders: schedule a follow-up re-hide after Blizzard's updates complete
-                        -- This catches cases where Blizzard resets alpha after our initial hide
+                        -- Catches cases where Blizzard resets alpha after the initial hide
                         if _G.C_Timer and _G.C_Timer.After then
                             local bossIndex = i  -- Capture loop variable for closure
                             _G.C_Timer.After(0, function()
@@ -2465,7 +2465,7 @@ do
                             -- BOSS FRAME FIX: The HealthBar StatusBar has oversized dimensions spanning both
                             -- health and power bars. The HealthBarsContainer (parent of HealthBar) has the
                             -- correct bounds because ManaBar is a sibling of HealthBarsContainer, not a child.
-                            -- We anchor the border to HealthBarsContainer instead of the StatusBar.
+                            -- The border anchors to HealthBarsContainer instead of the StatusBar.
                             do
                                 local styleKey = cfg.healthBarBorderStyle
                                 local tintEnabled = not not cfg.healthBarBorderTintEnable
@@ -3260,7 +3260,7 @@ do
 
             -- Lightweight persistence hooks for Target-of-Target Health Bar:
             -- Blizzard can reset the ToT StatusBar's fill texture during rapid updates (often in combat).
-            -- We re-assert the configured texture/color by writing to the underlying Texture region
+            -- Re-asserts the configured texture/color by writing to the underlying Texture region
             -- (avoids calling SetStatusBarTexture again inside a secure callstack).
             if unit == "TargetOfTarget" and _G.hooksecurefunc then
                 if not getProp(hb, "toTHealthTextureHooked") then
@@ -3355,7 +3355,7 @@ do
 
             -- Lightweight persistence hooks for Focus-Target Health Bar:
             -- Blizzard can reset the FoT StatusBar's fill texture during rapid updates (often in combat).
-            -- We re-assert the configured texture/color by writing to the underlying Texture region
+            -- Re-asserts the configured texture/color by writing to the underlying Texture region
             -- (avoids calling SetStatusBarTexture again inside a secure callstack).
             if unit == "FocusTarget" and _G.hooksecurefunc then
                 if not getProp(hb, "foTHealthTextureHooked") then
@@ -3927,7 +3927,7 @@ do
                         local leftFS = apb.LeftText
                         local rightFS = apb.RightText
                         -- Also resolve the center TextString (used in NUMERIC display mode)
-                        -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+                        -- Ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
                         local textStringFS = apb.TextString or apb.text
 
                         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
@@ -4103,7 +4103,7 @@ do
                             end
 
                             -- Apply text alignment using two-point anchoring (matches text.lua pattern).
-                            -- This makes SetJustifyH work correctly without needing GetWidth() (which can
+                            -- Makes SetJustifyH work correctly without needing GetWidth() (which can
                             -- trigger secret value errors on unit frame StatusBars).
                             -- Check for both :right and -right patterns to handle all key formats
                             local defaultAlign = "LEFT"
@@ -5138,7 +5138,7 @@ do
         addon._VehicleArtHooksInstalled = true
 
         -- Hook PlayerFrame_ToVehicleArt to re-enforce VehicleFrameTexture hiding
-        -- This is called when entering a vehicle (Blizzard shows VehicleFrameTexture)
+        -- Called when entering a vehicle (Blizzard shows VehicleFrameTexture)
         if _G.hooksecurefunc and type(_G.PlayerFrame_ToVehicleArt) == "function" then
             _G.hooksecurefunc("PlayerFrame_ToVehicleArt", function()
                 if _G.C_Timer and _G.C_Timer.After then
@@ -5150,7 +5150,7 @@ do
         end
 
         -- Hook PlayerFrame_ToPlayerArt to re-enforce AlternatePowerFrameTexture hiding
-        -- This is called when exiting a vehicle (Blizzard shows AlternatePowerFrameTexture)
+        -- Called when exiting a vehicle (Blizzard shows AlternatePowerFrameTexture)
         if _G.hooksecurefunc and type(_G.PlayerFrame_ToPlayerArt) == "function" then
             _G.hooksecurefunc("PlayerFrame_ToPlayerArt", function()
                 if _G.C_Timer and _G.C_Timer.After then
@@ -5162,7 +5162,7 @@ do
         end
 
         -- Install Show() hooks directly on the textures for extra coverage.
-        -- This catches ANY Show() call, not just those from known Blizzard functions.
+        -- Catches ANY Show() call, not just those from known Blizzard functions.
         local container = _G.PlayerFrame and _G.PlayerFrame.PlayerFrameContainer
         
         -- VehicleFrameTexture Show() hook
@@ -5332,7 +5332,7 @@ do
     -- Also register UNIT_MAXHEALTH and UNIT_HEAL_PREDICTION to catch edge cases:
     -- - UNIT_MAXHEALTH: When max health changes (buffs, potions that heal to cap)
     -- - UNIT_HEAL_PREDICTION: Incoming heal updates that may affect display
-    -- This fixes "stuck colors" when healing to exactly 100% (no subsequent UNIT_HEALTH fires)
+    -- Fixes "stuck colors" when healing to exactly 100% (no subsequent UNIT_HEALTH fires)
     local healthColorEventFrame = CreateFrame("Frame")
     healthColorEventFrame:RegisterEvent("UNIT_HEALTH")
     healthColorEventFrame:RegisterEvent("UNIT_MAXHEALTH")
@@ -5459,7 +5459,7 @@ do
         end
 
         -- Hook RefreshOpacityState to re-apply value-based colors after opacity changes.
-        -- This ensures color persists through opacity transitions (e.g., 20% -> 100% when target acquired).
+        -- Ensures color persists through opacity transitions (e.g., 20% -> 100% when target acquired).
         if addon.RefreshOpacityState and not addon._valueColorOpacityHooked then
             addon._valueColorOpacityHooked = true
             hooksecurefunc(addon, "RefreshOpacityState", function()

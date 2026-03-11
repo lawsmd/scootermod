@@ -126,7 +126,7 @@ function Profiles:CleanupOrphanedProfiles()
 end
 
 -- Detect when the current profile's Edit Mode layout was deleted externally (via Blizzard's Edit Mode UI).
--- This is called from RefreshFromEditMode after _layoutLookup is rebuilt.
+-- Called from RefreshFromEditMode after _layoutLookup is rebuilt.
 -- If the current profile no longer has a matching layout, prompt for reload.
 function Profiles:CheckForExternalDeletion()
     if not self.db or not self._layoutLookup then

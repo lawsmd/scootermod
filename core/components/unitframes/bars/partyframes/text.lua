@@ -234,7 +234,7 @@ local function stylePartyNameOverlay(frame, cfg)
     pcall(overlay.SetTextColor, overlay, r, g, b, a)
 
     -- Always use LEFT justify so truncation only happens on the right side.
-    -- This ensures player names always show the beginning of the name.
+    -- Ensures player names always show the beginning of the name.
     pcall(overlay.SetJustifyH, overlay, "LEFT")
     if overlay.SetJustifyV then
         pcall(overlay.SetJustifyV, overlay, "MIDDLE")

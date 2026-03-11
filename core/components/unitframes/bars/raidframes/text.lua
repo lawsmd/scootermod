@@ -269,7 +269,7 @@ local function styleRaidNameOverlay(frame, cfg)
     pcall(overlay.SetTextColor, overlay, r, g, b, a)
 
     -- Always use LEFT justify so truncation only happens on the right side.
-    -- This ensures player names always show the beginning of the name.
+    -- Ensures player names always show the beginning of the name.
     pcall(overlay.SetJustifyH, overlay, "LEFT")
     if overlay.SetJustifyV then
         pcall(overlay.SetJustifyV, overlay, "MIDDLE")
@@ -380,7 +380,7 @@ local function ensureRaidNameOverlay(frame, cfg)
     end
 
     -- Ensure an addon-owned clipping container that spans the FULL unit frame.
-    -- This allows 9-way alignment to position text anywhere within the frame.
+    -- Allows 9-way alignment to position text anywhere within the frame.
     ensureOverlayContainer(frame)
 
     -- Create overlay FontString if it doesn't exist (as a child of the clipping container)

@@ -175,7 +175,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
     end
 
     -- Use UnitHealthPercent with the curve to get a color
-    -- This is secret-safe because Blizzard evaluates the secret percentage internally
+    -- Secret-safe because Blizzard evaluates the secret percentage internally
     if not _G.UnitHealthPercent then
         if addon.DebugPrint then addon.DebugPrint("applyValueBasedColor: UnitHealthPercent not found") end
         return
@@ -332,7 +332,7 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
 
     -- SIMPLIFIED APPROACH: Due to secret value issues, color comparison is unreliable.
     -- Unconditionally reapply color at staggered intervals to catch timing edge cases.
-    -- This ensures the correct color is eventually applied even if UnitHealthPercent
+    -- Ensures the correct color is eventually applied even if UnitHealthPercent
     -- is initially stale (e.g., when healing to exactly 100%).
     -- Intervals: 150ms, 400ms (COLOR_VALIDATION_DELAYS) — reduced from 5 steps in OPT-16.
     -- The early-exit comparison in applyValueBasedColor makes redundant steps near-free.
@@ -425,7 +425,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
             end
         end
         -- Apply initial value-based color using the unit token (unitForClass parameter)
-        -- This ensures the bar isn't left white when the setting is first enabled
+        -- Ensures the bar isn't left white when the setting is first enabled
         if unitForClass then
             Textures.applyValueBasedColor(bar, unitForClass, nil, useDark)
         end

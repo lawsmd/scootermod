@@ -26,7 +26,7 @@ local function verifyHash(expected, blob, label)
     if not computed then
         -- Some clients/accounts do not expose C_Crypto.Hash. Hash validation is a
         -- safety rail (drift/tamper detection) but should not block functionality.
-        -- We warn once per session and proceed.
+        -- Warn once per session and proceed.
         if addon and not addon._warnedPresetHashUnavailable then
             addon._warnedPresetHashUnavailable = true
             if addon.Print then
@@ -483,7 +483,7 @@ function addon.EditMode:ImportPresetLayout(preset, opts)
 
     addon:Print(string.format("Imported preset '%s' as new layout '%s'.", preset.name or preset.id or "Preset", newLayoutName))
 
-    -- Do NOT attempt to activate the new layout/profile immediately.
+    -- Do NOT try to activate the new layout/profile immediately.
     -- Some clients block add-ons from chaining layout creation -> activation -> reload in one session,
     -- yielding "Interface action failed because of an AddOn" and leaving the user on the old profile.
     -- Instead, persist a pending activation token and let the next load perform the switch.

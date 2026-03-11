@@ -338,7 +338,7 @@ local function UpdateTitleRightClickState(sessionWindow, enabled)
     end
 end
 
--- Apply JiberishIcons class icon to replace spec icon using overlay approach
+-- Apply JiberishIcons class icon to replace spec icon using an overlay
 -- Uses a separate overlay texture to prevent flickering from Blizzard's icon resets
 local function ApplyJiberishIconsStyle(entry, db, sessionWindow)
     if not entry or not db then return end
@@ -722,7 +722,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
         else
             SafeSetShown(iconFrame, true)
 
-            -- Icon border - custom overlay approach for damage meter icons
+            -- Icon border - custom overlay for damage meter icons
             -- Blizzard's spec icons use TexCoords (0.0625 inset) creating a rectangular visible area
             -- A custom border overlay handles this properly
             if db.iconBorderEnable then
@@ -862,7 +862,7 @@ local function ApplyWindowStyling(window, db)
 end
 
 -- Default color for GameFontNormalMed1 (from Blizzard FontStyles.xml)
--- This is the gold/yellow color used by default for damage meter title text
+-- Gold/yellow color used by default for damage meter title text
 local TITLE_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
 
 -- Apply title/header text styling to a session window
@@ -1405,7 +1405,7 @@ local function HookSessionWindowScrollBox(sessionWindow, component)
 end
 
 -- Hook entry acquisition to style new entries
--- This handles one-time hooks on the main DamageMeter frame (Update/Refresh/UpdateData)
+-- Handles one-time hooks on the main DamageMeter frame (Update/Refresh/UpdateData)
 -- ScrollBox hooks for individual windows are handled by HookSessionWindowScrollBox
 local function HookEntryAcquisition(component)
     local dmFrame = _G.DamageMeter

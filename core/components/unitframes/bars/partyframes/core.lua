@@ -21,11 +21,11 @@ local PartyFrames = addon.BarsPartyFrames
 --------------------------------------------------------------------------------
 -- Writing properties directly to CompactPartyFrameMember frames
 -- (e.g., frame._ScootActive = true) can mark the entire frame as "addon-touched".
--- This causes ALL field accesses to return secret values in protected contexts
+-- Causes ALL field accesses to return secret values in protected contexts
 -- (like Edit Mode), breaking Blizzard's own code (frame.outOfRange becomes secret).
 --
 -- Solution: Store all Scoot state in a separate lookup table keyed by frame.
--- This avoids modifying Blizzard's frames while preserving overlay functionality.
+-- Avoids modifying Blizzard's frames while preserving overlay functionality.
 --------------------------------------------------------------------------------
 local PartyFrameState = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
 
@@ -107,7 +107,7 @@ end
 
 -- Update overlay dimensions based on health bar fill texture
 -- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
--- This avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
+-- Avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
@@ -303,7 +303,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
 
     if state and not state.healthOverlay then
         -- Parent the overlay to the healthBar StatusBar (a useParentLevel="true" child).
-        -- This places the overlay in the same rendering pass as DispelOverlay.
+        -- Places the overlay in the same rendering pass as DispelOverlay.
         -- Within that pass, draw layers compare normally: our BORDER sublevel 7
         -- renders before DispelOverlay's ARTWORK sublevel -5/-6, so the dispel
         -- gradient/highlight renders on top of our overlay.
@@ -364,7 +364,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 end)
             end
             -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
-            -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
+            -- Key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
             -- calls SetStatusBarColor(green), the hook fires IMMEDIATELY after and re-applies
             -- the value-based color. No frame gap = no blink.
             _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
@@ -443,7 +443,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     end
 
     -- Build a config fingerprint to detect if settings have actually changed.
-    -- This prevents expensive re-styling when ApplyStyles() is called but party
+    -- Prevents expensive re-styling when ApplyStyles() is called but party
     -- frame settings haven't changed (e.g., when changing Action Bar settings).
     local fingerprint = string.format("%s|%s|%s|%s|%s",
         tostring(cfg.healthBarTexture or ""),
@@ -458,14 +458,14 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     )
 
     -- If config hasn't changed and styling was already applied, skip re-styling.
-    -- This prevents visual blinking when ApplyStyles() is called for unrelated
+    -- Prevents visual blinking when ApplyStyles() is called for unrelated
     -- settings (e.g., CDM, Action Bars). stylingApplied is tracked separately from
     -- overlay dimensions because GetWidth() can return <= 1 due to secret values.
     if state.lastAppliedFingerprint == fingerprint and state.stylingApplied then
         -- FIX: With sticky visibility in place (Fix 1), the overlay won't be hidden
         -- due to secret values, so an aggressive recovery loop is unnecessary.
         -- The SetValue hook will update dimensions when values become available.
-        -- Only attempt a single deferred update if overlay isn't visible yet.
+        -- Only try a single deferred update if overlay isn't visible yet.
         local overlay = state.healthOverlay
         if overlay and not overlay:IsShown() then
             if _G.C_Timer and _G.C_Timer.After then
@@ -493,7 +493,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
     -- Keep trying until the overlay is successfully shown.
     -- NOTE: This retry loop only runs on initial setup (fingerprint check above
     -- prevents re-entry on subsequent ApplyStyles calls).
-    -- FIX: Reduced from 5 to 3 attempts and removed re-styling in retry loop.
+    -- FIX: Reduced from 5 to 3 tries and removed re-styling in retry loop.
     -- With anchor-based sizing, updateHealthOverlay just needs to run
     -- after the fill texture is ready. A single deferred call should suffice.
     if _G.C_Timer and _G.C_Timer.After then
@@ -543,7 +543,7 @@ end
 -- Note: OVERLAY layer with the lowest sublevel (-8) is used so borders appear
 -- above the health bar content but below the selection highlight.
 --
--- The previous SetBackdrop() approach on a child frame caused borders to draw
+-- The previous SetBackdrop() pattern on a child frame caused borders to draw
 -- on top of the selection highlight because child frame layers draw after parent
 -- frame layers (even if both are OVERLAY).
 --------------------------------------------------------------------------------
@@ -927,7 +927,7 @@ function PartyFrames.installHooks()
     end
 
     -- Hook CompactUnitFrame_UpdateHealthColor for "Color by Value" mode
-    -- This hook fires after every health update, enabling dynamic color updates
+    -- Fires after every health update, enabling dynamic color updates
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealthColor then
         _G.hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(frame)
             -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
@@ -965,7 +965,7 @@ function PartyFrames.installHooks()
 
             if overlay and overlay:IsShown() then
                 -- Overlay exists and is shown - apply immediately (no defer)
-                -- This prevents the 1-frame blink where Blizzard's color shows
+                -- Prevents the 1-frame blink where Blizzard's color shows
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                     addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay, useDark)
                     -- Schedule validation to catch timing edge cases (stuck colors at 100%)
@@ -1303,7 +1303,7 @@ function PartyFrames.installHooks()
     addon._applyGroupLeadIcon = applyGroupLeadIcon
 
     -- Hook CompactUnitFrame_UpdateRoleIcon to also apply group lead icon.
-    -- This fires during CompactUnitFrame_UpdateAll for every compact frame,
+    -- Fires during CompactUnitFrame_UpdateAll for every compact frame,
     -- providing reliable timing after unit assignment.
     if not addon._GroupLeadIconRoleIconHookInstalled then
         addon._GroupLeadIconRoleIconHookInstalled = true

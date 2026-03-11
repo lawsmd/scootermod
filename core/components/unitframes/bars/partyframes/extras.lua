@@ -339,7 +339,7 @@ addon.ApplyPartyAbsorbBarsVisibility = PartyFrames.ApplyAbsorbBarsVisibility
 -- Heal Prediction Clipping (MaskTexture)
 --------------------------------------------------------------------------------
 -- Clips all prediction/absorb textures to healthBar bounds using MaskTexture.
--- This prevents textures (especially otherHealPrediction) from extending past
+-- Prevents textures (especially otherHealPrediction) from extending past
 -- the right edge of the health bar at 100% health.
 --
 -- Only activates when user has configured party frames (zero-touch compliant).

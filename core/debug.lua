@@ -442,7 +442,7 @@ function addon.DebugDumpClassAuras()
         push("")
     end
 
-    -- Our match attempts (replay the exact logic from FindCDMItemForSpell)
+    -- Match tries (replay the exact logic from FindCDMItemForSpell)
     push("--- Match Replay for Registered Auras ---")
     push("")
     if classAuras then
@@ -1388,12 +1388,12 @@ end
 
 -- Secret value handling: some getters return "secret" values that cannot be
 -- used in string operations, comparisons, or arithmetic. We detect these by
--- attempting the operation in a pcall. IMPORTANT: Even comparing a secret to nil
+-- trying the operation in a pcall. IMPORTANT: Even comparing a secret to nil
 -- can fail, so ALL operations must be wrapped in pcall.
 
 -- Returns a guaranteed-safe string, or fallback if the value is a secret
 -- IMPORTANT: Even tostring(secret) can return a "tainted" value that
--- passes initial checks but fails in table.concat. We must verify the result
+-- passes basic checks but fails in table.concat. We must verify the result
 -- is a real Lua string type AND can be used in string operations.
 local function safeString(value, fallback)
     fallback = fallback or "<secret>"
@@ -1699,7 +1699,7 @@ end
 -- IMPORTANT: Must be defined before AttachTableInspectorCopyButton which calls it
 --
 -- CRITICAL: GetText() returns secret values even on Blizzard's own tooltips.
--- We must wrap ALL operations (including type() checks) in pcall because
+-- All operations (including type() checks) must be wrapped in pcall because
 -- comparing or type-checking a secret value throws an error.
 local function ExtractFrameStackTooltipText()
     local fs = _G.FrameStackTooltip

@@ -230,5 +230,5 @@ function addon.EditMode.SetSubGridEnabled(enabled)
     end
 end
 
--- Initialize when this file loads (safe: just sets up deferred hooks)
+-- Initialize when this file loads (safe: sets up deferred hooks)
 addon.EditMode.InitSubGrid()

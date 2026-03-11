@@ -553,7 +553,7 @@ function addon.EditMode.LoadLayouts()
 end
 
 -- Persist Edit Mode settings and trigger visual refresh via deferred SetActiveLayout.
--- This is the primary "apply settings visually" entry point for Scoot writes.
+-- Primary "apply settings visually" entry point for Scoot writes.
 -- Debug logging: Enable with `/run Scoot._dbgEditMode = true` to trace save calls.
 --
 -- IMPORTANT: The visual refresh depends on LEO:SaveOnly() calling SetActiveLayout in a
@@ -642,7 +642,7 @@ function addon.EditMode.WriteSetting(frame, settingId, value, opts)
         print("|cFFFF0000  Causes taint - remove updaters and rely on deferred SetActiveLayout()|r")
     end
 
-    -- Never attempt Edit Mode writes during combat.
+    -- Never try Edit Mode writes during combat.
     if _G.InCombatLockdown and _G.InCombatLockdown() then
         addon.EditMode._pendingWrites = addon.EditMode._pendingWrites or {}
 
@@ -855,7 +855,7 @@ function addon.EditMode.Initialize()
         if type(ER.RegisterCallback) == "function" then
             ER:RegisterCallback("EditMode.Enter", function()
                 -- Mark that Edit Mode is entering to suppress addon hooks during the transition
-                -- This prevents taint from propagating during Blizzard's frame setup
+                -- Prevents taint from propagating during Blizzard's frame setup
                 if addon and addon.EditMode and addon.EditMode.MarkOpeningEditMode then
                     addon.EditMode.MarkOpeningEditMode()
                 end
@@ -865,7 +865,7 @@ function addon.EditMode.Initialize()
             end, addon)
             ER:RegisterCallback("EditMode.Exit", function()
                 -- Mark that Edit Mode is exiting to suppress addon hooks during the transition
-                -- This prevents taint from propagating during Blizzard's frame setup
+                -- Prevents taint from propagating during Blizzard's frame setup
                 if addon and addon.EditMode and addon.EditMode.MarkExitingEditMode then
                     addon.EditMode.MarkExitingEditMode()
                 end

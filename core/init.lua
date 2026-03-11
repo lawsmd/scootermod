@@ -34,7 +34,7 @@ function addon:OnInitialize()
     end
 
     -- Apply pending preset activation (set during preset import).
-    -- This runs on the next load to avoid "Interface action failed because of an AddOn"
+    -- Runs on the next load to avoid "Interface action failed because of an AddOn"
     -- when trying to activate immediately after creating/saving layouts.
     if self.db and self.db.global and self.db.global.pendingPresetActivation and C_Timer and C_Timer.After then
         local pending = self.db.global.pendingPresetActivation
@@ -63,7 +63,7 @@ function addon:OnInitialize()
 
     -- 5. Register for events
     -- Login/spec-change guard: PLAYER_SPECIALIZATION_CHANGED can fire during initial login.
-    -- We must not prompt/reload in that phase; only live spec switches should prompt.
+    -- Prompting/reloading in that phase must be suppressed; only live spec switches should prompt.
     self._scootSpecLoginGuard = true
 
     -- Initialize Edit Mode integration (hooks + compatibility flags).
@@ -186,7 +186,7 @@ function addon:RegisterEvents()
 end
 
 -- Refresh opacity state for all elements affected by combat/target priority
--- This is safe to call during combat as SetAlpha is not a protected function
+-- Safe to call during combat as SetAlpha is not a protected function
 function addon:RefreshOpacityState()
     -- Update Unit Frame visibility/opacity
     if addon.ApplyAllUnitFrameVisibility then
@@ -230,7 +230,7 @@ end
 -- Shared helper for pet overlay enforcement events
 local function handlePetOverlayEvent()
     -- IMPORTANT: PetFrame is an Edit Mode managed/protected system frame.
-    -- We *flag* pending work during combat so we always re-assert on PLAYER_REGEN_ENABLED.
+    -- Pending work is flagged during combat so it is always re-asserted on PLAYER_REGEN_ENABLED.
     -- Experimental: we also allow in-combat alpha enforcement for PetFrameFlash to prevent
     -- the red glow/ring from reappearing and persisting until combat ends.
     if InCombatLockdown and InCombatLockdown() then
@@ -427,7 +427,7 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     end
     
     -- Install early alpha enforcement hooks for Target/Focus frame elements.
-    -- This must happen BEFORE first target acquisition to prevent "first target flash".
+    -- Must happen BEFORE first target acquisition to prevent "first target flash".
     -- The hooks ensure elements stay hidden even before applyForUnit() has run.
     if addon.InstallEarlyUnitFrameAlphaHooks then
         addon.InstallEarlyUnitFrameAlphaHooks()
@@ -443,21 +443,21 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
     self:ApplyStyles()
     
     -- Enforce Pet overlay visibility immediately after initial styling.
-    -- This ensures PetAttackModeTexture is hidden before the first frame renders if the
+    -- Ensures PetAttackModeTexture is hidden before the first frame renders if the
     -- player has a pet that's already in attack mode when logging in or reloading.
     if addon.UnitFrames_EnforcePetOverlays then
         addon.UnitFrames_EnforcePetOverlays()
     end
     
     -- Deferred reapply of Player textures to catch any Blizzard resets after initial apply
-    -- This ensures textures persist even if Blizzard updates the frame after our initial styling
+    -- Ensures textures persist even if Blizzard updates the frame after our initial styling
     if C_Timer and C_Timer.After and addon.ApplyUnitFrameBarTexturesFor then
         C_Timer.After(0.1, function()
             addon.ApplyUnitFrameBarTexturesFor("Player")
         end)
     end
     -- Deferred Pet overlay enforcement to catch Blizzard resets (PetFrame:Update runs after login).
-    -- This ensures PetAttackModeTexture stays hidden even if Blizzard shows it after initial styling.
+    -- Ensures PetAttackModeTexture stays hidden even if Blizzard shows it after initial styling.
     if C_Timer and C_Timer.After and addon.UnitFrames_EnforcePetOverlays then
         C_Timer.After(0.1, function()
             addon.UnitFrames_EnforcePetOverlays()
@@ -550,7 +550,7 @@ function addon:PLAYER_TARGET_CHANGED()
     -- =========================================================================
     -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's TargetFrame_Update)
     -- =========================================================================
-    -- This is the key to preventing visual "flash" of hidden elements.
+    -- Key to preventing visual "flash" of hidden elements.
     -- PLAYER_TARGET_CHANGED fires BEFORE Blizzard's internal handler calls
     -- TargetFrame_Update. By hiding elements synchronously here (not deferred),
     -- they're already hidden when Blizzard tries to show them.
@@ -630,7 +630,7 @@ function addon:PLAYER_FOCUS_CHANGED()
     -- =========================================================================
     -- IMMEDIATE PRE-EMPTIVE HIDING (runs BEFORE Blizzard's FocusFrame_Update)
     -- =========================================================================
-    -- This is the key to preventing visual "flash" of hidden elements.
+    -- Key to preventing visual "flash" of hidden elements.
     -- PLAYER_FOCUS_CHANGED fires BEFORE Blizzard's internal handler calls
     -- FocusFrame_Update. By hiding elements synchronously here (not deferred),
     -- they're already hidden when Blizzard tries to show them.

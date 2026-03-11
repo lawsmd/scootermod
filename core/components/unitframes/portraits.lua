@@ -394,7 +394,7 @@ do
 	end
 
 	-- Install enforcement hooks on portrait/mask frames to keep them hidden when Blizzard code re-shows them.
-	-- This is similar to the Pet overlay pattern but for Player/Target/Focus portraits.
+	-- Similar to the Pet overlay pattern but for Player/Target/Focus portraits.
 	-- Uses hooksecurefunc to re-enforce hidden state after Show/SetShown/SetAlpha calls.
 	local function installPortraitHideEnforcement(portraitFrame, maskFrame, unit)
 		if not portraitFrame then return end
@@ -1259,7 +1259,7 @@ do
 					
 					if damageTextDisabled then
 						-- Immediately set alpha to 0 if disabled, preventing it from being visible
-						-- This happens after Blizzard sets feedbackStartTime, so it won't cause nil errors
+						-- Happens after Blizzard sets feedbackStartTime, so it won't cause nil errors
 						if self.feedbackText.SetAlpha then
 							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
 						end
@@ -1287,7 +1287,7 @@ do
 	end
 
 	-- Hook CombatFeedback_OnUpdate to continuously keep alpha at 0 when disabled
-	-- This is critical because OnUpdate runs every frame and will override the alpha setting
+	-- Critical because OnUpdate runs every frame and will override the alpha setting
 	-- OnUpdate receives PlayerFrame only - PetFrame is excluded (see CombatFeedback_OnCombatEvent comment)
 	if _G.CombatFeedback_OnUpdate then
 		_G.hooksecurefunc("CombatFeedback_OnUpdate", function(self, elapsed)
@@ -1304,7 +1304,7 @@ do
 					local damageTextDisabled = db.unitFrames[unitKey].portrait.damageTextDisabled == true
 					if damageTextDisabled then
 						-- Continuously force alpha to 0, overriding Blizzard's animation
-						-- This runs after Blizzard's SetAlpha calls, so it will override them
+						-- Runs after Blizzard's SetAlpha calls, so it will override them
 						if self.feedbackText.SetAlpha then
 							pcall(self.feedbackText.SetAlpha, self.feedbackText, 0)
 						end

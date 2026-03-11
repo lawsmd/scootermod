@@ -44,7 +44,7 @@ end
       SetClampRectInsets(0,0,0,0), and SetIgnoreFramePositionManager(true).
       This behavior is replicated with a checkbox instead of a slider.
       
-      NOTE: ReanchorFrame/SetPoint approaches were tried and caused the frame to
+      NOTE: ReanchorFrame/SetPoint techniques were tried and caused the frame to
       snap to the right side of the screen. Do NOT call position-changing APIs.
 ----------------------------------------------------------------------------]]--
 
@@ -137,7 +137,7 @@ local CLAMP_ZERO = 0
     The original working slider called SetPoint to apply an X offset. We've been
     avoiding SetPoint because it sometimes re-anchored frames to unrelated UI
     elements (action bars). However, the slider DID work, so let's try a safer
-    approach:
+    technique:
     
     When the checkbox is enabled, we:
     1. Read the frame's CURRENT anchor
@@ -175,7 +175,7 @@ local function _ApplySliderStyleNudge(unit, frame)
 	end
 	
 	-- Safety check: if anchored to something other than UIParent, don't touch it
-	-- This prevents us from cementing a corrupted anchor
+	-- Prevents cementing a corrupted anchor
 	if relativeToName and relativeToName ~= "UIParent" then
 		_DbgPrint("Frame", unit, "anchored to", relativeToName, "- not nudging to avoid corruption")
 		return false
@@ -246,7 +246,7 @@ local function _InstallOffscreenEnforcementHooks(frame)
 	if frame.SetClampRectInsets and frame.GetClampRectInsets then
 		_G.hooksecurefunc(frame, "SetClampRectInsets", function(self, l, r, t, b)
 			-- Enforce ALWAYS when checkbox is enabled (not just Edit Mode).
-			-- This prevents Blizzard from reasserting clamp insets when exiting Edit Mode.
+			-- Prevents Blizzard from reasserting clamp insets when exiting Edit Mode.
 			if not getProp(self, "offscreenEnforceEnabled") then return end
 			if getProp(self, "offscreenEnforceGuard") then return end
 			-- Force (0,0,0,0) to prevent snap-back.
@@ -297,7 +297,7 @@ local function applyFor(unit)
 	local didWork = false
 
 	-- Apply the slider-style SetPoint nudge when enabled and in Edit Mode.
-	-- This is the key behavior that made the original slider work.
+	-- Key behavior that made the original slider work.
 	if shouldUnclamp and editModeActive and not _nudgeApplied[unit] then
 		local regFrame = _GetEditModeRegisteredFrame(unit)
 		if regFrame then
@@ -359,7 +359,7 @@ local function applyFor(unit)
 					if ok then setProp(frame, "origClampInsets", { l = l or 0, r = r or 0, t = t or 0, b = b or 0 }) end
 				end
 				-- Zero out clamp rect when checkbox is enabled (ALWAYS, not just Edit Mode).
-				-- This is the key fix: prevents snap-back when exiting Edit Mode.
+				-- Key fix: prevents snap-back when exiting Edit Mode.
 				if shouldUnclamp then
 					local curOk, l, r, t, b = pcall(frame.GetClampRectInsets, frame)
 					local needs = (not curOk) or (l ~= CLAMP_ZERO or r ~= CLAMP_ZERO or t ~= CLAMP_ZERO or b ~= CLAMP_ZERO) or (prev ~= shouldUnclamp)

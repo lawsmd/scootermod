@@ -122,7 +122,7 @@ end
 
 -- Update overlay dimensions based on health bar fill texture
 -- Uses anchor-based sizing instead of calculating from GetValue/GetMinMaxValues.
--- This avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
+-- Avoids secret value issues because the overlay anchors to Blizzard's fill texture directly,
 -- which is sized by Blizzard's internal (untainted) code.
 local function updateHealthOverlay(bar)
     if not bar then return end
@@ -307,7 +307,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
 
     if state and not state.healthOverlay then
         -- Parent the overlay to the healthBar StatusBar (a useParentLevel="true" child).
-        -- This places the overlay in the same rendering pass as DispelOverlay.
+        -- Places the overlay in the same rendering pass as DispelOverlay.
         -- Within that pass, draw layers compare normally: our BORDER sublevel 7
         -- renders before DispelOverlay's ARTWORK sublevel -5/-6, so the dispel
         -- gradient/highlight renders on top of our overlay.
@@ -362,7 +362,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                 updateHealthOverlay(self)
             end)
             -- FIX: Hook SetStatusBarColor to intercept Blizzard's color changes.
-            -- This is the key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
+            -- Key fix for blinking: when Blizzard's CompactUnitFrame_UpdateHealthColor
             -- calls SetStatusBarColor(green), the hook fires IMMEDIATELY after and re-applies
             -- the value-based color. No frame gap = no blink.
             _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
@@ -440,7 +440,7 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     end
 
     -- Build a config fingerprint to detect if settings have actually changed.
-    -- This prevents expensive re-styling when ApplyStyles() is called but raid
+    -- Prevents expensive re-styling when ApplyStyles() is called but raid
     -- frame settings haven't changed (e.g., when changing Action Bar settings).
     local fingerprint = string.format("%s|%s|%s|%s|%s",
         tostring(cfg.healthBarTexture or ""),
@@ -994,7 +994,7 @@ function RaidFrames.installHooks()
     end
 
     -- Hook CompactUnitFrame_UpdateHealthColor for "Color by Value" mode
-    -- This hook fires after every health update, enabling dynamic color updates
+    -- Fires after every health update, enabling dynamic color updates
     if _G.hooksecurefunc and _G.CompactUnitFrame_UpdateHealthColor then
         _G.hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(frame)
             -- CRITICAL: Skip ALL processing when Edit Mode is active to avoid taint
@@ -1032,7 +1032,7 @@ function RaidFrames.installHooks()
 
             if overlay and overlay:IsShown() then
                 -- Overlay exists and is shown - apply immediately (no defer)
-                -- This prevents the 1-frame blink where Blizzard's color shows
+                -- Prevents the 1-frame blink where Blizzard's color shows
                 if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                     addon.BarsTextures.applyValueBasedColor(healthBar, unit, overlay, useDark)
                     -- Schedule validation to catch timing edge cases (stuck colors at 100%)

@@ -597,7 +597,7 @@ function Rules:GetRuleById(ruleId)
 end
 
 -- Check if a specific rule is currently active (trigger conditions match)
--- This is used by the UI to show visual feedback on which rules are matching
+-- Used by the UI to show visual feedback on which rules are matching
 function Rules:IsRuleActive(ruleId)
     if not self:IsInitialized() then
         return false

@@ -126,7 +126,7 @@ function Borders.ApplySquare(frame, opts)
     if not frame or not opts then return end
 
     -- Sanity check: refuse to apply borders to frames larger than reasonable for a bar.
-    -- This catches cases where the wrong frame is passed (e.g., a parent container instead
+    -- Catches cases where the wrong frame is passed (e.g., a parent container instead
     -- of the actual bar). Skip the check if opts.skipDimensionCheck is set.
     if not opts.skipDimensionCheck then
         local fw = safeDimension(function() return frame:GetWidth() end)
@@ -216,7 +216,7 @@ function Borders.ApplyCircle(frame, opts)
     local col = opts.color or {0, 0, 0, 1}
     local r, g, b, a = col[1] or 0, col[2] or 0, col[3] or 0, col[4] or 1
     -- Portrait is on BACKGROUND layer, sublevel 1
-    -- We want the border to appear AROUND the portrait, not covering it
+    -- The border should appear AROUND the portrait, not covering it
     -- SetBackdrop creates edges that don't fill the center
     -- We'll use the same frame level as the portrait's parent, and SetBackdrop will handle the visual
     local layer = (type(opts.layer) == "string") and opts.layer or "OVERLAY"
@@ -236,7 +236,7 @@ function Borders.ApplyCircle(frame, opts)
         end
         if parentFrame and parentFrame.GetFrameLevel then
             -- Use the SAME frame level as the parent, not higher
-            -- This ensures the border appears at the same level as the portrait
+            -- Ensures the border appears at the same level as the portrait
             frameLevel = parentFrame:GetFrameLevel() or 0
         end
     elseif frame.GetFrameStrata then

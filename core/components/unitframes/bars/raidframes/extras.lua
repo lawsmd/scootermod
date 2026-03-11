@@ -263,7 +263,7 @@ addon.ApplyRaidAbsorbBarsVisibility = RaidFrames.ApplyAbsorbBarsVisibility
 -- Heal Prediction Clipping (MaskTexture)
 --------------------------------------------------------------------------------
 -- Clips all prediction/absorb textures to healthBar bounds using MaskTexture.
--- This prevents textures from extending past the health bar edges.
+-- Prevents textures from extending past the health bar edges.
 --
 -- Only activates when user has configured raid frames (zero-touch compliant).
 -- Mask is anchored to healthBar (stable frame) and persists across repositioning.

@@ -106,7 +106,7 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
     -- CDM, we must proactively hide the viewer frames so the UI matches the setting
     -- immediately (including right after /reload).
     --
-    -- We intentionally do NOT force-show when enabling; Edit Mode + viewer visibility
+    -- Intentionally does NOT force-show when enabling; Edit Mode + viewer visibility
     -- settings (and Blizzard state) should remain the source of truth for whether a
     -- particular viewer is currently visible.
     if desired == false then
@@ -413,7 +413,7 @@ local function postMutationSync(self, reason)
                 self:RefreshFromEditMode((reason or "PostMutation") .. "+retry")
             end
         end)
-        -- After suppression window, attempt to apply any pending layout to EM
+        -- After suppression window, try to apply any pending layout to EM
         C_Timer.After(0.35, function()
             if self and self.RefreshFromEditMode and ensureLayoutsLoaded() then
                 self:RefreshFromEditMode((reason or "PostMutation") .. "+final")
@@ -756,7 +756,7 @@ function Profiles:Initialize()
     end
 
     -- Consume pending profile activation as early as possible (immediately after DB exists).
-    -- This ensures that the very first post-reload session starts on the new profile/layout
+    -- Ensures that the very first post-reload session starts on the new profile/layout
     -- before any styling passes run, preventing "sticky" old-profile visuals.
     do
         local global = self.db and self.db.global
@@ -1064,7 +1064,7 @@ function Profiles:SwitchToProfile(profileKey, opts)
     end
     if not self._layoutLookup[profileKey] then
         -- Allow switching to existing AceDB profile even if layout is missing,
-        -- but do not attempt to adjust Edit Mode.
+        -- but do not try to adjust Edit Mode.
         opts.skipLayout = true
         Debug("SwitchToProfile missing layout lookup entry, skipping EM interaction", profileKey)
     end

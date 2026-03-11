@@ -1013,7 +1013,7 @@ addon.FontDisplayNames = {
 
 
 -- Preload font faces once to ensure consistent first-use rendering after game launch.
--- This avoids cases where certain Roboto variants appear unstyled until a second open.
+-- Avoids cases where certain Roboto variants appear unstyled until a second open.
 function addon.PreloadFonts()
     if addon._fontsPreloaded then return end
     addon._fontsPreloaded = true

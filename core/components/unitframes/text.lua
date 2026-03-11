@@ -423,7 +423,7 @@ do
         end
 
         -- Only modify width/alignment/position if alignment or offset is explicitly configured.
-        -- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+        -- Prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
         -- text positioning. Width/alignment changes are only appropriate when the user has
         -- explicitly configured layout-related settings.
         local hasLayoutCustomization = styleCfg.alignment ~= nil
@@ -449,7 +449,7 @@ do
             local yOffset = safeOffset(b.y) + oy
 
             -- Use two-point anchoring to span the parent bar width.
-            -- This makes JustifyH work correctly without needing GetWidth() (which can
+            -- Makes JustifyH work correctly without needing GetWidth() (which can
             -- trigger secret value errors on unit frame StatusBars).
             if fs.ClearAllPoints and fs.SetPoint and parentBar then
                 fs:ClearAllPoints()
@@ -514,7 +514,7 @@ do
                 or findFontStringByNameHint(frame, "HealthBarTextRight")
 
             -- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
-            -- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+            -- Ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
             -- Character Pane shows HealthBarText instead of LeftText/RightText
             if unit == "Pet" then
                 textStringFS = _G.PetFrameHealthBarText
@@ -1160,7 +1160,7 @@ do
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
 		-- Only modify width/alignment/position if alignment or offset is explicitly configured.
-		-- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+		-- Prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
 		-- text positioning. Width/alignment changes are only appropriate when the user has
 		-- explicitly configured layout-related settings.
 		local hasLayoutCustomization = styleCfg.alignment ~= nil
@@ -1186,7 +1186,7 @@ do
 			local yOffset = safeOffset(b.y) + oy
 
 			-- Use two-point anchoring to span the parent bar width.
-			-- This makes JustifyH work correctly without needing GetWidth() (which can
+			-- Makes JustifyH work correctly without needing GetWidth() (which can
 			-- trigger secret value errors on unit frame StatusBars).
 			if fs.ClearAllPoints and fs.SetPoint and parentBar then
 				fs:ClearAllPoints()
@@ -1254,7 +1254,7 @@ do
 				or findFontStringByNameHint(frame, "ManaBarTextRight")
 
 			-- Also resolve the center TextString (used in NUMERIC display mode and Character Pane)
-			-- This ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
+			-- Ensures styling persists when Blizzard switches between BOTH and NUMERIC modes
 			-- Character Pane shows ManaBarText instead of LeftText/RightText
 			if unit == "Pet" then
 				textStringFS = _G.PetFrameManaBarText
@@ -2268,7 +2268,7 @@ do
 		end
 
 		-- Optional: widen the name container for Target/Focus to reduce truncation.
-		-- This adjusts the Name FontString's width and anchor so the right edge
+		-- Adjusts the Name FontString's width and anchor so the right edge
 		-- stays aligned relative to the ReputationColor strip while growing left.
 		-- NOTE: This function MUST incorporate the configured offset values because it
 		-- runs AFTER applyTextStyle() and overwrites the position set there.
@@ -2450,7 +2450,7 @@ do
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
 		-- Only reposition if offset is explicitly configured.
-		-- This prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
+		-- Prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
 		-- text positioning.
 		local hasOffsetCustomization = styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil)
 		if hasOffsetCustomization then
@@ -2517,7 +2517,7 @@ do
 			-- When going from no target to having a target, the frame shows and unit data
 			-- may not be available during the initial SetTextColor call.
 			-- Strategy: Hide the name text immediately on show, apply the color, then reveal it.
-			-- This prevents any flash of the wrong color.
+			-- Prevents any flash of the wrong color.
 			local frameState = getState(unitFrame)
 			if unitFrame and frameState and not frameState.onShowClassColorHooked then
 				frameState.onShowClassColorHooked = true
@@ -3101,7 +3101,7 @@ do
 	end)
 
 	-- Hook PaperDollFrame.VisibilityUpdated event for reliable reapplication
-	-- This fires when the Character Pane (PaperDollFrame) is shown or hidden
+	-- Fires when the Character Pane (PaperDollFrame) is shown or hidden
 	-- Using EventRegistry is more reliable than HookScript as it uses Blizzard's official event system
 	if _G.EventRegistry and _G.EventRegistry.RegisterCallback then
 		_G.EventRegistry:RegisterCallback("PaperDollFrame.VisibilityUpdated", function(_, shown)
@@ -3506,7 +3506,7 @@ end
 --------------------------------------------------------------------------------
 -- The SetAlpha visibility hooks skip enforcement during Edit Mode to avoid taint.
 -- When Edit Mode closes, Blizzard may have shown text elements that should be hidden.
--- This hook re-enforces visibility settings after Edit Mode exits.
+-- Re-enforces visibility settings after Edit Mode exits.
 --------------------------------------------------------------------------------
 do
 	local function reapplyAllTextVisibility()

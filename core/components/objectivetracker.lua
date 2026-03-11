@@ -34,7 +34,7 @@ local function SafeSetFont(fs, face, size, flags)
     if not face or not size then return false end
 
     -- Capture the original FontObject BEFORE calling SetFont (which detaches the fontstring).
-    -- This allows us to read the live text size during Edit Mode preview.
+    -- Allows reading the live text size during Edit Mode preview.
     local state = getState(fs)
     if state and not state.originalFontObject then
         local ok, fontObj = pcall(fs.GetFontObject, fs)
@@ -48,7 +48,7 @@ local function SafeSetFont(fs, face, size, flags)
 end
 
 -- Read the live text size from a captured FontObject.
--- This is used during Edit Mode live preview when GetSetting returns stale persisted values.
+-- Used during Edit Mode live preview when GetSetting returns stale persisted values.
 local function GetLiveTextSizeFromFontObject()
     for fontObj in pairs(_capturedFontObjects) do
         if fontObj and type(fontObj.GetFont) == "function" then
@@ -496,7 +496,7 @@ local function GatherObjectiveTrackerHeaderBackgrounds()
     if campaign and campaign.Header and campaign.Header.Background then
         add(campaign.Header.Background)
     end
-    -- Quest module header (per docs: `QuestObjectiveTracker.Header.Background`)
+    -- Quest module header (`QuestObjectiveTracker.Header.Background`)
     -- Note: Some client builds may not expose this module inside `ObjectiveTrackerFrame.modules`,
     -- so keep an explicit reference in addition to the best-effort module scan.
     local quest = _G.QuestObjectiveTracker
@@ -802,7 +802,7 @@ local function InstallObjectiveTrackerHooks(self)
     -- Text Size changes are applied via UpdateSystemSettingTextSize(). If Scoot has
     -- detached fontstrings from FontObjects (via SetFont), styling must be re-applied with the new size.
     --
-    -- This hook fires for BOTH:
+    -- Fires for BOTH:
     -- - Scoot slider changes (flag is set)
     -- - Edit Mode live preview (flag is NOT set, but FontObject has the live size)
     --

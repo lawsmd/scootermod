@@ -43,7 +43,7 @@ local function isEditModeActive()
 end
 
 -- Pre-emptive hide for Target frame elements (ReputationColor, FrameTexture, Flash)
--- This runs SYNCHRONOUSLY from PLAYER_TARGET_CHANGED, BEFORE Blizzard's TargetFrame_Update.
+-- Runs SYNCHRONOUSLY from PLAYER_TARGET_CHANGED, BEFORE Blizzard's TargetFrame_Update.
 -- The texture might not exist yet at this moment, so a micro-delay follow-up is also scheduled.
 function Preemptive.hideTargetElements()
     local db = addon and addon.db and addon.db.profile
@@ -108,7 +108,7 @@ function Preemptive.hideTargetElements()
 end
 
 -- Pre-emptive hide for Focus frame elements (ReputationColor, FrameTexture, Flash)
--- This runs SYNCHRONOUSLY from PLAYER_FOCUS_CHANGED, BEFORE Blizzard's FocusFrame_Update.
+-- Runs SYNCHRONOUSLY from PLAYER_FOCUS_CHANGED, BEFORE Blizzard's FocusFrame_Update.
 -- The texture might not exist yet at this moment, so a micro-delay follow-up is also scheduled.
 function Preemptive.hideFocusElements()
     local db = addon and addon.db and addon.db.profile
@@ -310,7 +310,7 @@ function Preemptive.installEarlyAlphaHooks()
     -- the TargetFrame_Update hook never fires. These methods must be hooked directly.
 
     -- Helper to re-hide elements after CheckFaction/CheckLevel
-    -- This handles ReputationColor, Flash, AND LevelText/NameText
+    -- Handles ReputationColor, Flash, AND LevelText/NameText
     local function rehideTargetElements()
         if isEditModeActive() then return end
         local db = addon and addon.db and addon.db.profile
@@ -677,7 +677,7 @@ function Preemptive.installBossFrameHooks()
     end
 
     -- Hook BossTargetFrameContainer's UpdateShownState if available
-    -- This is called when boss frames are shown/hidden during encounters
+    -- Called when boss frames are shown/hidden during encounters
     local container = _G.BossTargetFrameContainer
     if container and container.UpdateShownState and not addon._ScootBossContainerUpdateHooked then
         addon._ScootBossContainerUpdateHooked = true

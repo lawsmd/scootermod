@@ -181,7 +181,7 @@ local function _InstallOffscreenEnforcementHooks(frame)
     if frame.SetClampRectInsets and frame.GetClampRectInsets then
         _G.hooksecurefunc(frame, "SetClampRectInsets", function(self, l, r, t, b)
             -- Enforce ALWAYS when checkbox is enabled (not just Edit Mode).
-            -- This prevents Blizzard from reasserting clamp insets when exiting Edit Mode.
+            -- Prevents Blizzard from reasserting clamp insets when exiting Edit Mode.
             if not getProp(self, "minimapOffscreenEnforceEnabled") then return end
             if getProp(self, "minimapOffscreenEnforceGuard") then return end
             -- Force (0,0,0,0) to prevent snap-back.

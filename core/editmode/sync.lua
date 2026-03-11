@@ -463,7 +463,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
     return false
 end
 
--- This is the main function for pushing the addon's state to Edit Mode.
+-- Main function for pushing the addon's state to Edit Mode.
 function addon.EditMode.SyncComponentToEditMode(component, opts)
     opts = opts or {}
     local frame = _G[component.frameName]
@@ -472,7 +472,7 @@ function addon.EditMode.SyncComponentToEditMode(component, opts)
     if addon.EditMode._syncingEM then return end
     addon.EditMode._syncingEM = true
 
-    -- Ensure layouts are loaded before we attempt to write
+    -- Ensure layouts are loaded before trying to write
     addon.EditMode.LoadLayouts()
 
     -- 1. Sync Position
@@ -502,7 +502,7 @@ function addon.EditMode.SyncComponentToEditMode(component, opts)
 end
 
 -- Position-only sync: Use this when ONLY position (X/Y) changed.
--- This avoids the cascade of syncing all Edit Mode settings (orientation, columns, etc.)
+-- Avoids the cascade of syncing all Edit Mode settings (orientation, columns, etc.)
 -- which would trigger many ResolveSettingId calls and LoadLayouts() invocations.
 -- NOTE: This function handles SaveOnly internally - callers should NOT
 -- call SaveOnly again after calling this function.

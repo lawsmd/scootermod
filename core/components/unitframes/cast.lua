@@ -240,7 +240,7 @@ do
 
 			-- Hook AdjustPosition (Target/Focus only) to immediately reapply custom anchoring
 			-- after Blizzard repositions the cast bar (aura updates, ToT changes, etc.).
-			-- This is the function that causes the flicker - it's called from UpdateAuras()
+			-- Causes the flicker - called from UpdateAuras()
 			-- on every UNIT_AURA event, which happens frequently during combat.
 			if (hookUnit == "Target" or hookUnit == "Focus") and frame.AdjustPosition then
 				_G.hooksecurefunc(frame, "AdjustPosition", function(self)
@@ -571,7 +571,7 @@ do
 					-- For class color, follow Health/Power bars and always use player's class
 					local unitId = (unit == "Player" and "player") or (unit == "Target" and "target") or (unit == "Focus" and "focus") or (unit == "Pet" and "pet") or "player"
 					-- Pass combatSafe=true only for visual-only refreshes triggered by cast bar hooks.
-					-- This allows texture/color re-application in combat while layout operations remain skipped.
+					-- Allows texture/color re-application in combat while layout operations remain skipped.
 					addon._ApplyToStatusBar(frame, texKey, colorMode, tint, "player", "cast", unitId, visualOnly)
 				end
 
@@ -700,7 +700,7 @@ do
 
 						-- Unit-specific per-side pad adjustments for Cast Bar:
 						-- Player: symmetric (no extra nudges; baseInset handles feel).
-						-- Target: top pulled down slightly, left/right pulled in a bit more, bottom unchanged.
+						-- Target: top pulled down slightly, left/right pulled in slightly more, bottom unchanged.
 						if enabled and unit == "Target" then
 							setProp(frame, "borderPadAdjust", {
 								left = -2,
@@ -735,7 +735,7 @@ do
 
 							-- Per-unit fine-tuning for the pixel fallback:
 							-- Player: top/bottom/left are good; pull the right edge in slightly.
-							-- Target: top pulled down a bit; left/right pulled in more; bottom remains aligned.
+							-- Target: top pulled down slightly; left/right pulled in more; bottom remains aligned.
 							local exLeft, exRight, exTop, exBottom = expandX, expandX, expandY, expandY
 							local name = frame.GetName and frame:GetName()
 							if name == "PlayerCastingBarFrame" then
@@ -1415,7 +1415,7 @@ do
 				else
 					-- Restore default positioning (original anchor)
 					-- Only restore if it previously had a custom anchor mode active
-					-- This prevents fighting with Blizzard's layout when user has "default" selected
+					-- Prevents fighting with Blizzard's layout when user has "default" selected
 					if getProp(frame, "hadCustomAnchor") then
 						local orig = bossOriginalCastBarAnchors[frame]
 						if orig then
