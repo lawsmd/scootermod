@@ -250,8 +250,20 @@ function PowerBar.Render(panel, scrollContent)
                             label = "Font Color",
                             values = textColorPowerValues,
                             order = textColorPowerOrder,
-                            get = function() return getSetting("valueTextColorMode") or "default" end,
-                            set = function(v) setSetting("valueTextColorMode", v or "default") end,
+                            get = function()
+                                return addon.ReadColorMode(
+                                    function() return getSetting("valueTextColorMode") end,
+                                    function() return getSetting("valueTextColorModeDK") end
+                                )
+                            end,
+                            set = function(v)
+                                addon.WriteColorMode(v or "default",
+                                    function() return getSetting("valueTextColorMode") end,
+                                    function(val) setSetting("valueTextColorMode", val) end,
+                                    function() return getSetting("valueTextColorModeDK") end,
+                                    function(val) setSetting("valueTextColorModeDK", val) end
+                                )
+                            end,
                             getColor = function()
                                 local c = getSetting("valueTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -310,8 +322,20 @@ function PowerBar.Render(panel, scrollContent)
                             label = "Font Color",
                             values = textColorPowerValues,
                             order = textColorPowerOrder,
-                            get = function() return getSetting("percentTextColorMode") or "default" end,
-                            set = function(v) setSetting("percentTextColorMode", v or "default") end,
+                            get = function()
+                                return addon.ReadColorMode(
+                                    function() return getSetting("percentTextColorMode") end,
+                                    function() return getSetting("percentTextColorModeDK") end
+                                )
+                            end,
+                            set = function(v)
+                                addon.WriteColorMode(v or "default",
+                                    function() return getSetting("percentTextColorMode") end,
+                                    function(val) setSetting("percentTextColorMode", val) end,
+                                    function() return getSetting("percentTextColorModeDK") end,
+                                    function(val) setSetting("percentTextColorModeDK", val) end
+                                )
+                            end,
                             getColor = function()
                                 local c = getSetting("percentTextColor") or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1

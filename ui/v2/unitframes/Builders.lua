@@ -302,13 +302,28 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
         order = colorOrder,
         get = function()
             local s = ensureTextDBFn(textKey) or {}
+            if textKey == "textPowerValue" or textKey == "textPowerPercent" then
+                return addon.ReadColorMode(
+                    function() return s.colorMode end,
+                    function() return s.colorModeDK end
+                )
+            end
             return s.colorMode or "default"
         end,
         set = function(v)
             local t = ensureParentDBFn()
             if not t then return end
             t[textKey] = t[textKey] or {}
-            t[textKey].colorMode = v or "default"
+            if textKey == "textPowerValue" or textKey == "textPowerPercent" then
+                addon.WriteColorMode(v or "default",
+                    function() return t[textKey].colorMode end,
+                    function(val) t[textKey].colorMode = val end,
+                    function() return t[textKey].colorModeDK end,
+                    function(val) t[textKey].colorModeDK = val end
+                )
+            else
+                t[textKey].colorMode = v or "default"
+            end
             UF.applyStyles()
         end,
         getColor = function()

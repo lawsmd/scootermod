@@ -589,7 +589,11 @@ local function applyTextStyle(leftText, rightText, component, overlayType)
         local font = db.percentTextFont or "Friz Quadrata TT"
         local size = tonumber(db.percentTextFontSize) or 10
         local flags = db.percentTextFontFlags or "OUTLINE"
-        local color = resolveColorMode(db.percentTextColorMode, db.percentTextColor, overlayType)
+        local effectivePercentMode = addon.ReadColorMode(
+            function() return db.percentTextColorMode end,
+            function() return db.percentTextColorModeDK end
+        )
+        local color = resolveColorMode(effectivePercentMode, db.percentTextColor, overlayType)
         local align = db.percentTextAlignment or "LEFT"
         local path = resolveFontPath(font)
         addon.ApplyFontStyle(leftText, path, size, flags)
@@ -605,7 +609,11 @@ local function applyTextStyle(leftText, rightText, component, overlayType)
         local font = db.valueTextFont or "Friz Quadrata TT"
         local size = tonumber(db.valueTextFontSize) or 10
         local flags = db.valueTextFontFlags or "OUTLINE"
-        local color = resolveColorMode(db.valueTextColorMode, db.valueTextColor, overlayType)
+        local effectiveValueMode = addon.ReadColorMode(
+            function() return db.valueTextColorMode end,
+            function() return db.valueTextColorModeDK end
+        )
+        local color = resolveColorMode(effectiveValueMode, db.valueTextColor, overlayType)
         local align = db.valueTextAlignment or "RIGHT"
         local path = resolveFontPath(font)
         addon.ApplyFontStyle(rightText, path, size, flags)
@@ -1969,6 +1977,7 @@ addon:RegisterComponentInitializer(function(self)
             valueTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
             valueTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
             valueTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            valueTextColorModeDK = { type = "addon", default = nil, ui = { hidden = true }},
             valueTextAlignment = { type = "addon", default = "RIGHT", ui = { hidden = true }},
             percentTextShow = { type = "addon", default = false, ui = { hidden = true }},
             percentTextFont = { type = "addon", default = "Friz Quadrata TT", ui = { hidden = true }},
@@ -1976,10 +1985,25 @@ addon:RegisterComponentInitializer(function(self)
             percentTextFontFlags = { type = "addon", default = "OUTLINE", ui = { hidden = true }},
             percentTextColor = { type = "addon", default = {1, 1, 1, 1}, ui = { hidden = true }},
             percentTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
+            percentTextColorModeDK = { type = "addon", default = nil, ui = { hidden = true }},
             percentTextAlignment = { type = "addon", default = "LEFT", ui = { hidden = true }},
         },
     })
     power.ApplyStyling = function(comp)
+        if comp.db then
+            addon.MigrateDKColorMode(
+                function() return comp.db.valueTextColorMode end,
+                function(v) comp.db.valueTextColorMode = v end,
+                function() return comp.db.valueTextColorModeDK end,
+                function(v) comp.db.valueTextColorModeDK = v end
+            )
+            addon.MigrateDKColorMode(
+                function() return comp.db.percentTextColorMode end,
+                function(v) comp.db.percentTextColorMode = v end,
+                function() return comp.db.percentTextColorModeDK end,
+                function(v) comp.db.percentTextColorModeDK = v end
+            )
+        end
         ensurePowerBarHooks(comp)
         applyPowerOffsets(comp)
     end

@@ -1104,6 +1104,10 @@ do
 		if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
 			return true
 		end
+		-- DK companion slot: ensure DK characters with dkSpec trigger styling even if base is "default"
+		if styleCfg.colorModeDK ~= nil and styleCfg.colorModeDK ~= "default" then
+			return true
+		end
 		if styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil) then
 			local ox = tonumber(styleCfg.offset.x) or 0
 			local oy = tonumber(styleCfg.offset.y) or 0
@@ -1129,7 +1133,10 @@ do
 		if fst then fst.SetProp(fs, "applyingFont", nil) end
 		-- Determine effective color based on colorMode (for Power Bar text)
 		local c = styleCfg.color or {1,1,1,1}
-		local colorMode = styleCfg.colorMode or "default"
+		local colorMode = addon.ReadColorMode(
+			function() return styleCfg.colorMode end,
+			function() return styleCfg.colorModeDK end
+		)
 		if colorMode == "classPower" then
 			-- Use the class's power bar color (Energy = yellow, Rage = red, Mana = blue, etc.)
 			if addon.GetPowerColorRGB then
@@ -1379,6 +1386,26 @@ do
                 end)
             end
         end
+
+		-- Migrate dkSpec from base slot to DK companion slot (idempotent)
+		local tpv = cfg.textPowerValue
+		if tpv then
+			addon.MigrateDKColorMode(
+				function() return tpv.colorMode end,
+				function(v) tpv.colorMode = v end,
+				function() return tpv.colorModeDK end,
+				function(v) tpv.colorModeDK = v end
+			)
+		end
+		local tpp = cfg.textPowerPercent
+		if tpp then
+			addon.MigrateDKColorMode(
+				function() return tpp.colorMode end,
+				function(v) tpp.colorMode = v end,
+				function() return tpp.colorModeDK end,
+				function(v) tpp.colorModeDK = v end
+			)
+		end
 
 		if leftFS then applyTextStyle(leftFS, cfg.textPowerPercent or {}, unit .. ":power-left", frame) end
 		if rightFS then applyTextStyle(rightFS, cfg.textPowerValue or {}, unit .. ":power-right", frame) end

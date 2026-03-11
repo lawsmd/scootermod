@@ -68,6 +68,48 @@ function addon.GetDKSpecColorRGB()
     return 1, 1, 1
 end
 
+-- Two-slot color mode helpers for DK "dkSpec" isolation across shared profiles.
+-- Each color mode setting has a base slot (used by non-DK) and a DK companion slot.
+-- Parameters are getter/setter closures so the same logic works for both PRD and UF storage.
+
+function addon.ReadColorMode(getBase, getDK)
+    local _, playerClass = UnitClass("player")
+    if playerClass == "DEATHKNIGHT" then
+        local dk = getDK()
+        if dk ~= nil then return dk end
+        return getBase() or "default"
+    else
+        local base = getBase() or "default"
+        if base == "dkSpec" then return "default" end
+        return base
+    end
+end
+
+function addon.WriteColorMode(value, getBase, setBase, getDK, setDK)
+    local _, playerClass = UnitClass("player")
+    if playerClass == "DEATHKNIGHT" then
+        setDK(value)
+        if value ~= "dkSpec" then
+            setBase(value)
+        end
+    else
+        setBase(value)
+        local currentDK = getDK()
+        if currentDK ~= "dkSpec" then
+            setDK(value)
+        end
+    end
+end
+
+function addon.MigrateDKColorMode(getBase, setBase, getDK, setDK)
+    local base = getBase()
+    local dk = getDK()
+    if base == "dkSpec" and dk == nil then
+        setDK("dkSpec")
+        setBase("default")
+    end
+end
+
 function addon.GetDefaultHealthColorRGB()
 	local c = addon.HealthDefaultColor
 	if c and c.r and c.g and c.b then return c.r, c.g, c.b end
