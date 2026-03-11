@@ -1646,7 +1646,7 @@ do
                 "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
                 "powerBarHidden",
                 "borderStyle", "borderThickness", "borderInset", "borderInsetH", "borderInsetV", "borderTintEnable", "borderTintColor",
-                "healthBarReverseFill",
+                "healthBarReverseFill", "healthBarHideTextureOnly",
             })
         local altCfg = rawget(cfg, "altPowerBar")
         if not hasAnyBarSetting and not hasAnyKey(altCfg, { "enabled", "width", "height", "x", "y", "fontFace", "size", "style", "color", "alignment" }) then
@@ -1680,6 +1680,21 @@ do
             -- which creates an addon-owned overlay texture. The overlay uses SetAllPoints(statusBarTex)
             -- anchoring instead of reading values.
             local hb = resolveHealthBar(frame, unit)
+            local healthBarHideTextureOnly = (cfg.healthBarHideTextureOnly == true)
+
+            -- Apply texture-only hiding (hide fill + background, keep text)
+            if hb then
+                if healthBarHideTextureOnly then
+                    if Util and Util.SetHealthBarTextureOnlyHidden then
+                        Util.SetHealthBarTextureOnlyHidden(hb, true)
+                    end
+                else
+                    if Util and Util.SetHealthBarTextureOnlyHidden then
+                        Util.SetHealthBarTextureOnlyHidden(hb, false)
+                    end
+                end
+            end
+
             if hb then
                 ensureRectHealthOverlay(unit, hb, cfg)
             end
@@ -1695,10 +1710,28 @@ do
                 end
             end
 
+            -- Re-apply texture-only hide after styling (ensures newly created ScootBG is also hidden)
+            if hb and healthBarHideTextureOnly then
+                if Util and Util.SetHealthBarTextureOnlyHidden then
+                    Util.SetHealthBarTextureOnlyHidden(hb, true)
+                end
+            end
+
             -- BORDER APPROACH: BarBorders.ApplyToBarFrame uses GetFrameLevel/GetHeight
             -- without pcall wrappers (barborders.lua lines 79, 84, 92), which can trigger
             -- secret value errors on Pet. Use an addon-owned anchor frame like Boss frames do.
-            if hb and cfg.useCustomBorders then
+            if hb and healthBarHideTextureOnly then
+                -- Clear any custom borders so only text remains
+                local anchor = getProp(hb, "petHealthBorderAnchor")
+                if anchor then
+                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+                        addon.BarBorders.ClearBarFrame(anchor)
+                    end
+                    if addon.Borders and addon.Borders.HideAll then
+                        addon.Borders.HideAll(anchor)
+                    end
+                end
+            elseif hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
                 if styleKey == "none" or styleKey == nil then
                     -- Clear any existing border

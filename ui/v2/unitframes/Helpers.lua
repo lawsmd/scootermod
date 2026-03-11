@@ -419,6 +419,7 @@ function UF.getHealthBarTabs(componentId)
             { key = "border", label = "Border" },
             { key = "percentText", label = "% Text" },
             { key = "valueText", label = "Value Text" },
+            { key = "visibility", label = "Visibility" },
         }
     end
 end
