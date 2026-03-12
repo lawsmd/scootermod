@@ -36,7 +36,7 @@ local function setRegionVisible(region, visible)
     end
 end
 
-function addon.ApplyAuraFrameVisualsFor(component)
+function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     if not component or (component.id ~= "buffs" and component.id ~= "debuffs") then return end
 
     local frameName = component.frameName
@@ -298,30 +298,13 @@ function addon.ApplyAuraFrameVisualsFor(component)
         local borderState = getState(border)
         if not iconState or not borderState then return end
 
-        if not iconState.debuffBaseWidth then
-            local w = icon:GetWidth()
-            if w and w > 0 then
-                iconState.debuffBaseWidth = w
-            end
-        end
-        if not iconState.debuffBaseHeight then
-            local h = icon:GetHeight()
-            if h and h > 0 then
-                iconState.debuffBaseHeight = h
-            end
-        end
-        if not borderState.debuffBaseWidth then
-            local bw = border:GetWidth()
-            if bw and bw > 0 then
-                borderState.debuffBaseWidth = bw
-            end
-        end
-        if not borderState.debuffBaseHeight then
-            local bh = border:GetHeight()
-            if bh and bh > 0 then
-                borderState.debuffBaseHeight = bh
-            end
-        end
+        -- Use known XML template constants from BuffFrameTemplates.xml:
+        -- AuraButtonArtTemplate Icon: <Size x="30" y="30"/>
+        -- AuraButtonArtTemplate DebuffBorder: <Size x="40" y="40"/>
+        if not iconState.debuffBaseWidth then iconState.debuffBaseWidth = 30 end
+        if not iconState.debuffBaseHeight then iconState.debuffBaseHeight = 30 end
+        if not borderState.debuffBaseWidth then borderState.debuffBaseWidth = 40 end
+        if not borderState.debuffBaseHeight then borderState.debuffBaseHeight = 40 end
     end
 
     local function resizeDebuffBorder(aura, icon, targetWidth, targetHeight)
@@ -347,10 +330,9 @@ function addon.ApplyAuraFrameVisualsFor(component)
             border:SetHeight(baseBorderHeight * (height / baseIconHeight))
         end
 
-        if border.ClearAllPoints and border.SetPoint and borderState and not borderState.debuffAnchorLocked then
+        if border.ClearAllPoints and border.SetPoint then
             border:ClearAllPoints()
             border:SetPoint("CENTER", icon, "CENTER")
-            borderState.debuffAnchorLocked = true
         end
     end
 
@@ -395,7 +377,7 @@ function addon.ApplyAuraFrameVisualsFor(component)
 
                 -- OPT-01: Skip auras already styled for the current config version
                 local auraVState = getState(aura)
-                if not auraVState or auraVState.lastStyledVersion ~= currentVersion then
+                if forceRestyle or not auraVState or auraVState.lastStyledVersion ~= currentVersion then
 
                     if icon then
                         captureDebuffBorderDefaults(aura, icon)
@@ -520,7 +502,7 @@ local function ApplyAuraFrameStyling(self)
         local componentId = self.id
         hooksecurefunc(frame, "UpdateAuraButtons", function()
             if addon and addon.Components and addon.Components[componentId] and addon.ApplyAuraFrameVisualsFor then
-                addon.ApplyAuraFrameVisualsFor(addon.Components[componentId])
+                addon.ApplyAuraFrameVisualsFor(addon.Components[componentId], true)
             end
         end)
         frameState.auraHooked = true
