@@ -10,7 +10,7 @@ Presets:Register({
     name = "ScooterUI",
     description = "Author's flagship desktop layout showcasing Scoot styling for raiding and Mythic+.",
     wowBuild = "12.0.0",
-    version = "2026.02.25",
+    version = "2026.03.12",
     screenClass = "desktop",
     recommendedInput = "Mouse + Keyboard",
     tags = { "Desktop", "Mythic+", "Raiding" },
@@ -18,7 +18,7 @@ Presets:Register({
     previewThumbnail = "Interface\\AddOns\\Scoot\\media\\presets\\ScooterUI",
     designedFor = { "Optimized for 4k 16:9 monitors", "Competitive PvE content, M+ and Raid" },
     recommends = { "Baganator", "Chattynator", "Platynator" },
-    lastUpdated = "2026-02-25",
+    lastUpdated = "2026-03-12",
 
     -- Edit Mode layout payload (raw layoutInfo table).
     -- Capture/update via: /scoot debug editmode export "ScooterUI"
@@ -244,8 +244,8 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -4.2246961593628,
-        offsetY = 112.70992279053,
+        offsetX = -4.1999998092651,
+        offsetY = 112.69999694824,
         point = "RIGHT",
         relativePoint = "RIGHT",
         relativeTo = "UIParent",
@@ -370,11 +370,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -4,
-        offsetY = 0,
-        point = "BOTTOMRIGHT",
-        relativePoint = "BOTTOMLEFT",
-        relativeTo = "MultiBarLeft",
+        offsetX = 484.10000610352,
+        offsetY = -1163.5,
+        point = "TOPLEFT",
+        relativePoint = "TOPLEFT",
+        relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
       settings = {
@@ -401,9 +401,9 @@ Presets:Register({
     {
       anchorInfo = {
         offsetX = -400,
-        offsetY = 92.800003051758,
-        point = "BOTTOM",
-        relativePoint = "BOTTOM",
+        offsetY = -470.79998779297,
+        point = "CENTER",
+        relativePoint = "CENTER",
         relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
@@ -536,7 +536,7 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 417.20001220703,
+        offsetX = 408.20001220703,
         offsetY = -775.5,
         point = "TOP",
         relativePoint = "TOP",
@@ -558,7 +558,7 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 417.39999389648,
+        offsetX = 418.39999389648,
         offsetY = -369.79998779297,
         point = "TOP",
         relativePoint = "TOP",
@@ -696,8 +696,8 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -368.20001220703,
-        offsetY = -267.5,
+        offsetX = -424.29998779297,
+        offsetY = -377.20001220703,
         point = "TOPRIGHT",
         relativePoint = "TOPRIGHT",
         relativeTo = "UIParent",
@@ -710,7 +710,7 @@ Presets:Register({
         },
         {
           setting = 7,
-          value = 0,
+          value = 1,
         },
         {
           setting = 16,
@@ -783,7 +783,7 @@ Presets:Register({
     {
       anchorInfo = {
         offsetX = 0,
-        offsetY = 517.5,
+        offsetY = 500,
         point = "CENTER",
         relativePoint = "CENTER",
         relativeTo = "UIParent",
@@ -795,11 +795,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 0.80000001192093,
-        offsetY = 3.2000000476837,
+        offsetX = -3.2000000476837,
+        offsetY = -0.80000001192093,
         point = "BOTTOMRIGHT",
-        relativePoint = "TOPRIGHT",
-        relativeTo = "ExternalDefensivesFrame",
+        relativePoint = "BOTTOMLEFT",
+        relativeTo = "EncounterTimeline",
       },
       isInDefaultPosition = false,
       settings = {
@@ -976,11 +976,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = 0,
-        offsetY = 4,
-        point = "BOTTOMLEFT",
-        relativePoint = "TOPLEFT",
-        relativeTo = "EncounterBar",
+        offsetX = -280.60000610352,
+        offsetY = -187.60000610352,
+        point = "CENTER",
+        relativePoint = "CENTER",
+        relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
       settings = {
@@ -1015,11 +1015,11 @@ Presets:Register({
     },
     {
       anchorInfo = {
-        offsetX = -904.70001220703,
-        offsetY = 802,
-        point = "BOTTOM",
-        relativePoint = "BOTTOM",
-        relativeTo = "UIParent",
+        offsetX = 30,
+        offsetY = 4,
+        point = "BOTTOMLEFT",
+        relativePoint = "TOPLEFT",
+        relativeTo = "MicroMenuContainer",
       },
       isInDefaultPosition = false,
       settings = {
@@ -1157,10 +1157,10 @@ Presets:Register({
     {
       anchorInfo = {
         offsetX = 0,
-        offsetY = -4,
-        point = "TOPRIGHT",
-        relativePoint = "BOTTOMRIGHT",
-        relativeTo = "DurabilityFrame",
+        offsetY = 4,
+        point = "BOTTOMRIGHT",
+        relativePoint = "TOPRIGHT",
+        relativeTo = "ExternalDefensivesFrame",
       },
       isInDefaultPosition = false,
       settings = {
@@ -1415,9 +1415,9 @@ Presets:Register({
     {
       anchorInfo = {
         offsetX = 0,
-        offsetY = -182.19999694824,
-        point = "CENTER",
-        relativePoint = "CENTER",
+        offsetY = 392.79998779297,
+        point = "BOTTOM",
+        relativePoint = "BOTTOM",
         relativeTo = "UIParent",
       },
       isInDefaultPosition = false,
@@ -1699,11 +1699,39 @@ Presets:Register({
     enableSlashCDM = true,
   },
   classAuraPositions = {
+    arcaneSalvo = {
+      ScooterUI = {
+        point = "CENTER",
+        x = 0.24552410840988,
+        y = -90.127494812012,
+      },
+    },
+    flameShock = {
+      ScooterUI = {
+        point = "CENTER",
+        x = -163.73818969727,
+        y = -322.71157836914,
+      },
+    },
     freezing = {
       ScooterUI = {
         point = "CENTER",
-        x = -15.68182849884,
-        y = -191.91540527344,
+        x = -15.074527740479,
+        y = -197.38543701172,
+      },
+    },
+    lesserGhoulStacks = {
+      ScooterUI = {
+        point = "CENTER",
+        x = -74.330703735352,
+        y = -121.52713012695,
+      },
+    },
+    virulentPlague = {
+      ScooterUI = {
+        point = "CENTER",
+        x = 119.17826843262,
+        y = -225.56379699707,
       },
     },
   },
@@ -2035,7 +2063,7 @@ Presets:Register({
       borderInset = -1,
       borderInsetH = -1,
       borderInsetV = -1,
-      borderStyle = "square",
+      borderStyle = "blizzard",
       borderThickness = 1.5,
       borderTintColor = {
         -0,
@@ -2233,7 +2261,7 @@ Presets:Register({
       },
       backdropTintEnable = false,
       barOpacity = 100,
-      barOpacityOutOfCombat = 10,
+      barOpacityOutOfCombat = 100,
       barOpacityWithTarget = 100,
       barVisibility = "always",
       borderInset = -1,
@@ -2584,7 +2612,130 @@ Presets:Register({
         style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
+    classAura_arcaneSalvo = {
+      barBackgroundColorMode = "custom",
+      barBackgroundOpacity = 50,
+      barBackgroundTexture = "bevelled",
+      barBackgroundTint = {
+        0,
+        0,
+        0,
+        1,
+      },
+      barBorderInsetH = 0,
+      barBorderInsetV = 0,
+      barBorderStyle = "none",
+      barBorderThickness = 1,
+      barBorderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      barBorderTintEnable = false,
+      barForegroundColorMode = "custom",
+      barForegroundTexture = "bevelled",
+      barForegroundTint = {
+        0.58,
+        0.38,
+        0.93,
+        1,
+      },
+      barHeight = 12,
+      barOffsetX = 0,
+      barOffsetY = 0,
+      barPosition = "RIGHT",
+      barWidth = 120,
+      borderInsetH = 0,
+      borderInsetV = 0,
+      borderStyle = "none",
+      borderThickness = 1,
+      borderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      borderTintEnable = false,
+      enabled = true,
+      hideFromCDM = true,
+      hideText = false,
+      iconMode = "custom",
+      iconShape = 0,
+      mode = "text",
+      opacityInCombat = 100,
+      opacityOutOfCombat = 40,
+      opacityWithTarget = 100,
+      scale = 150,
+      textColor = {
+        0.58,
+        0.38,
+        0.93,
+        1,
+      },
+      textFont = "DOGICA_PIXELBOLD",
+      textInnerAnchor = "CENTER",
+      textOffsetX = 0,
+      textOffsetY = -3,
+      textOuterAnchor = "LEFT",
+      textPosition = "inside",
+      textSize = 15,
+      textStyle = "SHADOWTHICKOUTLINE",
+    },
+    classAura_dreadPlague = {
+      enabled = true,
+      opacityOutOfCombat = 50,
+      scale = 80,
+    },
+    classAura_flameShock = {
+      barBackgroundTexture = "a3",
+      barBorderStyle = "square",
+      barForegroundTexture = "a3",
+      barHeight = 7,
+      barWidth = 300,
+      enabled = true,
+      hideText = true,
+      iconMode = "custom",
+      mode = "iconbar",
+      scale = 60,
+      textFont = "ROBOTO_SEMICOND_BLACK",
+      textOuterAnchor = "LEFT",
+      textStyle = "SHADOWTHICKOUTLINE",
+    },
     classAura_freezing = {
+      barBackgroundColorMode = "custom",
+      barBackgroundOpacity = 50,
+      barBackgroundTexture = "a3",
+      barBackgroundTint = {
+        0,
+        0,
+        0,
+        1,
+      },
+      barBorderInsetH = 0,
+      barBorderInsetV = 0,
+      barBorderStyle = "square",
+      barBorderThickness = 1,
+      barBorderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      barBorderTintEnable = false,
+      barForegroundColorMode = "custom",
+      barForegroundTexture = "a3",
+      barForegroundTint = {
+        0.68,
+        0.85,
+        1,
+        1,
+      },
+      barHeight = 4,
+      barOffsetX = 0,
+      barOffsetY = 0,
+      barPosition = "RIGHT",
+      barWidth = 240,
       borderInsetH = 0,
       borderInsetV = 0,
       borderStyle = "wowlabs",
@@ -2598,8 +2749,13 @@ Presets:Register({
       borderTintEnable = true,
       enabled = true,
       hideFromCDM = true,
+      hideText = false,
       iconMode = "custom",
       iconShape = -30,
+      mode = "icon",
+      opacityInCombat = 100,
+      opacityOutOfCombat = 100,
+      opacityWithTarget = 100,
       scale = 90,
       textColor = {
         0.68,
@@ -2615,6 +2771,26 @@ Presets:Register({
       textPosition = "outside",
       textSize = 24,
       textStyle = "SHADOWTHICKOUTLINE",
+    },
+    classAura_lesserGhoulStacks = {
+      enabled = true,
+      iconMode = "custom",
+      opacityOutOfCombat = 50,
+      scale = 140,
+      textFont = "DOGICA_PIXELBOLD",
+      textOffsetX = -1,
+      textSize = 16,
+      textStyle = "SHADOWTHICKOUTLINE",
+    },
+    classAura_virulentPlague = {
+      dotIconStyle = true,
+      dotOrientation = "vertical",
+      dotPadding = 8,
+      enabled = true,
+      exclamationPosition = "RIGHT",
+      exclamationSize = 32,
+      opacityOutOfCombat = 50,
+      scale = 80,
     },
     customGroup1 = {
       _textDirty = true,
@@ -2638,7 +2814,7 @@ Presets:Register({
       iconSize = 28,
       opacity = 100,
       opacityOnCooldown = 25,
-      opacityOnCooldownText = 100,
+      opacityOnCooldownText = 50,
       opacityOutOfCombat = 20,
       opacityWithTarget = 100,
       orientation = "H",
@@ -2649,6 +2825,9 @@ Presets:Register({
       },
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
+        offset = {
+          y = -10,
+        },
         size = 15,
       },
       textStacks = {
@@ -2720,12 +2899,12 @@ Presets:Register({
     },
     customGroup3 = {
       _textDirty = true,
-      anchorPosition = "center",
+      anchorPosition = "left",
       borderEnable = true,
       borderInset = -1,
       borderInsetH = -1,
-      borderInsetV = -1,
-      borderStyle = "blizzard",
+      borderInsetV = 0,
+      borderStyle = "wowlabs",
       borderThickness = 2,
       borderTintColor = {
         -0,
@@ -2734,14 +2913,14 @@ Presets:Register({
         1,
       },
       borderTintEnable = true,
-      columns = 15,
-      direction = "right",
-      iconPadding = 8,
-      iconSize = 48,
+      columns = 5,
+      direction = "left",
+      iconPadding = 10,
+      iconSize = 28,
       opacity = 100,
       opacityOnCooldown = 25,
       opacityOnCooldownText = 100,
-      opacityOutOfCombat = 98,
+      opacityOutOfCombat = 100,
       opacityWithTarget = 100,
       orientation = "H",
       supportsText = true,
@@ -2751,17 +2930,12 @@ Presets:Register({
       },
       textCooldown = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        size = 12,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        offset = {
+          y = -0,
+        },
+        size = 15,
       },
       textStacks = {
-        backdrop = "none",
-        backdropColor = {
-          -0,
-          -0,
-          -0,
-          1,
-        },
         color = {
           1,
           -0,
@@ -2770,14 +2944,16 @@ Presets:Register({
         },
         fontFace = "ROBOTO_SEMICOND_BLACK",
         offset = {
-          x = -0,
-          y = 20,
+          x = 4,
+          y = 5,
         },
-        size = 20,
-        style = "SHADOWTHICKOUTLINE",
+        size = 14,
+        style = "HEAVYSHADOWTHICKOUTLINE",
       },
     },
     damageMeter = {
+      autoResetData = "instance",
+      autoResetPrompt = true,
       background = 80,
       barBackgroundColor = {
         0.1,
@@ -2824,6 +3000,7 @@ Presets:Register({
         r = 1,
       },
       buttonTintMode = "custom",
+      customTruncation = true,
       frameHeight = 200,
       frameWidth = 300,
       headerBackdropShow = false,
@@ -2983,6 +3160,7 @@ Presets:Register({
       centerAnchor = true,
       columns = 15,
       direction = "right",
+      hideProcStart = true,
       iconHeight = 32,
       iconPadding = 8,
       iconSize = 70,
@@ -3045,8 +3223,8 @@ Presets:Register({
       barOpacity = 100,
       barOpacityWithTarget = 100,
       borderInset = -2,
-      borderInsetH = -1,
-      borderInsetV = -1,
+      borderInsetH = 0,
+      borderInsetV = 0,
       borderStyle = "wowlabs",
       borderThickness = 8,
       borderTintColor = {
@@ -3088,6 +3266,22 @@ Presets:Register({
         size = 12,
         style = "THICKOUTLINE",
       },
+      textHotkey = {
+        color = {
+          1,
+          1,
+          1,
+          1,
+        },
+        fontFace = "ROBOTO_SEMICOND_BLACK",
+        offset = {
+          x = 0,
+          y = 6,
+        },
+        size = 12,
+        style = "SHADOWTHICKOUTLINE",
+      },
+      textHotkeyHidden = false,
     },
     microBar = {
       barOpacity = 1,
@@ -3142,8 +3336,19 @@ Presets:Register({
       clockUse24Hour = false,
       dockHide = true,
       hideAddonButtonBorders = true,
+      mailButtonAnchor = "LEFT",
+      mailButtonEnabled = true,
+      mailButtonOffsetX = -15,
+      mailButtonOffsetY = 0,
       mapShape = "square",
       mapSize = 200,
+      overlayActive = false,
+      overlayButtonPosition = "TOPRIGHT",
+      overlayCombatHide = true,
+      overlayEnabled = true,
+      overlayMapOpacity = 0.75,
+      overlayNodesOpacity = 0.9,
+      overlayScale = 2,
       scootButtonSeparate = true,
       systemDataAnchor = "BOTTOMRIGHT",
       systemDataColorMode = "default",
@@ -3165,7 +3370,7 @@ Presets:Register({
       trackingButtonEnabled = true,
       trackingButtonOffsetX = 0,
       trackingButtonOffsetY = 0,
-      zoneTextAnchor = "TOP",
+      zoneCoordinatesEnabled = true,
       zoneTextColorMode = "pvp",
       zoneTextCustomColor = {
         1,
@@ -3189,6 +3394,97 @@ Presets:Register({
         size = 8,
         style = "THICKOUTLINE",
       },
+    },
+    notes = {
+      note1BodyColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      note1BodyText = "— Train Tailoring and Enchanting\
+— Enable War Mode if it's off",
+      note1Collapsed = false,
+      note1Enabled = false,
+      note1HeaderColor = {
+        0.1,
+        1,
+        0.1,
+        1,
+      },
+      note1HeaderText = "When @ Silvermoon",
+      note1Scale = 0.8,
+      note2BodyColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      note2BodyText = "— Most are covered on map, except:\
+— Lorewalker Cho on island south of 'S' in map's \"Stormwind\"\
+— Two Heritage Armor quests in Human Starter area",
+      note2Collapsed = false,
+      note2Enabled = false,
+      note2HeaderColor = {
+        0.1,
+        1,
+        0.1,
+        1,
+      },
+      note2HeaderText = "Stormwind Turn-Ins",
+      note2Scale = 0.8,
+      note3BodyColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      note3BodyText = "— TP to House via H-menu\
+— Turn in dailies",
+      note3Collapsed = false,
+      note3Enabled = false,
+      note3HeaderColor = {
+        0.1,
+        1,
+        0.1,
+        1,
+      },
+      note3HeaderText = "Housing/Endeavor Quests",
+      note3Scale = 0.8,
+      note4BodyColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      note4BodyText = "",
+      note4Collapsed = false,
+      note4Enabled = false,
+      note4HeaderColor = {
+        0.1,
+        1,
+        0.1,
+        1,
+      },
+      note4HeaderText = "",
+      note4Scale = 1,
+      note5BodyColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      note5BodyText = "",
+      note5Collapsed = false,
+      note5Enabled = false,
+      note5HeaderColor = {
+        0.1,
+        1,
+        0.1,
+        1,
+      },
+      note5HeaderText = "",
+      note5Scale = 1,
     },
     objectiveTracker = {
       height = 400,
@@ -3271,7 +3567,7 @@ Presets:Register({
       mouseoverMode = true,
       orientation = "H",
       positionX = -400,
-      positionY = -490,
+      positionY = -471,
       supportsText = true,
       tallWideRatio = -30,
       textCooldown = {
@@ -3468,9 +3764,10 @@ Presets:Register({
         1,
       },
       valueTextColorMode = "classPower",
-      valueTextFont = "ROBOTO_SEMICOND_BLACK",
+      valueTextColorModeDK = "dkSpec",
+      valueTextFont = "DOGICA_PIXELBOLD",
       valueTextFontFlags = "SHADOWTHICKOUTLINE",
-      valueTextFontSize = 16,
+      valueTextFontSize = 18,
       valueTextShow = true,
     },
     sctDamage = {
@@ -3640,8 +3937,8 @@ Presets:Register({
     trackedBuffs = {
       borderEnable = true,
       borderInset = -0,
-      borderInsetH = -1,
-      borderInsetV = -1,
+      borderInsetH = -0,
+      borderInsetV = -0,
       borderStyle = "blizzard",
       borderThickness = 3,
       borderTintColor = {
@@ -3663,7 +3960,7 @@ Presets:Register({
       opacityWithTarget = 100,
       orientation = "V",
       positionX = 126,
-      positionY = -84,
+      positionY = -73,
       showTimer = true,
       showTooltip = true,
       supportsText = true,
@@ -3692,7 +3989,7 @@ Presets:Register({
         fontFace = "ROBOTO_SEMICOND_BLACK",
         offset = {
           x = -45,
-          y = 5,
+          y = 3,
         },
         size = 20,
         style = "HEAVYSHADOWTHICKOUTLINE",
@@ -3718,6 +4015,7 @@ Presets:Register({
       centerAnchor = true,
       columns = 15,
       direction = "right",
+      hideProcStart = false,
       hideWhenInactive = true,
       iconHeight = 24,
       iconPadding = 8,
@@ -3725,11 +4023,11 @@ Presets:Register({
       iconWidth = 36,
       opacity = 100,
       opacityOnCooldown = 20,
-      opacityOnCooldownText = 100,
+      opacityOnCooldownText = 50,
       opacityOutOfCombat = 25,
       opacityWithTarget = 100,
       orientation = "H",
-      positionX = 75,
+      positionX = 90,
       positionY = -250,
       showTimer = true,
       showTooltip = true,
@@ -3786,6 +4084,10 @@ Presets:Register({
           type = "spell",
         },
         {
+          id = 55233,
+          type = "spell",
+        },
+        {
           id = 48792,
           type = "spell",
         },
@@ -3802,11 +4104,51 @@ Presets:Register({
           type = "spell",
         },
         {
+          id = 235450,
+          type = "spell",
+        },
+        {
           id = 342245,
           type = "spell",
         },
         {
           id = 45438,
+          type = "spell",
+        },
+        {
+          id = 61336,
+          type = "spell",
+        },
+        {
+          id = 363916,
+          type = "spell",
+        },
+        {
+          id = 360995,
+          type = "spell",
+        },
+        {
+          id = 355913,
+          type = "spell",
+        },
+        {
+          id = 108271,
+          type = "spell",
+        },
+        {
+          id = 198103,
+          type = "spell",
+        },
+        {
+          id = 244839,
+          type = "item",
+        },
+        {
+          id = 55342,
+          type = "spell",
+        },
+        {
+          id = 110959,
           type = "spell",
         },
         {
@@ -3826,7 +4168,15 @@ Presets:Register({
     {
       entries = {
         {
+          id = 2825,
+          type = "spell",
+        },
+        {
           id = 274738,
+          type = "spell",
+        },
+        {
+          id = 390386,
           type = "spell",
         },
         {
@@ -3845,6 +4195,14 @@ Presets:Register({
           id = 132516,
           type = "item",
         },
+        {
+          id = 61999,
+          type = "spell",
+        },
+        {
+          id = 20484,
+          type = "spell",
+        },
       },
       name = "Other Offensive",
       positions = {
@@ -3857,13 +4215,17 @@ Presets:Register({
     },
     {
       entries = {
+        {
+          id = 89682,
+          type = "item",
+        },
       },
-      name = "Misc",
+      name = "Traveling Items",
       positions = {
         ScooterUI = {
-          point = "CENTER",
-          x = -310.70034790039,
-          y = 55.692932128906,
+          point = "TOPLEFT",
+          x = 147.5560760498,
+          y = -721.42840576172,
         },
       },
     },
@@ -3874,8 +4236,12 @@ Presets:Register({
   debugMenuEnabled = true,
   groupFrames = {
     party = {
+      groupLeadIconAnchor = "TOP",
+      groupLeadIconOffsetY = -8,
+      groupLeadIconSet = "desaturated",
+      groupLeadIconShow = true,
       healthBarBackgroundOpacity = 50,
-      healthBarBackgroundTexture = "a3",
+      healthBarBackgroundTexture = "a2",
       healthBarBorderInset = -0,
       healthBarBorderStyle = "square",
       healthBarBorderThickness = 4,
@@ -3888,11 +4254,11 @@ Presets:Register({
       healthBarBorderTintEnable = true,
       healthBarColorMode = "valueDark",
       healthBarPadding = 6,
-      healthBarTexture = "a3",
+      healthBarTexture = "a2",
       hideOverAbsorbGlow = true,
       roleIconAnchor = "TOPRIGHT",
-      roleIconOffsetX = -0,
-      roleIconOffsetY = -0,
+      roleIconOffsetX = -15,
+      roleIconOffsetY = -3,
       roleIconScale = 110,
       roleIconSet = "pixel_white",
       roleIconVisibility = "hideDPS",
@@ -3921,13 +4287,19 @@ Presets:Register({
         },
         colorMode = "class",
         fontFace = "ROBOTO_SEMICOND_BLACK",
-        hideRealm = false,
+        hideRealm = true,
         offset = {
           x = 2,
           y = -0,
         },
         size = 10,
         style = "THICKOUTLINE",
+      },
+      textStatusText = {
+        anchor = "BOTTOM",
+        fontFace = "ROBOTO_SEMICOND_BLACK",
+        size = 10,
+        style = "SHADOWTHICKOUTLINE",
       },
     },
     raid = {
@@ -4016,18 +4388,45 @@ Presets:Register({
   keepFriendlyNameplatesDisabled = true,
   minimap = {
     hide = false,
-    minimapPos = 196.59631160482,
+    minimapPos = 198.15696322251,
   },
   misc = {
     customGameMenu = true,
+  },
+  notePositions = {
+    {
+      ScooterUI = {
+        point = "TOPLEFT",
+        x = 391.96615600586,
+        y = -13.794381141663,
+      },
+    },
+    {
+      ScooterUI = {
+        point = "TOP",
+        x = -513.07702636719,
+        y = -12.511790275574,
+      },
+    },
+    {
+      ScooterUI = {
+        point = "TOP",
+        x = -193.70909118652,
+        y = -12.92218875885,
+      },
+    },
   },
   prdSettings = {
     enablePRD = true,
   },
   qol = {
     autoRepairMode = "personal",
+    editModeNudgeArrows = true,
+    editModeSubGrid = true,
     quickLoot = true,
     sellGreyItems = true,
+    showMapCoordinates = true,
+    showQuestLogCount = true,
   },
   ruleBaselines = {
     ["prdPower.hideBar"] = false,
@@ -4079,6 +4478,7 @@ Presets:Register({
           64,
           105,
           264,
+          1467,
         },
         type = "specialization",
       },
@@ -4121,6 +4521,7 @@ Presets:Register({
       powerBarBorderThickness = 1,
       powerBarHidden = false,
       powerBarTexture = "a3",
+      scale = 1,
       textHealthPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
         size = 7,
@@ -4304,12 +4705,14 @@ Presets:Register({
       useCustomBorders = true,
     },
     Pet = {
-      healthBarBackgroundTexture = "a1",
+      healthBarBackgroundTexture = "a2",
       healthBarBorderStyle = "mmtYBorder",
       healthBarBorderThickness = 1,
       healthBarColorMode = "valueDark",
       healthBarHideBorder = false,
+      healthBarHideTextureOnly = true,
       healthBarTexture = "a2",
+      healthPercentHidden = false,
       healthValueHidden = true,
       levelTextHidden = true,
       opacityOutOfCombat = 25,
@@ -4329,8 +4732,10 @@ Presets:Register({
         },
         fontFace = "ROBOTO_SEMICOND_BLACK",
         offset = {
+          x = 40,
+          y = 10,
         },
-        size = 6,
+        size = 8,
         style = "SHADOWTHICKOUTLINE",
       },
       textHealthValue = {
@@ -4351,13 +4756,19 @@ Presets:Register({
         fontFace = "ROBOTO_SEMICOND_BLACK",
       },
       textName = {
-        colorMode = "default",
+        color = {
+          1,
+          1,
+          1,
+          1,
+        },
+        colorMode = "custom",
         fontFace = "ROBOTO_SEMICOND_BLACK",
         offset = {
           y = -0,
         },
         size = 8,
-        style = "HEAVYSHADOWTHICKOUTLINE",
+        style = "SHADOWTHICKOUTLINE",
       },
       textPowerPercent = {
         fontFace = "ROBOTO_SEMICOND_BLACK",
@@ -4378,11 +4789,12 @@ Presets:Register({
         offsetX = 32,
         offsetY = 8,
         textPercent = {
-          alignment = "LEFT",
+          alignment = "RIGHT",
           colorMode = "classPower",
           fontFace = "ROBOTO_SEMICOND_BLACK",
           offset = {
-            x = -0,
+            x = 65,
+            y = 18,
           },
           size = 8,
           style = "SHADOWTHICKOUTLINE",
@@ -4440,10 +4852,12 @@ Presets:Register({
       healthBarHideBorder = false,
       healthBarHideHealPrediction = true,
       healthBarHideOverAbsorbGlow = true,
+      healthBarHideTextureOnly = false,
       healthBarTexture = "a2",
       levelTextHidden = true,
       misc = {
         hideGroupNumber = true,
+        hidePvPIcons = true,
         hideRoleIcon = true,
       },
       nameBackdropBorderEnabled = false,
@@ -4457,6 +4871,8 @@ Presets:Register({
         },
         damageTextDisabled = true,
         hidePortrait = true,
+        useFullCircleMask = false,
+        zoom = 100,
       },
       powerBarBackgroundTexture = "a1",
       powerBarBorderInset = -0,
@@ -4464,7 +4880,7 @@ Presets:Register({
       powerBarBorderThickness = 1,
       powerBarCustomPositionEnabled = true,
       powerBarHeightPct = 100,
-      powerBarHidden = true,
+      powerBarHidden = false,
       powerBarHideFeedback = false,
       powerBarHideFullSpikes = false,
       powerBarHideManaCostPrediction = false,
