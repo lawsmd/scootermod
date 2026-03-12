@@ -16,6 +16,19 @@ local Combat = addon.BarsCombat
 addon.BarsPartyFrames = addon.BarsPartyFrames or {}
 local PartyFrames = addon.BarsPartyFrames
 
+-- Dispel indicator colors (hardcoded to avoid secret-key table lookups)
+local DISPEL_COLORS = {
+    ["Magic"]   = { r = 0.20, g = 0.60, b = 1.00 },
+    ["Curse"]   = { r = 0.60, g = 0.00, b = 1.00 },
+    ["Disease"] = { r = 0.60, g = 0.40, b = 0.00 },
+    ["Poison"]  = { r = 0.00, g = 0.60, b = 0.00 },
+    ["Bleed"]   = { r = 0.80, g = 0.00, b = 0.00 },
+}
+
+-- Weak-keyed cache: unitFrame → color table (shared across party/raid)
+addon._DispelColorCache = addon._DispelColorCache or setmetatable({}, { __mode = "k" })
+local dispelColorCache = addon._DispelColorCache
+
 --------------------------------------------------------------------------------
 -- TAINT PREVENTION: Lookup table for party frame state
 --------------------------------------------------------------------------------
@@ -297,6 +310,14 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         if state and state.healthOverlay then
             state.healthOverlay:Hide()
         end
+        -- Hide dispel clone textures when styling is disabled
+        if state and state.dispelFill then state.dispelFill:Hide() end
+        if state and state.dispelHighlight then state.dispelHighlight:Hide() end
+        -- Clear dispel color cache
+        local unitFrame = bar.GetParent and bar:GetParent()
+        if unitFrame and dispelColorCache then
+            dispelColorCache[unitFrame] = nil
+        end
         showBlizzardFill(bar)
         return
     end
@@ -326,13 +347,6 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 -- atomically in the same frame (no timing gap = no flicker).
                 local st = getState(self)
                 if not st or not st.overlayActive then return end
-                -- Re-raise DispelOverlay above healthBar on every health update.
-                -- Provides continuous enforcement during combat when ensureHealthOverlay
-                -- is unreachable (InCombatLockdown blocks deferred UpdateAll/SetUnit).
-                local dov = st.dispelOverlayRef
-                if dov and dov:IsShown() then
-                    dov:Raise()
-                end
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "party") or nil
@@ -414,27 +428,59 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             pcall(roleIcon.SetDrawLayer, roleIcon, "OVERLAY", 6)
         end
 
-        -- Raise DispelOverlay above healthBar in the useParentLevel stacking order.
-        -- Both are useParentLevel="true" siblings; rendering order among same-level
-        -- siblings depends on stacking order (not draw layers across frames).
-        local okD, dispelOverlay = pcall(function() return unitFrame.DispelOverlay end)
-        if okD and dispelOverlay and dispelOverlay.Raise then
-            pcall(dispelOverlay.Raise, dispelOverlay)
-        end
+    end
 
-        -- Cache DispelOverlay ref for fast access in SetValue hook
-        if state and okD and dispelOverlay then
-            state.dispelOverlayRef = dispelOverlay
-        end
+    -- Create dispel indicator clone on the PARENT CompactUnitFrame.
+    -- Parent textures render AFTER useParentLevel children (healthBar + its fill),
+    -- guaranteeing visibility above the health overlay.
+    -- ARTWORK 5-6 is below OVERLAY (selectionHighlight, roleIcon, name).
+    if state and not state.dispelCloneCreated then
+        local unitFrame = bar.GetParent and bar:GetParent()
+        if unitFrame then
+            state.dispelCloneCreated = true
 
-        -- One-time per-frame: Hook DispelOverlay:Show() to re-Raise immediately.
-        -- Show/Hide cycles in CompactUnitFrame_SetDispelOverlayAura reset stacking
-        -- order among useParentLevel siblings.
-        if state and not state.dispelShowHooked and okD and dispelOverlay then
-            state.dispelShowHooked = true
-            hooksecurefunc(dispelOverlay, "Show", function(self)
-                self:Raise()
-            end)
+            local dFill = unitFrame:CreateTexture(nil, "ARTWORK", nil, 5)
+            dFill:SetPoint("TOPLEFT", bar, "TOPLEFT")
+            dFill:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+            dFill:Hide()
+            state.dispelFill = dFill
+
+            local dHighlight = unitFrame:CreateTexture(nil, "ARTWORK", nil, 6)
+            dHighlight:SetPoint("TOPLEFT", bar, "TOPLEFT")
+            dHighlight:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+            dHighlight:SetAtlas("RaidFrame-DispelHighlight")
+            dHighlight:Hide()
+            state.dispelHighlight = dHighlight
+        end
+    end
+
+    -- Sync initial dispel state (handles styling applied while debuff is active)
+    if state and state.dispelFill and not state.dispelFill:IsShown() then
+        local unitFrame = bar.GetParent and bar:GetParent()
+        if unitFrame then
+            local okD, blizzDispel = pcall(function() return unitFrame.DispelOverlay end)
+            if okD and blizzDispel then
+                local okS, shown = pcall(blizzDispel.IsShown, blizzDispel)
+                if okS and shown then
+                    -- Try cached color first, then read from Blizzard, then fallback
+                    local color = dispelColorCache[unitFrame]
+
+                    if not color then
+                        local okC, cr, cg, cb = pcall(function()
+                            return blizzDispel.Border:GetVertexColor()
+                        end)
+                        if okC and type(cr) == "number" and not issecretvalue(cr) then
+                            color = { r = cr, g = cg, b = cb }
+                        end
+                    end
+
+                    color = color or DISPEL_COLORS["Magic"]
+                    state.dispelFill:SetColorTexture(color.r, color.g, color.b, 0.3)
+                    state.dispelHighlight:SetVertexColor(color.r, color.g, color.b, 1)
+                    state.dispelFill:Show()
+                    state.dispelHighlight:Show()
+                end
+            end
         end
     end
 
@@ -511,9 +557,17 @@ function PartyFrames.disableHealthOverlay(bar)
     if state and state.healthOverlay then
         state.healthOverlay:Hide()
     end
+    -- Hide dispel clone textures
+    if state and state.dispelFill then state.dispelFill:Hide() end
+    if state and state.dispelHighlight then state.dispelHighlight:Hide() end
+    -- Clear dispel color cache
+    local unitFrame = bar.GetParent and bar:GetParent()
+    if unitFrame and dispelColorCache then
+        dispelColorCache[unitFrame] = nil
+    end
     showBlizzardFill(bar)
     -- Restore roleIcon to stock draw layer
-    local unitFrame = bar.GetParent and bar:GetParent()
+    unitFrame = unitFrame or (bar.GetParent and bar:GetParent())
     if unitFrame then
         local okR, roleIcon = pcall(function() return unitFrame.roleIcon end)
         if okR and roleIcon and roleIcon.SetDrawLayer then
@@ -825,19 +879,64 @@ function PartyFrames.installHooks()
     if addon._PartyFrameHooksInstalled then return end
     addon._PartyFrameHooksInstalled = true
 
-    -- Raise DispelOverlay above healthBar in the useParentLevel stacking order.
-    -- Both are useParentLevel="true" siblings; rendering order among same-level
-    -- siblings depends on stacking order (not draw layers across frames).
-    -- Show()/Hide() cycles in CompactUnitFrame_SetDispelOverlayAura can flip
-    -- stacking order, so we re-Raise after every show.
-    if not addon._DispelOverlayRaiseHookInstalled then
-        addon._DispelOverlayRaiseHookInstalled = true
+    -- Sync addon-owned dispel clone textures when Blizzard fires dispel overlay updates.
+    -- Single global hook handles both party and raid frames since
+    -- CompactUnitFrame_SetDispelOverlayAura fires for all CompactUnitFrames.
+    -- Secret-safe: uses type()/issecretvalue() guards, DispelOverlay:IsShown() as
+    -- primary signal, and hardcoded DISPEL_COLORS to avoid secret-key table lookups.
+    if not addon._DispelCloneHookInstalled then
+        addon._DispelCloneHookInstalled = true
         if _G.hooksecurefunc and _G.CompactUnitFrame_SetDispelOverlayAura then
             _G.hooksecurefunc("CompactUnitFrame_SetDispelOverlayAura", function(frame, aura)
-                if not frame or not frame.DispelOverlay then return end
-                if aura and aura.dispelName and frame.DispelOverlay.Raise then
-                    frame.DispelOverlay:Raise()
-                end
+                pcall(function()
+                    if isEditModeActive() then return end
+                    if not frame or not frame.healthBar then return end
+
+                    local bar = frame.healthBar
+                    local state = getState(bar)
+
+                    -- Try raidframes state if partyframes state not found
+                    if not state and addon.BarsRaidFrames and addon.BarsRaidFrames._getState then
+                        state = addon.BarsRaidFrames._getState(bar)
+                    end
+
+                    -- Determine dispel color from aura (secret-safe)
+                    local color
+                    if aura and type(aura) == "table" then
+                        local okN, dn = pcall(function() return aura.dispelName end)
+                        if okN and type(dn) == "string" and not issecretvalue(dn) then
+                            color = DISPEL_COLORS[dn]
+                        end
+                    end
+
+                    -- Check Blizzard's DispelOverlay state (definitive after original fn)
+                    local okS, isShown = pcall(function()
+                        return frame.DispelOverlay and frame.DispelOverlay:IsShown()
+                    end)
+                    local shown = okS and isShown and not issecretvalue(isShown) and isShown
+
+                    -- Cache color for initial sync in ensureHealthOverlay
+                    if shown and color then
+                        dispelColorCache[frame] = color
+                    elseif not shown then
+                        dispelColorCache[frame] = nil
+                    end
+
+                    -- Update clone textures if state exists
+                    if not state or not state.overlayActive then return end
+                    if not state.dispelFill then return end
+
+                    if shown then
+                        color = color or dispelColorCache[frame] or DISPEL_COLORS["Magic"]
+                        state.dispelFill:SetColorTexture(color.r, color.g, color.b, 0.3)
+                        state.dispelHighlight:SetVertexColor(color.r, color.g, color.b, 1)
+                        state.dispelFill:Show()
+                        state.dispelHighlight:Show()
+                    else
+                        state.dispelFill:Hide()
+                        state.dispelHighlight:Hide()
+                    end
+                end)
             end)
         end
     end
