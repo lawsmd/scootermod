@@ -101,6 +101,17 @@ do
 	-- Track units that were reanchored during combat and need a full re-apply after combat ends
 	local pendingPostCombatRefresh = {}
 
+	-- Empowered cast state per unit token ("player"/"target"/"focus")
+	-- Set via events only — never reads Blizzard frame properties (no taint risk)
+	local empoweredCastActive = {}
+
+	local function isEmpoweredCast(unit)
+		local token = (unit == "Player" and "player")
+				  or (unit == "Target" and "target")
+				  or (unit == "Focus" and "focus")
+		return token and empoweredCastActive[token] or false
+	end
+
 	-- Lightweight reanchor: only corrects position (ClearAllPoints + SetPoint) without
 	-- going through the full apply pipeline or its combat guard.  Target/Focus cast bars
 	-- are visual StatusBars — repositioning them is safe during combat (no taint).
@@ -197,6 +208,9 @@ do
 			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
 				-- Ignore Scoot's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
+				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
+				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
+				if token and empoweredCastActive[token] then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
 					-- Mark this as a visual-only refresh to safely reapply
 					-- textures/colors in combat without re-anchoring secure frames.
@@ -206,6 +220,9 @@ do
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
+				-- Don't re-apply color during empowered casts (stage tiers provide visuals)
+				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
+				if token and empoweredCastActive[token] then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
 					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
@@ -564,7 +581,9 @@ do
 				local cfgStyle = db.unitFrames[unit].castBar
 
 				-- Foreground: texture + color
-				if addon._ApplyToStatusBar and frame.GetStatusBarTexture then
+				-- Skip during empowered casts: Blizzard uses transparent fill with
+				-- stage tiers at BACKGROUND sublevel 4-5. Custom texture hides them.
+				if not isEmpoweredCast(unit) and addon._ApplyToStatusBar and frame.GetStatusBarTexture then
 					local texKey = cfgStyle.castBarTexture or "default"
 					local colorMode = cfgStyle.castBarColorMode or "default"
 					local tint = cfgStyle.castBarTint
@@ -576,7 +595,9 @@ do
 				end
 
 				-- Background: texture + color + opacity
-				if addon._ApplyBackgroundToStatusBar then
+				-- Skip during empowered casts: the BG swap helpers handle hiding ScootBG
+				-- and restoring stock Background so stage tiers render correctly.
+				if not isEmpoweredCast(unit) and addon._ApplyBackgroundToStatusBar then
 					local bgTexKey = cfgStyle.castBarBackgroundTexture or "default"
 					local bgColorMode = cfgStyle.castBarBackgroundColorMode or "default"
 					local bgOpacity = cfgStyle.castBarBackgroundOpacity or 50
@@ -602,6 +623,8 @@ do
 					end
 
 					local sparkHidden = cfg.castBarSparkHidden == true
+					-- Empowered charge cursor is essential UX feedback — force-show during empowered casts
+					if isEmpoweredCast(unit) then sparkHidden = false end
 					local colorMode = cfg.castBarSparkColorMode or "default"
 					local tintTbl = type(cfg.castBarSparkTint) == "table" and cfg.castBarSparkTint or {1,1,1,1}
 
@@ -1050,6 +1073,216 @@ do
 		applyCastBarForUnit("Focus")
 	end
 
+	-- Empowered cast event tracking + stage tier texture replacement
+	do
+		local ef = CreateFrame("Frame")
+		ef:RegisterEvent("UNIT_SPELLCAST_EMPOWER_START")
+		ef:RegisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
+		ef:RegisterEvent("UNIT_SPELLCAST_STOP")
+		ef:RegisterEvent("UNIT_SPELLCAST_FAILED")
+		ef:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+		ef:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+
+		local tokenToUnit = { player = "Player", target = "Target", focus = "Focus" }
+
+		-- Background swap helpers: hide ScootBG and restore stock Background during
+		-- empowered casts so stage tier textures (sublevel 4-5) render correctly.
+		local function hideScootBGForEmpowered(unitToken)
+			local titleUnit = tokenToUnit[unitToken]
+			if not titleUnit then return end
+			local frame = resolveCastBarFrame(titleUnit)
+			if not frame then return end
+			local scootBG = getProp(frame, "ScootBG")
+			if scootBG and scootBG.SetAlpha then
+				pcall(scootBG.SetAlpha, scootBG, 0)
+			end
+			if frame.Background and frame.Background.SetAlpha then
+				pcall(frame.Background.SetAlpha, frame.Background, 1)
+			end
+			setProp(frame, "empoweredBGSwapped", true)
+		end
+
+		local function restoreScootBGAfterEmpowered(unitToken)
+			local titleUnit = tokenToUnit[unitToken]
+			if not titleUnit then return end
+			local frame = resolveCastBarFrame(titleUnit)
+			if not frame then return end
+			if not getProp(frame, "empoweredBGSwapped") then return end
+			setProp(frame, "empoweredBGSwapped", nil)
+			C_Timer.After(0, function()
+				-- Don't restore normal styling if a new empowered cast has started
+				if empoweredCastActive[unitToken] then return end
+				if addon and addon.ApplyUnitFrameCastBarFor then
+					addon.ApplyUnitFrameCastBarFor(titleUnit)
+				end
+			end)
+		end
+
+		-- Weak-key table for Scoot-owned tier overlay textures (avoids writing to Blizzard frame tables)
+		local tierOverlays = setmetatable({}, { __mode = "k" })
+		local empoweredStageUpdater
+
+		-- Brightened tier colors to compensate for vertex color multiplication on custom textures.
+		-- Dominant channel pushed near 1.0 so the custom texture's own coloring doesn't dim them.
+		local TIER_COLORS_NORMAL = {
+			{ 0.45, 0.95, 0.55 },  -- Tier 1: bright green
+			{ 1.00, 0.90, 0.30 },  -- Tier 2: bright yellow
+			{ 1.00, 0.55, 0.25 },  -- Tier 3: bright orange
+			{ 1.00, 0.30, 0.20 },  -- Tier 4: bright red
+		}
+		local TIER_COLORS_DISABLED = {
+			{ 0.18, 0.40, 0.22 },  -- ~40% of normal
+			{ 0.40, 0.36, 0.12 },
+			{ 0.40, 0.22, 0.10 },
+			{ 0.40, 0.12, 0.08 },
+		}
+
+		-- Replace stage tier atlas textures with Scoot-owned overlay textures + vertex colors
+		-- that preserve the stage color progression (green→yellow→orange→red).
+		-- SetTexture cannot visually override SetAtlas on Blizzard-owned textures, so we create
+		-- our own textures at a higher sublevel and hide the originals behind them.
+		local function applyScootTextureToTiers(unitToken)
+			local titleUnit = tokenToUnit[unitToken]
+			if not titleUnit then return end
+			local frame = resolveCastBarFrame(titleUnit)
+			if not frame then return end
+
+			-- Read user's configured texture key
+			local db = addon and addon.db and addon.db.profile
+			if not db then return end
+			local cfg = db.unitFrames and db.unitFrames[titleUnit] and db.unitFrames[titleUnit].castBar
+			if not cfg then return end
+			local texKey = cfg.castBarTexture or "default"
+			if texKey == "default" then return end
+
+			-- Resolve to a file path
+			local texturePath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(texKey)
+			if not texturePath then return end
+
+			-- Defer so Blizzard's AddStages has completed and StageTiers is populated
+			C_Timer.After(0, function()
+				-- Guard: empowered cast may have ended before this deferred callback fires
+				if not empoweredCastActive[unitToken] then return end
+				if not frame.StageTiers then return end
+				-- Guard against secret values on the StageTiers table
+				if issecretvalue and issecretvalue(frame.StageTiers) then return end
+
+				for i, tier in ipairs(frame.StageTiers) do
+					if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+						local nColor = TIER_COLORS_NORMAL[i] or TIER_COLORS_NORMAL[#TIER_COLORS_NORMAL]
+						local dColor = TIER_COLORS_DISABLED[i] or TIER_COLORS_DISABLED[#TIER_COLORS_DISABLED]
+
+						-- Get or create Scoot-owned overlay on this tier frame.
+						-- Sublevel 7: renders above Normal/Disabled (4) and Glow (5).
+						local overlay = tierOverlays[tier]
+						if not overlay then
+							overlay = tier:CreateTexture(nil, "BACKGROUND", nil, 7)
+							overlay:SetAllPoints()
+							tierOverlays[tier] = overlay
+						end
+
+						-- Apply custom texture + disabled color (all tiers start disabled)
+						overlay:SetTexture(texturePath)
+						overlay:SetTexCoord(0, 1, 0, 1)
+						overlay:SetVertexColor(dColor[1], dColor[2], dColor[3], 1)
+						overlay:Show()
+
+						-- Store colors for stage progression (safe: overlay is Scoot-created)
+						overlay._nColor = nColor
+						overlay._dColor = dColor
+						overlay._tierIndex = i
+
+						-- Hide original Blizzard atlas textures behind our overlay
+						pcall(tier.Normal.SetAlpha, tier.Normal, 0)
+						pcall(tier.Disabled.SetAlpha, tier.Disabled, 0)
+					end
+				end
+
+				-- Start stage progression tracker (transitions overlay colors disabled → normal)
+				if not empoweredStageUpdater then
+					empoweredStageUpdater = CreateFrame("Frame")
+					empoweredStageUpdater:SetScript("OnUpdate", function(self)
+						local f = self._castFrame
+						if not f or not f.StageTiers then
+							self:Hide()
+							return
+						end
+						local stage = f.CurrSpellStage
+						if stage and stage ~= self._lastStage and type(stage) == "number" then
+							self._lastStage = stage
+							for _, tier in ipairs(f.StageTiers) do
+								local ov = tierOverlays[tier]
+								if ov and ov._tierIndex then
+									local active = (ov._tierIndex <= stage)
+									local c = active and ov._nColor or ov._dColor
+									if c then
+										ov:SetVertexColor(c[1], c[2], c[3], 1)
+									end
+								end
+							end
+						end
+					end)
+				end
+				empoweredStageUpdater._castFrame = frame
+				empoweredStageUpdater._lastStage = nil
+				empoweredStageUpdater:Show()
+
+				-- Force the StatusBar fill texture to be invisible during empowered casts.
+				-- Blizzard calls SetColorFill(0,0,0,0) but the texture from a prior normal cast
+				-- (set by Scoot's _ApplyToStatusBar) may still render at BORDER layer, above the tiers.
+				-- The fill auto-restores when the next normal cast starts (Blizzard's SetStatusBarTexture
+				-- triggers Scoot's hook which re-applies the full foreground).
+				local fill = frame:GetStatusBarTexture()
+				if fill and not (issecretvalue and issecretvalue(fill)) then
+					if fill.SetAlpha then pcall(fill.SetAlpha, fill, 0) end
+				end
+			end)
+		end
+
+		-- Hide overlay textures and restore original Blizzard tier textures
+		local function cleanupTierOverlays(unitToken)
+			if empoweredStageUpdater then
+				empoweredStageUpdater:Hide()
+			end
+			local titleUnit = tokenToUnit[unitToken]
+			if not titleUnit then return end
+			local f = resolveCastBarFrame(titleUnit)
+			if f and f.StageTiers then
+				for _, tier in ipairs(f.StageTiers) do
+					local ov = tierOverlays[tier]
+					if ov then ov:Hide() end
+					-- Restore original alpha so Blizzard manages visibility normally
+					pcall(tier.Normal.SetAlpha, tier.Normal, 1)
+					pcall(tier.Disabled.SetAlpha, tier.Disabled, 1)
+				end
+				-- Restore fill texture alpha (set to 0 by applyScootTextureToTiers)
+				local fill = f:GetStatusBarTexture()
+				if fill and not (issecretvalue and issecretvalue(fill)) then
+					if fill.SetAlpha then pcall(fill.SetAlpha, fill, 1) end
+				end
+			end
+		end
+
+		ef:SetScript("OnEvent", function(self, event, unit, ...)
+			if event == "UNIT_SPELLCAST_EMPOWER_START" then
+				empoweredCastActive[unit] = true
+				hideScootBGForEmpowered(unit)
+				applyScootTextureToTiers(unit)
+			elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+				empoweredCastActive[unit] = nil
+				cleanupTierOverlays(unit)
+				restoreScootBGAfterEmpowered(unit)
+			else
+				-- Clear on any other cast event (failed, interrupted, new channel, etc.)
+				if empoweredCastActive[unit] then
+					empoweredCastActive[unit] = nil
+					cleanupTierOverlays(unit)
+					restoreScootBGAfterEmpowered(unit)
+				end
+			end
+		end)
+	end
+
 	-- Zero‑Touch hook installation: install cast bar persistence hooks ONLY when the profile
 	-- has explicit cast bar config. This is used to ensure hooks exist even if ApplyStyles()
 	-- is deferred due to combat at login/reload.
@@ -1075,6 +1308,9 @@ do
 			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
 				-- Ignore Scoot's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
+				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
+				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
+				if token and empoweredCastActive[token] then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
 					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
@@ -1082,6 +1318,9 @@ do
 				end
 			end)
 			_G.hooksecurefunc(frame, "SetStatusBarColor", function(self, ...)
+				-- Don't re-apply color during empowered casts (stage tiers provide visuals)
+				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
+				if token and empoweredCastActive[token] then return end
 				if addon and addon.ApplyUnitFrameCastBarFor then
 					setProp(self, "castVisualOnly", true)
 					addon.ApplyUnitFrameCastBarFor(hookUnit)
