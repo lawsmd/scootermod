@@ -136,6 +136,7 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|quests|<FrameName>>")
             addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
             addon:Print("  /scoot debug consoleport export")
+            addon:Print("  /scoot debug dm export [overall|current|expired]")
             return
         end
 
@@ -305,6 +306,21 @@ function SlashCmdList.SCOOT(msg, editBox)
             else
                 addon:Print("Class Auras debug not available (debug module missing).")
             end
+            return
+        end
+
+        -- /scoot debug dm export [overall|current|expired]
+        if sub1 == "dm" then
+            if sub2 == "export" then
+                local sessionArg = args[4]
+                if addon.DebugExportDamageMeters then
+                    addon.DebugExportDamageMeters(sessionArg)
+                else
+                    addon:Print("Damage Meter export not available (debug module missing).")
+                end
+                return
+            end
+            addon:Print("Usage: /scoot debug dm export [overall|current|expired]")
             return
         end
 
