@@ -53,11 +53,28 @@ function TB.installDataMirrorHooks(child)
             end)
         end
         if barFrame.Duration and barFrame.Duration.SetText then
-            hooksecurefunc(barFrame.Duration, "SetText", function(_, text)
+            hooksecurefunc(barFrame.Duration, "SetText", function(self, text)
                 local m = TB.barItemMirror[child]
                 if m then m.durationText = text end
                 if TB.verticalModeActive then
                     addon.UpdateVerticalBarText(child, "duration")
+                end
+                -- Throttled duration color for horizontal (default) mode
+                if not TB.verticalModeActive and addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
+                    local durCfg = TB.getTrackedBarSetting and TB.getTrackedBarSetting("textDuration")
+                    if durCfg and durCfg.colorMode == "duration" and m then
+                        local now = GetTime()
+                        if not m._lastDurColor or (now - m._lastDurColor) >= 0.33 then
+                            m._lastDurColor = now
+                            local barMax = m.barMax
+                            local barVal = m.barValue
+                            if barMax and barVal and type(barMax) == "number" and type(barVal) == "number" and barMax > 0 then
+                                local pct = barVal / barMax
+                                local r, g, b = addon.BarsTextures.getDurationColorRGB(pct)
+                                pcall(self.SetTextColor, self, r, g, b, 1)
+                            end
+                        end
+                    end
                 end
             end)
         end
@@ -439,6 +456,23 @@ function addon.UpdateVerticalBarText(child, which)
         stack.spellNameFS:SetText(mirror.nameText or "")
     elseif which == "duration" then
         stack.timerFS:SetText(mirror.durationText or "")
+        -- Throttled duration color for vertical mode timerFS
+        if addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
+            local durCfg = TB.getTrackedBarSetting and TB.getTrackedBarSetting("textDuration")
+            if durCfg and durCfg.colorMode == "duration" then
+                local now = GetTime()
+                if not mirror._lastDurColor or (now - mirror._lastDurColor) >= 0.33 then
+                    mirror._lastDurColor = now
+                    local barMax = mirror.barMax
+                    local barVal = mirror.barValue
+                    if barMax and barVal and type(barMax) == "number" and type(barVal) == "number" and barMax > 0 then
+                        local pct = barVal / barMax
+                        local r, g, b = addon.BarsTextures.getDurationColorRGB(pct)
+                        pcall(stack.timerFS.SetTextColor, stack.timerFS, r, g, b, 1)
+                    end
+                end
+            end
+        end
     elseif which == "icon" then
         stack.iconTexture:SetTexture(mirror.spellTexture)
     elseif which == "applications" then

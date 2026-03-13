@@ -5361,6 +5361,47 @@ do
         end
     end
 
+    -- Apply "Color by Value" to health text FontStrings for a unit.
+    -- Reuses the health color curve (same as bar coloring) for consistency.
+    -- Only updates FontStrings whose colorMode is "value".
+    local function applyHealthTextValueColor(unit)
+        if not addon.BarsTextures or not addon.BarsTextures.applyHealthTextColor then return end
+
+        -- Map unit token (lowercase) to unitFrames config key (capitalized)
+        -- _ufHealthTextFonts cache is keyed by capitalized names ("Player", "Target", etc.)
+        local unitKey
+        if unit == "player" then unitKey = "Player"
+        elseif unit == "target" then unitKey = "Target"
+        elseif unit == "focus" then unitKey = "Focus"
+        elseif unit == "pet" then unitKey = "Pet"
+        elseif unit:match("^boss%d$") then unitKey = "Boss"
+        else return end
+
+        local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unitKey]
+        if not cache then return end
+
+        local db = addon.db and addon.db.profile
+        local cfg = db and db.unitFrames and db.unitFrames[unitKey]
+        if not cfg then return end
+
+        -- Check health percent text (leftFS)
+        local percentCfg = cfg.textHealthPercent
+        if percentCfg and percentCfg.colorMode == "value" and cache.leftFS then
+            addon.BarsTextures.applyHealthTextColor(cache.leftFS, unit)
+        end
+
+        -- Check health value text (rightFS)
+        local valueCfg = cfg.textHealthValue
+        if valueCfg and valueCfg.colorMode == "value" and cache.rightFS then
+            addon.BarsTextures.applyHealthTextColor(cache.rightFS, unit)
+        end
+
+        -- Check center TextString (used in NUMERIC display mode)
+        if valueCfg and valueCfg.colorMode == "value" and cache.textStringFS then
+            addon.BarsTextures.applyHealthTextColor(cache.textStringFS, unit)
+        end
+    end
+
     -- UNIT_HEALTH event handler for value-based coloring
     -- Also register UNIT_MAXHEALTH and UNIT_HEAL_PREDICTION to catch edge cases:
     -- - UNIT_MAXHEALTH: When max health changes (buffs, potions that heal to cap)
@@ -5374,21 +5415,24 @@ do
         if not unit then return end
 
         local bar, useDark = getHealthBarForUnit(unit)
-        if not bar then return end
+        if bar then
+            -- Apply value-based color using the color curve
+            -- Use the overlay texture if available (cleaner than modifying Blizzard's textures)
+            if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                local overlay = getValueColorOverlay(bar)
+                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
 
-        -- Apply value-based color using the color curve
-        -- Use the overlay texture if available (cleaner than modifying Blizzard's textures)
-        if addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-            local overlay = getValueColorOverlay(bar)
-            addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
-
-            -- Schedule safety reapply only for non-overlay bars (Player, Target, Focus, Boss)
-            -- where Blizzard's native coloring may fight ours. Overlay-active bars (party/raid)
-            -- don't need this — usePredicted=true eliminates the timing lag.
-            if not overlay and addon.BarsTextures.scheduleColorValidation then
-                addon.BarsTextures.scheduleColorValidation(bar, unit, nil, useDark)
+                -- Schedule safety reapply only for non-overlay bars (Player, Target, Focus, Boss)
+                -- where Blizzard's native coloring may fight ours. Overlay-active bars (party/raid)
+                -- don't need this — usePredicted=true eliminates the timing lag.
+                if not overlay and addon.BarsTextures.scheduleColorValidation then
+                    addon.BarsTextures.scheduleColorValidation(bar, unit, nil, useDark)
+                end
             end
         end
+
+        -- Update health text coloring (independent of bar color mode)
+        applyHealthTextValueColor(unit)
     end)
 
     -- Also register for PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED
@@ -5402,12 +5446,14 @@ do
                 local overlay = getValueColorOverlay(bar)
                 addon.BarsTextures.applyValueBasedColor(bar, "target", overlay, useDark)
             end
+            applyHealthTextValueColor("target")
         elseif event == "PLAYER_FOCUS_CHANGED" then
             local bar, useDark = getHealthBarForUnit("focus")
             if bar and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                 local overlay = getValueColorOverlay(bar)
                 addon.BarsTextures.applyValueBasedColor(bar, "focus", overlay, useDark)
             end
+            applyHealthTextValueColor("focus")
         end
     end)
 
@@ -5430,6 +5476,8 @@ do
                     addon.BarsTextures.applyValueBasedColor(self, unitToken, overlay, useDark)
                 end
             end
+            -- Update health text coloring on SetValue for instant response
+            applyHealthTextValueColor(unitToken)
         end)
     end
 

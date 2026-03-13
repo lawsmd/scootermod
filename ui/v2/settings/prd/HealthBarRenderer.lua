@@ -23,7 +23,7 @@ function HealthBar.Render(panel, scrollContent)
     local h = Helpers.CreateComponentHelpers("prdHealth")
     local getComponent, getSetting = h.getComponent, h.get
     local setSetting = h.setAndApplyComponent
-    local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
+    local textColorValues, textColorOrder = Helpers.textColorHealthValues, Helpers.textColorHealthOrder
 
     -- Build border options
     local function getBorderOptions()

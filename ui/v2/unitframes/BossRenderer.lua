@@ -371,10 +371,10 @@ function UF.RenderBoss(panel, scrollContent)
                     style = function(cf, tabInner) buildStyleTab(tabInner, "healthBar", applyBarTextures) end,
                     border = function(cf, tabInner) buildBorderTab(tabInner, "healthBar", applyBarTextures) end,
                     percentText = function(cf, tabInner)
-                        buildTextTab(tabInner, "textHealthPercent", applyHealthText, "LEFT")
+                        buildTextTab(tabInner, "textHealthPercent", applyHealthText, "LEFT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
                     end,
                     valueText = function(cf, tabInner)
-                        buildTextTab(tabInner, "textHealthValue", applyHealthText, "RIGHT")
+                        buildTextTab(tabInner, "textHealthValue", applyHealthText, "RIGHT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
                     end,
                 },
             })

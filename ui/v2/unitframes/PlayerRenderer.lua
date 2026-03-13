@@ -298,11 +298,11 @@ function UF.RenderPlayer(panel, scrollContent)
                         buildHealthVisibilityTab(tabInner)
                     end,
                     percentText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textHealthPercent", ensureUFDB, ensureTextDB, applyHealthText, "LEFT")
+                        UF.Builders.buildTextTabContent(tabInner, "textHealthPercent", ensureUFDB, ensureTextDB, applyHealthText, "LEFT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
                         tabInner:Finalize()
                     end,
                     valueText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textHealthValue", ensureUFDB, ensureTextDB, applyHealthText, "RIGHT")
+                        UF.Builders.buildTextTabContent(tabInner, "textHealthValue", ensureUFDB, ensureTextDB, applyHealthText, "RIGHT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
                         tabInner:Finalize()
                     end,
                 },

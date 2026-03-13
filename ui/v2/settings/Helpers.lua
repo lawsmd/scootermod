@@ -174,6 +174,24 @@ Helpers.textColorValues = {
 }
 Helpers.textColorOrder = { "default", "class", "custom" }
 
+-- Text color mode options for health value/percentage text (adds "Color by Value")
+Helpers.textColorHealthValues = {
+    default = "Default",
+    class = "Class Color",
+    value = "Color by Value",
+    custom = "Custom",
+}
+Helpers.textColorHealthOrder = { "default", "class", "value", "custom" }
+
+-- Text color mode options for cooldown duration text (adds "Color by Duration")
+Helpers.textColorDurationValues = {
+    default = "Default",
+    class = "Class Color",
+    duration = "Color by Duration",
+    custom = "Custom",
+}
+Helpers.textColorDurationOrder = { "default", "class", "duration", "custom" }
+
 -- Text color mode options with class power color
 Helpers.textColorPowerValues = {
     default = "Default",

@@ -316,6 +316,15 @@ UF.fontColorValues = {
 }
 UF.fontColorOrder = { "default", "class", "custom" }
 
+-- Font color mode options for health text (adds "Color by Value")
+UF.fontColorHealthValues = {
+    default = "Default",
+    class = "Class Color",
+    value = "Color by Value",
+    custom = "Custom",
+}
+UF.fontColorHealthOrder = { "default", "class", "value", "custom" }
+
 -- Font color mode options (power bar texts - adds Class Power Color)
 UF.fontColorPowerValues = {
     default = "Default",

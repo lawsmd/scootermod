@@ -56,6 +56,9 @@ local function resolveCDMColorRGBA(cfg)
         local c = cfg and cfg.color
         if c then return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end
         return 1, 1, 1, 1
+    elseif colorMode == "duration" then
+        -- Initial white; throttled OnUpdate/SetText hooks handle dynamic coloring
+        return 1, 1, 1, 1
     else
         return 1, 1, 1, 1
     end
@@ -402,6 +405,12 @@ local function releaseOverlay(overlay)
     overlay:ClearAllPoints()
     overlay:SetParent(UIParent)  -- Prevents holding CDM icon reference
     overlay:SetAlpha(1.0)  -- Reset alpha when returning to pool
+    -- Clear duration color state
+    overlay._cdStart = nil
+    overlay._cdDuration = nil
+    overlay._cdLastColorUpdate = nil
+    overlay._cdTimerFS = nil
+    overlay:SetScript("OnUpdate", nil)
     if overlay.cooldownText then
         overlay.cooldownText:SetText("")
         overlay.cooldownText:Hide()
@@ -730,6 +739,54 @@ end
 
 addon.ApplyFontStyleDirect = applyFontStyleDirect
 
+-- Duration color OnUpdate handler for CDM icon overlays.
+-- Throttled to ~3 updates/sec (0.33s interval) for minimal CPU overhead.
+local DURATION_COLOR_THROTTLE = 0.33
+
+local function overlayDurationColorOnUpdate(overlay, elapsed)
+    overlay._cdLastColorUpdate = (overlay._cdLastColorUpdate or 0) + elapsed
+    if overlay._cdLastColorUpdate < DURATION_COLOR_THROTTLE then return end
+    overlay._cdLastColorUpdate = 0
+
+    local start = overlay._cdStart
+    local duration = overlay._cdDuration
+    if not start or not duration or duration <= 0 then return end
+
+    local now = GetTime()
+    local ok, remaining = pcall(function() return (start + duration) - now end)
+    if not ok or type(remaining) ~= "number" then return end
+
+    if remaining <= 0 then
+        -- Cooldown expired, remove OnUpdate
+        overlay:SetScript("OnUpdate", nil)
+        overlay._cdLastColorUpdate = nil
+        return
+    end
+
+    local pct = remaining / duration
+    if addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
+        local r, g, b = addon.BarsTextures.getDurationColorRGB(pct)
+        -- Use the actual Blizzard timer FontString stored during applyCooldownTextStyle
+        local fs = overlay._cdTimerFS
+        if fs and fs.SetTextColor then
+            pcall(fs.SetTextColor, fs, r, g, b, 1)
+        end
+    end
+end
+
+-- Install or remove duration color OnUpdate on an overlay
+local function manageDurationColorOnUpdate(overlay, cfg)
+    if not overlay then return end
+    local colorMode = cfg and cfg.colorMode
+    if colorMode == "duration" and overlay._cdStart and overlay._cdDuration and overlay._cdDuration > 0 then
+        overlay._cdLastColorUpdate = 0
+        overlay:SetScript("OnUpdate", overlayDurationColorOnUpdate)
+    else
+        overlay:SetScript("OnUpdate", nil)
+        overlay._cdLastColorUpdate = nil
+    end
+end
+
 -- Apply cooldown text styling when a cooldown is set
 local function applyCooldownTextStyle(cooldownFrame)
     if not cooldownFrame then return end
@@ -759,6 +816,17 @@ local function applyCooldownTextStyle(cooldownFrame)
             -- Cooldown text uses CENTER anchor by default
             applyFontStyleDirect(fontString, cfg, false, cooldownFrame)
         end
+
+        -- Install/remove throttled duration color OnUpdate on the overlay
+        if parent then
+            local overlay = activeOverlays[parent]
+            if overlay then
+                -- Store reference to the actual Blizzard timer FontString
+                -- so the OnUpdate can color it (not overlay.cooldownText which is empty)
+                overlay._cdTimerFS = fontString
+                manageDurationColorOnUpdate(overlay, cfg)
+            end
+        end
     end
 
     -- Style charge/stack count text (independent of cooldown text config)
@@ -785,9 +853,32 @@ local function hookCooldownTextStyling()
             if not cooldownFrame then return end
             if cooldownFrame.IsForbidden and cooldownFrame:IsForbidden() then return end
 
+            -- Capture timing for duration-based text coloring (safe locals for closure)
+            local safeStart = type(start) == "number" and not (issecretvalue and issecretvalue(start)) and start or nil
+            local safeDuration = type(duration) == "number" and not (issecretvalue and issecretvalue(duration)) and duration or nil
+
+            -- Store timing on overlay if it exists now
+            local parent = cooldownFrame:GetParent()
+            if parent then
+                local overlay = activeOverlays[parent]
+                if overlay then
+                    if safeStart then overlay._cdStart = safeStart end
+                    if safeDuration then overlay._cdDuration = safeDuration end
+                end
+            end
+
             -- Defer text styling to next frame for safety
             C_Timer.After(0, function()
                 if cooldownFrame and not (cooldownFrame.IsForbidden and cooldownFrame:IsForbidden()) then
+                    -- Also store timing on overlay here (overlay may not have existed above)
+                    local p = cooldownFrame:GetParent()
+                    if p then
+                        local ov = activeOverlays[p]
+                        if ov then
+                            if safeStart then ov._cdStart = safeStart end
+                            if safeDuration then ov._cdDuration = safeDuration end
+                        end
+                    end
                     pcall(applyCooldownTextStyle, cooldownFrame)
                 end
             end)

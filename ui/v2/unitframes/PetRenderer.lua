@@ -368,8 +368,8 @@ local function buildHealthPercentTextTab(inner)
 
     inner:AddSelectorColorPicker({
         label = "% Text Color",
-        values = UF.fontColorValues,
-        order = UF.fontColorOrder,
+        values = UF.fontColorHealthValues,
+        order = UF.fontColorHealthOrder,
         get = function()
             local s = ensureTextDB("textHealthPercent") or {}
             return s.colorMode or "default"
@@ -522,8 +522,8 @@ local function buildHealthValueTextTab(inner)
 
     inner:AddSelectorColorPicker({
         label = "Value Text Color",
-        values = UF.fontColorValues,
-        order = UF.fontColorOrder,
+        values = UF.fontColorHealthValues,
+        order = UF.fontColorHealthOrder,
         get = function()
             local s = ensureTextDB("textHealthValue") or {}
             return s.colorMode or "default"

@@ -407,6 +407,15 @@ do
             if unitToken then unitToken = unitToken:lower() end
             local cr, cg, cb = addon.GetClassColorRGB(unitToken or "player")
             c = {cr or 1, cg or 1, cb or 1, 1}
+        elseif colorMode == "value" then
+            -- "Color by Value": use health-based color curve (secret-safe)
+            local unitToken = baselineKey and baselineKey:match("^(.-):")
+            if unitToken then unitToken = unitToken:lower() end
+            if unitToken and addon.BarsTextures and addon.BarsTextures.applyHealthTextColor then
+                addon.BarsTextures.applyHealthTextColor(fs, unitToken)
+            else
+                c = {0, 1, 0, 1} -- fallback green
+            end
         elseif colorMode == "custom" then
             c = styleCfg.color or {1, 1, 1, 1}
         else
@@ -418,7 +427,7 @@ do
                 c = {1, 1, 1, 1}
             end
         end
-        if fs.SetTextColor then
+        if c and fs.SetTextColor then
             pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         end
 

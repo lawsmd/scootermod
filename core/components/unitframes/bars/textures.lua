@@ -717,6 +717,61 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
     end
 end
 
+--------------------------------------------------------------------------------
+-- Duration Color Interpolation (for cooldown timer text)
+--------------------------------------------------------------------------------
+-- Returns r,g,b for a remaining-duration percentage (0.0 = expired, 1.0 = full).
+-- Pure Lua math — ~5 arithmetic ops per call. No C_CurveUtil dependency.
+--
+-- Gradient:
+--   pct >= 0.50   → White (1, 1, 1)
+--   pct 0.50→0.35 → White→Green  (r 1→0, g 1, b 1→0)
+--   pct 0.35→0.20 → Green→Yellow (r 0→1, g 1, b 0)
+--   pct 0.20→0.00 → Yellow→DarkRed (r 1→0.8, g 1→0.1, b 0→0.1)
+--------------------------------------------------------------------------------
+
+function Textures.getDurationColorRGB(pct)
+    if type(pct) ~= "number" then return 1, 1, 1 end
+    if pct >= 0.50 then
+        return 1, 1, 1
+    elseif pct >= 0.35 then
+        -- White→Green: lerp over 0.50→0.35
+        local t = (0.50 - pct) / 0.15
+        return 1 - t, 1, 1 - t
+    elseif pct >= 0.20 then
+        -- Green→Yellow: lerp over 0.35→0.20
+        local t = (0.35 - pct) / 0.15
+        return t, 1, 0
+    else
+        -- Yellow→DarkRed: lerp over 0.20→0.00
+        local t = (pct >= 0) and (1 - pct / 0.20) or 1
+        return 1 - 0.2 * t, 1 - 0.9 * t, 0.1 * t
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Health Text Color Helper (for "Color by Value" text mode)
+--------------------------------------------------------------------------------
+-- Uses UnitHealthPercent(unit, true, curve) to get a secret-safe color,
+-- then applies it to a FontString via SetTextColor.
+--------------------------------------------------------------------------------
+
+function Textures.applyHealthTextColor(fontString, unit, useDark)
+    if not fontString or not unit then return end
+    if not fontString.SetTextColor then return end
+
+    local curve = useDark and getHealthValueDarkCurve() or getHealthValueCurve()
+    if not curve then return end
+    if not _G.UnitHealthPercent then return end
+
+    local ok, color = pcall(UnitHealthPercent, unit, true, curve)
+    if not ok or not color then return end
+    if type(color) == "number" or not color.GetRGB then return end
+
+    local r, g, b = color:GetRGB()
+    pcall(fontString.SetTextColor, fontString, r, g, b, 1)
+end
+
 -- Expose helpers to addon namespace for other modules (Cast Bar styling, etc.)
 addon._ApplyToStatusBar = Textures.applyToBar
 addon._ApplyBackgroundToStatusBar = Textures.applyBackgroundToBar
