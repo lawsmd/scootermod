@@ -142,6 +142,52 @@ function DamageMeter.Render(panel, scrollContent)
         end,
     })
 
+    -- Exports section
+    builder:AddCollapsibleSection({
+        title = "Exports",
+        componentId = "damageMeter",
+        sectionKey = "exports",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Enable Meter Exports",
+                description = "Show an export button on each damage meter window's title bar. Lets you export meter data to a High Score window or to chat.",
+                get = function() return getSetting("exportEnabled") or false end,
+                set = function(value)
+                    setSetting("exportEnabled", value)
+                end,
+            })
+
+            inner:AddTabbedSection({
+                componentId = "damageMeter",
+                sectionKey = "exportsTabs",
+                tabs = {
+                    { key = "windowExport", label = "Window Export" },
+                    { key = "titleBarButton", label = "Title Bar Button" },
+                },
+                buildContent = {
+                    windowExport = function(tabContent, tabInner)
+                        tabInner:AddDescription("Settings coming soon.")
+                        tabInner:Finalize()
+                    end,
+                    titleBarButton = function(tabContent, tabInner)
+                        tabInner:AddDescription("Customize this button in the Damage Meters > Title Bar > Buttons section.")
+                        tabInner:AddSlider({
+                            label = "X-Offset",
+                            description = "Adjust the horizontal position of the export button on the title bar.",
+                            min = -50, max = 50, step = 1,
+                            get = function() return getSetting("exportButtonXOffset") or 0 end,
+                            set = function(value) setSetting("exportButtonXOffset", value) end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Layout section
     builder:AddCollapsibleSection({
         title = "Layout",

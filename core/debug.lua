@@ -1907,15 +1907,6 @@ function addon.DebugExportDamageMeters(sessionOverride)
         addon:Print("Export only available out of combat.")
         return
     end
-    if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
-        addon:Print("Damage Meter API not available.")
-        return
-    end
-    local isAvailable, failureReason = C_DamageMeter.IsDamageMeterAvailable()
-    if not isAvailable then
-        addon:Print("Damage Meter not available: " .. (failureReason or "unknown"))
-        return
-    end
 
     -- Determine session type + primary meter type from window 1
     local sessionType = Enum.DamageMeterSessionType.Overall
@@ -1937,136 +1928,17 @@ function addon.DebugExportDamageMeters(sessionOverride)
         if st then sessionType = st end
     end
 
-    -- Column layout based on primary meter type
-    local DMT = Enum.DamageMeterType
-    local columnMap = {
-        [DMT.DamageDone]            = { DMT.Dps,                DMT.DamageDone,   DMT.Deaths, DMT.Interrupts },
-        [DMT.Dps]                   = { DMT.Dps,                DMT.DamageDone,   DMT.Deaths, DMT.Interrupts },
-        [DMT.HealingDone]           = { DMT.Hps,                DMT.HealingDone,  DMT.Deaths, DMT.Interrupts },
-        [DMT.Hps]                   = { DMT.Hps,                DMT.HealingDone,  DMT.Deaths, DMT.Interrupts },
-        [DMT.Deaths]                = { DMT.Deaths,             DMT.Dps,          DMT.DamageDone, DMT.Interrupts },
-        [DMT.Interrupts]            = { DMT.Interrupts,         DMT.Dps,          DMT.DamageDone, DMT.Deaths },
-        [DMT.Absorbs]               = { DMT.Absorbs,            DMT.Dps,          DMT.DamageDone, DMT.Deaths },
-        [DMT.Dispels]               = { DMT.Dispels,            DMT.Dps,          DMT.DamageDone, DMT.Deaths },
-        [DMT.DamageTaken]           = { DMT.DamageTaken,        DMT.Dps,          DMT.DamageDone, DMT.Deaths },
-        [DMT.AvoidableDamageTaken]  = { DMT.AvoidableDamageTaken, DMT.Dps,        DMT.DamageDone, DMT.Deaths },
-        [DMT.EnemyDamageTaken]      = { DMT.EnemyDamageTaken,   DMT.Dps,          DMT.DamageDone, DMT.Deaths },
-    }
-    local columns = columnMap[primaryMeterType] or columnMap[DMT.Dps]
-
-    -- Display names
-    local meterNames = {
-        [DMT.DamageDone] = "Damage",     [DMT.Dps] = "DPS",
-        [DMT.HealingDone] = "Healing",   [DMT.Hps] = "HPS",
-        [DMT.Absorbs] = "Absorbs",       [DMT.Interrupts] = "Interrupts",
-        [DMT.Dispels] = "Dispels",       [DMT.DamageTaken] = "Dmg Taken",
-        [DMT.AvoidableDamageTaken] = "Avoidable", [DMT.Deaths] = "Deaths",
-        [DMT.EnemyDamageTaken] = "Enemy Dmg",
-    }
-    local sessionLabels = {
-        [Enum.DamageMeterSessionType.Overall] = "Overall",
-        [Enum.DamageMeterSessionType.Current] = "Current",
-        [Enum.DamageMeterSessionType.Expired] = "Expired",
-    }
-
-    -- Rate metrics show amountPerSecond; count metrics show integer total; rest show abbreviated total
-    local rateMetrics = { [DMT.Dps] = true, [DMT.Hps] = true }
-    local countMetrics = { [DMT.Deaths] = true, [DMT.Interrupts] = true, [DMT.Dispels] = true }
-
-    -- Query all column meter types
-    local sessionData = {}
-    for _, mt in ipairs(columns) do
-        if not sessionData[mt] then
-            local ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, mt)
-            if ok and result then sessionData[mt] = result end
-        end
-    end
-
-    -- Primary session for ordering (pre-sorted by engine)
-    local primarySession = sessionData[columns[1]]
-    if not primarySession or not primarySession.combatSources or #primarySession.combatSources == 0 then
-        addon:Print("No data available for " .. (sessionLabels[sessionType] or "this") .. " session.")
+    -- Use shared data gathering function
+    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
+    if not data then
+        addon:Print(err or "No export data available.")
         return
-    end
-
-    -- Build player table keyed by GUID, preserving primary sort order
-    local players = {}
-    local playerOrder = {}
-    for _, source in ipairs(primarySession.combatSources) do
-        local guid = source.sourceGUID
-        if guid and not players[guid] then
-            players[guid] = {
-                name = source.name or "Unknown",
-                classFilename = source.classFilename or "",
-                isLocalPlayer = source.isLocalPlayer,
-                values = {},
-            }
-            players[guid].values[columns[1]] = {
-                total = source.totalAmount,
-                perSec = source.amountPerSecond,
-            }
-            table.insert(playerOrder, guid)
-        end
-    end
-
-    -- Merge secondary columns by GUID
-    for i = 2, #columns do
-        local mt = columns[i]
-        local data = sessionData[mt]
-        if data and data.combatSources then
-            for _, source in ipairs(data.combatSources) do
-                local guid = source.sourceGUID
-                if guid and players[guid] and not players[guid].values[mt] then
-                    players[guid].values[mt] = {
-                        total = source.totalAmount,
-                        perSec = source.amountPerSecond,
-                    }
-                end
-            end
-        end
-    end
-
-    -- Duration
-    local duration = primarySession.durationSeconds
-    if not duration then
-        local ok, dur = pcall(C_DamageMeter.GetSessionDurationSeconds, sessionType)
-        if ok then duration = dur end
-    end
-
-    -- Helpers
-    local function FormatNumber(n)
-        if not n or n == 0 then return "0" end
-        if n >= 1000000000 then return string.format("%.1fB", n / 1000000000)
-        elseif n >= 1000000 then return string.format("%.1fM", n / 1000000)
-        elseif n >= 1000 then return string.format("%.1fK", n / 1000)
-        else return string.format("%.0f", n) end
-    end
-
-    local function FormatDuration(sec)
-        if not sec or sec <= 0 then return "0s" end
-        local m = math.floor(sec / 60)
-        local s = math.floor(sec % 60)
-        return m > 0 and string.format("%dm %02ds", m, s) or string.format("%ds", s)
-    end
-
-    local function GetDisplayValue(guid, mt)
-        local v = players[guid] and players[guid].values[mt]
-        if not v then return "-" end
-        if rateMetrics[mt] then return FormatNumber(v.perSec)
-        elseif countMetrics[mt] then return tostring(math.floor(v.total))
-        else return FormatNumber(v.total) end
-    end
-
-    -- Column headers
-    local colHeaders = {}
-    for _, mt in ipairs(columns) do
-        table.insert(colHeaders, meterNames[mt] or "?")
     end
 
     -- Dynamic name column width
     local nameW = 16
-    for _, guid in ipairs(playerOrder) do
-        local n = #(players[guid].name or "")
+    for _, guid in ipairs(data.playerOrder) do
+        local n = #(data.players[guid].name or "")
         if n > nameW then nameW = n end
     end
     nameW = math.min(nameW, 20)
@@ -2074,30 +1946,29 @@ function addon.DebugExportDamageMeters(sessionOverride)
 
     -- Build output
     local lines = {}
-    local sessionLabel = sessionLabels[sessionType] or "Unknown"
-    table.insert(lines, string.format("Scoot Damage Meter Export  --  %s (%s)", sessionLabel, FormatDuration(duration)))
+    table.insert(lines, string.format("Scoot Damage Meter Export  --  %s (%s)", data.sessionLabel, data.FormatDuration(data.duration)))
 
-    local totalW = 4 + nameW + (#columns * (colW + 1))
+    local totalW = 4 + nameW + (#data.columns * (colW + 1))
     local sep = string.rep("-", totalW)
     table.insert(lines, sep)
 
     -- Header row
     local hdr = { string.format("%-3s %-" .. nameW .. "s", "#", "Player") }
-    for _, h in ipairs(colHeaders) do
+    for _, h in ipairs(data.columnNames) do
         table.insert(hdr, string.format("%" .. colW .. "s", h))
     end
     table.insert(lines, table.concat(hdr, " "))
     table.insert(lines, sep)
 
     -- Data rows
-    for rank, guid in ipairs(playerOrder) do
-        local p = players[guid]
+    for rank, guid in ipairs(data.playerOrder) do
+        local p = data.players[guid]
         local name = p.name or "Unknown"
         if #name > nameW then name = string.sub(name, 1, nameW) end
 
         local row = { string.format("%-3d %-" .. nameW .. "s", rank, name) }
-        for _, mt in ipairs(columns) do
-            table.insert(row, string.format("%" .. colW .. "s", GetDisplayValue(guid, mt)))
+        for _, mt in ipairs(data.columns) do
+            table.insert(row, string.format("%" .. colW .. "s", data.GetDisplayValue(guid, mt)))
         end
         local line = table.concat(row, " ")
         if p.isLocalPlayer then line = line .. "  *" end
@@ -2105,18 +1976,8 @@ function addon.DebugExportDamageMeters(sessionOverride)
     end
 
     table.insert(lines, sep)
-
-    -- Footer: instance, player count, timestamp
-    local instName, instType, _, diffName = GetInstanceInfo()
-    local instLabel
-    if instName and instName ~= "" and instType ~= "none" then
-        instLabel = (diffName and diffName ~= "") and (instName .. " (" .. diffName .. ")") or instName
-    else
-        instLabel = (instName and instName ~= "") and instName or "Open World"
-    end
-
     table.insert(lines, string.format("Instance: %s | Players: %d | %s",
-        instLabel, #playerOrder, date("%Y-%m-%d %H:%M")))
+        data.instanceLabel, data.playerCount, data.timestamp))
 
     ShowDebugCopyWindow("Damage Meter Export", table.concat(lines, "\n"))
 end

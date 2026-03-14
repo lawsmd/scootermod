@@ -243,7 +243,7 @@ local PIXEL_FONTS = {
     "DOGICA_REG", "DOGICA_BOLD", "DOGICA_PIXEL", "DOGICA_PIXELBOLD",
     "PIXELOP_REG", "PIXELOP_BOLD", "PIXELOP_MONO", "PIXELOP_MONOBOLD",
     "PIXELOP_SC", "PIXELOP_SCBOLD",
-    "RAINYHEARTS", "FONT_04B30", "MINECRAFT",
+    "RAINYHEARTS", "FONT_04B30", "MINECRAFT", "PRESS_START_2P",
 }
 
 local FONT_TABS = {
@@ -910,6 +910,7 @@ do
     f.RAINYHEARTS      = base .. "rainyhearts.ttf"
     f.FONT_04B30       = base .. "04B_30__.TTF"
     f.MINECRAFT        = base .. "Minecraft.ttf"
+    f.PRESS_START_2P   = base .. "PressStart2P-Regular.ttf"
 end
 
 -- Human-readable display names for the font dropdown
@@ -1009,6 +1010,7 @@ addon.FontDisplayNames = {
     RAINYHEARTS      = "Rainy Hearts",
     FONT_04B30       = "04B_30",
     MINECRAFT        = "Minecraft",
+    PRESS_START_2P   = "Press Start 2P",
 }
 
 
