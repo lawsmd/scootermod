@@ -153,18 +153,18 @@ function Controls:CreateToggle(options)
 
         -- Deferred height measurement after text layout completes
         local function MeasureAndAdjustHeight()
-            if not row or not descFS then return end
+            if not row or not descFS then return false end
 
             -- Get the row's effective width (try row, then parent)
             local rowWidth = row:GetWidth()
             if rowWidth == 0 and row:GetParent() then
                 rowWidth = row:GetParent():GetWidth() or 0
             end
-            if rowWidth == 0 then return end
+            if rowWidth == 0 then return false end
 
             -- Calculate available width for description text
             local descAvailableWidth = rowWidth - indicatorWidth - (TOGGLE_PADDING * 2) - labelLeftPad
-            if descAvailableWidth <= 0 then return end
+            if descAvailableWidth <= 0 then return false end
 
             -- Explicitly set description width so GetStringHeight returns wrapped height
             descFS:SetWidth(descAvailableWidth)
@@ -177,11 +177,17 @@ function Controls:CreateToggle(options)
             local currentHeight = row:GetHeight()
             if requiredHeight > currentHeight then
                 row:SetHeight(requiredHeight)
+                if row._onHeightChanged then
+                    row._onHeightChanged(requiredHeight - currentHeight)
+                end
             end
+            return true
         end
 
-        -- Try measuring after a short delay
-        C_Timer.After(0.1, MeasureAndAdjustHeight)
+        -- Try immediate measurement, fall back to deferred
+        if not MeasureAndAdjustHeight() then
+            C_Timer.After(0.1, MeasureAndAdjustHeight)
+        end
     end
 
     -- State indicator container (right side)

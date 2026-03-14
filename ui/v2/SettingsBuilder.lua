@@ -213,6 +213,14 @@ function Builder:AddToggle(options)
 
         -- Update Y position
         self._currentY = self._currentY - toggle:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            toggle._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
@@ -605,6 +613,14 @@ function Builder:AddSelector(options)
 
         -- Update Y position
         self._currentY = self._currentY - selector:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            selector._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
@@ -703,6 +719,14 @@ function Builder:AddSlider(options)
 
         -- Update Y position
         self._currentY = self._currentY - slider:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            slider._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
@@ -1043,6 +1067,14 @@ function Builder:AddColorPicker(options)
 
         -- Update Y position
         self._currentY = self._currentY - colorPicker:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            colorPicker._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
@@ -1104,6 +1136,14 @@ function Builder:AddToggleColorPicker(options)
 
         -- Update Y position
         self._currentY = self._currentY - toggleColor:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            toggleColor._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
@@ -1170,6 +1210,14 @@ function Builder:AddSelectorColorPicker(options)
 
         -- Update Y position
         self._currentY = self._currentY - selectorColor:GetHeight()
+
+        -- Propagate deferred height changes to parent collapsible
+        if self._parentCollapsible then
+            local parentCollapsible = self._parentCollapsible
+            selectorColor._onHeightChanged = function(delta)
+                parentCollapsible:SetContentHeight(parentCollapsible._contentHeight + delta)
+            end
+        end
     end
 
     return self
