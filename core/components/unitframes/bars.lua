@@ -5429,16 +5429,19 @@ do
         if not addon.BarsTextures or not addon.BarsTextures.applyHealthTextColor then return end
 
         -- Map unit token (lowercase) to unitFrames config key (capitalized)
-        -- _ufHealthTextFonts cache is keyed by capitalized names ("Player", "Target", etc.)
-        local unitKey
-        if unit == "player" then unitKey = "Player"
-        elseif unit == "target" then unitKey = "Target"
-        elseif unit == "focus" then unitKey = "Focus"
-        elseif unit == "pet" then unitKey = "Pet"
-        elseif unit:match("^boss%d$") then unitKey = "Boss"
+        -- unitKey = config key in db.unitFrames ("Boss" for all boss frames)
+        -- cacheKey = per-frame key in _ufHealthTextFonts ("Boss1", "Boss2", etc.)
+        local unitKey, cacheKey
+        if unit == "player" then unitKey = "Player"; cacheKey = "Player"
+        elseif unit == "target" then unitKey = "Target"; cacheKey = "Target"
+        elseif unit == "focus" then unitKey = "Focus"; cacheKey = "Focus"
+        elseif unit == "pet" then unitKey = "Pet"; cacheKey = "Pet"
+        elseif unit:match("^boss%d$") then
+            unitKey = "Boss"
+            cacheKey = "Boss" .. unit:match("^boss(%d)$")
         else return end
 
-        local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[unitKey]
+        local cache = addon._ufHealthTextFonts and addon._ufHealthTextFonts[cacheKey]
         if not cache then return end
 
         local db = addon.db and addon.db.profile

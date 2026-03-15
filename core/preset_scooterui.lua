@@ -4505,7 +4505,6 @@ Presets:Register({
           size = 8,
           style = "THICKOUTLINE",
         },
-        widthPct = 75,
       },
       frameSpacingYDelta = -60,
       healthBarBackgroundTexture = "a3",

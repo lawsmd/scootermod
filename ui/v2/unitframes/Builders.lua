@@ -230,7 +230,8 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
     defaultAlignment = defaultAlignment or "LEFT"
     colorValues = colorValues or UF.fontColorValues
     colorOrder = colorOrder or UF.fontColorOrder
-    local hiddenKey = textKey:gsub("text", ""):lower() .. "Hidden"
+    local stripped = textKey:gsub("^text", "")
+    local hiddenKey = stripped:sub(1,1):lower() .. stripped:sub(2) .. "Hidden"
 
     inner:AddToggle({
         label = "Disable Text",

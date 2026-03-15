@@ -298,7 +298,8 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
     defaultAlignment = defaultAlignment or "LEFT"
     colorValues = colorValues or UF.fontColorValues
     colorOrder = colorOrder or UF.fontColorOrder
-    local hiddenKey = textKey:gsub("text", ""):lower() .. "Hidden"
+    local stripped = textKey:gsub("^text", "")
+    local hiddenKey = stripped:sub(1,1):lower() .. stripped:sub(2) .. "Hidden"
 
     inner:AddToggle({
         label = "Disable Text",
@@ -1233,7 +1234,9 @@ function UF.RenderTarget(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBackgroundOpacity) or 50 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBackgroundOpacity = tonumber(v) or 50; applyCastBar() end end,
                         })
-                        tabInner:AddSpacer(8)
+                        tabInner:Finalize()
+                    end,
+                    spark = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Spark",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSparkHidden end,
@@ -1299,6 +1302,11 @@ function UF.RenderTarget(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return not not t.iconDisabled end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.iconDisabled = v and true or false; applyCastBar() end end,
                         })
+                        tabInner:AddToggle({
+                            label = "Hide Icon Backdrop (Shield)",
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderShieldHidden end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderShieldHidden = v and true or false; applyCastBar() end end,
+                        })
                         tabInner:AddSlider({
                             label = "Icon Size", min = 10, max = 64, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24 end,
@@ -1326,6 +1334,11 @@ function UF.RenderTarget(panel, scrollContent)
                             label = "Hide Spell Name",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSpellNameHidden end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarSpellNameHidden = v and true or false; applyCastBar() end end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Spell Name Border",
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.hideSpellNameBorder end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.hideSpellNameBorder = v and true or false; applyCastBar() end end,
                         })
                         tabInner:AddFontSelector({
                             label = "Spell Name Font",

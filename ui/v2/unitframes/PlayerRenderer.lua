@@ -1215,7 +1215,9 @@ function UF.RenderPlayer(panel, scrollContent)
                     end,
                     style = function(cf, tabInner)
                         UF.Builders.buildBarStyleContent(tabInner, "castBar", ensureCastBarDB, applyCastBar)
-                        tabInner:AddSpacer(8)
+                        tabInner:Finalize()
+                    end,
+                    spark = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Spark",
                             get = function()
@@ -1287,6 +1289,19 @@ function UF.RenderPlayer(panel, scrollContent)
                                 local t = ensureCastBarDB()
                                 if not t then return end
                                 t.iconDisabled = v and true or false
+                                applyCastBar()
+                            end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Icon Backdrop (Shield)",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.castBarBorderShieldHidden
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.castBarBorderShieldHidden = v and true or false
                                 applyCastBar()
                             end,
                         })

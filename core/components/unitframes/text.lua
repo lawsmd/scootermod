@@ -59,6 +59,28 @@ local function getBarWidthForAlignment(fs)
     return 120
 end
 
+-- Resolve boss name FontString from a boss frame. Promoted to addon namespace so both
+-- the health/power text positioning code and the boss name/level block can use it.
+function addon.ResolveBossNameFS(bossFrame)
+    return (bossFrame and (bossFrame.name
+        or (bossFrame.TargetFrameContent
+            and bossFrame.TargetFrameContent.TargetFrameContentMain
+            and bossFrame.TargetFrameContent.TargetFrameContentMain.Name)))
+        or nil
+end
+
+-- Map of name-anchor positions to { textPoint, namePoint, justifyH, gapX, gapY }
+local NAME_ANCHOR_MAP = {
+    LEFT_OF_NAME  = { "RIGHT",       "LEFT",        "RIGHT",  -2, 0 },
+    RIGHT_OF_NAME = { "LEFT",        "RIGHT",       "LEFT",    2, 0 },
+    TOP_LEFT      = { "BOTTOMLEFT",  "TOPLEFT",     "LEFT",    0, 2 },
+    TOP           = { "BOTTOM",      "TOP",         "CENTER",  0, 2 },
+    TOP_RIGHT     = { "BOTTOMRIGHT", "TOPRIGHT",    "RIGHT",   0, 2 },
+    BOTTOM_LEFT   = { "TOPLEFT",     "BOTTOMLEFT",  "LEFT",    0, -2 },
+    BOTTOM        = { "TOP",         "BOTTOM",      "CENTER",  0, -2 },
+    BOTTOM_RIGHT  = { "TOPRIGHT",    "BOTTOMRIGHT", "RIGHT",   0, -2 },
+}
+
 local function isEditModeActive()
 	if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
 		return addon.EditMode.IsEditModeActiveOrOpening()
@@ -302,7 +324,7 @@ do
         if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
             return true
         end
-        if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+        if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil or styleCfg.alignmentMode ~= nil then
             return true
         end
         if styleCfg.colorMode ~= nil and styleCfg.colorMode ~= "default" then
@@ -436,7 +458,25 @@ do
         -- text positioning. Width/alignment changes are only appropriate when the user has
         -- explicitly configured layout-related settings.
         local hasLayoutCustomization = styleCfg.alignment ~= nil
+            or styleCfg.alignmentMode ~= nil
             or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
+
+        -- Ensure name-anchor reparenting is undone if layout customizations are removed
+        if not hasLayoutCustomization then
+            local fst = ensureFS()
+            if fst then
+                local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
+                if origParent and fs.SetParent then
+                    pcall(fs.SetParent, fs, origParent)
+                    local origLayer = fst.GetProp(fs, "nameAnchorOrigLayer") or "OVERLAY"
+                    local origSub = fst.GetProp(fs, "nameAnchorOrigSublayer") or 1
+                    pcall(fs.SetDrawLayer, fs, origLayer, origSub)
+                    fst.SetProp(fs, "nameAnchorOrigParent", nil)
+                    fst.SetProp(fs, "nameAnchorOrigLayer", nil)
+                    fst.SetProp(fs, "nameAnchorOrigSublayer", nil)
+                end
+            end
+        end
 
         if hasLayoutCustomization then
             -- Determine default alignment based on text role
@@ -457,25 +497,85 @@ do
             local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
             local yOffset = safeOffset(b.y) + oy
 
-            -- Use two-point anchoring to span the parent bar width.
-            -- Makes JustifyH work correctly without needing GetWidth() (which can
-            -- trigger secret value errors on unit frame StatusBars).
-            if fs.ClearAllPoints and fs.SetPoint and parentBar then
-                fs:ClearAllPoints()
-                -- Anchor both left and right edges to span the bar
-                -- Apply small padding (2px) plus user X offset for text inset
-                local leftPad = 2 + ox
-                local rightPad = -2 + ox
-                pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
-                pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
+            -- Name-anchor mode: position text relative to boss name FontString
+            local useNameAnchor = false
+            if styleCfg.alignmentMode == "name" and baselineKey and baselineKey:find("^Boss") then
+                local bossIdx = baselineKey:match("^Boss(%d+)")
+                if bossIdx then
+                    local bossFrame = _G and _G["Boss" .. bossIdx .. "TargetFrame"] or nil
+                    local nameFS = bossFrame and addon.ResolveBossNameFS(bossFrame) or nil
+                    if nameFS then
+                        local anchorKey = styleCfg.nameAnchor or "RIGHT_OF_NAME"
+                        local anchorInfo = NAME_ANCHOR_MAP[anchorKey]
+                        if anchorInfo then
+                            useNameAnchor = true
+                            -- Reparent to contentMain so SetPoint can target nameFS (same hierarchy)
+                            local contentMain = bossFrame.TargetFrameContent
+                                and bossFrame.TargetFrameContent.TargetFrameContentMain
+                            if contentMain and fs.SetParent then
+                                local fst = ensureFS()
+                                if fst and not fst.GetProp(fs, "nameAnchorOrigParent") then
+                                    fst.SetProp(fs, "nameAnchorOrigParent", fs:GetParent())
+                                    fst.SetProp(fs, "nameAnchorOrigLayer", select(1, fs:GetDrawLayer()))
+                                    fst.SetProp(fs, "nameAnchorOrigSublayer", select(2, fs:GetDrawLayer()))
+                                end
+                                pcall(fs.SetParent, fs, contentMain)
+                                pcall(fs.SetDrawLayer, fs, "OVERLAY", 7)
+                            end
+                            local textPt, namePt, justH, gapX, gapY = anchorInfo[1], anchorInfo[2], anchorInfo[3], anchorInfo[4], anchorInfo[5]
+                            if fs.ClearAllPoints and fs.SetPoint then
+                                fs:ClearAllPoints()
+                                pcall(fs.SetPoint, fs, textPt, nameFS, namePt, gapX + ox, gapY + oy)
+                            end
+                            if fs.SetJustifyH then
+                                pcall(fs.SetJustifyH, fs, justH)
+                            end
+                            -- Undo two-point width constraint — let text auto-size
+                            if fs.SetWidth then
+                                pcall(fs.SetWidth, fs, 0)
+                            end
+                            forceTextRedraw(fs)
+                        end
+                    end
+                end
             end
 
-            if fs.SetJustifyH then
-                pcall(fs.SetJustifyH, fs, alignment)
-            end
+            if not useNameAnchor then
+                -- Restore original parent if previously reparented for name-anchor mode
+                local fst = ensureFS()
+                if fst then
+                    local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
+                    if origParent and fs.SetParent then
+                        pcall(fs.SetParent, fs, origParent)
+                        local origLayer = fst.GetProp(fs, "nameAnchorOrigLayer") or "OVERLAY"
+                        local origSub = fst.GetProp(fs, "nameAnchorOrigSublayer") or 1
+                        pcall(fs.SetDrawLayer, fs, origLayer, origSub)
+                        fst.SetProp(fs, "nameAnchorOrigParent", nil)
+                        fst.SetProp(fs, "nameAnchorOrigLayer", nil)
+                        fst.SetProp(fs, "nameAnchorOrigSublayer", nil)
+                    end
+                end
 
-            -- Force redraw to apply alignment visually
-            forceTextRedraw(fs)
+                -- Bar-relative mode: two-point anchoring to span the parent bar width.
+                -- Makes JustifyH work correctly without needing GetWidth() (which can
+                -- trigger secret value errors on unit frame StatusBars).
+                if fs.ClearAllPoints and fs.SetPoint and parentBar then
+                    fs:ClearAllPoints()
+                    -- Anchor both left and right edges to span the bar
+                    -- Apply small padding (2px) plus user X offset for text inset
+                    local leftPad = 2 + ox
+                    local rightPad = -2 + ox
+                    pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
+                    pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
+                end
+
+                if fs.SetJustifyH then
+                    pcall(fs.SetJustifyH, fs, alignment)
+                end
+
+                -- Force redraw to apply alignment visually
+                forceTextRedraw(fs)
+            end
         end
     end
 
@@ -724,6 +824,12 @@ do
                 if centerFS then
                     applyTextStyle(centerFS, cfg.textHealthValue or {}, "Boss" .. tostring(i) .. ":health-center", hbContainer)
                 end
+
+                addon._ufHealthTextFonts["Boss" .. tostring(i)] = {
+                    leftFS = leftFS,
+                    rightFS = rightFS,
+                    textStringFS = centerFS,
+                }
 
                 -- DeadText / UnconsciousText: inherit font face + style from Health Value settings
                 local valueCfg = cfg.textHealthValue or {}
@@ -1106,7 +1212,7 @@ do
 		if styleCfg.fontFace ~= nil and styleCfg.fontFace ~= "" and styleCfg.fontFace ~= "FRIZQT__" then
 			return true
 		end
-		if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil then
+		if styleCfg.size ~= nil or styleCfg.style ~= nil or styleCfg.color ~= nil or styleCfg.alignment ~= nil or styleCfg.alignmentMode ~= nil then
 			return true
 		end
 		-- colorMode is used for Power Bar text to support "classPower" color
@@ -1180,7 +1286,25 @@ do
 		-- text positioning. Width/alignment changes are only appropriate when the user has
 		-- explicitly configured layout-related settings.
 		local hasLayoutCustomization = styleCfg.alignment ~= nil
+			or styleCfg.alignmentMode ~= nil
 			or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
+
+		-- Ensure name-anchor reparenting is undone if layout customizations are removed
+		if not hasLayoutCustomization then
+			local fst = ensureFS()
+			if fst then
+				local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
+				if origParent and fs.SetParent then
+					pcall(fs.SetParent, fs, origParent)
+					local origLayer = fst.GetProp(fs, "nameAnchorOrigLayer") or "OVERLAY"
+					local origSub = fst.GetProp(fs, "nameAnchorOrigSublayer") or 1
+					pcall(fs.SetDrawLayer, fs, origLayer, origSub)
+					fst.SetProp(fs, "nameAnchorOrigParent", nil)
+					fst.SetProp(fs, "nameAnchorOrigLayer", nil)
+					fst.SetProp(fs, "nameAnchorOrigSublayer", nil)
+				end
+			end
+		end
 
 		if hasLayoutCustomization then
 			-- Determine default alignment based on whether this is left (%) or right (value) or center text
@@ -1201,26 +1325,85 @@ do
 			local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
 			local yOffset = safeOffset(b.y) + oy
 
-			-- Use two-point anchoring to span the parent bar width.
-			-- Makes JustifyH work correctly without needing GetWidth() (which can
-			-- trigger secret value errors on unit frame StatusBars).
-			if fs.ClearAllPoints and fs.SetPoint and parentBar then
-				fs:ClearAllPoints()
-				-- Anchor both left and right edges to span the bar
-				-- Apply small padding (2px) plus user X offset for text inset
-				local leftPad = 2 + ox
-				local rightPad = -2 + ox
-				pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
-				pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
+			-- Name-anchor mode: position text relative to boss name FontString
+			local useNameAnchor = false
+			if styleCfg.alignmentMode == "name" and baselineKey and baselineKey:find("^Boss") then
+				local bossIdx = baselineKey:match("^Boss(%d+)")
+				if bossIdx then
+					local bossFrame = _G and _G["Boss" .. bossIdx .. "TargetFrame"] or nil
+					local nameFS = bossFrame and addon.ResolveBossNameFS(bossFrame) or nil
+					if nameFS then
+						local anchorKey = styleCfg.nameAnchor or "RIGHT_OF_NAME"
+						local anchorInfo = NAME_ANCHOR_MAP[anchorKey]
+						if anchorInfo then
+							useNameAnchor = true
+							-- Reparent to contentMain so SetPoint can target nameFS (same hierarchy)
+							local contentMain = bossFrame.TargetFrameContent
+								and bossFrame.TargetFrameContent.TargetFrameContentMain
+							if contentMain and fs.SetParent then
+								local fst = ensureFS()
+								if fst and not fst.GetProp(fs, "nameAnchorOrigParent") then
+									fst.SetProp(fs, "nameAnchorOrigParent", fs:GetParent())
+									fst.SetProp(fs, "nameAnchorOrigLayer", select(1, fs:GetDrawLayer()))
+									fst.SetProp(fs, "nameAnchorOrigSublayer", select(2, fs:GetDrawLayer()))
+								end
+								pcall(fs.SetParent, fs, contentMain)
+								pcall(fs.SetDrawLayer, fs, "OVERLAY", 7)
+							end
+							local textPt, namePt, justH, gapX, gapY = anchorInfo[1], anchorInfo[2], anchorInfo[3], anchorInfo[4], anchorInfo[5]
+							if fs.ClearAllPoints and fs.SetPoint then
+								fs:ClearAllPoints()
+								pcall(fs.SetPoint, fs, textPt, nameFS, namePt, gapX + ox, gapY + oy)
+							end
+							if fs.SetJustifyH then
+								pcall(fs.SetJustifyH, fs, justH)
+							end
+							-- Undo two-point width constraint — let text auto-size
+							if fs.SetWidth then
+								pcall(fs.SetWidth, fs, 0)
+							end
+							forceTextRedraw(fs)
+						end
+					end
+				end
 			end
 
-			-- Apply text alignment
-			if fs.SetJustifyH then
-				pcall(fs.SetJustifyH, fs, alignment)
-			end
+			if not useNameAnchor then
+				-- Restore original parent if previously reparented for name-anchor mode
+				local fst = ensureFS()
+				if fst then
+					local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
+					if origParent and fs.SetParent then
+						pcall(fs.SetParent, fs, origParent)
+						local origLayer = fst.GetProp(fs, "nameAnchorOrigLayer") or "OVERLAY"
+						local origSub = fst.GetProp(fs, "nameAnchorOrigSublayer") or 1
+						pcall(fs.SetDrawLayer, fs, origLayer, origSub)
+						fst.SetProp(fs, "nameAnchorOrigParent", nil)
+						fst.SetProp(fs, "nameAnchorOrigLayer", nil)
+						fst.SetProp(fs, "nameAnchorOrigSublayer", nil)
+					end
+				end
 
-			-- Force redraw to apply alignment visually
-			forceTextRedraw(fs)
+				-- Bar-relative mode: two-point anchoring to span the parent bar width.
+				-- Makes JustifyH work correctly without needing GetWidth() (which can
+				-- trigger secret value errors on unit frame StatusBars).
+				if fs.ClearAllPoints and fs.SetPoint and parentBar then
+					fs:ClearAllPoints()
+					-- Anchor both left and right edges to span the bar
+					-- Apply small padding (2px) plus user X offset for text inset
+					local leftPad = 2 + ox
+					local rightPad = -2 + ox
+					pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
+					pcall(fs.SetPoint, fs, "RIGHT", parentBar, "RIGHT", rightPad, yOffset)
+				end
+
+				if fs.SetJustifyH then
+					pcall(fs.SetJustifyH, fs, alignment)
+				end
+
+				-- Force redraw to apply alignment visually
+				forceTextRedraw(fs)
+			end
 		end
 	end
 
@@ -1855,14 +2038,7 @@ do
 				return _G and _G["Boss" .. i .. "TargetFrame"] or nil
 			end
 
-			local function resolveBossNameFS(bossFrame)
-				-- Blizzard exposes bossFrame.name, but fall back to the canonical nested path.
-				return (bossFrame and (bossFrame.name
-					or (bossFrame.TargetFrameContent
-						and bossFrame.TargetFrameContent.TargetFrameContentMain
-						and bossFrame.TargetFrameContent.TargetFrameContentMain.Name)))
-					or nil
-			end
+			local resolveBossNameFS = addon.ResolveBossNameFS
 
 			local function resolveBossLevelFS(bossFrame)
 				return (bossFrame
@@ -1963,6 +2139,36 @@ do
 						local parent = (fs.GetParent and fs:GetParent()) or fallbackFrame
 						pcall(fs.SetPoint, fs, point, parent, relPoint, 0, 0)
 					end
+				end
+			end
+
+			local function applyBossNameContainerWidth(nameFS, styleCfg, bossIndex)
+				if not nameFS or not styleCfg then return end
+				if styleCfg.containerWidthPct == nil then return end
+
+				local pct = tonumber(styleCfg.containerWidthPct) or 100
+				if pct < 80 then pct = 80 elseif pct > 500 then pct = 500 end
+
+				local key = "Boss" .. tostring(bossIndex) .. ":nameContainer"
+				local baseline = addon._ufNameContainerBaselines[key]
+				if not baseline then
+					baseline = { width = safeGetWidth(nameFS) or 90 }
+					addon._ufNameContainerBaselines[key] = baseline
+				end
+
+				local baseWidth = baseline.width or 90
+				local newWidth = math.floor((baseWidth * pct / 100) + 0.5)
+
+				if nameFS.SetWidth then
+					nameFS:SetWidth(pct == 100 and baseWidth or newWidth)
+				end
+
+				local alignment = styleCfg.alignment or "LEFT"
+				if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, alignment) end
+
+				if nameFS.GetText and nameFS.SetText then
+					local txt = nameFS:GetText()
+					if txt then nameFS:SetText(""); nameFS:SetText(txt) end
 				end
 			end
 
@@ -2189,6 +2395,7 @@ do
 
 				if nameFS then
 					applyBossTextStyle(nameFS, cfg.textName or {}, "Boss" .. tostring(i) .. ":name", bossFrame)
+					applyBossNameContainerWidth(nameFS, cfg.textName or {}, i)
 				end
 
 				-- Level text

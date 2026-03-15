@@ -1045,6 +1045,27 @@ do
 			end
 		end
 
+		-- BorderShield visibility
+		do
+			local borderShield = frame.BorderShield
+			if borderShield then
+				local hideBorderShield = not not cfg.castBarBorderShieldHidden
+				if hideBorderShield then
+					if borderShield.SetAlpha then
+						pcall(borderShield.SetAlpha, borderShield, 0)
+					elseif borderShield.Hide then
+						pcall(borderShield.Hide, borderShield)
+					end
+				else
+					if borderShield.SetAlpha then
+						pcall(borderShield.SetAlpha, borderShield, 1)
+					elseif borderShield.Show then
+						pcall(borderShield.Show, borderShield)
+					end
+				end
+			end
+		end
+
 		local inCombat = InCombatLockdown and InCombatLockdown()
 		-- For normal styling passes triggered by profile changes or /reload, avoids
 		-- touching secure cast bar anchors during combat and defer until combat ends.
@@ -1407,7 +1428,10 @@ do
 		if not cfg then return end
 
 		local anchorMode = cfg.anchorMode or "default"
-		if anchorMode == "default" then return end
+		if anchorMode == "default" or anchorMode == "leftOfFrame" then return end
+
+		local offsetX = tonumber(cfg.offsetX) or 0
+		local offsetY = tonumber(cfg.offsetY) or 0
 
 		if anchorMode == "centeredUnderPower" then
 			local bossFrame = _G["Boss" .. index .. "TargetFrame"]
@@ -1419,7 +1443,20 @@ do
 			if manaBar then
 				setProp(frame, "ignoreSetPoint", true)
 				frame:ClearAllPoints()
-				frame:SetPoint("TOP", manaBar, "BOTTOM", 0, -2)
+				frame:SetPoint("TOP", manaBar, "BOTTOM", offsetX, -2 + offsetY)
+				setProp(frame, "ignoreSetPoint", nil)
+			end
+		elseif anchorMode == "underBossName" then
+			local bossFrame = _G["Boss" .. index .. "TargetFrame"]
+			local nameFS
+			if addon.ResolveBossNameFS then
+				nameFS = addon.ResolveBossNameFS(bossFrame)
+			end
+
+			if nameFS then
+				setProp(frame, "ignoreSetPoint", true)
+				frame:ClearAllPoints()
+				frame:SetPoint("TOPLEFT", nameFS, "BOTTOMLEFT", 27 + offsetX, -13 + offsetY)
 				setProp(frame, "ignoreSetPoint", nil)
 			end
 		end
@@ -1475,7 +1512,7 @@ do
 				if getProp(self, "ignoreSetPoint") then return end
 				-- Only re-apply if a custom anchor mode is active for this Boss cast bar
 				local mode = bossActiveAnchorModes[hookIndex]
-				if mode and mode ~= "default" then
+				if mode and mode ~= "default" and mode ~= "leftOfFrame" then
 					if InCombatLockdown and InCombatLockdown() then
 						-- Lightweight reanchor during combat (position only)
 						reanchorBossCastBar(self, hookIndex)
@@ -1496,7 +1533,7 @@ do
 			if frame.AdjustPosition then
 				_G.hooksecurefunc(frame, "AdjustPosition", function(self)
 					local mode = bossActiveAnchorModes[hookIndex]
-					if mode and mode ~= "default" then
+					if mode and mode ~= "default" and mode ~= "leftOfFrame" then
 						if InCombatLockdown and InCombatLockdown() then
 							reanchorBossCastBar(self, hookIndex)
 						else
@@ -1557,32 +1594,32 @@ do
 			end
 		end
 
-		-- Read "Cast Bar on Side" Edit Mode setting for the Boss system frame
-		-- NOTE: Edit Mode queries require the registered system frame, not the raw Boss1TargetFrame
-		local isCastBarOnSide = false
+		-- Read anchor mode from config
+		local anchorMode = cfg.anchorMode or "default"
+
+		-- Programmatically sync Edit Mode "CastBarOnSide" setting to match anchor mode
 		do
+			local desiredOnSide = (anchorMode == "leftOfFrame") and 1 or 0
 			local mgr = _G.EditModeManagerFrame
 			local EMSys = _G.Enum and _G.Enum.EditModeSystem
 			local idx = _G.Enum and _G.Enum.EditModeUnitFrameSystemIndices and _G.Enum.EditModeUnitFrameSystemIndices.Boss
 			local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.CastBarOnSide
 			if mgr and EMSys and idx and mgr.GetRegisteredSystemFrame and settingId then
 				local bossSystemFrame = mgr:GetRegisteredSystemFrame(EMSys.UnitFrame, idx)
-				if bossSystemFrame and addon and addon.EditMode and addon.EditMode.GetSetting then
-					local ok, v = pcall(addon.EditMode.GetSetting, bossSystemFrame, settingId)
-					if ok then
-						isCastBarOnSide = (v and v ~= 0) and true or false
+				if bossSystemFrame and addon.EditMode then
+					local currentVal = 0
+					if addon.EditMode.GetSetting then
+						local ok, v = pcall(addon.EditMode.GetSetting, bossSystemFrame, settingId)
+						if ok and v then currentVal = v end
+					end
+					if currentVal ~= desiredOnSide and addon.EditMode.WriteSetting then
+						addon.EditMode.WriteSetting(bossSystemFrame, settingId, desiredOnSide)
 					end
 				end
 			end
 		end
 
-		-- Read anchor mode from config (custom positioning, disabled when Cast Bar on Side is enabled)
-		local anchorMode = (not isCastBarOnSide) and (cfg.anchorMode or "default") or "default"
-
 		-- Read settings from config
-		local widthPct = tonumber(cfg.widthPct) or 100
-		if widthPct < 50 then widthPct = 50 elseif widthPct > 150 then widthPct = 150 end
-
 		local castBarScale = tonumber(cfg.castBarScale) or 100
 		if castBarScale < 50 then castBarScale = 50 elseif castBarScale > 150 then castBarScale = 150 end
 
@@ -1597,12 +1634,6 @@ do
 
 			-- Layout (size/scale/icon) is skipped for in-combat visual-only refreshes
 			if not visualOnly then
-				-- Apply width scaling relative to original width
-				if origWidth and frame.SetWidth then
-					local scale = widthPct / 100.0
-					pcall(frame.SetWidth, frame, origWidth * scale)
-				end
-
 				-- Apply cast bar scale
 				if frame.SetScale then
 					local scale = castBarScale / 100.0
@@ -1613,11 +1644,12 @@ do
 				-- Track the active anchor mode so the SetPoint hook knows when to re-apply
 				bossActiveAnchorModes[index] = anchorMode
 
-				if anchorMode ~= "default" then
+				if anchorMode ~= "default" and anchorMode ~= "leftOfFrame" then
 					local anchorApplied = false
+					local offsetX = tonumber(cfg.offsetX) or 0
+					local offsetY = tonumber(cfg.offsetY) or 0
 
 					if anchorMode == "centeredUnderPower" then
-						-- Resolve the Boss ManaBar (power bar) to anchor under
 						local bossFrame = _G["Boss" .. index .. "TargetFrame"]
 						local manaBar
 						if addon.BarsResolvers and addon.BarsResolvers.resolveBossManaBar then
@@ -1625,11 +1657,23 @@ do
 						end
 
 						if manaBar then
-							-- Position cast bar centered under the power bar
-							-- TOP of cast bar anchors to BOTTOM of power bar
 							setProp(frame, "ignoreSetPoint", true)
 							frame:ClearAllPoints()
-							frame:SetPoint("TOP", manaBar, "BOTTOM", 0, -2)
+							frame:SetPoint("TOP", manaBar, "BOTTOM", offsetX, -2 + offsetY)
+							setProp(frame, "ignoreSetPoint", nil)
+							anchorApplied = true
+						end
+					elseif anchorMode == "underBossName" then
+						local bossFrame = _G["Boss" .. index .. "TargetFrame"]
+						local nameFS
+						if addon.ResolveBossNameFS then
+							nameFS = addon.ResolveBossNameFS(bossFrame)
+						end
+
+						if nameFS then
+							setProp(frame, "ignoreSetPoint", true)
+							frame:ClearAllPoints()
+							frame:SetPoint("TOPLEFT", nameFS, "BOTTOMLEFT", 27 + offsetX, -13 + offsetY)
 							setProp(frame, "ignoreSetPoint", nil)
 							anchorApplied = true
 						end
@@ -1674,7 +1718,7 @@ do
 				end
 
 				-- Track that a custom anchor has been applied (for restoration when switching back to default)
-				if anchorMode ~= "default" then
+				if anchorMode ~= "default" and anchorMode ~= "leftOfFrame" then
 					setProp(frame, "hadCustomAnchor", true)
 				end
 
@@ -1962,6 +2006,37 @@ do
 				end
 			end
 
+			-- Ensure boss cast bar text renders above custom borders.
+			-- Same pattern as Player/Target/Focus (see above).
+			do
+				local borderEnabled = not not cfg.castBarBorderEnable
+				local borderStyle = cfg.castBarBorderStyle or "square"
+				local needsOverlay = borderEnabled and borderStyle ~= "none"
+
+				if needsOverlay then
+					local overlay = frame._ScootCastTextOverlay
+					if not overlay then
+						overlay = CreateFrame("Frame", nil, frame)
+						overlay:SetAllPoints(frame)
+						frame._ScootCastTextOverlay = overlay
+					end
+					local barLevel = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
+					overlay:SetFrameLevel(barLevel + 3)
+					overlay:Show()
+
+					if frame.Text and frame.Text.SetParent then
+						pcall(frame.Text.SetParent, frame.Text, overlay)
+					end
+				else
+					if frame._ScootCastTextOverlay then
+						if frame.Text and frame.Text.SetParent then
+							pcall(frame.Text.SetParent, frame.Text, frame)
+						end
+						frame._ScootCastTextOverlay:Hide()
+					end
+				end
+			end
+
 			-- Spell Name Text styling
 			do
 				local spellFS = frame.Text
@@ -2027,7 +2102,7 @@ do
 				end
 			end
 
-			-- BorderShield visibility (Boss cast bars only)
+			-- BorderShield visibility (Boss cast bars)
 			do
 				local borderShield = frame.BorderShield
 				if borderShield then

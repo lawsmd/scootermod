@@ -136,6 +136,7 @@ function UF.getUnitFrame(componentId)
     elseif componentId == "ufTarget" then idx = EM.Target
     elseif componentId == "ufFocus" then idx = EM.Focus
     elseif componentId == "ufPet" then idx = EM.Pet
+    elseif componentId == "ufBoss" then idx = EM.Boss
     end
 
     if not idx then return nil end
@@ -173,7 +174,7 @@ function UF.setEditModeFrameSize(componentId, value)
     end
 end
 
--- Read Edit Mode "Use Larger Frame" setting (Focus only)
+-- Read Edit Mode "Use Larger Frame" setting (Focus, Boss)
 function UF.getUseLargerFrame(componentId)
     local frame = UF.getUnitFrame(componentId)
     local settingId = _G.Enum and _G.Enum.EditModeUnitFrameSetting and _G.Enum.EditModeUnitFrameSetting.UseLargerFrame
@@ -250,6 +251,22 @@ UF.alignmentValues = {
     RIGHT = "Right",
 }
 UF.alignmentOrder = { "LEFT", "CENTER", "RIGHT" }
+
+-- Alignment mode options (bar-relative vs name-relative)
+UF.alignmentModeValues = { bar = "Within Bar", name = "Around Name" }
+UF.alignmentModeOrder = { "bar", "name" }
+
+-- Name-anchor position options (relative to boss name text)
+UF.nameAnchorValues = {
+    LEFT_OF_NAME = "Left of Name", RIGHT_OF_NAME = "Right of Name",
+    TOP_LEFT = "Top-Left", TOP = "Top", TOP_RIGHT = "Top-Right",
+    BOTTOM_LEFT = "Bottom-Left", BOTTOM = "Bottom", BOTTOM_RIGHT = "Bottom-Right",
+}
+UF.nameAnchorOrder = {
+    "LEFT_OF_NAME", "RIGHT_OF_NAME",
+    "TOP_LEFT", "TOP", "TOP_RIGHT",
+    "BOTTOM_LEFT", "BOTTOM", "BOTTOM_RIGHT",
+}
 
 -- Bar color mode options (health)
 UF.healthColorValues = {
@@ -471,12 +488,17 @@ end
 
 -- Cast Bar tabs by unit type
 function UF.getCastBarTabs(componentId)
+    local sparkTab = { key = "spark", label = "Spark", infoIcon = {
+        tooltipTitle = "Cast Bar Spark",
+        tooltipText = "The spark is the bright vertical line on the cast bar that marks the current cast progress position.",
+    } }
     if componentId == "ufPlayer" then
         -- Player has Cast Time tab
         return {
             { key = "positioning", label = "Positioning" },
             { key = "sizing", label = "Sizing" },
             { key = "style", label = "Style" },
+            sparkTab,
             { key = "border", label = "Border" },
             { key = "icon", label = "Icon" },
             { key = "spellName", label = "Spell Name" },
@@ -484,11 +506,12 @@ function UF.getCastBarTabs(componentId)
             { key = "visibility", label = "Visibility" },
         }
     else
-        -- Target/Focus: 7 tabs (no Cast Time)
+        -- Target/Focus/Boss: no Cast Time
         return {
             { key = "positioning", label = "Positioning" },
             { key = "sizing", label = "Sizing" },
             { key = "style", label = "Style" },
+            sparkTab,
             { key = "border", label = "Border" },
             { key = "icon", label = "Icon" },
             { key = "spellName", label = "Spell Name" },

@@ -690,6 +690,10 @@ function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
         addon.PreemptiveHideBossElements()
     end
 
+    -- Text visibility uses pcall(SetAlpha) which is combat-safe (same as PreemptiveHide).
+    if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+    if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
+
     -- Boss unit frames can update during combat. Do not touch protected Boss frames during combat
     -- (even "cosmetic" changes) to avoid taint that can later block BossTargetFrameContainer:SetSize().
     if InCombatLockdown and InCombatLockdown() then
@@ -725,6 +729,10 @@ function addon:UPDATE_BOSS_FRAMES()
     if addon.PreemptiveHideBossElements then
         addon.PreemptiveHideBossElements()
     end
+
+    -- Text visibility uses pcall(SetAlpha) which is combat-safe (same as PreemptiveHide).
+    if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
+    if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
 
     -- Keep this lightweight: boss frames can update frequently during encounters.
     if InCombatLockdown and InCombatLockdown() then

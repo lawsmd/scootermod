@@ -166,7 +166,8 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
     defaultAlignment = defaultAlignment or "LEFT"
     colorValues = colorValues or UF.fontColorValues
     colorOrder = colorOrder or UF.fontColorOrder
-    local hiddenKey = textKey:gsub("text", ""):lower() .. "Hidden"
+    local stripped = textKey:gsub("^text", "")
+    local hiddenKey = stripped:sub(1,1):lower() .. stripped:sub(2) .. "Hidden"
 
     inner:AddToggle({
         label = "Disable Text",
@@ -261,21 +262,62 @@ local function buildTextTab(inner, textKey, applyFn, defaultAlignment, colorValu
         hasAlpha = true,
     })
 
-    inner:AddSelector({
+    -- Determine initial mode and matching B-selector options
+    local initialMode = (ensureTextDB(textKey) or {}).alignmentMode or "bar"
+    local initialBValues = initialMode == "name" and UF.nameAnchorValues or UF.alignmentValues
+    local initialBOrder  = initialMode == "name" and UF.nameAnchorOrder  or UF.alignmentOrder
+
+    inner:AddDualSelector({
         label = "Alignment",
-        values = UF.alignmentValues,
-        order = UF.alignmentOrder,
-        get = function()
-            local s = ensureTextDB(textKey) or {}
-            return s.alignment or defaultAlignment
-        end,
-        set = function(v)
-            local t = ensureUFDB()
-            if not t then return end
-            t[textKey] = t[textKey] or {}
-            t[textKey].alignment = v or defaultAlignment
-            applyStyles()
-        end,
+        key = textKey .. "AlignmentDual",
+        selectorA = {
+            values = UF.alignmentModeValues,
+            order = UF.alignmentModeOrder,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                return s.alignmentMode or "bar"
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                t[textKey].alignmentMode = v or "bar"
+                applyStyles()
+                local dualSelector = inner:GetControl(textKey .. "AlignmentDual")
+                if dualSelector then
+                    if v == "name" then
+                        dualSelector:SetOptionsB(UF.nameAnchorValues, UF.nameAnchorOrder)
+                    else
+                        dualSelector:SetOptionsB(UF.alignmentValues, UF.alignmentOrder)
+                    end
+                end
+            end,
+        },
+        selectorB = {
+            values = initialBValues,
+            order = initialBOrder,
+            get = function()
+                local s = ensureTextDB(textKey) or {}
+                local mode = s.alignmentMode or "bar"
+                if mode == "name" then
+                    return s.nameAnchor or "RIGHT_OF_NAME"
+                else
+                    return s.alignment or defaultAlignment
+                end
+            end,
+            set = function(v)
+                local t = ensureUFDB()
+                if not t then return end
+                t[textKey] = t[textKey] or {}
+                local mode = t[textKey].alignmentMode or "bar"
+                if mode == "name" then
+                    t[textKey].nameAnchor = v or "RIGHT_OF_NAME"
+                else
+                    t[textKey].alignment = v or defaultAlignment
+                end
+                applyStyles()
+            end,
+        },
     })
 
     inner:AddDualSlider({
@@ -344,6 +386,17 @@ function UF.RenderBoss(panel, scrollContent)
         get = function() local t = ensureUFDB() or {}; return not not t.useCustomBorders end,
         set = function(v) local t = ensureUFDB(); if t then t.useCustomBorders = not not v; applyBarTextures() end end,
         infoIcon = UF.TOOLTIPS.hideBlizzardArt,
+    })
+
+    builder:AddToggle({
+        label = "Use Larger Frame",
+        description = "Uses the larger Boss frame variant (Edit Mode setting).",
+        get = function()
+            return UF.getUseLargerFrame(COMPONENT_ID)
+        end,
+        set = function(v)
+            UF.setUseLargerFrame(COMPONENT_ID, v)
+        end,
     })
 
     builder:AddSlider({
@@ -594,7 +647,7 @@ function UF.RenderBoss(panel, scrollContent)
                             set = function(v) local t = ensureUFDB(); if t then t.nameTextHidden = v and true or false; applyNameLevelText() end end,
                         })
                         tabInner:AddSlider({
-                            label = "Name Container Width", min = 80, max = 150, step = 5,
+                            label = "Name Container Width", min = 80, max = 500, step = 5,
                             get = function() local s = ensureNameLevelDB("textName") or {}; return tonumber(s.containerWidthPct) or 100 end,
                             set = function(v) local t = ensureNameLevelDB("textName"); if t then t.containerWidthPct = tonumber(v) or 100; applyNameLevelText() end end,
                         })
@@ -717,10 +770,12 @@ function UF.RenderBoss(panel, scrollContent)
                         tabInner:AddSelector({
                             label = "Anchor To",
                             values = {
-                                ["default"] = "Default (Blizzard)",
+                                ["default"] = "Under Frame (Default)",
+                                ["leftOfFrame"] = "Left of Frame",
                                 ["centeredUnderPower"] = "Centered Under Power Bar",
+                                ["underBossName"] = "Under Boss Name",
                             },
-                            order = {"default", "centeredUnderPower"},
+                            order = {"default", "leftOfFrame", "centeredUnderPower", "underBossName"},
                             get = function() local t = ensureCastBarDB() or {}; return t.anchorMode or "default" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.anchorMode = v; applyCastBar() end end,
                         })
@@ -746,16 +801,6 @@ function UF.RenderBoss(panel, scrollContent)
                             label = "Scale %", min = 50, max = 150, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarScale) or 100 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarScale = tonumber(v) or 100; applyCastBar() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Width %", min = 50, max = 150, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.widthPct) or 100 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.widthPct = tonumber(v) or 100; applyCastBar() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Height", min = 5, max = 50, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarHeight) or 13 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarHeight = tonumber(v) or 13; applyCastBar() end end,
                         })
                         tabInner:Finalize()
                     end,
@@ -792,7 +837,9 @@ function UF.RenderBoss(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBackgroundOpacity) or 50 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBackgroundOpacity = tonumber(v) or 50; applyCastBar() end end,
                         })
-                        tabInner:AddSpacer(8)
+                        tabInner:Finalize()
+                    end,
+                    spark = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Spark",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSparkHidden end,
@@ -858,6 +905,11 @@ function UF.RenderBoss(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return not not t.iconDisabled end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.iconDisabled = v and true or false; applyCastBar() end end,
                         })
+                        tabInner:AddToggle({
+                            label = "Hide Icon Backdrop (Shield)",
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.castBarBorderShieldHidden end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderShieldHidden = v and true or false; applyCastBar() end end,
+                        })
                         tabInner:AddSlider({
                             label = "Icon Size", min = 10, max = 64, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24 end,
@@ -885,6 +937,11 @@ function UF.RenderBoss(panel, scrollContent)
                             label = "Hide Spell Name",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarSpellNameHidden end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarSpellNameHidden = v and true or false; applyCastBar() end end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Spell Name Border",
+                            get = function() local t = ensureCastBarDB() or {}; return not not t.hideSpellNameBorder end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.hideSpellNameBorder = v and true or false; applyCastBar() end end,
                         })
                         tabInner:AddFontSelector({
                             label = "Spell Name Font",
