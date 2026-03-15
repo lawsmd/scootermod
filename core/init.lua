@@ -702,6 +702,7 @@ function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
             if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
             if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
             if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
+            if addon.ApplyBossHighLevelIconVisibility then addon.ApplyBossHighLevelIconVisibility() end
         end)
         -- Small follow-up pass to catch late Boss frame construction.
         C_Timer.After(0.1, function()
@@ -713,6 +714,7 @@ function addon:INSTANCE_ENCOUNTER_ENGAGE_UNIT()
         if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
         if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
         if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
+        if addon.ApplyBossHighLevelIconVisibility then addon.ApplyBossHighLevelIconVisibility() end
     end
 end
 
@@ -735,12 +737,14 @@ function addon:UPDATE_BOSS_FRAMES()
             if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
             if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
             if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
+            if addon.ApplyBossHighLevelIconVisibility then addon.ApplyBossHighLevelIconVisibility() end
         end)
     else
         if addon.ApplyUnitFrameBarTexturesFor then addon.ApplyUnitFrameBarTexturesFor("Boss") end
         if addon.ApplyUnitFrameHealthTextVisibilityFor then addon.ApplyUnitFrameHealthTextVisibilityFor("Boss") end
         if addon.ApplyUnitFramePowerTextVisibilityFor then addon.ApplyUnitFramePowerTextVisibilityFor("Boss") end
         if addon.ApplyBossCastBarFor then addon.ApplyBossCastBarFor() end
+        if addon.ApplyBossHighLevelIconVisibility then addon.ApplyBossHighLevelIconVisibility() end
     end
 end
 

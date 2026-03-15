@@ -33,6 +33,13 @@ local function ensureNameLevelDB(textKey)
     return t[textKey]
 end
 
+local function ensureMiscDB()
+    local t = UF.ensureUFDB(UNIT_KEY)
+    if not t then return nil end
+    t.misc = t.misc or {}
+    return t.misc
+end
+
 --------------------------------------------------------------------------------
 -- Apply Functions
 --------------------------------------------------------------------------------
@@ -364,12 +371,33 @@ function UF.RenderBoss(panel, scrollContent)
                     { key = "border", label = "Border" },
                     { key = "percentText", label = "% Text" },
                     { key = "valueText", label = "Value Text" },
+                    { key = "visibility", label = "Visibility" },
                 },
                 componentId = COMPONENT_ID,
                 sectionKey = "healthBar_tabs",
                 buildContent = {
                     style = function(cf, tabInner) buildStyleTab(tabInner, "healthBar", applyBarTextures) end,
                     border = function(cf, tabInner) buildBorderTab(tabInner, "healthBar", applyBarTextures) end,
+                    visibility = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Hide the Bar but not its Text",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.healthBarHideTextureOnly
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.healthBarHideTextureOnly = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Hide the Bar but not its Text",
+                                tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of health.",
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
                     percentText = function(cf, tabInner)
                         buildTextTab(tabInner, "textHealthPercent", applyHealthText, "LEFT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
                     end,
@@ -873,6 +901,50 @@ function UF.RenderBoss(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                 },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    --------------------------------------------------------------------------------
+    -- Visibility & Misc
+    --------------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Visibility & Misc",
+        componentId = COMPONENT_ID,
+        sectionKey = "visibilityMisc",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddToggle({
+                label = "Hide Threat Tracker",
+                get = function()
+                    local t = ensureMiscDB() or {}
+                    return not not t.hideBossThreatCounter
+                end,
+                set = function(v)
+                    local t = ensureMiscDB()
+                    if not t then return end
+                    t.hideBossThreatCounter = v and true or false
+                    if addon.ApplyBossThreatCounterVisibility then
+                        addon.ApplyBossThreatCounterVisibility()
+                    end
+                end,
+            })
+            inner:AddToggle({
+                label = "Hide Skull Icon",
+                get = function()
+                    local t = ensureMiscDB() or {}
+                    return not not t.hideHighLevelIcon
+                end,
+                set = function(v)
+                    local t = ensureMiscDB()
+                    if not t then return end
+                    t.hideHighLevelIcon = v and true or false
+                    if addon.ApplyBossHighLevelIconVisibility then
+                        addon.ApplyBossHighLevelIconVisibility()
+                    end
+                end,
             })
             inner:Finalize()
         end,

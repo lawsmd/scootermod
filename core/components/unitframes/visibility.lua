@@ -341,6 +341,106 @@ do
     end
 end
 
+-- Boss Misc.: High Level (Skull) Icon visibility (all 5 boss frames)
+-- Frame paths:
+--   Boss1TargetFrame.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture
+--   ...
+--   Boss5TargetFrame.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture
+do
+    local _bossHighLevelHooked = {}
+    local _originalBossHighLevelAlpha = {}
+
+    local function getBossHighLevelIconFrame(index)
+        local parentFrame = _G["Boss" .. tostring(index) .. "TargetFrame"]
+        if not parentFrame then return nil end
+        local content = parentFrame.TargetFrameContent
+        if not content then return nil end
+        local contextual = content.TargetFrameContentContextual
+        if not contextual then return nil end
+        return contextual.HighLevelTexture
+    end
+
+    local function applyBossHighLevelIconVisibilityFor(index)
+        local iconFrame = getBossHighLevelIconFrame(index)
+        if not iconFrame then return end
+
+        local db = addon and addon.db and addon.db.profile
+        if not db then return end
+
+        local unitFrames = rawget(db, "unitFrames")
+        local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+        local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+        if not miscCfg then return end
+        if miscCfg.hideHighLevelIcon == nil then return end
+        local hideIcon = (miscCfg.hideHighLevelIcon == true)
+
+        if _originalBossHighLevelAlpha[index] == nil then
+            _originalBossHighLevelAlpha[index] = iconFrame:GetAlpha() or 1
+        end
+
+        if hideIcon then
+            if iconFrame.SetAlpha then
+                pcall(iconFrame.SetAlpha, iconFrame, 0)
+            end
+        else
+            if iconFrame.SetAlpha then
+                pcall(iconFrame.SetAlpha, iconFrame, _originalBossHighLevelAlpha[index])
+            end
+        end
+    end
+
+    local function installBossHighLevelIconHooksFor(index)
+        if _bossHighLevelHooked[index] then return end
+        _bossHighLevelHooked[index] = true
+
+        local iconFrame = getBossHighLevelIconFrame(index)
+        if not iconFrame then return end
+
+        if iconFrame.Show then
+            hooksecurefunc(iconFrame, "Show", function(self)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                local unitFrames = rawget(db, "unitFrames")
+                local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+                local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+                if miscCfg and miscCfg.hideHighLevelIcon == true then
+                    if self.SetAlpha then
+                        pcall(self.SetAlpha, self, 0)
+                    end
+                end
+            end)
+        end
+
+        if iconFrame.SetAlpha then
+            hooksecurefunc(iconFrame, "SetAlpha", function(self, alpha)
+                local db = addon and addon.db and addon.db.profile
+                if not db then return end
+                local unitFrames = rawget(db, "unitFrames")
+                local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+                local miscCfg = bossCfg and rawget(bossCfg, "misc") or nil
+                if miscCfg and miscCfg.hideHighLevelIcon == true and alpha and alpha > 0 then
+                    if not getProp(self, "bossHighLevelAlphaDeferred") then
+                        setProp(self, "bossHighLevelAlphaDeferred", true)
+                        C_Timer.After(0, function()
+                            setProp(self, "bossHighLevelAlphaDeferred", nil)
+                            if miscCfg and miscCfg.hideHighLevelIcon == true and self.SetAlpha then
+                                pcall(self.SetAlpha, self, 0)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
+    function addon.ApplyBossHighLevelIconVisibility()
+        for i = 1, 5 do
+            installBossHighLevelIconHooksFor(i)
+            applyBossHighLevelIconVisibilityFor(i)
+        end
+    end
+end
+
 -- Target Misc.: Boss Icon visibility
 -- Frame path:
 --   Target: TargetFrame.TargetFrameContent.TargetFrameContentContextual.BossIcon

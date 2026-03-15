@@ -289,6 +289,9 @@ function addon:ApplyStyles()
     if addon.ApplyTargetBossIconVisibility then
         addon.ApplyTargetBossIconVisibility()
     end
+    if addon.ApplyBossHighLevelIconVisibility then
+        addon.ApplyBossHighLevelIconVisibility()
+    end
     if addon.ApplyAllPlayerMiscVisibility then
         addon.ApplyAllPlayerMiscVisibility()
     end

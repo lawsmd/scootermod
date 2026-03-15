@@ -648,7 +648,28 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
                     if not getProp(self, "settingAlpha") then
                         setProp(self, "settingAlpha", true)
                         pcall(self.SetAlpha, self, 0)
+                        pcall(self.Hide, self)
                         setProp(self, "settingAlpha", nil)
+                    end
+                end
+            end)
+        end
+    end
+
+    local function installBarColorHook(bar)
+        if not bar then return end
+        local st = getState(bar)
+        if not st then return end
+        if st.healthBarColorHooked then return end
+        st.healthBarColorHooked = true
+
+        if _G.hooksecurefunc and bar.SetStatusBarColor then
+            _G.hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b, a)
+                if getProp(self, "healthBarColorHidden") and (not a or a > 0) then
+                    if not getProp(self, "settingBarColor") then
+                        setProp(self, "settingBarColor", true)
+                        pcall(self.SetStatusBarColor, self, r or 0, g or 0, b or 0, 0)
+                        setProp(self, "settingBarColor", nil)
                     end
                 end
             end)
@@ -659,12 +680,14 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
         if fillTex then
             setProp(fillTex, "healthBarFillHidden", true)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 0) end
+            pcall(fillTex.Hide, fillTex)
             installAlphaHook(fillTex, "healthBarFillHidden")
         end
 
         if bgTex then
             setProp(bgTex, "healthBarBGHidden", true)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 0) end
+            pcall(bgTex.Hide, bgTex)
             installAlphaHook(bgTex, "healthBarBGHidden")
         end
 
@@ -673,24 +696,43 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
             if scBG then
                 setProp(scBG, "healthBarScootBGHidden", true)
                 if scBG.SetAlpha then pcall(scBG.SetAlpha, scBG, 0) end
+                pcall(scBG.Hide, scBG)
                 installAlphaHook(scBG, "healthBarScootBGHidden")
             end
         end
+
+        -- Hide the StatusBar fill color at the engine level
+        setProp(ownerFrame, "healthBarColorHidden", true)
+        if ownerFrame.SetStatusBarColor and ownerFrame.GetStatusBarColor then
+            local r, g, b = ownerFrame:GetStatusBarColor()
+            pcall(ownerFrame.SetStatusBarColor, ownerFrame, r, g, b, 0)
+        end
+        installBarColorHook(ownerFrame)
     else
+        -- Restore the StatusBar fill color
+        setProp(ownerFrame, "healthBarColorHidden", false)
+        if ownerFrame.SetStatusBarColor and ownerFrame.GetStatusBarColor then
+            local r, g, b = ownerFrame:GetStatusBarColor()
+            pcall(ownerFrame.SetStatusBarColor, ownerFrame, r, g, b, 1)
+        end
+
         if fillTex then
             setProp(fillTex, "healthBarFillHidden", false)
             if fillTex.SetAlpha then pcall(fillTex.SetAlpha, fillTex, 1) end
+            pcall(fillTex.Show, fillTex)
         end
 
         if bgTex then
             setProp(bgTex, "healthBarBGHidden", false)
             if bgTex.SetAlpha then pcall(bgTex.SetAlpha, bgTex, 1) end
+            pcall(bgTex.Show, bgTex)
         end
 
         do
             local scBG = getProp(ownerFrame, "ScootBG")
             if scBG then
                 setProp(scBG, "healthBarScootBGHidden", false)
+                pcall(scBG.Show, scBG)
             end
         end
     end

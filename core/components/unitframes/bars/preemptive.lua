@@ -579,6 +579,40 @@ function Preemptive.hideBossElements()
             end
         end
     end
+
+    -- Hide health bar fill/background when texture-only hiding is enabled
+    -- (keeps text overlays visible). Uses pcall + hooksecurefunc internally = combat-safe.
+    if cfg.healthBarHideTextureOnly then
+        local Util = addon.ComponentsUtil
+        if Util and Util.SetHealthBarTextureOnlyHidden then
+            for i = 1, 5 do
+                local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+                if bossFrame then
+                    local hb = bossFrame.healthbar
+                    if hb then
+                        Util.SetHealthBarTextureOnlyHidden(hb, true)
+                    end
+                end
+            end
+            -- Follow-up for late frame construction (matches ReputationColor pattern)
+            if _G.C_Timer and _G.C_Timer.After then
+                _G.C_Timer.After(0, function()
+                    local db2 = addon and addon.db and addon.db.profile
+                    local uf2 = db2 and rawget(db2, "unitFrames")
+                    local cfg2 = uf2 and rawget(uf2, "Boss")
+                    if not cfg2 or not cfg2.healthBarHideTextureOnly then return end
+                    local Util2 = addon.ComponentsUtil
+                    if not Util2 or not Util2.SetHealthBarTextureOnlyHidden then return end
+                    for i = 1, 5 do
+                        local bf = _G["Boss" .. i .. "TargetFrame"]
+                        if bf and bf.healthbar then
+                            Util2.SetHealthBarTextureOnlyHidden(bf.healthbar, true)
+                        end
+                    end
+                end)
+            end
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -601,27 +635,40 @@ function Preemptive.installBossFrameHooks()
         local db = addon and addon.db and addon.db.profile
         local unitFrames = db and rawget(db, "unitFrames")
         local cfg = unitFrames and rawget(unitFrames, "Boss")
-        if not cfg or not cfg.useCustomBorders then return end
+        if not cfg then return end
 
         for i = 1, 5 do
             local bossFrame = _G["Boss" .. i .. "TargetFrame"]
             if bossFrame then
-                -- Re-hide ReputationColor
-                local repColor = bossFrame.TargetFrameContent
-                    and bossFrame.TargetFrameContent.TargetFrameContentMain
-                    and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
-                if repColor and repColor.SetAlpha then
-                    pcall(repColor.SetAlpha, repColor, 0)
-                    if Alpha and Alpha.hookAlphaEnforcer then
-                        Alpha.hookAlphaEnforcer(repColor, makeComputeAlpha())
+                if cfg.useCustomBorders then
+                    -- Re-hide ReputationColor
+                    local repColor = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.ReputationColor
+                    if repColor and repColor.SetAlpha then
+                        pcall(repColor.SetAlpha, repColor, 0)
+                        if Alpha and Alpha.hookAlphaEnforcer then
+                            Alpha.hookAlphaEnforcer(repColor, makeComputeAlpha())
+                        end
+                    end
+
+                    -- Re-hide Flash
+                    local flash = bossFrame.TargetFrameContainer
+                        and bossFrame.TargetFrameContainer.Flash
+                    if flash and flash.SetAlpha then
+                        pcall(flash.SetAlpha, flash, 0)
                     end
                 end
 
-                -- Re-hide Flash
-                local flash = bossFrame.TargetFrameContainer
-                    and bossFrame.TargetFrameContainer.Flash
-                if flash and flash.SetAlpha then
-                    pcall(flash.SetAlpha, flash, 0)
+                -- Re-hide health bar fill if texture-only hiding is enabled
+                if cfg.healthBarHideTextureOnly then
+                    local Util = addon.ComponentsUtil
+                    if Util and Util.SetHealthBarTextureOnlyHidden then
+                        local hb = bossFrame.healthbar
+                        if hb then
+                            Util.SetHealthBarTextureOnlyHidden(hb, true)
+                        end
+                    end
                 end
             end
         end
@@ -701,5 +748,4 @@ addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
 addon.PreemptiveHideBossElements = Preemptive.hideBossElements
 addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
 addon.InstallBossFrameHooks = Preemptive.installBossFrameHooks
-
 return Preemptive

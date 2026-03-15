@@ -613,7 +613,12 @@ do
 
         -- Boss overlays activate when useCustomBorders is enabled (fills chips created by frame art masks)
         local shouldActivate = (ufCfg.useCustomBorders == true)
-        
+
+        -- Deactivate health overlay if texture-only hiding is active
+        if barType == "health" and cfg and cfg.healthBarHideTextureOnly == true then
+            shouldActivate = false
+        end
+
         local overlayKey = (barType == "health") and "ScootRectFillHealth" or "ScootRectFillPower"
         local st = getState(bar)
         if not st then return end
@@ -2456,6 +2461,17 @@ do
                 if bossFrame then
                     local hb = resolveHealthBar(bossFrame, unit)
                         if hb then
+                            local healthBarHideTextureOnly = (cfg.healthBarHideTextureOnly == true)
+                            if healthBarHideTextureOnly then
+                                if Util and Util.SetHealthBarTextureOnlyHidden then
+                                    Util.SetHealthBarTextureOnlyHidden(hb, true)
+                                end
+                            else
+                                if Util and Util.SetHealthBarTextureOnlyHidden then
+                                    Util.SetHealthBarTextureOnlyHidden(hb, false)
+                                end
+                            end
+
                             local colorModeHB = cfg.healthBarColorMode or "default"
                             local texKeyHB = cfg.healthBarTexture or "default"
                             applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
@@ -2491,6 +2507,20 @@ do
 
                             ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
 
+                            -- Clip HealthBarsContainer children to prevent dark background
+                            -- below health bar when boss has no power bar
+                            local hbClipContainer = resolveBossHealthBarsContainer(bossFrame)
+                            if hbClipContainer and hbClipContainer.SetClipsChildren then
+                                hbClipContainer:SetClipsChildren(true)
+                            end
+
+                            -- Re-apply texture-only hide after styling (ensures ScootBG is also hidden)
+                            if healthBarHideTextureOnly then
+                                if Util and Util.SetHealthBarTextureOnlyHidden then
+                                    Util.SetHealthBarTextureOnlyHidden(hb, true)
+                                end
+                            end
+
                             -- Rectangular overlay to fill top-left chip when using custom borders
                             ensureBossRectOverlay(bossFrame, hb, cfg, "health")
 
@@ -2499,6 +2529,14 @@ do
                             -- health and power bars. The HealthBarsContainer (parent of HealthBar) has the
                             -- correct bounds because ManaBar is a sibling of HealthBarsContainer, not a child.
                             -- The border anchors to HealthBarsContainer instead of the StatusBar.
+                            if healthBarHideTextureOnly then
+                                -- Clear borders when texture-only hiding is active
+                                local anchorFrame = getProp(hb, "bossHealthBorderAnchor")
+                                if anchorFrame then
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
+                                end
+                            else
                             do
                                 local styleKey = cfg.healthBarBorderStyle
                                 local tintEnabled = not not cfg.healthBarBorderTintEnable
@@ -2616,6 +2654,7 @@ do
                                     if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
                                 end
                             end
+                            end -- if not healthBarHideTextureOnly
 
                             -- Boss frames can get refreshed by Blizzard (HealthUpdate, Update) which resets textures.
                             -- Install a hook to re-assert our styling after Blizzard updates.
@@ -2631,6 +2670,15 @@ do
                                             local unitFrames2 = rawget(db2, "unitFrames")
                                             local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
                                             if not cfgBoss then return end
+
+                                            -- Re-hide fill texture after Blizzard may have recreated it
+                                            if cfgBoss.healthBarHideTextureOnly == true then
+                                                local hbReapply = bossFrame.healthbar
+                                                if hbReapply and Util and Util.SetHealthBarTextureOnlyHidden then
+                                                    Util.SetHealthBarTextureOnlyHidden(hbReapply, true)
+                                                end
+                                                return
+                                            end
 
                                             local texKey = cfgBoss.healthBarTexture or "default"
                                             local colorMode = cfgBoss.healthBarColorMode or "default"
