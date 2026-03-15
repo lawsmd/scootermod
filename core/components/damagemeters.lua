@@ -500,6 +500,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     -- Custom bar border
     -- "default" = Blizzard's stock border; "none" = no border; "square" = solid square; other = textured
     local borderStyle = db.barBorderStyle or "default"
+    local hiddenEdges = db.barBorderHiddenEdges or {}
 
     -- Get border color and thickness (used for both square and textured borders)
     local thickness = db.barBorderThickness or 1
@@ -636,6 +637,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
             addon.BarBorders.ApplyToBarFrame(statusBar, borderStyle, {
                 thickness = thickness,
                 color = { r, g, b, a },
+                hiddenEdges = hiddenEdges,
                 containerParent = UIParent,
                 sizeProxyParent = UIParent,
             })
@@ -1247,6 +1249,21 @@ end
 -- Shared Damage Meter Export Data
 --------------------------------------------------------------------------------
 
+local function GetCurrentZoneLabel()
+    local instName, instType, _, diffName = GetInstanceInfo()
+    if instName and instName ~= "" and instType ~= "none" then
+        return (diffName and diffName ~= "") and (instName .. " (" .. diffName .. ")") or instName
+    else
+        return (instName and instName ~= "") and instName or "Open World"
+    end
+end
+
+local dmResetZoneSnapshot = nil
+
+local function SnapshotResetZone()
+    dmResetZoneSnapshot = GetCurrentZoneLabel()
+end
+
 function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil, "Damage Meter API not available."
@@ -1378,13 +1395,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
     end
 
     -- Instance info
-    local instName, instType, _, diffName = GetInstanceInfo()
-    local instanceLabel
-    if instName and instName ~= "" and instType ~= "none" then
-        instanceLabel = (diffName and diffName ~= "") and (instName .. " (" .. diffName .. ")") or instName
-    else
-        instanceLabel = (instName and instName ~= "") and instName or "Open World"
-    end
+    local instanceLabel = GetCurrentZoneLabel()
 
     return {
         players = players,
@@ -1394,6 +1405,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
         sessionLabel = sessionLabels[sessionType] or "Unknown",
         duration = duration,
         instanceLabel = instanceLabel,
+        startZoneLabel = dmResetZoneSnapshot,
         playerCount = #playerOrder,
         timestamp = date("%Y-%m-%d %H:%M"),
         FormatNumber = FormatNumber,
@@ -2341,6 +2353,7 @@ addon:RegisterComponentInitializer(function(self)
             barBorderTintEnabled = { type = "addon", default = false, ui = { hidden = true } },
             barBorderTintColor = { type = "addon", default = { 1, 1, 1, 1 }, ui = { hidden = true } },
             barBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
+            barBorderHiddenEdges = { type = "addon", default = {}, ui = { hidden = true } },
 
             -- Icon settings (matching Essential Cooldowns Border pattern)
             iconBorderEnable = { type = "addon", default = false, ui = { hidden = true } },
@@ -2437,6 +2450,22 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(damageMeter)
+
+    -- Zone snapshot: track where data started
+    if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+        hooksecurefunc(C_DamageMeter, "ResetAllCombatSessions", SnapshotResetZone)
+    end
+    SnapshotResetZone()
+
+    -- Re-snapshot after PLAYER_ENTERING_WORLD so GetInstanceInfo() has difficulty info
+    local snapshotRefreshFrame = CreateFrame("Frame")
+    snapshotRefreshFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    snapshotRefreshFrame:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
+        if isInitialLogin or isReloadingUi then
+            SnapshotResetZone()
+            self:UnregisterAllEvents()
+        end
+    end)
 
     -- Auto-reset data event handler
     local resetFrame = CreateFrame("Frame")

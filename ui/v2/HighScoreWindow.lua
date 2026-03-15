@@ -39,6 +39,16 @@ local function GetArcadeFont()
         or "Interface\\AddOns\\Scoot\\media\\fonts\\PressStart2P-Regular.ttf"
 end
 
+local function TruncateToWidth(fontString, text, maxWidth)
+    fontString:SetText(text)
+    if fontString:GetStringWidth() <= maxWidth then return end
+    for i = #text, 1, -1 do
+        fontString:SetText(text:sub(1, i) .. "...")
+        if fontString:GetStringWidth() <= maxWidth then return end
+    end
+    fontString:SetText("...")
+end
+
 local function CreateRow(parent, index)
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(ROW_HEIGHT)
@@ -258,6 +268,27 @@ local function CreateHighScoreFrame()
     footer:SetTextColor(1, 1, 1, 0.5)
     frame._footer = footer
 
+    -- Zone info (bottom-right): label + value pairs for aligned START:/END:
+    frame._zoneLabel1 = frame:CreateFontString(nil, "OVERLAY")
+    pcall(frame._zoneLabel1.SetFont, frame._zoneLabel1, arcadeFont, 10, "")
+    frame._zoneLabel1:SetTextColor(1, 1, 1, 0.5)
+    frame._zoneLabel1:SetJustifyH("RIGHT")
+
+    frame._zoneValue1 = frame:CreateFontString(nil, "OVERLAY")
+    pcall(frame._zoneValue1.SetFont, frame._zoneValue1, arcadeFont, 10, "")
+    frame._zoneValue1:SetTextColor(1, 1, 1, 0.5)
+    frame._zoneValue1:SetJustifyH("LEFT")
+
+    frame._zoneLabel2 = frame:CreateFontString(nil, "OVERLAY")
+    pcall(frame._zoneLabel2.SetFont, frame._zoneLabel2, arcadeFont, 10, "")
+    frame._zoneLabel2:SetTextColor(1, 1, 1, 0.5)
+    frame._zoneLabel2:SetJustifyH("RIGHT")
+
+    frame._zoneValue2 = frame:CreateFontString(nil, "OVERLAY")
+    pcall(frame._zoneValue2.SetFont, frame._zoneValue2, arcadeFont, 10, "")
+    frame._zoneValue2:SetTextColor(1, 1, 1, 0.5)
+    frame._zoneValue2:SetJustifyH("LEFT")
+
     -- Scroll area
     local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
     scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -CONTENT_TOP_OFFSET)
@@ -359,6 +390,46 @@ local function CreateHighScoreFrame()
                 label = label .. " (" .. durStr .. ")"
             end
             frame._footer:SetText(label)
+        end
+
+        -- Zone display (bottom-right)
+        local endZone = data.instanceLabel or "Open World"
+        local startZone = data.startZoneLabel or endZone
+        local ZONE_LABEL_GAP = 6
+        local ZONE_VALUE_MAX_WIDTH = 340
+
+        -- Clear all 4 font strings
+        frame._zoneLabel1:ClearAllPoints(); frame._zoneLabel1:SetText("")
+        frame._zoneValue1:ClearAllPoints(); frame._zoneValue1:SetText("")
+        frame._zoneLabel2:ClearAllPoints(); frame._zoneLabel2:SetText("")
+        frame._zoneValue2:ClearAllPoints(); frame._zoneValue2:SetText("")
+
+        if startZone == endZone then
+            -- Single zone: just the name, right-aligned
+            frame._zoneValue1:SetJustifyH("RIGHT")
+            frame._zoneValue1:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -SIDE_PADDING, 12)
+            TruncateToWidth(frame._zoneValue1, endZone, ZONE_VALUE_MAX_WIDTH)
+        else
+            -- Dual zone: aligned labels + values
+            -- Measure label column width from the wider label
+            frame._zoneLabel1:SetText("START:")
+            local labelWidth = frame._zoneLabel1:GetStringWidth()
+
+            -- Row 2 (bottom): END
+            frame._zoneLabel2:SetText("END:")
+            frame._zoneLabel2:SetWidth(labelWidth)
+            frame._zoneLabel2:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
+                -(SIDE_PADDING + ZONE_VALUE_MAX_WIDTH + ZONE_LABEL_GAP), 12)
+            frame._zoneValue2:SetJustifyH("LEFT")
+            frame._zoneValue2:SetPoint("LEFT", frame._zoneLabel2, "RIGHT", ZONE_LABEL_GAP, 0)
+            TruncateToWidth(frame._zoneValue2, endZone, ZONE_VALUE_MAX_WIDTH)
+
+            -- Row 1 (above): START
+            frame._zoneLabel1:SetWidth(labelWidth)
+            frame._zoneLabel1:SetPoint("BOTTOMRIGHT", frame._zoneLabel2, "TOPRIGHT", 0, 2)
+            frame._zoneValue1:SetJustifyH("LEFT")
+            frame._zoneValue1:SetPoint("LEFT", frame._zoneLabel1, "RIGHT", ZONE_LABEL_GAP, 0)
+            TruncateToWidth(frame._zoneValue1, startZone, ZONE_VALUE_MAX_WIDTH)
         end
     end
 
