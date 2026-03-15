@@ -462,6 +462,23 @@ function UF.RenderBoss(panel, scrollContent)
                             get = function() local t = ensureUFDB() or {}; return not not t.powerBarHidden end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarHidden = v and true or false; applyBarTextures() end end,
                         })
+                        tabInner:AddToggle({
+                            label = "Hide the Bar but not its Text",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.powerBarHideTextureOnly
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarHideTextureOnly = v and true or false
+                                applyBarTextures()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Hide the Bar but not its Text",
+                                tooltipText = "Hides the bar texture and background, showing only the text overlay. Useful for a number-only display of power.",
+                            },
+                        })
                         tabInner:Finalize()
                     end,
                     percentText = function(cf, tabInner)

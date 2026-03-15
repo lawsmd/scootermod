@@ -670,6 +670,19 @@ function Preemptive.installBossFrameHooks()
                         end
                     end
                 end
+
+                -- Re-hide power bar fill if texture-only hiding is enabled
+                if cfg.powerBarHideTextureOnly then
+                    local Util = addon.ComponentsUtil
+                    if Util and Util.SetPowerBarTextureOnlyHidden then
+                        local pb = bossFrame.TargetFrameContent
+                            and bossFrame.TargetFrameContent.TargetFrameContentMain
+                            and bossFrame.TargetFrameContent.TargetFrameContentMain.ManaBar
+                        if pb then
+                            Util.SetPowerBarTextureOnlyHidden(pb, true)
+                        end
+                    end
+                end
             end
         end
     end

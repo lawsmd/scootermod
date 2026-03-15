@@ -618,6 +618,10 @@ do
         if barType == "health" and cfg and cfg.healthBarHideTextureOnly == true then
             shouldActivate = false
         end
+        -- Deactivate power overlay if texture-only hiding is active
+        if barType == "power" and cfg and cfg.powerBarHideTextureOnly == true then
+            shouldActivate = false
+        end
 
         local overlayKey = (barType == "health") and "ScootRectFillHealth" or "ScootRectFillPower"
         local st = getState(bar)
@@ -2875,7 +2879,7 @@ do
 
                                 -- Apply border to anchor frame
                                 -- Skip border application when power bar is fully hidden.
-                                if cfg.useCustomBorders and not powerBarHidden then
+                                if cfg.useCustomBorders and not powerBarHidden and not powerBarHideTextureOnly then
                                     if styleKey == "none" or styleKey == nil then
                                         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(anchorFrame) end
                                         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(anchorFrame) end
@@ -2939,6 +2943,15 @@ do
                                         local unitFrames2 = rawget(db2, "unitFrames")
                                         local cfgBoss = unitFrames2 and rawget(unitFrames2, "Boss") or nil
                                         if not cfgBoss then return end
+
+                                        -- Re-hide fill texture after Blizzard may have reset it
+                                        if cfgBoss.powerBarHideTextureOnly == true and not (cfgBoss.powerBarHidden == true) then
+                                            local pbReapply = bossFrame.manabar
+                                            if pbReapply and Util and Util.SetPowerBarTextureOnlyHidden then
+                                                Util.SetPowerBarTextureOnlyHidden(pbReapply, true)
+                                            end
+                                            return
+                                        end
 
                                         local texKey = cfgBoss.powerBarTexture or "default"
                                         local colorMode = cfgBoss.powerBarColorMode or "default"
