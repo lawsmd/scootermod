@@ -1287,13 +1287,6 @@ function UF.RenderPlayer(panel, scrollContent)
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
                         })
-                        tabInner:AddSelector({
-                            label = "End Cap Style",
-                            values = { tick = "Tick", dot = "Dot" },
-                            order = { "tick", "dot" },
-                            get = function() local t = ensureCastBarDB() or {}; return t.textFillEndCapStyle or "tick" end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapStyle = v or "tick"; applyCastBar() end end,
-                        })
                         tabInner:AddSlider({
                             label = "End Cap Size", min = 2, max = 20, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,

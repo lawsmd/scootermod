@@ -182,6 +182,11 @@ do
 		local existing = getProp(frame, "textFillElements")
 		if existing then return existing end
 
+		-- Unfilled outline elements (behind unfilled content)
+		local unfilledLineOL = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+		local unfilledLeftCapOL = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+		local unfilledRightCapOL = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+
 		-- Unfilled elements (dimmed, on cast bar directly)
 		local unfilledLine = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
 		local unfilledLeftCap = frame:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -192,6 +197,11 @@ do
 		clipFrame:SetClipsChildren(true)
 		local barLevel = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
 		clipFrame:SetFrameLevel(barLevel + 2)
+
+		-- Filled outline elements (children of clipFrame, behind filled content)
+		local filledLineOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+		local filledLeftCapOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+		local filledRightCapOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
 
 		-- Filled elements (children of clip frame, anchored to cast bar for positioning)
 		local filledLine = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 2)
@@ -208,15 +218,24 @@ do
 		sparkFrame:Hide()
 
 		-- Hide initially
+		unfilledLineOL:Hide()
+		unfilledLeftCapOL:Hide()
+		unfilledRightCapOL:Hide()
 		unfilledLine:Hide()
 		unfilledLeftCap:Hide()
 		unfilledRightCap:Hide()
 		clipFrame:Hide()
 
 		local elements = {
+			unfilledLineOL = unfilledLineOL,
+			unfilledLeftCapOL = unfilledLeftCapOL,
+			unfilledRightCapOL = unfilledRightCapOL,
 			unfilledLine = unfilledLine,
 			unfilledLeftCap = unfilledLeftCap,
 			unfilledRightCap = unfilledRightCap,
+			filledLineOL = filledLineOL,
+			filledLeftCapOL = filledLeftCapOL,
+			filledRightCapOL = filledRightCapOL,
 			clipFrame = clipFrame,
 			filledLine = filledLine,
 			filledLeftCap = filledLeftCap,
@@ -274,7 +293,6 @@ do
 
 		-- Read text-fill settings
 		local lineHeight = math.max(1, math.min(10, tonumber(cfg.textFillLineHeight) or 2))
-		local capStyle = cfg.textFillEndCapStyle or "tick"
 		local capSize = math.max(2, math.min(20, tonumber(cfg.textFillEndCapSize) or 6))
 
 		local barWidth = frame:GetWidth()
@@ -349,14 +367,9 @@ do
 			end
 		end
 
-		-- End cap dimensions
-		local capW, capH
-		if capStyle == "dot" then
-			capW, capH = capSize, capSize
-		else -- "tick"
-			capW = math.max(2, capSize * 0.3)
-			capH = capSize
-		end
+		-- End cap dimensions (tick style: narrow width, full height)
+		local capW = math.max(2, capSize * 0.3)
+		local capH = capSize
 
 		-- Gray color for unfilled elements (solid, no opacity reduction)
 		local grayR, grayG, grayB = 0.5, 0.5, 0.5
@@ -370,6 +383,14 @@ do
 		el:SetColorTexture(grayR, grayG, grayB, 1)
 		el:Show()
 
+		-- Unfilled line outline (1px expansion around content)
+		el = elements.unfilledLineOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.unfilledLine, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.unfilledLine, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
+		el:Show()
+
 		-- Unfilled left cap
 		el = elements.unfilledLeftCap
 		el:ClearAllPoints()
@@ -378,12 +399,28 @@ do
 		el:SetColorTexture(grayR, grayG, grayB, 1)
 		el:Show()
 
+		-- Unfilled left cap outline
+		el = elements.unfilledLeftCapOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.unfilledLeftCap, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.unfilledLeftCap, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
+		el:Show()
+
 		-- Unfilled right cap
 		el = elements.unfilledRightCap
 		el:ClearAllPoints()
 		el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
 		el:SetSize(capW, capH)
 		el:SetColorTexture(grayR, grayG, grayB, 1)
+		el:Show()
+
+		-- Unfilled right cap outline
+		el = elements.unfilledRightCapOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.unfilledRightCap, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.unfilledRightCap, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
 		el:Show()
 
 		-- Clip frame: LEFT-anchored, width = progress * barWidth
@@ -414,6 +451,14 @@ do
 		end
 		el:Show()
 
+		-- Filled line outline
+		el = elements.filledLineOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.filledLine, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.filledLine, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
+		el:Show()
+
 		-- Filled left cap
 		el = elements.filledLeftCap
 		el:ClearAllPoints()
@@ -427,6 +472,14 @@ do
 		end
 		el:Show()
 
+		-- Filled left cap outline
+		el = elements.filledLeftCapOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.filledLeftCap, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.filledLeftCap, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
+		el:Show()
+
 		-- Filled right cap
 		el = elements.filledRightCap
 		el:ClearAllPoints()
@@ -438,6 +491,14 @@ do
 		else
 			el:SetColorTexture(r, g, b, a)
 		end
+		el:Show()
+
+		-- Filled right cap outline
+		el = elements.filledRightCapOL
+		el:ClearAllPoints()
+		el:SetPoint("TOPLEFT", elements.filledRightCap, "TOPLEFT", -1, 1)
+		el:SetPoint("BOTTOMRIGHT", elements.filledRightCap, "BOTTOMRIGHT", 1, -1)
+		el:SetColorTexture(0, 0, 0, 1)
 		el:Show()
 
 		-- Filled text color (positioning synced after spell name styling)
@@ -536,6 +597,9 @@ do
 	local function hideTextFillElements(frame)
 		local elements = getProp(frame, "textFillElements")
 		if not elements then return end
+		elements.unfilledLineOL:Hide()
+		elements.unfilledLeftCapOL:Hide()
+		elements.unfilledRightCapOL:Hide()
 		elements.unfilledLine:Hide()
 		elements.unfilledLeftCap:Hide()
 		elements.unfilledRightCap:Hide()
