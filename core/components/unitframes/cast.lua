@@ -267,6 +267,7 @@ do
 			frame.Flakes01,       -- StandardFinish:OnPlay → SetTargetsShown(true)
 			frame.Flakes02,       -- StandardFinish:OnPlay → SetTargetsShown(true)
 			frame.Flakes03,       -- StandardFinish:OnPlay → SetTargetsShown(true)
+			frame.InterruptGlow,  -- PlayInterruptAnims() → self.InterruptGlow:Show()
 		}
 		for _, texture in ipairs(guardTextures) do
 			if texture and texture.Show then
@@ -365,6 +366,39 @@ do
 					end
 				end)
 			end
+		end
+
+		-- One-time hooks on animation groups whose setToFinalAlpha="true" overrides
+		-- our SetAlpha(0) at the C++ level during playback.  Stop them immediately.
+		-- FlashAnim / InterruptGlowAnim: no OnFinished callbacks in XML — safe.
+		-- StandardFinish: OnFinished calls SetTargetsShown(false), which hides targets — desired.
+		if not getProp(frame, "textFillAnimsHooked") then
+			setProp(frame, "textFillAnimsHooked", true)
+			local animGroups = { frame.FlashAnim, frame.InterruptGlowAnim, frame.StandardFinish }
+			for _, ag in ipairs(animGroups) do
+				if ag and ag.Play and ag.Stop then
+					local agRef, stopFn = ag, ag.Stop
+					hooksecurefunc(ag, "Play", function()
+						if getProp(frame, "textFillActive") then
+							pcall(stopFn, agRef)
+						end
+					end)
+				end
+			end
+		end
+
+		-- Hide our custom spark overlay when Blizzard calls HideSpark (cast complete / interrupt)
+		if not getProp(frame, "textFillHideSparkHooked") then
+			setProp(frame, "textFillHideSparkHooked", true)
+			hooksecurefunc(frame, "HideSpark", function(self)
+				if getProp(self, "textFillActive") then
+					local els = getProp(self, "textFillElements")
+					if els then
+						if els.sparkTex then els.sparkTex:Hide() end
+						if els.sparkFrame then els.sparkFrame:Hide() end
+					end
+				end
+			end)
 		end
 
 		-- End cap dimensions (tick style: narrow width, full height)
@@ -1175,6 +1209,56 @@ do
 						if baseGlow.SetAlpha then
 							pcall(baseGlow.SetAlpha, baseGlow, 0)
 						end
+					end
+
+					-- hideCastFlash: Flash (completion glow) + InterruptGlow (interrupt glow)
+					if cfg.hideCastFlash then
+						local flash = frame.Flash
+						if flash and flash.SetAlpha then pcall(flash.SetAlpha, flash, 0) end
+						local intGlow = frame.InterruptGlow
+						if intGlow and intGlow.SetAlpha then pcall(intGlow.SetAlpha, intGlow, 0) end
+					end
+
+					-- hideCompletionFlare: EnergyGlow + Flakes01-03 (upward animation on standard completion)
+					if cfg.hideCompletionFlare then
+						for _, tex in ipairs({ frame.EnergyGlow, frame.Flakes01, frame.Flakes02, frame.Flakes03 }) do
+							if tex and tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
+						end
+					end
+				end
+
+				-- One-time Play() hooks for default-mode cast flash / completion flare toggles.
+				-- Reads live DB config per Play() so toggling takes effect immediately.
+				-- textFillActive check prevents double-stopping with the text-fill hooks.
+				if isPlayer and not getProp(frame, "castFlashAnimHooked") then
+					setProp(frame, "castFlashAnimHooked", true)
+					local hookUnit = unit
+					local function getCastCfg()
+						local db = addon and addon.db and addon.db.profile
+						return db and db.unitFrames and db.unitFrames[hookUnit] and db.unitFrames[hookUnit].castBar
+					end
+					-- FlashAnim + InterruptGlowAnim → hideCastFlash
+					for _, ag in ipairs({ frame.FlashAnim, frame.InterruptGlowAnim }) do
+						if ag and ag.Play and ag.Stop then
+							local agRef, stopFn = ag, ag.Stop
+							hooksecurefunc(ag, "Play", function()
+								if not getProp(frame, "textFillActive") then
+									local c = getCastCfg()
+									if c and c.hideCastFlash then pcall(stopFn, agRef) end
+								end
+							end)
+						end
+					end
+					-- StandardFinish → hideCompletionFlare
+					local sf = frame.StandardFinish
+					if sf and sf.Play and sf.Stop then
+						local agRef, stopFn = sf, sf.Stop
+						hooksecurefunc(sf, "Play", function()
+							if not getProp(frame, "textFillActive") then
+								local c = getCastCfg()
+								if c and c.hideCompletionFlare then pcall(stopFn, agRef) end
+							end
+						end)
 					end
 				end
 			end

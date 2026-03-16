@@ -1178,7 +1178,7 @@ function UF.RenderPlayer(panel, scrollContent)
                     local prevMode = t.castBarMode or "default"
                     t.castBarMode = v
                     -- Auto-toggle effect textures for textFill mode (Player only)
-                    local hideKeys = { "hideChargeFlash", "hideCastShine", "hideWispGlow", "hideStandardGlow", "hideChannelSparkles", "hideBaseGlow" }
+                    local hideKeys = { "hideChargeFlash", "hideCastShine", "hideWispGlow", "hideStandardGlow", "hideChannelSparkles", "hideBaseGlow", "hideCastFlash", "hideCompletionFlare" }
                     if v == "textFill" and prevMode ~= "textFill" then
                         -- Entering textFill: backup current state, force all hidden
                         t._preTextFillHides = {}
@@ -1760,6 +1760,40 @@ function UF.RenderPlayer(panel, scrollContent)
                             infoIcon = {
                                 tooltipTitle = "Base Glow",
                                 tooltipText = "A wispy glow anchored to the left edge of the cast bar that briefly expands outward when a channeled spell finishes. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Cast Flash",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideCastFlash
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideCastFlash = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Cast Flash",
+                                tooltipText = "Hides the bright flash that fills the cast bar when a spell completes, and the glow outline that appears during interrupts. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Completion Flare",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideCompletionFlare
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideCompletionFlare = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Completion Flare",
+                                tooltipText = "Hides the upward flame and particle effects that rise from the cast bar when a standard spell finishes casting. Automatically hidden in Text-Fill mode.",
                             },
                         })
                         tabInner:Finalize()
