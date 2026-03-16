@@ -72,6 +72,71 @@ local function cloneColor(color)
     return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
 end
 
+local function applyHiddenEdges(holder, bfState)
+    local hiddenEdges = bfState and bfState.hiddenEdges
+    local hasAny = hiddenEdges and (hiddenEdges.top or hiddenEdges.bottom or hiddenEdges.left or hiddenEdges.right)
+
+    -- Edge textures created by BackdropTemplateMixin
+    local edgeMap = {
+        { name = "TopEdge", key = "top" },
+        { name = "BottomEdge", key = "bottom" },
+        { name = "LeftEdge", key = "left" },
+        { name = "RightEdge", key = "right" },
+    }
+    -- Corners: hidden if either adjacent edge is hidden
+    local cornerMap = {
+        { name = "TopLeftCorner", a = "top", b = "left" },
+        { name = "TopRightCorner", a = "top", b = "right" },
+        { name = "BottomLeftCorner", a = "bottom", b = "left" },
+        { name = "BottomRightCorner", a = "bottom", b = "right" },
+    }
+
+    if not hasAny then
+        -- Show all edges, corners, and gaskets (clean reset)
+        for _, e in ipairs(edgeMap) do
+            if holder[e.name] then holder[e.name]:Show() end
+        end
+        for _, c in ipairs(cornerMap) do
+            if holder[c.name] then holder[c.name]:Show() end
+        end
+        if bfState and bfState.gaskets then
+            for _, tex in pairs(bfState.gaskets) do tex:Show() end
+        end
+        return
+    end
+
+    -- Hide specified edges
+    for _, e in ipairs(edgeMap) do
+        if holder[e.name] then
+            if hiddenEdges[e.key] then
+                holder[e.name]:Hide()
+            else
+                holder[e.name]:Show()
+            end
+        end
+    end
+
+    -- Hide corners where either adjacent edge is hidden
+    for _, c in ipairs(cornerMap) do
+        if holder[c.name] then
+            if hiddenEdges[c.a] or hiddenEdges[c.b] then
+                holder[c.name]:Hide()
+            else
+                holder[c.name]:Show()
+            end
+        end
+    end
+
+    -- Hide gaskets for hidden edges
+    if bfState and bfState.gaskets then
+        local g = bfState.gaskets
+        if hiddenEdges.top and g.top then g.top:Hide() end
+        if hiddenEdges.bottom and g.bottom then g.bottom:Hide() end
+        if hiddenEdges.left and g.left then g.left:Hide() end
+        if hiddenEdges.right and g.right then g.right:Hide() end
+    end
+end
+
 local function ensureBorderFrame(barFrame)
     local bfState = borderFrameState[barFrame] or {}
     borderFrameState[barFrame] = bfState
@@ -87,6 +152,11 @@ local function ensureBorderFrame(barFrame)
                 if type(w) == "number" and type(h) == "number"
                    and not issecretvalue(w) and not issecretvalue(h) then
                     self:SetupTextureCoordinates()
+                    -- Re-apply hidden edges after texture coordinate update
+                    local bfs = borderFrameState[barFrame]
+                    if bfs and bfs.hiddenEdges then
+                        applyHiddenEdges(self, bfs)
+                    end
                 end
             end
         end)
@@ -185,6 +255,15 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
         if padB < 0 then padB = 0 end
     end
 
+    -- Zero padding on hidden edges so the border doesn't occupy space there
+    local hiddenEdges = bfState.hiddenEdges
+    if hiddenEdges then
+        if hiddenEdges.left then padL = 0 end
+        if hiddenEdges.right then padR = 0 end
+        if hiddenEdges.top then padT = 0 end
+        if hiddenEdges.bottom then padB = 0 end
+    end
+
     -- Use anchorTarget if specified (e.g., clipping container for height reduction)
     local anchorFrame = (bfState and bfState.anchorTarget) or barFrame
     holder:ClearAllPoints()
@@ -241,6 +320,9 @@ local function applyStyle(barFrame, style, color, thickness, skipStateUpdate, in
         tex:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         tex:Show()
     end
+
+    -- Apply hidden edges (hide specified edge/corner textures and gaskets)
+    applyHiddenEdges(holder, bfState)
 
     if not skipStateUpdate then
         bfState.state = {
@@ -428,6 +510,11 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
         bfState.padAdjust = options.padAdjust
     else
         bfState.padAdjust = nil
+    end
+    if type(options) == "table" and type(options.hiddenEdges) == "table" then
+        bfState.hiddenEdges = options.hiddenEdges
+    else
+        bfState.hiddenEdges = nil
     end
 
     return applyStyle(barFrame, style, color, thickness, false, nil, bfState.insetH, bfState.insetV)

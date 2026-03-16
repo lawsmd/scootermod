@@ -197,6 +197,16 @@ local function buildHealthBorderTab(inner)
             t.healthBarBorderStyle = v or "square"
             applyBarTextures()
         end,
+        getHiddenEdges = function()
+            local t = ensureUFDB() or {}
+            return t.healthBarBorderHiddenEdges
+        end,
+        setHiddenEdges = function(v)
+            local t = ensureUFDB()
+            if not t then return end
+            t.healthBarBorderHiddenEdges = v
+            applyBarTextures()
+        end,
     })
 
     inner:AddToggleColorPicker({
@@ -781,7 +791,9 @@ function UF.RenderPet(panel, scrollContent)
                     border = function(cf, tabInner)
                         tabInner:AddBarBorderSelector({ label = "Border Style", includeNone = true,
                             get = function() local t = ensureUFDB() or {}; return t.powerBarBorderStyle or "square" end,
-                            set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderStyle = v or "square"; applyBarTextures() end end })
+                            set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderStyle = v or "square"; applyBarTextures() end end,
+                            getHiddenEdges = function() local t = ensureUFDB() or {}; return t.powerBarBorderHiddenEdges end,
+                            setHiddenEdges = function(v) local t = ensureUFDB(); if t then t.powerBarBorderHiddenEdges = v; applyBarTextures() end end })
                         tabInner:AddToggleColorPicker({ label = "Border Tint",
                             get = function() local t = ensureUFDB() or {}; return not not t.powerBarBorderTintEnable end,
                             set = function(v) local t = ensureUFDB(); if t then t.powerBarBorderTintEnable = not not v; applyBarTextures() end end,

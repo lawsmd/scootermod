@@ -1120,6 +1120,7 @@ local function applyPRDBarBorder(component, statusBar)
     end
     local db = component.db or {}
     local styleKey = db.borderStyle or "square"
+    local hiddenEdges = db.borderHiddenEdges
     if styleKey == "none" then
         clearBarBorder(statusBar)
         return
@@ -1159,6 +1160,7 @@ local function applyPRDBarBorder(component, statusBar)
             levelOffset = 51,
             insetH = insetH,
             insetV = insetV,
+            hiddenEdges = hiddenEdges,
         })
         if handled then
             -- Hide any old square border that may have been applied previously
@@ -1187,6 +1189,7 @@ local function applyPRDBarBorder(component, statusBar)
             levelOffset = 51,
             expandX = expandX,
             expandY = expandY,
+            hiddenEdges = hiddenEdges,
         })
     end
 end
@@ -1878,6 +1881,7 @@ addon:RegisterComponentInitializer(function(self)
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             borderInsetH = { type = "addon", default = 0 },
             borderInsetV = { type = "addon", default = 0 },
+            borderHiddenEdges = { type = "addon", default = nil },
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Health Bar", widget = "checkbox", section = "Misc", order = 1,
             }},
@@ -1951,6 +1955,7 @@ addon:RegisterComponentInitializer(function(self)
             borderInset = { type = "addon", default = 0, ui = { hidden = true }},
             borderInsetH = { type = "addon", default = 0 },
             borderInsetV = { type = "addon", default = 0 },
+            borderHiddenEdges = { type = "addon", default = nil },
             hideBar = { type = "addon", default = false, ui = {
                 label = "Hide Power Bar", widget = "checkbox", section = "Misc", order = 1,
             }},

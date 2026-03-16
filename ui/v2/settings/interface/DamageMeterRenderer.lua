@@ -347,6 +347,8 @@ function DamageMeter.Render(panel, scrollContent)
                             set = function(value)
                                 setSetting("barBorderStyle", value)
                             end,
+                            getHiddenEdges = function() return getSetting("barBorderHiddenEdges") end,
+                            setHiddenEdges = function(value) setSetting("barBorderHiddenEdges", value) end,
                         })
                         tabInner:AddToggleColorPicker({
                             label = "Border Tint",

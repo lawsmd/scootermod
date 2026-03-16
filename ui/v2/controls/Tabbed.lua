@@ -311,6 +311,7 @@ function Controls:CreateTabbedSection(options)
         local tabBtn = CreateTabButton(tabData, i)
         local tabContent = CreateTabContent(tabData, i)
 
+        tabBtn._visible = tabData.visible  -- nil means always visible
         section._tabButtons[tabData.key] = tabBtn
         section._tabContents[tabData.key] = tabContent
         section._contentHeights[tabData.key] = 100  -- Default, updated by builder
@@ -320,28 +321,45 @@ function Controls:CreateTabbedSection(options)
     local function LayoutTabs()
         local allTabs = {}
         for _, tabData in ipairs(tabs) do
-            table.insert(allTabs, section._tabButtons[tabData.key])
+            local tabBtn = section._tabButtons[tabData.key]
+            local isVis = true
+            if type(tabBtn._visible) == "function" then
+                isVis = tabBtn._visible()
+            end
+            if isVis then
+                tabBtn:Show()
+                table.insert(allTabs, tabBtn)
+            else
+                tabBtn:Hide()
+            end
         end
 
         if #allTabs == 0 then return end
 
+        -- Recalculate row layout based on visible count
+        local visCount = #allTabs
+        local needsSecondRow = visCount > MAX_TABS_PER_ROW
+        local newTabBarHeight = needsSecondRow and (TAB_HEIGHT * 2 + TAB_ROW_SPACING) or TAB_HEIGHT
+        tabBar:SetHeight(newTabBarHeight)
+        tabBarHeight = newTabBarHeight  -- update upvalue
+
         -- Split into rows: bottom row (first 5), top row (6+)
-        local bottomCount = math.min(MAX_TABS_PER_ROW, #allTabs)
+        local bottomCount = math.min(MAX_TABS_PER_ROW, visCount)
         local bottomRow = {}
         for i = 1, bottomCount do
             table.insert(bottomRow, allTabs[i])
         end
 
         local topRow = {}
-        if #allTabs > MAX_TABS_PER_ROW then
-            for i = MAX_TABS_PER_ROW + 1, #allTabs do
+        if visCount > MAX_TABS_PER_ROW then
+            for i = MAX_TABS_PER_ROW + 1, visCount do
                 table.insert(topRow, allTabs[i])
             end
         end
 
         -- Position bottom row (left-aligned)
         local xOffset = TAB_BAR_PADDING
-        local yOffset = hasSecondRow and -(TAB_HEIGHT + TAB_ROW_SPACING) or 0
+        local yOffset = needsSecondRow and -(TAB_HEIGHT + TAB_ROW_SPACING) or 0
 
         for i, tabBtn in ipairs(bottomRow) do
             tabBtn:ClearAllPoints()
@@ -492,6 +510,23 @@ function Controls:CreateTabbedSection(options)
                 content._innerBuilder:Cleanup()
             end
         end
+    end
+
+    function section:RefreshTabVisibility()
+        LayoutTabs()
+        -- If selected tab is now invisible, select first visible tab
+        local selBtn = self._tabButtons[self._selectedTabKey]
+        if selBtn and not selBtn:IsShown() then
+            for _, tabData in ipairs(tabs) do
+                local btn = self._tabButtons[tabData.key]
+                if btn and btn:IsShown() then
+                    self:SelectTab(tabData.key)
+                    return
+                end
+            end
+        end
+        UpdateTabVisuals()
+        UpdateSectionHeight()
     end
 
     return section

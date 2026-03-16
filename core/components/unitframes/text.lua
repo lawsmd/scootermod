@@ -1991,6 +1991,7 @@ do
 			or cfg.nameBackdropBorderInsetV ~= nil
 			or cfg.nameBackdropBorderTintEnable ~= nil
 			or cfg.nameBackdropBorderTintColor ~= nil
+			or cfg.nameBackdropBorderHiddenEdges ~= nil
 		)
 		if not (hasVisibilitySettings or hasNameTextSettings or hasLevelTextSettings or hasBackdropSettings) then
 			return
@@ -2266,6 +2267,7 @@ do
 					or cfg.nameBackdropBorderInsetV ~= nil
 					or cfg.nameBackdropBorderTintEnable ~= nil
 					or cfg.nameBackdropBorderTintColor ~= nil
+					or cfg.nameBackdropBorderHiddenEdges ~= nil
 					or cfg.useCustomBorders ~= nil
 					or cfg.nameBackdropEnabled ~= nil
 					or cfg.nameBackdropTexture ~= nil
@@ -2281,6 +2283,7 @@ do
 				end
 
 				local styleKey = cfg.nameBackdropBorderStyle or "square"
+				local hiddenEdges = cfg.nameBackdropBorderHiddenEdges
 				local localEnabled = not not cfg.nameBackdropBorderEnabled
 				local globalEnabled = not not cfg.useCustomBorders
 				local useBorders = localEnabled and globalEnabled
@@ -2345,6 +2348,7 @@ do
 								layerSublevel = 7,
 								expandX = -(insetH),
 								expandY = -(insetV),
+								hiddenEdges = hiddenEdges,
 							})
 						end
 						borderFrame:Show()
@@ -2371,6 +2375,16 @@ do
 							borderFrame:Hide()
 						else
 							borderFrame:Show()
+							if hiddenEdges and (hiddenEdges.top or hiddenEdges.bottom or hiddenEdges.left or hiddenEdges.right) then
+								if hiddenEdges.top and borderFrame.TopEdge then borderFrame.TopEdge:Hide() end
+								if hiddenEdges.bottom and borderFrame.BottomEdge then borderFrame.BottomEdge:Hide() end
+								if hiddenEdges.left and borderFrame.LeftEdge then borderFrame.LeftEdge:Hide() end
+								if hiddenEdges.right and borderFrame.RightEdge then borderFrame.RightEdge:Hide() end
+								if borderFrame.TopLeftCorner and (hiddenEdges.top or hiddenEdges.left) then borderFrame.TopLeftCorner:Hide() end
+								if borderFrame.TopRightCorner and (hiddenEdges.top or hiddenEdges.right) then borderFrame.TopRightCorner:Hide() end
+								if borderFrame.BottomLeftCorner and (hiddenEdges.bottom or hiddenEdges.left) then borderFrame.BottomLeftCorner:Hide() end
+								if borderFrame.BottomRightCorner and (hiddenEdges.bottom or hiddenEdges.right) then borderFrame.BottomRightCorner:Hide() end
+							end
 						end
 					end
 				else
@@ -2945,6 +2959,7 @@ do
 				or cfg.nameBackdropBorderInsetV ~= nil
 				or cfg.nameBackdropBorderTintEnable ~= nil
 				or cfg.nameBackdropBorderTintColor ~= nil
+				or cfg.nameBackdropBorderHiddenEdges ~= nil
 				or cfg.useCustomBorders ~= nil
 				or cfg.nameBackdropEnabled ~= nil
 				or cfg.nameBackdropTexture ~= nil
@@ -2959,6 +2974,7 @@ do
 				end
 			else
 			local styleKey = cfg.nameBackdropBorderStyle or "square"
+			local hiddenEdges = cfg.nameBackdropBorderHiddenEdges
 			-- Align border gating with UI defaults: disabled until explicitly enabled.
 			local localEnabled = not not cfg.nameBackdropBorderEnabled
 			local globalEnabled = not not cfg.useCustomBorders
@@ -3026,6 +3042,7 @@ do
 							layerSublevel = 7,
 							expandX = -(insetH),
 							expandY = -(insetV),
+							hiddenEdges = hiddenEdges,
 						})
 					end
 					borderFrame:Show()
@@ -3053,6 +3070,16 @@ do
 						borderFrame:Hide()
 					else
 						borderFrame:Show()
+						if hiddenEdges and (hiddenEdges.top or hiddenEdges.bottom or hiddenEdges.left or hiddenEdges.right) then
+							if hiddenEdges.top and borderFrame.TopEdge then borderFrame.TopEdge:Hide() end
+							if hiddenEdges.bottom and borderFrame.BottomEdge then borderFrame.BottomEdge:Hide() end
+							if hiddenEdges.left and borderFrame.LeftEdge then borderFrame.LeftEdge:Hide() end
+							if hiddenEdges.right and borderFrame.RightEdge then borderFrame.RightEdge:Hide() end
+							if borderFrame.TopLeftCorner and (hiddenEdges.top or hiddenEdges.left) then borderFrame.TopLeftCorner:Hide() end
+							if borderFrame.TopRightCorner and (hiddenEdges.top or hiddenEdges.right) then borderFrame.TopRightCorner:Hide() end
+							if borderFrame.BottomLeftCorner and (hiddenEdges.bottom or hiddenEdges.left) then borderFrame.BottomLeftCorner:Hide() end
+							if borderFrame.BottomRightCorner and (hiddenEdges.bottom or hiddenEdges.right) then borderFrame.BottomRightCorner:Hide() end
+						end
 					end
 				end
 			elseif borderFrame then
@@ -3172,6 +3199,7 @@ do
 				or cfg.nameBackdropBorderInsetV ~= nil
 				or cfg.nameBackdropBorderTintEnable ~= nil
 				or cfg.nameBackdropBorderTintColor ~= nil
+				or cfg.nameBackdropBorderHiddenEdges ~= nil
 				or cfg.useCustomBorders ~= nil
 			then
 				return true

@@ -138,6 +138,16 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
             t[barPrefix .. "BorderStyle"] = v or "square"
             applyFn()
         end,
+        getHiddenEdges = function()
+            local t = ensureDBFn() or {}
+            return t[barPrefix .. "BorderHiddenEdges"]
+        end,
+        setHiddenEdges = function(v)
+            local t = ensureDBFn()
+            if not t then return end
+            t[barPrefix .. "BorderHiddenEdges"] = v
+            applyFn()
+        end,
     })
 
     inner:AddToggleColorPicker({

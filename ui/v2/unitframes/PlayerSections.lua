@@ -216,6 +216,16 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 apb.borderStyle = v or "square"
                                 applyBarTexturesFn()
                             end,
+                            getHiddenEdges = function()
+                                local apb = ensureAltPowerBarDB() or {}
+                                return apb.borderHiddenEdges
+                            end,
+                            setHiddenEdges = function(v)
+                                local apb = ensureAltPowerBarDB()
+                                if not apb then return end
+                                apb.borderHiddenEdges = v
+                                applyBarTexturesFn()
+                            end,
                         })
 
                         tabInner:AddToggleColorPicker({

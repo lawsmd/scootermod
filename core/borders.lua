@@ -176,13 +176,26 @@ function Borders.ApplySquare(frame, opts)
     e.Left:ClearAllPoints();   e.Left:SetPoint("TOPLEFT", target, "TOPLEFT", -exLeft, eyTop - sizeTop);        e.Left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -exLeft, (-eyBottom) + sizeBottom);   e.Left:SetWidth(sizeLeft)
     e.Right:ClearAllPoints();  e.Right:SetPoint("TOPRIGHT", target, "TOPRIGHT", exRight, eyTop - sizeTop);     e.Right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", exRight, (-eyBottom) + sizeBottom); e.Right:SetWidth(sizeRight)
     -- Defer Show() for managed frames (PetFrame, etc.) to break taint chain
+    local hiddenEdges = opts.hiddenEdges
     if opts.deferShow then
         C_Timer.After(0, function()
             for _, t in pairs(e) do if t.Show then t:Show() end end
+            if hiddenEdges then
+                if hiddenEdges.top and e.Top then e.Top:Hide() end
+                if hiddenEdges.bottom and e.Bottom then e.Bottom:Hide() end
+                if hiddenEdges.left and e.Left then e.Left:Hide() end
+                if hiddenEdges.right and e.Right then e.Right:Hide() end
+            end
             if container and container.Show then container:Show() end
         end)
     else
         for _, t in pairs(e) do if t.Show then t:Show() end end
+        if hiddenEdges then
+            if hiddenEdges.top and e.Top then e.Top:Hide() end
+            if hiddenEdges.bottom and e.Bottom then e.Bottom:Hide() end
+            if hiddenEdges.left and e.Left then e.Left:Hide() end
+            if hiddenEdges.right and e.Right then e.Right:Hide() end
+        end
         if container and container.Show then container:Show() end
     end
 end

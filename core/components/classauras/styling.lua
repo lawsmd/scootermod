@@ -273,6 +273,7 @@ local function ApplyBarStyling(aura, state)
             local borderThickness = math.max(1, tonumber(db.barBorderThickness) or 1)
             local borderInsetH = tonumber(db.barBorderInsetH) or 0
             local borderInsetV = tonumber(db.barBorderInsetV) or 0
+            local hiddenEdges = db.barBorderHiddenEdges
             local borderColor = { 0, 0, 0, 1 }
             if db.barBorderTintEnable and db.barBorderTintColor then
                 borderColor = db.barBorderTintColor
@@ -329,6 +330,13 @@ local function ApplyBarStyling(aura, state)
 
                 for _, tex in pairs(edges) do tex:Show() end
 
+                if hiddenEdges then
+                    if hiddenEdges.top and edges.Top then edges.Top:Hide() end
+                    if hiddenEdges.bottom and edges.Bottom then edges.Bottom:Hide() end
+                    if hiddenEdges.left and edges.Left then edges.Left:Hide() end
+                    if hiddenEdges.right and edges.Right then edges.Right:Hide() end
+                end
+
             elseif borderStyle ~= "none" and addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
                 -- Custom asset border via BarBorders module
                 if elem.squareBorder then
@@ -340,6 +348,7 @@ local function ApplyBarStyling(aura, state)
                     insetH = borderInsetH,
                     insetV = borderInsetV,
                     color = borderColor,
+                    hiddenEdges = hiddenEdges,
                 })
             else
                 -- "none": clear everything

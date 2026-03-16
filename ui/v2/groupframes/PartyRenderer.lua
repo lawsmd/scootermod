@@ -596,6 +596,16 @@ function GF.RenderParty(panel, scrollContent)
                         cfg.healthBarBorderStyle = v or "none"
                         GF.applyPartyHealthBarBorders()
                     end,
+                    getHiddenEdges = function()
+                        local cfg = ensureDB() or {}
+                        return cfg.healthBarBorderHiddenEdges
+                    end,
+                    setHiddenEdges = function(v)
+                        local cfg = ensureDB()
+                        if not cfg then return end
+                        cfg.healthBarBorderHiddenEdges = v
+                        GF.applyPartyHealthBarBorders()
+                    end,
                 })
 
                 inner:AddToggleColorPicker({

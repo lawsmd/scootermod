@@ -90,6 +90,8 @@ function HealthBar.Render(panel, scrollContent)
                 includeNone = true,
                 get = function() return getSetting("borderStyle") or "square" end,
                 set = function(v) setSetting("borderStyle", v) end,
+                getHiddenEdges = function() return getSetting("borderHiddenEdges") end,
+                setHiddenEdges = function(v) setSetting("borderHiddenEdges", v) end,
             })
 
             inner:AddToggleColorPicker({

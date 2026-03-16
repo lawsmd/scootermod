@@ -1742,6 +1742,7 @@ do
                 end
             elseif hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
+                local hiddenEdges = cfg.healthBarBorderHiddenEdges
                 if styleKey == "none" or styleKey == nil then
                     -- Clear any existing border
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -1810,6 +1811,7 @@ do
                             expandX = expandX,
                             expandY = expandY,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
+                            hiddenEdges = hiddenEdges,
                         })
                     end
                 end
@@ -1906,6 +1908,7 @@ do
             -- BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
             if hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
+                local hiddenEdges = cfg.healthBarBorderHiddenEdges
                 if styleKey == "none" or styleKey == nil then
                     -- Clear any existing border
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -1974,6 +1977,7 @@ do
                             expandX = expandX,
                             expandY = expandY,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
+                            hiddenEdges = hiddenEdges,
                         })
                     end
                 end
@@ -2067,6 +2071,7 @@ do
             -- BORDER APPROACH: Use an addon-owned anchor frame like Pet does.
             if hb and cfg.useCustomBorders then
                 local styleKey = cfg.healthBarBorderStyle
+                local hiddenEdges = cfg.healthBarBorderHiddenEdges
                 if styleKey == "none" or styleKey == nil then
                     -- Clear any existing border
                     if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -2135,6 +2140,7 @@ do
                             expandX = expandX,
                             expandY = expandY,
                             skipDimensionCheck = true, -- Bypass GetWidth/GetHeight check
+                            hiddenEdges = hiddenEdges,
                         })
                     end
                 end
@@ -2543,6 +2549,7 @@ do
                             else
                             do
                                 local styleKey = cfg.healthBarBorderStyle
+                                local hiddenEdges = cfg.healthBarBorderHiddenEdges
                                 local tintEnabled = not not cfg.healthBarBorderTintEnable
                                 local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
                                     cfg.healthBarBorderTintColor[1] or 1,
@@ -2646,6 +2653,7 @@ do
                                                 expandX = expandX,
                                                 expandY = expandY,
                                                 skipDimensionCheck = true, -- Anchor frame may be small
+                                                hiddenEdges = hiddenEdges,
                                             })
                                             handled = true
                                         end
@@ -2816,6 +2824,7 @@ do
                             -- The ManaBar StatusBar should have correct bounds (it's a sibling of HealthBarsContainer).
                             do
                                 local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
+                                local hiddenEdges = cfg.powerBarBorderHiddenEdges
                                 local tintEnabled
                                 if cfg.powerBarBorderTintEnable ~= nil then
                                     tintEnabled = not not cfg.powerBarBorderTintEnable
@@ -2919,6 +2928,7 @@ do
                                                 expandX = expandX,
                                                 expandY = expandY,
                                                 skipDimensionCheck = true, -- Anchor frame may be small
+                                                hiddenEdges = hiddenEdges,
                                             })
                                         end
                                         ensureTextAndBorderOrdering(unit)
@@ -3176,6 +3186,7 @@ do
             if unit ~= "Pet" and unit ~= "TargetOfTarget" and unit ~= "FocusTarget" and not healthBarHideTextureOnly then
             do
 				local styleKey = cfg.healthBarBorderStyle
+				local hiddenEdges = cfg.healthBarBorderHiddenEdges
 				local tintEnabled = not not cfg.healthBarBorderTintEnable
 				local tintColor = type(cfg.healthBarBorderTintColor) == "table" and {
 					cfg.healthBarBorderTintColor[1] or 1,
@@ -3228,6 +3239,7 @@ do
                                     insetH = insetH,
                                     insetV = insetV,
                                     anchorTarget = borderAnchorTarget, -- anchor to clipping container if active
+                                    hiddenEdges = hiddenEdges,
                                 })
 							end
                             if not handled then
@@ -3252,6 +3264,7 @@ do
                                         layerSublevel = 3,
                                         expandX = expandX,
                                         expandY = expandY,
+                                        hiddenEdges = hiddenEdges,
                                     })
                                 end
 							end
@@ -3918,6 +3931,9 @@ do
                             local styleKey = acfg.borderStyle
                                 or cfg.powerBarBorderStyle
                                 or cfg.healthBarBorderStyle
+                            local hiddenEdges = acfg.borderHiddenEdges
+                                or cfg.powerBarBorderHiddenEdges
+                                or cfg.healthBarBorderHiddenEdges
 
                             -- Tint enable: prefer Alternate Power–specific, then Power, then Health.
                             local tintEnabled
@@ -3985,6 +4001,7 @@ do
                                         containerParent = (apb and apb:GetParent()) or nil,
                                         insetH = insetH,
                                         insetV = insetV,
+                                        hiddenEdges = hiddenEdges,
                                     })
                                 end
 
@@ -4005,6 +4022,7 @@ do
                                             layerSublevel = 3,
                                             expandX = expandX,
                                             expandY = expandY,
+                                            hiddenEdges = hiddenEdges,
                                         })
                                     end
                                 end
@@ -4692,6 +4710,7 @@ do
             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
             do
                 local styleKey = cfg.powerBarBorderStyle or cfg.healthBarBorderStyle
+                local hiddenEdges = cfg.powerBarBorderHiddenEdges
                 local tintEnabled
                 if cfg.powerBarBorderTintEnable ~= nil then
                     tintEnabled = not not cfg.powerBarBorderTintEnable
@@ -4738,6 +4757,7 @@ do
                                 containerParent = (pb and pb:GetParent()) or nil,
                                 insetH = insetH,
                                 insetV = insetV,
+                                hiddenEdges = hiddenEdges,
                             })
                         end
                         if not handled then
@@ -4758,6 +4778,7 @@ do
                                     layerSublevel = 3,
                                     expandX = expandX,
                                     expandY = expandY,
+                                    hiddenEdges = hiddenEdges,
                                 })
                             end
                         end

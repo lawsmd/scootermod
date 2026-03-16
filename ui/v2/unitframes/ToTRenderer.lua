@@ -136,6 +136,8 @@ local function buildBorderTab(inner, barPrefix, applyFn)
         includeNone = true,
         get = function() local t = ensureToTDB() or {}; return t[barPrefix .. "BorderStyle"] or "square" end,
         set = function(v) local t = ensureToTDB(); if t then t[barPrefix .. "BorderStyle"] = v or "square"; applyFn() end end,
+        getHiddenEdges = function() local t = ensureToTDB() or {}; return t[barPrefix .. "BorderHiddenEdges"] end,
+        setHiddenEdges = function(v) local t = ensureToTDB(); if t then t[barPrefix .. "BorderHiddenEdges"] = v; applyFn() end end,
     })
 
     inner:AddToggleColorPicker({

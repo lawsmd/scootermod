@@ -68,6 +68,7 @@ local pickerSetting = nil
 local pickerCallback = nil
 local pickerAnchor = nil
 local pickerIncludeNone = true
+local pickerHiddenEdgesSetting = nil
 local selectedTab = "standard"
 
 --------------------------------------------------------------------------------
@@ -132,6 +133,7 @@ local function CloseBarBorderPicker()
     pickerSetting = nil
     pickerCallback = nil
     pickerAnchor = nil
+    pickerHiddenEdgesSetting = nil
 end
 
 local function CreateBarBorderPicker()
@@ -361,6 +363,109 @@ local function CreateBarBorderPicker()
     content:SetSize(contentWidth - PADDING, 100)
     scrollFrame:SetScrollChild(content)
     frame.Content = content
+
+    -- Hidden edges toggle row (below scroll area)
+    local edgeRow = CreateFrame("Frame", nil, frame)
+    edgeRow:SetHeight(32)
+    edgeRow:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", TAB_WIDTH + PADDING + 12, PADDING)
+    edgeRow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PADDING, PADDING)
+    frame._edgeRow = edgeRow
+
+    local edgeLabel = edgeRow:CreateFontString(nil, "OVERLAY")
+    edgeLabel:SetFont(labelFont, 11, "")
+    edgeLabel:SetPoint("LEFT", edgeRow, "LEFT", 0, 0)
+    edgeLabel:SetText("Hide Edge:")
+    edgeLabel:SetTextColor(0.6, 0.6, 0.6, 1)
+    edgeRow._label = edgeLabel
+
+    local TOGGLE_NAMES = {"Left", "Right", "Top", "Bottom"}
+    local TOGGLE_KEYS = {"left", "right", "top", "bottom"}
+    local TOGGLE_WIDTH = 50
+    local TOGGLE_HEIGHT = 22
+    local TOGGLE_SPACING = 4
+    edgeRow._toggles = {}
+
+    for ti, toggleName in ipairs(TOGGLE_NAMES) do
+        local toggle = CreateFrame("Button", nil, edgeRow)
+        toggle:SetSize(TOGGLE_WIDTH, TOGGLE_HEIGHT)
+        toggle:SetPoint("LEFT", edgeLabel, "RIGHT", 8 + (ti - 1) * (TOGGLE_WIDTH + TOGGLE_SPACING), 0)
+        toggle:EnableMouse(true)
+        toggle:RegisterForClicks("AnyUp")
+
+        local toggleBg = toggle:CreateTexture(nil, "BACKGROUND", nil, -6)
+        toggleBg:SetAllPoints()
+        toggleBg:SetColorTexture(0.10, 0.10, 0.12, 1)
+        toggle._bg = toggleBg
+
+        local toggleText = toggle:CreateFontString(nil, "OVERLAY")
+        local toggleFont = (theme and theme.GetFont and theme:GetFont("VALUE")) or "Fonts\\FRIZQT__.TTF"
+        toggleText:SetFont(toggleFont, 10, "")
+        toggleText:SetPoint("CENTER", 0, 0)
+        toggleText:SetText(toggleName)
+        toggleText:SetTextColor(0.5, 0.5, 0.5, 1)
+        toggle._text = toggleText
+
+        toggle._key = TOGGLE_KEYS[ti]
+        toggle._isOn = false
+
+        toggle:SetScript("OnClick", function(self)
+            if not pickerHiddenEdgesSetting then return end
+            local current = pickerHiddenEdgesSetting:GetValue() or {}
+            current[self._key] = not current[self._key]
+            pickerHiddenEdgesSetting:SetValue(current)
+            self._isOn = current[self._key]
+            frame:UpdateEdgeToggleVisual(self)
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end)
+
+        edgeRow._toggles[ti] = toggle
+    end
+
+    edgeRow:Hide() -- Hidden by default until ShowBarBorderPicker provides hiddenEdgesSetting
+
+    function frame:UpdateEdgeToggleVisual(toggle)
+        if toggle._isOn then
+            toggle._bg:SetColorTexture(self._accentR, self._accentG, self._accentB, 0.8)
+            toggle._text:SetTextColor(1, 1, 1, 1)
+        else
+            toggle._bg:SetColorTexture(0.10, 0.10, 0.12, 1)
+            toggle._text:SetTextColor(0.5, 0.5, 0.5, 1)
+        end
+    end
+
+    function frame:UpdateEdgeToggles()
+        local er = self._edgeRow
+        if not er then return end
+
+        if not pickerHiddenEdgesSetting then
+            er:Hide()
+            -- Restore scroll area to full height
+            self.ScrollFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -(PADDING + 20), PADDING)
+            return
+        end
+
+        er:Show()
+        -- Shrink scroll area to make room for toggle row
+        self.ScrollFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -(PADDING + 20), PADDING + 36)
+
+        local hiddenEdges = pickerHiddenEdgesSetting:GetValue() or {}
+
+        -- Disable toggles when current border is "none"
+        local currentBorder = pickerSetting and pickerSetting:GetValue()
+        local isNone = (currentBorder == "none")
+
+        for _, toggle in ipairs(er._toggles) do
+            toggle._isOn = hiddenEdges[toggle._key] or false
+            self:UpdateEdgeToggleVisual(toggle)
+            if isNone then
+                toggle:Disable()
+                toggle._bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+                toggle._text:SetTextColor(0.3, 0.3, 0.3, 1)
+            else
+                toggle:Enable()
+            end
+        end
+    end
 
     -- Button pool for border options
     frame.BorderButtons = {}
@@ -610,13 +715,14 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
-function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback)
+function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback, hiddenEdgesSetting)
     local frame = CreateBarBorderPicker()
 
     pickerSetting = setting
     pickerCallback = callback
     pickerAnchor = anchor
     pickerIncludeNone = (includeNone ~= false) -- Default true
+    pickerHiddenEdgesSetting = hiddenEdgesSetting
 
     -- Get current value and determine which tab to show
     local currentValue = nil
@@ -634,6 +740,7 @@ function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback)
     -- Update visuals and populate
     frame:UpdateTabVisuals()
     frame:PopulateContent()
+    frame:UpdateEdgeToggles()
 
     -- Position relative to anchor
     frame:ClearAllPoints()
@@ -820,6 +927,8 @@ function Controls:CreateBarBorderSelector(options)
     row._getValue = getValue
     row._setValue = setValue
     row._includeNone = includeNone
+    row._getHiddenEdges = options.getHiddenEdges
+    row._setHiddenEdges = options.setHiddenEdges
 
     -- Update display
     local function UpdateDisplay()
@@ -867,12 +976,21 @@ function Controls:CreateBarBorderSelector(options)
             end
         }
 
+        -- Create pseudo-setting for hidden edges (if getters/setters provided)
+        local hiddenEdgesPseudo = nil
+        if row._getHiddenEdges then
+            hiddenEdgesPseudo = {
+                GetValue = function() return row._getHiddenEdges() end,
+                SetValue = function(_, v) if row._setHiddenEdges then row._setHiddenEdges(v) end end,
+            }
+        end
+
         -- Show the bar border picker anchored to this selector
         addon.ShowBarBorderPicker(self, pseudoSetting, row._includeNone, function(selectedValue)
             row._currentValue = selectedValue
             row._setValue(selectedValue)
             UpdateDisplay()
-        end)
+        end, hiddenEdgesPseudo)
     end)
 
     -- Row hover effects

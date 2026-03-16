@@ -626,6 +626,7 @@ local function applyHealthBarBorder(bar, cfg)
     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
     local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
     local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
+    local hiddenEdges = cfg.healthBarBorderHiddenEdges
 
     if addon.BarBorders then
         anchor:ClearAllPoints()
@@ -705,6 +706,20 @@ local function applyHealthBarBorder(bar, cfg)
         else
             -- Unknown style, hide border
             clearHealthBarBorder(bar)
+            return
+        end
+
+        -- Apply hidden edges to BackdropTemplate edge/corner textures
+        if hiddenEdges and (hiddenEdges.top or hiddenEdges.bottom or hiddenEdges.left or hiddenEdges.right) then
+            if hiddenEdges.top and anchor.TopEdge then anchor.TopEdge:Hide() end
+            if hiddenEdges.bottom and anchor.BottomEdge then anchor.BottomEdge:Hide() end
+            if hiddenEdges.left and anchor.LeftEdge then anchor.LeftEdge:Hide() end
+            if hiddenEdges.right and anchor.RightEdge then anchor.RightEdge:Hide() end
+            -- Corners: hide if either adjacent edge is hidden
+            if anchor.TopLeftCorner and (hiddenEdges.top or hiddenEdges.left) then anchor.TopLeftCorner:Hide() end
+            if anchor.TopRightCorner and (hiddenEdges.top or hiddenEdges.right) then anchor.TopRightCorner:Hide() end
+            if anchor.BottomLeftCorner and (hiddenEdges.bottom or hiddenEdges.left) then anchor.BottomLeftCorner:Hide() end
+            if anchor.BottomRightCorner and (hiddenEdges.bottom or hiddenEdges.right) then anchor.BottomRightCorner:Hide() end
         end
     end
 end

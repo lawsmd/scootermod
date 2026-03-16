@@ -668,6 +668,7 @@ local function applyHealthBarBorder(bar, cfg)
     local thickness = tonumber(cfg.healthBarBorderThickness) or 1
     local insetH = tonumber(cfg.healthBarBorderInsetH) or tonumber(cfg.healthBarBorderInset) or 0
     local insetV = tonumber(cfg.healthBarBorderInsetV) or tonumber(cfg.healthBarBorderInset) or 0
+    local hiddenEdges = cfg.healthBarBorderHiddenEdges
 
     -- Calculate edge size and padding based on style
     local style = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
@@ -736,6 +737,14 @@ local function applyHealthBarBorder(bar, cfg)
         tex:SetTexture(texturePath)
         tex:SetVertexColor(r, g, b, a)
         tex:Show()
+    end
+
+    -- Apply hidden edges
+    if hiddenEdges then
+        if hiddenEdges.top and edges.Top then edges.Top:Hide() end
+        if hiddenEdges.bottom and edges.Bottom then edges.Bottom:Hide() end
+        if hiddenEdges.left and edges.Left then edges.Left:Hide() end
+        if hiddenEdges.right and edges.Right then edges.Right:Hide() end
     end
 end
 

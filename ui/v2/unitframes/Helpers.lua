@@ -293,6 +293,15 @@ UF.powerColorValues = {
 }
 UF.powerColorOrder = { "default", "texture", "custom" }
 
+-- Bar color mode options (cast bar)
+UF.castBarColorValues = {
+    default = "Default",
+    texture = "Texture Original",
+    class = "Class Color",
+    custom = "Custom",
+}
+UF.castBarColorOrder = { "default", "texture", "class", "custom" }
+
 -- Background color mode options
 UF.bgColorValues = {
     default = "Default",
@@ -487,11 +496,16 @@ function UF.getPortraitTabs(componentId)
 end
 
 -- Cast Bar tabs by unit type
-function UF.getCastBarTabs(componentId)
+function UF.getCastBarTabs(componentId, options)
     local sparkTab = { key = "spark", label = "Spark", infoIcon = {
         tooltipTitle = "Cast Bar Spark",
         tooltipText = "The spark is the bright vertical line on the cast bar that marks the current cast progress position.",
     } }
+    local fillLineTab = {
+        key = "fillLine",
+        label = "Text-Fill Mode",
+        visible = options and options.fillLineVisible or nil,
+    }
     if componentId == "ufPlayer" then
         -- Player has Cast Time tab
         return {
@@ -503,6 +517,7 @@ function UF.getCastBarTabs(componentId)
             { key = "icon", label = "Icon" },
             { key = "spellName", label = "Spell Name" },
             { key = "castTime", label = "Cast Time" },
+            fillLineTab,
             { key = "visibility", label = "Visibility" },
         }
     else
@@ -515,6 +530,7 @@ function UF.getCastBarTabs(componentId)
             { key = "border", label = "Border" },
             { key = "icon", label = "Icon" },
             { key = "spellName", label = "Spell Name" },
+            fillLineTab,
             { key = "visibility", label = "Visibility" },
         }
     end

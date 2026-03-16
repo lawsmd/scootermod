@@ -1135,7 +1135,12 @@ function UF.RenderPlayer(panel, scrollContent)
     -- Collapsible Section: Cast Bar (8 tabs for Player)
     --------------------------------------------------------------------------------
 
-    local castBarTabs = UF.getCastBarTabs(COMPONENT_ID)
+    local castBarTabs = UF.getCastBarTabs(COMPONENT_ID, {
+        fillLineVisible = function()
+            local t = ensureCastBarDB() or {}
+            return (t.castBarMode or "default") == "textFill"
+        end,
+    })
 
     builder:AddCollapsibleSection({
         title = "Cast Bar",
@@ -1143,7 +1148,50 @@ function UF.RenderPlayer(panel, scrollContent)
         sectionKey = "castBar",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddTabbedSection({
+            local tabbedRef  -- forward declaration for closure
+            inner:AddSelector({
+                label = "Mode",
+                description = "Choose how the cast bar is displayed.",
+                values = { default = "Default Cast Bar", textFill = "Text-Fill Cast Bar" },
+                order = { "default", "textFill" },
+                emphasized = true,
+                get = function() local t = ensureCastBarDB() or {}; return t.castBarMode or "default" end,
+                set = function(v)
+                    local t = ensureCastBarDB()
+                    if not t then return end
+                    local prevMode = t.castBarMode or "default"
+                    t.castBarMode = v
+                    -- Auto-toggle effect textures for textFill mode (Player only)
+                    local hideKeys = { "hideChargeFlash", "hideCastShine", "hideWispGlow", "hideStandardGlow", "hideChannelSparkles", "hideBaseGlow" }
+                    if v == "textFill" and prevMode ~= "textFill" then
+                        -- Entering textFill: backup current state, force all hidden
+                        t._preTextFillHides = {}
+                        for _, key in ipairs(hideKeys) do
+                            t._preTextFillHides[key] = { existed = (t[key] ~= nil), value = t[key] }
+                            t[key] = true
+                        end
+                    elseif v ~= "textFill" and prevMode == "textFill" then
+                        -- Leaving textFill: restore prior state or default to ON
+                        if t._preTextFillHides then
+                            for _, key in ipairs(hideKeys) do
+                                local info = t._preTextFillHides[key]
+                                if info and info.existed then
+                                    t[key] = info.value
+                                else
+                                    t[key] = true
+                                end
+                            end
+                            t._preTextFillHides = nil
+                        end
+                    end
+                    applyCastBar()
+                    -- Refresh tab visibility after mode change
+                    if tabbedRef and tabbedRef.RefreshTabVisibility then
+                        tabbedRef:RefreshTabVisibility()
+                    end
+                end,
+            })
+            tabbedRef = inner:AddTabbedSection({
                 tabs = castBarTabs,
                 componentId = COMPONENT_ID,
                 sectionKey = "castBar_tabs",
@@ -1214,7 +1262,27 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     style = function(cf, tabInner)
-                        UF.Builders.buildBarStyleContent(tabInner, "castBar", ensureCastBarDB, applyCastBar)
+                        UF.Builders.buildBarStyleContent(tabInner, "castBar", ensureCastBarDB, applyCastBar, UF.castBarColorValues, UF.castBarColorOrder)
+                        tabInner:Finalize()
+                    end,
+                    fillLine = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Line Height", min = 1, max = 10, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
+                        })
+                        tabInner:AddSelector({
+                            label = "End Cap Style",
+                            values = { tick = "Tick", dot = "Dot" },
+                            order = { "tick", "dot" },
+                            get = function() local t = ensureCastBarDB() or {}; return t.textFillEndCapStyle or "tick" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapStyle = v or "tick"; applyCastBar() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "End Cap Size", min = 2, max = 20, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapSize = tonumber(v) or 6; applyCastBar() end end,
+                        })
                         tabInner:Finalize()
                     end,
                     spark = function(cf, tabInner)
@@ -1258,6 +1326,23 @@ function UF.RenderPlayer(panel, scrollContent)
                             end,
                             customValue = "custom",
                             hasAlpha = true,
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Spark Glow",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideStandardGlow
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideStandardGlow = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Spark Glow",
+                                tooltipText = "The bright glow that trails behind the spark (progress indicator) during casting. Covers both standard and crafting cast bar types. Automatically hidden in Text-Fill mode.",
+                            },
                         })
                         tabInner:Finalize()
                     end,
@@ -1436,16 +1521,36 @@ function UF.RenderPlayer(panel, scrollContent)
                     end,
                     castTime = function(cf, tabInner)
                         tabInner:AddToggle({
-                            label = "Hide Cast Time",
+                            label = "Show Cast Time",
                             get = function()
-                                local t = ensureCastBarDB() or {}
-                                return not not t.castBarTimeHidden
+                                if addon and addon.EditMode and addon.EditMode.GetSetting then
+                                    local mgr = _G.EditModeManagerFrame
+                                    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+                                    local sid = _G.Enum and _G.Enum.EditModeCastBarSetting
+                                        and _G.Enum.EditModeCastBarSetting.ShowCastTime
+                                    if mgr and EMSys and sid and mgr.GetRegisteredSystemFrame then
+                                        local emFrame = mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+                                        if emFrame then
+                                            local v = addon.EditMode.GetSetting(emFrame, sid)
+                                            return (tonumber(v) or 0) ~= 0
+                                        end
+                                    end
+                                end
+                                return false
                             end,
                             set = function(v)
-                                local t = ensureCastBarDB()
-                                if not t then return end
-                                t.castBarTimeHidden = v and true or false
-                                applyCastBar()
+                                if addon and addon.EditMode and addon.EditMode.WriteSetting then
+                                    local mgr = _G.EditModeManagerFrame
+                                    local EMSys = _G.Enum and _G.Enum.EditModeSystem
+                                    local sid = _G.Enum and _G.Enum.EditModeCastBarSetting
+                                        and _G.Enum.EditModeCastBarSetting.ShowCastTime
+                                    if mgr and EMSys and sid and mgr.GetRegisteredSystemFrame then
+                                        local emFrame = mgr:GetRegisteredSystemFrame(EMSys.CastBar, nil)
+                                        if emFrame then
+                                            addon.EditMode.WriteSetting(emFrame, sid, v and 1 or 0)
+                                        end
+                                    end
+                                end
                             end,
                         })
                         tabInner:AddFontSelector({
@@ -1541,7 +1646,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 t.hideTextBorder = v and true or false
                                 applyCastBar()
                             end,
-                            tooltip = {
+                            infoIcon = {
                                 tooltipTitle = "Text Border",
                                 tooltipText = "Hides the text border frame that appears when the cast bar is unlocked from the Player frame.",
                             },
@@ -1558,9 +1663,94 @@ function UF.RenderPlayer(panel, scrollContent)
                                 t.hideChannelingShadow = v and true or false
                                 applyCastBar()
                             end,
-                            tooltip = {
+                            infoIcon = {
                                 tooltipTitle = "Channel Shadow",
                                 tooltipText = "Hides the shadow effect behind the cast bar during channeled spells.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Charge Flash",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideChargeFlash
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideChargeFlash = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Charge Flash",
+                                tooltipText = "A bright flash effect that plays when progressing through stages of an empowered cast (e.g., Evoker abilities). Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Cast Shine",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideCastShine
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideCastShine = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Cast Shine",
+                                tooltipText = "A bright shine that sweeps upward across the cast bar when a crafting or trade skill cast completes. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Wisp Glow",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideWispGlow
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideWispGlow = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Wisp Glow",
+                                tooltipText = "A wispy glow effect that briefly appears on the cast bar when a channeled spell finishes. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Channel Sparkles",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideChannelSparkles
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideChannelSparkles = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Channel Sparkles",
+                                tooltipText = "Animated sparkle particles that briefly appear when a channeled spell finishes. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Base Glow",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideBaseGlow
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideBaseGlow = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Base Glow",
+                                tooltipText = "A wispy glow anchored to the left edge of the cast bar that briefly expands outward when a channeled spell finishes. Automatically hidden in Text-Fill mode.",
                             },
                         })
                         tabInner:Finalize()

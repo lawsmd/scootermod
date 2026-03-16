@@ -157,6 +157,496 @@ do
 		pendingPostCombatRefresh[unit] = true
 	end
 
+	-- =========================================================================
+	-- Text-Fill Cast Bar mode helpers
+	-- =========================================================================
+
+	-- Resolve the fill color from cast bar color settings (mirrors bars/textures.lua logic)
+	local function resolveBarFillColor(cfg, unit)
+		local colorMode = cfg.castBarColorMode or "default"
+		local tint = cfg.castBarTint
+		if colorMode == "custom" and type(tint) == "table" then
+			return tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+		elseif colorMode == "class" then
+			if addon.GetClassColorRGB then
+				local r, g, b = addon.GetClassColorRGB("player")
+				return r or 1, g or 1, b or 1, 1
+			end
+		end
+		-- "default" / "textureOriginal": Blizzard's default gold cast bar color
+		return 1, 0.7, 0, 1
+	end
+
+	-- Lazily create all text-fill visual elements for a cast bar frame
+	local function ensureTextFillElements(frame)
+		local existing = getProp(frame, "textFillElements")
+		if existing then return existing end
+
+		-- Unfilled elements (dimmed, on cast bar directly)
+		local unfilledLine = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+		local unfilledLeftCap = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+		local unfilledRightCap = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+
+		-- Clip frame: children are clipped to its bounds for the progressive fill effect
+		local clipFrame = CreateFrame("Frame", nil, frame)
+		clipFrame:SetClipsChildren(true)
+		local barLevel = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
+		clipFrame:SetFrameLevel(barLevel + 2)
+
+		-- Filled elements (children of clip frame, anchored to cast bar for positioning)
+		local filledLine = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 2)
+		local filledLeftCap = clipFrame:CreateTexture(nil, "ARTWORK", nil, 2)
+		local filledRightCap = clipFrame:CreateTexture(nil, "ARTWORK", nil, 2)
+		local filledText = clipFrame:CreateFontString(nil, "OVERLAY")
+
+		-- Spark overlay frame (above clipFrame so spark renders in front of text)
+		local sparkFrame = CreateFrame("Frame", nil, frame)
+		sparkFrame:SetFrameLevel(barLevel + 3)
+		sparkFrame:SetAllPoints(frame)
+		local sparkTex = sparkFrame:CreateTexture(nil, "OVERLAY", nil, 3)
+		sparkTex:Hide()
+		sparkFrame:Hide()
+
+		-- Hide initially
+		unfilledLine:Hide()
+		unfilledLeftCap:Hide()
+		unfilledRightCap:Hide()
+		clipFrame:Hide()
+
+		local elements = {
+			unfilledLine = unfilledLine,
+			unfilledLeftCap = unfilledLeftCap,
+			unfilledRightCap = unfilledRightCap,
+			clipFrame = clipFrame,
+			filledLine = filledLine,
+			filledLeftCap = filledLeftCap,
+			filledRightCap = filledRightCap,
+			filledText = filledText,
+			sparkFrame = sparkFrame,
+			sparkTex = sparkTex,
+		}
+
+		setProp(frame, "textFillElements", elements)
+		return elements
+	end
+
+	-- One-time install of Show() hooks on decorative textures that Blizzard actively
+	-- re-shows during casts (ShowSpark, FinishSpell, StandardFinish OnPlay, etc.).
+	-- Instead of fighting the animation state machine with Stop(), we let animations
+	-- play through (so OnFinished callbacks fire) but keep their target textures hidden.
+	local function installTextFillShowGuards(frame)
+		if getProp(frame, "textFillShowGuarded") then return end
+		setProp(frame, "textFillShowGuarded", true)
+
+		local guardTextures = {
+			frame.Spark,          -- ShowSpark() → self.Spark:Show()
+			frame.StandardGlow,   -- ShowSpark() → sparkFx:SetShown(true)
+			frame.CraftGlow,      -- ShowSpark() → sparkFx:SetShown(true)
+			frame.ChannelShadow,  -- ShowSpark() → sparkFx:SetShown(true)
+			frame.Flash,          -- FinishSpell() → self.Flash:Show()
+			frame.EnergyGlow,     -- StandardFinish:OnPlay → SetTargetsShown(true)
+			frame.Flakes01,       -- StandardFinish:OnPlay → SetTargetsShown(true)
+			frame.Flakes02,       -- StandardFinish:OnPlay → SetTargetsShown(true)
+			frame.Flakes03,       -- StandardFinish:OnPlay → SetTargetsShown(true)
+		}
+		for _, texture in ipairs(guardTextures) do
+			if texture and texture.Show then
+				hooksecurefunc(texture, "Show", function(self)
+					if getProp(frame, "textFillActive") then
+						pcall(self.Hide, self)
+					end
+				end)
+			end
+		end
+	end
+
+	-- Apply text-fill mode visuals to a cast bar frame
+	local function applyTextFillMode(frame, cfg, unit)
+		local elements = ensureTextFillElements(frame)
+
+		-- Resolve fill color from cast bar color settings
+		local r, g, b, a = resolveBarFillColor(cfg, unit)
+
+		-- Resolve foreground texture (user's selected bar texture)
+		local texKey = cfg.castBarTexture or "default"
+		local texturePath = addon.Media and addon.Media.ResolveBarTexturePath
+			and addon.Media.ResolveBarTexturePath(texKey)
+
+		-- Read text-fill settings
+		local lineHeight = math.max(1, math.min(10, tonumber(cfg.textFillLineHeight) or 2))
+		local capStyle = cfg.textFillEndCapStyle or "tick"
+		local capSize = math.max(2, math.min(20, tonumber(cfg.textFillEndCapSize) or 6))
+
+		local barWidth = frame:GetWidth()
+		local barHeight = frame:GetHeight()
+
+		-- Hide StatusBar fill texture (bar continues functioning for spark positioning)
+		local fillTex = frame:GetStatusBarTexture()
+		if fillTex and fillTex.SetAlpha then
+			pcall(fillTex.SetAlpha, fillTex, 0)
+		end
+
+		-- Hide custom background (ScootBG)
+		local scootBG = getProp(frame, "ScootBG")
+		if scootBG and scootBG.SetAlpha then
+			pcall(scootBG.SetAlpha, scootBG, 0)
+		end
+		-- Hide Blizzard stock background
+		if frame.Background and frame.Background.SetAlpha then
+			pcall(frame.Background.SetAlpha, frame.Background, 0)
+		end
+
+		-- Hide InterruptGlow in text-fill mode (pill-shaped outline that flashes during interrupts)
+		local interruptGlow = frame.InterruptGlow
+		if interruptGlow then
+			if interruptGlow.SetAlpha then
+				pcall(interruptGlow.SetAlpha, interruptGlow, 0)
+			end
+			-- Stop any playing animation to prevent it from overriding our alpha
+			if frame.InterruptGlowAnim and frame.InterruptGlowAnim.Stop then
+				pcall(frame.InterruptGlowAnim.Stop, frame.InterruptGlowAnim)
+			end
+		end
+
+		-- Hide Blizzard bar border in text-fill mode
+		local border = frame.Border
+		if border and border.SetAlpha then
+			pcall(border.SetAlpha, border, 0)
+		end
+
+		-- Hide all decorative chrome textures (animations play invisibly, callbacks still fire)
+		local chromeTextures = {
+			frame.Spark, frame.Flash,
+			frame.StandardGlow, frame.CraftGlow, frame.ChannelShadow,
+			frame.EnergyGlow, frame.Flakes01, frame.Flakes02, frame.Flakes03,
+			frame.BaseGlow, frame.WispGlow, frame.Sparkles01, frame.Sparkles02,
+			frame.Shine, frame.ChargeFlash, frame.ChargeGlow,
+		}
+		for _, tex in ipairs(chromeTextures) do
+			if tex and tex.Hide then pcall(tex.Hide, tex) end
+		end
+
+		-- Flag for Show() guards and shake hook to check
+		setProp(frame, "textFillActive", true)
+
+		-- Install one-time Show() hooks so Blizzard can't re-show hidden chrome textures
+		installTextFillShowGuards(frame)
+
+		-- One-time hook on InterruptShakeAnim only (frame shake has no critical callbacks
+		-- and would visually shake text-fill elements; other animations play through
+		-- harmlessly since their target textures are hidden via Show() guards)
+		if not getProp(frame, "textFillShakeHooked") then
+			setProp(frame, "textFillShakeHooked", true)
+			local ag = frame.InterruptShakeAnim
+			if ag and ag.Play and ag.Stop then
+				local stopFn = ag.Stop
+				local agRef = ag
+				hooksecurefunc(ag, "Play", function()
+					if getProp(frame, "textFillActive") then
+						pcall(stopFn, agRef)
+					end
+				end)
+			end
+		end
+
+		-- End cap dimensions
+		local capW, capH
+		if capStyle == "dot" then
+			capW, capH = capSize, capSize
+		else -- "tick"
+			capW = math.max(2, capSize * 0.3)
+			capH = capSize
+		end
+
+		-- Gray color for unfilled elements (solid, no opacity reduction)
+		local grayR, grayG, grayB = 0.5, 0.5, 0.5
+
+		-- Unfilled line: full width, centered vertically
+		local el = elements.unfilledLine
+		el:ClearAllPoints()
+		el:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+		el:SetHeight(lineHeight)
+		el:SetColorTexture(grayR, grayG, grayB, 1)
+		el:Show()
+
+		-- Unfilled left cap
+		el = elements.unfilledLeftCap
+		el:ClearAllPoints()
+		el:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		el:SetSize(capW, capH)
+		el:SetColorTexture(grayR, grayG, grayB, 1)
+		el:Show()
+
+		-- Unfilled right cap
+		el = elements.unfilledRightCap
+		el:ClearAllPoints()
+		el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+		el:SetSize(capW, capH)
+		el:SetColorTexture(grayR, grayG, grayB, 1)
+		el:Show()
+
+		-- Clip frame: LEFT-anchored, width = progress * barWidth
+		local clipFrame = elements.clipFrame
+		clipFrame:ClearAllPoints()
+		clipFrame:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		clipFrame:SetHeight(barHeight)
+		-- Compute current progress
+		local mn, mx = frame:GetMinMaxValues()
+		local val = frame:GetValue()
+		local rng = mx - mn
+		local progress = (rng > 0) and ((val - mn) / rng) or 0
+		progress = math.max(0, math.min(1, progress))
+		clipFrame:SetWidth(math.max(0.1, progress * barWidth))
+		clipFrame:Show()
+
+		-- Filled line (anchored to cast bar, clipped by clip frame)
+		el = elements.filledLine
+		el:ClearAllPoints()
+		el:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+		el:SetHeight(lineHeight)
+		if texturePath then
+			el:SetTexture(texturePath)
+			el:SetVertexColor(r, g, b, a)
+		else
+			el:SetColorTexture(r, g, b, a)
+		end
+		el:Show()
+
+		-- Filled left cap
+		el = elements.filledLeftCap
+		el:ClearAllPoints()
+		el:SetPoint("LEFT", frame, "LEFT", 0, 0)
+		el:SetSize(capW, capH)
+		if texturePath then
+			el:SetTexture(texturePath)
+			el:SetVertexColor(r, g, b, a)
+		else
+			el:SetColorTexture(r, g, b, a)
+		end
+		el:Show()
+
+		-- Filled right cap
+		el = elements.filledRightCap
+		el:ClearAllPoints()
+		el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+		el:SetSize(capW, capH)
+		if texturePath then
+			el:SetTexture(texturePath)
+			el:SetVertexColor(r, g, b, a)
+		else
+			el:SetColorTexture(r, g, b, a)
+		end
+		el:Show()
+
+		-- Filled text color (positioning synced after spell name styling)
+		elements.filledText:SetTextColor(r, g, b, a)
+		elements.filledText:Show()
+
+		-- Custom spark overlay for text-fill mode
+		do
+			local spark = frame.Spark
+			local sparkTex = elements.sparkTex
+			local sparkFrame = elements.sparkFrame
+			if spark and sparkTex and sparkFrame then
+				-- Always use the standard yellow pip atlas (avoids stale red atlas after interrupts)
+				sparkTex:SetAtlas("ui-castingbar-pip")
+
+				-- Read spark settings (same keys the normal spark block uses)
+				local sparkHidden = cfg.castBarSparkHidden == true
+				if isEmpoweredCast(unit) then sparkHidden = false end
+
+				if sparkHidden then
+					sparkTex:Hide()
+					sparkFrame:Hide()
+				else
+					-- Spark color
+					local sparkColorMode = cfg.castBarSparkColorMode or "default"
+					local sparkTint = type(cfg.castBarSparkTint) == "table" and cfg.castBarSparkTint
+					if sparkColorMode == "custom" and sparkTint then
+						sparkTex:SetVertexColor(sparkTint[1] or 1, sparkTint[2] or 1,
+							sparkTint[3] or 1, sparkTint[4] or 1)
+					else
+						sparkTex:SetVertexColor(1, 1, 1, 1)
+					end
+
+					-- Initial position at current progress
+					local sparkW = spark:GetWidth() or 8
+					sparkTex:SetSize(sparkW, lineHeight)
+					sparkTex:ClearAllPoints()
+					sparkTex:SetPoint("CENTER", frame, "LEFT", progress * barWidth, 0)
+					sparkTex:Show()
+					sparkFrame:Show()
+				end
+
+				-- Store dimensions for SetValue hook
+				elements.lineHeight = lineHeight
+				elements.sparkWidth = spark:GetWidth() or 8
+			end
+		end
+
+		-- Install SetValue hook once for progress tracking
+		if not getProp(frame, "textFillSetValueHooked") then
+			setProp(frame, "textFillSetValueHooked", true)
+			hooksecurefunc(frame, "SetValue", function(self, value)
+				local els = getProp(self, "textFillElements")
+				if not els or not els.clipFrame:IsShown() then return end
+				local lo, hi = self:GetMinMaxValues()
+				local range = hi - lo
+				local prog = (range > 0) and ((value - lo) / range) or 0
+				prog = math.max(0, math.min(1, prog))
+				local bw = self:GetWidth()
+				els.clipFrame:SetWidth(math.max(0.1, prog * bw))
+				-- Update custom spark position + dynamic height
+				local sparkTex = els.sparkTex
+				if sparkTex and els.sparkFrame and els.sparkFrame:IsShown() then
+					local sparkX = prog * bw
+					local h = els.lineHeight or 2
+					local tl = els.textLeftEdge
+					local tr = els.textRightEdge
+					if tl and tr then
+						if sparkX >= tl and sparkX <= tr then
+							h = els.effectiveTextHeight or h
+						end
+					else
+						h = els.effectiveTextHeight or h
+					end
+					sparkTex:SetSize(els.sparkWidth or 8, h)
+					sparkTex:ClearAllPoints()
+					sparkTex:SetPoint("CENTER", self, "LEFT", sparkX, 0)
+				end
+			end)
+		end
+
+		-- Install SetText hook once for text content sync
+		local spellFS = frame.Text
+		if spellFS and not getProp(frame, "textFillSetTextHooked") then
+			setProp(frame, "textFillSetTextHooked", true)
+			hooksecurefunc(spellFS, "SetText", function(self, text)
+				local els = getProp(frame, "textFillElements")
+				if els and els.filledText and els.clipFrame:IsShown() then
+					els.filledText:SetText(text or "")
+				end
+			end)
+		end
+	end
+
+	-- Hide text-fill elements (when switching back to default mode)
+	local function hideTextFillElements(frame)
+		local elements = getProp(frame, "textFillElements")
+		if not elements then return end
+		elements.unfilledLine:Hide()
+		elements.unfilledLeftCap:Hide()
+		elements.unfilledRightCap:Hide()
+		elements.clipFrame:Hide()
+		if elements.sparkFrame then elements.sparkFrame:Hide() end
+		if elements.sparkTex then elements.sparkTex:Hide() end
+		-- Clear stored dimensions
+		elements.lineHeight = nil
+		elements.effectiveTextHeight = nil
+		elements.textLeftEdge = nil
+		elements.textRightEdge = nil
+		-- Restore fill texture alpha
+		local fillTex = frame:GetStatusBarTexture()
+		if fillTex and fillTex.SetAlpha then
+			pcall(fillTex.SetAlpha, fillTex, 1)
+		end
+		-- Restore backgrounds (normal pipeline will re-apply correct opacity)
+		if frame.Background and frame.Background.SetAlpha then
+			pcall(frame.Background.SetAlpha, frame.Background, 1)
+		end
+		-- Restore InterruptGlow (default alpha is 0, animations will show it when needed)
+		local interruptGlow = frame.InterruptGlow
+		if interruptGlow and interruptGlow.SetAlpha then
+			pcall(interruptGlow.SetAlpha, interruptGlow, 0)  -- restore to default (hidden until animated)
+		end
+		-- Restore Blizzard bar border
+		local border = frame.Border
+		if border and border.SetAlpha then
+			pcall(border.SetAlpha, border, 1)
+		end
+		-- Restore original text visibility (spell name styling block will re-apply on next cycle)
+		if frame.Text and frame.Text.SetAlpha then
+			pcall(frame.Text.SetAlpha, frame.Text, 1)
+		end
+		-- Clear text-fill flag so Show() guards and shake hook become inactive
+		setProp(frame, "textFillActive", nil)
+
+		-- Re-show Spark if mid-cast (ShowSpark won't be called again for current cast)
+		if (frame.casting or frame.channeling) and frame.Spark then
+			pcall(frame.Spark.Show, frame.Spark)
+		end
+	end
+
+	-- Sync filled text to match original spell name (called after spell name styling in apply())
+	local function syncTextFillText(frame, cfg)
+		local elements = getProp(frame, "textFillElements")
+		if not elements or not elements.filledText then return end
+		local spellFS = frame.Text
+		if not spellFS then return end
+
+		-- Copy font properties from styled original text
+		local face, size, flags = spellFS:GetFont()
+		if face then pcall(elements.filledText.SetFont, elements.filledText, face, size, flags) end
+		-- Copy text content
+		elements.filledText:SetText(spellFS:GetText() or "")
+		-- Match alignment
+		if elements.filledText.SetJustifyH then elements.filledText:SetJustifyH("CENTER") end
+		-- Position to match original text (read from config, not from current anchor)
+		elements.filledText:ClearAllPoints()
+		local styleCfg = cfg.spellNameText or {}
+		local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
+		local oy = (styleCfg.offset and tonumber(styleCfg.offset.y)) or 0
+		elements.filledText:SetPoint("CENTER", frame, "CENTER", ox, oy)
+		-- Expand clip frame height to contain text taller than the bar
+		local clipFrame = elements.clipFrame
+		if clipFrame then
+			local textH = elements.filledText:GetStringHeight()
+			-- Fallback: font string may not be laid out yet on first cast after /reload
+			if (not textH or textH <= 0) and size then
+				textH = size * 1.15
+			end
+			local frameH = frame:GetHeight()
+			if textH and textH > 0 and frameH and textH > frameH then
+				clipFrame:SetHeight(textH)
+			end
+			elements.effectiveTextHeight = textH
+		end
+		-- Constrain to bar width so both texts truncate identically (prevents clip-frame edge clipping)
+		local bw = frame:GetWidth()
+		if bw and bw > 0 then
+			elements.filledText:SetWidth(bw)
+			elements.filledText:SetWordWrap(false)
+			-- Match original text width so it truncates at the same point
+			if spellFS.SetWidth then
+				pcall(spellFS.SetWidth, spellFS, bw)
+				if spellFS.SetWordWrap then pcall(spellFS.SetWordWrap, spellFS, false) end
+			end
+		end
+		-- Store text horizontal bounds for spark height calculation
+		local sw = elements.filledText:GetStringWidth()
+		if sw and sw > 0 then
+			-- Cap to bar width (text is truncated by SetWidth above)
+			if bw and sw > bw then sw = bw end
+			local cx = (bw or 0) / 2 + ox
+			elements.textLeftEdge = cx - sw / 2
+			elements.textRightEdge = cx + sw / 2
+		end
+		-- Visibility follows spell name hidden state
+		if cfg.castBarSpellNameHidden then
+			elements.filledText:Hide()
+		else
+			elements.filledText:Show()
+		end
+		-- frame.Text stays visible as the unfilled text — spell name styling block manages its alpha
+	end
+
+	-- Export text-fill helpers for Boss cast bar section (separate do-block scope)
+	addon._applyTextFillMode = applyTextFillMode
+	addon._hideTextFillElements = hideTextFillElements
+	addon._syncTextFillText = syncTextFillText
+
 	-- Flush deferred full re-applies after combat ends
 	function addon.FlushPendingCastBarRefresh()
 		for unit in pairs(pendingPostCombatRefresh) do
@@ -567,13 +1057,86 @@ do
 						end
 					end
 				end
+
+				-- Player Cast Bar: ChargeFlash / Shine / WispGlow visibility
+				-- These are additive-blend effect textures that flash/glow at various cast moments.
+				-- Use SetAlpha to avoid fighting Blizzard's animation-driven show/hide logic.
+				if isPlayer then
+					local chargeFlash = frame.ChargeFlash
+					if chargeFlash then
+						local hide = not not cfg.hideChargeFlash
+						if chargeFlash.SetAlpha then
+							pcall(chargeFlash.SetAlpha, chargeFlash, hide and 0 or 1)
+						end
+					end
+					local shine = frame.Shine
+					if shine then
+						local hide = not not cfg.hideCastShine
+						if shine.SetAlpha then
+							pcall(shine.SetAlpha, shine, hide and 0 or 1)
+						end
+					end
+					local wispGlow = frame.WispGlow
+					if wispGlow then
+						local hide = not not cfg.hideWispGlow
+						if wispGlow.SetAlpha then
+							pcall(wispGlow.SetAlpha, wispGlow, hide and 0 or 1)
+						end
+					end
+					local standardGlow = frame.StandardGlow
+					if standardGlow then
+						local hide = not not cfg.hideStandardGlow
+						if standardGlow.SetAlpha then
+							pcall(standardGlow.SetAlpha, standardGlow, hide and 0 or 1)
+						end
+					end
+					local craftGlow = frame.CraftGlow
+					if craftGlow then
+						local hide = not not cfg.hideStandardGlow
+						if craftGlow.SetAlpha then
+							pcall(craftGlow.SetAlpha, craftGlow, hide and 0 or 1)
+						end
+					end
+					local sparkles01 = frame.Sparkles01
+					if sparkles01 then
+						local hide = not not cfg.hideChannelSparkles
+						if sparkles01.SetAlpha then
+							pcall(sparkles01.SetAlpha, sparkles01, hide and 0 or 1)
+						end
+					end
+					local sparkles02 = frame.Sparkles02
+					if sparkles02 then
+						local hide = not not cfg.hideChannelSparkles
+						if sparkles02.SetAlpha then
+							pcall(sparkles02.SetAlpha, sparkles02, hide and 0 or 1)
+						end
+					end
+					local baseGlow = frame.BaseGlow
+					if baseGlow then
+						local hide = not not cfg.hideBaseGlow
+						if baseGlow.SetAlpha then
+							pcall(baseGlow.SetAlpha, baseGlow, hide and 0 or 1)
+						end
+					end
+				end
+			end
+
+			-- Text-Fill Cast Bar mode
+			local castBarMode = cfg.castBarMode or "default"
+			-- Empowered casts fall back to default (stage tiers incompatible with text-fill)
+			if isEmpoweredCast(unit) then castBarMode = "default" end
+
+			if castBarMode == "textFill" then
+				applyTextFillMode(frame, cfg, unit)
+			else
+				hideTextFillElements(frame)
 			end
 
 			-- Apply foreground and background styling via shared bar helpers
 			-- When visualOnly is true (combat + hook path from SetStatusBarTexture/SetStatusBarColor),
 			-- texture/color is allowed so custom styling persists through Blizzard's updates.
 			-- Layout changes are already skipped above when visualOnly is true.
-			if (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
+			if castBarMode ~= "textFill" and (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
 				local db = addon and addon.db and addon.db.profile
 				db.unitFrames = db.unitFrames or {}
 				db.unitFrames[unit] = db.unitFrames[unit] or {}
@@ -659,9 +1222,15 @@ do
 			end
 
 			-- Custom Cast Bar border (per unit, uses bar border system)
+			if castBarMode == "textFill" then
+				if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
+				if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
+				if frame.Border and frame.Border.SetShown then pcall(frame.Border.SetShown, frame.Border, false) end
+			else
 			do
 				local enabled = not not cfg.castBarBorderEnable
 				local styleKey = cfg.castBarBorderStyle or "square"
+				local hiddenEdges = cfg.castBarBorderHiddenEdges
 				local tintEnabled = not not cfg.castBarBorderTintEnable
 				local tintTbl = type(cfg.castBarBorderTintColor) == "table" and cfg.castBarBorderTintColor or {1,1,1,1}
 				local tintColor = {
@@ -741,6 +1310,7 @@ do
 							levelOffset = 1,
 							insetH = combinedInsetH,
 							insetV = combinedInsetV,
+							hiddenEdges = hiddenEdges,
 						})
 					end
 
@@ -779,6 +1349,7 @@ do
 								expandRight = exRight,
 								expandTop = exTop,
 								expandBottom = exBottom,
+								hiddenEdges = hiddenEdges,
 							})
 						end
 					end
@@ -794,6 +1365,7 @@ do
 					end
 				end
 			end
+			end -- castBarMode ~= "textFill"
 
 			-- Cast Bar Icon border (per unit; reuses icon border system from Cooldown Manager)
 			do
@@ -855,7 +1427,7 @@ do
 			do
 				local borderEnabled = not not cfg.castBarBorderEnable
 				local borderStyle = cfg.castBarBorderStyle or "square"
-				local needsOverlay = borderEnabled and borderStyle ~= "none"
+				local needsOverlay = castBarMode ~= "textFill" and borderEnabled and borderStyle ~= "none"
 
 				if needsOverlay then
 					local overlay = frame._ScootCastTextOverlay
@@ -981,6 +1553,11 @@ do
 						end
 					end
 				end
+			end
+
+			-- Sync filled text in textFill mode (after spell name styling)
+			if castBarMode == "textFill" then
+				syncTextFillText(frame, cfg)
 			end
 
 			-- Cast Time Text styling (Player only; Target/Focus Cast Bars do not have cast time display)
@@ -1777,8 +2354,17 @@ do
 				end
 			end
 
+			-- Text-Fill Cast Bar mode (Boss)
+			local castBarMode = cfg.castBarMode or "default"
+
+			if castBarMode == "textFill" then
+				addon._applyTextFillMode(frame, cfg, "Boss")
+			else
+				addon._hideTextFillElements(frame)
+			end
+
 			-- Apply foreground and background styling
-			if (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
+			if castBarMode ~= "textFill" and (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
 				-- Foreground: texture + color
 				if addon._ApplyToStatusBar and frame.GetStatusBarTexture then
 					local texKey = cfg.castBarTexture or "default"
@@ -1845,9 +2431,15 @@ do
 			end
 
 			-- Custom Cast Bar border
+			if castBarMode == "textFill" then
+				if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(frame) end
+				if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(frame) end
+				if frame.Border and frame.Border.SetShown then pcall(frame.Border.SetShown, frame.Border, false) end
+			else
 			do
 				local enabled = not not cfg.castBarBorderEnable
 				local styleKey = cfg.castBarBorderStyle or "square"
+				local hiddenEdges = cfg.castBarBorderHiddenEdges
 				local tintEnabled = not not cfg.castBarBorderTintEnable
 				local tintTbl = type(cfg.castBarBorderTintColor) == "table" and cfg.castBarBorderTintColor or {1,1,1,1}
 				local tintColor = {
@@ -1909,6 +2501,7 @@ do
 						levelOffset = 1,
 						insetH = combinedInsetH,
 						insetV = combinedInsetV,
+						hiddenEdges = hiddenEdges,
 					})
 					end
 
@@ -1944,6 +2537,7 @@ do
 							expandRight = exRight,
 							expandTop = exTop,
 							expandBottom = exBottom,
+							hiddenEdges = hiddenEdges,
 						})
 					end
 				end
@@ -1959,6 +2553,7 @@ do
 					end
 				end
 			end
+			end -- castBarMode ~= "textFill" (Boss)
 
 			-- Cast Bar Icon border
 			do
@@ -2011,7 +2606,7 @@ do
 			do
 				local borderEnabled = not not cfg.castBarBorderEnable
 				local borderStyle = cfg.castBarBorderStyle or "square"
-				local needsOverlay = borderEnabled and borderStyle ~= "none"
+				local needsOverlay = castBarMode ~= "textFill" and borderEnabled and borderStyle ~= "none"
 
 				if needsOverlay then
 					local overlay = frame._ScootCastTextOverlay
@@ -2100,6 +2695,11 @@ do
 						)
 					end
 				end
+			end
+
+			-- Sync filled text in textFill mode (after Boss spell name styling)
+			if castBarMode == "textFill" then
+				addon._syncTextFillText(frame, cfg)
 			end
 
 			-- BorderShield visibility (Boss cast bars)

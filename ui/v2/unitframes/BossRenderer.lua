@@ -125,6 +125,8 @@ local function buildBorderTab(inner, barPrefix, applyFn, dbFn)
         includeNone = true,
         get = function() local t = dbFn() or {}; return t[barPrefix .. "BorderStyle"] or "square" end,
         set = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderStyle"] = v or "square"; applyFn() end end,
+        getHiddenEdges = function() local t = dbFn() or {}; return t[barPrefix .. "BorderHiddenEdges"] end,
+        setHiddenEdges = function(v) local t = dbFn(); if t then t[barPrefix .. "BorderHiddenEdges"] = v; applyFn() end end,
     })
 
     inner:AddToggleColorPicker({
@@ -609,6 +611,8 @@ function UF.RenderBoss(panel, scrollContent)
                             includeNone = true,
                             get = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderStyle or "square" end,
                             set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderStyle = v or "square"; applyNameLevelText() end end,
+                            getHiddenEdges = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderHiddenEdges end,
+                            setHiddenEdges = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderHiddenEdges = v; applyNameLevelText() end end,
                         })
                         tabInner:AddToggleColorPicker({
                             label = "Border Tint",
@@ -761,6 +765,15 @@ function UF.RenderBoss(panel, scrollContent)
         sectionKey = "castBar",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
+            inner:AddSelector({
+                label = "Mode",
+                description = "Choose how the cast bar is displayed.",
+                values = { default = "Default Cast Bar", textFill = "Text-Fill Cast Bar" },
+                order = { "default", "textFill" },
+                emphasized = true,
+                get = function() local t = ensureCastBarDB() or {}; return t.castBarMode or "default" end,
+                set = function(v) local t = ensureCastBarDB(); if t then t.castBarMode = v; applyCastBar() end end,
+            })
             inner:AddTabbedSection({
                 tabs = castBarTabs,
                 componentId = COMPONENT_ID,
@@ -811,7 +824,7 @@ function UF.RenderBoss(panel, scrollContent)
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarTexture = v or "default"; applyCastBar() end end,
                         })
                         tabInner:AddSelectorColorPicker({
-                            label = "Foreground Color", values = UF.healthColorValues, order = UF.healthColorOrder,
+                            label = "Foreground Color", values = UF.castBarColorValues, order = UF.castBarColorOrder,
                             get = function() local t = ensureCastBarDB() or {}; return t.castBarColorMode or "default" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarColorMode = v or "default"; applyCastBar() end end,
                             getColor = function() local t = ensureCastBarDB() or {}; local c = t.castBarTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
@@ -836,6 +849,26 @@ function UF.RenderBoss(panel, scrollContent)
                             label = "Background Opacity", min = 0, max = 100, step = 1,
                             get = function() local t = ensureCastBarDB() or {}; return tonumber(t.castBarBackgroundOpacity) or 50 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBackgroundOpacity = tonumber(v) or 50; applyCastBar() end end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    fillLine = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Line Height", min = 1, max = 10, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
+                        })
+                        tabInner:AddSelector({
+                            label = "End Cap Style",
+                            values = { tick = "Tick", dot = "Dot" },
+                            order = { "tick", "dot" },
+                            get = function() local t = ensureCastBarDB() or {}; return t.textFillEndCapStyle or "tick" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapStyle = v or "tick"; applyCastBar() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "End Cap Size", min = 2, max = 20, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapSize = tonumber(v) or 6; applyCastBar() end end,
                         })
                         tabInner:Finalize()
                     end,
@@ -868,6 +901,8 @@ function UF.RenderBoss(panel, scrollContent)
                             includeNone = true,
                             get = function() local t = ensureCastBarDB() or {}; return t.castBarBorderStyle or "square" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderStyle = v or "square"; applyCastBar() end end,
+                            getHiddenEdges = function() local t = ensureCastBarDB() or {}; return t.castBarBorderHiddenEdges end,
+                            setHiddenEdges = function(v) local t = ensureCastBarDB(); if t then t.castBarBorderHiddenEdges = v; applyCastBar() end end,
                         })
                         tabInner:AddToggleColorPicker({
                             label = "Border Tint",

@@ -231,6 +231,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 thickness = thickness,
                 insetH = insetH,
                 insetV = insetV,
+                hiddenEdges = db.borderHiddenEdges,
             })
         end
 

@@ -561,6 +561,7 @@ local function styleVerticalStack(stack, component)
                 thickness = thickness,
                 insetH = insetH,
                 insetV = insetV,
+                hiddenEdges = db.borderHiddenEdges,
             })
         end
         if not handled then
@@ -575,6 +576,7 @@ local function styleVerticalStack(stack, component)
                     expandX = 1,
                     expandY = 2,
                     skipDimensionCheck = true,
+                    hiddenEdges = db.borderHiddenEdges,
                 })
             end
         end

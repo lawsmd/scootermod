@@ -363,6 +363,8 @@ local function RenderClassAuras(panel, scrollContent, classToken)
                             includeNone = true,
                             get = function() return getSetting("barBorderStyle") or "none" end,
                             set = function(v) h.setAndApply("barBorderStyle", v) builder:DeferredRefreshAll() end,
+                            getHiddenEdges = function() return getSetting("barBorderHiddenEdges") end,
+                            setHiddenEdges = function(v) h.setAndApply("barBorderHiddenEdges", v) builder:DeferredRefreshAll() end,
                         })
 
                         -- Border Tint

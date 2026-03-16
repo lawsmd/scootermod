@@ -865,6 +865,8 @@ function Builder:AddBarBorderSelector(options)
         width = options.width,
         includeNone = options.includeNone,
         useLightDim = self._useLightDim,
+        getHiddenEdges = options.getHiddenEdges,
+        setHiddenEdges = options.setHiddenEdges,
     })
 
     if barBorderSelector then
@@ -1012,7 +1014,7 @@ function Builder:AddTabbedSection(options)
         end)
     end
 
-    return self
+    return section
 end
 
 --------------------------------------------------------------------------------
