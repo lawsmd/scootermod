@@ -1063,24 +1063,21 @@ do
 				-- Use SetAlpha to avoid fighting Blizzard's animation-driven show/hide logic.
 				if isPlayer then
 					local chargeFlash = frame.ChargeFlash
-					if chargeFlash then
-						local hide = not not cfg.hideChargeFlash
+					if chargeFlash and cfg.hideChargeFlash then
 						if chargeFlash.SetAlpha then
-							pcall(chargeFlash.SetAlpha, chargeFlash, hide and 0 or 1)
+							pcall(chargeFlash.SetAlpha, chargeFlash, 0)
 						end
 					end
 					local shine = frame.Shine
-					if shine then
-						local hide = not not cfg.hideCastShine
+					if shine and cfg.hideCastShine then
 						if shine.SetAlpha then
-							pcall(shine.SetAlpha, shine, hide and 0 or 1)
+							pcall(shine.SetAlpha, shine, 0)
 						end
 					end
 					local wispGlow = frame.WispGlow
-					if wispGlow then
-						local hide = not not cfg.hideWispGlow
+					if wispGlow and cfg.hideWispGlow then
 						if wispGlow.SetAlpha then
-							pcall(wispGlow.SetAlpha, wispGlow, hide and 0 or 1)
+							pcall(wispGlow.SetAlpha, wispGlow, 0)
 						end
 					end
 					local standardGlow = frame.StandardGlow
@@ -1098,24 +1095,21 @@ do
 						end
 					end
 					local sparkles01 = frame.Sparkles01
-					if sparkles01 then
-						local hide = not not cfg.hideChannelSparkles
+					if sparkles01 and cfg.hideChannelSparkles then
 						if sparkles01.SetAlpha then
-							pcall(sparkles01.SetAlpha, sparkles01, hide and 0 or 1)
+							pcall(sparkles01.SetAlpha, sparkles01, 0)
 						end
 					end
 					local sparkles02 = frame.Sparkles02
-					if sparkles02 then
-						local hide = not not cfg.hideChannelSparkles
+					if sparkles02 and cfg.hideChannelSparkles then
 						if sparkles02.SetAlpha then
-							pcall(sparkles02.SetAlpha, sparkles02, hide and 0 or 1)
+							pcall(sparkles02.SetAlpha, sparkles02, 0)
 						end
 					end
 					local baseGlow = frame.BaseGlow
-					if baseGlow then
-						local hide = not not cfg.hideBaseGlow
+					if baseGlow and cfg.hideBaseGlow then
 						if baseGlow.SetAlpha then
-							pcall(baseGlow.SetAlpha, baseGlow, hide and 0 or 1)
+							pcall(baseGlow.SetAlpha, baseGlow, 0)
 						end
 					end
 				end
