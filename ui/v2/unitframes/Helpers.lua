@@ -521,7 +521,7 @@ function UF.getCastBarTabs(componentId, options)
             { key = "visibility", label = "Visibility" },
         }
     else
-        -- Target/Focus/Boss: no Cast Time
+        -- Target/Focus/Boss
         return {
             { key = "positioning", label = "Positioning" },
             { key = "sizing", label = "Sizing" },
@@ -530,6 +530,7 @@ function UF.getCastBarTabs(componentId, options)
             { key = "border", label = "Border" },
             { key = "icon", label = "Icon" },
             { key = "spellName", label = "Spell Name" },
+            { key = "castTime", label = "Cast Time" },
             fillLineTab,
             { key = "visibility", label = "Visibility" },
         }

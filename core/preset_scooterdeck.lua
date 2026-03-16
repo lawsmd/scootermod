@@ -2547,9 +2547,6 @@ Presets:Register({
       positionY = 325,
       supportsText = true,
       tallWideRatio = -40,
-      textCount = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-      },
       textDuration = {
         color = {
           1,
@@ -2840,9 +2837,6 @@ Presets:Register({
       positionY = 180,
       supportsText = true,
       tallWideRatio = -40,
-      textCount = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-      },
       textDuration = {
         color = {
           1,
@@ -2866,7 +2860,6 @@ Presets:Register({
       },
     },
     essentialCooldowns = {
-      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderInsetH = -1,
@@ -3063,15 +3056,6 @@ Presets:Register({
       zoneTextOffsetX = 0,
       zoneTextOffsetY = 0,
       zoneTextPosition = "TOP",
-    },
-    nameplatesUnit = {
-      _nameplatesColorMigrated = true,
-      _nameplatesTextMigrated = true,
-      textName = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-        size = 8,
-        style = "THICKOUTLINE",
-      },
     },
     objectiveTracker = {
       height = 400,
@@ -3574,7 +3558,6 @@ Presets:Register({
       visibilityMode = "always",
     },
     utilityCooldowns = {
-      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderInsetH = -1,
@@ -3671,7 +3654,6 @@ Presets:Register({
       },
       healthBarBorderTintEnable = true,
       healthBarColorMode = "valueDark",
-      healthBarPadding = 6,
       healthBarTexture = "a3",
       hideHealPrediction = true,
       hideOverAbsorbGlow = true,
@@ -3780,7 +3762,6 @@ Presets:Register({
       },
     },
   },
-  keepFriendlyNameplatesDisabled = true,
   minimap = {
     hide = false,
     minimapPos = 209.24882296246,
@@ -3870,7 +3851,6 @@ Presets:Register({
           style = "THICKOUTLINE",
         },
       },
-      frameSpacingYDelta = -60,
       healthBarBackgroundTexture = "a3",
       healthBarBorderStyle = "square",
       healthBarBorderThickness = 1,
@@ -4234,7 +4214,6 @@ Presets:Register({
       powerBarBorderInset = -0,
       powerBarBorderStyle = "square",
       powerBarBorderThickness = 1,
-      powerBarCustomPositionEnabled = true,
       powerBarHeightPct = 100,
       powerBarHidden = true,
       powerBarHideFeedback = false,
@@ -4244,8 +4223,6 @@ Presets:Register({
       powerBarHideTextureOnly = true,
       powerBarOffsetX = 10,
       powerBarOffsetY = -2,
-      powerBarPosX = -0,
-      powerBarPosY = -55,
       powerBarTexture = "a1",
       powerBarWidthPct = 80,
       powerPercentHidden = false,

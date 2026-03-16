@@ -364,6 +364,22 @@ function UF.RenderPlayer(panel, scrollContent)
                     end,
                     sizing = function(cf, tabInner)
                         tabInner:AddSlider({
+                            label = "Width %",
+                            min = 10,
+                            max = 200,
+                            step = 5,
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return tonumber(t.powerBarWidthPct) or 100
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.powerBarWidthPct = tonumber(v) or 100
+                                applyBarTextures()
+                            end,
+                        })
+                        tabInner:AddSlider({
                             label = "Height %",
                             min = 10,
                             max = 200,

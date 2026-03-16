@@ -1406,6 +1406,30 @@ function UF.RenderTarget(panel, scrollContent)
                         })
                         tabInner:Finalize()
                     end,
+                    castTime = function(cf, tabInner)
+                        tabInner:AddFontSelector({
+                            label = "Cast Time Font",
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.castTimeText or {}; return s.fontFace or "FRIZQT__" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castTimeText = t.castTimeText or {}; t.castTimeText.fontFace = v; applyCastBar() end end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Cast Time Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.castTimeText or {}; return s.style or "OUTLINE" end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castTimeText = t.castTimeText or {}; t.castTimeText.style = v; applyCastBar() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Cast Time Size", min = 6, max = 32, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.castTimeText or {}; return tonumber(s.size) or 12 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.castTimeText = t.castTimeText or {}; t.castTimeText.size = tonumber(v) or 12; applyCastBar() end end,
+                        })
+                        tabInner:AddColorPicker({
+                            label = "Cast Time Color",
+                            get = function() local t = ensureCastBarDB() or {}; local s = t.castTimeText or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            set = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.castTimeText = t.castTimeText or {}; t.castTimeText.color = {r,g,b,a}; applyCastBar() end end,
+                            hasAlpha = true,
+                        })
+                        tabInner:Finalize()
+                    end,
                     visibility = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Cast Bar",

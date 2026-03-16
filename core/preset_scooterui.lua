@@ -2580,9 +2580,6 @@ Presets:Register({
       positionY = 500,
       supportsText = true,
       tallWideRatio = -40,
-      textCount = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-      },
       textDuration = {
         color = {
           1,
@@ -2793,7 +2790,6 @@ Presets:Register({
       scale = 80,
     },
     customGroup1 = {
-      _textDirty = true,
       anchorPosition = "left",
       borderEnable = true,
       borderInset = -1,
@@ -2847,7 +2843,6 @@ Presets:Register({
       },
     },
     customGroup2 = {
-      _textDirty = true,
       anchorPosition = "center",
       borderEnable = true,
       borderInset = -1,
@@ -2898,7 +2893,6 @@ Presets:Register({
       },
     },
     customGroup3 = {
-      _textDirty = true,
       anchorPosition = "left",
       borderEnable = true,
       borderInset = -1,
@@ -3116,9 +3110,6 @@ Presets:Register({
       positionY = 365,
       supportsText = true,
       tallWideRatio = -30,
-      textCount = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-      },
       textDuration = {
         color = {
           1,
@@ -3142,7 +3133,6 @@ Presets:Register({
       },
     },
     essentialCooldowns = {
-      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderInsetH = -0,
@@ -3385,15 +3375,6 @@ Presets:Register({
       zoneTextOffsetX = 0,
       zoneTextOffsetY = -5,
       zoneTextPosition = "TOP",
-    },
-    nameplatesUnit = {
-      _nameplatesColorMigrated = true,
-      _nameplatesTextMigrated = true,
-      textName = {
-        fontFace = "ROBOTO_SEMICOND_BLACK",
-        size = 8,
-        style = "THICKOUTLINE",
-      },
     },
     notes = {
       note1BodyColor = {
@@ -3948,7 +3929,6 @@ Presets:Register({
         1,
       },
       borderTintEnable = true,
-      compactCenter = true,
       direction = "down",
       hideWhenInactive = true,
       iconHeight = 32,
@@ -3997,7 +3977,6 @@ Presets:Register({
       visibilityMode = "always",
     },
     utilityCooldowns = {
-      alignGroupCenter = true,
       borderEnable = true,
       borderInset = -0,
       borderInsetH = -1,
@@ -4253,7 +4232,6 @@ Presets:Register({
       },
       healthBarBorderTintEnable = true,
       healthBarColorMode = "valueDark",
-      healthBarPadding = 6,
       healthBarTexture = "a2",
       hideOverAbsorbGlow = true,
       roleIconAnchor = "TOPRIGHT",
@@ -4385,7 +4363,6 @@ Presets:Register({
       },
     },
   },
-  keepFriendlyNameplatesDisabled = true,
   minimap = {
     hide = false,
     minimapPos = 198.15696322251,
@@ -4506,7 +4483,6 @@ Presets:Register({
           style = "THICKOUTLINE",
         },
       },
-      frameSpacingYDelta = -60,
       healthBarBackgroundTexture = "a3",
       healthBarBorderStyle = "square",
       healthBarBorderThickness = 1,
@@ -4877,7 +4853,6 @@ Presets:Register({
       powerBarBorderInset = -0,
       powerBarBorderStyle = "square",
       powerBarBorderThickness = 1,
-      powerBarCustomPositionEnabled = true,
       powerBarHeightPct = 100,
       powerBarHidden = false,
       powerBarHideFeedback = false,
@@ -4887,8 +4862,6 @@ Presets:Register({
       powerBarHideTextureOnly = true,
       powerBarOffsetX = 10,
       powerBarOffsetY = -2,
-      powerBarPosX = -0,
-      powerBarPosY = -55,
       powerBarTexture = "a1",
       powerBarWidthPct = 80,
       powerPercentHidden = false,
