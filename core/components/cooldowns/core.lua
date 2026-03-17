@@ -775,6 +775,7 @@ local function overlayDurationColorOnUpdate(overlay, elapsed)
     end
 
     local pct = remaining / duration
+
     if addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
         local r, g, b = addon.BarsTextures.getDurationColorRGB(pct)
         -- Use the actual Blizzard timer FontString stored during applyCooldownTextStyle
@@ -889,7 +890,13 @@ local function hookCooldownTextStyling()
             if parent then
                 local overlay = activeOverlays[parent]
                 if overlay then
-                    if safeStart then overlay._cdStart = safeStart end
+                    if safeStart then
+                        overlay._cdStart = safeStart
+                    elseif overlay._cdStart and overlay._cdDuration
+                        and (overlay._cdStart + overlay._cdDuration) < GetTime() then
+                        -- Secret params + stale timing → new cooldown starting now
+                        overlay._cdStart = GetTime()
+                    end
                     if safeDuration then overlay._cdDuration = safeDuration end
                 end
             end
@@ -902,7 +909,12 @@ local function hookCooldownTextStyling()
                     if p then
                         local ov = activeOverlays[p]
                         if ov then
-                            if safeStart then ov._cdStart = safeStart end
+                            if safeStart then
+                                ov._cdStart = safeStart
+                            elseif ov._cdStart and ov._cdDuration
+                                and (ov._cdStart + ov._cdDuration) < GetTime() then
+                                ov._cdStart = GetTime()
+                            end
                             if safeDuration then ov._cdDuration = safeDuration end
                         end
                     end
@@ -1104,6 +1116,13 @@ function Overlays.HideOverlay(cdmIcon)
     local overlay = activeOverlays[cdmIcon]
     if overlay then
         overlay:Hide()
+        -- Clear duration color timing state to prevent stale values
+        -- when this CDM icon frame is reused for a different ability
+        overlay._cdStart = nil
+        overlay._cdDuration = nil
+        overlay._cdLastColorUpdate = nil
+        overlay._cdTimerFS = nil
+        overlay:SetScript("OnUpdate", nil)
     end
 end
 

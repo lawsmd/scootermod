@@ -57,7 +57,11 @@ local function applyPowerText()
 end
 
 local function applyCastBar()
-    UF.applyCastBar(UNIT_KEY)
+    if addon.ApplyBossCastBarFor then
+        addon.ApplyBossCastBarFor()
+    else
+        UF.applyCastBar(UNIT_KEY)
+    end
 end
 
 local function applyStyles()
