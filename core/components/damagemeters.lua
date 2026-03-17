@@ -154,6 +154,8 @@ local METER_TYPE_NAMES = {
     [Enum.DamageMeterType.Dispels] = DAMAGE_METER_DISPELS or "Dispels",
     [Enum.DamageMeterType.DamageTaken] = DAMAGE_METER_DAMAGE_TAKEN or "Damage Taken",
     [Enum.DamageMeterType.AvoidableDamageTaken] = DAMAGE_METER_AVOIDABLE_DAMAGE_TAKEN or "Avoidable Damage",
+    [Enum.DamageMeterType.Deaths] = DAMAGE_METER_TYPE_DEATHS or "Deaths",
+    [Enum.DamageMeterType.EnemyDamageTaken] = DAMAGE_METER_TYPE_ENEMY_DAMAGE_TAKEN or "Enemy Damage Taken",
 }
 
 local SESSION_TYPE_NAMES = {
@@ -321,7 +323,7 @@ local function HookSessionWindowTitleRightClick(sessionWindow)
 
     overlay:SetScript("OnClick", function(self, button)
         if button == "RightButton" and dropdown.OpenMenu and not InCombatLockdown() then
-            dropdown:OpenMenu()
+            securecallfunction(dropdown.OpenMenu, dropdown)
         end
     end)
 
@@ -1320,6 +1322,18 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
         return nil, "No data available for " .. (sessionLabels[sessionType] or "this") .. " session."
     end
 
+    -- Pre-count Deaths per GUID (each combatSource entry = one death event)
+    local deathCounts = {}
+    local deathSession = sessionData[DMT.Deaths]
+    if deathSession and deathSession.combatSources then
+        for _, source in ipairs(deathSession.combatSources) do
+            local guid = source.sourceGUID
+            if guid then
+                deathCounts[guid] = (deathCounts[guid] or 0) + 1
+            end
+        end
+    end
+
     -- Build player table keyed by GUID, preserving primary sort order
     local players = {}
     local playerOrder = {}
@@ -1327,15 +1341,22 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
         local guid = source.sourceGUID
         if guid and not players[guid] then
             players[guid] = {
-                name = source.name or "Unknown",
+                name = (source.name and source.name:match("^([^%-]+)")) or "Unknown",
                 classFilename = source.classFilename or "",
                 isLocalPlayer = source.isLocalPlayer,
                 values = {},
             }
-            players[guid].values[columns[1]] = {
-                total = source.totalAmount,
-                perSec = source.amountPerSecond,
-            }
+            if columns[1] == DMT.Deaths then
+                players[guid].values[columns[1]] = {
+                    total = deathCounts[guid] or 0,
+                    perSec = 0,
+                }
+            else
+                players[guid].values[columns[1]] = {
+                    total = source.totalAmount,
+                    perSec = source.amountPerSecond,
+                }
+            end
             table.insert(playerOrder, guid)
         end
     end
@@ -1345,13 +1366,26 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
         local mt = columns[i]
         local data = sessionData[mt]
         if data and data.combatSources then
-            for _, source in ipairs(data.combatSources) do
-                local guid = source.sourceGUID
-                if guid and players[guid] and not players[guid].values[mt] then
-                    players[guid].values[mt] = {
-                        total = source.totalAmount,
-                        perSec = source.amountPerSecond,
-                    }
+            if mt == DMT.Deaths then
+                -- Deaths: use pre-counted occurrences, not totalAmount
+                for _, source in ipairs(data.combatSources) do
+                    local guid = source.sourceGUID
+                    if guid and players[guid] and not players[guid].values[mt] then
+                        players[guid].values[mt] = {
+                            total = deathCounts[guid] or 0,
+                            perSec = 0,
+                        }
+                    end
+                end
+            else
+                for _, source in ipairs(data.combatSources) do
+                    local guid = source.sourceGUID
+                    if guid and players[guid] and not players[guid].values[mt] then
+                        players[guid].values[mt] = {
+                            total = source.totalAmount,
+                            perSec = source.amountPerSecond,
+                        }
+                    end
                 end
             end
         end

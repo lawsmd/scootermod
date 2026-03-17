@@ -195,8 +195,8 @@ do
 		-- Clip frame: children are clipped to its bounds for the progressive fill effect
 		local clipFrame = CreateFrame("Frame", nil, frame)
 		clipFrame:SetClipsChildren(true)
-		local barLevel = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
-		clipFrame:SetFrameLevel(barLevel + 2)
+		-- Frame level auto-inherited from parent (frame) at C++ level,
+		-- bypasses Lua secret value restrictions on tainted boss frames
 
 		-- Filled outline elements (children of clipFrame, behind filled content)
 		local filledLineOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -211,7 +211,7 @@ do
 
 		-- Spark overlay frame (above clipFrame so spark renders in front of text)
 		local sparkFrame = CreateFrame("Frame", nil, frame)
-		sparkFrame:SetFrameLevel(barLevel + 3)
+		sparkFrame:SetFrameLevel(clipFrame:GetFrameLevel() + 1)
 		sparkFrame:SetAllPoints(frame)
 		local sparkTex = sparkFrame:CreateTexture(nil, "OVERLAY", nil, 3)
 		sparkTex:Hide()
@@ -267,7 +267,7 @@ do
 			frame.Flakes01,       -- StandardFinish:OnPlay → SetTargetsShown(true)
 			frame.Flakes02,       -- StandardFinish:OnPlay → SetTargetsShown(true)
 			frame.Flakes03,       -- StandardFinish:OnPlay → SetTargetsShown(true)
-			frame.InterruptGlow,  -- PlayInterruptAnims() → self.InterruptGlow:Show()
+			-- InterruptGlow intentionally excluded — controlled by hideInterruptGlow toggle independently
 		}
 		for _, texture in ipairs(guardTextures) do
 			if texture and texture.Show then
@@ -296,9 +296,6 @@ do
 		local lineHeight = math.max(1, math.min(10, tonumber(cfg.textFillLineHeight) or 2))
 		local capSize = math.max(2, math.min(20, tonumber(cfg.textFillEndCapSize) or 6))
 
-		local barWidth = frame:GetWidth()
-		local barHeight = frame:GetHeight()
-
 		-- Hide StatusBar fill texture (bar continues functioning for spark positioning)
 		local fillTex = frame:GetStatusBarTexture()
 		if fillTex and fillTex.SetAlpha then
@@ -315,17 +312,7 @@ do
 			pcall(frame.Background.SetAlpha, frame.Background, 0)
 		end
 
-		-- Hide InterruptGlow in text-fill mode (pill-shaped outline that flashes during interrupts)
-		local interruptGlow = frame.InterruptGlow
-		if interruptGlow then
-			if interruptGlow.SetAlpha then
-				pcall(interruptGlow.SetAlpha, interruptGlow, 0)
-			end
-			-- Stop any playing animation to prevent it from overriding our alpha
-			if frame.InterruptGlowAnim and frame.InterruptGlowAnim.Stop then
-				pcall(frame.InterruptGlowAnim.Stop, frame.InterruptGlowAnim)
-			end
-		end
+		-- InterruptGlow is NOT hidden in text-fill mode — controlled by hideInterruptGlow toggle independently
 
 		-- Hide Blizzard bar border in text-fill mode
 		local border = frame.Border
@@ -370,11 +357,12 @@ do
 
 		-- One-time hooks on animation groups whose setToFinalAlpha="true" overrides
 		-- our SetAlpha(0) at the C++ level during playback.  Stop them immediately.
-		-- FlashAnim / InterruptGlowAnim: no OnFinished callbacks in XML — safe.
+		-- FlashAnim: no OnFinished callbacks in XML — safe.
 		-- StandardFinish: OnFinished calls SetTargetsShown(false), which hides targets — desired.
+		-- InterruptGlowAnim: excluded — handled by hideInterruptGlow Play() hook instead.
 		if not getProp(frame, "textFillAnimsHooked") then
 			setProp(frame, "textFillAnimsHooked", true)
-			local animGroups = { frame.FlashAnim, frame.InterruptGlowAnim, frame.StandardFinish }
+			local animGroups = { frame.FlashAnim, frame.StandardFinish }
 			for _, ag in ipairs(animGroups) do
 				if ag and ag.Play and ag.Stop then
 					local agRef, stopFn = ag, ag.Stop
@@ -396,6 +384,20 @@ do
 					if els then
 						if els.sparkTex then els.sparkTex:Hide() end
 						if els.sparkFrame then els.sparkFrame:Hide() end
+					end
+				end
+			end)
+		end
+
+		-- Re-show our custom spark when Blizzard starts a new cast (ShowSpark)
+		if not getProp(frame, "textFillShowSparkHooked") then
+			setProp(frame, "textFillShowSparkHooked", true)
+			hooksecurefunc(frame, "ShowSpark", function(self)
+				if getProp(self, "textFillActive") then
+					local els = getProp(self, "textFillElements")
+					if els then
+						if els.sparkTex then pcall(els.sparkTex.Show, els.sparkTex) end
+						if els.sparkFrame then pcall(els.sparkFrame.Show, els.sparkFrame) end
 					end
 				end
 			end)
@@ -457,18 +459,25 @@ do
 		el:SetColorTexture(0, 0, 0, 1)
 		el:Show()
 
-		-- Clip frame: LEFT-anchored, width = progress * barWidth
+		-- Clip frame: LEFT-anchored, RIGHT edge tracks fill texture (secret-safe in 12.0)
 		local clipFrame = elements.clipFrame
+
+		-- clipFrame auto-inherits level from parent (frame) — no explicit set needed.
+		-- Only refresh sparkFrame relative to clipFrame (safe to read, it's our frame).
+		if elements.sparkFrame then
+			elements.sparkFrame:SetFrameLevel(clipFrame:GetFrameLevel() + 1)
+		end
 		clipFrame:ClearAllPoints()
-		clipFrame:SetPoint("LEFT", frame, "LEFT", 0, 0)
-		clipFrame:SetHeight(barHeight)
-		-- Compute current progress
-		local mn, mx = frame:GetMinMaxValues()
-		local val = frame:GetValue()
-		local rng = mx - mn
-		local progress = (rng > 0) and ((val - mn) / rng) or 0
-		progress = math.max(0, math.min(1, progress))
-		clipFrame:SetWidth(math.max(0.1, progress * barWidth))
+		-- Anchor vertically to bar frame with overflow for text taller than bar.
+		-- Uses anchor-based height (secret-safe) instead of SetHeight(GetHeight()).
+		local textOverflow = 20
+		clipFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, textOverflow)
+		if fillTex then
+			clipFrame:SetPoint("BOTTOMRIGHT", fillTex, "BOTTOMRIGHT", 0, -textOverflow)
+		else
+			clipFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, -textOverflow)
+			clipFrame:SetWidth(0.1)
+		end
 		clipFrame:Show()
 
 		-- Filled line (anchored to cast bar, clipped by clip frame)
@@ -566,51 +575,54 @@ do
 						sparkTex:SetVertexColor(1, 1, 1, 1)
 					end
 
-					-- Initial position at current progress
-					local sparkW = spark:GetWidth() or 8
+					-- Initial position anchored to fill texture edge (secret-safe)
+					local ok_sw, raw_sw = pcall(spark.GetWidth, spark)
+					local sparkW = (ok_sw and type(raw_sw) == "number") and raw_sw or 8
 					sparkTex:SetSize(sparkW, lineHeight)
 					sparkTex:ClearAllPoints()
-					sparkTex:SetPoint("CENTER", frame, "LEFT", progress * barWidth, 0)
+					if fillTex then
+						sparkTex:SetPoint("CENTER", fillTex, "RIGHT", 0, 0)
+					else
+						sparkTex:SetPoint("CENTER", frame, "LEFT", 0, 0)
+					end
 					sparkTex:Show()
 					sparkFrame:Show()
 				end
 
 				-- Store dimensions for SetValue hook
 				elements.lineHeight = lineHeight
-				elements.sparkWidth = spark:GetWidth() or 8
+				local ok_sw2, raw_sw2 = pcall(spark.GetWidth, spark)
+			elements.sparkWidth = (ok_sw2 and type(raw_sw2) == "number") and raw_sw2 or 8
 			end
 		end
 
-		-- Install SetValue hook once for progress tracking
+		-- Install SetValue hook once for dynamic spark height
+		-- (clip frame width auto-tracks via anchor to fill texture — no arithmetic needed)
 		if not getProp(frame, "textFillSetValueHooked") then
 			setProp(frame, "textFillSetValueHooked", true)
 			hooksecurefunc(frame, "SetValue", function(self, value)
-				local els = getProp(self, "textFillElements")
-				if not els or not els.clipFrame:IsShown() then return end
-				local lo, hi = self:GetMinMaxValues()
-				local range = hi - lo
-				local prog = (range > 0) and ((value - lo) / range) or 0
-				prog = math.max(0, math.min(1, prog))
-				local bw = self:GetWidth()
-				els.clipFrame:SetWidth(math.max(0.1, prog * bw))
-				-- Update custom spark position + dynamic height
-				local sparkTex = els.sparkTex
-				if sparkTex and els.sparkFrame and els.sparkFrame:IsShown() then
-					local sparkX = prog * bw
-					local h = els.lineHeight or 2
-					local tl = els.textLeftEdge
-					local tr = els.textRightEdge
-					if tl and tr then
-						if sparkX >= tl and sparkX <= tr then
+				pcall(function()
+					local els = getProp(self, "textFillElements")
+					if not els or not els.clipFrame:IsShown() then return end
+					-- Dynamic spark height only (clip frame + spark position auto-track via anchors)
+					local sparkTex = els.sparkTex
+					if sparkTex and els.sparkFrame and els.sparkFrame:IsShown() then
+						local ft = self:GetStatusBarTexture()
+						local ok_fw, raw_fw = pcall(ft.GetWidth, ft)
+						local sparkX = (ok_fw and type(raw_fw) == "number") and raw_fw or 0
+						local h = els.lineHeight or 2
+						local tl = els.textLeftEdge
+						local tr = els.textRightEdge
+						if tl and tr then
+							if sparkX >= tl and sparkX <= tr then
+								h = els.effectiveTextHeight or h
+							end
+						else
 							h = els.effectiveTextHeight or h
 						end
-					else
-						h = els.effectiveTextHeight or h
+						sparkTex:SetHeight(h)
 					end
-					sparkTex:SetSize(els.sparkWidth or 8, h)
-					sparkTex:ClearAllPoints()
-					sparkTex:SetPoint("CENTER", self, "LEFT", sparkX, 0)
-				end
+				end)
 			end)
 		end
 
@@ -619,10 +631,12 @@ do
 		if spellFS and not getProp(frame, "textFillSetTextHooked") then
 			setProp(frame, "textFillSetTextHooked", true)
 			hooksecurefunc(spellFS, "SetText", function(self, text)
-				local els = getProp(frame, "textFillElements")
-				if els and els.filledText and els.clipFrame:IsShown() then
-					els.filledText:SetText(text or "")
-				end
+				pcall(function()
+					local els = getProp(frame, "textFillElements")
+					if els and els.filledText and els.clipFrame:IsShown() then
+						els.filledText:SetText(text or "")
+					end
+				end)
 			end)
 		end
 	end
@@ -687,6 +701,17 @@ do
 		-- Copy font properties from styled original text
 		local face, size, flags = spellFS:GetFont()
 		if face then pcall(elements.filledText.SetFont, elements.filledText, face, size, flags) end
+		-- Copy shadow properties so filled text has identical visual bounds
+		do
+			local ok_sc, sr, sg, sb, sa = pcall(spellFS.GetShadowColor, spellFS)
+			if ok_sc and sr then
+				pcall(elements.filledText.SetShadowColor, elements.filledText, sr, sg, sb, sa or 1)
+			end
+			local ok_so, sx, sy = pcall(spellFS.GetShadowOffset, spellFS)
+			if ok_so and sx then
+				pcall(elements.filledText.SetShadowOffset, elements.filledText, sx, sy)
+			end
+		end
 		-- Copy text content
 		elements.filledText:SetText(spellFS:GetText() or "")
 		-- Match alignment
@@ -700,20 +725,17 @@ do
 		-- Expand clip frame height to contain text taller than the bar
 		local clipFrame = elements.clipFrame
 		if clipFrame then
-			local textH = elements.filledText:GetStringHeight()
-			-- Fallback: font string may not be laid out yet on first cast after /reload
+			local ok_th, raw_th = pcall(elements.filledText.GetStringHeight, elements.filledText)
+			local textH = (ok_th and type(raw_th) == "number") and raw_th or nil
 			if (not textH or textH <= 0) and size then
 				textH = size * 1.15
-			end
-			local frameH = frame:GetHeight()
-			if textH and textH > 0 and frameH and textH > frameH then
-				clipFrame:SetHeight(textH)
 			end
 			elements.effectiveTextHeight = textH
 		end
 		-- Constrain to bar width so both texts truncate identically (prevents clip-frame edge clipping)
-		local bw = frame:GetWidth()
-		if bw and bw > 0 then
+		local ok_bw, raw_bw = pcall(frame.GetWidth, frame)
+		local bw = (ok_bw and type(raw_bw) == "number" and not (issecretvalue and issecretvalue(raw_bw))) and raw_bw or 0
+		if bw > 0 then
 			elements.filledText:SetWidth(bw)
 			elements.filledText:SetWordWrap(false)
 			-- Match original text width so it truncates at the same point
@@ -723,11 +745,12 @@ do
 			end
 		end
 		-- Store text horizontal bounds for spark height calculation
-		local sw = elements.filledText:GetStringWidth()
-		if sw and sw > 0 then
+		local ok_sw, raw_sw = pcall(elements.filledText.GetStringWidth, elements.filledText)
+		local sw = (ok_sw and type(raw_sw) == "number") and raw_sw or 0
+		if sw > 0 then
 			-- Cap to bar width (text is truncated by SetWidth above)
-			if bw and sw > bw then sw = bw end
-			local cx = (bw or 0) / 2 + ox
+			if bw > 0 and sw > bw then sw = bw end
+			local cx = (bw > 0 and bw or 0) / 2 + ox
 			elements.textLeftEdge = cx - sw / 2
 			elements.textRightEdge = cx + sw / 2
 		end
@@ -978,8 +1001,8 @@ do
 			-- Layout (position/size/icon) is skipped for in-combat visual-only refreshes.
 			if not visualOnly then
 				if frame.ClearAllPoints and frame.SetPoint then
-					-- Apply width scaling relative to original width (if available)
-					if origWidth and frame.SetWidth then
+					-- Apply width scaling relative to original width (Player only)
+					if isPlayer and origWidth and frame.SetWidth then
 						local scale = widthPct / 100.0
 						pcall(frame.SetWidth, frame, origWidth * scale)
 					end
@@ -1211,10 +1234,13 @@ do
 						end
 					end
 
-					-- hideCastFlash: Flash (completion glow) + InterruptGlow (interrupt glow)
+					-- hideCastFlash: Flash (completion glow)
 					if cfg.hideCastFlash then
 						local flash = frame.Flash
 						if flash and flash.SetAlpha then pcall(flash.SetAlpha, flash, 0) end
+					end
+					-- hideInterruptGlow: InterruptGlow (interrupt glow)
+					if cfg.hideInterruptGlow then
 						local intGlow = frame.InterruptGlow
 						if intGlow and intGlow.SetAlpha then pcall(intGlow.SetAlpha, intGlow, 0) end
 					end
@@ -1237,17 +1263,25 @@ do
 						local db = addon and addon.db and addon.db.profile
 						return db and db.unitFrames and db.unitFrames[hookUnit] and db.unitFrames[hookUnit].castBar
 					end
-					-- FlashAnim + InterruptGlowAnim → hideCastFlash
-					for _, ag in ipairs({ frame.FlashAnim, frame.InterruptGlowAnim }) do
-						if ag and ag.Play and ag.Stop then
-							local agRef, stopFn = ag, ag.Stop
-							hooksecurefunc(ag, "Play", function()
-								if not getProp(frame, "textFillActive") then
-									local c = getCastCfg()
-									if c and c.hideCastFlash then pcall(stopFn, agRef) end
-								end
-							end)
-						end
+					-- FlashAnim → hideCastFlash
+					local flashAnim = frame.FlashAnim
+					if flashAnim and flashAnim.Play and flashAnim.Stop then
+						local agRef, stopFn = flashAnim, flashAnim.Stop
+						hooksecurefunc(flashAnim, "Play", function()
+							if not getProp(frame, "textFillActive") then
+								local c = getCastCfg()
+								if c and c.hideCastFlash then pcall(stopFn, agRef) end
+							end
+						end)
+					end
+					-- InterruptGlowAnim → hideInterruptGlow (works in both default and text-fill modes)
+					local intGlowAnim = frame.InterruptGlowAnim
+					if intGlowAnim and intGlowAnim.Play and intGlowAnim.Stop then
+						local agRef, stopFn = intGlowAnim, intGlowAnim.Stop
+						hooksecurefunc(intGlowAnim, "Play", function()
+							local c = getCastCfg()
+							if c and c.hideInterruptGlow then pcall(stopFn, agRef) end
+						end)
 					end
 					-- StandardFinish → hideCompletionFlare
 					local sf = frame.StandardFinish
@@ -1269,7 +1303,7 @@ do
 			if isEmpoweredCast(unit) then castBarMode = "default" end
 
 			if castBarMode == "textFill" then
-				applyTextFillMode(frame, cfg, unit)
+				pcall(applyTextFillMode, frame, cfg, unit)
 			else
 				hideTextFillElements(frame)
 			end
@@ -1572,11 +1606,11 @@ do
 				local needsOverlay = castBarMode ~= "textFill" and borderEnabled and borderStyle ~= "none"
 
 				if needsOverlay then
-					local overlay = frame._ScootCastTextOverlay
+					local overlay = getProp(frame, "ScootCastTextOverlay")
 					if not overlay then
 						overlay = CreateFrame("Frame", nil, frame)
 						overlay:SetAllPoints(frame)
-						frame._ScootCastTextOverlay = overlay
+						setProp(frame, "ScootCastTextOverlay", overlay)
 					end
 					-- Determine level above the border holder.  BarBorders uses
 					-- barLevel + levelOffset (1 for cast bars); ApplySquare uses the
@@ -1593,14 +1627,15 @@ do
 					end
 				else
 					-- Borders disabled: restore text to bar frame
-					if frame._ScootCastTextOverlay then
+					local overlay = getProp(frame, "ScootCastTextOverlay")
+					if overlay then
 						if frame.Text and frame.Text.SetParent then
 							pcall(frame.Text.SetParent, frame.Text, frame)
 						end
 						if unit == "Player" and frame.CastTimeText and frame.CastTimeText.SetParent then
 							pcall(frame.CastTimeText.SetParent, frame.CastTimeText, frame)
 						end
-						frame._ScootCastTextOverlay:Hide()
+						overlay:Hide()
 					end
 				end
 			end
@@ -1699,7 +1734,7 @@ do
 
 			-- Sync filled text in textFill mode (after spell name styling)
 			if castBarMode == "textFill" then
-				syncTextFillText(frame, cfg)
+				pcall(syncTextFillText, frame, cfg)
 			end
 
 			-- Cast Time Text styling (Player only; Target/Focus Cast Bars do not have cast time display)
@@ -2500,7 +2535,7 @@ do
 			local castBarMode = cfg.castBarMode or "default"
 
 			if castBarMode == "textFill" then
-				addon._applyTextFillMode(frame, cfg, "Boss")
+				local ok, err = pcall(addon._applyTextFillMode, frame, cfg, "Boss")
 			else
 				addon._hideTextFillElements(frame)
 			end
@@ -2751,11 +2786,11 @@ do
 				local needsOverlay = castBarMode ~= "textFill" and borderEnabled and borderStyle ~= "none"
 
 				if needsOverlay then
-					local overlay = frame._ScootCastTextOverlay
+					local overlay = getProp(frame, "ScootCastTextOverlay")
 					if not overlay then
 						overlay = CreateFrame("Frame", nil, frame)
 						overlay:SetAllPoints(frame)
-						frame._ScootCastTextOverlay = overlay
+						setProp(frame, "ScootCastTextOverlay", overlay)
 					end
 					local barLevel = (frame.GetFrameLevel and frame:GetFrameLevel()) or 0
 					overlay:SetFrameLevel(barLevel + 3)
@@ -2765,11 +2800,12 @@ do
 						pcall(frame.Text.SetParent, frame.Text, overlay)
 					end
 				else
-					if frame._ScootCastTextOverlay then
+					local overlay = getProp(frame, "ScootCastTextOverlay")
+					if overlay then
 						if frame.Text and frame.Text.SetParent then
 							pcall(frame.Text.SetParent, frame.Text, frame)
 						end
-						frame._ScootCastTextOverlay:Hide()
+						overlay:Hide()
 					end
 				end
 			end
@@ -2841,7 +2877,7 @@ do
 
 			-- Sync filled text in textFill mode (after Boss spell name styling)
 			if castBarMode == "textFill" then
-				addon._syncTextFillText(frame, cfg)
+				pcall(addon._syncTextFillText, frame, cfg)
 			end
 
 			-- BorderShield visibility (Boss cast bars)

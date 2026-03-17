@@ -529,625 +529,6 @@ function UF.RenderPlayer(panel, scrollContent)
     end
 
     --------------------------------------------------------------------------------
-    -- Collapsible Section: Class Resource (Player only - dynamic title)
-    --------------------------------------------------------------------------------
-
-    UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDB)
-
-    --------------------------------------------------------------------------------
-    -- Collapsible Section: Totem Bar (conditional visibility)
-    --------------------------------------------------------------------------------
-
-    if addon.UnitFrames_TotemBar_ShouldShow and addon.UnitFrames_TotemBar_ShouldShow() then
-        UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
-    end
-
-    --------------------------------------------------------------------------------
-    -- Collapsible Section: Name & Level Text
-    --------------------------------------------------------------------------------
-
-    builder:AddCollapsibleSection({
-        title = "Name & Level Text",
-        componentId = COMPONENT_ID,
-        sectionKey = "nameLevelText",
-        defaultExpanded = false,
-        buildContent = function(contentFrame, inner)
-            inner:AddTabbedSection({
-                tabs = {
-                    { key = "backdrop", label = "Backdrop" },
-                    { key = "border", label = "Border" },
-                    { key = "nameText", label = "Name Text" },
-                    { key = "levelText", label = "Level Text" },
-                },
-                componentId = COMPONENT_ID,
-                sectionKey = "nameLevelText_tabs",
-                buildContent = {
-                    backdrop = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Enable Backdrop",
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return not not t.nameBackdropEnabled
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropEnabled = not not v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddBarTextureSelector({
-                            label = "Backdrop Texture",
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return t.nameBackdropTexture or ""
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropTexture = v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Backdrop Color",
-                            values = UF.bgColorValues,
-                            order = UF.bgColorOrder,
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return t.nameBackdropColorMode or "default"
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropColorMode = v or "default"
-                                applyNameLevelText()
-                            end,
-                            getColor = function()
-                                local t = ensureUFDB() or {}
-                                local c = t.nameBackdropTint or {1, 1, 1, 1}
-                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                            end,
-                            setColor = function(r, g, b, a)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropTint = {r, g, b, a}
-                                applyNameLevelText()
-                            end,
-                            customValue = "custom",
-                            hasAlpha = true,
-                        })
-                        tabInner:AddSlider({
-                            label = "Backdrop Width (%)",
-                            min = 25, max = 300, step = 1,
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return tonumber(t.nameBackdropWidthPct) or 100
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropWidthPct = tonumber(v) or 100
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Backdrop Opacity",
-                            min = 0, max = 100, step = 1,
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return tonumber(t.nameBackdropOpacity) or 50
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropOpacity = tonumber(v) or 50
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    border = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Enable Border",
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return not not t.nameBackdropBorderEnabled
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameBackdropBorderEnabled = not not v
-                                applyNameLevelText()
-                            end,
-                        })
-                        UF.Builders.buildBarBorderContent(tabInner, "nameBackdrop", ensureUFDB, applyNameLevelText)
-                        tabInner:Finalize()
-                    end,
-                    nameText = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Disable Name Text",
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return not not t.nameTextHidden
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.nameTextHidden = v and true or false
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Name Text Font",
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                return s.fontFace or "FRIZQT__"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.fontFace = v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Name Text Style",
-                            values = UF.fontStyleValues,
-                            order = UF.fontStyleOrder,
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                return s.style or "OUTLINE"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.style = v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Name Text Size",
-                            min = 6, max = 48, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                return tonumber(s.size) or 14
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.size = tonumber(v) or 14
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Name Text Color",
-                            values = UF.fontColorValues,
-                            order = UF.fontColorOrder,
-                            get = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                return s.colorMode or "default"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.colorMode = v or "default"
-                                applyNameLevelText()
-                            end,
-                            getColor = function()
-                                local s = ensureNameLevelDB("textName") or {}
-                                local c = s.color or {1, 0.82, 0, 1}
-                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                            end,
-                            setColor = function(r, g, b, a)
-                                local t = ensureNameLevelDB("textName")
-                                if not t then return end
-                                t.color = {r, g, b, a}
-                                applyNameLevelText()
-                            end,
-                            customValue = "custom",
-                            hasAlpha = true,
-                        })
-                        tabInner:AddDualSlider({
-                            label = "Name Text Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                    levelText = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Disable Level Text",
-                            get = function()
-                                local t = ensureUFDB() or {}
-                                return not not t.levelTextHidden
-                            end,
-                            set = function(v)
-                                local t = ensureUFDB()
-                                if not t then return end
-                                t.levelTextHidden = v and true or false
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Level Text Font",
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                return s.fontFace or "FRIZQT__"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.fontFace = v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Level Text Style",
-                            values = UF.fontStyleValues,
-                            order = UF.fontStyleOrder,
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                return s.style or "OUTLINE"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.style = v
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Level Text Size",
-                            min = 6, max = 48, step = 1,
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                return tonumber(s.size) or 14
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.size = tonumber(v) or 14
-                                applyNameLevelText()
-                            end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Level Text Color",
-                            values = UF.fontColorValues,
-                            order = UF.fontColorOrder,
-                            get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                return s.colorMode or "default"
-                            end,
-                            set = function(v)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.colorMode = v or "default"
-                                applyNameLevelText()
-                            end,
-                            getColor = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
-                                local c = s.color or {1, 0.82, 0, 1}
-                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                            end,
-                            setColor = function(r, g, b, a)
-                                local t = ensureNameLevelDB("textLevel")
-                                if not t then return end
-                                t.color = {r, g, b, a}
-                                applyNameLevelText()
-                            end,
-                            customValue = "custom",
-                            hasAlpha = true,
-                        })
-                        tabInner:AddDualSlider({
-                            label = "Level Text Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                },
-            })
-            inner:Finalize()
-        end,
-    })
-
-    --------------------------------------------------------------------------------
-    -- Collapsible Section: Portrait
-    --------------------------------------------------------------------------------
-
-    local portraitTabs = UF.getPortraitTabs(COMPONENT_ID)
-
-    builder:AddCollapsibleSection({
-        title = "Portrait",
-        componentId = COMPONENT_ID,
-        sectionKey = "portrait",
-        defaultExpanded = false,
-        buildContent = function(contentFrame, inner)
-            inner:AddTabbedSection({
-                tabs = portraitTabs,
-                componentId = COMPONENT_ID,
-                sectionKey = "portrait_tabs",
-                buildContent = {
-                    positioning = function(cf, tabInner)
-                        tabInner:AddDualSlider({
-                            label = "Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local t = ensurePortraitDB() or {}
-                                    return tonumber(t.offsetX) or 0
-                                end,
-                                set = function(v)
-                                    local t = ensurePortraitDB()
-                                    if not t then return end
-                                    t.offsetX = tonumber(v) or 0
-                                    applyPortrait()
-                                end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -100, max = 100, step = 1,
-                                get = function()
-                                    local t = ensurePortraitDB() or {}
-                                    return tonumber(t.offsetY) or 0
-                                end,
-                                set = function(v)
-                                    local t = ensurePortraitDB()
-                                    if not t then return end
-                                    t.offsetY = tonumber(v) or 0
-                                    applyPortrait()
-                                end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                    sizing = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = "Portrait Size (Scale)",
-                            min = 50, max = 200, step = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return tonumber(t.scale) or 100
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.scale = tonumber(v) or 100
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    mask = function(cf, tabInner)
-                        tabInner:AddSlider({
-                            label = "Portrait Zoom",
-                            min = 100, max = 200, step = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return tonumber(t.zoom) or 100
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.zoom = tonumber(v) or 100
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddToggle({
-                            label = "Use Full Circle Mask",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return t.useFullCircleMask == true
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.useFullCircleMask = (v == true)
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    border = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Use Custom Border",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return t.portraitBorderEnable == true
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.portraitBorderEnable = (v == true)
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Border Style",
-                            values = UF.portraitBorderValues,
-                            order = UF.portraitBorderOrder,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return t.portraitBorderStyle or "texture_c"
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.portraitBorderStyle = v or "texture_c"
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Border Inset",
-                            min = 1, max = 8, step = 0.5, precision = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                local v = tonumber(t.portraitBorderThickness) or 1
-                                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Border Color",
-                            values = UF.portraitBorderColorValues,
-                            order = UF.portraitBorderColorOrder,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return t.portraitBorderColorMode or "texture"
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.portraitBorderColorMode = v or "texture"
-                                applyPortrait()
-                            end,
-                            getColor = function()
-                                local t = ensurePortraitDB() or {}
-                                local c = t.portraitBorderTintColor or {1, 1, 1, 1}
-                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                            end,
-                            setColor = function(r, g, b, a)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.portraitBorderTintColor = {r, g, b, a}
-                                applyPortrait()
-                            end,
-                            customValue = "custom",
-                            hasAlpha = true,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    personalText = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Hide Personal Text",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return not not t.damageTextDisabled
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.damageTextDisabled = v and true or false
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Personal Text Font",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                local s = t.damageText or {}
-                                return s.fontFace or "FRIZQT__"
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.damageText = t.damageText or {}
-                                t.damageText.fontFace = v
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Personal Text Style",
-                            values = UF.fontStyleValues,
-                            order = UF.fontStyleOrder,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                local s = t.damageText or {}
-                                return s.style or "OUTLINE"
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.damageText = t.damageText or {}
-                                t.damageText.style = v
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Personal Text Size",
-                            min = 6, max = 48, step = 1,
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                local s = t.damageText or {}
-                                return tonumber(s.size) or 14
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.damageText = t.damageText or {}
-                                t.damageText.size = tonumber(v) or 14
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:AddColorPicker({
-                            label = "Personal Text Color",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                local s = t.damageText or {}
-                                local c = s.color or {1, 1, 1, 1}
-                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                            end,
-                            set = function(r, g, b, a)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.damageText = t.damageText or {}
-                                t.damageText.color = {r, g, b, a}
-                                applyPortrait()
-                            end,
-                            hasAlpha = true,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    visibility = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Hide Portrait",
-                            get = function()
-                                local t = ensurePortraitDB() or {}
-                                return not not t.hidePortrait
-                            end,
-                            set = function(v)
-                                local t = ensurePortraitDB()
-                                if not t then return end
-                                t.hidePortrait = v and true or false
-                                applyPortrait()
-                            end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                },
-            })
-            inner:Finalize()
-        end,
-    })
-
-    --------------------------------------------------------------------------------
     -- Collapsible Section: Cast Bar (8 tabs for Player)
     --------------------------------------------------------------------------------
 
@@ -1776,7 +1157,24 @@ function UF.RenderPlayer(panel, scrollContent)
                             end,
                             infoIcon = {
                                 tooltipTitle = "Cast Flash",
-                                tooltipText = "Hides the bright flash that fills the cast bar when a spell completes, and the glow outline that appears during interrupts. Automatically hidden in Text-Fill mode.",
+                                tooltipText = "Hides the bright flash that fills the cast bar when a spell completes. Automatically hidden in Text-Fill mode.",
+                            },
+                        })
+                        tabInner:AddToggle({
+                            label = "Hide Interrupt Glow",
+                            get = function()
+                                local t = ensureCastBarDB() or {}
+                                return not not t.hideInterruptGlow
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.hideInterruptGlow = v and true or false
+                                applyCastBar()
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Interrupt Glow",
+                                tooltipText = "Hides the red glow outline that surrounds the cast bar when a spell is interrupted.",
                             },
                         })
                         tabInner:AddToggle({
@@ -1795,6 +1193,625 @@ function UF.RenderPlayer(panel, scrollContent)
                                 tooltipTitle = "Completion Flare",
                                 tooltipText = "Hides the upward flame and particle effects that rise from the cast bar when a standard spell finishes casting. Automatically hidden in Text-Fill mode.",
                             },
+                        })
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    --------------------------------------------------------------------------------
+    -- Collapsible Section: Class Resource (Player only - dynamic title)
+    --------------------------------------------------------------------------------
+
+    UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDB)
+
+    --------------------------------------------------------------------------------
+    -- Collapsible Section: Totem Bar (conditional visibility)
+    --------------------------------------------------------------------------------
+
+    if addon.UnitFrames_TotemBar_ShouldShow and addon.UnitFrames_TotemBar_ShouldShow() then
+        UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
+    end
+
+    --------------------------------------------------------------------------------
+    -- Collapsible Section: Name & Level Text
+    --------------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Name & Level Text",
+        componentId = COMPONENT_ID,
+        sectionKey = "nameLevelText",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "backdrop", label = "Backdrop" },
+                    { key = "border", label = "Border" },
+                    { key = "nameText", label = "Name Text" },
+                    { key = "levelText", label = "Level Text" },
+                },
+                componentId = COMPONENT_ID,
+                sectionKey = "nameLevelText_tabs",
+                buildContent = {
+                    backdrop = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Enable Backdrop",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.nameBackdropEnabled
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropEnabled = not not v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddBarTextureSelector({
+                            label = "Backdrop Texture",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return t.nameBackdropTexture or ""
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropTexture = v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Backdrop Color",
+                            values = UF.bgColorValues,
+                            order = UF.bgColorOrder,
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return t.nameBackdropColorMode or "default"
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropColorMode = v or "default"
+                                applyNameLevelText()
+                            end,
+                            getColor = function()
+                                local t = ensureUFDB() or {}
+                                local c = t.nameBackdropTint or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropTint = {r, g, b, a}
+                                applyNameLevelText()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+                        tabInner:AddSlider({
+                            label = "Backdrop Width (%)",
+                            min = 25, max = 300, step = 1,
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return tonumber(t.nameBackdropWidthPct) or 100
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropWidthPct = tonumber(v) or 100
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Backdrop Opacity",
+                            min = 0, max = 100, step = 1,
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return tonumber(t.nameBackdropOpacity) or 50
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropOpacity = tonumber(v) or 50
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    border = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Enable Border",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.nameBackdropBorderEnabled
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameBackdropBorderEnabled = not not v
+                                applyNameLevelText()
+                            end,
+                        })
+                        UF.Builders.buildBarBorderContent(tabInner, "nameBackdrop", ensureUFDB, applyNameLevelText)
+                        tabInner:Finalize()
+                    end,
+                    nameText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Disable Name Text",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.nameTextHidden
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.nameTextHidden = v and true or false
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Name Text Font",
+                            get = function()
+                                local s = ensureNameLevelDB("textName") or {}
+                                return s.fontFace or "FRIZQT__"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textName")
+                                if not t then return end
+                                t.fontFace = v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Name Text Style",
+                            values = UF.fontStyleValues,
+                            order = UF.fontStyleOrder,
+                            get = function()
+                                local s = ensureNameLevelDB("textName") or {}
+                                return s.style or "OUTLINE"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textName")
+                                if not t then return end
+                                t.style = v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Name Text Size",
+                            min = 6, max = 48, step = 1,
+                            get = function()
+                                local s = ensureNameLevelDB("textName") or {}
+                                return tonumber(s.size) or 14
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textName")
+                                if not t then return end
+                                t.size = tonumber(v) or 14
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Name Text Color",
+                            values = UF.fontColorValues,
+                            order = UF.fontColorOrder,
+                            get = function()
+                                local s = ensureNameLevelDB("textName") or {}
+                                return s.colorMode or "default"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textName")
+                                if not t then return end
+                                t.colorMode = v or "default"
+                                applyNameLevelText()
+                            end,
+                            getColor = function()
+                                local s = ensureNameLevelDB("textName") or {}
+                                local c = s.color or {1, 0.82, 0, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local t = ensureNameLevelDB("textName")
+                                if not t then return end
+                                t.color = {r, g, b, a}
+                                applyNameLevelText()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+                        tabInner:AddDualSlider({
+                            label = "Name Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
+                    levelText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Disable Level Text",
+                            get = function()
+                                local t = ensureUFDB() or {}
+                                return not not t.levelTextHidden
+                            end,
+                            set = function(v)
+                                local t = ensureUFDB()
+                                if not t then return end
+                                t.levelTextHidden = v and true or false
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Level Text Font",
+                            get = function()
+                                local s = ensureNameLevelDB("textLevel") or {}
+                                return s.fontFace or "FRIZQT__"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textLevel")
+                                if not t then return end
+                                t.fontFace = v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Level Text Style",
+                            values = UF.fontStyleValues,
+                            order = UF.fontStyleOrder,
+                            get = function()
+                                local s = ensureNameLevelDB("textLevel") or {}
+                                return s.style or "OUTLINE"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textLevel")
+                                if not t then return end
+                                t.style = v
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Level Text Size",
+                            min = 6, max = 48, step = 1,
+                            get = function()
+                                local s = ensureNameLevelDB("textLevel") or {}
+                                return tonumber(s.size) or 14
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textLevel")
+                                if not t then return end
+                                t.size = tonumber(v) or 14
+                                applyNameLevelText()
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Level Text Color",
+                            values = UF.fontColorValues,
+                            order = UF.fontColorOrder,
+                            get = function()
+                                local s = ensureNameLevelDB("textLevel") or {}
+                                return s.colorMode or "default"
+                            end,
+                            set = function(v)
+                                local t = ensureNameLevelDB("textLevel")
+                                if not t then return end
+                                t.colorMode = v or "default"
+                                applyNameLevelText()
+                            end,
+                            getColor = function()
+                                local s = ensureNameLevelDB("textLevel") or {}
+                                local c = s.color or {1, 0.82, 0, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local t = ensureNameLevelDB("textLevel")
+                                if not t then return end
+                                t.color = {r, g, b, a}
+                                applyNameLevelText()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+                        tabInner:AddDualSlider({
+                            label = "Level Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    --------------------------------------------------------------------------------
+    -- Collapsible Section: Portrait
+    --------------------------------------------------------------------------------
+
+    local portraitTabs = UF.getPortraitTabs(COMPONENT_ID)
+
+    builder:AddCollapsibleSection({
+        title = "Portrait",
+        componentId = COMPONENT_ID,
+        sectionKey = "portrait",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = portraitTabs,
+                componentId = COMPONENT_ID,
+                sectionKey = "portrait_tabs",
+                buildContent = {
+                    positioning = function(cf, tabInner)
+                        tabInner:AddDualSlider({
+                            label = "Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensurePortraitDB() or {}
+                                    return tonumber(t.offsetX) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensurePortraitDB()
+                                    if not t then return end
+                                    t.offsetX = tonumber(v) or 0
+                                    applyPortrait()
+                                end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function()
+                                    local t = ensurePortraitDB() or {}
+                                    return tonumber(t.offsetY) or 0
+                                end,
+                                set = function(v)
+                                    local t = ensurePortraitDB()
+                                    if not t then return end
+                                    t.offsetY = tonumber(v) or 0
+                                    applyPortrait()
+                                end,
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
+                    sizing = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Portrait Size (Scale)",
+                            min = 50, max = 200, step = 1,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return tonumber(t.scale) or 100
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.scale = tonumber(v) or 100
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    mask = function(cf, tabInner)
+                        tabInner:AddSlider({
+                            label = "Portrait Zoom",
+                            min = 100, max = 200, step = 1,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return tonumber(t.zoom) or 100
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.zoom = tonumber(v) or 100
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddToggle({
+                            label = "Use Full Circle Mask",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return t.useFullCircleMask == true
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.useFullCircleMask = (v == true)
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    border = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Use Custom Border",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return t.portraitBorderEnable == true
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.portraitBorderEnable = (v == true)
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Border Style",
+                            values = UF.portraitBorderValues,
+                            order = UF.portraitBorderOrder,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return t.portraitBorderStyle or "texture_c"
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.portraitBorderStyle = v or "texture_c"
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Border Inset",
+                            min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                local v = tonumber(t.portraitBorderThickness) or 1
+                                return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.portraitBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2))
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Border Color",
+                            values = UF.portraitBorderColorValues,
+                            order = UF.portraitBorderColorOrder,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return t.portraitBorderColorMode or "texture"
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.portraitBorderColorMode = v or "texture"
+                                applyPortrait()
+                            end,
+                            getColor = function()
+                                local t = ensurePortraitDB() or {}
+                                local c = t.portraitBorderTintColor or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.portraitBorderTintColor = {r, g, b, a}
+                                applyPortrait()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = true,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    personalText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Hide Personal Text",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return not not t.damageTextDisabled
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.damageTextDisabled = v and true or false
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Personal Text Font",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                local s = t.damageText or {}
+                                return s.fontFace or "FRIZQT__"
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.damageText = t.damageText or {}
+                                t.damageText.fontFace = v
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Personal Text Style",
+                            values = UF.fontStyleValues,
+                            order = UF.fontStyleOrder,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                local s = t.damageText or {}
+                                return s.style or "OUTLINE"
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.damageText = t.damageText or {}
+                                t.damageText.style = v
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Personal Text Size",
+                            min = 6, max = 48, step = 1,
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                local s = t.damageText or {}
+                                return tonumber(s.size) or 14
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.damageText = t.damageText or {}
+                                t.damageText.size = tonumber(v) or 14
+                                applyPortrait()
+                            end,
+                        })
+                        tabInner:AddColorPicker({
+                            label = "Personal Text Color",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                local s = t.damageText or {}
+                                local c = s.color or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            set = function(r, g, b, a)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.damageText = t.damageText or {}
+                                t.damageText.color = {r, g, b, a}
+                                applyPortrait()
+                            end,
+                            hasAlpha = true,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    visibility = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Hide Portrait",
+                            get = function()
+                                local t = ensurePortraitDB() or {}
+                                return not not t.hidePortrait
+                            end,
+                            set = function(v)
+                                local t = ensurePortraitDB()
+                                if not t then return end
+                                t.hidePortrait = v and true or false
+                                applyPortrait()
+                            end,
                         })
                         tabInner:Finalize()
                     end,

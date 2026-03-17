@@ -621,7 +621,16 @@ local function getCooldownFontString(cooldownFrame)
         return scootFontStrings[cooldownFrame]
     end
 
-    -- Search regions for FontString
+    -- Prefer the dedicated Cooldown widget API (C++-managed countdown FontString)
+    if cooldownFrame.GetCountdownFontString then
+        local ok, fs = pcall(cooldownFrame.GetCountdownFontString, cooldownFrame)
+        if ok and fs then
+            scootFontStrings[cooldownFrame] = fs
+            return fs
+        end
+    end
+
+    -- Fallback: scan regions (for non-Cooldown frame types)
     if cooldownFrame.GetRegions then
         for _, region in ipairs({cooldownFrame:GetRegions()}) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
@@ -702,7 +711,7 @@ end
 -- Apply font styling directly to a Blizzard FontString (no GetText!)
 -- isChargeText: if true, uses BOTTOMRIGHT anchor; otherwise uses CENTER
 -- parentFrame: the frame to anchor to (defaults to fontString's parent)
-local function applyFontStyleDirect(fontString, cfg, isChargeText, parentFrame)
+local function applyFontStyleDirect(fontString, cfg, isChargeText, parentFrame, skipColor)
     if not fontString or not cfg then return end
 
     local size = tonumber(cfg.size) or 14
@@ -715,7 +724,9 @@ local function applyFontStyleDirect(fontString, cfg, isChargeText, parentFrame)
     end
 
     pcall(fontString.SetFont, fontString, fontFace, size, style)
-    pcall(fontString.SetTextColor, fontString, r, g, b, a)
+    if not skipColor then
+        pcall(fontString.SetTextColor, fontString, r, g, b, a)
+    end
 
     if cfg.shadowX or cfg.shadowY then
         pcall(fontString.SetShadowOffset, fontString, cfg.shadowX or 1, cfg.shadowY or -1)
@@ -740,19 +751,19 @@ end
 addon.ApplyFontStyleDirect = applyFontStyleDirect
 
 -- Duration color OnUpdate handler for CDM icon overlays.
--- Throttled to ~3 updates/sec (0.33s interval) for minimal CPU overhead.
+-- Uses GetTime()-based throttle (~3 updates/sec) to avoid secret value issues
+-- with the elapsed parameter on tainted system frame children.
 local DURATION_COLOR_THROTTLE = 0.33
 
 local function overlayDurationColorOnUpdate(overlay, elapsed)
-    overlay._cdLastColorUpdate = (overlay._cdLastColorUpdate or 0) + elapsed
-    if overlay._cdLastColorUpdate < DURATION_COLOR_THROTTLE then return end
-    overlay._cdLastColorUpdate = 0
+    local now = GetTime()
+    if (now - (overlay._cdLastColorUpdate or 0)) < DURATION_COLOR_THROTTLE then return end
+    overlay._cdLastColorUpdate = now
 
     local start = overlay._cdStart
     local duration = overlay._cdDuration
     if not start or not duration or duration <= 0 then return end
 
-    local now = GetTime()
     local ok, remaining = pcall(function() return (start + duration) - now end)
     if not ok or type(remaining) ~= "number" then return end
 
@@ -812,9 +823,11 @@ local function applyCooldownTextStyle(cooldownFrame)
         scootFontStrings[cooldownFrame] = nil
 
         local fontString = getCooldownFontString(cooldownFrame)
+        local isDurationMode = cfg.colorMode == "duration"
         if fontString then
             -- Cooldown text uses CENTER anchor by default
-            applyFontStyleDirect(fontString, cfg, false, cooldownFrame)
+            -- Skip color when duration mode is active to prevent white flash
+            applyFontStyleDirect(fontString, cfg, false, cooldownFrame, isDurationMode)
         end
 
         -- Install/remove throttled duration color OnUpdate on the overlay
@@ -825,6 +838,20 @@ local function applyCooldownTextStyle(cooldownFrame)
                 -- so the OnUpdate can color it (not overlay.cooldownText which is empty)
                 overlay._cdTimerFS = fontString
                 manageDurationColorOnUpdate(overlay, cfg)
+
+                -- Immediately apply correct duration color to prevent white flash
+                if isDurationMode and fontString
+                    and overlay._cdStart and overlay._cdDuration and overlay._cdDuration > 0 then
+                    local now = GetTime()
+                    local ok, remaining = pcall(function() return (overlay._cdStart + overlay._cdDuration) - now end)
+                    if ok and type(remaining) == "number" and remaining > 0 then
+                        local pct = remaining / overlay._cdDuration
+                        if addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
+                            local r2, g2, b2 = addon.BarsTextures.getDurationColorRGB(pct)
+                            pcall(fontString.SetTextColor, fontString, r2, g2, b2, 1)
+                        end
+                    end
+                end
             end
         end
     end

@@ -549,215 +549,15 @@ function UF.RenderBoss(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
-    -- Name & Level Text (4 tabs: Backdrop, Border, Name Text, Level Text)
-    --------------------------------------------------------------------------------
-
-    builder:AddCollapsibleSection({
-        title = "Name & Level Text",
-        componentId = COMPONENT_ID,
-        sectionKey = "nameLevelText",
-        defaultExpanded = false,
-        buildContent = function(contentFrame, inner)
-            inner:AddTabbedSection({
-                tabs = {
-                    { key = "backdrop", label = "Backdrop" },
-                    { key = "border", label = "Border" },
-                    { key = "nameText", label = "Name Text" },
-                    { key = "levelText", label = "Level Text" },
-                },
-                componentId = COMPONENT_ID,
-                sectionKey = "nameLevelText_tabs",
-                buildContent = {
-                    backdrop = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Enable Backdrop",
-                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropEnabled end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropEnabled = not not v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddBarTextureSelector({
-                            label = "Backdrop Texture",
-                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropTexture or "" end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropTexture = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Backdrop Color",
-                            values = UF.bgColorValues, order = UF.bgColorOrder,
-                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropColorMode or "default" end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropColorMode = v or "default"; applyNameLevelText() end end,
-                            getColor = function() local t = ensureUFDB() or {}; local c = t.nameBackdropTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropTint = {r,g,b,a}; applyNameLevelText() end end,
-                            customValue = "custom", hasAlpha = true,
-                        })
-                        tabInner:AddSlider({
-                            label = "Backdrop Width (%)", min = 25, max = 300, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropWidthPct) or 100 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropWidthPct = tonumber(v) or 100; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Backdrop Opacity", min = 0, max = 100, step = 1,
-                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropOpacity) or 50 end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropOpacity = tonumber(v) or 50; applyNameLevelText() end end,
-                        })
-                        tabInner:Finalize()
-                    end,
-                    border = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Enable Border",
-                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropBorderEnabled end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderEnabled = not not v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddBarBorderSelector({
-                            label = "Border Style",
-                            includeNone = true,
-                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderStyle or "square" end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderStyle = v or "square"; applyNameLevelText() end end,
-                            getHiddenEdges = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderHiddenEdges end,
-                            setHiddenEdges = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderHiddenEdges = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddToggleColorPicker({
-                            label = "Border Tint",
-                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropBorderTintEnable end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderTintEnable = not not v; applyNameLevelText() end end,
-                            getColor = function() local t = ensureUFDB() or {}; local c = t.nameBackdropBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropBorderTintColor = {r,g,b,a}; applyNameLevelText() end end,
-                            hasAlpha = true,
-                        })
-                        tabInner:AddSlider({
-                            label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
-                            get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end,
-                        })
-                        tabInner:AddDualSlider({
-                            label = "Border Inset",
-                            sliderA = {
-                                axisLabel = "H", min = -4, max = 4, step = 1,
-                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetH) or tonumber(t.nameBackdropBorderInset) or 0 end,
-                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetH = tonumber(v) or 0; applyNameLevelText() end end,
-                                minLabel = "-4", maxLabel = "+4",
-                            },
-                            sliderB = {
-                                axisLabel = "V", min = -4, max = 4, step = 1,
-                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetV) or tonumber(t.nameBackdropBorderInset) or 0 end,
-                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetV = tonumber(v) or 0; applyNameLevelText() end end,
-                                minLabel = "-4", maxLabel = "+4",
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                    nameText = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Disable Name Text",
-                            get = function() local t = ensureUFDB() or {}; return not not t.nameTextHidden end,
-                            set = function(v) local t = ensureUFDB(); if t then t.nameTextHidden = v and true or false; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Name Container Width", min = 80, max = 500, step = 5,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return tonumber(s.containerWidthPct) or 100 end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.containerWidthPct = tonumber(v) or 100; applyNameLevelText() end end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Name Text Font",
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.fontFace or "FRIZQT__" end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.fontFace = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Name Text Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.style or "OUTLINE" end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.style = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Name Text Size", min = 6, max = 48, step = 1,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return tonumber(s.size) or 14 end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.size = tonumber(v) or 14; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Name Text Color",
-                            values = UF.fontColorValues, order = UF.fontColorOrder,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.colorMode or "default" end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.colorMode = v or "default"; applyNameLevelText() end end,
-                            getColor = function() local s = ensureNameLevelDB("textName") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensureNameLevelDB("textName"); if t then t.color = {r,g,b,a}; applyNameLevelText() end end,
-                            customValue = "custom", hasAlpha = true,
-                        })
-                        tabInner:AddSelector({
-                            label = "Name Text Alignment", values = UF.alignmentValues, order = UF.alignmentOrder,
-                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.alignment or "LEFT" end,
-                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.alignment = v or "LEFT"; applyNameLevelText() end end,
-                        })
-                        tabInner:AddDualSlider({
-                            label = "Name Text Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                    levelText = function(cf, tabInner)
-                        tabInner:AddToggle({
-                            label = "Disable Level Text",
-                            get = function() local t = ensureUFDB() or {}; return not not t.levelTextHidden end,
-                            set = function(v) local t = ensureUFDB(); if t then t.levelTextHidden = v and true or false; applyNameLevelText() end end,
-                        })
-                        tabInner:AddFontSelector({
-                            label = "Level Text Font",
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.fontFace or "FRIZQT__" end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.fontFace = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSelector({
-                            label = "Level Text Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.style or "OUTLINE" end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.style = v; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "Level Text Size", min = 6, max = 48, step = 1,
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return tonumber(s.size) or 14 end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.size = tonumber(v) or 14; applyNameLevelText() end end,
-                        })
-                        tabInner:AddSelectorColorPicker({
-                            label = "Level Text Color", values = UF.fontColorValues, order = UF.fontColorOrder,
-                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.colorMode or "default" end,
-                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.colorMode = v or "default"; applyNameLevelText() end end,
-                            getColor = function() local s = ensureNameLevelDB("textLevel") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
-                            setColor = function(r,g,b,a) local t = ensureNameLevelDB("textLevel"); if t then t.color = {r,g,b,a}; applyNameLevelText() end end,
-                            customValue = "custom", hasAlpha = true,
-                        })
-                        tabInner:AddDualSlider({
-                            label = "Level Text Offset",
-                            sliderA = {
-                                axisLabel = "X",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                            sliderB = {
-                                axisLabel = "Y",
-                                min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
-                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
-                            },
-                        })
-                        tabInner:Finalize()
-                    end,
-                },
-            })
-            inner:Finalize()
-        end,
-    })
-
-    --------------------------------------------------------------------------------
     -- Cast Bar (7 tabs: Positioning, Sizing, Style, Border, Icon, Spell Name, Visibility)
     --------------------------------------------------------------------------------
 
-    local castBarTabs = UF.getCastBarTabs(COMPONENT_ID)
+    local castBarTabs = UF.getCastBarTabs(COMPONENT_ID, {
+        fillLineVisible = function()
+            local t = ensureCastBarDB() or {}
+            return (t.castBarMode or "default") == "textFill"
+        end,
+    })
 
     builder:AddCollapsibleSection({
         title = "Cast Bar",
@@ -765,6 +565,7 @@ function UF.RenderBoss(panel, scrollContent)
         sectionKey = "castBar",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
+            local tabbedRef
             inner:AddSelector({
                 label = "Mode",
                 description = "Choose how the cast bar is displayed.",
@@ -772,9 +573,15 @@ function UF.RenderBoss(panel, scrollContent)
                 order = { "default", "textFill" },
                 emphasized = true,
                 get = function() local t = ensureCastBarDB() or {}; return t.castBarMode or "default" end,
-                set = function(v) local t = ensureCastBarDB(); if t then t.castBarMode = v; applyCastBar() end end,
+                set = function(v)
+                    local t = ensureCastBarDB()
+                    if t then t.castBarMode = v; applyCastBar() end
+                    if tabbedRef and tabbedRef.RefreshTabVisibility then
+                        tabbedRef:RefreshTabVisibility()
+                    end
+                end,
             })
-            inner:AddTabbedSection({
+            tabbedRef = inner:AddTabbedSection({
                 tabs = castBarTabs,
                 componentId = COMPONENT_ID,
                 sectionKey = "castBar_tabs",
@@ -1023,6 +830,211 @@ function UF.RenderBoss(panel, scrollContent)
                             label = "Hide Cast Bar",
                             get = function() local t = ensureCastBarDB() or {}; return not not t.castBarHidden end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.castBarHidden = v and true or false; applyCastBar() end end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                },
+            })
+            inner:Finalize()
+        end,
+    })
+
+    --------------------------------------------------------------------------------
+    -- Name & Level Text (4 tabs: Backdrop, Border, Name Text, Level Text)
+    --------------------------------------------------------------------------------
+
+    builder:AddCollapsibleSection({
+        title = "Name & Level Text",
+        componentId = COMPONENT_ID,
+        sectionKey = "nameLevelText",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "backdrop", label = "Backdrop" },
+                    { key = "border", label = "Border" },
+                    { key = "nameText", label = "Name Text" },
+                    { key = "levelText", label = "Level Text" },
+                },
+                componentId = COMPONENT_ID,
+                sectionKey = "nameLevelText_tabs",
+                buildContent = {
+                    backdrop = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Enable Backdrop",
+                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropEnabled end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropEnabled = not not v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddBarTextureSelector({
+                            label = "Backdrop Texture",
+                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropTexture or "" end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropTexture = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Backdrop Color",
+                            values = UF.bgColorValues, order = UF.bgColorOrder,
+                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropColorMode or "default" end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropColorMode = v or "default"; applyNameLevelText() end end,
+                            getColor = function() local t = ensureUFDB() or {}; local c = t.nameBackdropTint or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropTint = {r,g,b,a}; applyNameLevelText() end end,
+                            customValue = "custom", hasAlpha = true,
+                        })
+                        tabInner:AddSlider({
+                            label = "Backdrop Width (%)", min = 25, max = 300, step = 1,
+                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropWidthPct) or 100 end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropWidthPct = tonumber(v) or 100; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Backdrop Opacity", min = 0, max = 100, step = 1,
+                            get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropOpacity) or 50 end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropOpacity = tonumber(v) or 50; applyNameLevelText() end end,
+                        })
+                        tabInner:Finalize()
+                    end,
+                    border = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Enable Border",
+                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropBorderEnabled end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderEnabled = not not v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddBarBorderSelector({
+                            label = "Border Style",
+                            includeNone = true,
+                            get = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderStyle or "square" end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderStyle = v or "square"; applyNameLevelText() end end,
+                            getHiddenEdges = function() local t = ensureUFDB() or {}; return t.nameBackdropBorderHiddenEdges end,
+                            setHiddenEdges = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderHiddenEdges = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddToggleColorPicker({
+                            label = "Border Tint",
+                            get = function() local t = ensureUFDB() or {}; return not not t.nameBackdropBorderTintEnable end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderTintEnable = not not v; applyNameLevelText() end end,
+                            getColor = function() local t = ensureUFDB() or {}; local c = t.nameBackdropBorderTintColor or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureUFDB(); if t then t.nameBackdropBorderTintColor = {r,g,b,a}; applyNameLevelText() end end,
+                            hasAlpha = true,
+                        })
+                        tabInner:AddSlider({
+                            label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,
+                            get = function() local t = ensureUFDB() or {}; local v = tonumber(t.nameBackdropBorderThickness) or 1; return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2)) end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderThickness = math.max(1, math.min(8, math.floor((tonumber(v) or 1) * 2 + 0.5) / 2)); applyNameLevelText() end end,
+                        })
+                        tabInner:AddDualSlider({
+                            label = "Border Inset",
+                            sliderA = {
+                                axisLabel = "H", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetH) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetH = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                            sliderB = {
+                                axisLabel = "V", min = -4, max = 4, step = 1,
+                                get = function() local t = ensureUFDB() or {}; return tonumber(t.nameBackdropBorderInsetV) or tonumber(t.nameBackdropBorderInset) or 0 end,
+                                set = function(v) local t = ensureUFDB(); if t then t.nameBackdropBorderInsetV = tonumber(v) or 0; applyNameLevelText() end end,
+                                minLabel = "-4", maxLabel = "+4",
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
+                    nameText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Disable Name Text",
+                            get = function() local t = ensureUFDB() or {}; return not not t.nameTextHidden end,
+                            set = function(v) local t = ensureUFDB(); if t then t.nameTextHidden = v and true or false; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Name Container Width", min = 80, max = 500, step = 5,
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return tonumber(s.containerWidthPct) or 100 end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.containerWidthPct = tonumber(v) or 100; applyNameLevelText() end end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Name Text Font",
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.fontFace or "FRIZQT__" end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.fontFace = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Name Text Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.style or "OUTLINE" end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.style = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Name Text Size", min = 6, max = 48, step = 1,
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return tonumber(s.size) or 14 end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.size = tonumber(v) or 14; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Name Text Color",
+                            values = UF.fontColorValues, order = UF.fontColorOrder,
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.colorMode or "default" end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.colorMode = v or "default"; applyNameLevelText() end end,
+                            getColor = function() local s = ensureNameLevelDB("textName") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureNameLevelDB("textName"); if t then t.color = {r,g,b,a}; applyNameLevelText() end end,
+                            customValue = "custom", hasAlpha = true,
+                        })
+                        tabInner:AddSelector({
+                            label = "Name Text Alignment", values = UF.alignmentValues, order = UF.alignmentOrder,
+                            get = function() local s = ensureNameLevelDB("textName") or {}; return s.alignment or "LEFT" end,
+                            set = function(v) local t = ensureNameLevelDB("textName"); if t then t.alignment = v or "LEFT"; applyNameLevelText() end end,
+                        })
+                        tabInner:AddDualSlider({
+                            label = "Name Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                        })
+                        tabInner:Finalize()
+                    end,
+                    levelText = function(cf, tabInner)
+                        tabInner:AddToggle({
+                            label = "Disable Level Text",
+                            get = function() local t = ensureUFDB() or {}; return not not t.levelTextHidden end,
+                            set = function(v) local t = ensureUFDB(); if t then t.levelTextHidden = v and true or false; applyNameLevelText() end end,
+                        })
+                        tabInner:AddFontSelector({
+                            label = "Level Text Font",
+                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.fontFace or "FRIZQT__" end,
+                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.fontFace = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSelector({
+                            label = "Level Text Style", values = UF.fontStyleValues, order = UF.fontStyleOrder,
+                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.style or "OUTLINE" end,
+                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.style = v; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "Level Text Size", min = 6, max = 48, step = 1,
+                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return tonumber(s.size) or 14 end,
+                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.size = tonumber(v) or 14; applyNameLevelText() end end,
+                        })
+                        tabInner:AddSelectorColorPicker({
+                            label = "Level Text Color", values = UF.fontColorValues, order = UF.fontColorOrder,
+                            get = function() local s = ensureNameLevelDB("textLevel") or {}; return s.colorMode or "default" end,
+                            set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.colorMode = v or "default"; applyNameLevelText() end end,
+                            getColor = function() local s = ensureNameLevelDB("textLevel") or {}; local c = s.color or {1,0.82,0,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
+                            setColor = function(r,g,b,a) local t = ensureNameLevelDB("textLevel"); if t then t.color = {r,g,b,a}; applyNameLevelText() end end,
+                            customValue = "custom", hasAlpha = true,
+                        })
+                        tabInner:AddDualSlider({
+                            label = "Level Text Offset",
+                            sliderA = {
+                                axisLabel = "X",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
+                            sliderB = {
+                                axisLabel = "Y",
+                                min = -100, max = 100, step = 1,
+                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
+                            },
                         })
                         tabInner:Finalize()
                     end,
