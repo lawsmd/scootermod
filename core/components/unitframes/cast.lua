@@ -544,8 +544,12 @@ do
 		el:SetColorTexture(0, 0, 0, 1)
 		el:Show()
 
-		-- Filled text color (positioning synced after spell name styling)
-		elements.filledText:SetTextColor(r, g, b, a)
+		-- Filled text color: use spell name font color (not bar fill color).
+		-- Bar fill color (r, g, b, a) continues to drive line and cap textures only.
+		do
+			local sc = (cfg.spellNameText or {}).color or {1, 1, 1, 1}
+			elements.filledText:SetTextColor(sc[1] or 1, sc[2] or 1, sc[3] or 1, sc[4] or 1)
+		end
 		elements.filledText:Show()
 
 		-- Custom spark overlay for text-fill mode
@@ -609,16 +613,17 @@ do
 					if sparkTex and els.sparkFrame and els.sparkFrame:IsShown() then
 						local ft = self:GetStatusBarTexture()
 						local ok_fw, raw_fw = pcall(ft.GetWidth, ft)
-						local sparkX = (ok_fw and type(raw_fw) == "number") and raw_fw or 0
+						local sparkX = (ok_fw and type(raw_fw) == "number"
+							and not (issecretvalue and issecretvalue(raw_fw))) and raw_fw or nil
 						local h = els.lineHeight or 2
 						local tl = els.textLeftEdge
 						local tr = els.textRightEdge
-						if tl and tr then
+						if sparkX and tl and tr then
 							if sparkX >= tl and sparkX <= tr then
 								h = els.effectiveTextHeight or h
 							end
-						else
-							h = els.effectiveTextHeight or h
+						elseif els.effectiveTextHeight then
+							h = els.effectiveTextHeight
 						end
 						sparkTex:SetHeight(h)
 					end
@@ -761,6 +766,12 @@ do
 			elements.filledText:Show()
 		end
 		-- frame.Text stays visible as the unfilled text — spell name styling block manages its alpha
+		-- Override frame.Text color to the unfilled text color setting.
+		-- Runs AFTER spell name styling has set frame.Text color, so this takes precedence.
+		if spellFS and spellFS.SetTextColor then
+			local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5, 1}
+			pcall(spellFS.SetTextColor, spellFS, uc[1] or 0.5, uc[2] or 0.5, uc[3] or 0.5, uc[4] or 1)
+		end
 	end
 
 	-- Export text-fill helpers for Boss cast bar section (separate do-block scope)
