@@ -31,6 +31,130 @@ local function getIconBorderContainer(frame)
     return st and st.ScootIconBorderContainer or nil
 end
 
+-- =========================================================================
+-- Gradient text helpers (spell name color ramp)
+-- =========================================================================
+
+local SPELL_LIGHTEN_RATIO = 0.45
+
+local function resolveGradientColors(colorMode, styleCfg)
+    local r1, g1, b1
+    if colorMode == "classGradient" and addon.GetClassColorRGB then
+        r1, g1, b1 = addon.GetClassColorRGB("player")
+    end
+    if colorMode == "customGradient" then
+        local c = styleCfg.color or {1, 1, 1, 1}
+        r1, g1, b1 = c[1] or 1, c[2] or 1, c[3] or 1
+    end
+    r1, g1, b1 = r1 or 1, g1 or 1, b1 or 1
+    local r2, g2, b2 = addon.LightenColor(r1, g1, b1, SPELL_LIGHTEN_RATIO)
+    return r1, g1, b1, r2, g2, b2
+end
+
+-- File-level guard for re-entrant SetText during gradient application
+local _rampApplying = false
+
+-- Install a SetText hook on a spell name FontString for live gradient updates.
+-- cfgResolver: function() returning the spellNameText sub-table (or nil).
+-- parentFrame: the cast bar frame (for text-fill mode awareness).
+local function installGradientHook(spellFS, cfgResolver, parentFrame)
+    if not spellFS or getProp(spellFS, "_rampHooked") then return end
+    hooksecurefunc(spellFS, "SetText", function(self, text)
+        if _rampApplying then return end
+        if type(text) ~= "string" then return end
+        -- Cache the raw (uncolored) text for re-application on settings change
+        setProp(self, "_rampRawText", text)
+        local styleCfg = cfgResolver()
+        if not styleCfg then return end
+        local mode = styleCfg.colorMode
+        if mode ~= "classGradient" and mode ~= "customGradient" then return end
+        if not addon.BuildColorRampString then return end
+        local r1, g1, b1, r2, g2, b2 = resolveGradientColors(mode, styleCfg)
+        -- Text-fill mode: apply gradient to filledText only, leave frame.Text as raw text
+        if parentFrame and getProp(parentFrame, "textFillActive") then
+            local els = getProp(parentFrame, "textFillElements")
+            if els and els.filledText then
+                pcall(els.filledText.SetText, els.filledText, addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2))
+            end
+            return  -- Do NOT modify frame.Text with gradient codes
+        end
+        -- Normal mode: apply gradient to frame.Text
+        _rampApplying = true
+        pcall(self.SetText, self, addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2))
+        _rampApplying = false
+    end)
+    setProp(spellFS, "_rampHooked", true)
+end
+
+-- Apply spell name color based on colorMode setting.
+-- Handles: default, class, custom, classGradient, customGradient.
+-- parentFrame: the cast bar frame (for text-fill mode awareness).
+local function applySpellNameColor(spellFS, styleCfg, parentFrame)
+    if not spellFS then return end
+    local colorMode = styleCfg.colorMode or "default"
+    local isTextFill = parentFrame and getProp(parentFrame, "textFillActive")
+
+    if colorMode == "classGradient" or colorMode == "customGradient" then
+        local cachedText = getProp(spellFS, "_rampRawText")
+        if cachedText and addon.BuildColorRampString then
+            local r1, g1, b1, r2, g2, b2 = resolveGradientColors(colorMode, styleCfg)
+            local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
+            if isTextFill then
+                -- Text-fill: gradient goes to filledText; frame.Text stays raw
+                local els = getProp(parentFrame, "textFillElements")
+                if els and els.filledText then
+                    pcall(els.filledText.SetText, els.filledText, rampText)
+                end
+                -- Ensure frame.Text has raw text (no |cff codes)
+                _rampApplying = true
+                pcall(spellFS.SetText, spellFS, cachedText)
+                _rampApplying = false
+                -- SetTextColor on frame.Text will be handled by syncTextFillText's
+                -- unfilled text color override — don't set it here
+            else
+                -- Normal mode: gradient on frame.Text, white base color
+                if spellFS.SetTextColor then
+                    pcall(spellFS.SetTextColor, spellFS, 1, 1, 1, 1)
+                end
+                _rampApplying = true
+                pcall(spellFS.SetText, spellFS, rampText)
+                _rampApplying = false
+            end
+        end
+    elseif colorMode == "class" then
+        local cr, cg, cb
+        if addon.GetClassColorRGB then
+            cr, cg, cb = addon.GetClassColorRGB("player")
+        end
+        cr, cg, cb = cr or 1, cg or 1, cb or 1
+        if spellFS.SetTextColor then
+            pcall(spellFS.SetTextColor, spellFS, cr, cg, cb, 1)
+        end
+    elseif colorMode == "custom" then
+        local c = styleCfg.color or {1, 1, 1, 1}
+        if spellFS.SetTextColor then
+            pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        end
+    else -- "default"
+        if spellFS.SetTextColor then
+            pcall(spellFS.SetTextColor, spellFS, 1, 1, 1, 1)
+        end
+    end
+
+    -- When switching FROM gradient to non-gradient, restore plain text
+    if colorMode ~= "classGradient" and colorMode ~= "customGradient" then
+        local cachedText = getProp(spellFS, "_rampRawText")
+        if cachedText and spellFS.GetText then
+            local ok, current = pcall(spellFS.GetText, spellFS)
+            if ok and type(current) == "string" and current:find("|cff") then
+                _rampApplying = true
+                pcall(spellFS.SetText, spellFS, cachedText)
+                _rampApplying = false
+            end
+        end
+    end
+end
+
 -- Unit Frames: Cast Bar positioning (Target/Focus only, addon-managed offsets)
 do
 	local function resolveCastBarFrame(unit)
@@ -717,8 +841,25 @@ do
 				pcall(elements.filledText.SetShadowOffset, elements.filledText, sx, sy)
 			end
 		end
-		-- Copy text content
-		elements.filledText:SetText(spellFS:GetText() or "")
+		-- Copy text content — use cached raw text to avoid copying gradient |cff codes
+		local rawText = getProp(spellFS, "_rampRawText") or spellFS:GetText() or ""
+		local styleCfg_tf = cfg.spellNameText or {}
+		local colorMode_tf = styleCfg_tf.colorMode or "default"
+		if (colorMode_tf == "classGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
+			local r1, g1, b1, r2, g2, b2 = resolveGradientColors(colorMode_tf, styleCfg_tf)
+			elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
+		else
+			elements.filledText:SetText(rawText)
+		end
+		-- Ensure frame.Text has raw text (no inline |cff codes) so unfilled color works
+		if rawText and getProp(spellFS, "_rampRawText") then
+			local ok_gt, currentText = pcall(spellFS.GetText, spellFS)
+			if ok_gt and type(currentText) == "string" and currentText:find("|cff") then
+				_rampApplying = true
+				pcall(spellFS.SetText, spellFS, rawText)
+				_rampApplying = false
+			end
+		end
 		-- Match alignment
 		if elements.filledText.SetJustifyH then elements.filledText:SetJustifyH("CENTER") end
 		-- Position to match original text (read from config, not from current anchor)
@@ -1714,11 +1855,18 @@ do
 							pcall(spellFS.SetFont, spellFS, face, size, outline)
 						end
 
-						-- Color (simple RGBA, no mode for now)
-						local c = styleCfg.color or {1, 1, 1, 1}
-						if spellFS.SetTextColor then
-							pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-						end
+						-- Install gradient SetText hook (once per FontString)
+						local hookUnit = unit
+						installGradientHook(spellFS, function()
+							local d = addon and addon.db and addon.db.profile
+							if not d then return nil end
+							local uf = d.unitFrames and d.unitFrames[hookUnit]
+							local cb = uf and uf.castBar
+							return cb and cb.spellNameText
+						end, frame)
+
+						-- Color (mode-aware: default/class/custom/classGradient/customGradient)
+						applySpellNameColor(spellFS, styleCfg, frame)
 
 						-- Offsets relative to baseline (centered)
 						local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0
@@ -2860,11 +3008,17 @@ do
 						pcall(spellFS.SetFont, spellFS, face, size, outline)
 					end
 
-					-- Color
-					local c = styleCfg.color or {1, 1, 1, 1}
-					if spellFS.SetTextColor then
-						pcall(spellFS.SetTextColor, spellFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-					end
+					-- Install gradient SetText hook (once per FontString)
+					installGradientHook(spellFS, function()
+						local d = addon and addon.db and addon.db.profile
+						if not d then return nil end
+						local uf = d.unitFrames and d.unitFrames.Boss
+						local cb = uf and uf.castBar
+						return cb and cb.spellNameText
+					end, frame)
+
+					-- Color (mode-aware: default/class/custom/classGradient/customGradient)
+					applySpellNameColor(spellFS, styleCfg, frame)
 
 					-- Offsets relative to baseline
 					local ox = (styleCfg.offset and tonumber(styleCfg.offset.x)) or 0

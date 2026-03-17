@@ -667,16 +667,6 @@ function UF.RenderPlayer(panel, scrollContent)
                             "The fill color used in Text-Fill Mode is decided by the Spell Name text's font color.",
                             { color = {1, 0.82, 0}, fontSize = 14, topPadding = 4 }
                         )
-                        tabInner:AddSlider({
-                            label = "Line Height", min = 1, max = 10, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
-                        })
-                        tabInner:AddSlider({
-                            label = "End Cap Size", min = 2, max = 20, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
-                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapSize = tonumber(v) or 6; applyCastBar() end end,
-                        })
                         tabInner:AddColorPicker({
                             label = "Unfilled Text Color",
                             get = function()
@@ -692,6 +682,16 @@ function UF.RenderPlayer(panel, scrollContent)
                                 end
                             end,
                             hasAlpha = true,
+                        })
+                        tabInner:AddSlider({
+                            label = "Line Height", min = 1, max = 10, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
+                        })
+                        tabInner:AddSlider({
+                            label = "End Cap Size", min = 2, max = 20, step = 1,
+                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
+                            set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapSize = tonumber(v) or 6; applyCastBar() end end,
                         })
                         tabInner:Finalize()
                     end,
@@ -910,21 +910,36 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                         })
-                        tabInner:AddColorPicker({
+                        tabInner:AddSelectorColorPicker({
                             label = "Spell Name Color",
+                            values = UF.fontColorCastBarValues,
+                            order = UF.fontColorCastBarOrder,
                             get = function()
+                                local t = ensureCastBarDB() or {}
+                                local s = t.spellNameText or {}
+                                return s.colorMode or "default"
+                            end,
+                            set = function(v)
+                                local t = ensureCastBarDB()
+                                if not t then return end
+                                t.spellNameText = t.spellNameText or {}
+                                t.spellNameText.colorMode = v or "default"
+                                applyCastBar()
+                            end,
+                            getColor = function()
                                 local t = ensureCastBarDB() or {}
                                 local s = t.spellNameText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
-                            set = function(r, g, b, a)
+                            setColor = function(r, g, b, a)
                                 local t = ensureCastBarDB()
                                 if not t then return end
                                 t.spellNameText = t.spellNameText or {}
                                 t.spellNameText.color = {r, g, b, a}
                                 applyCastBar()
                             end,
+                            customValue = {"custom", "customGradient"},
                             hasAlpha = true,
                         })
                         tabInner:Finalize()

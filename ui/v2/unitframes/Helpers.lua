@@ -334,6 +334,16 @@ UF.fillDirectionValues = {
 }
 UF.fillDirectionOrder = { "default", "reverse" }
 
+-- Font color mode options (cast bar spell name — includes gradient modes)
+UF.fontColorCastBarValues = {
+    default = "Default",
+    class = "Class Color",
+    custom = "Custom",
+    classGradient = "Class Color (Gradient)",
+    customGradient = "Custom (Gradient)",
+}
+UF.fontColorCastBarOrder = { "default", "class", "custom", "classGradient", "customGradient" }
+
 -- Font color mode options
 UF.fontColorValues = {
     default = "Default",
