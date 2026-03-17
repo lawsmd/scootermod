@@ -24,7 +24,38 @@ function UF.getUnitKey(componentId)
 end
 
 --------------------------------------------------------------------------------
--- Database Access
+-- Database Access (read-only — use in get callbacks to avoid materializing tables)
+--------------------------------------------------------------------------------
+
+function UF.getUFDB(unitKey)
+    local db = addon and addon.db and addon.db.profile
+    if not db then return nil end
+    local unitFrames = rawget(db, "unitFrames")
+    return unitFrames and rawget(unitFrames, unitKey) or nil
+end
+
+function UF.getTextDB(unitKey, textKey)
+    local t = UF.getUFDB(unitKey)
+    return t and rawget(t, textKey) or nil
+end
+
+function UF.getPortraitDB(unitKey)
+    local t = UF.getUFDB(unitKey)
+    return t and rawget(t, "portrait") or nil
+end
+
+function UF.getCastBarDB(unitKey)
+    local t = UF.getUFDB(unitKey)
+    return t and rawget(t, "castBar") or nil
+end
+
+function UF.getMiscDB(unitKey)
+    local t = UF.getUFDB(unitKey)
+    return t and rawget(t, "misc") or nil
+end
+
+--------------------------------------------------------------------------------
+-- Database Access (write — materializes tables, use only in set callbacks)
 --------------------------------------------------------------------------------
 
 -- Ensure unit frame database exists and return it

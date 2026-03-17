@@ -134,9 +134,11 @@ function SlashCmdList.SCOOT(msg, editBox)
         if sub1 == "" then
             addon:Print("Usage:")
             addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|quests|<FrameName>>")
-            addon:Print("  /scoot debug profiles export [\"Profile Name\"]")
+            addon:Print("  /scoot debug profiles export [\"Profile Name\"]  |  trace <on|off>  |  log  |  clear")
             addon:Print("  /scoot debug consoleport export")
             addon:Print("  /scoot debug dm export [overall|current|expired]")
+            addon:Print("  /scoot debug dm frames")
+            addon:Print("  /scoot debug dm trace <on|off>")
             return
         end
 
@@ -150,7 +152,33 @@ function SlashCmdList.SCOOT(msg, editBox)
                 end
                 return
             end
+            if sub2 == "trace" then
+                local toggle = args[4]
+                if toggle == "on" then
+                    if addon.SetProfilesTrace then addon.SetProfilesTrace(true)
+                    else addon:Print("Profiles trace not available.") end
+                elseif toggle == "off" then
+                    if addon.SetProfilesTrace then addon.SetProfilesTrace(false)
+                    else addon:Print("Profiles trace not available.") end
+                else
+                    addon:Print("Usage: /scoot debug profiles trace <on|off>")
+                end
+                return
+            end
+            if sub2 == "log" then
+                if addon.ShowProfilesTraceLog then addon.ShowProfilesTraceLog()
+                else addon:Print("Profiles trace log not available.") end
+                return
+            end
+            if sub2 == "clear" then
+                if addon.ClearProfilesTrace then addon.ClearProfilesTrace()
+                else addon:Print("Profiles trace clear not available.") end
+                return
+            end
             addon:Print("Usage: /scoot debug profiles export [\"Profile Name\"]")
+            addon:Print("       /scoot debug profiles trace <on|off>")
+            addon:Print("       /scoot debug profiles log")
+            addon:Print("       /scoot debug profiles clear")
             return
         end
 
@@ -310,6 +338,8 @@ function SlashCmdList.SCOOT(msg, editBox)
         end
 
         -- /scoot debug dm export [overall|current|expired]
+        -- /scoot debug dm frames
+        -- /scoot debug dm trace <on|off>
         if sub1 == "dm" then
             if sub2 == "export" then
                 local sessionArg = args[4]
@@ -320,7 +350,30 @@ function SlashCmdList.SCOOT(msg, editBox)
                 end
                 return
             end
+            if sub2 == "frames" then
+                if addon.DebugDMFrames then
+                    addon.DebugDMFrames()
+                else
+                    addon:Print("DM frame debug not available (damagemeters module missing).")
+                end
+                return
+            end
+            if sub2 == "trace" then
+                local toggle = args[4]
+                if toggle == "on" then
+                    if addon.SetDMDebug then addon.SetDMDebug(true)
+                    else addon:Print("DM debug not available.") end
+                elseif toggle == "off" then
+                    if addon.SetDMDebug then addon.SetDMDebug(false)
+                    else addon:Print("DM debug not available.") end
+                else
+                    addon:Print("Usage: /scoot debug dm trace <on|off>")
+                end
+                return
+            end
             addon:Print("Usage: /scoot debug dm export [overall|current|expired]")
+            addon:Print("       /scoot debug dm frames")
+            addon:Print("       /scoot debug dm trace <on|off>")
             return
         end
 

@@ -981,11 +981,11 @@ do
 	local function applyForUnit(unit)
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames[unit] = db.unitFrames[unit] or {}
-		db.unitFrames[unit].portrait = db.unitFrames[unit].portrait or {}
-		local ufCfg = db.unitFrames[unit]
-		local cfg = ufCfg.portrait
+		local unitFrames = rawget(db, "unitFrames")
+		local ufCfg = unitFrames and rawget(unitFrames, unit) or nil
+		if not ufCfg then return end
+		local cfg = rawget(ufCfg, "portrait")
+		if not cfg then return end
 
 		-- OPT-20: Use cached frame resolution (session-stable hierarchy)
 		local frames = getCachedFrames(unit)

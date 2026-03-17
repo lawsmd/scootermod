@@ -45,7 +45,11 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     local frame = _G[frameName]
     if not frame or not frame.AuraContainer then return end
 
-    local db = component.db or {}
+    -- Zero-Touch: if still on proxy DB, do nothing
+    if component._ScootDBProxy and component.db == component._ScootDBProxy then return end
+
+    local db = component.db
+    if not db then return end
     local settings = component.settings or {}
 
     if type(db.textDuration) ~= "table" and type(db.textCooldown) == "table" then
@@ -282,6 +286,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         setRegionVisible(aura.IconBorder, visible)
         setRegionVisible(aura.Border, visible)
         setRegionVisible(aura.DebuffBorder, visible)
+        setRegionVisible(aura.TempEnchantBorder, visible)
     end
 
     local function clearCustomBorder(icon)
@@ -336,6 +341,51 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         end
     end
 
+    local function captureTempEnchantBorderDefaults(aura, icon)
+        if not aura or not icon then return end
+        local border = aura.TempEnchantBorder
+        if not border then return end
+
+        local iconState = getState(icon)
+        local borderState = getState(border)
+        if not iconState or not borderState then return end
+
+        -- XML template constants: Icon 30x30, TempEnchantBorder 32x32
+        if not iconState.tempEnchantBaseWidth then iconState.tempEnchantBaseWidth = 30 end
+        if not iconState.tempEnchantBaseHeight then iconState.tempEnchantBaseHeight = 30 end
+        if not borderState.tempEnchantBaseWidth then borderState.tempEnchantBaseWidth = 32 end
+        if not borderState.tempEnchantBaseHeight then borderState.tempEnchantBaseHeight = 32 end
+    end
+
+    local function resizeTempEnchantBorder(aura, icon, targetWidth, targetHeight)
+        if not aura or not icon then return end
+        local border = aura.TempEnchantBorder
+        if not border or not border.SetSize then return end
+
+        local iconState = getState(icon)
+        local borderState = getState(border)
+
+        local baseIconW = iconState and iconState.tempEnchantBaseWidth
+        local baseIconH = iconState and iconState.tempEnchantBaseHeight
+        local baseBorderW = borderState and borderState.tempEnchantBaseWidth
+        local baseBorderH = borderState and borderState.tempEnchantBaseHeight
+
+        local w = targetWidth or icon:GetWidth()
+        local h = targetHeight or icon:GetHeight()
+
+        if baseIconW and baseIconW > 0 and baseBorderW then
+            border:SetWidth(baseBorderW * (w / baseIconW))
+        end
+        if baseIconH and baseIconH > 0 and baseBorderH then
+            border:SetHeight(baseBorderH * (h / baseIconH))
+        end
+
+        if border.ClearAllPoints and border.SetPoint then
+            border:ClearAllPoints()
+            border:SetPoint("CENTER", icon, "CENTER")
+        end
+    end
+
     local auraCollections = {}
     local function addCollection(list)
         if type(list) == "table" then
@@ -381,6 +431,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
                     if icon then
                         captureDebuffBorderDefaults(aura, icon)
+                        captureTempEnchantBorderDefaults(aura, icon)
                     end
                     if icon and icon.SetSize and width and height then
                         icon:SetSize(width, height)
@@ -406,6 +457,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     end
                     if icon then
                         resizeDebuffBorder(aura, icon, width, height)
+                        resizeTempEnchantBorder(aura, icon, width, height)
                     end
                     if icon then
                         -- OPT-01 Opt3: Border param cache — skip ApplyIconBorderStyle when params match

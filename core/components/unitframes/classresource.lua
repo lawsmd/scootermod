@@ -124,19 +124,18 @@ for _, entry in ipairs(CLASS_RESOURCE_ENTRIES) do
 	end
 end
 
-local function ensureConfig()
+local function getClassResourceConfig()
 	local db = addon and addon.db and addon.db.profile
 	if not db then return nil end
-
-	db.unitFrames = db.unitFrames or {}
-	db.unitFrames.Player = db.unitFrames.Player or {}
-	db.unitFrames.Player.classResource = db.unitFrames.Player.classResource or {}
-	local cfg = db.unitFrames.Player.classResource
-
-	-- Clean up removed custom position keys (feature retired)
-	cfg.classResourceCustomPositionEnabled = nil
-	cfg.classResourcePosX = nil
-	cfg.classResourcePosY = nil
+	local unitFrames = rawget(db, "unitFrames")
+	local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+	local cfg = playerCfg and rawget(playerCfg, "classResource") or nil
+	if cfg then
+		-- Clean up removed custom position keys (feature retired)
+		cfg.classResourceCustomPositionEnabled = nil
+		cfg.classResourcePosX = nil
+		cfg.classResourcePosY = nil
+	end
 	return cfg
 end
 
@@ -175,9 +174,15 @@ local function captureBaselines(frame)
 	
 	-- Capture original padding (used by LayoutFrame system for positioning)
 	if not originalPaddings[frame] then
+		local lp = frame.leftPadding
+		local tp = frame.topPadding
+		if issecretvalue and ((lp ~= nil and issecretvalue(lp)) or (tp ~= nil and issecretvalue(tp))) then
+			lp = 0
+			tp = 0
+		end
 		originalPaddings[frame] = {
-			leftPadding = frame.leftPadding or 0,
-			topPadding = frame.topPadding or 0,
+			leftPadding = lp or 0,
+			topPadding = tp or 0,
 		}
 		debugPrint("Captured baseline paddings for", frame:GetName() or "unnamed",
 			"left:", originalPaddings[frame].leftPadding,
@@ -214,7 +219,7 @@ local function ensureVisibilityHooks(frame, cfg)
 	hookedFrames[frame] = true
 	
 	-- Store reference to config getter for hooks
-	setProp(frame, "classResourceCfg", ensureConfig)
+	setProp(frame, "classResourceCfg", getClassResourceConfig)
 	
 	-- Hook Show to enforce hidden state (runs AFTER Blizzard's Show)
 	-- CRITICAL: Combat guard required to avoid tainting nameplate operations during form changes
@@ -267,7 +272,9 @@ local function triggerLayoutUpdate()
 		if not layoutTriggerClosure then
 			layoutTriggerClosure = function()
 				local c = _G.PlayerFrameBottomManagedFramesContainer
-				if c and c.Layout then
+				if c and c.MarkDirty then
+					pcall(c.MarkDirty, c)
+				elseif c and c.Layout then
 					pcall(c.Layout, c)
 				end
 			end
@@ -288,7 +295,7 @@ local function ensureLayoutHook()
 			local inCombat = InCombatLockdown and InCombatLockdown()
 
 			-- Reapply styling after layout completes.
-			local cfg = ensureConfig()
+			local cfg = getClassResourceConfig()
 			if not cfg then return end
 
 			local frames, _ = resolveClassResourceFrames()
@@ -320,17 +327,11 @@ local function applyClassResourceForUnit(unit)
 		return
 	end
 
-	local cfg = ensureConfig()
+	local cfg = getClassResourceConfig()
 	if not cfg then
 		debugPrint("No config available, skipping apply")
 		return
 	end
-
-	-- Initialize defaults
-	if cfg.scale == nil then cfg.scale = 100 end
-	if cfg.hide == nil then cfg.hide = false end
-	if cfg.offsetX == nil then cfg.offsetX = 0 end
-	if cfg.offsetY == nil then cfg.offsetY = 0 end
 
 	local frames, label = resolveClassResourceFrames()
 	if #frames == 0 then
@@ -364,13 +365,8 @@ local function applyClassResourceForUnit(unit)
 		if not inCombat and (offsetX ~= 0 or offsetY ~= 0) then
 			local newLeft = (origPadding.leftPadding or 0) + offsetX
 			local newTop = (origPadding.topPadding or 0) - offsetY  -- Negate Y so positive = up
-			-- Only write if different from current to minimize unnecessary taint surface
-			if frame.leftPadding ~= newLeft then
-				frame.leftPadding = newLeft
-			end
-			if frame.topPadding ~= newTop then
-				frame.topPadding = newTop
-			end
+			frame.leftPadding = newLeft
+			frame.topPadding = newTop
 			debugPrint("Set padding for", frame:GetName() or "unnamed",
 				"left:", frame.leftPadding, "top:", frame.topPadding)
 		end

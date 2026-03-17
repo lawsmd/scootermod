@@ -3596,11 +3596,10 @@ do
 	local function applyFoTNameText()
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames.FocusTarget = db.unitFrames.FocusTarget or {}
-		local cfg = db.unitFrames.FocusTarget
-		cfg.textName = cfg.textName or {}
-		local styleCfg = cfg.textName
+		local unitFrames = rawget(db, "unitFrames")
+		local cfg = unitFrames and rawget(unitFrames, "FocusTarget") or nil
+		if not cfg then return end
+		local styleCfg = rawget(cfg, "textName")
 
 		local nameFS = resolveFoTNameFS()
 		if not nameFS then return end

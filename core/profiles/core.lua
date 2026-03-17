@@ -7,6 +7,9 @@ local LEO = LibStub and LibStub("LibEditModeOverride-1.0")
 
 local DEBUG_PREFIX = "|cffa0ff00ScootProfiles|r"
 
+local profilesTraceBuffer = {}
+local PROFILES_TRACE_MAX = 500
+
 local function Debug(...)
     if not addon or not addon._dbgProfiles then return end
     local messages = {}
@@ -14,11 +17,37 @@ local function Debug(...)
         messages[#messages + 1] = tostring(select(i, ...))
     end
     local msg = table.concat(messages, " ")
-    if addon.Print then
-        addon:Print(DEBUG_PREFIX .. " " .. msg)
-    else
-        print(DEBUG_PREFIX, msg)
+    -- Always capture to trace buffer when tracing is enabled
+    local timestamp = GetTime and string.format("%.3f", GetTime()) or "?"
+    local entry = "[" .. timestamp .. "] " .. msg
+    table.insert(profilesTraceBuffer, entry)
+    if #profilesTraceBuffer > PROFILES_TRACE_MAX then
+        table.remove(profilesTraceBuffer, 1)
     end
+end
+
+function addon.SetProfilesTrace(enabled)
+    addon._dbgProfiles = enabled
+    if enabled then
+        wipe(profilesTraceBuffer)
+    end
+end
+
+function addon.ShowProfilesTraceLog()
+    if #profilesTraceBuffer == 0 then
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("Profiles Trace", "(trace buffer empty — enable with /scoot debug profiles trace on, then switch profiles)")
+        end
+        return
+    end
+    local text = table.concat(profilesTraceBuffer, "\n")
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Profiles Trace (" .. #profilesTraceBuffer .. " entries)", text)
+    end
+end
+
+function addon.ClearProfilesTrace()
+    wipe(profilesTraceBuffer)
 end
 
 local function deepCopy(tbl)
@@ -1006,6 +1035,12 @@ function Profiles:_setActiveProfile(profileKey, opts)
         end
     end
 
+    if opts.skipLayout and not self._pendingActiveLayout
+       and self._layoutLookup and not next(self._layoutLookup) then
+        self._pendingActiveLayout = profileKey
+        Debug("_setActiveProfile safety-net pending set (empty layout lookup)", profileKey)
+    end
+
     if addon and addon._dbgProfiles and C_Timer and C_Timer.After then
         local targetName = profileKey
         C_Timer.After(0.2, function()
@@ -1066,7 +1101,8 @@ function Profiles:SwitchToProfile(profileKey, opts)
         -- Allow switching to existing AceDB profile even if layout is missing,
         -- but do not try to adjust Edit Mode.
         opts.skipLayout = true
-        Debug("SwitchToProfile missing layout lookup entry, skipping EM interaction", profileKey)
+        self._pendingActiveLayout = profileKey
+        Debug("SwitchToProfile missing layout lookup entry, skipping EM interaction; pending set", profileKey)
     end
     self:_setActiveProfile(profileKey, opts)
     self:PruneSpecAssignments()
@@ -1147,6 +1183,8 @@ function Profiles:RefreshFromEditMode(origin)
         else
             Debug("Suppressed EM re-apply during post-copy window", pending)
         end
+        self._pendingActiveLayout = nil
+        Debug("Cleared pending flag after resolution", pending)
         return
     end
 

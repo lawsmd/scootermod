@@ -1118,7 +1118,8 @@ local function applyPRDBarBorder(component, statusBar)
     if not component or not statusBar then
         return
     end
-    local db = component.db or {}
+    local db = component.db
+    if not db then return end
     local styleKey = db.borderStyle or "square"
     local hiddenEdges = db.borderHiddenEdges
     if styleKey == "none" then

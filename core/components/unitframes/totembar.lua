@@ -44,31 +44,22 @@ end
 -- Configuration Access
 --------------------------------------------------------------------------------
 
-local function ensureConfig()
+local function getTotemBarConfig()
     local db = addon and addon.db and addon.db.profile
     if not db then return nil end
-
-    db.unitFrames = db.unitFrames or {}
-    db.unitFrames.Player = db.unitFrames.Player or {}
-    db.unitFrames.Player.totemBar = db.unitFrames.Player.totemBar or {}
-
-    local cfg = db.unitFrames.Player.totemBar
-
-    -- Ensure sub-tables exist
-    cfg.iconBorders = cfg.iconBorders or {}
-    cfg.timerText = cfg.timerText or {}
-
-    return cfg
+    local unitFrames = rawget(db, "unitFrames")
+    local playerCfg = unitFrames and rawget(unitFrames, "Player") or nil
+    return playerCfg and rawget(playerCfg, "totemBar") or nil
 end
 
 local function getIconBordersConfig()
-    local cfg = ensureConfig()
-    return cfg and cfg.iconBorders or {}
+    local cfg = getTotemBarConfig()
+    return cfg and rawget(cfg, "iconBorders") or nil
 end
 
 local function getTimerTextConfig()
-    local cfg = ensureConfig()
-    return cfg and cfg.timerText or {}
+    local cfg = getTotemBarConfig()
+    return cfg and rawget(cfg, "timerText") or nil
 end
 
 --------------------------------------------------------------------------------
@@ -120,6 +111,7 @@ local function applyBorderStyling(border, hidden)
             hookedBorders[border] = true
             hooksecurefunc(border, "Show", function(self)
                 local cfg = getIconBordersConfig()
+                if not cfg then return end
                 if cfg.hidden then
                     C_Timer.After(0, function()
                         pcall(self.SetAlpha, self, 0)
@@ -128,6 +120,7 @@ local function applyBorderStyling(border, hidden)
             end)
             hooksecurefunc(border, "SetAlpha", function(self, alpha)
                 local cfg = getIconBordersConfig()
+                if not cfg then return end
                 if cfg.hidden and alpha ~= 0 then
                     C_Timer.After(0, function()
                         pcall(self.SetAlpha, self, 0)
@@ -159,6 +152,7 @@ local function applyTimerTextStyling(duration, cfg)
             hookedDurations[duration] = true
             hooksecurefunc(duration, "Show", function(self)
                 local tcfg = getTimerTextConfig()
+                if not tcfg then return end
                 if tcfg.hidden then
                     C_Timer.After(0, function()
                         pcall(self.SetAlpha, self, 0)
@@ -167,6 +161,7 @@ local function applyTimerTextStyling(duration, cfg)
             end)
             hooksecurefunc(duration, "SetAlpha", function(self, alpha)
                 local tcfg = getTimerTextConfig()
+                if not tcfg then return end
                 if tcfg.hidden and alpha ~= 0 then
                     C_Timer.After(0, function()
                         pcall(self.SetAlpha, self, 0)
@@ -222,6 +217,7 @@ local function applyTimerTextStyling(duration, cfg)
         -- Hook SetText to reapply styling after Blizzard updates
         hooksecurefunc(duration, "SetText", function(self, text)
             local tcfg = getTimerTextConfig()
+            if not tcfg then return end
             if tcfg.hidden then
                 C_Timer.After(0, function()
                     pcall(self.SetAlpha, self, 0)
@@ -255,14 +251,14 @@ function addon.ApplyTotemBarStyling()
         return
     end
 
-    local cfg = ensureConfig()
+    local cfg = getTotemBarConfig()
     if not cfg then
         debugPrint("No config available, skipping")
         return
     end
 
-    local borderCfg = cfg.iconBorders or {}
-    local textCfg = cfg.timerText or {}
+    local borderCfg = rawget(cfg, "iconBorders") or {}
+    local textCfg = rawget(cfg, "timerText") or {}
 
     debugPrint("Applying totem bar styling...")
 

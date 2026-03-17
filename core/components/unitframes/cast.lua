@@ -146,7 +146,7 @@ local function applySpellNameColor(spellFS, styleCfg, parentFrame)
         local cachedText = getProp(spellFS, "_rampRawText")
         if cachedText and spellFS.GetText then
             local ok, current = pcall(spellFS.GetText, spellFS)
-            if ok and type(current) == "string" and current:find("|cff") then
+            if ok and type(current) == "string" and not issecretvalue(current) and current:find("|cff") then
                 _rampApplying = true
                 pcall(spellFS.SetText, spellFS, cachedText)
                 _rampApplying = false
@@ -828,7 +828,8 @@ do
 		if not spellFS then return end
 
 		-- Copy font properties from styled original text
-		local face, size, flags = spellFS:GetFont()
+		local ok_gf, face, size, flags = pcall(spellFS.GetFont, spellFS)
+		if not ok_gf then face = nil end
 		if face then pcall(elements.filledText.SetFont, elements.filledText, face, size, flags) end
 		-- Copy shadow properties so filled text has identical visual bounds
 		do
@@ -842,7 +843,14 @@ do
 			end
 		end
 		-- Copy text content — use cached raw text to avoid copying gradient |cff codes
-		local rawText = getProp(spellFS, "_rampRawText") or spellFS:GetText() or ""
+		local rawText = getProp(spellFS, "_rampRawText")
+		if not rawText then
+			local ok_rt, rt = pcall(spellFS.GetText, spellFS)
+			if ok_rt and type(rt) == "string" and not issecretvalue(rt) then
+				rawText = rt
+			end
+		end
+		rawText = rawText or ""
 		local styleCfg_tf = cfg.spellNameText or {}
 		local colorMode_tf = styleCfg_tf.colorMode or "default"
 		if (colorMode_tf == "classGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
@@ -854,7 +862,7 @@ do
 		-- Ensure frame.Text has raw text (no inline |cff codes) so unfilled color works
 		if rawText and getProp(spellFS, "_rampRawText") then
 			local ok_gt, currentText = pcall(spellFS.GetText, spellFS)
-			if ok_gt and type(currentText) == "string" and currentText:find("|cff") then
+			if ok_gt and type(currentText) == "string" and not issecretvalue(currentText) and currentText:find("|cff") then
 				_rampApplying = true
 				pcall(spellFS.SetText, spellFS, rawText)
 				_rampApplying = false
@@ -936,10 +944,17 @@ do
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
 
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames[unit] = db.unitFrames[unit] or {}
-		db.unitFrames[unit].castBar = db.unitFrames[unit].castBar or {}
-		local cfg = db.unitFrames[unit].castBar
+		local unitFrames = rawget(db, "unitFrames")
+		local unitCfg = unitFrames and rawget(unitFrames, unit) or nil
+		if not unitCfg then return end
+		local cfg = rawget(unitCfg, "castBar")
+		if not cfg then return end
+		-- Zero-Touch: skip empty tables (browsed settings but nothing configured)
+		local hasConfig = false
+		for k, v in pairs(cfg) do
+			if v ~= nil then hasConfig = true; break end
+		end
+		if not hasConfig then return end
 
 		local frame = resolveCastBarFrame(unit)
 		if not frame then return end
@@ -1466,15 +1481,14 @@ do
 			-- Layout changes are already skipped above when visualOnly is true.
 			if castBarMode ~= "textFill" and (not inCombat or visualOnly) and (addon._ApplyToStatusBar or addon._ApplyBackgroundToStatusBar) then
 				local db = addon and addon.db and addon.db.profile
-				db.unitFrames = db.unitFrames or {}
-				db.unitFrames[unit] = db.unitFrames[unit] or {}
-				db.unitFrames[unit].castBar = db.unitFrames[unit].castBar or {}
-				local cfgStyle = db.unitFrames[unit].castBar
+				local _uf = db and rawget(db, "unitFrames") or nil
+				local _uc = _uf and rawget(_uf, unit) or nil
+				local cfgStyle = _uc and rawget(_uc, "castBar") or nil
 
 				-- Foreground: texture + color
 				-- Skip during empowered casts: Blizzard uses transparent fill with
 				-- stage tiers at BACKGROUND sublevel 4-5. Custom texture hides them.
-				if not isEmpoweredCast(unit) and addon._ApplyToStatusBar and frame.GetStatusBarTexture then
+				if cfgStyle and not isEmpoweredCast(unit) and addon._ApplyToStatusBar and frame.GetStatusBarTexture then
 					local texKey = cfgStyle.castBarTexture or "default"
 					local colorMode = cfgStyle.castBarColorMode or "default"
 					local tint = cfgStyle.castBarTint
@@ -1488,7 +1502,7 @@ do
 				-- Background: texture + color + opacity
 				-- Skip during empowered casts: the BG swap helpers handle hiding ScootBG
 				-- and restoring stock Background so stage tiers render correctly.
-				if not isEmpoweredCast(unit) and addon._ApplyBackgroundToStatusBar then
+				if cfgStyle and not isEmpoweredCast(unit) and addon._ApplyBackgroundToStatusBar then
 					local bgTexKey = cfgStyle.castBarBackgroundTexture or "default"
 					local bgColorMode = cfgStyle.castBarBackgroundColorMode or "default"
 					local bgOpacity = cfgStyle.castBarBackgroundOpacity or 50
@@ -1847,7 +1861,7 @@ do
 						-- Font / size / outline
 						local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
 							or (select(1, _G.GameFontNormal:GetFont()))
-						local size = tonumber(styleCfg.size) or 14
+						local size = tonumber(styleCfg.size) or 10
 						local outline = tostring(styleCfg.style or "OUTLINE")
 						if addon.ApplyFontStyle then
 							addon.ApplyFontStyle(spellFS, face, size, outline)
@@ -1925,7 +1939,7 @@ do
 						-- Font / size / outline
 						local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
 							or (select(1, _G.GameFontNormal:GetFont()))
-						local size = tonumber(styleCfg.size) or 14
+						local size = tonumber(styleCfg.size) or 10
 						local outline = tostring(styleCfg.style or "OUTLINE")
 						if addon.ApplyFontStyle then
 							addon.ApplyFontStyle(castTimeFS, face, size, outline)
@@ -3000,7 +3014,7 @@ do
 					-- Font / size / outline
 					local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__")
 						or (select(1, _G.GameFontNormal:GetFont()))
-					local size = tonumber(styleCfg.size) or 14
+					local size = tonumber(styleCfg.size) or 10
 					local outline = tostring(styleCfg.style or "OUTLINE")
 					if addon.ApplyFontStyle then
 						addon.ApplyFontStyle(spellFS, face, size, outline)
@@ -3087,10 +3101,11 @@ do
 		if not db then return end
 
 		-- Boss cast bars share config under db.unitFrames.Boss.castBar
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames.Boss = db.unitFrames.Boss or {}
-		db.unitFrames.Boss.castBar = db.unitFrames.Boss.castBar or {}
-		local cfg = db.unitFrames.Boss.castBar
+		local unitFrames = rawget(db, "unitFrames")
+		local bossCfg = unitFrames and rawget(unitFrames, "Boss") or nil
+		if not bossCfg then return end
+		local cfg = rawget(bossCfg, "castBar")
+		if not cfg then return end
 
 		-- Check if there's any cast bar config; if not, skip (Zero-Touch policy)
 		local hasConfig = false

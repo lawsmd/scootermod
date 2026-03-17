@@ -100,9 +100,6 @@ local function getElementState(frame)
     return elementState[frame]
 end
 
--- Module-level hook guard for the main DamageMeter frame (avoids writing to dmFrame)
-local dmFrameHooked = false
-
 -- OPT-18: Style generation counter for dirty-flag caching.
 -- Bumped before every full-pass ForEachVisibleEntry call so that subsequent
 -- per-entry InitEntry calls with matching classToken can skip redundant work.
@@ -112,6 +109,10 @@ local dmStyleGeneration = 0
 -- UIParent-parented overlays don't auto-hide when entries are hidden/recycled
 -- by the ScrollBox. Use a per-window "hide then show visible" pattern.
 local windowOverlays = setmetatable({}, { __mode = "k" })
+
+-- Strong set of session windows we've styled (for cleanup iteration)
+-- windowOverlays/windowState are weak-key tables and can't be reliably iterated.
+local knownSessionWindows = {}
 
 local function registerDMOverlay(sessionWindow, overlay)
     if not sessionWindow or not overlay then return end
@@ -130,11 +131,621 @@ local function hideWindowOverlays(sessionWindow)
 end
 
 local function hideAllDMOverlays()
+    -- Restore Blizzard entry visuals before hiding overlays
     for _, overlays in pairs(windowOverlays) do
         for _, overlay in ipairs(overlays) do
+            if overlay._lastEntry then
+                RestoreBlizzardEntryContent(overlay._lastEntry)
+            end
             overlay:Hide()
         end
     end
+    -- Clip frames, button overlays, title right-click overlays from windowState
+    for sessionWindow in pairs(knownSessionWindows) do
+        local ws = windowState[sessionWindow]
+        if ws then
+            if ws.clipFrame then ws.clipFrame:Hide() end
+            if ws.buttonOverlays then
+                if ws.buttonOverlays.typeArrow then ws.buttonOverlays.typeArrow:Hide() end
+                if ws.buttonOverlays.settingsIcon then ws.buttonOverlays.settingsIcon:Hide() end
+            end
+            if ws.titleRightClickOverlay then ws.titleRightClickOverlay:Hide() end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Entry Overlay System
+-- Creates Scoot-owned overlay frames that visually cover Blizzard entries.
+-- All styling calls target overlays, preventing taint on system frame children.
+--------------------------------------------------------------------------------
+
+local OVERLAY_DEFAULT_BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local OVERLAY_DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+local OVERLAY_DEFAULT_FONT_SIZE = 12
+local OVERLAY_DEFAULT_FONT_FLAGS = "OUTLINE"
+
+-- Replicate Blizzard's DamageMeterEntryMixin:GetValueText using safe table reads
+local function FormatOverlayValueText(entry)
+    if not entry then return "" end
+
+    -- Early bail if key values are secret (can't format secret numbers)
+    local val = entry.value
+    if issecretvalue(val) then return "" end
+
+    local primary, secondary
+    local vps = entry.valuePerSecond
+    local showVPS = entry.showsValuePerSecondAsPrimary
+    if not issecretvalue(vps) and not issecretvalue(showVPS) and vps and showVPS then
+        primary = vps
+        secondary = val
+    else
+        primary = val or 0
+        secondary = (not issecretvalue(vps)) and vps or nil
+    end
+
+    if type(primary) ~= "number" then primary = 0 end
+    if secondary and type(secondary) ~= "number" then secondary = nil end
+
+    local abbrev = AbbreviateLargeNumbers or function(n) return tostring(math.floor(n)) end
+    local round = Round or function(n) return math.floor(n + 0.5) end
+
+    local ndt = entry.numberDisplayType
+    if issecretvalue(ndt) then ndt = 1 end
+    ndt = ndt or 1
+    local DMN = Enum.DamageMeterNumbers
+
+    if DMN and ndt == DMN.Complete then
+        local pct = 0
+        local stv = entry.sessionTotalValue
+        if not issecretvalue(stv) and type(val) == "number"
+           and type(stv) == "number" and stv > 0 then
+            pct = round((val / stv) * 100)
+        end
+        local fmt = _G.DAMAGE_METER_ENTRY_FORMAT_COMPLETE
+        if fmt then
+            return fmt:format(abbrev(primary), abbrev(secondary or 0), pct)
+        end
+        return string.format("%s (%s, %d%%)", abbrev(primary), abbrev(secondary or 0), pct)
+    elseif DMN and ndt == DMN.Compact then
+        local fmt = _G.DAMAGE_METER_ENTRY_FORMAT_COMPACT
+        if fmt then
+            return fmt:format(abbrev(primary), abbrev(secondary or 0))
+        end
+        return string.format("%s (%s)", abbrev(primary), abbrev(secondary or 0))
+    else
+        local fmt = _G.DAMAGE_METER_ENTRY_FORMAT_MINIMAL
+        if fmt then
+            return fmt:format(abbrev(primary))
+        end
+        return abbrev(primary)
+    end
+end
+
+-- Create a per-window clip frame anchored to the ScrollBox
+local function CreateClipFrame(sessionWindow)
+    local scrollBox = sessionWindow and sessionWindow.ScrollBox
+    if not scrollBox then return nil end
+
+    local clipFrame = CreateFrame("Frame", nil, UIParent)
+    clipFrame:SetClipsChildren(true)
+    clipFrame:SetAllPoints(scrollBox)
+    -- Use HIGH strata so overlays (clipFrame children) render above Blizzard's system frame subtree
+    clipFrame:SetFrameStrata("HIGH")
+    local ok2, sbLevel = pcall(scrollBox.GetFrameLevel, scrollBox)
+    if ok2 and type(sbLevel) == "number" then clipFrame:SetFrameLevel(sbLevel) end
+
+    return clipFrame
+end
+
+-- Create an entry overlay frame hierarchy
+local function CreateEntryOverlay(parentFrame)
+    local overlay = CreateFrame("Frame", nil, parentFrame)
+    overlay:EnableMouse(false)
+    -- Frame level set dynamically in PopulateEntryOverlay per-entry (handles ScrollBox recycling)
+
+    -- Bar overlay (StatusBar) for the fill
+    local barOverlay = CreateFrame("StatusBar", nil, overlay)
+    barOverlay:SetStatusBarTexture(OVERLAY_DEFAULT_BAR_TEXTURE)
+
+    -- Opaque base behind bar (hides Blizzard StatusBar content)
+    local bgBase = barOverlay:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bgBase:SetAllPoints(barOverlay)
+    bgBase:SetColorTexture(0, 0, 0, 1)
+
+    -- Background texture (behind bar fill, user-configurable alpha)
+    local bgTexture = barOverlay:CreateTexture(nil, "BACKGROUND")
+    bgTexture:SetAllPoints(barOverlay)
+    bgTexture:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+
+    -- BackgroundEdge replica (thin dark border for default style)
+    local bgEdge = barOverlay:CreateTexture(nil, "BORDER")
+    bgEdge:SetAllPoints(barOverlay)
+    bgEdge:SetColorTexture(0, 0, 0, 0.4)
+    bgEdge:Hide()
+
+    -- Name FontString (left-aligned on bar)
+    local nameFS = barOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
+    nameFS:SetFont(OVERLAY_DEFAULT_FONT, OVERLAY_DEFAULT_FONT_SIZE, OVERLAY_DEFAULT_FONT_FLAGS)
+    nameFS:SetTextColor(1, 1, 1, 1)
+    nameFS:SetJustifyH("LEFT")
+    nameFS:SetWordWrap(false)
+
+    -- Value FontString (right-aligned on bar)
+    local valueFS = barOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
+    valueFS:SetFont(OVERLAY_DEFAULT_FONT, OVERLAY_DEFAULT_FONT_SIZE, OVERLAY_DEFAULT_FONT_FLAGS)
+    valueFS:SetTextColor(1, 1, 1, 1)
+    valueFS:SetJustifyH("RIGHT")
+    valueFS:SetWordWrap(false)
+
+    -- Icon frame (anchored to entry.Icon later)
+    local iconFrame = CreateFrame("Frame", nil, overlay)
+    local iconTexture = iconFrame:CreateTexture(nil, "ARTWORK")
+    iconTexture:SetAllPoints(iconFrame)
+
+    -- Opaque base behind icon (hides Blizzard Icon content)
+    local iconBg = iconFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    iconBg:SetAllPoints(iconFrame)
+    iconBg:SetColorTexture(0, 0, 0, 0)
+    iconBg:Hide()
+
+    -- Square border edges for the bar
+    overlay._squareBorderEdges = {
+        top = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        bottom = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        left = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        right = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+    }
+    for _, edge in pairs(overlay._squareBorderEdges) do
+        edge:Hide()
+    end
+
+    -- Icon border edges
+    overlay._iconBorderEdges = {
+        top = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        bottom = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        left = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        right = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+    }
+    for _, edge in pairs(overlay._iconBorderEdges) do
+        edge:Hide()
+    end
+
+    overlay.bgBase = bgBase
+    overlay.barOverlay = barOverlay
+    overlay.bgTexture = bgTexture
+    overlay.iconBg = iconBg
+    overlay.bgEdge = bgEdge
+    overlay.nameFS = nameFS
+    overlay.valueFS = valueFS
+    overlay.iconFrame = iconFrame
+    overlay.iconTexture = iconTexture
+
+    return overlay
+end
+
+-- Hide Blizzard's visual content on a DM entry (overlay replaces it)
+local function HideBlizzardEntryContent(entry)
+    if not entry then return end
+    -- SetAlpha(0) on parent frame hides all children (Name, Value, Background, fill)
+    if entry.StatusBar then pcall(entry.StatusBar.SetAlpha, entry.StatusBar, 0) end
+    if entry.Icon then pcall(entry.Icon.SetAlpha, entry.Icon, 0) end
+end
+
+-- Restore Blizzard's visual content (cleanup when overlays removed)
+local function RestoreBlizzardEntryContent(entry)
+    if not entry then return end
+    if entry.StatusBar then pcall(entry.StatusBar.SetAlpha, entry.StatusBar, 1) end
+    if entry.Icon then pcall(entry.Icon.SetAlpha, entry.Icon, 1) end
+end
+
+-- Apply icon to overlay (spec icon or JiberishIcons)
+local function ApplyOverlayIcon(overlay, entry, db)
+    if not overlay or not entry then return end
+
+    local showIcons = entry.showBarIcons
+    if issecretvalue(showIcons) then showIcons = true end
+    if db.showSpecIcon == false then showIcons = false end
+
+    if not showIcons then
+        overlay.iconFrame:Hide()
+        return
+    end
+
+    overlay.iconFrame:Show()
+
+    -- JiberishIcons integration
+    if db.jiberishIconsEnabled then
+        local JI = GetJiberishIcons()
+        local classToken = entry.classFilename
+        if issecretvalue(classToken) then classToken = nil end
+        if JI and classToken then
+            local classData = JI.dataHelper and JI.dataHelper.class and JI.dataHelper.class[classToken]
+            if classData and classData.texCoords then
+                local styleName = db.jiberishIconsStyle or "fabled"
+                local mergedStyles = JI.mergedStylePacks and JI.mergedStylePacks.class
+                if mergedStyles then
+                    local styleData = mergedStyles.styles and mergedStyles.styles[styleName]
+                    local basePath = (styleData and styleData.path) or mergedStyles.path
+                    if basePath then
+                        overlay.iconTexture:SetTexture(basePath .. styleName)
+                        overlay.iconTexture:SetTexCoord(unpack(classData.texCoords))
+                        overlay.iconTexture:Show()
+                        return
+                    end
+                end
+            end
+        end
+    end
+
+    -- Default: spec icon from entry properties
+    local iconID = entry.specIconID
+    if issecretvalue(iconID) then iconID = nil end
+    if not iconID then
+        iconID = entry.iconTexture
+        if issecretvalue(iconID) then iconID = nil end
+    end
+    if iconID then
+        overlay.iconTexture:SetTexture(iconID)
+        overlay.iconTexture:SetTexCoord(0, 1, 0, 1)
+        overlay.iconTexture:Show()
+    else
+        overlay.iconTexture:Hide()
+    end
+end
+
+-- Apply bar borders to overlay (all calls on Scoot-owned frames)
+local function ApplyOverlayBorders(overlay, db, sessionWindow)
+    if not overlay or not db then return end
+
+    local borderStyle = db.barBorderStyle or "default"
+    local barOverlay = overlay.barOverlay
+
+    local thickness = db.barBorderThickness or 1
+    local r, g, b, a = 0, 0, 0, 1
+    if db.barBorderTintEnabled and db.barBorderTintColor then
+        local c = db.barBorderTintColor
+        r = c.r or c[1] or 0
+        g = c.g or c[2] or 0
+        b = c.b or c[3] or 0
+        a = c.a or c[4] or 1
+    end
+
+    -- bgEdge: visible only for "default" border style
+    if borderStyle == "default" then
+        overlay.bgEdge:Show()
+    else
+        overlay.bgEdge:Hide()
+    end
+
+    -- Square border edges
+    local edges = overlay._squareBorderEdges
+    if borderStyle == "square" then
+        edges.top:ClearAllPoints()
+        edges.top:SetPoint("TOPLEFT", barOverlay, "TOPLEFT", 0, 0)
+        edges.top:SetPoint("TOPRIGHT", barOverlay, "TOPRIGHT", 0, 0)
+        edges.top:SetHeight(thickness)
+        edges.top:SetColorTexture(r, g, b, a)
+        edges.top:Show()
+
+        edges.bottom:ClearAllPoints()
+        edges.bottom:SetPoint("BOTTOMLEFT", barOverlay, "BOTTOMLEFT", 0, 0)
+        edges.bottom:SetPoint("BOTTOMRIGHT", barOverlay, "BOTTOMRIGHT", 0, 0)
+        edges.bottom:SetHeight(thickness)
+        edges.bottom:SetColorTexture(r, g, b, a)
+        edges.bottom:Show()
+
+        edges.left:ClearAllPoints()
+        edges.left:SetPoint("TOPLEFT", barOverlay, "TOPLEFT", 0, -thickness)
+        edges.left:SetPoint("BOTTOMLEFT", barOverlay, "BOTTOMLEFT", 0, thickness)
+        edges.left:SetWidth(thickness)
+        edges.left:SetColorTexture(r, g, b, a)
+        edges.left:Show()
+
+        edges.right:ClearAllPoints()
+        edges.right:SetPoint("TOPRIGHT", barOverlay, "TOPRIGHT", 0, -thickness)
+        edges.right:SetPoint("BOTTOMRIGHT", barOverlay, "BOTTOMRIGHT", 0, thickness)
+        edges.right:SetWidth(thickness)
+        edges.right:SetColorTexture(r, g, b, a)
+        edges.right:Show()
+    else
+        for _, edge in pairs(edges) do
+            edge:Hide()
+        end
+    end
+
+    -- Textured borders (BarBorders system) — creates UIParent-parented overlays on our barOverlay
+    if borderStyle ~= "default" and borderStyle ~= "none" and borderStyle ~= "square" then
+        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
+            addon.BarBorders.ApplyToBarFrame(barOverlay, borderStyle, {
+                thickness = thickness,
+                color = { r, g, b, a },
+                hiddenEdges = db.barBorderHiddenEdges or {},
+                containerParent = UIParent,
+                sizeProxyParent = UIParent,
+            })
+            if sessionWindow and not overlay._holderRegistered then
+                local holder = addon.BarBorders.GetBorderHolder and addon.BarBorders.GetBorderHolder(barOverlay)
+                if holder then
+                    registerDMOverlay(sessionWindow, holder)
+                    overlay._holderRegistered = true
+                end
+                local bState = addon.BarBorders.GetBorderState and addon.BarBorders.GetBorderState(barOverlay)
+                if bState and bState.sizeProxy and not overlay._proxyRegistered then
+                    registerDMOverlay(sessionWindow, bState.sizeProxy)
+                    overlay._proxyRegistered = true
+                end
+            end
+        end
+    else
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(barOverlay)
+        end
+    end
+end
+
+-- Apply icon border to overlay
+local function ApplyOverlayIconBorder(overlay, db)
+    if not overlay or not db then return end
+
+    local edges = overlay._iconBorderEdges
+    local iconFrame = overlay.iconFrame
+
+    if not db.iconBorderEnable or not iconFrame:IsShown() then
+        for _, edge in pairs(edges) do
+            edge:Hide()
+        end
+        return
+    end
+
+    local thickness = db.iconBorderThickness or 1
+    local insetH = tonumber(db.iconBorderInsetH) or 0
+    local insetV = tonumber(db.iconBorderInsetV) or 2
+
+    local r, g, b, a = 0, 0, 0, 1
+    if db.iconBorderTintEnable and db.iconBorderTintColor then
+        local c = db.iconBorderTintColor
+        r = c.r or c[1] or 0
+        g = c.g or c[2] or 0
+        b = c.b or c[3] or 0
+        a = c.a or c[4] or 1
+    end
+
+    edges.top:ClearAllPoints()
+    edges.top:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", insetH, -insetV)
+    edges.top:SetPoint("TOPRIGHT", iconFrame, "TOPRIGHT", -insetH, -insetV)
+    edges.top:SetHeight(thickness)
+    edges.top:SetColorTexture(r, g, b, a)
+    edges.top:Show()
+
+    edges.bottom:ClearAllPoints()
+    edges.bottom:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", insetH, insetV)
+    edges.bottom:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -insetH, insetV)
+    edges.bottom:SetHeight(thickness)
+    edges.bottom:SetColorTexture(r, g, b, a)
+    edges.bottom:Show()
+
+    edges.left:ClearAllPoints()
+    edges.left:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", insetH, -(insetV + thickness))
+    edges.left:SetPoint("BOTTOMLEFT", iconFrame, "BOTTOMLEFT", insetH, insetV + thickness)
+    edges.left:SetWidth(thickness)
+    edges.left:SetColorTexture(r, g, b, a)
+    edges.left:Show()
+
+    edges.right:ClearAllPoints()
+    edges.right:SetPoint("TOPRIGHT", iconFrame, "TOPRIGHT", -insetH, -(insetV + thickness))
+    edges.right:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -insetH, insetV + thickness)
+    edges.right:SetWidth(thickness)
+    edges.right:SetColorTexture(r, g, b, a)
+    edges.right:Show()
+end
+
+-- Full overlay population (styling + data) — all calls on Scoot-owned frames
+local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
+    if not overlay or not entry or not db then return end
+
+    -- Anchor overlay to entry (anchoring TO system frame = safe, no taint)
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(entry)
+
+    -- HIGH strata ensures overlays render above Blizzard's MEDIUM-strata system frame subtree
+    overlay:SetFrameStrata("HIGH")
+    local ok2, entryLevel = pcall(entry.GetFrameLevel, entry)
+    if ok2 and type(entryLevel) == "number" then
+        overlay:SetFrameLevel(entryLevel + 3)
+    end
+
+    -- Hide Blizzard's original content (overlay replaces it visually)
+    HideBlizzardEntryContent(entry)
+    overlay._lastEntry = entry
+
+    -- Detect entry style (Thin/Bordered/Default) for style-specific layout
+    local entryStyle = entry.style
+    if issecretvalue(entryStyle) then entryStyle = nil end
+    local isThinStyle = (entryStyle == Enum.DamageMeterStyle.Thin)
+    local isBorderedStyle = (entryStyle == Enum.DamageMeterStyle.Bordered)
+
+    -- Anchor bar overlay to entry's StatusBar
+    local statusBar = entry.StatusBar or entry.bar
+    if statusBar then
+        overlay.barOverlay:ClearAllPoints()
+        overlay.barOverlay:SetAllPoints(statusBar)
+    else
+        overlay.barOverlay:ClearAllPoints()
+        overlay.barOverlay:SetAllPoints(overlay)
+    end
+
+    -- Anchor icon to entry's Icon frame
+    if entry.Icon then
+        overlay.iconFrame:ClearAllPoints()
+        overlay.iconFrame:SetAllPoints(entry.Icon)
+    end
+
+    -- Bar texture
+    if db.barTexture and db.barTexture ~= "default" then
+        local resolved = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(db.barTexture)
+        if resolved then
+            overlay.barOverlay:SetStatusBarTexture(resolved)
+        end
+    else
+        overlay.barOverlay:SetStatusBarTexture(OVERLAY_DEFAULT_BAR_TEXTURE)
+    end
+
+    -- Bar foreground color
+    local showClassColor = db.showClassColor
+    local colorMode = db.barForegroundColorMode or "default"
+    local classToken = entry.classFilename
+    if issecretvalue(classToken) then classToken = nil end
+
+    if showClassColor and classToken then
+        local cr, cg, cb = GetClassColor(classToken)
+        overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
+    elseif colorMode == "custom" and db.barForegroundTint then
+        local c = db.barForegroundTint
+        overlay.barOverlay:SetStatusBarColor(c.r or c[1] or 1, c.g or c[2] or 0.8, c.b or c[3] or 0, c.a or c[4] or 1)
+    else
+        -- Default: use entry's status bar color if available
+        local sbc = entry.statusBarColor
+        if issecretvalue(sbc) then sbc = nil end
+        local isClassColor = entry.isClassColorDesired
+        if issecretvalue(isClassColor) then isClassColor = nil end
+        if sbc and type(sbc) == "table" then
+            overlay.barOverlay:SetStatusBarColor(sbc.r or sbc[1] or 0.8, sbc.g or sbc[2] or 0.8, sbc.b or sbc[3] or 0.8, 1)
+        elseif isClassColor and classToken then
+            local cr, cg, cb = GetClassColor(classToken)
+            overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
+        else
+            overlay.barOverlay:SetStatusBarColor(0.8, 0.8, 0.8, 1)
+        end
+    end
+
+    -- Bar fill values (StatusBar:SetMinMaxValues/SetValue accept secrets — AllowedWhenTainted)
+    pcall(overlay.barOverlay.SetMinMaxValues, overlay.barOverlay, 0, entry.maxValue)
+    pcall(overlay.barOverlay.SetValue, overlay.barOverlay, entry.value)
+
+    -- Background color
+    local bgColorMode = db.barBackgroundColorMode or "default"
+    if bgColorMode == "custom" and db.barBackgroundTint then
+        local c = db.barBackgroundTint
+        overlay.bgTexture:SetColorTexture(c.r or c[1] or 0.1, c.g or c[2] or 0.1, c.b or c[3] or 0.1, c.a or c[4] or 0.8)
+    else
+        local bgAlpha = entry.backgroundAlpha
+        if issecretvalue(bgAlpha) or type(bgAlpha) ~= "number" then bgAlpha = 0.8 end
+        overlay.bgTexture:SetColorTexture(0.1, 0.1, 0.1, bgAlpha)
+    end
+
+    -- Bordered style: use Blizzard's bordered atlas (border baked into texture)
+    if isBorderedStyle then
+        overlay.bgTexture:SetAtlas("UI-HUD-CoolDownManager-Bar-BG")
+        overlay.bgTexture:SetAlpha(1)
+        overlay.bgTexture:ClearAllPoints()
+        overlay.bgTexture:SetPoint("TOPLEFT", overlay.barOverlay, "TOPLEFT", -2, 2)
+        overlay.bgTexture:SetPoint("BOTTOMRIGHT", overlay.barOverlay, "BOTTOMRIGHT", 6, -7)
+    else
+        overlay.bgTexture:ClearAllPoints()
+        overlay.bgTexture:SetAllPoints(overlay.barOverlay)
+    end
+
+    -- Name text + styling
+    local nameText = entry.nameText
+    if issecretvalue(nameText) then nameText = nil end
+    if not nameText then
+        nameText = entry.sourceName
+        if issecretvalue(nameText) then nameText = nil end
+    end
+    overlay.nameFS:SetText(nameText or "")
+    if db.textNames then
+        local cfg = db.textNames
+        if cfg.fontFace and addon and addon.ResolveFontFace then
+            local face = addon.ResolveFontFace(cfg.fontFace)
+            local baseFontSize = cfg.fontSize or OVERLAY_DEFAULT_FONT_SIZE
+            local editModeScale = (db.textSize or 100) / 100
+            local addonScale = cfg.scaleMultiplier or 1.0
+            overlay.nameFS:SetFont(face, baseFontSize * editModeScale * addonScale, cfg.fontStyle or OVERLAY_DEFAULT_FONT_FLAGS)
+        end
+        if cfg.colorMode == "custom" and cfg.color then
+            local c = cfg.color
+            overlay.nameFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        else
+            overlay.nameFS:SetTextColor(1, 1, 1, 1)
+        end
+    end
+    -- Value text + styling (must anchor before nameFS since name anchors to value)
+    pcall(function()
+        overlay.valueFS:SetText(FormatOverlayValueText(entry))
+    end)
+    if db.textNumbers then
+        local cfg = db.textNumbers
+        if cfg.fontFace and addon and addon.ResolveFontFace then
+            local face = addon.ResolveFontFace(cfg.fontFace)
+            local baseFontSize = cfg.fontSize or OVERLAY_DEFAULT_FONT_SIZE
+            local editModeScale = (db.textSize or 100) / 100
+            local addonScale = cfg.scaleMultiplier or 1.0
+            overlay.valueFS:SetFont(face, baseFontSize * editModeScale * addonScale, cfg.fontStyle or OVERLAY_DEFAULT_FONT_FLAGS)
+        end
+        if cfg.colorMode == "custom" and cfg.color then
+            local c = cfg.color
+            overlay.valueFS:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        else
+            overlay.valueFS:SetTextColor(1, 1, 1, 1)
+        end
+    end
+    overlay.valueFS:ClearAllPoints()
+    if isThinStyle then
+        -- Thin: text at top of entry, bar beneath
+        overlay.valueFS:SetPoint("TOP", overlay, "TOP", 0, 0)
+        overlay.valueFS:SetPoint("RIGHT", overlay, "RIGHT", -8, 0)
+    else
+        -- Default/Bordered: text vertically centered on bar
+        overlay.valueFS:SetPoint("RIGHT", overlay.barOverlay, "RIGHT", -4, 0)
+        overlay.valueFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, 0)
+        overlay.valueFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, 0)
+    end
+
+    -- Name text anchoring
+    overlay.nameFS:ClearAllPoints()
+    if isThinStyle then
+        overlay.nameFS:SetPoint("TOP", overlay, "TOP", 0, 0)
+        overlay.nameFS:SetPoint("LEFT", overlay.barOverlay, "LEFT", 4, 0)
+        overlay.nameFS:SetPoint("RIGHT", overlay.valueFS, "LEFT", -4, 0)
+    else
+        overlay.nameFS:SetPoint("LEFT", overlay.barOverlay, "LEFT", 4, 0)
+        overlay.nameFS:SetPoint("RIGHT", overlay.valueFS, "LEFT", -4, 0)
+        overlay.nameFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, 0)
+        overlay.nameFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, 0)
+    end
+
+    -- Icon (spec or JiberishIcons)
+    ApplyOverlayIcon(overlay, entry, db)
+
+    -- Borders
+    ApplyOverlayBorders(overlay, db, sessionWindow)
+    ApplyOverlayIconBorder(overlay, db)
+
+    overlay:Show()
+end
+
+-- Data-only update for overlays (safe during combat — only updates bar fill + text)
+local function UpdateEntryOverlayData(overlay, entry)
+    if not overlay or not entry then return end
+
+    -- StatusBar:SetMinMaxValues/SetValue accept secrets (AllowedWhenTainted)
+    pcall(overlay.barOverlay.SetMinMaxValues, overlay.barOverlay, 0, entry.maxValue)
+    pcall(overlay.barOverlay.SetValue, overlay.barOverlay, entry.value)
+
+    -- Text: skip updates when values are secret (can't format/compare)
+    local nameText = entry.nameText
+    if not issecretvalue(nameText) then
+        if not nameText then
+            nameText = entry.sourceName
+            if issecretvalue(nameText) then nameText = nil end
+        end
+        overlay.nameFS:SetText(nameText or "")
+    end
+
+    pcall(function()
+        overlay.valueFS:SetText(FormatOverlayValueText(entry))
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -257,40 +868,6 @@ local function RefreshAllWindowTitles()
     end
 end
 
--- Hook a single session window's methods for enhanced title updates
--- @param sessionWindow - The DamageMeterSessionWindow frame to hook
--- @return boolean - true if hooks were newly installed, false if already hooked
-local function HookSessionWindowTitleUpdates(sessionWindow)
-    if not sessionWindow then return false end
-    local state = getWindowState(sessionWindow)
-    if state.titleHooked then return false end
-    state.titleHooked = true
-
-    -- Hook SetDamageMeterType - fires when user changes meter type (DPS, HPS, etc.)
-    if sessionWindow.SetDamageMeterType then
-        hooksecurefunc(sessionWindow, "SetDamageMeterType", function(self, damageMeterType)
-            C_Timer.After(0, function()
-                if self and self:IsShown() then
-                    UpdateEnhancedTitle(self)
-                end
-            end)
-        end)
-    end
-
-    -- Hook SetSession - fires when user changes session (Current, Overall, Segment N)
-    if sessionWindow.SetSession then
-        hooksecurefunc(sessionWindow, "SetSession", function(self, sessionType, sessionID)
-            C_Timer.After(0, function()
-                if self and self:IsShown() then
-                    UpdateEnhancedTitle(self)
-                end
-            end)
-        end)
-    end
-
-    return true
-end
-
 -- Hook right-click on title text to open meter type dropdown
 -- @param sessionWindow - The DamageMeterSessionWindow frame to hook
 -- @return boolean - true if hooks were newly installed, false if already hooked
@@ -340,485 +917,43 @@ local function UpdateTitleRightClickState(sessionWindow, enabled)
     end
 end
 
--- Apply JiberishIcons class icon to replace spec icon using an overlay
--- Uses a separate overlay texture to prevent flickering from Blizzard's icon resets
-local function ApplyJiberishIconsStyle(entry, db, sessionWindow)
-    if not entry or not db then return end
-
-    local iconFrame = entry.Icon
-    local blizzardIcon = iconFrame and iconFrame.Icon
-
-    -- If JiberishIcons disabled or icons hidden, restore Blizzard's icon
-    if not db.jiberishIconsEnabled or db.showSpecIcon == false then
-        -- Show Blizzard's icon
-        if blizzardIcon then
-            pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
-        end
-        -- Hide the overlay and its UIParent-parented container
-        local elSt = iconFrame and getElementState(iconFrame)
-        if elSt then
-            if elSt.jiberishOverlay then
-                elSt.jiberishOverlay:Hide()
-            end
-            if elSt.jiberishContainer then
-                elSt.jiberishContainer:Hide()
-            end
-        end
-        return
-    end
-
-    local JI = GetJiberishIcons()
-    if not JI then return end
-
-    -- Get class token from entry
-    local classToken = entry.classFilename or entry.classToken or entry.class
-    if not classToken then
-        if blizzardIcon then
-            pcall(blizzardIcon.SetAlpha, blizzardIcon, 1)
-        end
-        local elSt = iconFrame and getElementState(iconFrame)
-        if elSt then
-            if elSt.jiberishOverlay then elSt.jiberishOverlay:Hide() end
-            if elSt.jiberishContainer then elSt.jiberishContainer:Hide() end
-        end
-        return
-    end
-
-    -- Get texCoords for this class
-    local classData = JI.dataHelper and JI.dataHelper.class and JI.dataHelper.class[classToken]
-    if not classData or not classData.texCoords then return end
-
-    -- Get texture path for selected style
-    local styleName = db.jiberishIconsStyle or "fabled"
-    local mergedStyles = JI.mergedStylePacks and JI.mergedStylePacks.class
-    if not mergedStyles then return end
-
-    local styleData = mergedStyles.styles and mergedStyles.styles[styleName]
-    local basePath = (styleData and styleData.path) or mergedStyles.path
-    local fullPath = basePath .. styleName
-
-    -- HIDE Blizzard's icon texture (prevents flicker)
-    if blizzardIcon then
-        pcall(blizzardIcon.SetAlpha, blizzardIcon, 0)
-    end
-
-    -- CREATE/UPDATE the overlay texture (UIParent-parented to avoid tainting entry.Icon)
-    local elSt = getElementState(iconFrame)
-    local overlay = elSt.jiberishOverlay
-    if not overlay then
-        local container = elSt.jiberishContainer
-        if not container then
-            container = CreateFrame("Frame", nil, UIParent)
-            container:SetAllPoints(iconFrame)
-            container:SetFrameStrata("MEDIUM")
-            local ok, lvl = pcall(iconFrame.GetFrameLevel, iconFrame)
-            container:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 1) or 5)
-            elSt.jiberishContainer = container
-            registerDMOverlay(sessionWindow, container)
-        end
-        overlay = container:CreateTexture(nil, "ARTWORK", nil, 1)
-        overlay:SetAllPoints(container)
-        elSt.jiberishOverlay = overlay
-    end
-
-    -- Show the UIParent-parented container
-    if elSt.jiberishContainer then
-        elSt.jiberishContainer:Show()
-    end
-
-    -- Apply JiberishIcons to the addon overlay (not Blizzard's)
-    pcall(overlay.SetTexture, overlay, fullPath)
-    pcall(overlay.SetTexCoord, overlay, unpack(classData.texCoords))
-    overlay:Show()
-end
-
--- Apply styling to a single entry (bar) in the damage meter
+-- Apply styling to a single entry via overlay system
+-- Zero direct method calls on Blizzard entry or its children — all styling on Scoot-owned frames
 local function ApplySingleEntryStyle(entry, db, sessionWindow)
     if not entry or not db then return end
 
-    local statusBar = entry.StatusBar or entry.bar or entry
-    if not statusBar then return end
+    -- Get/create clip frame for this session window
+    local ws = getWindowState(sessionWindow)
+    if not ws.clipFrame then
+        ws.clipFrame = CreateClipFrame(sessionWindow)
+    end
 
-    -- OPT-18: Skip restyle if entry appearance hasn't changed since last full pass.
-    -- Cache key is { generation, classToken } — generation invalidates on any full-pass
-    -- restyle (ApplyStyling or ScrollBox:Update), classToken catches per-entry data changes
-    -- (e.g., rank shift assigns a different-class player to this recycled frame).
-    local classToken = entry.classFilename or entry.classToken or entry.class or (entry.data and entry.data.classToken)
+    -- Determine parent (clip frame for scroll entries, UIParent for LocalPlayerEntry)
+    local isLocalPlayerEntry = (entry == sessionWindow.LocalPlayerEntry)
+    local parentFrame = isLocalPlayerEntry and UIParent or ws.clipFrame
+
+    -- Get/create entry overlay
     local elSt = getElementState(entry)
+    if not elSt.entryOverlay then
+        elSt.entryOverlay = CreateEntryOverlay(parentFrame)
+        registerDMOverlay(sessionWindow, elSt.entryOverlay)
+    end
+
+    local overlay = elSt.entryOverlay
+    local classToken = entry.classFilename
+    if issecretvalue(classToken) then classToken = nil end
+    classToken = classToken or ""
+
+    -- OPT-18: Skip full restyle if entry hasn't changed since last full pass
     if elSt._cacheGen == dmStyleGeneration and elSt._cacheClass == classToken then
+        HideBlizzardEntryContent(entry)
+        UpdateEntryOverlayData(overlay, entry)
+        overlay:Show()
         return
     end
 
-    -- Bar texture
-    if db.barTexture and db.barTexture ~= "default" then
-        local texturePath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(db.barTexture)
-        if texturePath and statusBar.SetStatusBarTexture then
-            pcall(statusBar.SetStatusBarTexture, statusBar, texturePath)
-        end
-    end
+    PopulateEntryOverlay(overlay, entry, db, sessionWindow)
 
-    -- Bar foreground color
-    -- Priority: showClassColor (Edit Mode) > barForegroundColorMode
-    local showClassColor = db.showClassColor
-    local colorMode = db.barForegroundColorMode or "default"
-
-    if showClassColor then
-        -- Edit Mode class color setting takes priority
-        local classToken = entry.classFilename or entry.classToken or entry.class or (entry.data and entry.data.classToken)
-        if classToken then
-            local r, g, b = GetClassColor(classToken)
-            if statusBar.SetStatusBarColor then
-                pcall(statusBar.SetStatusBarColor, statusBar, r, g, b, 1)
-            end
-        end
-    elseif colorMode == "custom" and db.barForegroundTint then
-        -- Custom color from addon settings
-        local c = db.barForegroundTint
-        local r = c.r or c[1] or 1
-        local g = c.g or c[2] or 0.8
-        local b = c.b or c[3] or 0
-        local a = c.a or c[4] or 1
-        if statusBar.SetStatusBarColor then
-            pcall(statusBar.SetStatusBarColor, statusBar, r, g, b, a)
-        end
-    end
-    -- "default" mode: don't override Blizzard's color
-
-    -- Bar background color
-    local bgColorMode = db.barBackgroundColorMode or "default"
-    if bgColorMode == "custom" and db.barBackgroundTint then
-        local bg = statusBar.Background or statusBar.bg or statusBar.background
-        if bg and bg.SetVertexColor then
-            local c = db.barBackgroundTint
-            local r = c.r or c[1] or 0.1
-            local g = c.g or c[2] or 0.1
-            local b = c.b or c[3] or 0.1
-            local a = c.a or c[4] or 0.8
-            pcall(bg.SetVertexColor, bg, r, g, b, a)
-        end
-    end
-    -- "default" mode: don't override Blizzard's background color
-
-    -- Custom bar border
-    -- "default" = Blizzard's stock border; "none" = no border; "square" = solid square; other = textured
-    local borderStyle = db.barBorderStyle or "default"
-    local hiddenEdges = db.barBorderHiddenEdges or {}
-
-    -- Get border color and thickness (used for both square and textured borders)
-    local thickness = db.barBorderThickness or 1
-    local r, g, b, a = 0, 0, 0, 1  -- Default black
-    if db.barBorderTintEnabled and db.barBorderTintColor then
-        local c = db.barBorderTintColor
-        r = c.r or c[1] or 0
-        g = c.g or c[2] or 0
-        b = c.b or c[3] or 0
-        a = c.a or c[4] or 1
-    end
-
-    if borderStyle == "default" then
-        -- Use Blizzard's stock border - restore it and clear any custom borders
-        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
-        if blizzBorder then
-            SafeSetAlpha(blizzBorder, 1)
-        end
-
-        -- Clear textured border if it exists
-        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
-            addon.BarBorders.ClearBarFrame(statusBar)
-        end
-
-        -- Hide square border overlay if it exists
-        if getElementState(statusBar).squareBorderOverlay then
-            getElementState(statusBar).squareBorderOverlay:Hide()
-        end
-
-    elseif borderStyle == "none" then
-        -- No border at all - hide everything
-        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
-        if blizzBorder then
-            SafeSetAlpha(blizzBorder, 0)
-        end
-
-        -- Clear textured border if it exists
-        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
-            addon.BarBorders.ClearBarFrame(statusBar)
-        end
-
-        -- Hide square border overlay if it exists
-        if getElementState(statusBar).squareBorderOverlay then
-            getElementState(statusBar).squareBorderOverlay:Hide()
-        end
-
-    elseif borderStyle == "square" then
-        -- Simple solid-color square border using 4-edge textures
-        -- Hide Blizzard's default border
-        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
-        if blizzBorder then
-            SafeSetAlpha(blizzBorder, 0)
-        end
-
-        -- Clear any textured border
-        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
-            addon.BarBorders.ClearBarFrame(statusBar)
-        end
-
-        -- Get or create square border overlay (UIParent-parented to avoid tainting entry.StatusBar)
-        local borderOverlay = getElementState(statusBar).squareBorderOverlay
-        if not borderOverlay then
-            borderOverlay = CreateFrame("Frame", nil, UIParent)
-            borderOverlay:SetFrameStrata("MEDIUM")
-            local ok, lvl = pcall(statusBar.GetFrameLevel, statusBar)
-            borderOverlay:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 2) or 7)
-            getElementState(statusBar).squareBorderOverlay = borderOverlay
-            registerDMOverlay(sessionWindow, borderOverlay)
-
-            -- Create 4 edge textures
-            borderOverlay.edges = {
-                top = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                bottom = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                left = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                right = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-            }
-        end
-
-        -- Position overlay to cover status bar
-        borderOverlay:ClearAllPoints()
-        borderOverlay:SetAllPoints(statusBar)
-
-        local edges = borderOverlay.edges
-
-        -- Top edge
-        edges.top:ClearAllPoints()
-        edges.top:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, 0)
-        edges.top:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, 0)
-        edges.top:SetHeight(thickness)
-        edges.top:SetColorTexture(r, g, b, a)
-        edges.top:Show()
-
-        -- Bottom edge
-        edges.bottom:ClearAllPoints()
-        edges.bottom:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, 0)
-        edges.bottom:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, 0)
-        edges.bottom:SetHeight(thickness)
-        edges.bottom:SetColorTexture(r, g, b, a)
-        edges.bottom:Show()
-
-        -- Left edge
-        edges.left:ClearAllPoints()
-        edges.left:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, -thickness)
-        edges.left:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, thickness)
-        edges.left:SetWidth(thickness)
-        edges.left:SetColorTexture(r, g, b, a)
-        edges.left:Show()
-
-        -- Right edge
-        edges.right:ClearAllPoints()
-        edges.right:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, -thickness)
-        edges.right:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, thickness)
-        edges.right:SetWidth(thickness)
-        edges.right:SetColorTexture(r, g, b, a)
-        edges.right:Show()
-
-        borderOverlay:Show()
-
-    else
-        -- Textured border - use BarBorders system
-        -- Hide Blizzard's default border
-        local blizzBorder = statusBar.BackgroundEdge or statusBar.Border or statusBar.border
-        if blizzBorder then
-            SafeSetAlpha(blizzBorder, 0)
-        end
-
-        -- Hide square border overlay if it exists
-        if getElementState(statusBar).squareBorderOverlay then
-            getElementState(statusBar).squareBorderOverlay:Hide()
-        end
-
-        -- Apply textured border (UIParent-parented to avoid tainting entry.StatusBar)
-        if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-            addon.BarBorders.ApplyToBarFrame(statusBar, borderStyle, {
-                thickness = thickness,
-                color = { r, g, b, a },
-                hiddenEdges = hiddenEdges,
-                containerParent = UIParent,
-                sizeProxyParent = UIParent,
-            })
-
-            -- Register BarBorders holder and size proxy for visibility management
-            local elSt = getElementState(statusBar)
-            local holder = addon.BarBorders.GetBorderHolder(statusBar)
-            if holder and not elSt.holderRegistered then
-                registerDMOverlay(sessionWindow, holder)
-                elSt.holderRegistered = true
-            end
-            local bState = addon.BarBorders.GetBorderState(statusBar)
-            if bState and bState.sizeProxy and not elSt.proxyRegistered then
-                registerDMOverlay(sessionWindow, bState.sizeProxy)
-                elSt.proxyRegistered = true
-            end
-        end
-    end
-
-    -- Name text styling
-    local nameFS = statusBar.Name or statusBar.name or (entry.Name)
-    if nameFS and db.textNames then
-        local cfg = db.textNames
-        if cfg.fontFace and addon and addon.ResolveFontFace then
-            local face = addon.ResolveFontFace(cfg.fontFace)
-            -- Calculate effective font size: baseFontSize * (editModeTextSize/100) * scaleMultiplier
-            local baseFontSize = cfg.fontSize or 12
-            local editModeScale = (db.textSize or 100) / 100
-            local addonScale = cfg.scaleMultiplier or 1.0
-            local effectiveSize = baseFontSize * editModeScale * addonScale
-            local flags = cfg.fontStyle or "OUTLINE"
-            if nameFS.SetFont then
-                pcall(nameFS.SetFont, nameFS, face, effectiveSize, flags)
-            end
-        end
-        -- Apply color (only if colorMode is "custom")
-        local colorMode = cfg.colorMode or "default"
-        if colorMode == "custom" and cfg.color and nameFS.SetTextColor then
-            local c = cfg.color
-            pcall(nameFS.SetTextColor, nameFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-        end
-        -- Note: "default" uses Blizzard's default white (1,1,1,1) which is already the default
-        -- Promote draw layer to render above bar borders
-        if nameFS.SetDrawLayer then
-            pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 7)
-        end
-    end
-
-    -- Value text styling (DPS/HPS numbers)
-    local valueFS = statusBar.Value or statusBar.value or (entry.Value)
-    if valueFS and db.textNumbers then
-        local cfg = db.textNumbers
-        if cfg.fontFace and addon and addon.ResolveFontFace then
-            local face = addon.ResolveFontFace(cfg.fontFace)
-            -- Calculate effective font size: baseFontSize * (editModeTextSize/100) * scaleMultiplier
-            local baseFontSize = cfg.fontSize or 12
-            local editModeScale = (db.textSize or 100) / 100
-            local addonScale = cfg.scaleMultiplier or 1.0
-            local effectiveSize = baseFontSize * editModeScale * addonScale
-            local flags = cfg.fontStyle or "OUTLINE"
-            if valueFS.SetFont then
-                pcall(valueFS.SetFont, valueFS, face, effectiveSize, flags)
-            end
-        end
-        -- Apply color (only if colorMode is "custom")
-        local colorMode = cfg.colorMode or "default"
-        if colorMode == "custom" and cfg.color and valueFS.SetTextColor then
-            local c = cfg.color
-            pcall(valueFS.SetTextColor, valueFS, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
-        end
-        -- Note: "default" uses Blizzard's default white (1,1,1,1) which is already the default
-        -- Promote draw layer to render above bar borders
-        if valueFS.SetDrawLayer then
-            pcall(valueFS.SetDrawLayer, valueFS, "OVERLAY", 7)
-        end
-    end
-
-    -- Spec icon styling
-    -- Frame hierarchy from fstack: entry.Icon (frame) > entry.Icon.Icon (texture)
-    local iconFrame = entry.Icon
-    if iconFrame then
-        if db.showSpecIcon == false then
-            SafeSetShown(iconFrame, false)
-        else
-            SafeSetShown(iconFrame, true)
-
-            -- Icon border - custom overlay for damage meter icons
-            -- Blizzard's spec icons use TexCoords (0.0625 inset) creating a rectangular visible area
-            -- A custom border overlay handles this properly
-            if db.iconBorderEnable then
-                local thickness = db.iconBorderThickness or 1
-                local insetH = tonumber(db.iconBorderInsetH) or 0  -- Horizontal inset (left/right)
-                local insetV = tonumber(db.iconBorderInsetV) or 2  -- Vertical inset (top/bottom) - default 2 for Blizzard's clipped icons
-
-                -- Get or create the border overlay frame (UIParent-parented to avoid tainting entry.Icon)
-                local borderOverlay = getElementState(iconFrame).borderOverlay
-                if not borderOverlay then
-                    borderOverlay = CreateFrame("Frame", nil, UIParent)
-                    borderOverlay:SetFrameStrata("MEDIUM")
-                    local ok, lvl = pcall(iconFrame.GetFrameLevel, iconFrame)
-                    borderOverlay:SetFrameLevel(ok and type(lvl) == "number" and (lvl + 2) or 7)
-                    getElementState(iconFrame).borderOverlay = borderOverlay
-                    registerDMOverlay(sessionWindow, borderOverlay)
-
-                    -- Create 4 edge textures for the border
-                    borderOverlay.edges = {
-                        top = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                        bottom = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                        left = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                        right = borderOverlay:CreateTexture(nil, "OVERLAY", nil, 7),
-                    }
-                end
-
-                -- Position the overlay with separate horizontal and vertical insets
-                -- Positive inset = move inward, negative inset = move outward
-                borderOverlay:ClearAllPoints()
-                borderOverlay:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", insetH, -insetV)
-                borderOverlay:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -insetH, insetV)
-
-                -- Get border color
-                local r, g, b, a = 0, 0, 0, 1  -- Default black
-                if db.iconBorderTintEnable and db.iconBorderTintColor then
-                    local c = db.iconBorderTintColor
-                    r = c.r or c[1] or 0
-                    g = c.g or c[2] or 0
-                    b = c.b or c[3] or 0
-                    a = c.a or c[4] or 1
-                end
-
-                -- Configure edges
-                local edges = borderOverlay.edges
-
-                -- Top edge
-                edges.top:ClearAllPoints()
-                edges.top:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, 0)
-                edges.top:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, 0)
-                edges.top:SetHeight(thickness)
-                edges.top:SetColorTexture(r, g, b, a)
-                edges.top:Show()
-
-                -- Bottom edge
-                edges.bottom:ClearAllPoints()
-                edges.bottom:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, 0)
-                edges.bottom:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, 0)
-                edges.bottom:SetHeight(thickness)
-                edges.bottom:SetColorTexture(r, g, b, a)
-                edges.bottom:Show()
-
-                -- Left edge (between top and bottom)
-                edges.left:ClearAllPoints()
-                edges.left:SetPoint("TOPLEFT", borderOverlay, "TOPLEFT", 0, -thickness)
-                edges.left:SetPoint("BOTTOMLEFT", borderOverlay, "BOTTOMLEFT", 0, thickness)
-                edges.left:SetWidth(thickness)
-                edges.left:SetColorTexture(r, g, b, a)
-                edges.left:Show()
-
-                -- Right edge (between top and bottom)
-                edges.right:ClearAllPoints()
-                edges.right:SetPoint("TOPRIGHT", borderOverlay, "TOPRIGHT", 0, -thickness)
-                edges.right:SetPoint("BOTTOMRIGHT", borderOverlay, "BOTTOMRIGHT", 0, thickness)
-                edges.right:SetWidth(thickness)
-                edges.right:SetColorTexture(r, g, b, a)
-                edges.right:Show()
-
-                borderOverlay:Show()
-            else
-                -- Hide custom border overlay
-                local borderOverlay = getElementState(iconFrame).borderOverlay
-                if borderOverlay then
-                    borderOverlay:Hide()
-                end
-            end
-
-            -- Apply JiberishIcons class icon replacement (after border handling)
-            ApplyJiberishIconsStyle(entry, db, sessionWindow)
-        end
-    end
-
-    -- OPT-18: Update cache after successful restyle
     elSt._cacheGen = dmStyleGeneration
     elSt._cacheClass = classToken
 end
@@ -2104,17 +2239,24 @@ local function ForEachVisibleEntry(sessionWindow, callback)
 
     -- Method 1: ForEachFrame (standard ScrollBox API)
     if scrollBox.ForEachFrame then
-        pcall(scrollBox.ForEachFrame, scrollBox, callback)
+        local ok, err = pcall(scrollBox.ForEachFrame, scrollBox, callback)
+        if not ok and addon._debugDM then
+            addon._debugDMLog = addon._debugDMLog or {}
+            addon._debugDMLog[#addon._debugDMLog + 1] = "ForEachFrame error: " .. tostring(err)
+        end
         return
     end
 
     -- Method 2: GetFrames (alternative API)
     if scrollBox.GetFrames then
-        local frames = scrollBox:GetFrames()
-        if frames then
+        local ok, frames = pcall(scrollBox.GetFrames, scrollBox)
+        if ok and frames then
             for _, frame in ipairs(frames) do
                 pcall(callback, frame)
             end
+        elseif not ok and addon._debugDM then
+            addon._debugDMLog = addon._debugDMLog or {}
+            addon._debugDMLog[#addon._debugDMLog + 1] = "GetFrames error: " .. tostring(frames)
         end
         return
     end
@@ -2128,11 +2270,13 @@ local function ForEachVisibleEntry(sessionWindow, callback)
                 pcall(callback, child)
             end
         end
+    elseif addon._debugDM then
+        addon._debugDMLog = addon._debugDMLog or {}
+        addon._debugDMLog[#addon._debugDMLog + 1] = "No iteration method found on ScrollBox"
     end
 end
 
 -- OPT-18: Bump generation and restyle all visible entries in one pass.
--- After this call, per-entry InitEntry hooks with matching classToken will skip.
 local function styleAllVisibleEntries(sessionWindow, db)
     dmStyleGeneration = dmStyleGeneration + 1
     ForEachVisibleEntry(sessionWindow, function(entryFrame)
@@ -2140,156 +2284,85 @@ local function styleAllVisibleEntries(sessionWindow, db)
     end)
 end
 
--- Hook ScrollBox for a single session window (if not already hooked)
--- Returns true if a new hook was installed, false if already hooked or no ScrollBox
-local function HookSessionWindowScrollBox(sessionWindow, component)
-    if not sessionWindow or not sessionWindow.ScrollBox then
-        return false
-    end
-    local state = getWindowState(sessionWindow)
-    if state.scrollHooked then
-        return false
-    end
-    state.scrollHooked = true
-
-    hooksecurefunc(sessionWindow.ScrollBox, "Update", function(scrollBox)
-        local state = getWindowState(sessionWindow)
-        if state._scrollUpdateQueued then return end
-        state._scrollUpdateQueued = true
-        _G.C_Timer.After(0, function()
-            state._scrollUpdateQueued = nil
-            if not component.db then return end
-            if not PlayerInCombat() then
-                hideWindowOverlays(sessionWindow)
+-- Update all visible overlay data across all windows (combat-safe: bar fill + text only)
+local function UpdateAllOverlayData(comp)
+    if not comp or not comp.db then return end
+    local windows = GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        ForEachVisibleEntry(sessionWindow, function(entryFrame)
+            local elSt = elementState[entryFrame]
+            if elSt and elSt.entryOverlay then
+                UpdateEntryOverlayData(elSt.entryOverlay, entryFrame)
             end
-            -- OPT-18: Bump generation so subsequent InitEntry calls skip redundant work
-            styleAllVisibleEntries(sessionWindow, component.db)
         end)
-    end)
-
-    -- Hook ShowLocalPlayerEntry to restyle the sticky player row when it appears
-    -- LocalPlayerEntry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
-    if sessionWindow.ShowLocalPlayerEntry and not state.localPlayerHooked then
-        state.localPlayerHooked = true
-        hooksecurefunc(sessionWindow, "ShowLocalPlayerEntry", function(self, earlierInList)
-            C_Timer.After(0, function()
-                if not component.db then return end
-                local localPlayerEntry = self.LocalPlayerEntry
-                if localPlayerEntry then
-                    ApplySingleEntryStyle(localPlayerEntry, component.db, self)
+        -- Also update LocalPlayerEntry overlay (only if entry is visible)
+        local lpe = sessionWindow.LocalPlayerEntry
+        if lpe then
+            local ok, shown = pcall(lpe.IsShown, lpe)
+            if ok and shown then
+                local elSt = elementState[lpe]
+                if elSt and elSt.entryOverlay then
+                    UpdateEntryOverlayData(elSt.entryOverlay, lpe)
                 end
-            end)
-        end)
-    end
-
-    -- Hook InitEntry to catch UpdateExistingDataProvider path (RetainScrollPosition)
-    -- where ScrollBox:Update doesn't fire but entries get new data via Init.
-    -- OPT-18: Coalesce per-entry C_Timer.After closures into a single deferred batch.
-    -- Instead of one closure per recycled entry, we collect pending frames in a set
-    -- and fire a single timer that processes all of them at end-of-frame.
-    if sessionWindow.InitEntry and not state.initEntryHooked then
-        state.initEntryHooked = true
-        hooksecurefunc(sessionWindow, "InitEntry", function(self, frame, elementData)
-            -- Skip if ScrollBox:Update already queued a full pass (Path A)
-            local wState = getWindowState(sessionWindow)
-            if wState._scrollUpdateQueued then return end
-
-            -- Collect frame into pending set (deduplicates same-frame re-inits)
-            if not wState._pendingEntries then
-                wState._pendingEntries = {}
             end
-            wState._pendingEntries[frame] = true
-
-            -- Schedule a single coalesced timer per window per frame
-            if not wState._initEntryCoalesced then
-                wState._initEntryCoalesced = true
-                C_Timer.After(0, function()
-                    wState._initEntryCoalesced = nil
-                    if not component.db then return end
-                    local pending = wState._pendingEntries
-                    if pending then
-                        for entry in pairs(pending) do
-                            if entry and entry.Icon then
-                                ApplySingleEntryStyle(entry, component.db, sessionWindow)
-                            end
-                        end
-                        wipe(pending)
-                    end
-                end)
-            end
-        end)
+        end
     end
-
-    return true
 end
 
--- Hook entry acquisition to style new entries
--- Handles one-time hooks on the main DamageMeter frame (Update/Refresh/UpdateData)
--- ScrollBox hooks for individual windows are handled by HookSessionWindowScrollBox
-local function HookEntryAcquisition(component)
-    local dmFrame = _G.DamageMeter
-    if not dmFrame or dmFrameHooked then return end
-    dmFrameHooked = true
-
-    -- Coalesce re-application to one per frame
-    local function requestApply()
-        if component._ScootDMApplyQueued then return end
-        component._ScootDMApplyQueued = true
-        _G.C_Timer.After(0, function()
-            component._ScootDMApplyQueued = nil
-            if component and component.ApplyStyling then
-                component:ApplyStyling()
+-- Get scroll signature for scroll change detection
+local function GetScrollSignature()
+    local windows = GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        local sig = nil
+        ForEachVisibleEntry(sessionWindow, function(entryFrame)
+            if not sig then
+                local nt = entryFrame.nameText
+                if issecretvalue(nt) then nt = nil end
+                if not nt then
+                    nt = entryFrame.sourceName
+                    if issecretvalue(nt) then nt = nil end
+                end
+                local style = entryFrame.style
+                if issecretvalue(style) then style = nil end
+                sig = (nt or "") .. "|" .. tostring(style or "")
             end
         end)
+        if sig then return sig end
     end
-
-    -- Hook Update/Refresh methods on main DamageMeter frame
-    if type(dmFrame.Update) == "function" then
-        hooksecurefunc(dmFrame, "Update", requestApply)
-    end
-    if type(dmFrame.Refresh) == "function" then
-        hooksecurefunc(dmFrame, "Refresh", requestApply)
-    end
-    if type(dmFrame.UpdateData) == "function" then
-        hooksecurefunc(dmFrame, "UpdateData", requestApply)
-    end
-    -- Hook SetupSessionWindow for newly created windows (e.g., via "Create New Window" dropdown)
-    if type(dmFrame.SetupSessionWindow) == "function" then
-        hooksecurefunc(dmFrame, "SetupSessionWindow", requestApply)
-    end
+    return ""
 end
 
 -- Main styling function
 local function ApplyDamageMeterStyling(self)
     local dmFrame = _G.DamageMeter
-    if not dmFrame then return end
-
-    -- Install hooks on first styling pass
-    HookEntryAcquisition(self)
+    if not dmFrame then
+        hideAllDMOverlays()
+        return
+    end
 
     -- Zero-Touch: if still on proxy DB, do nothing
     if self._ScootDBProxy and self.db == self._ScootDBProxy then
+        hideAllDMOverlays()
         return
     end
 
     local db = self.db
-    if type(db) ~= "table" then return end
-
-    -- BEFORE combat guard: always install hooks and discover windows
-    -- hooksecurefunc() is always safe during combat — it doesn't modify secure state
-    local windows = GetAllSessionWindows()
-    for _, sessionWindow in ipairs(windows) do
-        HookSessionWindowScrollBox(sessionWindow, self)
-        HookSessionWindowTitleUpdates(sessionWindow)
+    if type(db) ~= "table" then
+        hideAllDMOverlays()
+        return
     end
 
+    local windows = GetAllSessionWindows()
+
     -- Combat-safe: defer window-level styling during combat
+    -- No cleanup here: meters still visible, just can't restyle
     if PlayerInCombat() then
         return
     end
 
     -- Style all session windows and their entries
     for _, sessionWindow in ipairs(windows) do
+        knownSessionWindows[sessionWindow] = true  -- track for cleanup
 
         -- Reset this window's UIParent-parented overlays before re-styling visible entries
         hideWindowOverlays(sessionWindow)
@@ -2336,9 +2409,20 @@ local function ApplyDamageMeterStyling(self)
 
         -- Style LocalPlayerEntry (sticky player row at bottom when scrolled past own position)
         -- This entry is a sibling of ScrollBox, not a child, so ForEachVisibleEntry misses it
+        -- Guard with visibility check: after data clear, entry still exists but is hidden;
+        -- ApplySingleEntryStyle calls overlay:Show(), which would leave a stuck overlay
         local localPlayerEntry = sessionWindow.LocalPlayerEntry
         if localPlayerEntry then
-            ApplySingleEntryStyle(localPlayerEntry, db, sessionWindow)
+            local ok, shown = pcall(localPlayerEntry.IsShown, localPlayerEntry)
+            if ok and shown then
+                ApplySingleEntryStyle(localPlayerEntry, db, sessionWindow)
+            else
+                -- Entry hidden/gone — hide its overlay if it exists
+                local elSt = elementState[localPlayerEntry]
+                if elSt and elSt.entryOverlay then
+                    elSt.entryOverlay:Hide()
+                end
+            end
         end
     end
 end
@@ -2501,6 +2585,82 @@ addon:RegisterComponentInitializer(function(self)
         end
     end)
 
+    -- Event-driven restyling (replaces Rule 11-violating hooksecurefunc on system frames)
+    -- DamageMeter inherits EditModeDamageMeterSystemTemplate — hooks on its tree cause taint.
+    -- These events fire when Blizzard refreshes the meter, matching the old hook triggers.
+    local dmEventPending = false
+    local dmResetPending = false
+    local dmEventFrame = CreateFrame("Frame")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_RESET")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
+    dmEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    dmEventFrame:SetScript("OnEvent", function(_, event)
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        if event == "DAMAGE_METER_RESET" then
+            dmResetPending = true
+        end
+        if dmEventPending then return end
+        dmEventPending = true
+        C_Timer.After(0, function()
+            dmEventPending = nil
+            if dmResetPending then
+                dmResetPending = false
+                hideAllDMOverlays()
+            end
+            if PlayerInCombat() then
+                -- Combat: data-only update (bar fill + text, no style changes)
+                UpdateAllOverlayData(comp)
+            else
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end
+        end)
+    end)
+
+    -- Scroll detection ticker: detects ScrollBox content changes during scrolling
+    -- Also tracks DamageMeter visibility to hide/show overlays on transitions
+    local scrollSignature = ""
+    local dmWasShown = false
+    local scrollTicker = CreateFrame("Frame")
+    scrollTicker:SetScript("OnUpdate", function(self, elapsed)
+        self._elapsed = (self._elapsed or 0) + elapsed
+        if self._elapsed < 0.3 then return end
+        self._elapsed = 0
+        local dmFrame = _G.DamageMeter
+        local isShown = dmFrame and dmFrame:IsShown()
+        if not isShown then
+            if dmWasShown then
+                dmWasShown = false
+                hideAllDMOverlays()
+            end
+            return
+        end
+        if not dmWasShown then
+            dmWasShown = true
+            -- Frame just became visible — trigger full restyle
+            local comp = addon.Components and addon.Components["damageMeter"]
+            if comp and comp.ApplyStyling and not PlayerInCombat() then
+                comp:ApplyStyling()
+            end
+            return
+        end
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        local newSig = GetScrollSignature()
+        if issecretvalue(newSig) then return end
+        if newSig ~= scrollSignature then
+            scrollSignature = newSig
+            if PlayerInCombat() then
+                UpdateAllOverlayData(comp)
+            else
+                comp:ApplyStyling()
+            end
+        end
+    end)
+
     -- Auto-reset data event handler
     local resetFrame = CreateFrame("Frame")
     resetFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -2530,4 +2690,67 @@ addon:RegisterComponentInitializer(function(self)
             C_DamageMeter.ResetAllCombatSessions()
         end
     end)
+
+    -- Debug: /scoot debug dm frames — overlay diagnostic info in copyable window
+    addon.DebugDMFrames = function()
+        local lines = {}
+        local function push(s) lines[#lines + 1] = s end
+
+        local windows = GetAllSessionWindows()
+        push("Session windows found: " .. #windows)
+        push("")
+        for i, sw in ipairs(windows) do
+            local ws = windowState[sw]
+            local clipFrame = ws and ws.clipFrame
+            local overlayCount = windowOverlays[sw] and #windowOverlays[sw] or 0
+            push(string.format("Window %d: overlays=%d, clipFrame=%s", i, overlayCount, tostring(clipFrame ~= nil)))
+            if clipFrame then
+                local ok, cl = pcall(clipFrame.GetFrameLevel, clipFrame)
+                local ok2, cs = pcall(clipFrame.GetFrameStrata, clipFrame)
+                push(string.format("  ClipFrame: level=%s, strata=%s", ok and tostring(cl) or "?", ok2 and tostring(cs) or "?"))
+            end
+            local entryCount = 0
+            ForEachVisibleEntry(sw, function(entry)
+                entryCount = entryCount + 1
+                local ok, el = pcall(entry.GetFrameLevel, entry)
+                local ok2, es = pcall(entry.GetFrameStrata, entry)
+                local elSt = elementState[entry]
+                local ov = elSt and elSt.entryOverlay
+                local ovLevel, ovStrata = "none", "none"
+                if ov then
+                    local ok3, ol = pcall(ov.GetFrameLevel, ov)
+                    local ok4, os = pcall(ov.GetFrameStrata, ov)
+                    ovLevel = ok3 and tostring(ol) or "?"
+                    ovStrata = ok4 and tostring(os) or "?"
+                end
+                push(string.format("  Entry %d: level=%s strata=%s | Overlay: level=%s strata=%s shown=%s",
+                    entryCount,
+                    ok and tostring(el) or "?", ok2 and tostring(es) or "?",
+                    ovLevel, ovStrata,
+                    ov and tostring(ov:IsShown()) or "no overlay"))
+            end)
+            push(string.format("  Visible entries: %d", entryCount))
+            push("")
+        end
+
+        -- Include buffered error log if debug tracing was on
+        if addon._debugDMLog and #addon._debugDMLog > 0 then
+            push("--- Debug Log (" .. #addon._debugDMLog .. " entries) ---")
+            for _, msg in ipairs(addon._debugDMLog) do
+                push(msg)
+            end
+        end
+
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("DM Frame Diagnostics", lines)
+        end
+    end
+
+    -- Toggle DM debug mode
+    addon.SetDMDebug = function(enabled)
+        addon._debugDM = enabled
+        if addon.Print then
+            addon:Print("DM debug " .. (enabled and "enabled" or "disabled"))
+        end
+    end
 end)

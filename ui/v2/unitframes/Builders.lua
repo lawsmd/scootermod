@@ -13,16 +13,19 @@ UF.Builders = UF.Builders or {}
 -- Builds: Foreground Texture → Foreground Color → Spacer → Background Texture →
 --         Background Color → Background Opacity
 -- Does NOT call Finalize() — callers do.
+-- getDBFn: read-only accessor (no materialization), used in get callbacks
+-- ensureDBFn: materializing accessor, used in set callbacks
 
-function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn, colorValues, colorOrder, colorInfoIcons)
+function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn, colorValues, colorOrder, colorInfoIcons, getDBFn)
     colorValues = colorValues or UF.healthColorValues
     colorOrder = colorOrder or UF.healthColorOrder
     colorInfoIcons = colorInfoIcons or UF.healthColorInfoIcons
+    local readFn = getDBFn or ensureDBFn
 
     inner:AddDualBarStyleRow({
         label = "Foreground",
         getTexture = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "Texture"] or "default"
         end,
         setTexture = function(v)
@@ -35,7 +38,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
         colorOrder = colorOrder,
         colorInfoIcons = colorInfoIcons,
         getColorMode = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "ColorMode"] or "default"
         end,
         setColorMode = function(v)
@@ -45,7 +48,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
             applyFn()
         end,
         getColor = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             local c = t[barPrefix .. "Tint"] or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
@@ -64,7 +67,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
     inner:AddDualBarStyleRow({
         label = "Background",
         getTexture = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "BackgroundTexture"] or "default"
         end,
         setTexture = function(v)
@@ -76,7 +79,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
         colorValues = UF.bgColorValues,
         colorOrder = UF.bgColorOrder,
         getColorMode = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "BackgroundColorMode"] or "default"
         end,
         setColorMode = function(v)
@@ -86,7 +89,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
             applyFn()
         end,
         getColor = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             local c = t[barPrefix .. "BackgroundTint"] or {0, 0, 0, 1}
             return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
         end,
@@ -106,7 +109,7 @@ function UF.Builders.buildBarStyleContent(inner, barPrefix, ensureDBFn, applyFn,
         max = 100,
         step = 1,
         get = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return tonumber(t[barPrefix .. "BackgroundOpacity"]) or 50
         end,
         set = function(v)
@@ -123,13 +126,16 @@ end
 --------------------------------------------------------------------------------
 -- Builds: Border Style → Border Tint → Border Thickness → Border Inset
 -- Does NOT call Finalize() — callers do.
+-- getDBFn: read-only accessor (no materialization), used in get callbacks
 
-function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn)
+function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn, getDBFn)
+    local readFn = getDBFn or ensureDBFn
+
     inner:AddBarBorderSelector({
         label = "Border Style",
         includeNone = true,
         get = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "BorderStyle"] or "square"
         end,
         set = function(v)
@@ -139,7 +145,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
             applyFn()
         end,
         getHiddenEdges = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return t[barPrefix .. "BorderHiddenEdges"]
         end,
         setHiddenEdges = function(v)
@@ -153,7 +159,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
     inner:AddToggleColorPicker({
         label = "Border Tint",
         get = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             return not not t[barPrefix .. "BorderTintEnable"]
         end,
         set = function(v)
@@ -163,7 +169,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
             applyFn()
         end,
         getColor = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             local c = t[barPrefix .. "BorderTintColor"] or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
@@ -183,7 +189,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
         step = 0.5,
         precision = 1,
         get = function()
-            local t = ensureDBFn() or {}
+            local t = readFn() or {}
             local v = tonumber(t[barPrefix .. "BorderThickness"]) or 1
             return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
         end,
@@ -200,7 +206,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
         sliderA = {
             axisLabel = "H", min = -4, max = 4, step = 1,
             get = function()
-                local t = ensureDBFn() or {}
+                local t = readFn() or {}
                 return tonumber(t[barPrefix .. "BorderInsetH"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0
             end,
             set = function(v)
@@ -214,7 +220,7 @@ function UF.Builders.buildBarBorderContent(inner, barPrefix, ensureDBFn, applyFn
         sliderB = {
             axisLabel = "V", min = -4, max = 4, step = 1,
             get = function()
-                local t = ensureDBFn() or {}
+                local t = readFn() or {}
                 return tonumber(t[barPrefix .. "BorderInsetV"]) or tonumber(t[barPrefix .. "BorderInset"]) or 0
             end,
             set = function(v)
@@ -235,18 +241,21 @@ end
 -- Does NOT call Finalize() — callers do.
 -- Font/style/size/color/alignment/offset all call UF.applyStyles().
 -- Disable toggle calls applyTextFn (the specific apply function).
+-- getParentDBFn/getTextDBFn: read-only accessors (no materialization), used in get callbacks
 
-function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensureTextDBFn, applyTextFn, defaultAlignment, colorValues, colorOrder)
+function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensureTextDBFn, applyTextFn, defaultAlignment, colorValues, colorOrder, getParentDBFn, getTextDBFn)
     defaultAlignment = defaultAlignment or "LEFT"
     colorValues = colorValues or UF.fontColorValues
     colorOrder = colorOrder or UF.fontColorOrder
     local stripped = textKey:gsub("^text", "")
     local hiddenKey = stripped:sub(1,1):lower() .. stripped:sub(2) .. "Hidden"
+    local readParentFn = getParentDBFn or ensureParentDBFn
+    local readTextFn = getTextDBFn or ensureTextDBFn
 
     inner:AddToggle({
         label = "Disable Text",
         get = function()
-            local t = ensureParentDBFn() or {}
+            local t = readParentFn() or {}
             return not not t[hiddenKey]
         end,
         set = function(v)
@@ -260,7 +269,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
     inner:AddFontSelector({
         label = "Font",
         get = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             return s.fontFace or "FRIZQT__"
         end,
         set = function(v)
@@ -277,7 +286,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
         values = UF.fontStyleValues,
         order = UF.fontStyleOrder,
         get = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             return s.style or "OUTLINE"
         end,
         set = function(v)
@@ -295,7 +304,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
         max = 48,
         step = 1,
         get = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             return tonumber(s.size) or 14
         end,
         set = function(v)
@@ -312,7 +321,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
         values = colorValues,
         order = colorOrder,
         get = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             if textKey == "textPowerValue" or textKey == "textPowerPercent" then
                 return addon.ReadColorMode(
                     function() return s.colorMode end,
@@ -338,7 +347,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
             UF.applyStyles()
         end,
         getColor = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             local c = s.color or {1, 1, 1, 1}
             return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
         end,
@@ -358,7 +367,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
         values = UF.alignmentValues,
         order = UF.alignmentOrder,
         get = function()
-            local s = ensureTextDBFn(textKey) or {}
+            local s = readTextFn(textKey) or {}
             return s.alignment or defaultAlignment
         end,
         set = function(v)
@@ -376,7 +385,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
             axisLabel = "X",
             min = -100, max = 100, step = 1,
             get = function()
-                local s = ensureTextDBFn(textKey) or {}
+                local s = readTextFn(textKey) or {}
                 local o = s.offset or {}
                 return tonumber(o.x) or 0
             end,
@@ -393,7 +402,7 @@ function UF.Builders.buildTextTabContent(inner, textKey, ensureParentDBFn, ensur
             axisLabel = "Y",
             min = -100, max = 100, step = 1,
             get = function()
-                local s = ensureTextDBFn(textKey) or {}
+                local s = readTextFn(textKey) or {}
                 local o = s.offset or {}
                 return tonumber(o.y) or 0
             end,

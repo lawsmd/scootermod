@@ -575,6 +575,13 @@ do
             return
         end
 
+        -- Hide overlay if the StatusBar fill has zero effective width (boss with no power)
+        local okW, fillW = pcall(statusBarTex.GetWidth, statusBarTex)
+        if okW and type(fillW) == "number" and fillW <= 0.1 then
+            overlay:Hide()
+            return
+        end
+
         -- BOSS FIX: Use stored bounds frame for vertical constraints.
         -- Boss HealthBar StatusBar is oversized (spans both health + power areas).
         -- Anchors LEFT/RIGHT to StatusBarTexture (tracks fill width automatically),
@@ -770,6 +777,18 @@ do
             r, g, b = hr or 0, hg or 1, hb or 0
         end
         overlay:SetVertexColor(r, g, b, a)
+
+        -- Safety: verify overlay has a valid texture. If all atlas/texture attempts
+        -- failed silently, fall back to SetColorTexture to prevent gray checkerboard.
+        do
+            local okA, aName = pcall(overlay.GetAtlas, overlay)
+            local okT, tPath = pcall(overlay.GetTexture, overlay)
+            local hasValidTex = (okA and aName and aName ~= "")
+                or (okT and tPath and ((type(tPath) == "string" and tPath ~= "") or (type(tPath) == "number" and tPath > 0)))
+            if not hasValidTex and overlay.SetColorTexture then
+                overlay:SetColorTexture(r, g, b, a)
+            end
+        end
 
         updateBossRectOverlay(bar, overlayKey)
     end
@@ -2759,6 +2778,30 @@ do
                                 setProp(pb, "origPBAlpha", ok and (a or 1) or 1)
                             end
 
+                            -- Detect boss with no usable power resource
+                            local bossHasNoPower = false
+                            if pb.GetMinMaxValues then
+                                local okMM, pMin, pMax = pcall(pb.GetMinMaxValues, pb)
+                                if okMM and type(pMax) == "number" and pMax <= 0 then
+                                    bossHasNoPower = true
+                                end
+                            end
+
+                            if bossHasNoPower then
+                                -- Hide entire ManaBar to prevent rogue texture artifacts
+                                -- (Spark, invalid atlas, etc.). Text repositioned via "Around Name"
+                                -- is reparented to TargetFrameContentMain and is NOT affected.
+                                if pb.SetAlpha then pcall(pb.SetAlpha, pb, 0) end
+                                if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(pb) end
+                                if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
+                                local bpAnchor = getProp(pb, "bossPowerBorderAnchor")
+                                if bpAnchor then
+                                    if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(bpAnchor) end
+                                    if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(bpAnchor) end
+                                end
+                            end
+
+                            if not bossHasNoPower then
                             if powerBarHidden then
                                 if pb.SetAlpha then pcall(pb.SetAlpha, pb, 0) end
                                 do local bg = getProp(pb, "ScootBG"); if bg and bg.SetAlpha then pcall(bg.SetAlpha, bg, 0) end end
@@ -3005,6 +3048,7 @@ do
                                     end)
                                 end
                             end
+                            end -- if not bossHasNoPower
                         end
                 end
             end

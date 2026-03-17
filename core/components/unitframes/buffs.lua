@@ -56,10 +56,11 @@ do
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end
 
-		db.unitFrames = db.unitFrames or {}
-		db.unitFrames[unit] = db.unitFrames[unit] or {}
-		db.unitFrames[unit].buffsDebuffs = db.unitFrames[unit].buffsDebuffs or {}
-		local cfg = db.unitFrames[unit].buffsDebuffs
+		local unitFrames = rawget(db, "unitFrames")
+		local unitCfg = unitFrames and rawget(unitFrames, unit) or nil
+		if not unitCfg then return end
+		local cfg = rawget(unitCfg, "buffsDebuffs")
+		if not cfg then return end
 
 		local frame = resolveUnitFrame(unit)
 		if not frame then return end

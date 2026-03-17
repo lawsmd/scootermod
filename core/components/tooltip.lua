@@ -510,7 +510,8 @@ local function ApplyTooltipStyling(self)
     local tooltip = _G["GameTooltip"]
     if not tooltip then return end
 
-    local db = self.db or {}
+    local db = self.db
+    if not db then return end
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()

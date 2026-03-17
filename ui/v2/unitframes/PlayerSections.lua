@@ -13,7 +13,7 @@ UF.PlayerSections = UF.PlayerSections or {}
 -- Builds the full collapsible section for Alternate Power Bar.
 -- Called from PlayerRenderer when addon.UnitFrames_PlayerHasAlternatePowerBar() is true.
 
-function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureUFDBFn, applyBarTexturesFn)
+function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureUFDBFn, applyBarTexturesFn, getUFDBFn)
     local function ensureAltPowerBarDB()
         local t = ensureUFDBFn()
         if not t then return nil end
@@ -30,6 +30,16 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
             apb[textKey] = {}
         end
         return apb[textKey]
+    end
+
+    local function getAltPowerBarDB()
+        local t = getUFDBFn and getUFDBFn() or nil
+        return t and rawget(t, "altPowerBar") or nil
+    end
+
+    local function getAltPowerTextDB(textKey)
+        local apb = getAltPowerBarDB()
+        return apb and rawget(apb, textKey) or nil
     end
 
     local altPowerTabs = {
@@ -60,7 +70,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "X",
                                 min = -150, max = 150, step = 1,
                                 get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
+                                    local apb = getAltPowerBarDB() or {}
                                     return tonumber(apb.offsetX) or 0
                                 end,
                                 set = function(v)
@@ -74,7 +84,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "Y",
                                 min = -150, max = 150, step = 1,
                                 get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
+                                    local apb = getAltPowerBarDB() or {}
                                     return tonumber(apb.offsetY) or 0
                                 end,
                                 set = function(v)
@@ -92,7 +102,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Width %",
                             min = 10, max = 150, step = 1,
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return tonumber(apb.widthPct) or 100
                             end,
                             set = function(v)
@@ -108,7 +118,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddDualBarStyleRow({
                             label = "Foreground",
                             getTexture = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.texture or "default"
                             end,
                             setTexture = function(v)
@@ -120,7 +130,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             colorValues = UF.healthColorValues,
                             colorOrder = UF.healthColorOrder,
                             getColorMode = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.colorMode or "default"
                             end,
                             setColorMode = function(v)
@@ -130,7 +140,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getColor = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 local c = apb.tint or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -149,7 +159,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddDualBarStyleRow({
                             label = "Background",
                             getTexture = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.backgroundTexture or "default"
                             end,
                             setTexture = function(v)
@@ -161,7 +171,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             colorValues = UF.bgColorValues,
                             colorOrder = UF.bgColorOrder,
                             getColorMode = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.backgroundColorMode or "default"
                             end,
                             setColorMode = function(v)
@@ -171,7 +181,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getColor = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 local c = apb.backgroundTint or {0, 0, 0, 1}
                                 return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
                             end,
@@ -189,7 +199,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Background Opacity",
                             min = 0, max = 100, step = 1,
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return tonumber(apb.backgroundOpacity) or 50
                             end,
                             set = function(v)
@@ -207,7 +217,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Border Style",
                             includeNone = true,
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.borderStyle or "square"
                             end,
                             set = function(v)
@@ -217,7 +227,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getHiddenEdges = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.borderHiddenEdges
                             end,
                             setHiddenEdges = function(v)
@@ -231,7 +241,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggleColorPicker({
                             label = "Border Tint",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return not not apb.borderTintEnable
                             end,
                             set = function(v)
@@ -241,7 +251,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getColor = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 local c = apb.borderTintColor or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -258,7 +268,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Border Thickness",
                             min = 1, max = 8, step = 0.5, precision = 1,
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 local v = tonumber(apb.borderThickness) or 1
                                 return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                             end,
@@ -275,7 +285,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             sliderA = {
                                 axisLabel = "H", min = -4, max = 4, step = 1,
                                 get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
+                                    local apb = getAltPowerBarDB() or {}
                                     return tonumber(apb.borderInsetH) or tonumber(apb.borderInset) or 0
                                 end,
                                 set = function(v)
@@ -289,7 +299,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             sliderB = {
                                 axisLabel = "V", min = -4, max = 4, step = 1,
                                 get = function()
-                                    local apb = ensureAltPowerBarDB() or {}
+                                    local apb = getAltPowerBarDB() or {}
                                     return tonumber(apb.borderInsetV) or tonumber(apb.borderInset) or 0
                                 end,
                                 set = function(v)
@@ -308,7 +318,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Alternate Power Bar",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hidden == true
                             end,
                             set = function(v)
@@ -326,7 +336,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide the Bar but not its Text",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hideTextureOnly == true
                             end,
                             set = function(v)
@@ -344,7 +354,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Full Bar Animations",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hideFullSpikes == true
                             end,
                             set = function(v)
@@ -362,7 +372,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Power Feedback",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hideFeedback == true
                             end,
                             set = function(v)
@@ -380,7 +390,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide APB Spark",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hideSpark == true
                             end,
                             set = function(v)
@@ -398,7 +408,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Mana Cost Predictions",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.hideManaCostPrediction == true
                             end,
                             set = function(v)
@@ -416,7 +426,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Percent Text",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.percentHidden == true
                             end,
                             set = function(v)
@@ -434,7 +444,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddToggle({
                             label = "Hide Value Text",
                             get = function()
-                                local apb = ensureAltPowerBarDB() or {}
+                                local apb = getAltPowerBarDB() or {}
                                 return apb.valueHidden == true
                             end,
                             set = function(v)
@@ -455,7 +465,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
@@ -471,7 +481,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
@@ -486,7 +496,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Size",
                             min = 6, max = 48, step = 1,
                             get = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 return tonumber(s.size) or 14
                             end,
                             set = function(v)
@@ -502,7 +512,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.fontColorPowerValues,
                             order = UF.fontColorPowerOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 return s.colorMode or "default"
                             end,
                             set = function(v)
@@ -512,7 +522,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getColor = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -531,7 +541,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.alignmentValues,
                             order = UF.alignmentOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textPercent") or {}
+                                local s = getAltPowerTextDB("textPercent") or {}
                                 return s.alignment or "LEFT"
                             end,
                             set = function(v)
@@ -548,7 +558,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    local s = getAltPowerTextDB("textPercent") or {}
                                     local o = s.offset or {}
                                     return tonumber(o.x) or 0
                                 end,
@@ -564,7 +574,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local s = ensureAltPowerTextDB("textPercent") or {}
+                                    local s = getAltPowerTextDB("textPercent") or {}
                                     local o = s.offset or {}
                                     return tonumber(o.y) or 0
                                 end,
@@ -584,7 +594,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                         tabInner:AddFontSelector({
                             label = "Font",
                             get = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
@@ -600,7 +610,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
@@ -615,7 +625,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             label = "Size",
                             min = 6, max = 48, step = 1,
                             get = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 return tonumber(s.size) or 14
                             end,
                             set = function(v)
@@ -631,7 +641,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.fontColorPowerValues,
                             order = UF.fontColorPowerOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 return s.colorMode or "default"
                             end,
                             set = function(v)
@@ -641,7 +651,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 applyBarTexturesFn()
                             end,
                             getColor = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -660,7 +670,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                             values = UF.alignmentValues,
                             order = UF.alignmentOrder,
                             get = function()
-                                local s = ensureAltPowerTextDB("textValue") or {}
+                                local s = getAltPowerTextDB("textValue") or {}
                                 return s.alignment or "RIGHT"
                             end,
                             set = function(v)
@@ -677,7 +687,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    local s = getAltPowerTextDB("textValue") or {}
                                     local o = s.offset or {}
                                     return tonumber(o.x) or 0
                                 end,
@@ -693,7 +703,7 @@ function UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureU
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local s = ensureAltPowerTextDB("textValue") or {}
+                                    local s = getAltPowerTextDB("textValue") or {}
                                     local o = s.offset or {}
                                     return tonumber(o.y) or 0
                                 end,
@@ -722,12 +732,17 @@ end
 -- Builds the full collapsible section for Class Resource.
 -- Always shown for Player (dynamic title based on class).
 
-function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBFn)
+function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBFn, getUFDBFn)
     local function ensureClassResourceDB()
         local t = ensureUFDBFn()
         if not t then return nil end
         t.classResource = t.classResource or {}
         return t.classResource
+    end
+
+    local function getClassResourceDB()
+        local t = getUFDBFn and getUFDBFn() or nil
+        return t and rawget(t, "classResource") or nil
     end
 
     local function applyClassResource()
@@ -772,7 +787,7 @@ function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBF
                     values = { default = "Blizzard Default", pixel = "Pixel Art" },
                     order = { "default", "pixel" },
                     get = function()
-                        local cfg = ensureClassResourceDB() or {}
+                        local cfg = getClassResourceDB() or {}
                         return cfg[textureKey] or "default"
                     end,
                     set = function(v)
@@ -792,7 +807,7 @@ function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBF
                         axisLabel = "X",
                         min = -150, max = 150, step = 1,
                         get = function()
-                            local cfg = ensureClassResourceDB() or {}
+                            local cfg = getClassResourceDB() or {}
                             return tonumber(cfg.offsetX) or 0
                         end,
                         set = function(v)
@@ -806,7 +821,7 @@ function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBF
                         axisLabel = "Y",
                         min = -150, max = 150, step = 1,
                         get = function()
-                            local cfg = ensureClassResourceDB() or {}
+                            local cfg = getClassResourceDB() or {}
                             return tonumber(cfg.offsetY) or 0
                         end,
                         set = function(v)
@@ -825,7 +840,7 @@ function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBF
                     label = getClassResourceTitle() .. " Scale",
                     min = 50, max = 150, step = 1,
                     get = function()
-                        local cfg = ensureClassResourceDB() or {}
+                        local cfg = getClassResourceDB() or {}
                         return tonumber(cfg.scale) or 100
                     end,
                     set = function(v)
@@ -842,7 +857,7 @@ function UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDBF
                 tabInner:AddToggle({
                     label = "Hide " .. getClassResourceTitle(),
                     get = function()
-                        local cfg = ensureClassResourceDB() or {}
+                        local cfg = getClassResourceDB() or {}
                         return cfg.hide == true
                     end,
                     set = function(v)
@@ -896,6 +911,21 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
         return tb.timerText
     end
 
+    local function getTotemBarDB()
+        local t = UF.getUFDB(UNIT_KEY)
+        return t and rawget(t, "totemBar") or nil
+    end
+
+    local function getTotemBarIconBordersDB()
+        local tb = getTotemBarDB()
+        return tb and rawget(tb, "iconBorders") or nil
+    end
+
+    local function getTotemBarTimerTextDB()
+        local tb = getTotemBarDB()
+        return tb and rawget(tb, "timerText") or nil
+    end
+
     local function applyTotemBar()
         if addon.ApplyTotemBarStyling then
             addon.ApplyTotemBarStyling()
@@ -929,7 +959,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                         tabInner:AddToggle({
                             label = "Hide Icon Borders",
                             get = function()
-                                local cfg = ensureTotemBarIconBordersDB() or {}
+                                local cfg = getTotemBarIconBordersDB() or {}
                                 return cfg.hidden == true
                             end,
                             set = function(v)
@@ -945,7 +975,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                         tabInner:AddToggle({
                             label = "Hide Timer Text",
                             get = function()
-                                local cfg = ensureTotemBarTimerTextDB() or {}
+                                local cfg = getTotemBarTimerTextDB() or {}
                                 return cfg.hidden == true
                             end,
                             set = function(v)
@@ -958,7 +988,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                         tabInner:AddFontSelector({
                             label = "Font Face",
                             get = function()
-                                local cfg = ensureTotemBarTimerTextDB() or {}
+                                local cfg = getTotemBarTimerTextDB() or {}
                                 return cfg.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
@@ -972,7 +1002,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                             label = "Font Size",
                             min = 6, max = 24, step = 1,
                             get = function()
-                                local cfg = ensureTotemBarTimerTextDB() or {}
+                                local cfg = getTotemBarTimerTextDB() or {}
                                 return tonumber(cfg.size) or 12
                             end,
                             set = function(v)
@@ -987,7 +1017,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local cfg = ensureTotemBarTimerTextDB() or {}
+                                local cfg = getTotemBarTimerTextDB() or {}
                                 return cfg.style or "OUTLINE"
                             end,
                             set = function(v)
@@ -1001,7 +1031,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                             label = "Font Color",
                             hasAlpha = true,
                             get = function()
-                                local cfg = ensureTotemBarTimerTextDB() or {}
+                                local cfg = getTotemBarTimerTextDB() or {}
                                 local c = cfg.color or { 1, 1, 1, 1 }
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -1018,7 +1048,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                                 axisLabel = "X",
                                 min = -50, max = 50, step = 1,
                                 get = function()
-                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    local cfg = getTotemBarTimerTextDB() or {}
                                     local o = cfg.offset or {}
                                     return tonumber(o.x) or 0
                                 end,
@@ -1034,7 +1064,7 @@ function UF.PlayerSections.buildTotemBar(builder, COMPONENT_ID)
                                 axisLabel = "Y",
                                 min = -50, max = 50, step = 1,
                                 get = function()
-                                    local cfg = ensureTotemBarTimerTextDB() or {}
+                                    local cfg = getTotemBarTimerTextDB() or {}
                                     local o = cfg.offset or {}
                                     return tonumber(o.y) or 0
                                 end,

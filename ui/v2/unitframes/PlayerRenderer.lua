@@ -40,6 +40,32 @@ local function ensureNameLevelDB(textKey)
     return t[textKey]
 end
 
+-- Read-only accessors (no materialization — used in get callbacks)
+local function getUFDB()
+    return UF.getUFDB(UNIT_KEY)
+end
+
+local function getTextDB(key)
+    return UF.getTextDB(UNIT_KEY, key)
+end
+
+local function getPortraitDB()
+    return UF.getPortraitDB(UNIT_KEY)
+end
+
+local function getCastBarDB()
+    return UF.getCastBarDB(UNIT_KEY)
+end
+
+local function getMiscDB()
+    return UF.getMiscDB(UNIT_KEY)
+end
+
+local function getNameLevelDB(textKey)
+    local t = UF.getUFDB(UNIT_KEY)
+    return t and rawget(t, textKey) or nil
+end
+
 --------------------------------------------------------------------------------
 -- Apply Functions
 --------------------------------------------------------------------------------
@@ -94,7 +120,7 @@ local function buildHealthVisibilityTab(inner)
     inner:AddToggle({
         label = "Hide the Bar but not its Text",
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return not not t.healthBarHideTextureOnly
         end,
         set = function(v)
@@ -113,7 +139,7 @@ local function buildHealthVisibilityTab(inner)
         label = "Hide Over Absorb Glow",
         description = "Hides the glow effect when absorb shields exceed max health.",
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return not not t.healthBarHideOverAbsorbGlow
         end,
         set = function(v)
@@ -129,7 +155,7 @@ local function buildHealthVisibilityTab(inner)
         label = "Hide Heal Prediction",
         description = "Hides the green heal prediction bar when healing is incoming.",
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return not not t.healthBarHideHealPrediction
         end,
         set = function(v)
@@ -147,7 +173,7 @@ local function buildHealthVisibilityTab(inner)
     inner:AddToggle({
         label = "Hide Health Loss Animation",
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return not not t.healthBarHideHealthLossAnimation
         end,
         set = function(v)
@@ -188,7 +214,7 @@ function UF.RenderPlayer(panel, scrollContent)
         description = "REQUIRED for custom borders. Hides default frame art.",
         emphasized = true,
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return not not t.useCustomBorders
         end,
         set = function(v)
@@ -232,7 +258,7 @@ function UF.RenderPlayer(panel, scrollContent)
         step = 0.05,
         precision = 2,
         get = function()
-            local t = ensureUFDB() or {}
+            local t = getUFDB() or {}
             return tonumber(t.scaleMult) or 1.0
         end,
         set = function(v)
@@ -270,7 +296,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             max = 100,
                             step = 5,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return tonumber(t.healthBarOverlayHeightPct) or 100
                             end,
                             set = function(v)
@@ -287,22 +313,22 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     style = function(cf, tabInner)
-                        UF.Builders.buildBarStyleContent(tabInner, "healthBar", ensureUFDB, applyBarTextures)
+                        UF.Builders.buildBarStyleContent(tabInner, "healthBar", ensureUFDB, applyBarTextures, nil, nil, nil, getUFDB)
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)
-                        UF.Builders.buildBarBorderContent(tabInner, "healthBar", ensureUFDB, applyBarTextures)
+                        UF.Builders.buildBarBorderContent(tabInner, "healthBar", ensureUFDB, applyBarTextures, getUFDB)
                         tabInner:Finalize()
                     end,
                     visibility = function(cf, tabInner)
                         buildHealthVisibilityTab(tabInner)
                     end,
                     percentText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textHealthPercent", ensureUFDB, ensureTextDB, applyHealthText, "LEFT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
+                        UF.Builders.buildTextTabContent(tabInner, "textHealthPercent", ensureUFDB, ensureTextDB, applyHealthText, "LEFT", UF.fontColorHealthValues, UF.fontColorHealthOrder, getUFDB, getTextDB)
                         tabInner:Finalize()
                     end,
                     valueText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textHealthValue", ensureUFDB, ensureTextDB, applyHealthText, "RIGHT", UF.fontColorHealthValues, UF.fontColorHealthOrder)
+                        UF.Builders.buildTextTabContent(tabInner, "textHealthValue", ensureUFDB, ensureTextDB, applyHealthText, "RIGHT", UF.fontColorHealthValues, UF.fontColorHealthOrder, getUFDB, getTextDB)
                         tabInner:Finalize()
                     end,
                 },
@@ -335,7 +361,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensureUFDB() or {}
+                                    local t = getUFDB() or {}
                                     return tonumber(t.powerBarOffsetX) or 0
                                 end,
                                 set = function(v)
@@ -349,7 +375,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensureUFDB() or {}
+                                    local t = getUFDB() or {}
                                     return tonumber(t.powerBarOffsetY) or 0
                                 end,
                                 set = function(v)
@@ -369,7 +395,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             max = 200,
                             step = 5,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return tonumber(t.powerBarWidthPct) or 100
                             end,
                             set = function(v)
@@ -385,7 +411,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             max = 200,
                             step = 5,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return tonumber(t.powerBarHeightPct) or 100
                             end,
                             set = function(v)
@@ -398,18 +424,18 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     style = function(cf, tabInner)
-                        UF.Builders.buildBarStyleContent(tabInner, "powerBar", ensureUFDB, applyBarTextures, UF.powerColorValues, UF.powerColorOrder)
+                        UF.Builders.buildBarStyleContent(tabInner, "powerBar", ensureUFDB, applyBarTextures, UF.powerColorValues, UF.powerColorOrder, nil, getUFDB)
                         tabInner:Finalize()
                     end,
                     border = function(cf, tabInner)
-                        UF.Builders.buildBarBorderContent(tabInner, "powerBar", ensureUFDB, applyBarTextures)
+                        UF.Builders.buildBarBorderContent(tabInner, "powerBar", ensureUFDB, applyBarTextures, getUFDB)
                         tabInner:Finalize()
                     end,
                     visibility = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Power Bar",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHidden
                             end,
                             set = function(v)
@@ -422,7 +448,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide the Bar but not its Text",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHideTextureOnly
                             end,
                             set = function(v)
@@ -439,7 +465,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Full Bar Animations",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHideFullSpikes
                             end,
                             set = function(v)
@@ -456,7 +482,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Power Feedback",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHideFeedback
                             end,
                             set = function(v)
@@ -473,7 +499,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Power Bar Spark",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHideSpark
                             end,
                             set = function(v)
@@ -490,7 +516,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Mana Cost Predictions",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.powerBarHideManaCostPrediction
                             end,
                             set = function(v)
@@ -507,11 +533,11 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     percentText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textPowerPercent", ensureUFDB, ensureTextDB, applyPowerText, "LEFT", UF.fontColorPowerValues, UF.fontColorPowerOrder)
+                        UF.Builders.buildTextTabContent(tabInner, "textPowerPercent", ensureUFDB, ensureTextDB, applyPowerText, "LEFT", UF.fontColorPowerValues, UF.fontColorPowerOrder, getUFDB, getTextDB)
                         tabInner:Finalize()
                     end,
                     valueText = function(cf, tabInner)
-                        UF.Builders.buildTextTabContent(tabInner, "textPowerValue", ensureUFDB, ensureTextDB, applyPowerText, "RIGHT", UF.fontColorPowerValues, UF.fontColorPowerOrder)
+                        UF.Builders.buildTextTabContent(tabInner, "textPowerValue", ensureUFDB, ensureTextDB, applyPowerText, "RIGHT", UF.fontColorPowerValues, UF.fontColorPowerOrder, getUFDB, getTextDB)
                         tabInner:Finalize()
                     end,
                 },
@@ -525,7 +551,7 @@ function UF.RenderPlayer(panel, scrollContent)
     --------------------------------------------------------------------------------
 
     if addon.UnitFrames_PlayerHasAlternatePowerBar and addon.UnitFrames_PlayerHasAlternatePowerBar() then
-        UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureUFDB, applyBarTextures)
+        UF.PlayerSections.buildAlternatePowerBar(builder, COMPONENT_ID, ensureUFDB, applyBarTextures, getUFDB)
     end
 
     --------------------------------------------------------------------------------
@@ -534,7 +560,7 @@ function UF.RenderPlayer(panel, scrollContent)
 
     local castBarTabs = UF.getCastBarTabs(COMPONENT_ID, {
         fillLineVisible = function()
-            local t = ensureCastBarDB() or {}
+            local t = getCastBarDB() or {}
             return (t.castBarMode or "default") == "textFill"
         end,
     })
@@ -552,7 +578,7 @@ function UF.RenderPlayer(panel, scrollContent)
                 values = { default = "Default Cast Bar", textFill = "Text-Fill Cast Bar" },
                 order = { "default", "textFill" },
                 emphasized = true,
-                get = function() local t = ensureCastBarDB() or {}; return t.castBarMode or "default" end,
+                get = function() local t = getCastBarDB() or {}; return t.castBarMode or "default" end,
                 set = function(v)
                     local t = ensureCastBarDB()
                     if not t then return end
@@ -600,7 +626,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "X",
                                 min = -200, max = 200, step = 1,
                                 get = function()
-                                    local t = ensureCastBarDB() or {}
+                                    local t = getCastBarDB() or {}
                                     return tonumber(t.offsetX) or 0
                                 end,
                                 set = function(v)
@@ -614,7 +640,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "Y",
                                 min = -200, max = 200, step = 1,
                                 get = function()
-                                    local t = ensureCastBarDB() or {}
+                                    local t = getCastBarDB() or {}
                                     return tonumber(t.offsetY) or 0
                                 end,
                                 set = function(v)
@@ -632,7 +658,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Width %",
                             min = 50, max = 150, step = 1,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return tonumber(t.widthPct) or 100
                             end,
                             set = function(v)
@@ -646,7 +672,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Height",
                             min = 5, max = 50, step = 1,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return tonumber(t.castBarHeight) or 13
                             end,
                             set = function(v)
@@ -659,7 +685,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:Finalize()
                     end,
                     style = function(cf, tabInner)
-                        UF.Builders.buildBarStyleContent(tabInner, "castBar", ensureCastBarDB, applyCastBar, UF.castBarColorValues, UF.castBarColorOrder)
+                        UF.Builders.buildBarStyleContent(tabInner, "castBar", ensureCastBarDB, applyCastBar, UF.castBarColorValues, UF.castBarColorOrder, nil, getCastBarDB)
                         tabInner:Finalize()
                     end,
                     fillLine = function(cf, tabInner)
@@ -670,7 +696,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddColorPicker({
                             label = "Unfilled Text Color",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local c = t.textFillUnfilledTextColor or {0.5, 0.5, 0.5, 1}
                                 return c[1] or 0.5, c[2] or 0.5, c[3] or 0.5, c[4] or 1
                             end,
@@ -685,12 +711,12 @@ function UF.RenderPlayer(panel, scrollContent)
                         })
                         tabInner:AddSlider({
                             label = "Line Height", min = 1, max = 10, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
+                            get = function() local t = getCastBarDB() or {}; return tonumber(t.textFillLineHeight) or 2 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.textFillLineHeight = tonumber(v) or 2; applyCastBar() end end,
                         })
                         tabInner:AddSlider({
                             label = "End Cap Size", min = 2, max = 20, step = 1,
-                            get = function() local t = ensureCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
+                            get = function() local t = getCastBarDB() or {}; return tonumber(t.textFillEndCapSize) or 6 end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.textFillEndCapSize = tonumber(v) or 6; applyCastBar() end end,
                         })
                         tabInner:Finalize()
@@ -699,7 +725,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Spark",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.castBarSparkHidden
                             end,
                             set = function(v)
@@ -714,7 +740,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = { ["default"] = "Default", ["custom"] = "Custom" },
                             order = { "default", "custom" },
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return t.castBarSparkColorMode or "default"
                             end,
                             set = function(v)
@@ -724,7 +750,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                             getColor = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local c = t.castBarSparkTint or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -740,7 +766,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Spark Glow",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideStandardGlow
                             end,
                             set = function(v)
@@ -760,7 +786,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Enable Border",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.castBarBorderEnable
                             end,
                             set = function(v)
@@ -770,14 +796,14 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                         })
-                        UF.Builders.buildBarBorderContent(tabInner, "castBar", ensureCastBarDB, applyCastBar)
+                        UF.Builders.buildBarBorderContent(tabInner, "castBar", ensureCastBarDB, applyCastBar, getCastBarDB)
                         tabInner:Finalize()
                     end,
                     icon = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Hide Icon",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.iconDisabled
                             end,
                             set = function(v)
@@ -790,7 +816,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Icon Backdrop (Shield)",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.castBarBorderShieldHidden
                             end,
                             set = function(v)
@@ -804,7 +830,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Icon Size",
                             min = 10, max = 64, step = 1,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return tonumber(t.iconWidth) or tonumber(t.iconHeight) or 24
                             end,
                             set = function(v)
@@ -821,7 +847,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensureCastBarDB() or {}
+                                    local t = getCastBarDB() or {}
                                     return tonumber(t.castBarIconOffsetX) or 0
                                 end,
                                 set = function(v)
@@ -835,7 +861,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensureCastBarDB() or {}
+                                    local t = getCastBarDB() or {}
                                     return tonumber(t.castBarIconOffsetY) or 0
                                 end,
                                 set = function(v)
@@ -852,7 +878,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Spell Name",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.castBarSpellNameHidden
                             end,
                             set = function(v)
@@ -865,7 +891,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddFontSelector({
                             label = "Spell Name Font",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.spellNameText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
@@ -882,7 +908,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.spellNameText or {}
                                 return s.style or "OUTLINE"
                             end,
@@ -898,15 +924,15 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Spell Name Size",
                             min = 6, max = 32, step = 1,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.spellNameText or {}
-                                return tonumber(s.size) or 12
+                                return tonumber(s.size) or 10
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
                                 t.spellNameText = t.spellNameText or {}
-                                t.spellNameText.size = tonumber(v) or 12
+                                t.spellNameText.size = tonumber(v) or 10
                                 applyCastBar()
                             end,
                         })
@@ -915,7 +941,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontColorCastBarValues,
                             order = UF.fontColorCastBarOrder,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.spellNameText or {}
                                 return s.colorMode or "default"
                             end,
@@ -927,7 +953,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyCastBar()
                             end,
                             getColor = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.spellNameText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -981,7 +1007,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddFontSelector({
                             label = "Cast Time Font",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.castTimeText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
@@ -998,7 +1024,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.castTimeText or {}
                                 return s.style or "OUTLINE"
                             end,
@@ -1014,22 +1040,22 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Cast Time Size",
                             min = 6, max = 32, step = 1,
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.castTimeText or {}
-                                return tonumber(s.size) or 12
+                                return tonumber(s.size) or 10
                             end,
                             set = function(v)
                                 local t = ensureCastBarDB()
                                 if not t then return end
                                 t.castTimeText = t.castTimeText or {}
-                                t.castTimeText.size = tonumber(v) or 12
+                                t.castTimeText.size = tonumber(v) or 10
                                 applyCastBar()
                             end,
                         })
                         tabInner:AddColorPicker({
                             label = "Cast Time Color",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 local s = t.castTimeText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -1049,7 +1075,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Cast Bar",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.castBarHidden
                             end,
                             set = function(v)
@@ -1062,7 +1088,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Text Border",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideTextBorder
                             end,
                             set = function(v)
@@ -1079,7 +1105,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Channel Shadow",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideChannelingShadow
                             end,
                             set = function(v)
@@ -1096,7 +1122,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Charge Flash",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideChargeFlash
                             end,
                             set = function(v)
@@ -1113,7 +1139,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Cast Shine",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideCastShine
                             end,
                             set = function(v)
@@ -1130,7 +1156,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Wisp Glow",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideWispGlow
                             end,
                             set = function(v)
@@ -1147,7 +1173,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Channel Sparkles",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideChannelSparkles
                             end,
                             set = function(v)
@@ -1164,7 +1190,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Base Glow",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideBaseGlow
                             end,
                             set = function(v)
@@ -1181,7 +1207,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Cast Flash",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideCastFlash
                             end,
                             set = function(v)
@@ -1198,7 +1224,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Interrupt Glow",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideInterruptGlow
                             end,
                             set = function(v)
@@ -1215,7 +1241,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Completion Flare",
                             get = function()
-                                local t = ensureCastBarDB() or {}
+                                local t = getCastBarDB() or {}
                                 return not not t.hideCompletionFlare
                             end,
                             set = function(v)
@@ -1241,7 +1267,7 @@ function UF.RenderPlayer(panel, scrollContent)
     -- Collapsible Section: Class Resource (Player only - dynamic title)
     --------------------------------------------------------------------------------
 
-    UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDB)
+    UF.PlayerSections.buildClassResource(builder, COMPONENT_ID, ensureUFDB, getUFDB)
 
     --------------------------------------------------------------------------------
     -- Collapsible Section: Totem Bar (conditional visibility)
@@ -1275,7 +1301,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Enable Backdrop",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.nameBackdropEnabled
                             end,
                             set = function(v)
@@ -1288,7 +1314,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddBarTextureSelector({
                             label = "Backdrop Texture",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return t.nameBackdropTexture or ""
                             end,
                             set = function(v)
@@ -1303,7 +1329,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.bgColorValues,
                             order = UF.bgColorOrder,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return t.nameBackdropColorMode or "default"
                             end,
                             set = function(v)
@@ -1313,7 +1339,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyNameLevelText()
                             end,
                             getColor = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 local c = t.nameBackdropTint or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -1330,7 +1356,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Backdrop Width (%)",
                             min = 25, max = 300, step = 1,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return tonumber(t.nameBackdropWidthPct) or 100
                             end,
                             set = function(v)
@@ -1344,7 +1370,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Backdrop Opacity",
                             min = 0, max = 100, step = 1,
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return tonumber(t.nameBackdropOpacity) or 50
                             end,
                             set = function(v)
@@ -1360,7 +1386,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Enable Border",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.nameBackdropBorderEnabled
                             end,
                             set = function(v)
@@ -1370,14 +1396,14 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyNameLevelText()
                             end,
                         })
-                        UF.Builders.buildBarBorderContent(tabInner, "nameBackdrop", ensureUFDB, applyNameLevelText)
+                        UF.Builders.buildBarBorderContent(tabInner, "nameBackdrop", ensureUFDB, applyNameLevelText, getUFDB)
                         tabInner:Finalize()
                     end,
                     nameText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Disable Name Text",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.nameTextHidden
                             end,
                             set = function(v)
@@ -1390,7 +1416,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddFontSelector({
                             label = "Name Text Font",
                             get = function()
-                                local s = ensureNameLevelDB("textName") or {}
+                                local s = getNameLevelDB("textName") or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
@@ -1405,7 +1431,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local s = ensureNameLevelDB("textName") or {}
+                                local s = getNameLevelDB("textName") or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
@@ -1419,7 +1445,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Name Text Size",
                             min = 6, max = 48, step = 1,
                             get = function()
-                                local s = ensureNameLevelDB("textName") or {}
+                                local s = getNameLevelDB("textName") or {}
                                 return tonumber(s.size) or 14
                             end,
                             set = function(v)
@@ -1434,7 +1460,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontColorValues,
                             order = UF.fontColorOrder,
                             get = function()
-                                local s = ensureNameLevelDB("textName") or {}
+                                local s = getNameLevelDB("textName") or {}
                                 return s.colorMode or "default"
                             end,
                             set = function(v)
@@ -1444,7 +1470,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyNameLevelText()
                             end,
                             getColor = function()
-                                local s = ensureNameLevelDB("textName") or {}
+                                local s = getNameLevelDB("textName") or {}
                                 local c = s.color or {1, 0.82, 0, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -1462,13 +1488,13 @@ function UF.RenderPlayer(panel, scrollContent)
                             sliderA = {
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                get = function() local s = getNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
                                 set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
                             },
                             sliderB = {
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                get = function() local s = getNameLevelDB("textName") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
                                 set = function(v) local t = ensureNameLevelDB("textName"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
                             },
                         })
@@ -1478,7 +1504,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Disable Level Text",
                             get = function()
-                                local t = ensureUFDB() or {}
+                                local t = getUFDB() or {}
                                 return not not t.levelTextHidden
                             end,
                             set = function(v)
@@ -1491,7 +1517,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddFontSelector({
                             label = "Level Text Font",
                             get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
+                                local s = getNameLevelDB("textLevel") or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
                             set = function(v)
@@ -1506,7 +1532,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
+                                local s = getNameLevelDB("textLevel") or {}
                                 return s.style or "OUTLINE"
                             end,
                             set = function(v)
@@ -1520,7 +1546,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Level Text Size",
                             min = 6, max = 48, step = 1,
                             get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
+                                local s = getNameLevelDB("textLevel") or {}
                                 return tonumber(s.size) or 14
                             end,
                             set = function(v)
@@ -1535,7 +1561,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontColorValues,
                             order = UF.fontColorOrder,
                             get = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
+                                local s = getNameLevelDB("textLevel") or {}
                                 return s.colorMode or "default"
                             end,
                             set = function(v)
@@ -1545,7 +1571,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyNameLevelText()
                             end,
                             getColor = function()
-                                local s = ensureNameLevelDB("textLevel") or {}
+                                local s = getNameLevelDB("textLevel") or {}
                                 local c = s.color or {1, 0.82, 0, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -1563,13 +1589,13 @@ function UF.RenderPlayer(panel, scrollContent)
                             sliderA = {
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
+                                get = function() local s = getNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.x) or 0 end,
                                 set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.x = tonumber(v) or 0; applyNameLevelText() end end,
                             },
                             sliderB = {
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
-                                get = function() local s = ensureNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
+                                get = function() local s = getNameLevelDB("textLevel") or {}; local o = s.offset or {}; return tonumber(o.y) or 0 end,
                                 set = function(v) local t = ensureNameLevelDB("textLevel"); if t then t.offset = t.offset or {}; t.offset.y = tonumber(v) or 0; applyNameLevelText() end end,
                             },
                         })
@@ -1605,7 +1631,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "X",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensurePortraitDB() or {}
+                                    local t = getPortraitDB() or {}
                                     return tonumber(t.offsetX) or 0
                                 end,
                                 set = function(v)
@@ -1619,7 +1645,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 axisLabel = "Y",
                                 min = -100, max = 100, step = 1,
                                 get = function()
-                                    local t = ensurePortraitDB() or {}
+                                    local t = getPortraitDB() or {}
                                     return tonumber(t.offsetY) or 0
                                 end,
                                 set = function(v)
@@ -1637,7 +1663,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Portrait Size (Scale)",
                             min = 50, max = 200, step = 1,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return tonumber(t.scale) or 100
                             end,
                             set = function(v)
@@ -1654,7 +1680,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Portrait Zoom",
                             min = 100, max = 200, step = 1,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return tonumber(t.zoom) or 100
                             end,
                             set = function(v)
@@ -1667,7 +1693,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Use Full Circle Mask",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return t.useFullCircleMask == true
                             end,
                             set = function(v)
@@ -1683,7 +1709,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Use Custom Border",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return t.portraitBorderEnable == true
                             end,
                             set = function(v)
@@ -1698,7 +1724,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.portraitBorderValues,
                             order = UF.portraitBorderOrder,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return t.portraitBorderStyle or "texture_c"
                             end,
                             set = function(v)
@@ -1712,7 +1738,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Border Inset",
                             min = 1, max = 8, step = 0.5, precision = 1,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local v = tonumber(t.portraitBorderThickness) or 1
                                 return math.max(1, math.min(8, math.floor(v * 2 + 0.5) / 2))
                             end,
@@ -1728,7 +1754,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.portraitBorderColorValues,
                             order = UF.portraitBorderColorOrder,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return t.portraitBorderColorMode or "texture"
                             end,
                             set = function(v)
@@ -1738,7 +1764,7 @@ function UF.RenderPlayer(panel, scrollContent)
                                 applyPortrait()
                             end,
                             getColor = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local c = t.portraitBorderTintColor or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
                             end,
@@ -1757,7 +1783,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Personal Text",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return not not t.damageTextDisabled
                             end,
                             set = function(v)
@@ -1770,7 +1796,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddFontSelector({
                             label = "Personal Text Font",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local s = t.damageText or {}
                                 return s.fontFace or "FRIZQT__"
                             end,
@@ -1787,7 +1813,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             values = UF.fontStyleValues,
                             order = UF.fontStyleOrder,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local s = t.damageText or {}
                                 return s.style or "OUTLINE"
                             end,
@@ -1803,7 +1829,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             label = "Personal Text Size",
                             min = 6, max = 48, step = 1,
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local s = t.damageText or {}
                                 return tonumber(s.size) or 14
                             end,
@@ -1818,7 +1844,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddColorPicker({
                             label = "Personal Text Color",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 local s = t.damageText or {}
                                 local c = s.color or {1, 1, 1, 1}
                                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -1838,7 +1864,7 @@ function UF.RenderPlayer(panel, scrollContent)
                         tabInner:AddToggle({
                             label = "Hide Portrait",
                             get = function()
-                                local t = ensurePortraitDB() or {}
+                                local t = getPortraitDB() or {}
                                 return not not t.hidePortrait
                             end,
                             set = function(v)
@@ -1872,7 +1898,7 @@ function UF.RenderPlayer(panel, scrollContent)
                 max = 100,
                 step = 1,
                 get = function()
-                    local t = ensureUFDB() or {}
+                    local t = getUFDB() or {}
                     return tonumber(t.opacityOutOfCombat) or 100
                 end,
                 set = function(v)
@@ -1890,7 +1916,7 @@ function UF.RenderPlayer(panel, scrollContent)
                 max = 100,
                 step = 1,
                 get = function()
-                    local t = ensureUFDB() or {}
+                    local t = getUFDB() or {}
                     return tonumber(t.opacityInCombat) or 100
                 end,
                 set = function(v)
@@ -1907,7 +1933,7 @@ function UF.RenderPlayer(panel, scrollContent)
                 max = 100,
                 step = 1,
                 get = function()
-                    local t = ensureUFDB() or {}
+                    local t = getUFDB() or {}
                     return tonumber(t.opacityWithTarget) or 100
                 end,
                 set = function(v)
@@ -1935,7 +1961,7 @@ function UF.RenderPlayer(panel, scrollContent)
             inner:AddToggle({
                 label = "Hide Role Icon",
                 get = function()
-                    local t = ensureMiscDB() or {}
+                    local t = getMiscDB() or {}
                     return not not t.hideRoleIcon
                 end,
                 set = function(v)
@@ -1949,7 +1975,7 @@ function UF.RenderPlayer(panel, scrollContent)
             inner:AddToggle({
                 label = "Hide Group Number",
                 get = function()
-                    local t = ensureMiscDB() or {}
+                    local t = getMiscDB() or {}
                     return not not t.hideGroupNumber
                 end,
                 set = function(v)
@@ -1963,7 +1989,7 @@ function UF.RenderPlayer(panel, scrollContent)
             inner:AddToggle({
                 label = "Hide PvP Icons",
                 get = function()
-                    local t = ensureMiscDB() or {}
+                    local t = getMiscDB() or {}
                     return not not t.hidePvPIcons
                 end,
                 set = function(v)
@@ -1978,7 +2004,7 @@ function UF.RenderPlayer(panel, scrollContent)
                 label = "Allow Off-Screen Dragging",
                 description = "Allows moving frames closer to screen edges.",
                 get = function()
-                    local t = ensureMiscDB() or {}
+                    local t = getMiscDB() or {}
                     return not not t.allowOffscreenDrag
                 end,
                 set = function(v)
