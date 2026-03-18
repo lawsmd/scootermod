@@ -1170,7 +1170,7 @@ ApplyTextToGroup = function(groupIndex)
 
     for _, icon in ipairs(icons) do
         -- Cooldown text (style the Cooldown frame's internal FontString)
-        if db.textCooldown and next(db.textCooldown) then
+        if db.textCooldown then
             local cdFrame = icon.Cooldown
             if cdFrame and cdFrame.GetRegions then
                 for _, region in ipairs({cdFrame:GetRegions()}) do
@@ -1189,7 +1189,7 @@ ApplyTextToGroup = function(groupIndex)
         end
 
         -- Charge/stack count text
-        if db.textStacks and next(db.textStacks) then
+        if db.textStacks then
             ApplyTextStyle(icon.CountText, db.textStacks, 12)
             local ox = (db.textStacks.offset and db.textStacks.offset.x) or 0
             local oy = (db.textStacks.offset and db.textStacks.offset.y) or 0
