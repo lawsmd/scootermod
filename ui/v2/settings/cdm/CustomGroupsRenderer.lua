@@ -31,7 +31,6 @@ local function CreateCustomGroupRenderer(groupIndex)
         local h = Helpers.CreateComponentHelpers(componentId)
         local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
         local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
-        local textColorDurationValues, textColorDurationOrder = Helpers.textColorDurationValues, Helpers.textColorDurationOrder
 
         -- Preview
         builder:AddPreview({
@@ -417,8 +416,8 @@ local function CreateCustomGroupRenderer(groupIndex)
 
                             tabBuilder:AddSelectorColorPicker({
                                 label = "Font Color",
-                                values = textColorDurationValues,
-                                order = textColorDurationOrder,
+                                values = textColorValues,
+                                order = textColorOrder,
                                 get = function() return getCooldownSetting("colorMode", "default") end,
                                 set = function(v) setCooldownSetting("colorMode", v or "default") end,
                                 getColor = function()

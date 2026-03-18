@@ -8,6 +8,31 @@ function addon.LightenColor(r, g, b, ratio)
     return r + (1.0 - r) * t, g + (1.0 - g) * t, b + (1.0 - b) * t
 end
 
+-- Darken a color by mixing toward black.
+-- ratio 0.0 = unchanged, 1.0 = black
+function addon.DarkenColor(r, g, b, ratio)
+    local t = ratio or 0.15
+    return r * (1 - t), g * (1 - t), b * (1 - t)
+end
+
+-- Curated gradient endpoint colors per class.
+-- Each is a brighter, hue-shifted variant that creates a richer ramp than generic lightening.
+addon.CLASS_GRADIENT_ENDPOINTS = {
+    DEATHKNIGHT = { 1.00, 0.35, 0.30 },
+    DEMONHUNTER = { 0.88, 0.45, 1.00 },
+    DRUID       = { 1.00, 0.75, 0.35 },
+    EVOKER      = { 0.40, 0.85, 0.75 },
+    HUNTER      = { 0.85, 1.00, 0.60 },
+    MAGE        = { 0.55, 0.92, 1.00 },
+    MONK        = { 0.35, 1.00, 0.80 },
+    PALADIN     = { 1.00, 0.78, 0.88 },
+    PRIEST      = { 1.00, 1.00, 0.85 },
+    ROGUE       = { 1.00, 1.00, 0.70 },
+    SHAMAN      = { 0.30, 0.70, 1.00 },
+    WARLOCK     = { 0.75, 0.55, 1.00 },
+    WARRIOR     = { 0.95, 0.80, 0.60 },
+}
+
 -- Strip WoW escape sequences (|cff..., |r, |T...|t, |A...|a, |n) from a string.
 local function stripEscapes(text)
     local s = text

@@ -41,6 +41,17 @@ local function resolveGradientColors(colorMode, styleCfg)
     local r1, g1, b1
     if colorMode == "classGradient" and addon.GetClassColorRGB then
         r1, g1, b1 = addon.GetClassColorRGB("player")
+        r1, g1, b1 = r1 or 1, g1 or 1, b1 or 1
+        -- Curated per-class endpoints with darkened start for richer gradients
+        local _, classToken = UnitClass("player")
+        local endpoints = classToken and addon.CLASS_GRADIENT_ENDPOINTS and addon.CLASS_GRADIENT_ENDPOINTS[classToken]
+        if endpoints then
+            local dr, dg, db = addon.DarkenColor(r1, g1, b1)
+            return dr, dg, db, endpoints[1], endpoints[2], endpoints[3]
+        end
+        -- Fallback: generic lighten formula
+        local r2, g2, b2 = addon.LightenColor(r1, g1, b1, SPELL_LIGHTEN_RATIO)
+        return r1, g1, b1, r2, g2, b2
     end
     if colorMode == "customGradient" then
         local c = styleCfg.color or {1, 1, 1, 1}

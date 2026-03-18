@@ -27,7 +27,6 @@ function UtilityCooldowns.Render(panel, scrollContent)
     local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
     local syncEditModeSetting = h.sync
     local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
-    local textColorDurationValues, textColorDurationOrder = Helpers.textColorDurationValues, Helpers.textColorDurationOrder
 
     -- Collapsible section: Positioning
     builder:AddCollapsibleSection({
@@ -471,7 +470,7 @@ function UtilityCooldowns.Render(panel, scrollContent)
                         })
                         tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            values = textColorDurationValues, order = textColorDurationOrder,
+                            values = textColorValues, order = textColorOrder,
                             get = function() return getCooldownSetting("colorMode", "default") end,
                             set = function(v) setCooldownSetting("colorMode", v or "default") end,
                             getColor = function()

@@ -288,11 +288,6 @@ local function ReleaseIcon(groupIndex, icon)
     end
     icon.atlasBorder:Hide()
     icon:SetScript("OnUpdate", nil)
-    icon._cdTimerFS = nil
-    icon._cdStart = nil
-    icon._cdDuration = nil
-    icon._cdLastColorUpdate = nil
-    icon._cdDurationColorEnabled = nil
     icon.entry = nil
     icon.entryIndex = nil
     table.insert(iconPools[groupIndex], icon)
@@ -483,58 +478,6 @@ local function ApplyTextStyle(fontString, cfg, defaultSize)
 end
 
 --------------------------------------------------------------------------------
--- Duration Color OnUpdate (Custom Group icons)
---------------------------------------------------------------------------------
-
-local CG_DURATION_COLOR_THROTTLE = 0.33
-
-local function cgDurationColorOnUpdate(icon, elapsed)
-    icon._cdLastColorUpdate = (icon._cdLastColorUpdate or 0) + elapsed
-    if icon._cdLastColorUpdate < CG_DURATION_COLOR_THROTTLE then return end
-    icon._cdLastColorUpdate = 0
-
-    local start = icon._cdStart
-    local duration = icon._cdDuration
-    if not start or not duration then return end
-
-    local okDur, durPositive = pcall(function() return duration > 0 end)
-    if not okDur or not durPositive then return end
-
-    local now = GetTime()
-    local ok, remaining = pcall(function() return (start + duration) - now end)
-    if not ok or type(remaining) ~= "number" then return end
-
-    if remaining <= 0 then
-        icon:SetScript("OnUpdate", nil)
-        icon._cdLastColorUpdate = nil
-        return
-    end
-
-    local pct = remaining / duration
-    if addon.BarsTextures and addon.BarsTextures.getDurationColorRGB then
-        local r, g, b = addon.BarsTextures.getDurationColorRGB(pct)
-        local fs = icon._cdTimerFS
-        if fs and fs.SetTextColor then
-            pcall(fs.SetTextColor, fs, r, g, b, 1)
-        end
-    end
-end
-
-local function manageCGDurationColorOnUpdate(icon)
-    if not icon then return end
-    if icon._cdDurationColorEnabled and icon._cdTimerFS and icon._cdStart and icon._cdDuration then
-        local okDur, durPositive = pcall(function() return icon._cdDuration > 0 end)
-        if okDur and durPositive then
-            icon._cdLastColorUpdate = 0
-            icon:SetScript("OnUpdate", cgDurationColorOnUpdate)
-            return
-        end
-    end
-    icon:SetScript("OnUpdate", nil)
-    icon._cdLastColorUpdate = nil
-end
-
---------------------------------------------------------------------------------
 -- Cooldown Tracking
 --------------------------------------------------------------------------------
 
@@ -578,23 +521,13 @@ local function RefreshSpellCooldown(icon)
                     -- All charges spent — show cooldown swipe
                     if chargeInfo.cooldownStartTime > 0 then
                         icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-                        icon._cdStart = chargeInfo.cooldownStartTime
-                        icon._cdDuration = chargeInfo.cooldownDuration
-                        manageCGDurationColorOnUpdate(icon)
                     end
                 elseif chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
                     -- Recharging — show swipe
                     icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-                    icon._cdStart = chargeInfo.cooldownStartTime
-                    icon._cdDuration = chargeInfo.cooldownDuration
-                    manageCGDurationColorOnUpdate(icon)
                 else
                     -- All charges full
                     icon.Cooldown:Clear()
-                    icon._cdStart = nil
-                    icon._cdDuration = nil
-                    icon:SetScript("OnUpdate", nil)
-                    icon._cdLastColorUpdate = nil
                 end
                 return cdInfo
             end
@@ -602,9 +535,6 @@ local function RefreshSpellCooldown(icon)
         else
             -- Secret: SetCooldown + SetText both accept secret values natively
             icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-            icon._cdStart = chargeInfo.cooldownStartTime
-            icon._cdDuration = chargeInfo.cooldownDuration
-            manageCGDurationColorOnUpdate(icon)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
             return cdInfo
@@ -627,22 +557,12 @@ local function RefreshSpellCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-            icon._cdStart = cdInfo.startTime
-            icon._cdDuration = cdInfo.duration
-            manageCGDurationColorOnUpdate(icon)
         else
             icon.Cooldown:Clear()
-            icon._cdStart = nil
-            icon._cdDuration = nil
-            icon:SetScript("OnUpdate", nil)
-            icon._cdLastColorUpdate = nil
         end
     else
         -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
         icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-        icon._cdStart = cdInfo.startTime
-        icon._cdDuration = cdInfo.duration
-        manageCGDurationColorOnUpdate(icon)
     end
 
     return cdInfo
@@ -659,22 +579,12 @@ local function RefreshItemCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(startTime, duration)
-            icon._cdStart = startTime
-            icon._cdDuration = duration
-            manageCGDurationColorOnUpdate(icon)
         else
             icon.Cooldown:Clear()
-            icon._cdStart = nil
-            icon._cdDuration = nil
-            icon:SetScript("OnUpdate", nil)
-            icon._cdLastColorUpdate = nil
         end
     elseif startTime and duration then
         -- Secret fallback: pass directly to SetCooldown
         icon.Cooldown:SetCooldown(startTime, duration)
-        icon._cdStart = startTime
-        icon._cdDuration = duration
-        manageCGDurationColorOnUpdate(icon)
     end
 
     -- Stack count
@@ -1258,8 +1168,6 @@ ApplyTextToGroup = function(groupIndex)
     local db = component.db
     local icons = activeIcons[groupIndex]
 
-    local durationColorEnabled = db.textCooldown and db.textCooldown.colorMode == "duration"
-
     for _, icon in ipairs(icons) do
         -- Cooldown text (style the Cooldown frame's internal FontString)
         if db.textCooldown and next(db.textCooldown) then
@@ -1274,15 +1182,11 @@ ApplyTextToGroup = function(groupIndex)
                             region:ClearAllPoints()
                             region:SetPoint("CENTER", cdFrame, "CENTER", ox, oy)
                         end
-                        icon._cdTimerFS = region
                         break
                     end
                 end
             end
         end
-
-        icon._cdDurationColorEnabled = durationColorEnabled
-        manageCGDurationColorOnUpdate(icon)
 
         -- Charge/stack count text
         if db.textStacks and next(db.textStacks) then

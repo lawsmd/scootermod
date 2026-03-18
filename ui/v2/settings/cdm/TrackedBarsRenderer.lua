@@ -25,7 +25,6 @@ function TrackedBars.Render(panel, scrollContent)
     local setSetting = h.setAndApply
     local syncEditModeSetting = h.sync
     local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
-    local textColorDurationValues, textColorDurationOrder = Helpers.textColorDurationValues, Helpers.textColorDurationOrder
 
     local function getIconBorderOptions()
         return Helpers.getIconBorderOptions({{"none","None"}})
@@ -426,8 +425,8 @@ function TrackedBars.Render(panel, scrollContent)
                         -- Font Color picker
                         tabBuilder:AddSelectorColorPicker({
                             label = "Font Color",
-                            values = textColorDurationValues,
-                            order = textColorDurationOrder,
+                            values = textColorValues,
+                            order = textColorOrder,
                             get = function() return getDurationSetting("colorMode", "default") end,
                             set = function(v) setDurationSetting("colorMode", v or "default") end,
                             getColor = function()
