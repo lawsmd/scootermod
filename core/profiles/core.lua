@@ -7,9 +7,6 @@ local LEO = LibStub and LibStub("LibEditModeOverride-1.0")
 
 local DEBUG_PREFIX = "|cffa0ff00ScootProfiles|r"
 
-local profilesTraceBuffer = {}
-local PROFILES_TRACE_MAX = 500
-
 local function Debug(...)
     if not addon or not addon._dbgProfiles then return end
     local messages = {}
@@ -17,37 +14,24 @@ local function Debug(...)
         messages[#messages + 1] = tostring(select(i, ...))
     end
     local msg = table.concat(messages, " ")
-    -- Always capture to trace buffer when tracing is enabled
-    local timestamp = GetTime and string.format("%.3f", GetTime()) or "?"
-    local entry = "[" .. timestamp .. "] " .. msg
-    table.insert(profilesTraceBuffer, entry)
-    if #profilesTraceBuffer > PROFILES_TRACE_MAX then
-        table.remove(profilesTraceBuffer, 1)
+    if addon.Print then
+        addon:Print(DEBUG_PREFIX .. " " .. msg)
+    else
+        print(DEBUG_PREFIX, msg)
     end
 end
 
-function addon.SetProfilesTrace(enabled)
-    addon._dbgProfiles = enabled
-    if enabled then
-        wipe(profilesTraceBuffer)
+-- Persistent debug log that survives /reload (stored in addon.db.global)
+local function LogReload(event, data)
+    local global = addon and addon.db and addon.db.global
+    if not global then return end
+    if not global._profileSwitchLog then global._profileSwitchLog = {} end
+    local entry = { t = GetTime and string.format("%.3f", GetTime()) or "?", e = event }
+    if data then
+        for k, v in pairs(data) do entry[k] = tostring(v) end
     end
-end
-
-function addon.ShowProfilesTraceLog()
-    if #profilesTraceBuffer == 0 then
-        if addon.DebugShowWindow then
-            addon.DebugShowWindow("Profiles Trace", "(trace buffer empty — enable with /scoot debug profiles trace on, then switch profiles)")
-        end
-        return
-    end
-    local text = table.concat(profilesTraceBuffer, "\n")
-    if addon.DebugShowWindow then
-        addon.DebugShowWindow("Profiles Trace (" .. #profilesTraceBuffer .. " entries)", text)
-    end
-end
-
-function addon.ClearProfilesTrace()
-    wipe(profilesTraceBuffer)
+    table.insert(global._profileSwitchLog, entry)
+    while #global._profileSwitchLog > 50 do table.remove(global._profileSwitchLog, 1) end
 end
 
 local function deepCopy(tbl)
@@ -715,6 +699,7 @@ function Profiles:PromptReloadToProfile(layoutName, meta)
             if addon and addon.db then
                 persistAceProfileKeyForChar(addon.db, layoutName)
             end
+            LogReload("onAccept", { target = layoutName })
             persistEditModeActiveLayoutByName(layoutName)
             ReloadUI()
         end,
@@ -773,6 +758,8 @@ function Profiles:Initialize()
     self._lastRequestedLayout = nil
     self._pendingSpecReload = nil
     self._lastKnownSpecID = nil
+    self._reloadActivationLock = nil
+    self._reloadActivationLockUntil = nil
     self._initialized = true
     Debug("Initialize")
 
@@ -787,6 +774,7 @@ function Profiles:Initialize()
     -- Consume pending profile activation as early as possible (immediately after DB exists).
     -- Ensures that the very first post-reload session starts on the new profile/layout
     -- before any styling passes run, preventing "sticky" old-profile visuals.
+    LogReload("Init:start", { aceProfile = self.db:GetCurrentProfile(), pending = self.db.global and self.db.global.pendingProfileActivation and self.db.global.pendingProfileActivation.layoutName })
     do
         local global = self.db and self.db.global
         local p = global and global.pendingProfileActivation
@@ -796,6 +784,10 @@ function Profiles:Initialize()
             -- still set the AceDB profile and queue the layout apply for when layouts load.
             self:SwitchToProfile(p.layoutName, { reason = "PendingProfileActivation", force = true })
             global.pendingProfileActivation = nil
+            -- Prevent RefreshFromEditMode from overriding the profile while LEO cache may be stale
+            self._reloadActivationLock = p.layoutName
+            self._reloadActivationLockUntil = (GetTime and GetTime() or 0) + 3
+            LogReload("Init:afterSwitch", { aceProfile = self.db:GetCurrentProfile(), pendingActive = self._pendingActiveLayout, lock = p.layoutName })
             -- Note: we intentionally do not print a chat message for spec-triggered reloads.
         end
     end
@@ -963,6 +955,7 @@ function Profiles:_setActiveProfile(profileKey, opts)
     opts = opts or {}
     local current = self.db:GetCurrentProfile()
     Debug("_setActiveProfile", profileKey, "current=" .. tostring(current), opts.skipLayout and "[skipLayout]" or "", opts.force and "[force]" or "")
+    LogReload("setActive", { target = profileKey, current = current, skipLayout = opts.skipLayout })
 
     self:EnsureProfileExists(profileKey, { preset = self:IsPreset(profileKey) })
 
@@ -1118,6 +1111,7 @@ function Profiles:RefreshFromEditMode(origin)
     local presetLayouts = LEO:GetPresetLayoutNames() or {}
     local activeLayout = LEO:GetActiveLayout()
     Debug("RefreshFromEditMode", origin or "?", "active=" .. tostring(activeLayout), "pending=" .. tostring(self._pendingActiveLayout))
+    LogReload("Refresh:" .. tostring(origin or "?"), { leoActive = activeLayout, pending = self._pendingActiveLayout, profile = self.db:GetCurrentProfile(), lock = self._reloadActivationLock })
 
     table.sort(editableLayouts, function(a, b) return tostring(a) < tostring(b) end)
     table.sort(presetLayouts, function(a, b) return tostring(a) < tostring(b) end)
@@ -1189,6 +1183,29 @@ function Profiles:RefreshFromEditMode(origin)
     end
 
     if activeLayout and self._layoutLookup[activeLayout] then
+        -- If we recently consumed a pending profile activation, don't let stale LEO override it
+        local now = GetTime and GetTime() or 0
+        if self._reloadActivationLock and self._reloadActivationLockUntil then
+            if activeLayout == self._reloadActivationLock then
+                -- LEO agrees with target; proceed normally but keep lock active
+                -- (LEO can report stale data again in subsequent calls within the same frame)
+                Debug("Reload activation lock: LEO confirms target, lock stays", activeLayout)
+                LogReload("Refresh:lockConfirmed", { lock = activeLayout })
+            elseif now < self._reloadActivationLockUntil then
+                -- LEO disagrees with our target and lock hasn't expired; don't override
+                Debug("RefreshFromEditMode blocked by reload lock",
+                      "lock=" .. tostring(self._reloadActivationLock),
+                      "LEO=" .. tostring(activeLayout))
+                LogReload("Refresh:locked", { lock = self._reloadActivationLock, leoActive = activeLayout })
+                return
+            else
+                -- Lock expired; clear and fall through to normal behavior
+                self._reloadActivationLock = nil
+                self._reloadActivationLockUntil = nil
+                Debug("Reload activation lock expired")
+                LogReload("Refresh:lockExpired", { leoActive = activeLayout })
+            end
+        end
         local options = { skipLayout = true }
         if self._pendingActiveLayout and self._pendingActiveLayout ~= activeLayout then
             options.skipLayout = self:IsPostCopySuppressed() and true or false
@@ -1225,6 +1242,28 @@ function Profiles:IsActiveProfilePreset()
         return false
     end
     return self:IsPreset(active)
+end
+
+function addon.DumpReloadDebugLog()
+    local log = addon.db and addon.db.global and addon.db.global._profileSwitchLog
+    if not log or #log == 0 then
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("Profile Switch Log", "(no entries)")
+        end
+        return
+    end
+    local lines = {}
+    for i, entry in ipairs(log) do
+        local parts = {}
+        for k, v in pairs(entry) do
+            parts[#parts + 1] = k .. "=" .. tostring(v)
+        end
+        table.sort(parts)
+        lines[#lines + 1] = "[" .. i .. "] " .. table.concat(parts, " | ")
+    end
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Profile Switch Log (" .. #log .. " entries)", table.concat(lines, "\n"))
+    end
 end
 
 -- Expose internals for sibling profiles files

@@ -134,7 +134,7 @@ function SlashCmdList.SCOOT(msg, editBox)
         if sub1 == "" then
             addon:Print("Usage:")
             addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|quests|<FrameName>>")
-            addon:Print("  /scoot debug profiles export [\"Profile Name\"]  |  trace <on|off>  |  log  |  clear")
+            addon:Print("  /scoot debug profiles export [\"Profile Name\"]  |  reload")
             addon:Print("  /scoot debug consoleport export")
             addon:Print("  /scoot debug dm export [overall|current|expired]")
             addon:Print("  /scoot debug dm frames")
@@ -152,33 +152,16 @@ function SlashCmdList.SCOOT(msg, editBox)
                 end
                 return
             end
-            if sub2 == "trace" then
-                local toggle = args[4]
-                if toggle == "on" then
-                    if addon.SetProfilesTrace then addon.SetProfilesTrace(true)
-                    else addon:Print("Profiles trace not available.") end
-                elseif toggle == "off" then
-                    if addon.SetProfilesTrace then addon.SetProfilesTrace(false)
-                    else addon:Print("Profiles trace not available.") end
+            if sub2 == "reload" then
+                if addon.DumpReloadDebugLog then
+                    addon.DumpReloadDebugLog()
                 else
-                    addon:Print("Usage: /scoot debug profiles trace <on|off>")
+                    addon:Print("Reload debug log not available.")
                 end
                 return
             end
-            if sub2 == "log" then
-                if addon.ShowProfilesTraceLog then addon.ShowProfilesTraceLog()
-                else addon:Print("Profiles trace log not available.") end
-                return
-            end
-            if sub2 == "clear" then
-                if addon.ClearProfilesTrace then addon.ClearProfilesTrace()
-                else addon:Print("Profiles trace clear not available.") end
-                return
-            end
             addon:Print("Usage: /scoot debug profiles export [\"Profile Name\"]")
-            addon:Print("       /scoot debug profiles trace <on|off>")
-            addon:Print("       /scoot debug profiles log")
-            addon:Print("       /scoot debug profiles clear")
+            addon:Print("       /scoot debug profiles reload")
             return
         end
 

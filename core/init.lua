@@ -79,6 +79,7 @@ function addon:GetDefaults()
         global = {
             pendingPresetActivation = nil,
             pendingProfileActivation = nil,
+            _profileSwitchLog = nil,  -- persists debug entries across reload
             -- Settings Panel (global accent color, position, size)
             accentColor = { r = 0, g = 1, b = 0.255, a = 1 },  -- Matrix green #00FF41
             windowPosition = nil,  -- Saved as { point, relPoint, x, y }
