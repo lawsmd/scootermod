@@ -397,7 +397,7 @@ local function ensureRaidNameOverlay(frame, cfg)
             _G.hooksecurefunc(frame.name, "SetText", function(_, text)
                 if ownerState and ownerState.nameOverlayText and ownerState.nameOverlayActive then
                     -- text may be a secret value in 12.0; branch on type
-                    if type(text) == "string" then
+                    if type(text) == "string" and not issecretvalue(text) then
                         local displayText = text
                         -- Strip realm suffix: "Name-Realm" -> "Name"
                         -- WoW names cannot contain hyphens; hyphen always delimits realm.
@@ -457,7 +457,7 @@ local function ensureRaidNameOverlay(frame, cfg)
     local textCopied = false
     if frameState and frameState.nameOverlayText and frame.name and frame.name.GetText then
         local ok, currentText = pcall(frame.name.GetText, frame.name)
-        if ok and type(currentText) == "string" and currentText ~= "" then
+        if ok and type(currentText) == "string" and not issecretvalue(currentText) and currentText ~= "" then
             local displayText = currentText
             -- Strip realm suffix: "Name-Realm" -> "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
@@ -471,7 +471,7 @@ local function ensureRaidNameOverlay(frame, cfg)
     -- Fallback: if GetText failed (secret/nil), try GetUnitName
     if not textCopied and frameState and frameState.nameOverlayText and frame.unit then
         local unitOk, unitName = pcall(GetUnitName, frame.unit, true)
-        if unitOk and type(unitName) == "string" and unitName ~= "" then
+        if unitOk and type(unitName) == "string" and not issecretvalue(unitName) and unitName ~= "" then
             local displayText = unitName
             -- Strip realm suffix: "Name-Realm" -> "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
@@ -962,7 +962,7 @@ local function ensureRaidStatusTextOverlay(frame, cfg)
 
         if blizzST.GetText then
             local ok, currentText = pcall(blizzST.GetText, blizzST)
-            if ok and type(currentText) == "string" and currentText ~= "" then
+            if ok and type(currentText) == "string" and not issecretvalue(currentText) and currentText ~= "" then
                 frameState.statusTextOverlay:SetText(currentText)
             elseif ok then
                 -- Secret or non-string -- forward directly
