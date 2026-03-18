@@ -72,7 +72,7 @@ local function pixelFloor(uiValue, frame)
     local scale = 1
     if frame and frame.GetEffectiveScale then
         local ok, es = pcall(frame.GetEffectiveScale, frame)
-        if ok and type(es) == "number" and es > 0 then
+        if ok and type(es) == "number" and not issecretvalue(es) and es > 0 then
             scale = es
         end
     else
@@ -577,7 +577,7 @@ do
 
         -- Hide overlay if the StatusBar fill has zero effective width (boss with no power)
         local okW, fillW = pcall(statusBarTex.GetWidth, statusBarTex)
-        if okW and type(fillW) == "number" and fillW <= 0.1 then
+        if okW and type(fillW) == "number" and not issecretvalue(fillW) and fillW <= 0.1 then
             overlay:Hide()
             return
         end
@@ -2782,7 +2782,7 @@ do
                             local bossHasNoPower = false
                             if pb.GetMinMaxValues then
                                 local okMM, pMin, pMax = pcall(pb.GetMinMaxValues, pb)
-                                if okMM and type(pMax) == "number" and pMax <= 0 then
+                                if okMM and type(pMax) == "number" and not issecretvalue(pMax) and pMax <= 0 then
                                     bossHasNoPower = true
                                 end
                             end
@@ -4342,13 +4342,13 @@ do
                         if not apbState.ufOrigWidth then
                             if apb.GetWidth then
                                 local ok, w = pcall(apb.GetWidth, apb)
-                                if ok and w then apbState.ufOrigWidth = w end
+                                if ok and w and not issecretvalue(w) then apbState.ufOrigWidth = w end
                             end
                         end
                         if not apbState.ufOrigHeight then
                             if apb.GetHeight then
                                 local ok, h = pcall(apb.GetHeight, apb)
-                                if ok and h then apbState.ufOrigHeight = h end
+                                if ok and h and not issecretvalue(h) then apbState.ufOrigHeight = h end
                             end
                         end
                         if not apbState.ufOrigPoints then
@@ -4432,7 +4432,7 @@ do
                     if pb and not pbState.ufOrigWidth then
                         if pb.GetWidth then
                             local ok, w = pcall(pb.GetWidth, pb)
-                            if ok and w then pbState.ufOrigWidth = w end
+                            if ok and w and not issecretvalue(w) then pbState.ufOrigWidth = w end
                         end
                     end
 
@@ -4586,7 +4586,7 @@ do
 					    if tex and texState and not texState.origCapturedHeight then
 						    if tex.GetHeight then
 							    local ok, h = pcall(tex.GetHeight, tex)
-							    if ok and h then texState.origHeight = h end
+							    if ok and h and not issecretvalue(h) then texState.origHeight = h end
 						    end
 						    -- Texture anchor points already captured by width scaling
 						    texState.origCapturedHeight = true
@@ -4594,7 +4594,7 @@ do
 					    if mask and maskState and not maskState.origCapturedHeight then
 						    if mask.GetHeight then
 							    local ok, h = pcall(mask.GetHeight, mask)
-							    if ok and h then maskState.origHeight = h end
+							    if ok and h and not issecretvalue(h) then maskState.origHeight = h end
 						    end
 						    -- Mask anchor points already captured by width scaling
 						    maskState.origCapturedHeight = true
@@ -4638,7 +4638,7 @@ do
 					    if pb and not pbState.ufOrigHeight then
 						    if pb.GetHeight then
 							    local ok, h = pcall(pb.GetHeight, pb)
-							    if ok and h then pbState.ufOrigHeight = h end
+							    if ok and h and not issecretvalue(h) then pbState.ufOrigHeight = h end
 						    end
 					    end
 					
