@@ -12,6 +12,19 @@ local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> 
 -- Config version tracking: skip re-styling auras when config hasn't changed (OPT-01)
 local configVersions = {}  -- componentId -> integer
 
+-- Atlas lookup for debuff border overlays (matches AuraUtil.GetDebuffDisplayInfoTable)
+local DEBUFF_BORDER_ATLASES = {
+    ["Magic"]   = { basic = "ui-debuff-border-magic-noicon",   dispel = "ui-debuff-border-magic-icon" },
+    ["Curse"]   = { basic = "ui-debuff-border-curse-noicon",   dispel = "ui-debuff-border-curse-icon" },
+    ["Disease"] = { basic = "ui-debuff-border-disease-noicon", dispel = "ui-debuff-border-disease-icon" },
+    ["Poison"]  = { basic = "ui-debuff-border-poison-noicon",  dispel = "ui-debuff-border-poison-icon" },
+    ["Bleed"]   = { basic = "ui-debuff-border-bleed-noicon",   dispel = "ui-debuff-border-bleed-icon" },
+    ["None"]    = { basic = "ui-debuff-border-default-noicon" },
+}
+
+-- Cache debuff type per aura button (weak-key, populated by AuraUtil.SetAuraBorderAtlas hook)
+local debuffTypeCache = setmetatable({}, { __mode = "k" })
+
 function addon.BumpAuraConfigVersion(componentId)
     configVersions[componentId] = (configVersions[componentId] or 0) + 1
 end
@@ -34,6 +47,57 @@ local function setRegionVisible(region, visible)
         if region.Hide then region:Hide() end
         if region.SetAlpha then region:SetAlpha(0) end
     end
+end
+
+-- Creates an addon-owned overlay texture on the aura button (C-level, no Lua table taint).
+-- Stores in auraState[aura][stateKey] for reuse.
+local function ensureOverlayTexture(aura, stateKey, drawLayer, sublevel)
+    local state = getState(aura)
+    if not state then return nil end
+    if state[stateKey] then return state[stateKey] end
+    local ok, tex = pcall(aura.CreateTexture, aura, nil, drawLayer or "OVERLAY", sublevel or 1)
+    if not ok or not tex then return nil end
+    state[stateKey] = tex
+    return tex
+end
+
+-- Sizes and positions the debuff border overlay to match the non-square icon shape.
+-- Uses cached dispel type from AuraUtil.SetAuraBorderAtlas hook to select the correct atlas.
+local function updateDebuffBorderOverlay(aura, state, iconWidth, iconHeight)
+    if not state or not state.debuffBorderOverlay then return end
+    local overlay = state.debuffBorderOverlay
+    -- DebuffBorder XML: 40x40 for 30x30 icon
+    local bw = iconWidth * (40 / 30)
+    local bh = iconHeight * (40 / 30)
+    overlay:SetSize(bw, bh)
+    overlay:ClearAllPoints()
+    local icon = aura.Icon or aura.icon or aura.IconTexture
+    overlay:SetPoint("CENTER", icon or aura, "CENTER")
+    -- Apply atlas from cached debuff type
+    local cached = debuffTypeCache[aura]
+    local dt = cached and cached.dispelType or "None"
+    local sd = cached and cached.showDispelType
+    local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
+    local atlas = (sd and entry.dispel) or entry.basic
+    if atlas then
+        pcall(overlay.SetAtlas, overlay, atlas, false)
+    end
+    overlay:Show()
+end
+
+-- Sizes and positions the temp enchant border overlay to match the non-square icon shape.
+local function updateTempEnchantBorderOverlay(aura, state, iconWidth, iconHeight)
+    if not state or not state.tempEnchantBorderOverlay then return end
+    local overlay = state.tempEnchantBorderOverlay
+    -- TempEnchantBorder XML: 32x32 for 30x30 icon
+    local bw = iconWidth * (32 / 30)
+    local bh = iconHeight * (32 / 30)
+    overlay:SetSize(bw, bh)
+    overlay:ClearAllPoints()
+    local icon = aura.Icon or aura.icon or aura.IconTexture
+    overlay:SetPoint("CENTER", icon or aura, "CENTER")
+    pcall(overlay.SetTexture, overlay, "Interface\\Buttons\\UI-TempEnchant-Border")
+    overlay:Show()
 end
 
 function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
@@ -294,98 +358,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         CleanupIconBorderAttachments(icon)
     end
 
-    local function captureDebuffBorderDefaults(aura, icon)
-        if componentId ~= "debuffs" or not aura or not icon then return end
-        local border = aura.DebuffBorder
-        if not border then return end
-
-        local iconState = getState(icon)
-        local borderState = getState(border)
-        if not iconState or not borderState then return end
-
-        -- Use known XML template constants from BuffFrameTemplates.xml:
-        -- AuraButtonArtTemplate Icon: <Size x="30" y="30"/>
-        -- AuraButtonArtTemplate DebuffBorder: <Size x="40" y="40"/>
-        if not iconState.debuffBaseWidth then iconState.debuffBaseWidth = 30 end
-        if not iconState.debuffBaseHeight then iconState.debuffBaseHeight = 30 end
-        if not borderState.debuffBaseWidth then borderState.debuffBaseWidth = 40 end
-        if not borderState.debuffBaseHeight then borderState.debuffBaseHeight = 40 end
-    end
-
-    local function resizeDebuffBorder(aura, icon, targetWidth, targetHeight)
-        if componentId ~= "debuffs" or not aura or not icon then return end
-        local border = aura.DebuffBorder
-        if not border or not border.SetSize then return end
-
-        local iconState = getState(icon)
-        local borderState = getState(border)
-
-        local baseIconWidth = iconState and iconState.debuffBaseWidth
-        local baseIconHeight = iconState and iconState.debuffBaseHeight
-        local baseBorderWidth = borderState and borderState.debuffBaseWidth
-        local baseBorderHeight = borderState and borderState.debuffBaseHeight
-
-        local width = targetWidth or icon:GetWidth()
-        local height = targetHeight or icon:GetHeight()
-
-        if baseIconWidth and baseIconWidth > 0 and baseBorderWidth then
-            border:SetWidth(baseBorderWidth * (width / baseIconWidth))
-        end
-        if baseIconHeight and baseIconHeight > 0 and baseBorderHeight then
-            border:SetHeight(baseBorderHeight * (height / baseIconHeight))
-        end
-
-        if border.ClearAllPoints and border.SetPoint then
-            border:ClearAllPoints()
-            border:SetPoint("CENTER", icon, "CENTER")
-        end
-    end
-
-    local function captureTempEnchantBorderDefaults(aura, icon)
-        if not aura or not icon then return end
-        local border = aura.TempEnchantBorder
-        if not border then return end
-
-        local iconState = getState(icon)
-        local borderState = getState(border)
-        if not iconState or not borderState then return end
-
-        -- XML template constants: Icon 30x30, TempEnchantBorder 32x32
-        if not iconState.tempEnchantBaseWidth then iconState.tempEnchantBaseWidth = 30 end
-        if not iconState.tempEnchantBaseHeight then iconState.tempEnchantBaseHeight = 30 end
-        if not borderState.tempEnchantBaseWidth then borderState.tempEnchantBaseWidth = 32 end
-        if not borderState.tempEnchantBaseHeight then borderState.tempEnchantBaseHeight = 32 end
-    end
-
-    local function resizeTempEnchantBorder(aura, icon, targetWidth, targetHeight)
-        if not aura or not icon then return end
-        local border = aura.TempEnchantBorder
-        if not border or not border.SetSize then return end
-
-        local iconState = getState(icon)
-        local borderState = getState(border)
-
-        local baseIconW = iconState and iconState.tempEnchantBaseWidth
-        local baseIconH = iconState and iconState.tempEnchantBaseHeight
-        local baseBorderW = borderState and borderState.tempEnchantBaseWidth
-        local baseBorderH = borderState and borderState.tempEnchantBaseHeight
-
-        local w = targetWidth or icon:GetWidth()
-        local h = targetHeight or icon:GetHeight()
-
-        if baseIconW and baseIconW > 0 and baseBorderW then
-            border:SetWidth(baseBorderW * (w / baseIconW))
-        end
-        if baseIconH and baseIconH > 0 and baseBorderH then
-            border:SetHeight(baseBorderH * (h / baseIconH))
-        end
-
-        if border.ClearAllPoints and border.SetPoint then
-            border:ClearAllPoints()
-            border:SetPoint("CENTER", icon, "CENTER")
-        end
-    end
-
     local auraCollections = {}
     local function addCollection(list)
         if type(list) == "table" then
@@ -429,10 +401,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                 local auraVState = getState(aura)
                 if forceRestyle or not auraVState or auraVState.lastStyledVersion ~= currentVersion then
 
-                    if icon then
-                        captureDebuffBorderDefaults(aura, icon)
-                        captureTempEnchantBorderDefaults(aura, icon)
-                    end
                     if icon and icon.SetSize and width and height then
                         icon:SetSize(width, height)
                         -- Calculate texture coordinates to crop instead of stretch
@@ -454,10 +422,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                         if icon.SetTexCoord then
                             pcall(icon.SetTexCoord, icon, left, right, top, bottom)
                         end
-                    end
-                    if icon then
-                        resizeDebuffBorder(aura, icon, width, height)
-                        resizeTempEnchantBorder(aura, icon, width, height)
                     end
                     if icon then
                         -- OPT-01 Opt3: Border param cache — skip ApplyIconBorderStyle when params match
@@ -505,6 +469,38 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             clearCustomBorder(icon)
                             local iconState = getState(icon)
                             if iconState then iconState.lastBorder = nil end
+                        end
+                    end
+
+                    -- Debuff/TempEnchant border overlay management
+                    -- Runs after the border section to have final say on border visibility
+                    if componentId == "debuffs" and icon then
+                        local auraSt = getState(aura)
+                        if ratio ~= 0 and not borderEnabled then
+                            -- Detect which border type before hiding
+                            local hasTempEnchant = false
+                            if aura.TempEnchantBorder then
+                                local okV, vis = pcall(aura.TempEnchantBorder.IsShown, aura.TempEnchantBorder)
+                                if okV and vis == true then hasTempEnchant = true end
+                            end
+
+                            if hasTempEnchant then
+                                -- Temp enchant aura: overlay TempEnchantBorder
+                                setRegionVisible(aura.TempEnchantBorder, false)
+                                ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
+                                updateTempEnchantBorderOverlay(aura, auraSt, width, height)
+                                if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
+                            else
+                                -- Regular debuff: overlay DebuffBorder
+                                setRegionVisible(aura.DebuffBorder, false)
+                                ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
+                                updateDebuffBorderOverlay(aura, auraSt, width, height)
+                                if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
+                            end
+                        else
+                            -- Square icons or custom border active: hide overlays
+                            if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
+                            if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         end
                     end
 
@@ -558,6 +554,45 @@ local function ApplyAuraFrameStyling(self)
             end
         end)
         frameState.auraHooked = true
+    end
+
+    -- Install global hook on AuraUtil.SetAuraBorderAtlas for debuff type tracking
+    if not addon._DebuffBorderAtlasHookInstalled then
+        addon._DebuffBorderAtlasHookInstalled = true
+        if hooksecurefunc and AuraUtil and AuraUtil.SetAuraBorderAtlas then
+            hooksecurefunc(AuraUtil, "SetAuraBorderAtlas", function(borderRegion, dispelType, showDispelType)
+                pcall(function()
+                    if not borderRegion or not borderRegion.GetParent then return end
+                    local aura = borderRegion:GetParent()
+                    if not aura then return end
+
+                    -- Secret-safe: guard dispelType and showDispelType
+                    local dt = "None"
+                    if dispelType and not issecretvalue(dispelType) and type(dispelType) == "string" then
+                        dt = dispelType
+                    end
+                    local sd = false
+                    if showDispelType and not issecretvalue(showDispelType) then
+                        sd = not not showDispelType
+                    end
+
+                    debuffTypeCache[aura] = { dispelType = dt, showDispelType = sd }
+
+                    -- Immediately update overlay atlas if it exists and is shown
+                    local auraSt = auraState[aura]
+                    if auraSt and auraSt.debuffBorderOverlay then
+                        local okShown, shown = pcall(auraSt.debuffBorderOverlay.IsShown, auraSt.debuffBorderOverlay)
+                        if okShown and shown then
+                            local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
+                            local atlas = (sd and entry.dispel) or entry.basic
+                            if atlas then
+                                pcall(auraSt.debuffBorderOverlay.SetAtlas, auraSt.debuffBorderOverlay, atlas, false)
+                            end
+                        end
+                    end
+                end)
+            end)
+        end
     end
 
     -- OPT-01: Bump config version so ApplyStyling (profile switch, etc.) forces full re-style
