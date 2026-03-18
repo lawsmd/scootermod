@@ -207,43 +207,35 @@ local BRAND_R, BRAND_G, BRAND_B = 0.20, 0.90, 0.30
 local DEFAULT_FONTS = { "FRIZQT__", "ARIALN", "MORPHEUS", "SKURRI" }
 
 local GOOGLE_FONTS = {
-    -- Fira Sans
-    "FIRASANS_REG", "FIRASANS_LIGHT", "FIRASANS_MED", "FIRASANS_SEMIBOLD",
-    "FIRASANS_BOLD", "FIRASANS_EXTRABOLD", "FIRASANS_BLACK",
-    -- Roboto
-    "ROBOTO_REG", "ROBOTO_LIGHT", "ROBOTO_MED", "ROBOTO_SEMIBOLD",
-    "ROBOTO_BLD", "ROBOTO_EXTRABOLD", "ROBOTO_BLACK",
-    -- Roboto Condensed
-    "ROBOTO_COND_REG", "ROBOTO_COND_LIGHT", "ROBOTO_COND_MED", "ROBOTO_COND_SEMIBOLD",
-    "ROBOTO_COND_BOLD", "ROBOTO_COND_EXTRABOLD", "ROBOTO_COND_BLACK",
-    -- Roboto SemiCondensed
-    "ROBOTO_SEMICOND_REG", "ROBOTO_SEMICOND_LIGHT", "ROBOTO_SEMICOND_MED", "ROBOTO_SEMICOND_SEMIBOLD",
-    "ROBOTO_SEMICOND_BOLD", "ROBOTO_SEMICOND_EXTRABOLD", "ROBOTO_SEMICOND_BLACK",
     -- Dosis
-    "DOSIS_REG", "DOSIS_LIGHT", "DOSIS_MED", "DOSIS_SEMIBOLD",
-    "DOSIS_BOLD", "DOSIS_EXTRABOLD",
+    "DOSIS_REG", "DOSIS_BOLD", "DOSIS_LIGHT", "DOSIS_MED",
     -- Exo 2
-    "EXO2_REG", "EXO2_LIGHT", "EXO2_MED", "EXO2_SEMIBOLD",
-    "EXO2_BOLD", "EXO2_EXTRABOLD", "EXO2_BLACK",
+    "EXO2_REG", "EXO2_BLACK", "EXO2_BOLD", "EXO2_LIGHT", "EXO2_MED",
+    -- Fira Sans
+    "FIRASANS_REG", "FIRASANS_BLACK", "FIRASANS_BOLD", "FIRASANS_LIGHT", "FIRASANS_MED",
     -- Lato
-    "LATO_REG", "LATO_LIGHT", "LATO_BOLD", "LATO_BLACK",
+    "LATO_REG", "LATO_BLACK", "LATO_BOLD", "LATO_LIGHT",
     -- Montserrat
-    "MONTSERRAT_REG", "MONTSERRAT_LIGHT", "MONTSERRAT_MED", "MONTSERRAT_SEMIBOLD",
-    "MONTSERRAT_BOLD", "MONTSERRAT_EXTRABOLD", "MONTSERRAT_BLACK",
+    "MONTSERRAT_REG", "MONTSERRAT_BLACK", "MONTSERRAT_BOLD", "MONTSERRAT_LIGHT", "MONTSERRAT_MED",
     -- Mukta
-    "MUKTA_REG", "MUKTA_LIGHT", "MUKTA_MED", "MUKTA_SEMIBOLD",
-    "MUKTA_BOLD", "MUKTA_EXTRABOLD",
+    "MUKTA_REG", "MUKTA_BOLD", "MUKTA_LIGHT", "MUKTA_MED",
     -- Poppins
-    "POPPINS_REG", "POPPINS_LIGHT", "POPPINS_MED", "POPPINS_SEMIBOLD",
-    "POPPINS_BOLD", "POPPINS_EXTRABOLD", "POPPINS_BLACK",
+    "POPPINS_REG", "POPPINS_BLACK", "POPPINS_BOLD", "POPPINS_LIGHT", "POPPINS_MED",
+    -- Roboto
+    "ROBOTO_REG", "ROBOTO_BLACK", "ROBOTO_BLD", "ROBOTO_LIGHT", "ROBOTO_MED",
+    -- Roboto Condensed
+    "ROBOTO_COND_REG", "ROBOTO_COND_BLACK", "ROBOTO_COND_BOLD", "ROBOTO_COND_LIGHT", "ROBOTO_COND_MED",
+    -- Roboto SemiCondensed
+    "ROBOTO_SEMICOND_REG", "ROBOTO_SEMICOND_BLACK", "ROBOTO_SEMICOND_BOLD", "ROBOTO_SEMICOND_LIGHT", "ROBOTO_SEMICOND_MED",
 }
 
 local PIXEL_FONTS = {
-    "PIXELLARI",
+    "FONT_04B30",
     "DOGICA_REG", "DOGICA_BOLD", "DOGICA_PIXEL", "DOGICA_PIXELBOLD",
+    "MINECRAFT",
     "PIXELOP_REG", "PIXELOP_BOLD", "PIXELOP_MONO", "PIXELOP_MONOBOLD",
     "PIXELOP_SC", "PIXELOP_SCBOLD",
-    "RAINYHEARTS", "FONT_04B30", "MINECRAFT", "PRESS_START_2P",
+    "PIXELLARI", "PRESS_START_2P", "RAINYHEARTS",
 }
 
 local FONT_TABS = {
@@ -814,53 +806,41 @@ do
     f.FIRASANS_REG       = base .. "FiraSans-Regular.ttf"
     f.FIRASANS_LIGHT     = base .. "FiraSans-Light.ttf"
     f.FIRASANS_MED       = base .. "FiraSans-Medium.ttf"
-    f.FIRASANS_SEMIBOLD  = base .. "FiraSans-SemiBold.ttf"
     f.FIRASANS_BOLD      = base .. "FiraSans-Bold.ttf"
-    f.FIRASANS_EXTRABOLD = base .. "FiraSans-ExtraBold.ttf"
     f.FIRASANS_BLACK     = base .. "FiraSans-Black.ttf"
 
     -- Roboto family
     f.ROBOTO_REG       = base .. "Roboto-Regular.ttf"
     f.ROBOTO_LIGHT     = base .. "Roboto-Light.ttf"
     f.ROBOTO_MED       = base .. "Roboto-Medium.ttf"
-    f.ROBOTO_SEMIBOLD  = base .. "Roboto-SemiBold.ttf"
     f.ROBOTO_BLD       = base .. "Roboto-Bold.ttf"
-    f.ROBOTO_EXTRABOLD = base .. "Roboto-ExtraBold.ttf"
     f.ROBOTO_BLACK     = base .. "Roboto-Black.ttf"
 
     -- Roboto Condensed family
     f.ROBOTO_COND_REG       = base .. "Roboto_Condensed-Regular.ttf"
     f.ROBOTO_COND_LIGHT     = base .. "Roboto_Condensed-Light.ttf"
     f.ROBOTO_COND_MED       = base .. "Roboto_Condensed-Medium.ttf"
-    f.ROBOTO_COND_SEMIBOLD  = base .. "Roboto_Condensed-SemiBold.ttf"
     f.ROBOTO_COND_BOLD      = base .. "Roboto_Condensed-Bold.ttf"
-    f.ROBOTO_COND_EXTRABOLD = base .. "Roboto_Condensed-ExtraBold.ttf"
     f.ROBOTO_COND_BLACK     = base .. "Roboto_Condensed-Black.ttf"
 
     -- Roboto SemiCondensed family
     f.ROBOTO_SEMICOND_REG       = base .. "Roboto_SemiCondensed-Regular.ttf"
     f.ROBOTO_SEMICOND_LIGHT     = base .. "Roboto_SemiCondensed-Light.ttf"
     f.ROBOTO_SEMICOND_MED       = base .. "Roboto_SemiCondensed-Medium.ttf"
-    f.ROBOTO_SEMICOND_SEMIBOLD  = base .. "Roboto_SemiCondensed-SemiBold.ttf"
     f.ROBOTO_SEMICOND_BOLD      = base .. "Roboto_SemiCondensed-Bold.ttf"
-    f.ROBOTO_SEMICOND_EXTRABOLD = base .. "Roboto_SemiCondensed-ExtraBold.ttf"
     f.ROBOTO_SEMICOND_BLACK     = base .. "Roboto_SemiCondensed-Black.ttf"
 
     -- Dosis family
     f.DOSIS_REG      = base .. "Dosis-Regular.ttf"
     f.DOSIS_LIGHT    = base .. "Dosis-Light.ttf"
     f.DOSIS_MED      = base .. "Dosis-Medium.ttf"
-    f.DOSIS_SEMIBOLD = base .. "Dosis-SemiBold.ttf"
     f.DOSIS_BOLD     = base .. "Dosis-Bold.ttf"
-    f.DOSIS_EXTRABOLD= base .. "Dosis-ExtraBold.ttf"
 
     -- Exo 2 family
     f.EXO2_REG       = base .. "Exo2-Regular.ttf"
     f.EXO2_LIGHT     = base .. "Exo2-Light.ttf"
     f.EXO2_MED       = base .. "Exo2-Medium.ttf"
-    f.EXO2_SEMIBOLD  = base .. "Exo2-SemiBold.ttf"
     f.EXO2_BOLD      = base .. "Exo2-Bold.ttf"
-    f.EXO2_EXTRABOLD = base .. "Exo2-ExtraBold.ttf"
     f.EXO2_BLACK     = base .. "Exo2-Black.ttf"
 
     -- Lato family
@@ -873,26 +853,20 @@ do
     f.MONTSERRAT_REG       = base .. "Montserrat-Regular.ttf"
     f.MONTSERRAT_LIGHT     = base .. "Montserrat-Light.ttf"
     f.MONTSERRAT_MED       = base .. "Montserrat-Medium.ttf"
-    f.MONTSERRAT_SEMIBOLD  = base .. "Montserrat-SemiBold.ttf"
     f.MONTSERRAT_BOLD      = base .. "Montserrat-Bold.ttf"
-    f.MONTSERRAT_EXTRABOLD = base .. "Montserrat-ExtraBold.ttf"
     f.MONTSERRAT_BLACK     = base .. "Montserrat-Black.ttf"
 
     -- Mukta family
     f.MUKTA_REG      = base .. "Mukta-Regular.ttf"
     f.MUKTA_LIGHT    = base .. "Mukta-Light.ttf"
     f.MUKTA_MED      = base .. "Mukta-Medium.ttf"
-    f.MUKTA_SEMIBOLD = base .. "Mukta-SemiBold.ttf"
     f.MUKTA_BOLD     = base .. "Mukta-Bold.ttf"
-    f.MUKTA_EXTRABOLD= base .. "Mukta-ExtraBold.ttf"
 
     -- Poppins family
     f.POPPINS_REG       = base .. "Poppins-Regular.ttf"
     f.POPPINS_LIGHT     = base .. "Poppins-Light.ttf"
     f.POPPINS_MED       = base .. "Poppins-Medium.ttf"
-    f.POPPINS_SEMIBOLD  = base .. "Poppins-SemiBold.ttf"
     f.POPPINS_BOLD      = base .. "Poppins-Bold.ttf"
-    f.POPPINS_EXTRABOLD = base .. "Poppins-ExtraBold.ttf"
     f.POPPINS_BLACK     = base .. "Poppins-Black.ttf"
 
     -- Pixel fonts
@@ -924,48 +898,36 @@ addon.FontDisplayNames = {
     FIRASANS_REG       = "Fira Sans",
     FIRASANS_LIGHT     = "Fira Sans Light",
     FIRASANS_MED       = "Fira Sans Medium",
-    FIRASANS_SEMIBOLD  = "Fira Sans SemiBold",
     FIRASANS_BOLD      = "Fira Sans Bold",
-    FIRASANS_EXTRABOLD = "Fira Sans ExtraBold",
     FIRASANS_BLACK     = "Fira Sans Black",
     -- Roboto
     ROBOTO_REG       = "Roboto",
     ROBOTO_LIGHT     = "Roboto Light",
     ROBOTO_MED       = "Roboto Medium",
-    ROBOTO_SEMIBOLD  = "Roboto SemiBold",
     ROBOTO_BLD       = "Roboto Bold",
-    ROBOTO_EXTRABOLD = "Roboto ExtraBold",
     ROBOTO_BLACK     = "Roboto Black",
     -- Roboto Condensed
     ROBOTO_COND_REG       = "Roboto Cond",
     ROBOTO_COND_LIGHT     = "Roboto Cond Light",
     ROBOTO_COND_MED       = "Roboto Cond Medium",
-    ROBOTO_COND_SEMIBOLD  = "Roboto Cond SemiBold",
     ROBOTO_COND_BOLD      = "Roboto Cond Bold",
-    ROBOTO_COND_EXTRABOLD = "Roboto Cond ExtraBold",
     ROBOTO_COND_BLACK     = "Roboto Cond Black",
     -- Roboto SemiCondensed
     ROBOTO_SEMICOND_REG       = "Roboto SemiCond",
     ROBOTO_SEMICOND_LIGHT     = "Roboto SemiCond Light",
     ROBOTO_SEMICOND_MED       = "Roboto SemiCond Medium",
-    ROBOTO_SEMICOND_SEMIBOLD  = "Roboto SemiCond SemiBold",
     ROBOTO_SEMICOND_BOLD      = "Roboto SemiCond Bold",
-    ROBOTO_SEMICOND_EXTRABOLD = "Roboto SemiCond ExtraBold",
     ROBOTO_SEMICOND_BLACK     = "Roboto SemiCond Black",
     -- Dosis
     DOSIS_REG      = "Dosis",
     DOSIS_LIGHT    = "Dosis Light",
     DOSIS_MED      = "Dosis Medium",
-    DOSIS_SEMIBOLD = "Dosis SemiBold",
     DOSIS_BOLD     = "Dosis Bold",
-    DOSIS_EXTRABOLD= "Dosis ExtraBold",
     -- Exo 2
     EXO2_REG       = "Exo 2",
     EXO2_LIGHT     = "Exo 2 Light",
     EXO2_MED       = "Exo 2 Medium",
-    EXO2_SEMIBOLD  = "Exo 2 SemiBold",
     EXO2_BOLD      = "Exo 2 Bold",
-    EXO2_EXTRABOLD = "Exo 2 ExtraBold",
     EXO2_BLACK     = "Exo 2 Black",
     -- Lato
     LATO_REG   = "Lato",
@@ -976,24 +938,18 @@ addon.FontDisplayNames = {
     MONTSERRAT_REG       = "Montserrat",
     MONTSERRAT_LIGHT     = "Montserrat Light",
     MONTSERRAT_MED       = "Montserrat Medium",
-    MONTSERRAT_SEMIBOLD  = "Montserrat SemiBold",
     MONTSERRAT_BOLD      = "Montserrat Bold",
-    MONTSERRAT_EXTRABOLD = "Montserrat ExtraBold",
     MONTSERRAT_BLACK     = "Montserrat Black",
     -- Mukta
     MUKTA_REG      = "Mukta",
     MUKTA_LIGHT    = "Mukta Light",
     MUKTA_MED      = "Mukta Medium",
-    MUKTA_SEMIBOLD = "Mukta SemiBold",
     MUKTA_BOLD     = "Mukta Bold",
-    MUKTA_EXTRABOLD= "Mukta ExtraBold",
     -- Poppins
     POPPINS_REG       = "Poppins",
     POPPINS_LIGHT     = "Poppins Light",
     POPPINS_MED       = "Poppins Medium",
-    POPPINS_SEMIBOLD  = "Poppins SemiBold",
     POPPINS_BOLD      = "Poppins Bold",
-    POPPINS_EXTRABOLD = "Poppins ExtraBold",
     POPPINS_BLACK     = "Poppins Black",
     -- Pixel fonts
     PIXELLARI        = "Pixellari",
