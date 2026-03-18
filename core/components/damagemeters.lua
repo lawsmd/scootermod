@@ -292,23 +292,23 @@ local function CreateEntryOverlay(parentFrame)
     iconBg:SetColorTexture(0, 0, 0, 0)
     iconBg:Hide()
 
-    -- Square border edges for the bar
+    -- Square border edges for the bar (on barOverlay so they render above its fill)
     overlay._squareBorderEdges = {
-        top = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        bottom = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        left = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        right = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        top = barOverlay:CreateTexture(nil, "OVERLAY", nil, 5),
+        bottom = barOverlay:CreateTexture(nil, "OVERLAY", nil, 5),
+        left = barOverlay:CreateTexture(nil, "OVERLAY", nil, 5),
+        right = barOverlay:CreateTexture(nil, "OVERLAY", nil, 5),
     }
     for _, edge in pairs(overlay._squareBorderEdges) do
         edge:Hide()
     end
 
-    -- Icon border edges
+    -- Icon border edges (on iconFrame so they render above its content)
     overlay._iconBorderEdges = {
-        top = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        bottom = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        left = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
-        right = overlay:CreateTexture(nil, "OVERLAY", nil, 7),
+        top = iconFrame:CreateTexture(nil, "OVERLAY", nil, 5),
+        bottom = iconFrame:CreateTexture(nil, "OVERLAY", nil, 5),
+        left = iconFrame:CreateTexture(nil, "OVERLAY", nil, 5),
+        right = iconFrame:CreateTexture(nil, "OVERLAY", nil, 5),
     }
     for _, edge in pairs(overlay._iconBorderEdges) do
         edge:Hide()
@@ -398,8 +398,19 @@ local function ApplyOverlayIcon(overlay, entry, db)
 end
 
 -- Apply bar borders to overlay (all calls on Scoot-owned frames)
-local function ApplyOverlayBorders(overlay, db, sessionWindow)
+local function ApplyOverlayBorders(overlay, db, sessionWindow, isBorderedStyle)
     if not overlay or not db then return end
+
+    -- Bordered edit mode style has Blizzard's border baked into the atlas.
+    -- Clear any active Scoot borders and return.
+    if isBorderedStyle then
+        overlay.bgEdge:Hide()
+        for _, edge in pairs(overlay._squareBorderEdges) do edge:Hide() end
+        if addon.BarBorders and addon.BarBorders.ClearBarFrame then
+            addon.BarBorders.ClearBarFrame(overlay.barOverlay)
+        end
+        return
+    end
 
     local borderStyle = db.barBorderStyle or "default"
     local barOverlay = overlay.barOverlay
@@ -457,28 +468,14 @@ local function ApplyOverlayBorders(overlay, db, sessionWindow)
         end
     end
 
-    -- Textured borders (BarBorders system) — creates UIParent-parented overlays on our barOverlay
+    -- Textured borders (BarBorders system) — holder parented to barOverlay (inherits strata/visibility)
     if borderStyle ~= "default" and borderStyle ~= "none" and borderStyle ~= "square" then
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
             addon.BarBorders.ApplyToBarFrame(barOverlay, borderStyle, {
                 thickness = thickness,
                 color = { r, g, b, a },
                 hiddenEdges = db.barBorderHiddenEdges or {},
-                containerParent = UIParent,
-                sizeProxyParent = UIParent,
             })
-            if sessionWindow and not overlay._holderRegistered then
-                local holder = addon.BarBorders.GetBorderHolder and addon.BarBorders.GetBorderHolder(barOverlay)
-                if holder then
-                    registerDMOverlay(sessionWindow, holder)
-                    overlay._holderRegistered = true
-                end
-                local bState = addon.BarBorders.GetBorderState and addon.BarBorders.GetBorderState(barOverlay)
-                if bState and bState.sizeProxy and not overlay._proxyRegistered then
-                    registerDMOverlay(sessionWindow, bState.sizeProxy)
-                    overlay._proxyRegistered = true
-                end
-            end
         end
     else
         if addon.BarBorders and addon.BarBorders.ClearBarFrame then
@@ -570,12 +567,14 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
 
     -- Anchor bar overlay to entry's StatusBar
     local statusBar = entry.StatusBar or entry.bar
-    if statusBar then
-        overlay.barOverlay:ClearAllPoints()
-        overlay.barOverlay:SetAllPoints(statusBar)
+    local barAnchor = statusBar or overlay
+    overlay.barOverlay:ClearAllPoints()
+    if not isThinStyle and not isBorderedStyle then
+        -- Default style: inset left edge so bar doesn't butt against transparent icons
+        overlay.barOverlay:SetPoint("TOPLEFT", barAnchor, "TOPLEFT", 5, 0)
+        overlay.barOverlay:SetPoint("BOTTOMRIGHT", barAnchor, "BOTTOMRIGHT", 0, 0)
     else
-        overlay.barOverlay:ClearAllPoints()
-        overlay.barOverlay:SetAllPoints(overlay)
+        overlay.barOverlay:SetAllPoints(barAnchor)
     end
 
     -- Anchor icon to entry's Icon frame
@@ -712,10 +711,10 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
         overlay.valueFS:SetPoint("TOP", overlay, "TOP", 0, 0)
         overlay.valueFS:SetPoint("RIGHT", overlay, "RIGHT", -8, 0)
     else
-        -- Default/Bordered: text vertically centered on bar
+        -- Default/Bordered: text vertically centered on bar, nudged down 2px
         overlay.valueFS:SetPoint("RIGHT", overlay.barOverlay, "RIGHT", -4, 0)
-        overlay.valueFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, 0)
-        overlay.valueFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, 0)
+        overlay.valueFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, -2)
+        overlay.valueFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, -2)
     end
 
     -- Name text anchoring
@@ -727,15 +726,15 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     else
         overlay.nameFS:SetPoint("LEFT", overlay.barOverlay, "LEFT", 4, 0)
         overlay.nameFS:SetPoint("RIGHT", overlay.valueFS, "LEFT", -4, 0)
-        overlay.nameFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, 0)
-        overlay.nameFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, 0)
+        overlay.nameFS:SetPoint("TOP", overlay.barOverlay, "TOP", 0, -2)
+        overlay.nameFS:SetPoint("BOTTOM", overlay.barOverlay, "BOTTOM", 0, -2)
     end
 
     -- Icon (spec or JiberishIcons)
     ApplyOverlayIcon(overlay, entry, db)
 
     -- Borders
-    ApplyOverlayBorders(overlay, db, sessionWindow)
+    ApplyOverlayBorders(overlay, db, sessionWindow, isBorderedStyle)
     ApplyOverlayIconBorder(overlay, db)
 
     overlay:Show()
