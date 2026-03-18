@@ -55,7 +55,7 @@ local function ensureOverlayTexture(aura, stateKey, drawLayer, sublevel)
     local state = getState(aura)
     if not state then return nil end
     if state[stateKey] then return state[stateKey] end
-    local ok, tex = pcall(aura.CreateTexture, aura, nil, drawLayer or "OVERLAY", sublevel or 1)
+    local ok, tex = pcall(aura.CreateTexture, aura, nil, drawLayer or "OVERLAY", nil, sublevel or 1)
     if not ok or not tex then return nil end
     state[stateKey] = tex
     return tex
@@ -73,12 +73,15 @@ local function updateDebuffBorderOverlay(aura, state, iconWidth, iconHeight)
     overlay:ClearAllPoints()
     local icon = aura.Icon or aura.icon or aura.IconTexture
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
-    -- Apply atlas from cached debuff type
+    -- Apply atlas from cached debuff type (prefer actual atlas captured from Blizzard)
     local cached = debuffTypeCache[aura]
-    local dt = cached and cached.dispelType or "None"
-    local sd = cached and cached.showDispelType
-    local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
-    local atlas = (sd and entry.dispel) or entry.basic
+    local atlas = cached and cached.actualAtlas
+    if not atlas then
+        local dt = cached and cached.dispelType or "None"
+        local sd = cached and cached.showDispelType
+        local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
+        atlas = (sd and entry.dispel) or entry.basic
+    end
     if atlas then
         pcall(overlay.SetAtlas, overlay, atlas, false)
     end
@@ -476,23 +479,36 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     -- Runs after the border section to have final say on border visibility
                     if componentId == "debuffs" and icon then
                         local auraSt = getState(aura)
-                        if ratio ~= 0 and not borderEnabled then
-                            -- Detect which border type before hiding
-                            local hasTempEnchant = false
-                            if aura.TempEnchantBorder then
-                                local okV, vis = pcall(aura.TempEnchantBorder.IsShown, aura.TempEnchantBorder)
-                                if okV and vis == true then hasTempEnchant = true end
+                        -- Skip private aura anchors — borders managed by game client
+                        local isPrivateAnchor = false
+                        local okAnc, isAnc = pcall(function() return aura.isAuraAnchor end)
+                        if okAnc and isAnc and not issecretvalue(isAnc) then
+                            isPrivateAnchor = true
+                        end
+
+                        if isPrivateAnchor then
+                            -- Private aura anchor: don't create overlays, hide any stale ones
+                            if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
+                            if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
+                        elseif ratio ~= 0 and not borderEnabled then
+                            -- Hide BOTH Blizzard borders — we're replacing with a properly-sized overlay
+                            setRegionVisible(aura.DebuffBorder, false)
+                            setRegionVisible(aura.TempEnchantBorder, false)
+
+                            -- Detect which border type via aura.auraType (set by Blizzard's UpdateAuraType)
+                            local isTempEnchant = false
+                            local okType, aType = pcall(function() return aura.auraType end)
+                            if okType and aType and not issecretvalue(aType) and aType == "TempEnchant" then
+                                isTempEnchant = true
                             end
 
-                            if hasTempEnchant then
+                            if isTempEnchant then
                                 -- Temp enchant aura: overlay TempEnchantBorder
-                                setRegionVisible(aura.TempEnchantBorder, false)
                                 ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
                                 updateTempEnchantBorderOverlay(aura, auraSt, width, height)
                                 if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                             else
                                 -- Regular debuff: overlay DebuffBorder
-                                setRegionVisible(aura.DebuffBorder, false)
                                 ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
                                 updateDebuffBorderOverlay(aura, auraSt, width, height)
                                 if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
@@ -576,17 +592,28 @@ local function ApplyAuraFrameStyling(self)
                         sd = not not showDispelType
                     end
 
-                    debuffTypeCache[aura] = { dispelType = dt, showDispelType = sd }
+                    local cacheEntry = { dispelType = dt, showDispelType = sd }
+
+                    -- Capture the actual atlas Blizzard set on the border region
+                    local okAtlas, actualAtlas = pcall(borderRegion.GetAtlas, borderRegion)
+                    if okAtlas and actualAtlas and not issecretvalue(actualAtlas) and type(actualAtlas) == "string" then
+                        cacheEntry.actualAtlas = actualAtlas
+                    end
+
+                    debuffTypeCache[aura] = cacheEntry
 
                     -- Immediately update overlay atlas if it exists and is shown
                     local auraSt = auraState[aura]
                     if auraSt and auraSt.debuffBorderOverlay then
                         local okShown, shown = pcall(auraSt.debuffBorderOverlay.IsShown, auraSt.debuffBorderOverlay)
                         if okShown and shown then
-                            local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
-                            local atlas = (sd and entry.dispel) or entry.basic
-                            if atlas then
-                                pcall(auraSt.debuffBorderOverlay.SetAtlas, auraSt.debuffBorderOverlay, atlas, false)
+                            local hookAtlas = cacheEntry.actualAtlas
+                            if not hookAtlas then
+                                local entry = DEBUFF_BORDER_ATLASES[dt] or DEBUFF_BORDER_ATLASES["None"]
+                                hookAtlas = (sd and entry.dispel) or entry.basic
+                            end
+                            if hookAtlas then
+                                pcall(auraSt.debuffBorderOverlay.SetAtlas, auraSt.debuffBorderOverlay, hookAtlas, false)
                             end
                         end
                     end
