@@ -540,6 +540,38 @@ local function ApplyOverlayIconBorder(overlay, db)
     edges.right:Show()
 end
 
+-- Update bar foreground color on Scoot-owned overlay (combat-safe, no taint)
+local function UpdateOverlayBarColor(overlay, entry, db)
+    if not overlay or not entry or not db then return end
+
+    local showClassColor = db.showClassColor
+    local colorMode = db.barForegroundColorMode or "default"
+    local classToken = entry.classFilename
+    if issecretvalue(classToken) then classToken = nil end
+
+    if showClassColor and classToken then
+        local cr, cg, cb = GetClassColor(classToken)
+        overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
+    elseif colorMode == "custom" and db.barForegroundTint then
+        local c = db.barForegroundTint
+        overlay.barOverlay:SetStatusBarColor(c.r or c[1] or 1, c.g or c[2] or 0.8, c.b or c[3] or 0, c.a or c[4] or 1)
+    else
+        -- Default: use entry's status bar color if available
+        local sbc = entry.statusBarColor
+        if issecretvalue(sbc) then sbc = nil end
+        local isClassColor = entry.isClassColorDesired
+        if issecretvalue(isClassColor) then isClassColor = nil end
+        if sbc and type(sbc) == "table" then
+            overlay.barOverlay:SetStatusBarColor(sbc.r or sbc[1] or 0.8, sbc.g or sbc[2] or 0.8, sbc.b or sbc[3] or 0.8, 1)
+        elseif isClassColor and classToken then
+            local cr, cg, cb = GetClassColor(classToken)
+            overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
+        else
+            overlay.barOverlay:SetStatusBarColor(0.8, 0.8, 0.8, 1)
+        end
+    end
+end
+
 -- Full overlay population (styling + data) — all calls on Scoot-owned frames
 local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     if not overlay or not entry or not db then return end
@@ -594,32 +626,7 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     end
 
     -- Bar foreground color
-    local showClassColor = db.showClassColor
-    local colorMode = db.barForegroundColorMode or "default"
-    local classToken = entry.classFilename
-    if issecretvalue(classToken) then classToken = nil end
-
-    if showClassColor and classToken then
-        local cr, cg, cb = GetClassColor(classToken)
-        overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
-    elseif colorMode == "custom" and db.barForegroundTint then
-        local c = db.barForegroundTint
-        overlay.barOverlay:SetStatusBarColor(c.r or c[1] or 1, c.g or c[2] or 0.8, c.b or c[3] or 0, c.a or c[4] or 1)
-    else
-        -- Default: use entry's status bar color if available
-        local sbc = entry.statusBarColor
-        if issecretvalue(sbc) then sbc = nil end
-        local isClassColor = entry.isClassColorDesired
-        if issecretvalue(isClassColor) then isClassColor = nil end
-        if sbc and type(sbc) == "table" then
-            overlay.barOverlay:SetStatusBarColor(sbc.r or sbc[1] or 0.8, sbc.g or sbc[2] or 0.8, sbc.b or sbc[3] or 0.8, 1)
-        elseif isClassColor and classToken then
-            local cr, cg, cb = GetClassColor(classToken)
-            overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
-        else
-            overlay.barOverlay:SetStatusBarColor(0.8, 0.8, 0.8, 1)
-        end
-    end
+    UpdateOverlayBarColor(overlay, entry, db)
 
     -- Bar fill values (StatusBar:SetMinMaxValues/SetValue accept secrets — AllowedWhenTainted)
     pcall(overlay.barOverlay.SetMinMaxValues, overlay.barOverlay, 0, entry.maxValue)
@@ -707,8 +714,8 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     end
     overlay.valueFS:ClearAllPoints()
     if isThinStyle then
-        -- Thin: text at top of entry, bar beneath
-        overlay.valueFS:SetPoint("TOP", overlay, "TOP", 0, 0)
+        -- Thin: text at top of entry, bar beneath; nudge down 2px to avoid top clipping
+        overlay.valueFS:SetPoint("TOP", overlay, "TOP", 0, -2)
         overlay.valueFS:SetPoint("RIGHT", overlay, "RIGHT", -8, 0)
     else
         -- Default/Bordered: text vertically centered on bar, nudged down 2px
@@ -720,7 +727,7 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     -- Name text anchoring
     overlay.nameFS:ClearAllPoints()
     if isThinStyle then
-        overlay.nameFS:SetPoint("TOP", overlay, "TOP", 0, 0)
+        overlay.nameFS:SetPoint("TOP", overlay, "TOP", 0, -2)
         overlay.nameFS:SetPoint("LEFT", overlay.barOverlay, "LEFT", 4, 0)
         overlay.nameFS:SetPoint("RIGHT", overlay.valueFS, "LEFT", -4, 0)
     else
@@ -737,11 +744,25 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     ApplyOverlayBorders(overlay, db, sessionWindow, isBorderedStyle)
     ApplyOverlayIconBorder(overlay, db)
 
+    -- Store identity fields on Scoot-owned overlay for recycling detection
+    local idClassToken = entry.classFilename
+    if issecretvalue(idClassToken) then idClassToken = nil end
+    overlay._classToken = idClassToken
+
+    local idSpecIcon = entry.specIconID
+    if issecretvalue(idSpecIcon) then idSpecIcon = nil end
+    overlay._specIconID = idSpecIcon
+
+    local idSourceName = entry.sourceName
+    if issecretvalue(idSourceName) then idSourceName = nil end
+    overlay._sourceName = idSourceName
+
     overlay:Show()
 end
 
 -- Data-only update for overlays (safe during combat — only updates bar fill + text)
-local function UpdateEntryOverlayData(overlay, entry)
+-- Detects frame recycling (rankings change) and refreshes icon/color when needed
+local function UpdateEntryOverlayData(overlay, entry, db)
     if not overlay or not entry then return end
 
     -- StatusBar:SetMinMaxValues/SetValue accept secrets (AllowedWhenTainted)
@@ -763,6 +784,55 @@ local function UpdateEntryOverlayData(overlay, entry)
             overlay.valueFS:SetText(text)
         end
     end
+
+    -- Recycling detection: when rankings change, Blizzard reuses the same frame
+    -- for a different player. Detect this and refresh icon + bar color.
+    if db then
+        local recycled = false
+
+        local curClass = entry.classFilename
+        if issecretvalue(curClass) then curClass = nil end
+        if curClass and curClass ~= overlay._classToken then
+            recycled = true
+        end
+
+        if not recycled then
+            local curSpecIcon = entry.specIconID
+            if issecretvalue(curSpecIcon) then curSpecIcon = nil end
+            if curSpecIcon and curSpecIcon ~= overlay._specIconID then
+                recycled = true
+            end
+        end
+
+        if not recycled then
+            local curSourceName = entry.sourceName
+            if issecretvalue(curSourceName) then curSourceName = nil end
+            if curSourceName and curSourceName ~= overlay._sourceName then
+                recycled = true
+            end
+        end
+
+        if recycled then
+            ApplyOverlayIcon(overlay, entry, db)
+            UpdateOverlayBarColor(overlay, entry, db)
+
+            -- Update stored identity
+            local newClass = entry.classFilename
+            if issecretvalue(newClass) then newClass = nil end
+            overlay._classToken = newClass
+
+            local newSpecIcon = entry.specIconID
+            if issecretvalue(newSpecIcon) then newSpecIcon = nil end
+            overlay._specIconID = newSpecIcon
+
+            local newSourceName = entry.sourceName
+            if issecretvalue(newSourceName) then newSourceName = nil end
+            overlay._sourceName = newSourceName
+        end
+    end
+
+    -- Keep cleanup reference current
+    overlay._lastEntry = entry
 end
 
 --------------------------------------------------------------------------------
@@ -963,9 +1033,9 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     classToken = classToken or ""
 
     -- OPT-18: Skip full restyle if entry hasn't changed since last full pass
-    if elSt._cacheGen == dmStyleGeneration and elSt._cacheClass == classToken then
+    if elSt._cacheGen == dmStyleGeneration and elSt._cacheClass == classToken and classToken ~= "" then
         HideBlizzardEntryContent(entry)
-        UpdateEntryOverlayData(overlay, entry)
+        UpdateEntryOverlayData(overlay, entry, db)
         overlay:Show()
         return
     end
@@ -2310,7 +2380,7 @@ local function UpdateAllOverlayData(comp)
         ForEachVisibleEntry(sessionWindow, function(entryFrame)
             local elSt = elementState[entryFrame]
             if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
-                UpdateEntryOverlayData(elSt.entryOverlay, entryFrame)
+                UpdateEntryOverlayData(elSt.entryOverlay, entryFrame, comp.db)
             else
                 -- Entry needs overlay (new post-reset entry, or overlay hidden by reset cleanup)
                 ApplySingleEntryStyle(entryFrame, comp.db, sessionWindow)
@@ -2323,7 +2393,7 @@ local function UpdateAllOverlayData(comp)
             if ok and shown then
                 local elSt = elementState[lpe]
                 if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
-                    UpdateEntryOverlayData(elSt.entryOverlay, lpe)
+                    UpdateEntryOverlayData(elSt.entryOverlay, lpe, comp.db)
                 else
                     ApplySingleEntryStyle(lpe, comp.db, sessionWindow)
                 end
