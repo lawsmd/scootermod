@@ -1592,7 +1592,7 @@ local function CreateCustomGroupSettings()
         borderEnable = { type = "addon", default = false },
         borderTintEnable = { type = "addon", default = false },
         borderTintColor = { type = "addon", default = {1, 1, 1, 1} },
-        borderStyle = { type = "addon", default = "square" },
+        borderStyle = { type = "addon", default = "none" },
         borderThickness = { type = "addon", default = 1 },
         borderInset = { type = "addon", default = 0 },
         borderInsetH = { type = "addon", default = 0 },

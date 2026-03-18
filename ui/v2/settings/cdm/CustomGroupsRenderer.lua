@@ -188,12 +188,28 @@ local function CreateCustomGroupRenderer(groupIndex)
             sectionKey = "border",
             defaultExpanded = false,
             buildContent = function(contentFrame, inner)
-                inner:AddToggle({
-                    key = "borderEnable",
-                    label = "Use Custom Border",
-                    description = "Enable custom border styling for cooldown icons.",
-                    get = function() return getSetting("borderEnable") or false end,
-                    set = function(val) h.setAndApply("borderEnable", val) builder:DeferredRefreshAll() end,
+                local borderStyleValues, borderStyleOrder = Helpers.getIconBorderOptions({ { "none", "None" } })
+
+                inner:AddSelector({
+                    key = "borderStyle",
+                    label = "Border Style",
+                    description = "Choose the visual style for icon borders.",
+                    values = borderStyleValues,
+                    order = borderStyleOrder,
+                    get = function()
+                        if not getSetting("borderEnable") then return "none" end
+                        return getSetting("borderStyle") or "square"
+                    end,
+                    set = function(v)
+                        if v == "none" then
+                            h.set("borderEnable", false)
+                            h.setAndApply("borderStyle", "none")
+                        else
+                            h.set("borderEnable", true)
+                            h.setAndApply("borderStyle", v)
+                        end
+                        builder:DeferredRefreshAll()
+                    end,
                 })
 
                 inner:AddToggleColorPicker({
@@ -213,18 +229,6 @@ local function CreateCustomGroupRenderer(groupIndex)
                         builder:DeferredRefreshAll()
                     end,
                     hasAlpha = true,
-                })
-
-                local borderStyleValues, borderStyleOrder = Helpers.getIconBorderOptions()
-
-                inner:AddSelector({
-                    key = "borderStyle",
-                    label = "Border Style",
-                    description = "Choose the visual style for icon borders.",
-                    values = borderStyleValues,
-                    order = borderStyleOrder,
-                    get = function() return getSetting("borderStyle") or "square" end,
-                    set = function(v) h.setAndApply("borderStyle", v) builder:DeferredRefreshAll() end,
                 })
 
                 inner:AddSlider({
