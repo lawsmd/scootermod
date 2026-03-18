@@ -777,7 +777,8 @@ function UIPanel:CreateContentPane()
     end)
 
     local scrollContent = CreateFrame("Frame", "ScootContentScrollContent", scrollFrame)
-    scrollContent:SetWidth(scrollFrame:GetWidth() or 400)
+    local sfWidth = scrollFrame:GetWidth()
+    scrollContent:SetWidth((sfWidth and sfWidth > 0) and (sfWidth - 16) or 400)
     scrollFrame:SetScrollChild(scrollContent)
     contentPane._scrollFrame = scrollFrame
     contentPane._scrollContent = scrollContent

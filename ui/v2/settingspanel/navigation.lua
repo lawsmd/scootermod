@@ -759,6 +759,14 @@ function UIPanel:OnNavigationSelect(key, previousKey)
             contentPane._scrollFrame:SetPoint("TOPLEFT", contentPane._header, "BOTTOMLEFT", CONTENT_PADDING, -CONTENT_PADDING)
         end
 
+        -- Ensure scrollContent width is up to date (handles first-render timing)
+        if scrollContent and contentPane._scrollFrame then
+            local w = contentPane._scrollFrame:GetWidth()
+            if w and w > 0 then
+                scrollContent:SetWidth(w - 16)
+            end
+        end
+
         local renderer = self._renderers and self._renderers[key]
         if renderer and scrollContent then
             if contentPane._placeholder then

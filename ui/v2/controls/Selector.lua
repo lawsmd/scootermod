@@ -344,7 +344,7 @@ function Controls:CreateSelector(options)
     row._syncLockTimer = nil
     row._isDisabled = false
     row._isDisabledFn = isDisabledFn
-    row._selectorContainer = selectorContainer
+    row._selectorContainer = selector
 
     -- Find index of key in keyList (uses row._keyList for dynamic updates)
     local function getKeyIndex(key)
