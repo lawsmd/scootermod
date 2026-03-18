@@ -77,6 +77,12 @@ function UIPanel:Initialize()
 
     tinsert(UISpecialFrames, "ScootSettingsFrame")
 
+    frame:SetScript("OnHide", function()
+        if addon.CloseFontPicker then addon.CloseFontPicker() end
+        if addon.CloseBarTexturePicker then addon.CloseBarTexturePicker() end
+        if addon.CloseBarBorderPicker then addon.CloseBarBorderPicker() end
+    end)
+
     Window:RestorePosition(frame)
 
     self._initialized = true
