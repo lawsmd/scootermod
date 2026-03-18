@@ -290,6 +290,7 @@ local function ReleaseIcon(groupIndex, icon)
     icon:SetScript("OnUpdate", nil)
     icon.entry = nil
     icon.entryIndex = nil
+    icon._groupIndex = nil
     table.insert(iconPools[groupIndex], icon)
 end
 
@@ -733,6 +734,8 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
             applyCGTextAlpha(icon.Cooldown, nil, ctx.containerAlpha, ctx.textDimAlpha, true)
         elseif durObj and durObj.IsZero then
             applyCGTextAlpha(icon.Cooldown, durObj, ctx.containerAlpha, ctx.textDimAlpha, false)
+        else
+            resetCGTextAlpha(icon.Cooldown)
         end
     elseif not ctx.needsTextOverride and icon.Cooldown then
         resetCGTextAlpha(icon.Cooldown)
@@ -791,6 +794,13 @@ local function ApplyCooldownOpacity(icon, groupIndex, ctx)
         local startTime, duration, isEnabled = C_Container.GetItemCooldown(icon.entry.id)
         local ok, isOnCD = pcall(checkItemCD, startTime, duration, isEnabled)
         ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
+    end
+end
+
+local function OnIconCooldownDone(cooldownFrame)
+    local icon = cooldownFrame:GetParent()
+    if icon and icon.entry and icon._groupIndex then
+        ApplyCooldownOpacity(icon, icon._groupIndex)
     end
 end
 
@@ -929,6 +939,8 @@ local function RebuildGroup(groupIndex)
         end
         icon.entry = vis.entry
         icon.entryIndex = vis.index
+        icon._groupIndex = groupIndex
+        icon.Cooldown:SetScript("OnCooldownDone", OnIconCooldownDone)
         table.insert(activeIcons[groupIndex], icon)
     end
 
