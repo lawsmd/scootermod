@@ -316,6 +316,13 @@ UF.healthColorInfoIcons = {
     },
 }
 
+UF.fontColorCastBarInfoIcons = {
+    specGradient = {
+        tooltipTitle = "Spec Color (Gradient)",
+        tooltipText = "Hand-picked gradient colors for each of WoW's 39 specializations. Designed to match each spec's identity while contrasting against its class color. These colors are curated and may be adjusted over time.",
+    },
+}
+
 -- Bar color mode options (power)
 UF.powerColorValues = {
     default = "Default",
@@ -371,9 +378,10 @@ UF.fontColorCastBarValues = {
     class = "Class Color",
     custom = "Custom",
     classGradient = "Class Color (Gradient)",
+    specGradient = "Spec Color (Gradient)",
     customGradient = "Custom (Gradient)",
 }
-UF.fontColorCastBarOrder = { "default", "class", "custom", "classGradient", "customGradient" }
+UF.fontColorCastBarOrder = { "default", "class", "custom", "classGradient", "specGradient", "customGradient" }
 
 -- Font color mode options
 UF.fontColorValues = {

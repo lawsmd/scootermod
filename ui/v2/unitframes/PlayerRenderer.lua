@@ -967,6 +967,7 @@ function UF.RenderPlayer(panel, scrollContent)
                             end,
                             customValue = {"custom", "customGradient"},
                             hasAlpha = true,
+                            optionInfoIcons = UF.fontColorCastBarInfoIcons,
                         })
                         tabInner:Finalize()
                     end,

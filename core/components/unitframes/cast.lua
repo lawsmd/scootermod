@@ -54,6 +54,23 @@ local function resolveGradientColors(colorMode, styleCfg)
         local r2, g2, b2 = addon.LightenColor(r1, g1, b1, SPELL_LIGHTEN_RATIO)
         return r1, g1, b1, r2, g2, b2
     end
+    if colorMode == "specGradient" then
+        local specIndex = GetSpecialization and GetSpecialization()
+        local specID = specIndex and GetSpecializationInfo and select(1, GetSpecializationInfo(specIndex))
+        local specData = specID and addon.SPEC_GRADIENT_COLORS and addon.SPEC_GRADIENT_COLORS[specID]
+        if specData then
+            local dr, dg, db = addon.DarkenColor(specData.base[1], specData.base[2], specData.base[3], 0.25)
+            local er, eg, eb = addon.LightenColor(specData.endpoint[1], specData.endpoint[2], specData.endpoint[3], 0.10)
+            return dr, dg, db, er, eg, eb
+        end
+        -- Fallback: use class gradient if spec not found
+        if addon.GetClassColorRGB then
+            r1, g1, b1 = addon.GetClassColorRGB("player")
+            r1, g1, b1 = r1 or 1, g1 or 1, b1 or 1
+            local r2, g2, b2 = addon.LightenColor(r1, g1, b1, SPELL_LIGHTEN_RATIO)
+            return r1, g1, b1, r2, g2, b2
+        end
+    end
     if colorMode == "customGradient" then
         local c = styleCfg.color or {1, 1, 1, 1}
         r1, g1, b1 = c[1] or 1, c[2] or 1, c[3] or 1
@@ -79,7 +96,7 @@ local function installGradientHook(spellFS, cfgResolver, parentFrame)
         local styleCfg = cfgResolver()
         if not styleCfg then return end
         local mode = styleCfg.colorMode
-        if mode ~= "classGradient" and mode ~= "customGradient" then return end
+        if mode ~= "classGradient" and mode ~= "specGradient" and mode ~= "customGradient" then return end
         if not addon.BuildColorRampString then return end
         local r1, g1, b1, r2, g2, b2 = resolveGradientColors(mode, styleCfg)
         -- Text-fill mode: apply gradient to filledText only, leave frame.Text as raw text
@@ -106,7 +123,7 @@ local function applySpellNameColor(spellFS, styleCfg, parentFrame)
     local colorMode = styleCfg.colorMode or "default"
     local isTextFill = parentFrame and getProp(parentFrame, "textFillActive")
 
-    if colorMode == "classGradient" or colorMode == "customGradient" then
+    if colorMode == "classGradient" or colorMode == "specGradient" or colorMode == "customGradient" then
         local cachedText = getProp(spellFS, "_rampRawText")
         if cachedText and addon.BuildColorRampString then
             local r1, g1, b1, r2, g2, b2 = resolveGradientColors(colorMode, styleCfg)
@@ -154,7 +171,7 @@ local function applySpellNameColor(spellFS, styleCfg, parentFrame)
     end
 
     -- When switching FROM gradient to non-gradient, restore plain text
-    if colorMode ~= "classGradient" and colorMode ~= "customGradient" then
+    if colorMode ~= "classGradient" and colorMode ~= "specGradient" and colorMode ~= "customGradient" then
         local cachedText = getProp(spellFS, "_rampRawText")
         if cachedText and spellFS.GetText then
             local ok, current = pcall(spellFS.GetText, spellFS)
@@ -865,7 +882,7 @@ do
 		rawText = rawText or ""
 		local styleCfg_tf = cfg.spellNameText or {}
 		local colorMode_tf = styleCfg_tf.colorMode or "default"
-		if (colorMode_tf == "classGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
+		if (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
 			local r1, g1, b1, r2, g2, b2 = resolveGradientColors(colorMode_tf, styleCfg_tf)
 			elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 		else

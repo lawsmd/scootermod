@@ -850,6 +850,7 @@ function UF.RenderBoss(panel, scrollContent)
                             setColor = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.color = {r,g,b,a}; applyCastBar() end end,
                             customValue = {"custom", "customGradient"},
                             hasAlpha = true,
+                            optionInfoIcons = UF.fontColorCastBarInfoIcons,
                         })
                         tabInner:Finalize()
                     end,
