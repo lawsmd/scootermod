@@ -231,6 +231,15 @@ do
 		end
 	end
 
+	-- Resolve Name FontString for Target/Focus (anchor target for "Above Name")
+	local function resolveNameFS(unit)
+		if unit == "Target" then
+			return getNested(_G.TargetFrame, "TargetFrameContent", "TargetFrameContentMain", "Name")
+		elseif unit == "Focus" then
+			return getNested(_G.FocusFrame, "TargetFrameContent", "TargetFrameContentMain", "Name")
+		end
+	end
+
 	-- Track which cast bars have custom anchor mode active, so the SetPoint hook knows when to re-apply
 	local activeAnchorModes = {}
 	-- Track scheduled re-apply timers to avoid duplicate scheduling
@@ -277,11 +286,16 @@ do
 		if not cfg then return end
 
 		local anchorMode = cfg.anchorMode or "default"
+		-- Backward-compat: migrate old healthTop → nameTop
+		if anchorMode == "healthTop" then
+			anchorMode = "nameTop"
+			cfg.anchorMode = "nameTop"
+		end
 		if anchorMode == "default" then return end
 
 		local anchorBar, anchorEdge
-		if anchorMode == "healthTop" then
-			anchorBar = resolveHealthBar(unit)
+		if anchorMode == "nameTop" then
+			anchorBar = resolveNameFS(unit)
 			anchorEdge = "top"
 		elseif anchorMode == "healthBottom" then
 			anchorBar = resolveHealthBar(unit)
@@ -1170,8 +1184,13 @@ do
 		end
 
 		-- Anchor Mode (Target/Focus only): determines anchor point for cast bar positioning
-		-- "default" = stock Blizzard position, "healthTop/healthBottom/powerTop/powerBottom" = custom anchors
+		-- "default" = stock Blizzard position, "nameTop/healthBottom/powerTop/powerBottom" = custom anchors
 		local anchorMode = (unit == "Target" or unit == "Focus") and (cfg.anchorMode or "default") or "default"
+		-- Backward-compat: migrate old healthTop → nameTop
+		if anchorMode == "healthTop" then
+			anchorMode = "nameTop"
+			if cfg then cfg.anchorMode = "nameTop" end
+		end
 
 		-- Width percent (50–150%; 100 = stock width)
 		local widthPct = tonumber(cfg.widthPct) or 100
@@ -1230,8 +1249,8 @@ do
 							-- Resolve the target bar based on anchor mode
 							local anchorBar
 							local anchorEdge -- "top" or "bottom"
-							if anchorMode == "healthTop" then
-								anchorBar = resolveHealthBar(unit)
+							if anchorMode == "nameTop" then
+								anchorBar = resolveNameFS(unit)
 								anchorEdge = "top"
 							elseif anchorMode == "healthBottom" then
 								anchorBar = resolveHealthBar(unit)

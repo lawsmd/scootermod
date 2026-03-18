@@ -828,12 +828,12 @@ function UF.RenderTarget(panel, scrollContent)
                             label = "Anchor To",
                             values = {
                                 ["default"] = "Default (Blizzard)",
-                                ["healthTop"] = "Above Health Bar",
+                                ["nameTop"] = "Above Name",
                                 ["healthBottom"] = "Below Health Bar",
                                 ["powerTop"] = "Above Power Bar",
                                 ["powerBottom"] = "Below Power Bar",
                             },
-                            order = {"default", "healthTop", "healthBottom", "powerTop", "powerBottom"},
+                            order = {"default", "nameTop", "healthBottom", "powerTop", "powerBottom"},
                             get = function() local t = getCastBarDB() or {}; return t.anchorMode or "default" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.anchorMode = v; applyCastBar() end end,
                         })
