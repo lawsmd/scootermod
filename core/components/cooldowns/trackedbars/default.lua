@@ -26,7 +26,11 @@ local function createBarOverlay(blizzBarItem)
     overlay.barBg:Hide()
 
     overlay.barFill = overlay:CreateTexture(nil, "BORDER", nil, -1)
+    overlay.barFill:SetAllPoints(overlay)  -- Fallback anchors until fill texture has dimensions
     overlay.barFill:Hide()
+
+    -- Break alpha inheritance from viewer (CMC compat: viewer may SetAlpha(0))
+    overlay:SetIgnoreParentAlpha(true)
 
     overlay:Hide()
     return overlay
@@ -50,6 +54,7 @@ local function anchorFillOverlay(overlay, barFrame)
     overlay.barFill:ClearAllPoints()
     overlay.barFill:SetAllPoints(fill)
 end
+TB.anchorFillOverlay = anchorFillOverlay
 
 local function hideBarOverlay(blizzBarItem)
     local overlay = TB.trackedBarOverlays[blizzBarItem]
@@ -99,35 +104,41 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     local desiredPad = tonumber(db.iconBarPadding) or 0
     desiredPad = tonumber(desiredPad) or 0
 
-    local currentGap
-    if barFrame.GetLeft and iconFrame.GetRight then
-        local bl = barFrame:GetLeft()
-        local ir = iconFrame:GetRight()
-        if bl and ir then currentGap = bl - ir end
-    end
-
-    local deltaPad = (currentGap and (desiredPad - currentGap)) or 0
-
-    if barFrame.ClearAllPoints and barFrame.SetPoint then
-        local rightPoint, rightRelTo, rightRelPoint, rx, ry
-        if barFrame.GetNumPoints and barFrame.GetPoint then
-            local n = barFrame:GetNumPoints()
-            for i = 1, n do
-                local p, rt, rp, ox, oy = barFrame:GetPoint(i)
-                if p == "RIGHT" then rightPoint, rightRelTo, rightRelPoint, rx, ry = p, rt, rp, ox, oy break end
+    -- Skip bar padding when item is hidden — anchor targets have invalid positions.
+    -- Padding will apply correctly on next styling pass when item is visible.
+    if child.IsShown and child:IsShown() then
+        pcall(function()
+            local currentGap
+            if barFrame.GetLeft and iconFrame.GetRight then
+                local bl = barFrame:GetLeft()
+                local ir = iconFrame:GetRight()
+                if bl and ir then currentGap = bl - ir end
             end
-        end
-        barFrame:ClearAllPoints()
-        if rightPoint and rightRelTo then
-            barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad, ry or 0)
-        else
-            barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad, 0)
-        end
-        local anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = iconFrame, "RIGHT", "RIGHT"
-        if iconFrame.IsShown and not iconFrame:IsShown() then
-            anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = child, "LEFT", "LEFT"
-        end
-        barFrame:SetPoint("LEFT", anchorLeftTo, anchorLeftPoint, desiredPad, 0)
+
+            local deltaPad = (currentGap and (desiredPad - currentGap)) or 0
+
+            if barFrame.ClearAllPoints and barFrame.SetPoint then
+                local rightPoint, rightRelTo, rightRelPoint, rx, ry
+                if barFrame.GetNumPoints and barFrame.GetPoint then
+                    local n = barFrame:GetNumPoints()
+                    for i = 1, n do
+                        local p, rt, rp, ox, oy = barFrame:GetPoint(i)
+                        if p == "RIGHT" then rightPoint, rightRelTo, rightRelPoint, rx, ry = p, rt, rp, ox, oy break end
+                    end
+                end
+                barFrame:ClearAllPoints()
+                if rightPoint and rightRelTo then
+                    barFrame:SetPoint("RIGHT", rightRelTo, rightRelPoint or "RIGHT", (rx or 0) + deltaPad, ry or 0)
+                else
+                    barFrame:SetPoint("RIGHT", child, "RIGHT", deltaPad, 0)
+                end
+                local anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = iconFrame, "RIGHT", "RIGHT"
+                if iconFrame.IsShown and not iconFrame:IsShown() then
+                    anchorLeftTo, anchorLeftPoint, anchorLeftRelPoint = child, "LEFT", "LEFT"
+                end
+                barFrame:SetPoint("LEFT", anchorLeftTo, anchorLeftPoint, desiredPad, 0)
+            end
+        end)
     end
 
     -- Overlay-based bar texture styling
@@ -170,15 +181,16 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 overlay.barBg:SetAlpha(opacityVal)
                 overlay.barBg:Show()
 
-                -- Show overlay only if item is visible, active, and not suppressed
+                -- Show overlay — parent chain handles visibility when item is hidden.
+                -- When item becomes visible, overlay becomes visible automatically.
                 if not (TB.isItemSuppressed and TB.isItemSuppressed(child)) then
                     if not child.IsShown or child:IsShown() then
-                        local ok, isInactive = pcall(function() return child.isActive == false end)
-                        if not (ok and not issecretvalue(isInactive) and isInactive) then
-                            pcall(function() child:SetAlpha(1) end)
-                            overlay:Show()
+                        pcall(function() child:SetAlpha(1) end)
+                        if child.SetIgnoreParentAlpha then
+                            pcall(child.SetIgnoreParentAlpha, child, true)
                         end
                     end
+                    overlay:Show()
                 end
 
                 -- Hide Blizzard fill texture so the overlay shows through

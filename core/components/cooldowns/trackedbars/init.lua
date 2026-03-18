@@ -25,6 +25,9 @@ TB.blizzItemToStack = setmetatable({}, { __mode = "k" })
 -- Mode flag (written by vertical.lua, read by all)
 TB.verticalModeActive = false
 
+-- Viewer alpha tracking for CMC compatibility (SetAlpha(0) on viewer)
+TB._viewerAlpha = 1
+
 -- Alpha enforcement hooks tracking (weak keys)
 TB.alphaEnforcedItems = setmetatable({}, { __mode = "k" })
 TB.prevIsActive = setmetatable({}, { __mode = "k" })
@@ -216,8 +219,6 @@ local function onItemFrameHide(self, component)
     if TB.verticalModeActive then
         scheduleVerticalRebuild(component)
     else
-        local overlay = TB.trackedBarOverlays[self]
-        if overlay then overlay:Hide() end
         pcall(self.SetAlpha, self, 0)
     end
 end
@@ -237,9 +238,6 @@ local function onItemFrameShow(self, component)
     local overlay = TB.trackedBarOverlays[self]
     if not overlay then return end
 
-    local ok, isInactive = pcall(function() return self.isActive == false end)
-    if ok and not issecretvalue(isInactive) and isInactive then return end
-
     if TB.isItemSuppressed and TB.isItemSuppressed(self) then
         TB.enforceSuppressedVisibility(self)
         if TB.tbTraceEnabled then
@@ -251,6 +249,31 @@ local function onItemFrameShow(self, component)
     -- v15: Show only when not suppressed.
     pcall(function() self:SetAlpha(1) end)
     overlay:Show()
+
+    -- Ensure overlay textures are visible and properly anchored
+    -- (initial styling may have run while item was hidden/inactive)
+    if overlay.barFill and not overlay.barFill:IsShown() then
+        overlay.barFill:Show()
+    end
+    if overlay.barBg and not overlay.barBg:IsShown() then
+        overlay.barBg:Show()
+    end
+    if TB.anchorFillOverlay then
+        local barFrame = (self.GetBarFrame and self:GetBarFrame()) or self.Bar
+        if barFrame then
+            TB.anchorFillOverlay(overlay, barFrame)
+        end
+    end
+
+    -- Deferred re-style: initial styling may have run while item was hidden,
+    -- skipping bar padding. Re-apply now that the item has valid layout.
+    C_Timer.After(0, function()
+        if self:IsShown() and not (TB.isItemSuppressed and TB.isItemSuppressed(self)) then
+            if addon.ApplyTrackedBarVisualsForChild then
+                addon.ApplyTrackedBarVisualsForChild(component, self)
+            end
+        end
+    end)
 
     -- If bounce detected (recent hide), verify in background
     local hideTime = TB.recentHide[self]
@@ -303,6 +326,10 @@ local function hookTrackedBars(component)
             if not TB.visHookedItems[itemFrame] then
                 hooksecurefunc(itemFrame, "Hide", function(self) onItemFrameHide(self, component) end)
                 hooksecurefunc(itemFrame, "Show", function(self) onItemFrameShow(self, component) end)
+                -- Decouple bar item alpha from viewer parent chain
+                if itemFrame.SetIgnoreParentAlpha then
+                    pcall(itemFrame.SetIgnoreParentAlpha, itemFrame, true)
+                end
                 TB.visHookedItems[itemFrame] = true
             end
 
@@ -345,6 +372,25 @@ local function hookTrackedBars(component)
     -- Hook Edit Mode for vertical mode support
     if TB.hookVertEditMode then
         TB.hookVertEditMode()
+    end
+
+    -- CMC compatibility: mirror viewer alpha changes to decoupled overlays and bar items
+    if not TB._viewerAlphaHooked and frame.SetAlpha then
+        TB._viewerAlphaHooked = true
+        hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+            if type(alpha) ~= "number" or issecretvalue(alpha) then return end
+            TB._viewerAlpha = alpha
+            if not TB.verticalModeActive then
+                for child, overlay in pairs(TB.trackedBarOverlays) do
+                    if overlay and overlay.SetAlpha then
+                        pcall(overlay.SetAlpha, overlay, alpha)
+                    end
+                    if child and child.SetAlpha then
+                        pcall(child.SetAlpha, child, alpha)
+                    end
+                end
+            end
+        end)
     end
 
     trackedBarsHooked = true
