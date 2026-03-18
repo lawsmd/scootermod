@@ -105,6 +105,9 @@ end
 -- per-entry InitEntry calls with matching classToken can skip redundant work.
 local dmStyleGeneration = 0
 
+-- Forward declaration (defined after CreateEntryOverlay, used by hideAllDMOverlays)
+local RestoreBlizzardEntryContent
+
 -- Overlay visibility management for UIParent-parented overlays.
 -- UIParent-parented overlays don't auto-hide when entries are hidden/recycled
 -- by the ScrollBox. Use a per-window "hide then show visible" pattern.
@@ -333,7 +336,7 @@ local function HideBlizzardEntryContent(entry)
 end
 
 -- Restore Blizzard's visual content (cleanup when overlays removed)
-local function RestoreBlizzardEntryContent(entry)
+RestoreBlizzardEntryContent = function(entry)
     if not entry then return end
     if entry.StatusBar then pcall(entry.StatusBar.SetAlpha, entry.StatusBar, 1) end
     if entry.Icon then pcall(entry.Icon.SetAlpha, entry.Icon, 1) end
@@ -653,7 +656,14 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
         nameText = entry.sourceName
         if issecretvalue(nameText) then nameText = nil end
     end
-    overlay.nameFS:SetText(nameText or "")
+    if nameText then
+        overlay.nameFS:SetText(nameText)
+    elseif entry.StatusBar and entry.StatusBar.Name then
+        local ok, text = pcall(entry.StatusBar.Name.GetText, entry.StatusBar.Name)
+        if ok and text then overlay.nameFS:SetText(text) else overlay.nameFS:SetText("") end
+    else
+        overlay.nameFS:SetText("")
+    end
     if db.textNames then
         local cfg = db.textNames
         if cfg.fontFace and addon and addon.ResolveFontFace then
@@ -671,9 +681,15 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
         end
     end
     -- Value text + styling (must anchor before nameFS since name anchors to value)
-    pcall(function()
-        overlay.valueFS:SetText(FormatOverlayValueText(entry))
-    end)
+    local fmtOk, fmtText = pcall(FormatOverlayValueText, entry)
+    if fmtOk and fmtText and fmtText ~= "" then
+        overlay.valueFS:SetText(fmtText)
+    elseif entry.StatusBar and entry.StatusBar.Value then
+        local ok, text = pcall(entry.StatusBar.Value.GetText, entry.StatusBar.Value)
+        if ok and text then overlay.valueFS:SetText(text) else overlay.valueFS:SetText("") end
+    else
+        overlay.valueFS:SetText("")
+    end
     if db.textNumbers then
         local cfg = db.textNumbers
         if cfg.fontFace and addon and addon.ResolveFontFace then
@@ -733,19 +749,21 @@ local function UpdateEntryOverlayData(overlay, entry)
     pcall(overlay.barOverlay.SetMinMaxValues, overlay.barOverlay, 0, entry.maxValue)
     pcall(overlay.barOverlay.SetValue, overlay.barOverlay, entry.value)
 
-    -- Text: skip updates when values are secret (can't format/compare)
-    local nameText = entry.nameText
-    if not issecretvalue(nameText) then
-        if not nameText then
-            nameText = entry.sourceName
-            if issecretvalue(nameText) then nameText = nil end
+    -- Name: forward from Blizzard's FontString (SetText(secret) is allowed and renders correctly)
+    if entry.StatusBar and entry.StatusBar.Name then
+        local ok, text = pcall(entry.StatusBar.Name.GetText, entry.StatusBar.Name)
+        if ok and text then
+            overlay.nameFS:SetText(text)
         end
-        overlay.nameFS:SetText(nameText or "")
     end
 
-    pcall(function()
-        overlay.valueFS:SetText(FormatOverlayValueText(entry))
-    end)
+    -- Value: forward from Blizzard's FontString (SetText(secret) is allowed and renders correctly)
+    if entry.StatusBar and entry.StatusBar.Value then
+        local ok, text = pcall(entry.StatusBar.Value.GetText, entry.StatusBar.Value)
+        if ok and text then
+            overlay.valueFS:SetText(text)
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -927,6 +945,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     if not ws.clipFrame then
         ws.clipFrame = CreateClipFrame(sessionWindow)
     end
+    if ws.clipFrame then ws.clipFrame:Show() end
 
     -- Determine parent (clip frame for scroll entries, UIParent for LocalPlayerEntry)
     local isLocalPlayerEntry = (entry == sessionWindow.LocalPlayerEntry)
@@ -2291,8 +2310,11 @@ local function UpdateAllOverlayData(comp)
     for _, sessionWindow in ipairs(windows) do
         ForEachVisibleEntry(sessionWindow, function(entryFrame)
             local elSt = elementState[entryFrame]
-            if elSt and elSt.entryOverlay then
+            if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
                 UpdateEntryOverlayData(elSt.entryOverlay, entryFrame)
+            else
+                -- Entry needs overlay (new post-reset entry, or overlay hidden by reset cleanup)
+                ApplySingleEntryStyle(entryFrame, comp.db, sessionWindow)
             end
         end)
         -- Also update LocalPlayerEntry overlay (only if entry is visible)
@@ -2301,8 +2323,10 @@ local function UpdateAllOverlayData(comp)
             local ok, shown = pcall(lpe.IsShown, lpe)
             if ok and shown then
                 local elSt = elementState[lpe]
-                if elSt and elSt.entryOverlay then
+                if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
                     UpdateEntryOverlayData(elSt.entryOverlay, lpe)
+                else
+                    ApplySingleEntryStyle(lpe, comp.db, sessionWindow)
                 end
             end
         end
