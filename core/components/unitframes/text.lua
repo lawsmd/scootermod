@@ -663,6 +663,8 @@ do
             if not fs then return end
             local fstate = ensureFS()
             if not fstate then return end
+            -- OPT-31: Invalidate hot-path cache so settings changes propagate
+            if fstate then fstate.ClearProp(fs, "healthTextAppliedHidden") end
             if hiddenSetting == nil then
                 return
             end
@@ -853,6 +855,8 @@ do
         if not cfg then
             return
         end
+        -- OPT-31: Zero-touch fast path — skip entirely when no visibility settings are configured
+        if rawget(cfg, "healthPercentHidden") == nil and rawget(cfg, "healthValueHidden") == nil then return end
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
@@ -865,6 +869,9 @@ do
             if hiddenSetting == nil then
                 return
             end
+            -- OPT-31: Skip if this visibility state is already applied
+            local currentApplied = fstate.GetProp(fs, "healthTextAppliedHidden")
+            if currentApplied == hiddenSetting then return end
             local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
@@ -909,9 +916,11 @@ do
                     end
                 end
                 fstate.SetHidden(fs, "healthText", true)
+                fstate.SetProp(fs, "healthTextAppliedHidden", true)
             else
                 fstate.SetHidden(fs, "healthText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                fstate.SetProp(fs, "healthTextAppliedHidden", false)
             end
         end
 
@@ -1494,6 +1503,8 @@ do
             if not fs then return end
             local fstate = ensureFS()
             if not fstate then return end
+            -- OPT-31: Invalidate hot-path cache so settings changes propagate
+            if fstate then fstate.ClearProp(fs, "powerTextAppliedHidden") end
             if hiddenSetting == nil then
                 return
             end
@@ -1678,6 +1689,8 @@ do
         if not cfg then
             return
         end
+        -- OPT-31: Zero-touch fast path — skip entirely when no visibility settings are configured
+        if rawget(cfg, "powerBarHidden") == nil and rawget(cfg, "powerPercentHidden") == nil and rawget(cfg, "powerValueHidden") == nil then return end
 
         -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
         -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
@@ -1690,6 +1703,9 @@ do
             if hiddenSetting == nil then
                 return
             end
+            -- OPT-31: Skip if this visibility state is already applied
+            local currentApplied = fstate.GetProp(fs, "powerTextAppliedHidden")
+            if currentApplied == hiddenSetting then return end
             local hidden = (hiddenSetting == true)
             if hidden then
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 0) end
@@ -1731,9 +1747,11 @@ do
                     end
                 end
                 fstate.SetHidden(fs, "powerText", true)
+                fstate.SetProp(fs, "powerTextAppliedHidden", true)
             else
                 fstate.SetHidden(fs, "powerText", false)
                 if fs.SetAlpha then pcall(fs.SetAlpha, fs, 1) end
+                fstate.SetProp(fs, "powerTextAppliedHidden", false)
             end
         end
 
