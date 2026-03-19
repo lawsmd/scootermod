@@ -480,7 +480,7 @@ local function styleVerticalStack(stack, component)
     local defaultFace = select(1, GameFontNormal:GetFont())
 
     -- Bar textures
-    local useCustom = db.styleEnableCustom ~= false
+    local useCustom = rawget(db, "styleEnableCustom") == true
     if useCustom then
         local fgKey = db.styleForegroundTexture or "bevelled"
         local bgKey = db.styleBackgroundTexture or "bevelled"
@@ -500,14 +500,14 @@ local function styleVerticalStack(stack, component)
         end
 
         -- Foreground color
-        local fgColorMode = db.styleForegroundColorMode or "default"
-        local fgTint = db.styleForegroundTint or {1,1,1,1}
+        local fgColorMode = rawget(db, "styleForegroundColorMode") or "default"
+        local fgTint = rawget(db, "styleForegroundTint") or {1,1,1,1}
         local fgR, fgG, fgB, fgA = TB.resolveBarColor(fgColorMode, fgTint, 1.0, 0.5, 0.25, 1.0)
         stack.barFill:GetStatusBarTexture():SetVertexColor(fgR, fgG, fgB, fgA)
 
         -- Background color + opacity
-        local bgColorMode = db.styleBackgroundColorMode or "default"
-        local bgTint = db.styleBackgroundTint or {0,0,0,1}
+        local bgColorMode = rawget(db, "styleBackgroundColorMode") or "default"
+        local bgTint = rawget(db, "styleBackgroundTint") or {0,0,0,1}
         local bgOpacity = tonumber(db.styleBackgroundOpacity) or 50
         bgOpacity = math.max(0, math.min(100, bgOpacity)) / 100
         local bgR, bgG, bgB, bgA = TB.resolveBarColor(bgColorMode, bgTint, 0, 0, 0, 1)
@@ -532,10 +532,10 @@ local function styleVerticalStack(stack, component)
         local styleKey = db.borderStyle or "square"
         local thickness = tonumber(db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-        local tintEnabled = db.borderTintEnable and type(db.borderTintColor) == "table"
+        local tintEnabled = db.borderTintEnable and type(rawget(db, "borderTintColor")) == "table"
         local color
         if tintEnabled then
-            local c = db.borderTintColor
+            local c = rawget(db, "borderTintColor")
             color = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
         else
             color = {0, 0, 0, 1}
@@ -581,7 +581,7 @@ local function styleVerticalStack(stack, component)
     local iconBorderInsetH = tonumber(db.iconBorderInsetH) or tonumber(db.iconBorderInset) or 0
     local iconBorderInsetV = tonumber(db.iconBorderInsetV) or tonumber(db.iconBorderInset) or 0
     local iconTintEnabled = not not db.iconBorderTintEnable
-    local tintRaw = db.iconBorderTintColor
+    local tintRaw = rawget(db, "iconBorderTintColor")
     if iconBorderEnabled and stack.iconRegion:IsShown() then
         local iconState = getState(stack.iconRegion)
         local lb = iconState and iconState.lastIconBorder

@@ -279,7 +279,7 @@ local TITLE_DEFAULT_COLOR = { 1.0, 0.82, 0, 1 }
 local function ApplyTitleStyling(sessionWindow, db)
     if not sessionWindow or not db then return end
 
-    local titleCfg = db.textTitle
+    local titleCfg = rawget(db, "textTitle")
 
     -- Collect ALL title FontStrings for font styling (font face, size, style)
     local allTitleTargets = {}
@@ -345,7 +345,7 @@ local function ApplyTimerStyling(sessionWindow, db)
     local timerFS = sessionWindow.SessionTimer
     if not timerFS or not timerFS.SetFont then return end
 
-    local timerCfg = db.textTimer
+    local timerCfg = rawget(db, "textTimer")
     if not timerCfg then return end
 
     -- Font face and style

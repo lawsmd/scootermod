@@ -380,7 +380,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     local borderThickness = tonumber(db.borderThickness) or 1
     if borderThickness < 1 then borderThickness = 1 elseif borderThickness > 8 then borderThickness = 8 end
     local borderTintEnabled = not not db.borderTintEnable
-    local borderTintColor = db.borderTintColor
+    local borderTintColor = rawget(db, "borderTintColor")
     local tintColor
     if borderTintEnabled and type(borderTintColor) == "table" then
         tintColor = {

@@ -168,7 +168,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
 
     -- Overlay-based bar texture styling
     do
-        local useCustom = (db and db.styleEnableCustom) ~= false
+        local useCustom = rawget(db, "styleEnableCustom") == true
         if useCustom then
             local overlay = getOrCreateBarOverlay(child)
             if overlay then
@@ -182,8 +182,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 else
                     overlay.barFill:SetColorTexture(1, 0.5, 0.25, 1)
                 end
-                local fgColorMode = (db and db.styleForegroundColorMode) or "default"
-                local fgTint = (db and db.styleForegroundTint) or {1,1,1,1}
+                local fgColorMode = rawget(db, "styleForegroundColorMode") or "default"
+                local fgTint = rawget(db, "styleForegroundTint") or {1,1,1,1}
                 local r, g, b, a = TB.resolveBarColor(fgColorMode, fgTint, 1.0, 0.5, 0.25, 1.0)
                 overlay.barFill:SetVertexColor(r, g, b, a)
                 overlay.barFill:Show()
@@ -196,8 +196,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
                 else
                     overlay.barBg:SetColorTexture(0, 0, 0, 1)
                 end
-                local bgColorMode = (db and db.styleBackgroundColorMode) or "default"
-                local bgTint = (db and db.styleBackgroundTint) or {0,0,0,1}
+                local bgColorMode = rawget(db, "styleBackgroundColorMode") or "default"
+                local bgTint = rawget(db, "styleBackgroundTint") or {0,0,0,1}
                 local br, bg2, bb, ba = TB.resolveBarColor(bgColorMode, bgTint, 0, 0, 0, 1)
                 overlay.barBg:SetVertexColor(br, bg2, bb, ba)
                 local bgOpacity = db.styleBackgroundOpacity or 50
@@ -246,10 +246,10 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         local thickness = tonumber(db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
         local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
-        local tintEnabled = db.borderTintEnable and type(db.borderTintColor) == "table"
+        local tintEnabled = db.borderTintEnable and type(rawget(db, "borderTintColor")) == "table"
         local color
         if tintEnabled then
-            local c = db.borderTintColor
+            local c = rawget(db, "borderTintColor")
             color = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
         else
             if styleDef then
@@ -312,7 +312,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     local iconBorderInsetH = tonumber(getSettingValue("iconBorderInsetH")) or tonumber(getSettingValue("iconBorderInset")) or 0
     local iconBorderInsetV = tonumber(getSettingValue("iconBorderInsetV")) or tonumber(getSettingValue("iconBorderInset")) or 0
     local iconTintEnabled = not not getSettingValue("iconBorderTintEnable")
-    local tintRaw = getSettingValue("iconBorderTintColor")
+    local tintRaw = rawget(db, "iconBorderTintColor")
 
     if iconBorderEnabled and shouldShowIconBorder() then
         Util.ToggleDefaultIconOverlay(iconFrame, false)

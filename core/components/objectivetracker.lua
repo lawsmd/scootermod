@@ -355,9 +355,11 @@ local function ApplyObjectiveTrackerTextStyling(self)
     if type(db) ~= "table" then return end
 
     -- Only style text types that are explicitly present in the DB.
-    local headerCfg = type(db.textHeader) == "table" and db.textHeader or nil
-    local questNameCfg = type(db.textQuestName) == "table" and db.textQuestName or nil
-    local objectiveCfg = type(db.textQuestObjective) == "table" and db.textQuestObjective or nil
+    -- rawget: bypass attachSettingsDefaults metatable so table-type defaults
+    -- (e.g. { style = "OUTLINE" }) don't leak onto zero-touch profiles.
+    local headerCfg = rawget(db, "textHeader")
+    local questNameCfg = rawget(db, "textQuestName")
+    local objectiveCfg = rawget(db, "textQuestObjective")
     if not headerCfg and not questNameCfg and not objectiveCfg then
         return
     end
@@ -534,10 +536,10 @@ local function ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     if type(db) ~= "table" then return end
 
     -- Only act when the user has explicitly configured this section.
-    -- (nil means "untouched" to preserve Zero‑Touch behavior.)
-    local hide = db.hideHeaderBackgrounds
-    local tintEnable = db.tintHeaderBackgroundEnable
-    local tintColor = db.tintHeaderBackgroundColor
+    -- rawget: bypass metatable so defaults don't trigger on zero-touch profiles.
+    local hide = rawget(db, "hideHeaderBackgrounds")
+    local tintEnable = rawget(db, "tintHeaderBackgroundEnable")
+    local tintColor = rawget(db, "tintHeaderBackgroundColor")
     if hide == nil and tintEnable == nil and tintColor == nil then
         return
     end
@@ -633,7 +635,7 @@ local function ApplyObjectiveTrackerCombatOpacity(self)
 
     local inCombat = PlayerInCombat()
     local inInstance = PlayerInDungeonOrRaidInstance()
-    local configured = ClampPercent0To100(db.opacityInInstanceCombat)
+    local configured = ClampPercent0To100(rawget(db, "opacityInInstanceCombat"))
     local shouldApply = inCombat and inInstance
 
     -- NOTE: Alpha is intentionally NOT set on ObjectiveTrackerFrame itself.
@@ -725,7 +727,7 @@ local function ApplyObjectiveTrackerScale(self)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
     local db = self.db
     if type(db) ~= "table" then return end
-    local scale = tonumber(db.scale)
+    local scale = tonumber(rawget(db, "scale"))
     if not scale then return end  -- nil = untouched (Zero-Touch)
     if scale < 0.5 then scale = 0.5 elseif scale > 1.5 then scale = 1.5 end
     pcall(tracker.SetScale, tracker, scale)

@@ -49,12 +49,12 @@ local function buildActionBarFingerprint(db)
         tostring(db.backdropInset or ""),
         tostring(db.backdropTintEnable or ""),
         colorFingerprint(db.backdropTintColor),
-        tostring(db.textHotkeyHidden or ""),
-        tostring(db.textMacroHidden or ""),
-        textConfigFingerprint(db.textStacks))
-    return base .. "|" .. textConfigFingerprint(db.textCooldown)
-        .. "|" .. textConfigFingerprint(db.textHotkey)
-        .. "|" .. textConfigFingerprint(db.textMacro)
+        tostring(rawget(db, "textHotkeyHidden") or ""),
+        tostring(rawget(db, "textMacroHidden") or ""),
+        textConfigFingerprint(rawget(db, "textStacks")))
+    return base .. "|" .. textConfigFingerprint(rawget(db, "textCooldown"))
+        .. "|" .. textConfigFingerprint(rawget(db, "textHotkey"))
+        .. "|" .. textConfigFingerprint(rawget(db, "textMacro"))
 end
 
 local function getBarState(bar)
@@ -540,8 +540,10 @@ local function ApplyActionBarStyling(self)
             end
 
             if btn.Count then
-                local cfg = self.db.textStacks or { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
-                applyTextToFontString(btn.Count, cfg, "CENTER", "CENTER", btn)
+                local cfg = rawget(self.db, "textStacks")
+                if cfg then
+                    applyTextToFontString(btn.Count, cfg, "CENTER", "CENTER", btn)
+                end
             end
 
             local cdOwner = btn.cooldown or btn.Cooldown or btn.CooldownFrame or nil
@@ -561,8 +563,10 @@ local function ApplyActionBarStyling(self)
                 cdText = findFS(cdOwner)
             end
             if cdText then
-                local cfg = self.db.textCooldown or { size = 16, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
-                applyTextToFontString(cdText, cfg, "CENTER", "CENTER", btn)
+                local cfg = rawget(self.db, "textCooldown")
+                if cfg then
+                    applyTextToFontString(cdText, cfg, "CENTER", "CENTER", btn)
+                end
             end
 
             if btn.HotKey then
@@ -570,24 +574,28 @@ local function ApplyActionBarStyling(self)
                 local rangeIndicator = (_G and _G.RANGE_INDICATOR) or "RANGE_INDICATOR"
                 local isEmpty = (txt == nil or txt == "")
                 local isRange = (txt == rangeIndicator or txt == "•")
-                local hiddenByUser = self.db and self.db.textHotkeyHidden
+                local hiddenByUser = self.db and rawget(self.db, "textHotkeyHidden")
                 local shouldShow = (not hiddenByUser) and (not isEmpty) and (not isRange)
                 pcall(btn.HotKey.SetShown, btn.HotKey, shouldShow)
                 if shouldShow then
-                    local cfg = self.db.textHotkey or { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
-                    applyTextToFontString(btn.HotKey, cfg, "RIGHT", "TOPRIGHT", btn)
+                    local cfg = rawget(self.db, "textHotkey")
+                    if cfg then
+                        applyTextToFontString(btn.HotKey, cfg, "RIGHT", "TOPRIGHT", btn)
+                    end
                 end
             end
 
             if btn.Name then
                 local txt = (btn.Name.GetText and btn.Name:GetText()) or nil
                 local isEmpty = (txt == nil or txt == "")
-                local hiddenByUser = self.db and self.db.textMacroHidden
+                local hiddenByUser = self.db and rawget(self.db, "textMacroHidden")
                 local shouldShow = (not hiddenByUser) and (not isEmpty)
                 pcall(btn.Name.SetShown, btn.Name, shouldShow)
                 if shouldShow then
-                    local cfg = self.db.textMacro or { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }
-                    applyTextToFontString(btn.Name, cfg, "CENTER", "BOTTOM", btn)
+                    local cfg = rawget(self.db, "textMacro")
+                    if cfg then
+                        applyTextToFontString(btn.Name, cfg, "CENTER", "BOTTOM", btn)
+                    end
                 end
             end
         end

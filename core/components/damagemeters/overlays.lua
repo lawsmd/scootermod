@@ -284,8 +284,8 @@ local function ApplyOverlayBorders(overlay, db, sessionWindow, isBorderedStyle)
 
     local thickness = db.barBorderThickness or 1
     local r, g, b, a = 0, 0, 0, 1
-    if db.barBorderTintEnabled and db.barBorderTintColor then
-        local c = db.barBorderTintColor
+    if db.barBorderTintEnabled and rawget(db, "barBorderTintColor") then
+        local c = rawget(db, "barBorderTintColor")
         r = c.r or c[1] or 0
         g = c.g or c[2] or 0
         b = c.b or c[3] or 0
@@ -419,8 +419,8 @@ local function UpdateOverlayBarColor(overlay, entry, db)
     if showClassColor and classToken then
         local cr, cg, cb = GetClassColor(classToken)
         overlay.barOverlay:SetStatusBarColor(cr, cg, cb, 1)
-    elseif colorMode == "custom" and db.barForegroundTint then
-        local c = db.barForegroundTint
+    elseif colorMode == "custom" and rawget(db, "barForegroundTint") then
+        local c = rawget(db, "barForegroundTint")
         overlay.barOverlay:SetStatusBarColor(c.r or c[1] or 1, c.g or c[2] or 0.8, c.b or c[3] or 0, c.a or c[4] or 1)
     else
         -- Default: use entry's status bar color if available
@@ -505,8 +505,8 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
 
     -- Background color
     local bgColorMode = db.barBackgroundColorMode or "default"
-    if bgColorMode == "custom" and db.barBackgroundTint then
-        local c = db.barBackgroundTint
+    if bgColorMode == "custom" and rawget(db, "barBackgroundTint") then
+        local c = rawget(db, "barBackgroundTint")
         overlay.bgTexture:SetColorTexture(c.r or c[1] or 0.1, c.g or c[2] or 0.1, c.b or c[3] or 0.1, c.a or c[4] or 0.8)
     else
         local bgAlpha = entry.backgroundAlpha
@@ -541,8 +541,8 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     else
         overlay.nameFS:SetText("")
     end
-    if db.textNames then
-        local cfg = db.textNames
+    if rawget(db, "textNames") then
+        local cfg = rawget(db, "textNames")
         if cfg.fontFace and addon and addon.ResolveFontFace then
             local face = addon.ResolveFontFace(cfg.fontFace)
             local baseFontSize = cfg.fontSize or OVERLAY_DEFAULT_FONT_SIZE
@@ -567,8 +567,8 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     else
         overlay.valueFS:SetText("")
     end
-    if db.textNumbers then
-        local cfg = db.textNumbers
+    if rawget(db, "textNumbers") then
+        local cfg = rawget(db, "textNumbers")
         if cfg.fontFace and addon and addon.ResolveFontFace then
             local face = addon.ResolveFontFace(cfg.fontFace)
             local baseFontSize = cfg.fontSize or OVERLAY_DEFAULT_FONT_SIZE
