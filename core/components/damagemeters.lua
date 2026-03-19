@@ -105,6 +105,11 @@ end
 -- per-entry InitEntry calls with matching classToken can skip redundant work.
 local dmStyleGeneration = 0
 
+-- OPT-27: Cache GetAllSessionWindows result to avoid per-call table allocation.
+-- Invalidated on DM reset and full restyle (ApplyDamageMeterStyling).
+local cachedSessionWindows = nil
+local cachedSessionWindowsValid = false
+
 -- Forward declaration (defined after CreateEntryOverlay, used by hideAllDMOverlays)
 local RestoreBlizzardEntryContent
 
@@ -2285,7 +2290,17 @@ local function ApplyExportButtonStyling(sessionWindow, db)
     btn:Show()
 end
 
+-- OPT-27: Invalidate the session window cache so the next call rebuilds it.
+local function InvalidateSessionWindowCache()
+    cachedSessionWindows = nil
+    cachedSessionWindowsValid = false
+end
+
 local function GetAllSessionWindows()
+    if cachedSessionWindowsValid and cachedSessionWindows then
+        return cachedSessionWindows
+    end
+
     local windows = {}
 
     -- Try numbered session windows (DamageMeterSessionWindow1, DamageMeterSessionWindow2, etc.)
@@ -2315,6 +2330,8 @@ local function GetAllSessionWindows()
         end
     end
 
+    cachedSessionWindows = windows
+    cachedSessionWindowsValid = true
     return windows
 end
 
@@ -2427,6 +2444,7 @@ end
 
 -- Main styling function
 local function ApplyDamageMeterStyling(self)
+    InvalidateSessionWindowCache()
     local dmFrame = _G.DamageMeter
     if not dmFrame then
         hideAllDMOverlays()
@@ -2692,6 +2710,7 @@ addon:RegisterComponentInitializer(function(self)
         local comp = addon.Components and addon.Components["damageMeter"]
         if not comp or not comp.db then return end
         if event == "DAMAGE_METER_RESET" then
+            InvalidateSessionWindowCache()
             dmResetPending = true
         end
         if dmEventPending then return end
