@@ -395,7 +395,7 @@ local function CreateHighScoreFrame()
         -- Zone display (bottom-right)
         local endZone = data.instanceLabel or "Open World"
         local startZone = data.startZoneLabel or endZone
-        local ZONE_LABEL_GAP = 6
+        local ZONE_LABEL_GAP = 10
         local ZONE_VALUE_MAX_WIDTH = 340
 
         -- Clear all 4 font strings
