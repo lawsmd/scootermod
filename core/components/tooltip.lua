@@ -450,6 +450,7 @@ local function InitTooltipIDs()
                 elseif actionType == "macro" then
                     addIDLine(tooltip, id, "MacroID")
                 end
+                tooltip:Show()
             end
         end)
     end
