@@ -1,0 +1,674 @@
+local addonName, addon = ...
+
+-- Damage Meters Component
+-- Targets Blizzard's Damage Meter frame (DamageMeter, Edit Mode system) and provides:
+-- - Edit Mode settings: Style, Frame Width/Height, Bar Height, Padding, Opacity, Background, Text Size, Visibility, Show Spec Icon, Show Class Color
+-- - Addon-only settings: Bar textures, fonts, colors, borders, etc.
+--
+-- Zero-Touch invariant:
+-- - If the profile has no persisted table for this component, ApplyStyling must do nothing.
+-- - Even if the component DB exists due to Edit Mode changes, addon-only styling should only apply
+--   when the specific config tables exist.
+
+-- Namespace setup
+addon.DamageMeters = addon.DamageMeters or {}
+local DM = addon.DamageMeters
+
+--------------------------------------------------------------------------------
+-- Utility Functions
+--------------------------------------------------------------------------------
+
+local function SafeSetAlpha(frame, alpha)
+    if not frame or not frame.SetAlpha then return false end
+    return pcall(frame.SetAlpha, frame, alpha)
+end
+
+local function SafeSetShown(region, shown)
+    if not region then return end
+    if region.SetShown then
+        pcall(region.SetShown, region, shown and true or false)
+        return
+    end
+    if shown then
+        if region.Show then pcall(region.Show, region) end
+    else
+        if region.Hide then pcall(region.Hide, region) end
+    end
+end
+
+local function PlayerInCombat()
+    if addon and addon.ComponentsUtil and type(addon.ComponentsUtil.PlayerInCombat) == "function" then
+        return addon.ComponentsUtil.PlayerInCombat()
+    end
+    if InCombatLockdown() then
+        return true
+    end
+    return UnitAffectingCombat("player") and true or false
+end
+
+local function GetClassColor(classToken)
+    if not classToken then return 1, 1, 1, 1 end
+    local colors = _G.RAID_CLASS_COLORS
+    if colors and colors[classToken] then
+        local c = colors[classToken]
+        return c.r or 1, c.g or 1, c.b or 1, 1
+    end
+    return 1, 1, 1, 1
+end
+
+DM._SafeSetAlpha = SafeSetAlpha
+DM._SafeSetShown = SafeSetShown
+DM._PlayerInCombat = PlayerInCombat
+DM._GetClassColor = GetClassColor
+
+--------------------------------------------------------------------------------
+-- JiberishIcons Integration Helpers
+--------------------------------------------------------------------------------
+
+local function GetJiberishIcons()
+    local JIGlobal = _G.ElvUI_JiberishIcons
+    if not JIGlobal or type(JIGlobal) ~= "table" then return nil end
+    local JI = JIGlobal[1]
+    if not JI then return nil end
+    return JI
+end
+
+local function IsJiberishIconsAvailable()
+    local JI = GetJiberishIcons()
+    if not JI then return false end
+    if not JI.dataHelper or not JI.dataHelper.class then return false end
+    if not JI.mergedStylePacks or not JI.mergedStylePacks.class then return false end
+    return true
+end
+
+local function GetJiberishIconsStyles()
+    local JI = GetJiberishIcons()
+    if not JI or not JI.mergedStylePacks or not JI.mergedStylePacks.class then return {} end
+    local styles = {}
+    for key, data in pairs(JI.mergedStylePacks.class.styles or {}) do
+        styles[key] = data.name or key
+    end
+    return styles
+end
+
+-- Export to addon namespace for UI access
+addon.IsJiberishIconsAvailable = IsJiberishIconsAvailable
+addon.GetJiberishIconsStyles = GetJiberishIconsStyles
+DM._GetJiberishIcons = GetJiberishIcons
+
+--------------------------------------------------------------------------------
+-- State Tables
+--------------------------------------------------------------------------------
+
+-- Per-window state storage (avoids tainting Blizzard frames with _Scoot* properties)
+local windowState = setmetatable({}, { __mode = "k" })  -- Weak keys for GC
+
+local function getWindowState(sessionWindow)
+    if not windowState[sessionWindow] then
+        windowState[sessionWindow] = {}
+    end
+    return windowState[sessionWindow]
+end
+
+-- Per-element state (icons, status bars, overlays) — avoids writing _scooter* fields
+-- directly onto Blizzard child frames which can propagate taint to the parent system frame.
+local elementState = setmetatable({}, { __mode = "k" })
+
+local function getElementState(frame)
+    if not elementState[frame] then
+        elementState[frame] = {}
+    end
+    return elementState[frame]
+end
+
+-- OPT-18: Style generation counter for dirty-flag caching.
+-- Bumped before every full-pass ForEachVisibleEntry call so that subsequent
+-- per-entry InitEntry calls with matching classToken can skip redundant work.
+DM._dmStyleGeneration = 0
+
+-- OPT-27: Cache GetAllSessionWindows result to avoid per-call table allocation.
+-- Invalidated on DM reset and full restyle (ApplyDamageMeterStyling).
+local cachedSessionWindows = nil
+local cachedSessionWindowsValid = false
+
+-- Overlay visibility management for UIParent-parented overlays.
+-- UIParent-parented overlays don't auto-hide when entries are hidden/recycled
+-- by the ScrollBox. Use a per-window "hide then show visible" pattern.
+local windowOverlays = setmetatable({}, { __mode = "k" })
+
+-- Strong set of session windows we've styled (for cleanup iteration)
+-- windowOverlays/windowState are weak-key tables and can't be reliably iterated.
+local knownSessionWindows = {}
+
+DM._windowState = windowState
+DM._elementState = elementState
+DM._windowOverlays = windowOverlays
+DM._knownSessionWindows = knownSessionWindows
+DM._getWindowState = getWindowState
+DM._getElementState = getElementState
+
+--------------------------------------------------------------------------------
+-- Overlay Registry & Visibility Management
+--------------------------------------------------------------------------------
+
+local function registerDMOverlay(sessionWindow, overlay)
+    if not sessionWindow or not overlay then return end
+    if not windowOverlays[sessionWindow] then
+        windowOverlays[sessionWindow] = {}
+    end
+    windowOverlays[sessionWindow][#windowOverlays[sessionWindow] + 1] = overlay
+end
+
+local function hideWindowOverlays(sessionWindow)
+    local overlays = sessionWindow and windowOverlays[sessionWindow]
+    if not overlays then return end
+    for _, overlay in ipairs(overlays) do
+        overlay:Hide()
+    end
+end
+
+local function hideAllDMOverlays()
+    -- Restore Blizzard entry visuals before hiding overlays
+    for _, overlays in pairs(windowOverlays) do
+        for _, overlay in ipairs(overlays) do
+            if overlay._lastEntry then
+                -- Late-binding: DM._RestoreBlizzardEntryContent set by overlays.lua
+                DM._RestoreBlizzardEntryContent(overlay._lastEntry)
+            end
+            overlay:Hide()
+        end
+    end
+    -- Clip frames, button overlays, title right-click overlays from windowState
+    for sessionWindow in pairs(knownSessionWindows) do
+        local ws = windowState[sessionWindow]
+        if ws then
+            if ws.clipFrame then ws.clipFrame:Hide() end
+            if ws.buttonOverlays then
+                if ws.buttonOverlays.typeArrow then ws.buttonOverlays.typeArrow:Hide() end
+                if ws.buttonOverlays.settingsIcon then ws.buttonOverlays.settingsIcon:Hide() end
+            end
+            if ws.titleRightClickOverlay then ws.titleRightClickOverlay:Hide() end
+        end
+    end
+end
+
+DM._registerDMOverlay = registerDMOverlay
+DM._hideWindowOverlays = hideWindowOverlays
+DM._hideAllDMOverlays = hideAllDMOverlays
+
+--------------------------------------------------------------------------------
+-- Zone Snapshot (for export data)
+--------------------------------------------------------------------------------
+
+local function GetCurrentZoneLabel()
+    local instName, instType, _, diffName = GetInstanceInfo()
+    if instName and instName ~= "" and instType ~= "none" then
+        return (diffName and diffName ~= "") and (instName .. " (" .. diffName .. ")") or instName
+    else
+        return (instName and instName ~= "") and instName or "Open World"
+    end
+end
+
+DM._dmResetZoneSnapshot = nil
+
+local function SnapshotResetZone()
+    DM._dmResetZoneSnapshot = GetCurrentZoneLabel()
+end
+
+DM._GetCurrentZoneLabel = GetCurrentZoneLabel
+
+--------------------------------------------------------------------------------
+-- Session Window Discovery
+--------------------------------------------------------------------------------
+
+-- OPT-27: Invalidate the session window cache so the next call rebuilds it.
+local function InvalidateSessionWindowCache()
+    cachedSessionWindows = nil
+    cachedSessionWindowsValid = false
+end
+
+local function GetAllSessionWindows()
+    if cachedSessionWindowsValid and cachedSessionWindows then
+        return cachedSessionWindows
+    end
+
+    local windows = {}
+
+    -- Try numbered session windows (DamageMeterSessionWindow1, DamageMeterSessionWindow2, etc.)
+    for i = 1, 10 do
+        local windowName = "DamageMeterSessionWindow" .. i
+        local window = _G[windowName]
+        if window then
+            table.insert(windows, window)
+        end
+    end
+
+    -- Also check DamageMeter.sessionWindows array if it exists
+    local dmFrame = _G.DamageMeter
+    if dmFrame and dmFrame.sessionWindows then
+        for _, window in ipairs(dmFrame.sessionWindows) do
+            -- Avoid duplicates
+            local found = false
+            for _, existing in ipairs(windows) do
+                if existing == window then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                table.insert(windows, window)
+            end
+        end
+    end
+
+    cachedSessionWindows = windows
+    cachedSessionWindowsValid = true
+    return windows
+end
+
+-- Iterate all visible entries in a session window's ScrollBox
+local function ForEachVisibleEntry(sessionWindow, callback)
+    if not sessionWindow then return end
+
+    local scrollBox = sessionWindow.ScrollBox
+    if not scrollBox then return end
+
+    -- Method 1: ForEachFrame (standard ScrollBox API)
+    if scrollBox.ForEachFrame then
+        local ok, err = pcall(scrollBox.ForEachFrame, scrollBox, callback)
+        if not ok and addon._debugDM then
+            addon._debugDMLog = addon._debugDMLog or {}
+            addon._debugDMLog[#addon._debugDMLog + 1] = "ForEachFrame error: " .. tostring(err)
+        end
+        return
+    end
+
+    -- Method 2: GetFrames (alternative API)
+    if scrollBox.GetFrames then
+        local ok, frames = pcall(scrollBox.GetFrames, scrollBox)
+        if ok and frames then
+            for _, frame in ipairs(frames) do
+                pcall(callback, frame)
+            end
+        elseif not ok and addon._debugDM then
+            addon._debugDMLog = addon._debugDMLog or {}
+            addon._debugDMLog[#addon._debugDMLog + 1] = "GetFrames error: " .. tostring(frames)
+        end
+        return
+    end
+
+    -- Method 3: Iterate ScrollTarget children directly
+    local scrollTarget = scrollBox.ScrollTarget
+    if scrollTarget and scrollTarget.GetChildren then
+        local children = { scrollTarget:GetChildren() }
+        for _, child in ipairs(children) do
+            if child and child.StatusBar then
+                pcall(callback, child)
+            end
+        end
+    elseif addon._debugDM then
+        addon._debugDMLog = addon._debugDMLog or {}
+        addon._debugDMLog[#addon._debugDMLog + 1] = "No iteration method found on ScrollBox"
+    end
+end
+
+-- Get scroll signature for scroll change detection
+local function GetScrollSignature()
+    local windows = GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        local sig = nil
+        ForEachVisibleEntry(sessionWindow, function(entryFrame)
+            if not sig then
+                local nt = entryFrame.nameText
+                if issecretvalue(nt) then nt = nil end
+                if not nt then
+                    nt = entryFrame.sourceName
+                    if issecretvalue(nt) then nt = nil end
+                end
+                local style = entryFrame.style
+                if issecretvalue(style) then style = nil end
+                sig = (nt or "") .. "|" .. tostring(style or "")
+            end
+        end)
+        if sig then return sig end
+    end
+    return ""
+end
+
+DM._InvalidateSessionWindowCache = InvalidateSessionWindowCache
+DM._GetAllSessionWindows = GetAllSessionWindows
+DM._ForEachVisibleEntry = ForEachVisibleEntry
+DM._GetScrollSignature = GetScrollSignature
+
+--------------------------------------------------------------------------------
+-- Component Registration
+--------------------------------------------------------------------------------
+
+addon:RegisterComponentInitializer(function(self)
+    local Component = addon.ComponentPrototype
+
+    local damageMeter = Component:New({
+        id = "damageMeter",
+        name = "Damage Meter",
+        frameName = "DamageMeter",
+        settings = {
+            -- Edit Mode-managed settings (11 total)
+            -- Style dropdown: Default(0), Bordered(1), Thin(2)
+            style = { type = "editmode", settingId = nil, default = 0, ui = { hidden = true } },
+            -- Layout settings
+            frameWidth = { type = "editmode", settingId = nil, default = 300, ui = { hidden = true } },
+            frameHeight = { type = "editmode", settingId = nil, default = 200, ui = { hidden = true } },
+            barHeight = { type = "editmode", settingId = nil, default = 20, ui = { hidden = true } },
+            padding = { type = "editmode", settingId = nil, default = 4, ui = { hidden = true } },
+            -- Transparency/Opacity settings
+            opacity = { type = "editmode", settingId = nil, default = 100, ui = { hidden = true } },
+            background = { type = "editmode", settingId = nil, default = 80, ui = { hidden = true } },
+            -- Text size
+            textSize = { type = "editmode", settingId = nil, default = 100, ui = { hidden = true } },
+            -- Visibility dropdown: Always(0), InCombat(1), Hidden(2)
+            visibility = { type = "editmode", settingId = nil, default = 0, ui = { hidden = true } },
+            -- Checkboxes
+            showSpecIcon = { type = "editmode", settingId = nil, default = true, ui = { hidden = true } },
+            showClassColor = { type = "editmode", settingId = nil, default = true, ui = { hidden = true } },
+
+            -- Addon-only settings (bar styling)
+            barTexture = { type = "addon", default = "default", ui = { hidden = true } },
+            -- Foreground color: mode ("default", "class", "custom") + tint for custom
+            barForegroundColorMode = { type = "addon", default = "default", ui = { hidden = true } },
+            barForegroundTint = { type = "addon", default = { r = 1, g = 0.8, b = 0, a = 1 }, ui = { hidden = true } },
+            -- Background color: mode ("default", "custom") + tint for custom
+            barBackgroundColorMode = { type = "addon", default = "default", ui = { hidden = true } },
+            barBackgroundTint = { type = "addon", default = { r = 0.1, g = 0.1, b = 0.1, a = 0.8 }, ui = { hidden = true } },
+            -- Legacy settings (kept for backwards compatibility)
+            barForegroundColor = { type = "addon", default = { 1, 0.8, 0, 1 }, ui = { hidden = true } },
+            barBackgroundColor = { type = "addon", default = { 0.1, 0.1, 0.1, 0.8 }, ui = { hidden = true } },
+
+            -- Bar border settings
+            barBorderStyle = { type = "addon", default = "default", ui = { hidden = true } },
+            barBorderTintEnabled = { type = "addon", default = false, ui = { hidden = true } },
+            barBorderTintColor = { type = "addon", default = { 1, 1, 1, 1 }, ui = { hidden = true } },
+            barBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
+            barBorderHiddenEdges = { type = "addon", default = {}, ui = { hidden = true } },
+
+            -- Icon settings (matching Essential Cooldowns Border pattern)
+            iconBorderEnable = { type = "addon", default = false, ui = { hidden = true } },
+            iconBorderTintEnable = { type = "addon", default = false, ui = { hidden = true } },
+            iconBorderTintColor = { type = "addon", default = { r = 1, g = 1, b = 1, a = 1 }, ui = { hidden = true } },
+            iconBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
+            iconBorderInsetH = { type = "addon", default = 0, ui = { hidden = true } },  -- Horizontal (left/right)
+            iconBorderInsetV = { type = "addon", default = 2, ui = { hidden = true } },  -- Vertical (top/bottom) - default 2 for clipped icons
+
+            -- JiberishIcons integration (class icons to replace spec icons)
+            jiberishIconsEnabled = { type = "addon", default = false, ui = { hidden = true } },
+            jiberishIconsStyle = { type = "addon", default = "fabled", ui = { hidden = true } },
+
+            -- Text settings - Title (header/dropdown)
+            -- Default color is Blizzard's GameFontNormalMed1 gold: r=1.0, g=0.82, b=0
+            textTitle = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                fontStyle = "OUTLINE",
+                scaleMultiplier = 1.0,
+                colorMode = "default",
+                color = { 1.0, 0.82, 0, 1 },
+            }, ui = { hidden = true }},
+
+            -- Text settings - Timer (session timer [00:05:23])
+            -- Same defaults as textTitle (both inherit GameFontNormalMed1)
+            textTimer = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                fontStyle = "OUTLINE",
+                colorMode = "default",
+                color = { 1.0, 0.82, 0, 1 },
+            }, ui = { hidden = true }},
+
+            -- Button tint (header dropdown arrows, settings icon, session name text)
+            buttonTintMode = { type = "addon", default = "default", ui = { hidden = true }},
+            buttonTint = { type = "addon", default = { r = 1, g = 0.82, b = 0, a = 1 }, ui = { hidden = true }},
+
+            -- Button icon overlays (custom atlas-based icons for uniform styling)
+            buttonIconOverlaysEnabled = { type = "addon", default = false, ui = { hidden = true }},
+
+            -- Header backdrop settings
+            headerBackdropShow = { type = "addon", default = true, ui = { hidden = true }},
+            headerBackdropTint = { type = "addon", default = { r = 1, g = 1, b = 1, a = 1 }, ui = { hidden = true }},
+
+            -- Enhanced title: show session type alongside meter type (e.g., "DPS (Current)")
+            showSessionInTitle = { type = "addon", default = false, ui = { hidden = true }},
+
+            -- Right-click title text to open meter type dropdown
+            titleTextRightClickMeterType = { type = "addon", default = false, ui = { hidden = true }},
+
+            -- Text settings - Names (player names on bars)
+            textNames = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                fontStyle = "OUTLINE",
+                fontSize = 12,
+                color = { 1, 1, 1, 1 },
+                colorMode = "default",
+                scaleMultiplier = 1.0,
+            }, ui = { hidden = true }},
+
+            -- Text settings - Numbers (DPS/HPS values)
+            textNumbers = { type = "addon", default = {
+                fontFace = "FRIZQT__",
+                fontStyle = "OUTLINE",
+                fontSize = 12,
+                color = { 1, 1, 1, 1 },
+                colorMode = "default",
+                scaleMultiplier = 1.0,
+            }, ui = { hidden = true }},
+
+            -- Window border settings
+            windowShowBorder = { type = "addon", default = false, ui = { hidden = true } },
+            windowBorderStyle = { type = "addon", default = "default", ui = { hidden = true } },
+            windowBorderColor = { type = "addon", default = { 1, 1, 1, 1 }, ui = { hidden = true } },
+            windowBorderThickness = { type = "addon", default = 1, ui = { hidden = true } },
+
+            -- Window background settings
+            windowCustomBackdrop = { type = "addon", default = false, ui = { hidden = true } },
+            windowBackdropTexture = { type = "addon", default = "default", ui = { hidden = true } },
+            windowBackdropColor = { type = "addon", default = { 0.1, 0.1, 0.1, 0.9 }, ui = { hidden = true } },
+
+            -- Export settings
+            exportEnabled = { type = "addon", default = false, ui = { hidden = true } },
+            exportButtonXOffset = { type = "addon", default = 0, ui = { hidden = true } },
+            exportChatChannel = { type = "addon", default = "PARTY", ui = { hidden = true } },
+            exportChatLineCount = { type = "addon", default = 5, ui = { hidden = true } },
+            highScoreFont = { type = "addon", default = "PRESS_START_2P", ui = { hidden = true } },
+
+            -- Quality of Life settings
+            autoResetData = { type = "addon", default = "off", ui = { hidden = true } },
+            autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
+        },
+        ApplyStyling = function(self) DM._ApplyDamageMeterStyling(self) end,
+        RefreshOpacity = function() end,  -- OPT-13: Opacity is Edit Mode-managed; no Scoot work needed
+    })
+
+    self:RegisterComponent(damageMeter)
+
+    -- Zone snapshot: track where data started
+    if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+        hooksecurefunc(C_DamageMeter, "ResetAllCombatSessions", SnapshotResetZone)
+    end
+    SnapshotResetZone()
+
+    -- Re-snapshot after PLAYER_ENTERING_WORLD so GetInstanceInfo() has difficulty info
+    local snapshotRefreshFrame = CreateFrame("Frame")
+    snapshotRefreshFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    snapshotRefreshFrame:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
+        if isInitialLogin or isReloadingUi then
+            SnapshotResetZone()
+            self:UnregisterAllEvents()
+        end
+    end)
+
+    -- Event-driven restyling (replaces Rule 11-violating hooksecurefunc on system frames)
+    -- DamageMeter inherits EditModeDamageMeterSystemTemplate — hooks on its tree cause taint.
+    -- These events fire when Blizzard refreshes the meter, matching the old hook triggers.
+    local dmEventPending = false
+    local dmResetPending = false
+    local dmEventFrame = CreateFrame("Frame")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_RESET")
+    dmEventFrame:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
+    dmEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    dmEventFrame:SetScript("OnEvent", function(_, event)
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        if event == "DAMAGE_METER_RESET" then
+            InvalidateSessionWindowCache()
+            dmResetPending = true
+        end
+        if dmEventPending then return end
+        dmEventPending = true
+        C_Timer.After(0, function()
+            dmEventPending = nil
+            if dmResetPending then
+                dmResetPending = false
+                hideAllDMOverlays()
+            end
+            if PlayerInCombat() then
+                -- Combat: data-only update (bar fill + text, no style changes)
+                DM._UpdateAllOverlayData(comp)
+            else
+                if comp and comp.ApplyStyling then
+                    comp:ApplyStyling()
+                end
+            end
+        end)
+    end)
+
+    -- Scroll detection ticker: detects ScrollBox content changes during scrolling
+    -- Also tracks DamageMeter visibility to hide/show overlays on transitions
+    local scrollSignature = ""
+    local dmWasShown = false
+    local scrollTicker = CreateFrame("Frame")
+    scrollTicker:SetScript("OnUpdate", function(self, elapsed)
+        self._elapsed = (self._elapsed or 0) + elapsed
+        if self._elapsed < 0.3 then return end
+        self._elapsed = 0
+        local dmFrame = _G.DamageMeter
+        local isShown = dmFrame and dmFrame:IsShown()
+        if not isShown then
+            if dmWasShown then
+                dmWasShown = false
+                hideAllDMOverlays()
+            end
+            return
+        end
+        if not dmWasShown then
+            dmWasShown = true
+            -- Frame just became visible — trigger full restyle
+            local comp = addon.Components and addon.Components["damageMeter"]
+            if comp and comp.ApplyStyling and not PlayerInCombat() then
+                comp:ApplyStyling()
+            end
+            return
+        end
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        local newSig = GetScrollSignature()
+        if issecretvalue(newSig) then return end
+        if newSig ~= scrollSignature then
+            scrollSignature = newSig
+            if PlayerInCombat() then
+                DM._UpdateAllOverlayData(comp)
+            else
+                comp:ApplyStyling()
+            end
+        end
+    end)
+
+    -- Auto-reset data event handler
+    local resetFrame = CreateFrame("Frame")
+    resetFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    resetFrame:SetScript("OnEvent", function(_, event, isInitialLogin, isReloadingUi)
+        if isInitialLogin or isReloadingUi then return end
+
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp or not comp.db then return end
+        local mode = comp.db.autoResetData
+        if mode ~= "instance" then return end
+
+        local inInstance, instanceType = IsInInstance()
+        if not inInstance then return end
+        if instanceType ~= "party" and instanceType ~= "raid" and instanceType ~= "scenario" then return end
+
+        if not C_DamageMeter or not C_DamageMeter.ResetAllCombatSessions then return end
+
+        if comp.db.autoResetPrompt then
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOT_DM_RESET_CONFIRM", {
+                    onAccept = function()
+                        C_DamageMeter.ResetAllCombatSessions()
+                    end,
+                })
+            end
+        else
+            C_DamageMeter.ResetAllCombatSessions()
+        end
+    end)
+
+    -- Debug: /scoot debug dm frames — overlay diagnostic info in copyable window
+    addon.DebugDMFrames = function()
+        local lines = {}
+        local function push(s) lines[#lines + 1] = s end
+
+        local windows = GetAllSessionWindows()
+        push("Session windows found: " .. #windows)
+        push("")
+        for i, sw in ipairs(windows) do
+            local ws = windowState[sw]
+            local clipFrame = ws and ws.clipFrame
+            local overlayCount = windowOverlays[sw] and #windowOverlays[sw] or 0
+            push(string.format("Window %d: overlays=%d, clipFrame=%s", i, overlayCount, tostring(clipFrame ~= nil)))
+            if clipFrame then
+                local ok, cl = pcall(clipFrame.GetFrameLevel, clipFrame)
+                local ok2, cs = pcall(clipFrame.GetFrameStrata, clipFrame)
+                push(string.format("  ClipFrame: level=%s, strata=%s", ok and tostring(cl) or "?", ok2 and tostring(cs) or "?"))
+            end
+            local entryCount = 0
+            ForEachVisibleEntry(sw, function(entry)
+                entryCount = entryCount + 1
+                local ok, el = pcall(entry.GetFrameLevel, entry)
+                local ok2, es = pcall(entry.GetFrameStrata, entry)
+                local elSt = elementState[entry]
+                local ov = elSt and elSt.entryOverlay
+                local ovLevel, ovStrata = "none", "none"
+                if ov then
+                    local ok3, ol = pcall(ov.GetFrameLevel, ov)
+                    local ok4, os = pcall(ov.GetFrameStrata, ov)
+                    ovLevel = ok3 and tostring(ol) or "?"
+                    ovStrata = ok4 and tostring(os) or "?"
+                end
+                push(string.format("  Entry %d: level=%s strata=%s | Overlay: level=%s strata=%s shown=%s",
+                    entryCount,
+                    ok and tostring(el) or "?", ok2 and tostring(es) or "?",
+                    ovLevel, ovStrata,
+                    ov and tostring(ov:IsShown()) or "no overlay"))
+            end)
+            push(string.format("  Visible entries: %d", entryCount))
+            push("")
+        end
+
+        -- Include buffered error log if debug tracing was on
+        if addon._debugDMLog and #addon._debugDMLog > 0 then
+            push("--- Debug Log (" .. #addon._debugDMLog .. " entries) ---")
+            for _, msg in ipairs(addon._debugDMLog) do
+                push(msg)
+            end
+        end
+
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("DM Frame Diagnostics", lines)
+        end
+    end
+
+    -- Toggle DM debug mode
+    addon.SetDMDebug = function(enabled)
+        addon._debugDM = enabled
+        if addon.Print then
+            addon:Print("DM debug " .. (enabled and "enabled" or "disabled"))
+        end
+    end
+end)
