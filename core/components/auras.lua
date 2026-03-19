@@ -180,10 +180,15 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
     local function ensureDefaultColor(cfg, fs)
         if cfg.color ~= nil or not (fs and fs.GetTextColor) then return end
-        local r, g, b, a = fs:GetTextColor()
+        local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
+        if not ok then return end
+        if issecretvalue(r) then return end
         local alpha = a
         if alpha == nil and fs.GetAlpha then
-            alpha = fs:GetAlpha()
+            local ok2, alphaVal = pcall(fs.GetAlpha, fs)
+            if ok2 and not issecretvalue(alphaVal) then
+                alpha = alphaVal
+            end
         end
         cfg.color = { r or 1, g or 1, b or 1, alpha or 1 }
     end
@@ -193,7 +198,10 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         local state = getState(fs)
         if not state then return nil end
         if not state.defaultAnchor then
-            local point, relTo, relPoint, x, y = fs:GetPoint(1)
+            local ok, point, relTo, relPoint, x, y = pcall(fs.GetPoint, fs, 1)
+            if not ok or issecretvalue(point) then
+                point, relTo, relPoint, x, y = "CENTER", fallbackRelTo, "CENTER", 0, 0
+            end
             if not point then
                 point, relPoint, x, y = "CENTER", "CENTER", 0, 0
             end
@@ -468,7 +476,12 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                                 end
                             end
                         else
-                            setDefaultAuraBorderVisible(aura, true)
+                            setRegionVisible(aura.IconBorder, true)
+                            setRegionVisible(aura.Border, true)
+                            if componentId ~= "debuffs" then
+                                setRegionVisible(aura.DebuffBorder, true)
+                                setRegionVisible(aura.TempEnchantBorder, true)
+                            end
                             clearCustomBorder(icon)
                             local iconState = getState(icon)
                             if iconState then iconState.lastBorder = nil end
@@ -514,7 +527,11 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                                 if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                             end
                         else
-                            -- Square icons or custom border active: hide overlays
+                            -- Square icons or custom border active: restore Blizzard borders, hide overlays
+                            if not borderEnabled then
+                                setRegionVisible(aura.DebuffBorder, true)
+                                setRegionVisible(aura.TempEnchantBorder, true)
+                            end
                             if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                             if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         end
@@ -616,6 +633,9 @@ local function ApplyAuraFrameStyling(self)
                                 pcall(auraSt.debuffBorderOverlay.SetAtlas, auraSt.debuffBorderOverlay, hookAtlas, false)
                             end
                         end
+                        -- Per-button safety: hide Blizzard's border immediately when overlay is active
+                        pcall(borderRegion.Hide, borderRegion)
+                        pcall(borderRegion.SetAlpha, borderRegion, 0)
                     end
                 end)
             end)
