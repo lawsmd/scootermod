@@ -76,7 +76,10 @@ core/components/personal_resource_display/opacity.lua
 core/components/personal_resource_display/text.lua
 core/components/personal_resource_display/bars.lua
 core/components/scrollingcombattext.lua
-core/components/unitframes/text.lua
+core/components/unitframes/text/core.lua
+core/components/unitframes/text/health.lua
+core/components/unitframes/text/power.lua
+core/components/unitframes/text/names.lua
 core/components/unitframes/bars/utils.lua
 core/components/unitframes/bars/combat.lua
 core/components/unitframes/bars/resolvers.lua
