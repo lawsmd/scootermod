@@ -119,6 +119,9 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     if not db then return end
     local settings = component.settings or {}
 
+    -- Defense in depth: if DB was materialized but has no real settings, do nothing
+    if not next(db) then return end
+
     if type(db.textDuration) ~= "table" and type(db.textCooldown) == "table" then
         local src = db.textCooldown
         local copy = {}
@@ -138,13 +141,9 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
     local defaultFace = (select(1, GameFontNormal:GetFont()))
 
-    local function ensureTextConfig(key)
+    local function getTextConfig(key)
         local cfg = db[key]
-        if type(cfg) ~= "table" then
-            cfg = {}
-            db[key] = cfg
-        end
-        cfg.offset = cfg.offset or {}
+        if type(cfg) ~= "table" then return nil end
         return cfg
     end
 
@@ -202,20 +201,8 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         if type(fs.SetFontObject) == "function" then hooksecurefunc(fs, "SetFontObject", fontObjectCallback) end
     end
 
-    local function ensureDefaultColor(cfg, fs)
-        if cfg.color ~= nil or not (fs and fs.GetTextColor) then return end
-        local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
-        if not ok then return end
-        if issecretvalue(r) then return end
-        local alpha = a
-        if alpha == nil and fs.GetAlpha then
-            local ok2, alphaVal = pcall(fs.GetAlpha, fs)
-            if ok2 and not issecretvalue(alphaVal) then
-                alpha = alphaVal
-            end
-        end
-        cfg.color = { r or 1, g or 1, b or 1, alpha or 1 }
-    end
+    -- ensureDefaultColor removed: don't persist captured Blizzard colors to DB.
+    -- If no user color is configured, Blizzard manages the FontString color (zero-touch).
 
     local function captureDefaultAnchor(fs, fallbackRelTo)
         if not fs then return nil end
@@ -243,8 +230,8 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
     local function applyAuraText(fs, key, defaultSize, fallbackRelTo)
         if not fs or not fs.SetFont then return end
-        local cfg = ensureTextConfig(key)
-        ensureDefaultColor(cfg, fs)
+        local cfg = getTextConfig(key)
+        if not cfg then return end  -- Zero-touch: no user config, skip text styling
         ensureTextHooks(fs, key)
         local state = getState(fs)
         local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
@@ -276,8 +263,9 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         -- OPT-26 Change 5: Anchor cache — skip ClearAllPoints + SetPoint when unchanged
         local anchor = captureDefaultAnchor(fs, fallbackRelTo)
         if anchor and fs.ClearAllPoints and fs.SetPoint then
-            local ox = tonumber(cfg.offset.x) or 0
-            local oy = tonumber(cfg.offset.y) or 0
+            local offsetCfg = cfg.offset or {}
+            local ox = tonumber(offsetCfg.x) or 0
+            local oy = tonumber(offsetCfg.y) or 0
             local pt = anchor.point or "CENTER"
             local rp = anchor.relPoint or anchor.point or "CENTER"
             local ax = (anchor.x or 0) + ox
@@ -526,8 +514,20 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             setRegionVisible(aura.IconBorder, true)
                             setRegionVisible(aura.Border, true)
                             if componentId ~= "debuffs" then
-                                setRegionVisible(aura.DebuffBorder, true)
-                                setRegionVisible(aura.TempEnchantBorder, true)
+                                -- Restore type-specific borders based on aura type (not blanket force-show)
+                                local okType, aType = pcall(function() return aura.auraType end)
+                                local resolvedType = (okType and aType and not issecretvalue(aType)) and aType or nil
+                                if resolvedType == "TempEnchant" then
+                                    setRegionVisible(aura.DebuffBorder, false)
+                                    setRegionVisible(aura.TempEnchantBorder, true)
+                                elseif resolvedType == "Debuff" or resolvedType == "DeadlyDebuff" then
+                                    setRegionVisible(aura.DebuffBorder, true)
+                                    setRegionVisible(aura.TempEnchantBorder, false)
+                                else
+                                    -- Buff, nil, or secret: hide both (matches Blizzard behavior)
+                                    setRegionVisible(aura.DebuffBorder, false)
+                                    setRegionVisible(aura.TempEnchantBorder, false)
+                                end
                             end
                             clearCustomBorder(icon)
                             local iconState = getState(icon)
@@ -576,8 +576,20 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                         else
                             -- Square icons or custom border active: restore Blizzard borders, hide overlays
                             if not borderEnabled then
-                                setRegionVisible(aura.DebuffBorder, true)
-                                setRegionVisible(aura.TempEnchantBorder, true)
+                                -- Restore type-specific borders based on aura type (not blanket force-show)
+                                local okType2, aType2 = pcall(function() return aura.auraType end)
+                                local resolved2 = (okType2 and aType2 and not issecretvalue(aType2)) and aType2 or nil
+                                if resolved2 == "Debuff" or resolved2 == "DeadlyDebuff" then
+                                    setRegionVisible(aura.DebuffBorder, true)
+                                    setRegionVisible(aura.TempEnchantBorder, false)
+                                elseif resolved2 == "TempEnchant" then
+                                    setRegionVisible(aura.DebuffBorder, false)
+                                    setRegionVisible(aura.TempEnchantBorder, true)
+                                else
+                                    -- Buff, nil, or secret: hide both (matches Blizzard behavior)
+                                    setRegionVisible(aura.DebuffBorder, false)
+                                    setRegionVisible(aura.TempEnchantBorder, false)
+                                end
                             end
                             if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                             if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
