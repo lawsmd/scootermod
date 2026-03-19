@@ -619,6 +619,20 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
         return
     end
 
+    -- OPT-33: Skip redundant work when the bar is already in the requested
+    -- hidden state. The enforcement hooks (SetAlpha/Show/SetStatusBarColor)
+    -- already maintain visibility, so repeated pcall operations are wasted.
+    -- Exception: if a ScootBG was created since the last call (styling
+    -- re-apply path), fall through so it gets hidden too.
+    if hidden then
+        if getProp(ownerFrame, "healthBarColorHidden") then
+            local scBG = getProp(ownerFrame, "ScootBG")
+            if not scBG or getProp(scBG, "healthBarScootBGHidden") then
+                return
+            end
+        end
+    end
+
     local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
     local bgTex = ownerFrame.Background or ownerFrame.background
 
