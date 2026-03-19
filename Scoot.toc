@@ -107,7 +107,13 @@ core/components/notes.lua
 core/qol.lua
 core/components/objectivetracker.lua
 core/components/damagemeters.lua
-core/debug.lua
+core/debug/core.lua
+core/debug/editmode.lua
+core/debug/classauras.lua
+core/debug/offscreen.lua
+core/debug/export.lua
+core/debug/inspector.lua
+core/debug/misc.lua
 core/taintdebug.lua
 core/dialogs.lua
 core/importexport.lua
