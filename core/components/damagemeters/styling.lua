@@ -672,6 +672,8 @@ end
 -- Update all visible overlay data across all windows (combat-safe: bar fill + text only)
 local function UpdateAllOverlayData(comp)
     if not comp or not comp.db then return end
+    -- Zero-Touch: if still on proxy DB, do nothing (no config = no overlays)
+    if comp._ScootDBProxy and comp.db == comp._ScootDBProxy then return end
     local dmFrame = _G.DamageMeter
     if not dmFrame or not dmFrame:IsShown() then
         DM._hideAllDMOverlays()
