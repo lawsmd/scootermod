@@ -31,6 +31,11 @@ local addonName, addon = ...
 
 addon.EditMode = {}
 
+-- OPT-28: Event-driven Edit Mode state flag. Set true on EditMode.Enter,
+-- false on EditMode.Exit. Eliminates pcall + Blizzard API checks from the
+-- hot-path guard that runs in every hook callback (~106 call sites).
+local editModeActiveState = false
+
 local LEO = LibStub("LibEditModeOverride-1.0")
 
 -- Cache for resolved Edit Mode setting IDs per system
@@ -440,20 +445,13 @@ end
 addon.EditMode._exitingEditMode = addon.EditMode._exitingEditMode or false
 
 function addon.EditMode.IsEditModeActiveOrOpening()
-    -- True during opening, active, or exiting phases to avoid taint during transitions
-    if addon and addon.EditMode then
-        if addon.EditMode._openingEditMode then return true end
-        if addon.EditMode._exitingEditMode then return true end
-    end
-    local mgr = _G.EditModeManagerFrame
-    if not mgr then return false end
-    if mgr.IsEditModeActive then
-        local ok, active = pcall(mgr.IsEditModeActive, mgr)
-        if ok and active then return true end
-    end
-    if mgr.editModeActive then return true end
-    if mgr.IsShown and mgr:IsShown() then return true end
-    return false
+    -- OPT-28: Three boolean ORs instead of pcall + Blizzard API queries.
+    -- editModeActiveState is set/cleared by EditMode.Enter/Exit callbacks.
+    -- _openingEditMode/_exitingEditMode cover the 1-second transition windows.
+    return addon.EditMode._openingEditMode
+        or addon.EditMode._exitingEditMode
+        or editModeActiveState
+        or false
 end
 
 function addon.EditMode.MarkOpeningEditMode()
@@ -854,6 +852,8 @@ function addon.EditMode.Initialize()
         local ER = _G.EventRegistry
         if type(ER.RegisterCallback) == "function" then
             ER:RegisterCallback("EditMode.Enter", function()
+                -- OPT-28: Set persistent state flag immediately
+                editModeActiveState = true
                 -- Mark that Edit Mode is entering to suppress addon hooks during the transition
                 -- Prevents taint from propagating during Blizzard's frame setup
                 if addon and addon.EditMode and addon.EditMode.MarkOpeningEditMode then
@@ -864,6 +864,8 @@ function addon.EditMode.Initialize()
                 -- which represents the real user Edit Mode entry path.
             end, addon)
             ER:RegisterCallback("EditMode.Exit", function()
+                -- OPT-28: Clear persistent state flag immediately
+                editModeActiveState = false
                 -- Mark that Edit Mode is exiting to suppress addon hooks during the transition
                 -- Prevents taint from propagating during Blizzard's frame setup
                 if addon and addon.EditMode and addon.EditMode.MarkExitingEditMode then
@@ -890,6 +892,18 @@ function addon.EditMode.Initialize()
                 end)
             end, addon)
             addon._editModeCBRegistered = true
+        end
+
+        -- OPT-28: Seed the cached state for reload-while-in-Edit-Mode.
+        -- EventRegistry callbacks only fire on transitions, so if Edit Mode
+        -- was already active before this code ran, the flag would be stale.
+        do
+            local mgr = _G.EditModeManagerFrame
+            if mgr then
+                if mgr.editModeActive or (mgr.IsShown and mgr:IsShown()) then
+                    editModeActiveState = true
+                end
+            end
         end
     end
 

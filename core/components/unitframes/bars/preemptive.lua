@@ -34,13 +34,8 @@ local Preemptive = addon.BarsPreemptive
 -- Called SYNCHRONOUSLY from PLAYER_TARGET_CHANGED and PLAYER_FOCUS_CHANGED
 -- event handlers. Hides elements BEFORE Blizzard's TargetFrame_Update runs.
 
-local function isEditModeActive()
-    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
-        return addon.EditMode.IsEditModeActiveOrOpening()
-    end
-    local mgr = _G.EditModeManagerFrame
-    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
-end
+-- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Pre-emptive hide for Target frame elements (ReputationColor, FrameTexture, Flash)
 -- Runs SYNCHRONOUSLY from PLAYER_TARGET_CHANGED, BEFORE Blizzard's TargetFrame_Update.

@@ -19,13 +19,8 @@ end
 addon.BarsAlpha = addon.BarsAlpha or {}
 local Alpha = addon.BarsAlpha
 
-local function isEditModeActive()
-    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
-        return addon.EditMode.IsEditModeActiveOrOpening()
-    end
-    local mgr = _G.EditModeManagerFrame
-    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
-end
+-- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 --------------------------------------------------------------------------------
 -- Alpha Application

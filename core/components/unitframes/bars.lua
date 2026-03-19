@@ -21,13 +21,8 @@ local Preemptive = addon.BarsPreemptive
 local RaidFrames = addon.BarsRaidFrames
 local PartyFrames = addon.BarsPartyFrames
 
-local function isEditModeActive()
-    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
-        return addon.EditMode.IsEditModeActiveOrOpening()
-    end
-    local mgr = _G.EditModeManagerFrame
-    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
-end
+-- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
 local FS = nil

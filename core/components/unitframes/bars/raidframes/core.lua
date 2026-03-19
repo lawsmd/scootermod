@@ -724,14 +724,8 @@ local function applyHealthBarBorder(bar, cfg)
     end
 end
 
--- EDIT MODE GUARD: Skip processing when Edit Mode is active
-local function isEditModeActiveForBorders()
-    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
-        return addon.EditMode.IsEditModeActiveOrOpening()
-    end
-    local mgr = _G.EditModeManagerFrame
-    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
-end
+-- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+local isEditModeActiveForBorders = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Apply health bar borders to all raid frames
 function addon.ApplyRaidFrameHealthBarBorders()
@@ -924,18 +918,9 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
--- EDIT MODE GUARD: Skip all CompactUnitFrame hooks when Edit Mode is active.
--- When Scoot triggers ApplyChanges (which bounces Edit Mode), Blizzard sets up
--- Arena/Party/Raid frames. If hooks run during this flow (even just to check
--- frame type), addon code in the execution context can cause UnitInRange() and
--- similar APIs to return secret values, breaking Blizzard's own code.
-local function isEditModeActive()
-    if addon and addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
-        return addon.EditMode.IsEditModeActiveOrOpening()
-    end
-    local mgr = _G.EditModeManagerFrame
-    return mgr and (mgr.editModeActive or (mgr.IsShown and mgr:IsShown()))
-end
+-- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC).
+-- Skip all CompactUnitFrame hooks when Edit Mode is active to avoid taint.
+local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 addon.BarsRaidFrames._isEditModeActive = isEditModeActive
 
