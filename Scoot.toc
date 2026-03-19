@@ -103,7 +103,10 @@ core/components/unitframes/classresource.lua
 core/components/unitframes/dkrunes.lua
 core/components/unitframes/magearcanecharges.lua
 core/components/unitframes/totembar.lua
-core/components/unitframes/cast.lua
+core/components/unitframes/cast/core.lua
+core/components/unitframes/cast/textfill.lua
+core/components/unitframes/cast/styling.lua
+core/components/unitframes/cast/boss.lua
 core/components/unitframes/buffs.lua
 core/components/unitframes/visibility.lua
 core/components/unitframes/copy.lua
