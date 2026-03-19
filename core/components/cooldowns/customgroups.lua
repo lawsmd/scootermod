@@ -922,7 +922,7 @@ local function RebuildGroup(groupIndex)
 
     -- Manage item ticker
     if totalItems > 0 and not itemTicker then
-        itemTicker = C_Timer.NewTicker(0.25, function()
+        itemTicker = C_Timer.NewTicker(0.5, function()
             RefreshAllItemCooldowns()
         end)
     elseif totalItems == 0 and itemTicker then
