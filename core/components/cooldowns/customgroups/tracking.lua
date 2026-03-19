@@ -75,12 +75,15 @@ local function RefreshSpellCooldown(icon)
                     if chargeInfo.cooldownStartTime > 0 then
                         icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
                     end
+                    icon.Icon:SetDesaturated(true)
                 elseif chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
                     -- Recharging — show swipe
                     icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
+                    icon.Icon:SetDesaturated(false)
                 else
                     -- All charges full
                     icon.Cooldown:Clear()
+                    icon.Icon:SetDesaturated(false)
                 end
                 return cdInfo
             end
@@ -90,6 +93,7 @@ local function RefreshSpellCooldown(icon)
             icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
+            icon.Icon:SetDesaturated(false)
             return cdInfo
         end
     else
@@ -101,6 +105,7 @@ local function RefreshSpellCooldown(icon)
 
     -- isOnGCD is NeverSecret — always safe
     if cdInfo.isOnGCD then
+        icon.Icon:SetDesaturated(false)
         return cdInfo
     end
 
@@ -110,12 +115,15 @@ local function RefreshSpellCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
+            icon.Icon:SetDesaturated(true)
         else
             icon.Cooldown:Clear()
+            icon.Icon:SetDesaturated(false)
         end
     else
         -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
         icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
+        icon.Icon:SetDesaturated(true)
     end
 
     return cdInfo
@@ -132,12 +140,15 @@ local function RefreshItemCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(startTime, duration)
+            icon.Icon:SetDesaturated(true)
         else
             icon.Cooldown:Clear()
+            icon.Icon:SetDesaturated(false)
         end
     elseif startTime and duration then
         -- Secret fallback: pass directly to SetCooldown
         icon.Cooldown:SetCooldown(startTime, duration)
+        icon.Icon:SetDesaturated(true)
     end
 
     -- Stack count
@@ -329,6 +340,7 @@ end
 function CG._OnIconCooldownDone(cooldownFrame)
     local icon = cooldownFrame:GetParent()
     if icon and icon.entry and icon._groupIndex then
+        icon.Icon:SetDesaturated(false)
         ApplyCooldownOpacity(icon, icon._groupIndex)
     end
 end
