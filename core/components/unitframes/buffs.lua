@@ -4,15 +4,10 @@ local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
 local ClampOpacity = Util.ClampOpacity
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 local function getState(frame)
-    local fs = ensureFS()
-    return fs and fs.Get(frame) or nil
+    return FS.Get(frame)
 end
 
 -- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)

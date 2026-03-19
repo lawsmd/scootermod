@@ -9,11 +9,7 @@
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 -- Create module namespace
 addon.BarsAlpha = addon.BarsAlpha or {}
@@ -41,7 +37,7 @@ end
 -- @param computeAlpha: Function that returns the desired alpha value (0 or 1)
 function Alpha.hookAlphaEnforcer(frameOrTexture, computeAlpha)
     if not frameOrTexture or not _G.hooksecurefunc or type(computeAlpha) ~= "function" then return end
-    local fs = ensureFS()
+    local fs = FS
     if fs and fs.IsHooked(frameOrTexture, "alphaEnforcer") then return end
     if fs then fs.MarkHooked(frameOrTexture, "alphaEnforcer") end
 

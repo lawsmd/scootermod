@@ -65,7 +65,8 @@ end
 
 -- Check if a hook has been installed (without writing to the frame)
 function FS.IsHooked(frame, hookKey)
-    return FS.GetProp(frame, hookKey) == true
+    if not frame or not frameData[frame] then return false end
+    return frameData[frame][hookKey] == true
 end
 
 -- Mark a hook as installed
@@ -75,7 +76,8 @@ end
 
 -- Check if an element is marked as hidden
 function FS.IsHidden(frame, hiddenKey)
-    return FS.GetProp(frame, hiddenKey) == true
+    if not frame or not frameData[frame] then return false end
+    return frameData[frame][hiddenKey] == true
 end
 
 -- Set hidden state

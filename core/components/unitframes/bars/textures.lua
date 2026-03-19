@@ -9,24 +9,19 @@ local addonName, addon = ...
 local Utils = addon.BarsUtils
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 local function getState(frame)
-    local fs = ensureFS()
-    return fs and fs.Get(frame) or nil
+    return FS.Get(frame)
 end
 
 local function getProp(frame, key)
-    local st = getState(frame)
+    local st = FS.Get(frame)
     return st and st[key] or nil
 end
 
 local function setProp(frame, key, value)
-    local st = getState(frame)
+    local st = FS.Get(frame)
     if st then
         st[key] = value
     end
@@ -221,7 +216,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
     -- Fast path: when the overlay system is active and an overlay is provided,
     -- we only need to color our addon-owned overlay texture. Skip the recursion guard,
     -- Blizzard texture pcalls, and FrameState overhead entirely.
-    local barState = ensureFS() and ensureFS().Get(bar)
+    local barState = FS.Get(bar)
     local overlaySystemActive = barState and barState.rectActive
 
     if overlaySystemActive and overlay and overlay.SetVertexColor then

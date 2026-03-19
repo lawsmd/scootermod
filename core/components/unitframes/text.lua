@@ -1,15 +1,10 @@
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 local function getState(frame)
-    local fs = ensureFS()
-    return fs and fs.Get(frame) or nil
+    return FS.Get(frame)
 end
 
 -- Secret-value safe helpers (shared module)
@@ -251,7 +246,7 @@ do
     -- IMPORTANT: Use hooksecurefunc to avoid replacing the method and taint
     -- secure StatusBar instances used by Blizzard (Combat Log, unit frames, etc.).
     local function hookHealthBarUpdateTextString(bar, unit)
-        local fs = ensureFS()
+        local fs = FS
         if not bar or not fs then return end
         if fs.IsHooked(bar, "healthBarUpdateTextString") then return end
         fs.MarkHooked(bar, "healthBarUpdateTextString")
@@ -363,7 +358,7 @@ do
             or currentFont
         local outline = styleCfg.style ~= nil and tostring(styleCfg.style) or (currentFlags or "")
 
-        local fstate = ensureFS()
+        local fstate = FS
         if fstate then fstate.SetProp(fs, "applyingFont", true) end
         if addon.ApplyFontStyle then
             addon.ApplyFontStyle(fs, face, currentSize, outline)
@@ -377,7 +372,7 @@ do
     -- each time Blizzard's CheckDead() displays the text.
     local function hookDeadTextShow(fs, unit)
         if not fs then return end
-        local fstate = ensureFS()
+        local fstate = FS
         if not fstate then return end
         if fstate.IsHooked(fs, "deadTextFontShow") then return end
         fstate.MarkHooked(fs, "deadTextFontShow")
@@ -406,7 +401,7 @@ do
         local outline = tostring(styleCfg.style or "OUTLINE")
 
         -- Set flag to prevent the SetFont hook from triggering a reapply loop
-        local fstate = ensureFS()
+        local fstate = FS
         if fstate then fstate.SetProp(fs, "applyingFont", true) end
         if addon.ApplyFontStyle then
             addon.ApplyFontStyle(fs, face, size, outline)
@@ -458,7 +453,7 @@ do
 
         -- Ensure name-anchor reparenting is undone if layout customizations are removed
         if not hasLayoutCustomization then
-            local fst = ensureFS()
+            local fst = FS
             if fst then
                 local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
                 if origParent and fs.SetParent then
@@ -508,7 +503,7 @@ do
                             local contentMain = bossFrame.TargetFrameContent
                                 and bossFrame.TargetFrameContent.TargetFrameContentMain
                             if contentMain and fs.SetParent then
-                                local fst = ensureFS()
+                                local fst = FS
                                 if fst and not fst.GetProp(fs, "nameAnchorOrigParent") then
                                     fst.SetProp(fs, "nameAnchorOrigParent", fs:GetParent())
                                     fst.SetProp(fs, "nameAnchorOrigLayer", select(1, fs:GetDrawLayer()))
@@ -537,7 +532,7 @@ do
 
             if not useNameAnchor then
                 -- Restore original parent if previously reparented for name-anchor mode
-                local fst = ensureFS()
+                local fst = FS
                 if fst then
                     local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
                     if origParent and fs.SetParent then
@@ -661,7 +656,7 @@ do
         -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyHealthTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
-            local fstate = ensureFS()
+            local fstate = FS
             if not fstate then return end
             -- OPT-31: Invalidate hot-path cache so settings changes propagate
             if fstate then fstate.ClearProp(fs, "healthTextAppliedHidden") end
@@ -678,7 +673,7 @@ do
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -686,13 +681,13 @@ do
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
                                 if not st.GetProp(self, "healthTextAlphaDeferred") then
                                     st.SetProp(self, "healthTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        local st2 = ensureFS()
+                                        local st2 = FS
                                         if st2 then st2.SetProp(self, "healthTextAlphaDeferred", nil) end
                                         if st2 and st2.IsHidden(self, "healthText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
@@ -704,7 +699,7 @@ do
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -723,14 +718,14 @@ do
         applyHealthTextVisibility(rightFS, cfg.healthValueHidden, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
-        local fstate = ensureFS()
+        local fstate = FS
         if textStringFS and fstate and not fstate.IsHooked(textStringFS, "healthTextCenterSetText") then
             fstate.MarkHooked(textStringFS, "healthTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
                     if isEditModeActive() then return end
                     -- Enforce hidden state immediately if configured
-                    local st = ensureFS()
+                    local st = FS
                     if st and st.IsHidden(self, "healthTextCenter") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
@@ -864,7 +859,7 @@ do
         -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
-            local fstate = ensureFS()
+            local fstate = FS
             if not fstate then return end
             if hiddenSetting == nil then
                 return
@@ -882,7 +877,7 @@ do
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -890,13 +885,13 @@ do
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
                                 if not st.GetProp(self, "healthTextAlphaDeferred") then
                                     st.SetProp(self, "healthTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        local st2 = ensureFS()
+                                        local st2 = FS
                                         if st2 then st2.SetProp(self, "healthTextAlphaDeferred", nil) end
                                         if st2 and st2.IsHidden(self, "healthText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
@@ -908,7 +903,7 @@ do
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
                             if isEditModeActive() then return end
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "healthText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -1150,7 +1145,7 @@ do
 	-- Hook UpdateTextString to reapply visibility after Blizzard's updates.
 	-- Use hooksecurefunc to avoid replacing the method and taint secure StatusBars.
 	local function hookPowerBarUpdateTextString(bar, unit)
-		local fstate = ensureFS()
+		local fstate = FS
 		if not bar or not fstate then return end
 		if fstate.IsHooked(bar, "powerBarUpdateTextString") then return end
 		fstate.MarkHooked(bar, "powerBarUpdateTextString")
@@ -1246,7 +1241,7 @@ do
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
 		-- Set flag to prevent the SetFont hook from triggering a reapply loop
-		local fst = ensureFS()
+		local fst = FS
 		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 		if fst then fst.SetProp(fs, "applyingFont", nil) end
@@ -1295,7 +1290,7 @@ do
 
 		-- Ensure name-anchor reparenting is undone if layout customizations are removed
 		if not hasLayoutCustomization then
-			local fst = ensureFS()
+			local fst = FS
 			if fst then
 				local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
 				if origParent and fs.SetParent then
@@ -1345,7 +1340,7 @@ do
 							local contentMain = bossFrame.TargetFrameContent
 								and bossFrame.TargetFrameContent.TargetFrameContentMain
 							if contentMain and fs.SetParent then
-								local fst = ensureFS()
+								local fst = FS
 								if fst and not fst.GetProp(fs, "nameAnchorOrigParent") then
 									fst.SetProp(fs, "nameAnchorOrigParent", fs:GetParent())
 									fst.SetProp(fs, "nameAnchorOrigLayer", select(1, fs:GetDrawLayer()))
@@ -1374,7 +1369,7 @@ do
 
 			if not useNameAnchor then
 				-- Restore original parent if previously reparented for name-anchor mode
-				local fst = ensureFS()
+				local fst = FS
 				if fst then
 					local origParent = fst.GetProp(fs, "nameAnchorOrigParent")
 					if origParent and fs.SetParent then
@@ -1501,7 +1496,7 @@ do
         -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyPowerTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
-            local fstate = ensureFS()
+            local fstate = FS
             if not fstate then return end
             -- OPT-31: Invalidate hot-path cache so settings changes propagate
             if fstate then fstate.ClearProp(fs, "powerTextAppliedHidden") end
@@ -1517,20 +1512,20 @@ do
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
                                 if not st.GetProp(self, "powerTextAlphaDeferred") then
                                     st.SetProp(self, "powerTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        local st2 = ensureFS()
+                                        local st2 = FS
                                         if st2 then st2.SetProp(self, "powerTextAlphaDeferred", nil) end
                                         if st2 and st2.IsHidden(self, "powerText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
@@ -1541,7 +1536,7 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -1571,13 +1566,13 @@ do
 		applyPowerTextVisibility(rightFS, rightHiddenSetting, unit)
 
         -- Install SetText hook for center TextString to enforce hidden state only
-        local fstate = ensureFS()
+        local fstate = FS
         if textStringFS and fstate and not fstate.IsHooked(textStringFS, "powerTextCenterSetText") then
             fstate.MarkHooked(textStringFS, "powerTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
                     -- Enforce hidden state immediately if configured
-                    local st = ensureFS()
+                    local st = FS
                     if st and st.IsHidden(self, "powerTextCenter") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
                     end
@@ -1698,7 +1693,7 @@ do
         -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
-            local fstate = ensureFS()
+            local fstate = FS
             if not fstate then return end
             if hiddenSetting == nil then
                 return
@@ -1715,20 +1710,20 @@ do
                     if _G.hooksecurefunc then
                         -- Hook Show() to re-enforce alpha=0
                         _G.hooksecurefunc(fs, "Show", function(self)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
                         end)
                         -- Hook SetAlpha() to re-enforce alpha=0 when Blizzard tries to make it visible
                         _G.hooksecurefunc(fs, "SetAlpha", function(self, alpha)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and alpha and alpha > 0 then
                                 -- Use C_Timer to avoid infinite recursion (hook calls SetAlpha which triggers hook)
                                 if not st.GetProp(self, "powerTextAlphaDeferred") then
                                     st.SetProp(self, "powerTextAlphaDeferred", true)
                                     C_Timer.After(0, function()
-                                        local st2 = ensureFS()
+                                        local st2 = FS
                                         if st2 then st2.SetProp(self, "powerTextAlphaDeferred", nil) end
                                         if st2 and st2.IsHidden(self, "powerText") and self.SetAlpha then
                                             pcall(self.SetAlpha, self, 0)
@@ -1739,7 +1734,7 @@ do
                         end)
                         -- Hook SetText() to re-enforce alpha=0 when Blizzard updates text content
                         _G.hooksecurefunc(fs, "SetText", function(self)
-                            local st = ensureFS()
+                            local st = FS
                             if st and st.IsHidden(self, "powerText") and self.SetAlpha then
                                 pcall(self.SetAlpha, self, 0)
                             end
@@ -2120,7 +2115,7 @@ do
 				local face = addon.ResolveFontFace and addon.ResolveFontFace(styleCfg.fontFace or "FRIZQT__") or (select(1, _G.GameFontNormal:GetFont()))
 				local size = tonumber(styleCfg.size) or 14
 				local outline = tostring(styleCfg.style or "OUTLINE")
-				local fst = ensureFS()
+				local fst = FS
 				if fst then fst.SetProp(fs, "applyingFont", true) end
 				if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 				if fst then fst.SetProp(fs, "applyingFont", nil) end
@@ -2694,7 +2689,7 @@ do
 		local size = tonumber(styleCfg.size) or 14
 		local outline = tostring(styleCfg.style or "OUTLINE")
 		-- Set flag to prevent the SetFont hook from triggering a reapply loop
-		local fst = ensureFS()
+		local fst = FS
 		if fst then fst.SetProp(fs, "applyingFont", true) end
 		if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
 		if fst then fst.SetProp(fs, "applyingFont", nil) end
@@ -3335,7 +3330,7 @@ do
 	-- These can trigger updates when switching between Character/Reputation/Currency tabs
 	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function hookCharacterTabs()
-		local fstate = ensureFS()
+		local fstate = FS
 		if not fstate then return end
 		for i = 1, 4 do
 			local tab = _G["CharacterFrameTab" .. i]
@@ -3352,7 +3347,7 @@ do
 
 	-- Hook CharacterFrame OnShow as a backup
 	local function hookCharacterFrameOnShow()
-		local fstate = ensureFS()
+		local fstate = FS
 		if not fstate then return end
 		local charFrame = _G.CharacterFrame
 		if charFrame and charFrame.HookScript and not fstate.IsHooked(charFrame, "textOnShowHooked") then
@@ -3446,7 +3441,7 @@ do
 
 		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
 		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
-		local fstate = ensureFS()
+		local fstate = FS
 		if cfg.nameTextHidden ~= nil and fstate then
 			local hidden = (cfg.nameTextHidden == true)
 			if hidden then
@@ -3457,13 +3452,13 @@ do
 					fstate.MarkHooked(nameFS, "totNameVisibility")
 					if _G.hooksecurefunc then
 						_G.hooksecurefunc(nameFS, "SetText", function(self)
-							local st = ensureFS()
+							local st = FS
 							if st and st.IsHidden(self, "totName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
 						end)
 						_G.hooksecurefunc(nameFS, "Show", function(self)
-							local st = ensureFS()
+							local st = FS
 							if st and st.IsHidden(self, "totName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
@@ -3562,7 +3557,7 @@ do
 	-- ToT frame is re-shown when target changes, so hook the ToT OnShow
 	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function installToTHooks()
-		local fstate = ensureFS()
+		local fstate = FS
 		if not fstate then return end
 		local tot = _G.TargetFrameToT
 		if tot and not fstate.IsHooked(tot, "nameTextHooked") then
@@ -3637,7 +3632,7 @@ do
 
 		-- Apply visibility: tri‑state (nil=no touch) via SetAlpha (combat-safe)
 		-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
-		local fstate = ensureFS()
+		local fstate = FS
 		if cfg.nameTextHidden ~= nil and fstate then
 			local hidden = (cfg.nameTextHidden == true)
 			if hidden then
@@ -3648,13 +3643,13 @@ do
 					fstate.MarkHooked(nameFS, "fotNameVisibility")
 					if _G.hooksecurefunc then
 						_G.hooksecurefunc(nameFS, "SetText", function(self)
-							local st = ensureFS()
+							local st = FS
 							if st and st.IsHidden(self, "fotName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
 						end)
 						_G.hooksecurefunc(nameFS, "Show", function(self)
-							local st = ensureFS()
+							local st = FS
 							if st and st.IsHidden(self, "fotName") and self.SetAlpha then
 								pcall(self.SetAlpha, self, 0)
 							end
@@ -3753,7 +3748,7 @@ do
 	-- FoT frame is re-shown when focus target changes, so hook the FoT OnShow
 	-- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
 	local function installFoTHooks()
-		local fstate = ensureFS()
+		local fstate = FS
 		if not fstate then return end
 		local fot = _G.FocusFrameToT
 		if fot and not fstate.IsHooked(fot, "fotNameTextHooked") then

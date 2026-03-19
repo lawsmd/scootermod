@@ -1,6 +1,5 @@
 local addonName, addon = ...
 
-local ensureFS = addon.ComponentsUtil._ensureFS
 local getState = addon.ComponentsUtil._getState
 local getProp = addon.ComponentsUtil._getProp
 local setProp = addon.ComponentsUtil._setProp

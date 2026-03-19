@@ -14,23 +14,15 @@ local addonName, addon = ...
 ]]
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 local function getProp(frame, key)
-    local fs = ensureFS()
-    if not fs then return nil end
-    local st = fs.Get(frame)
+    local st = FS.Get(frame)
     return st and st[key] or nil
 end
 
 local function setProp(frame, key, value)
-    local fs = ensureFS()
-    if not fs then return end
-    local st = fs.Get(frame)
+    local st = FS.Get(frame)
     if st then
         st[key] = value
     end

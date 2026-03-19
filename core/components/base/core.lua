@@ -4,24 +4,19 @@ addon.Components = addon.Components or {}
 addon.ComponentInitializers = addon.ComponentInitializers or {}
 addon.ComponentsUtil = addon.ComponentsUtil or {}
 
-local FS = nil
-local function ensureFS()
-    if not FS then FS = addon.FrameState end
-    return FS
-end
+local FS = addon.FrameState
 
 local function getState(frame)
-    local fs = ensureFS()
-    return fs and fs.Get(frame) or nil
+    return FS.Get(frame)
 end
 
 local function getProp(frame, key)
-    local st = getState(frame)
+    local st = FS.Get(frame)
     return st and st[key] or nil
 end
 
 local function setProp(frame, key, value)
-    local st = getState(frame)
+    local st = FS.Get(frame)
     if st then
         st[key] = value
     end
@@ -187,7 +182,7 @@ function addon:ClearFrameLevelState()
     local function clearTextFlags(fs)
         if not fs then return end
         -- Clear FrameState hidden flags
-        local fstate = ensureFS()
+        local fstate = FS
         if fstate then
             fstate.SetHidden(fs, "healthText", false)
             fstate.SetHidden(fs, "powerText", false)
@@ -501,7 +496,6 @@ function addon:SyncAllEditModeSettings()
     return anyChanged
 end
 
-addon.ComponentsUtil._ensureFS = ensureFS
 addon.ComponentsUtil._getState = getState
 addon.ComponentsUtil._getProp = getProp
 addon.ComponentsUtil._setProp = setProp
