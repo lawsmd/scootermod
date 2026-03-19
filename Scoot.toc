@@ -71,7 +71,10 @@ core/components/classauras/deathknight.lua
 core/components/actionbars.lua
 core/components/extraabilities.lua
 core/components/auras.lua
-core/components/personal_resource_display.lua
+core/components/personal_resource_display/core.lua
+core/components/personal_resource_display/opacity.lua
+core/components/personal_resource_display/text.lua
+core/components/personal_resource_display/bars.lua
 core/components/scrollingcombattext.lua
 core/components/unitframes/text.lua
 core/components/unitframes/bars/utils.lua
