@@ -562,6 +562,7 @@ local function CreateCustomGroupSettings()
         -- Sizing
         iconSize = { type = "addon", default = 30 },
         tallWideRatio = { type = "addon", default = 0 },
+        iconZoom = { type = "addon", default = 0 },
 
         -- Border
         borderEnable = { type = "addon", default = false },

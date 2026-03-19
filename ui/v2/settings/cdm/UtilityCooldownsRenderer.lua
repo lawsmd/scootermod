@@ -193,6 +193,55 @@ function UtilityCooldowns.Render(panel, scrollContent)
         end,
     })
 
+    -- Collapsible section: Icons
+    builder:AddCollapsibleSection({
+        title = "Icons",
+        componentId = "utilityCooldowns",
+        sectionKey = "icons",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            inner:AddSlider({
+                label = "Icon Zoom",
+                description = "Crops icon edges inward to reduce visible rounded corners from Blizzard's icon mask.",
+                min = 0, max = 30, step = 1,
+                get = function() return getSetting("iconZoom") or 0 end,
+                set = function(v)
+                    setSetting("iconZoom", v)
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end,
+                minLabel = "0%", maxLabel = "30%",
+            })
+
+            inner:AddToggle({
+                label = "Square Cooldown Swipe",
+                description = "Replaces the circular cooldown animation with a square one.",
+                get = function() return getSetting("squareCooldownSwipe") or false end,
+                set = function(v)
+                    setSetting("squareCooldownSwipe", v)
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end,
+            })
+
+            inner:AddToggle({
+                label = "Hide Decorative Ring",
+                description = "Hides Blizzard's ornamental ring overlay around each icon.",
+                get = function() return getSetting("hideDecorativeRing") or false end,
+                set = function(v)
+                    setSetting("hideDecorativeRing", v)
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end,
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Collapsible section: Animations
     builder:AddCollapsibleSection({
         title = "Animations",

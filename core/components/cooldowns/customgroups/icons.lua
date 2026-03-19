@@ -161,24 +161,9 @@ function CG._GetIconDimensions(db)
     end
 end
 
-function CG._ApplyTexCoord(icon, iconW, iconH)
-    local aspectRatio = iconW / iconH
-    local inset = ICON_TEXCOORD_INSET
-    local left, right, top, bottom = inset, 1 - inset, inset, 1 - inset
-
-    if aspectRatio > 1.0 then
-        local cropAmount = 1.0 - (1.0 / aspectRatio)
-        local offset = cropAmount / 2.0
-        top = top + offset * (1 - 2 * inset)
-        bottom = bottom - offset * (1 - 2 * inset)
-    elseif aspectRatio < 1.0 then
-        local cropAmount = 1.0 - aspectRatio
-        local offset = cropAmount / 2.0
-        left = left + offset * (1 - 2 * inset)
-        right = right - offset * (1 - 2 * inset)
-    end
-
-    icon.Icon:SetTexCoord(left, right, top, bottom)
+function CG._ApplyTexCoord(icon, iconW, iconH, userZoom)
+    local l, r, t, b = addon.CalculateIconTexCoords(iconW / iconH, userZoom, ICON_TEXCOORD_INSET)
+    icon.Icon:SetTexCoord(l, r, t, b)
 end
 
 --------------------------------------------------------------------------------

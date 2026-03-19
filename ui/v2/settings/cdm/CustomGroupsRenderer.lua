@@ -195,6 +195,28 @@ local function CreateCustomGroupRenderer(groupIndex)
         })
 
         --------------------------------------------------------------------
+        -- Icons
+        --------------------------------------------------------------------
+        builder:AddCollapsibleSection({
+            title = "Icons",
+            componentId = componentId,
+            sectionKey = "icons",
+            defaultExpanded = false,
+            buildContent = function(contentFrame, inner)
+                inner:AddSlider({
+                    label = "Icon Zoom",
+                    description = "Crops icon edges inward. Adds to the baseline border-art removal crop.",
+                    min = 0, max = 30, step = 1,
+                    get = function() return getSetting("iconZoom") or 0 end,
+                    set = function(v) h.setAndApply("iconZoom", v) end,
+                    minLabel = "0%", maxLabel = "30%",
+                })
+
+                inner:Finalize()
+            end,
+        })
+
+        --------------------------------------------------------------------
         -- Border
         --------------------------------------------------------------------
         builder:AddCollapsibleSection({

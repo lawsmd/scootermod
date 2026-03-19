@@ -502,6 +502,22 @@ function TrackedBars.Render(panel, scrollContent)
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
             inner:AddSlider({
+                label = "Icon Zoom",
+                description = "Crops icon edges inward to reduce visible rounded corners.",
+                min = 0, max = 30, step = 1,
+                get = function() return getSetting("iconZoom") or 0 end,
+                set = function(v) setSetting("iconZoom", v) end,
+                minLabel = "0%", maxLabel = "30%",
+            })
+
+            inner:AddToggle({
+                label = "Hide Decorative Ring",
+                description = "Hides Blizzard's ornamental ring overlay around each icon.",
+                get = function() return getSetting("iconHideDecorativeRing") or false end,
+                set = function(v) setSetting("iconHideDecorativeRing", v) end,
+            })
+
+            inner:AddSlider({
                 label = "Icon Shape",
                 description = "Adjust icon aspect ratio. Center = square icons.",
                 min = -67, max = 67, step = 1,

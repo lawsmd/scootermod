@@ -503,6 +503,8 @@ addon:RegisterComponentInitializer(function(self)
             iconTallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Icon", order = 1
             }},
+            iconZoom = { type = "addon", default = 0 },
+            iconHideDecorativeRing = { type = "addon", default = false },
             iconBorderEnable = { type = "addon", default = false, ui = {
                 label = "Enable Border", widget = "checkbox", section = "Icon", order = 2
             }},

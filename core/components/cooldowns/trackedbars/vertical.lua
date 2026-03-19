@@ -395,6 +395,28 @@ local function layoutVerticalStack(stack, displayMode)
         stack.iconRegion:ClearAllPoints()
         stack.iconRegion:SetPoint("BOTTOM", stack, "BOTTOM", 0, 0)
         yOff = iconH + iconBarPad
+
+        -- Icon zoom texcoord
+        local iconZoomVal = tonumber(TB.getTrackedBarSetting("iconZoom")) or 0
+        if stack.iconTexture then
+            local l, r, t, b = addon.CalculateIconTexCoords(iconW / iconH, iconZoomVal, 0)
+            pcall(stack.iconTexture.SetTexCoord, stack.iconTexture, l, r, t, b)
+        end
+
+        -- Hide decorative ring on vertical icon
+        local iconHideRing = TB.getTrackedBarSetting("iconHideDecorativeRing")
+        if iconHideRing and stack.iconRegion then
+            pcall(function()
+                for _, region in ipairs({ stack.iconRegion:GetRegions() }) do
+                    if region:IsObjectType("Texture") and region ~= stack.iconTexture then
+                        local atlas = region:GetAtlas()
+                        if atlas == "UI-HUD-CoolDownManager-IconOverlay" then
+                            region:SetAlpha(0)
+                        end
+                    end
+                end
+            end)
+        end
     end
 
     stack.barRegion:ClearAllPoints()

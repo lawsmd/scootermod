@@ -101,6 +101,31 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if mask and mask.SetAllPoints then mask:SetAllPoints(iconFrame) end
     end
 
+    -- Icon zoom texcoord
+    local iconZoomVal = tonumber(getSettingValue("iconZoom")) or 0
+    if (iconZoomVal > 0 or iconRatio ~= 0) and iconWidth and iconHeight then
+        local tex = iconFrame.Icon or (child.GetIconTexture and child:GetIconTexture())
+        if tex and tex.SetTexCoord then
+            local l, r, t, b = addon.CalculateIconTexCoords(iconWidth / iconHeight, iconZoomVal, 0)
+            pcall(tex.SetTexCoord, tex, l, r, t, b)
+        end
+    end
+
+    -- Hide decorative ring on tracked bar icon
+    local iconHideRing = getSettingValue("iconHideDecorativeRing")
+    if iconHideRing and iconFrame then
+        pcall(function()
+            for _, region in ipairs({ iconFrame:GetRegions() }) do
+                if region:IsObjectType("Texture") then
+                    local atlas = region:GetAtlas()
+                    if atlas == "UI-HUD-CoolDownManager-IconOverlay" then
+                        region:SetAlpha(0)
+                    end
+                end
+            end
+        end)
+    end
+
     local desiredPad = tonumber(db.iconBarPadding) or 0
     desiredPad = tonumber(desiredPad) or 0
 

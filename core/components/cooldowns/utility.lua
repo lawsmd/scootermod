@@ -40,6 +40,9 @@ addon:RegisterComponentInitializer(function(self)
             tallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
+            iconZoom = { type = "addon", default = 0 },
+            squareCooldownSwipe = { type = "addon", default = false },
+            hideDecorativeRing = { type = "addon", default = false },
             hideProcStart = { type = "addon", default = false, ui = {
                 label = "Hide Proc Start Animation", widget = "checkbox", section = "Animations", order = 1
             }},

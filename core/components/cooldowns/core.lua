@@ -307,6 +307,11 @@ local scootFontStrings = setmetatable({}, { __mode = "k" })
 -- Track which FontStrings have been decoupled from parent alpha (weak keys for GC)
 local textAlphaDecoupled = setmetatable({}, { __mode = "k" })
 
+-- Track icon zoom, swipe modifications, and hidden rings (weak keys for GC)
+local zoomedIcons = setmetatable({}, { __mode = "k" })
+local modifiedSwipes = setmetatable({}, { __mode = "k" })
+local hiddenRings = setmetatable({}, { __mode = "k" })
+
 -- Cache GetChildren() results per viewer to avoid temporary table allocation on every pass
 local viewerChildrenCache = {}
 
@@ -1007,6 +1012,24 @@ end
 -- Texture coordinates are adjusted to prevent stretching on non-square sizes.
 --------------------------------------------------------------------------------
 
+-- Shared texcoord utility: composes zoom + aspect-ratio crop + optional baseline inset.
+-- baseInset allows Custom Groups to layer their border-art removal crop.
+addon.CalculateIconTexCoords = function(aspectRatio, zoomPct, baseInset)
+    local inset = (baseInset or 0) + math.max(0, math.min(0.30, (tonumber(zoomPct) or 0) / 100))
+    local left, right, top, bottom = inset, 1 - inset, inset, 1 - inset
+    local range = 1 - 2 * inset
+    if aspectRatio > 1.0 then
+        local offset = (1.0 - 1.0 / aspectRatio) / 2.0
+        top = top + offset * range
+        bottom = bottom - offset * range
+    elseif aspectRatio < 1.0 then
+        local offset = (1.0 - aspectRatio) / 2.0
+        left = left + offset * range
+        right = right - offset * range
+    end
+    return left, right, top, bottom
+end
+
 -- Resize SpellActivationAlert and its flipbook textures to match custom icon dimensions.
 -- ProcStartFlipbook: use SetScale (immediate render transform) instead of SetSize (deferred
 -- layout property). SetSize mid-FlipBook causes a hitch; SetScale applies in the GPU pass.
@@ -1055,26 +1078,9 @@ function Overlays.ApplyIconSize(cdmIcon, opts)
 
     if not ok then return end
 
-    -- Calculate texture coordinates to crop instead of stretch
-    -- Prevents the icon from looking distorted with non-square dimensions
-    local aspectRatio = iconWidth / iconHeight
-    local left, right, top, bottom = 0, 1, 0, 1
-
-    if aspectRatio > 1.0 then
-        -- Wider than tall - crop top/bottom
-        local cropAmount = 1.0 - (1.0 / aspectRatio)
-        local offset = cropAmount / 2.0
-        top = offset
-        bottom = 1.0 - offset
-    elseif aspectRatio < 1.0 then
-        -- Taller than wide - crop left/right
-        local cropAmount = 1.0 - aspectRatio
-        local offset = cropAmount / 2.0
-        left = offset
-        right = 1.0 - offset
-    end
-
-    -- Apply texture coordinates
+    -- Calculate texture coordinates: aspect-ratio crop + optional zoom
+    local zoomPct = tonumber(opts.iconZoom) or 0
+    local left, right, top, bottom = addon.CalculateIconTexCoords(iconWidth / iconHeight, zoomPct, 0)
     pcall(function()
         iconTexture:SetTexCoord(left, right, top, bottom)
     end)
@@ -1126,6 +1132,70 @@ function Overlays.ResetIconSize(cdmIcon)
     end
 
     sizedIcons[cdmIcon] = nil
+    zoomedIcons[cdmIcon] = nil
+end
+
+--------------------------------------------------------------------------------
+-- Square Cooldown Swipe
+--------------------------------------------------------------------------------
+
+local SQUARE_SWIPE_PATH = "Interface\\AddOns\\Scoot\\media\\masks\\squareswipe"
+
+function Overlays.ApplySquareSwipe(cdmIcon)
+    if not cdmIcon then return end
+    pcall(function()
+        for _, child in ipairs({ cdmIcon:GetChildren() }) do
+            if child.SetSwipeTexture then
+                child:SetSwipeTexture(SQUARE_SWIPE_PATH)
+                modifiedSwipes[child] = true
+            end
+        end
+    end)
+end
+
+function Overlays.ResetSwipe(cdmIcon)
+    if not cdmIcon then return end
+    pcall(function()
+        for _, child in ipairs({ cdmIcon:GetChildren() }) do
+            if modifiedSwipes[child] and child.SetSwipeTexture then
+                child:SetSwipeTexture("Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe")
+                modifiedSwipes[child] = nil
+            end
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- Hide Decorative Ring
+--------------------------------------------------------------------------------
+
+local RING_ATLAS = "UI-HUD-CoolDownManager-IconOverlay"
+
+function Overlays.HideIconRing(cdmIcon)
+    if not cdmIcon then return end
+    pcall(function()
+        for _, region in ipairs({ cdmIcon:GetRegions() }) do
+            if region:IsObjectType("Texture") and not hiddenRings[region] then
+                local atlas = region:GetAtlas()
+                if atlas == RING_ATLAS then
+                    region:SetAlpha(0)
+                    hiddenRings[region] = true
+                end
+            end
+        end
+    end)
+end
+
+function Overlays.RestoreIconRing(cdmIcon)
+    if not cdmIcon then return end
+    pcall(function()
+        for _, region in ipairs({ cdmIcon:GetRegions() }) do
+            if hiddenRings[region] then
+                region:SetAlpha(1)
+                hiddenRings[region] = nil
+            end
+        end
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -1159,20 +1229,59 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
         iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
     end
 
+    local zoom = tonumber(db.iconZoom) or 0
+    local useSquareSwipe = db.squareCooldownSwipe
+    local hideRing = db.hideDecorativeRing
+
     for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
         if isValidCDMItemFrame(child) then
             if not isFrameVisible(child) then
                 Overlays.HideOverlay(child)
             else
-                -- Apply icon sizing if configured
+                -- Apply icon sizing (with zoom) if configured
                 if hasCustomSize and iconWidth and iconHeight then
                     Overlays.ApplyIconSize(child, {
                         width = iconWidth,
                         height = iconHeight,
+                        iconZoom = zoom,
                     })
+                    zoomedIcons[child] = zoom > 0 or nil
                 elseif sizedIcons[child] then
                     -- Reset if previously sized but no longer configured
                     Overlays.ResetIconSize(child)
+                    if zoom > 0 then
+                        local iconTexture = child.icon or child.Icon
+                        if iconTexture then
+                            local l, r, t, b = addon.CalculateIconTexCoords(1.0, zoom, 0)
+                            pcall(function() iconTexture:SetTexCoord(l, r, t, b) end)
+                        end
+                        zoomedIcons[child] = true
+                    end
+                elseif zoom > 0 then
+                    local iconTexture = child.icon or child.Icon
+                    if iconTexture then
+                        local l, r, t, b = addon.CalculateIconTexCoords(1.0, zoom, 0)
+                        pcall(function() iconTexture:SetTexCoord(l, r, t, b) end)
+                    end
+                    zoomedIcons[child] = true
+                elseif zoomedIcons[child] then
+                    local iconTexture = child.icon or child.Icon
+                    if iconTexture then pcall(function() iconTexture:SetTexCoord(0, 1, 0, 1) end) end
+                    zoomedIcons[child] = nil
+                end
+
+                -- Square cooldown swipe
+                if useSquareSwipe then
+                    Overlays.ApplySquareSwipe(child)
+                else
+                    Overlays.ResetSwipe(child)
+                end
+
+                -- Hide decorative ring
+                if hideRing then
+                    Overlays.HideIconRing(child)
+                else
+                    Overlays.RestoreIconRing(child)
                 end
 
                 if borderEnabled and not hasBlizzardDebuffBorder(child) then
@@ -1260,14 +1369,33 @@ function Overlays.HookViewer(viewerFrameName, componentId)
 
                     -- Apply icon sizing if configured via ratio
                     local ratio = tonumber(component.db.tallWideRatio) or 0
+                    local zoom = tonumber(component.db.iconZoom) or 0
                     if ratio ~= 0 and addon.IconRatio then
                         local iconWidth, iconHeight = addon.IconRatio.GetDimensionsForComponent(componentId, ratio)
                         if iconWidth and iconHeight then
                             Overlays.ApplyIconSize(itemFrame, {
                                 width = iconWidth,
                                 height = iconHeight,
+                                iconZoom = zoom,
                             })
                         end
+                    elseif zoom > 0 then
+                        local iconTexture = itemFrame.icon or itemFrame.Icon
+                        if iconTexture then
+                            local l, r, t, b = addon.CalculateIconTexCoords(1.0, zoom, 0)
+                            pcall(function() iconTexture:SetTexCoord(l, r, t, b) end)
+                        end
+                        zoomedIcons[itemFrame] = true
+                    end
+
+                    -- Square cooldown swipe
+                    if component.db.squareCooldownSwipe then
+                        Overlays.ApplySquareSwipe(itemFrame)
+                    end
+
+                    -- Hide decorative ring
+                    if component.db.hideDecorativeRing then
+                        Overlays.HideIconRing(itemFrame)
                     end
 
                     if component.db.borderEnable and not hasBlizzardDebuffBorder(itemFrame) then
@@ -1318,10 +1446,14 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                 C_Timer.After(0, function()
                     Overlays.HideOverlay(itemFrame)
                     Overlays.ResetIconSize(itemFrame)
+                    Overlays.ResetSwipe(itemFrame)
+                    Overlays.RestoreIconRing(itemFrame)
                 end)
             else
                 Overlays.HideOverlay(itemFrame)
                 Overlays.ResetIconSize(itemFrame)
+                Overlays.ResetSwipe(itemFrame)
+                Overlays.RestoreIconRing(itemFrame)
             end
         end)
     end

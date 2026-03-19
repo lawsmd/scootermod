@@ -117,7 +117,7 @@ function CG._LayoutIcons(groupIndex)
     -- Position each icon using CENTER anchor
     for i, icon in ipairs(icons) do
         icon:SetSize(iconW, iconH)
-        CG._ApplyTexCoord(icon, iconW, iconH)
+        CG._ApplyTexCoord(icon, iconW, iconH, db.iconZoom)
 
         local pos = i - 1
         local major = pos % stride       -- index along primary axis
