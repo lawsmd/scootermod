@@ -151,13 +151,22 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     local function enforceTextColor(fs, key, state)
         state = state or getState(fs)
         if not fs or not state or state.colorApplying then return end
-        local cfg = db[key]
-        if type(cfg) ~= "table" then return end
-        local color = cfg.color
-        if type(color) ~= "table" or not fs.SetTextColor then return end
-        state.colorApplying = true
-        fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-        state.colorApplying = nil
+        local cr = state.colorR
+        if cr then
+            -- OPT-26: Fast path — use cached color (avoids db[key] lookup + type checks)
+            state.colorApplying = true
+            fs:SetTextColor(cr, state.colorG, state.colorB, state.colorA)
+            state.colorApplying = nil
+        else
+            -- Fallback: hook fired before first applyAuraText (rare)
+            local cfg = db[key]
+            if type(cfg) ~= "table" then return end
+            local color = cfg.color
+            if type(color) ~= "table" or not fs.SetTextColor then return end
+            state.colorApplying = true
+            fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+            state.colorApplying = nil
+        end
     end
 
     local function ensureTextHooks(fs, key)
@@ -167,15 +176,30 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         if state.textHooked then return end
         state.textHooked = true
 
-        local callback = function()
+        -- OPT-26: Split callbacks — colorCallback for color hooks, fontObjectCallback invalidates caches
+        local colorCallback = function()
             local st = auraState[fs]
             if not st or st.colorApplying then return end
             enforceTextColor(fs, key, st)
         end
 
-        if type(fs.SetTextColor) == "function" then hooksecurefunc(fs, "SetTextColor", callback) end
-        if type(fs.SetVertexColor) == "function" then hooksecurefunc(fs, "SetVertexColor", callback) end
-        if type(fs.SetFontObject) == "function" then hooksecurefunc(fs, "SetFontObject", callback) end
+        local fontObjectCallback = function()
+            local st = auraState[fs]
+            if not st then return end
+            -- SetFontObject resets font face, size, style, and may reset color — invalidate all caches
+            st.lastFontKey = nil
+            st.lastColorR = nil
+            st.lastColorG = nil
+            st.lastColorB = nil
+            st.lastColorA = nil
+            st.lastAnchorPt = nil
+            if st.colorApplying then return end
+            enforceTextColor(fs, key, st)
+        end
+
+        if type(fs.SetTextColor) == "function" then hooksecurefunc(fs, "SetTextColor", colorCallback) end
+        if type(fs.SetVertexColor) == "function" then hooksecurefunc(fs, "SetVertexColor", colorCallback) end
+        if type(fs.SetFontObject) == "function" then hooksecurefunc(fs, "SetFontObject", fontObjectCallback) end
     end
 
     local function ensureDefaultColor(cfg, fs)
@@ -222,32 +246,55 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         local cfg = ensureTextConfig(key)
         ensureDefaultColor(cfg, fs)
         ensureTextHooks(fs, key)
+        local state = getState(fs)
         local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
         local size = tonumber(cfg.size) or defaultSize
         local style = cfg.style or "OUTLINE"
-        pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
-        if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
-        local state = getState(fs)
-        local color = cfg.color
-        if color and fs.SetTextColor then
-            if state then state.colorApplying = true end
-            fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-            if state then state.colorApplying = nil end
+        -- OPT-26 Change 1: Font key cache — skip SetDrawLayer + ApplyFontStyle when unchanged
+        local fontKey = face .. "|" .. size .. "|" .. style
+        if not state or state.lastFontKey ~= fontKey then
+            pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
+            if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
+            if state then state.lastFontKey = fontKey end
         end
+        -- OPT-26 Change 2: Color cache — skip SetTextColor when color values unchanged
+        local color = cfg.color
+        if color and fs.SetTextColor and state then
+            local r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+            -- Always update cached values for enforceTextColor fast path
+            state.colorR, state.colorG, state.colorB, state.colorA = r, g, b, a
+            if state.lastColorR ~= r or state.lastColorG ~= g
+               or state.lastColorB ~= b or state.lastColorA ~= a then
+                state.colorApplying = true
+                fs:SetTextColor(r, g, b, a)
+                state.colorApplying = nil
+                state.lastColorR, state.lastColorG, state.lastColorB, state.lastColorA = r, g, b, a
+            end
+        elseif color and fs.SetTextColor then
+            fs:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        end
+        -- OPT-26 Change 5: Anchor cache — skip ClearAllPoints + SetPoint when unchanged
         local anchor = captureDefaultAnchor(fs, fallbackRelTo)
         if anchor and fs.ClearAllPoints and fs.SetPoint then
             local ox = tonumber(cfg.offset.x) or 0
             local oy = tonumber(cfg.offset.y) or 0
-            fs:ClearAllPoints()
-            fs:SetPoint(
-                anchor.point or "CENTER",
-                anchor.relTo or fallbackRelTo,
-                anchor.relPoint or anchor.point or "CENTER",
-                (anchor.x or 0) + ox,
-                (anchor.y or 0) + oy
-            )
+            local pt = anchor.point or "CENTER"
+            local rp = anchor.relPoint or anchor.point or "CENTER"
+            local ax = (anchor.x or 0) + ox
+            local ay = (anchor.y or 0) + oy
+            if not state or state.lastAnchorPt ~= pt or state.lastAnchorRP ~= rp
+               or state.lastAnchorX ~= ax or state.lastAnchorY ~= ay then
+                fs:ClearAllPoints()
+                fs:SetPoint(pt, anchor.relTo or fallbackRelTo, rp, ax, ay)
+                if state then
+                    state.lastAnchorPt = pt
+                    state.lastAnchorRP = rp
+                    state.lastAnchorX = ax
+                    state.lastAnchorY = ay
+                end
+            end
         end
-        enforceTextColor(fs, key, state)
+        -- OPT-26 Change 3: Removed redundant enforceTextColor call (color already applied above)
     end
 
     local componentId = component and component.id
