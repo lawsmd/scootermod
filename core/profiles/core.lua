@@ -403,10 +403,18 @@ local function normalizeName(name)
 end
 
 local function notifyUI()
-    -- NOTE (2025-11-17): Layout/profile mutations no longer force a structural
-    -- re-render of the Scoot settings list. The Profiles page is built to
-    -- update its own rows and dropdowns in place, so we avoid calling
-    -- RefreshCurrentCategoryDeferred here to prevent right-pane flicker.
+    -- Deferred re-render of the Manage Profiles page after mutations (copy, rename, delete, create).
+    -- Delay ensures postMutationSync has completed. Visibility guards prevent spurious re-renders.
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(0.4, function()
+        local manage = addon and addon.UI and addon.UI.Settings
+            and addon.UI.Settings.Profiles and addon.UI.Settings.Profiles.Manage
+        if not manage or not manage._state or not manage._state.refreshCallback then return end
+        local panel = addon.UI and addon.UI.SettingsPanel
+        if not panel or panel._currentCategoryKey ~= "profilesManage" then return end
+        if not (panel.frame and panel.frame:IsShown()) then return end
+        manage._state.refreshCallback()
+    end)
 end
 
 -- Multi-pass sync after layout mutations to avoid stale lists
@@ -415,6 +423,7 @@ local function postMutationSync(self, reason)
     self._postCopySuppressUntil = GetTime() + 0.3
     if C_Timer and C_Timer.After then
         C_Timer.After(0.05, function()
+            if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
             if self and self.RefreshFromEditMode and ensureLayoutsLoaded() then
                 self:RefreshFromEditMode(reason or "PostMutation")
             else
@@ -422,12 +431,14 @@ local function postMutationSync(self, reason)
             end
         end)
         C_Timer.After(0.2, function()
+            if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
             if self and self.RefreshFromEditMode and ensureLayoutsLoaded() then
                 self:RefreshFromEditMode((reason or "PostMutation") .. "+retry")
             end
         end)
         -- After suppression window, try to apply any pending layout to EM
         C_Timer.After(0.35, function()
+            if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
             if self and self.RefreshFromEditMode and ensureLayoutsLoaded() then
                 self:RefreshFromEditMode((reason or "PostMutation") .. "+final")
             end

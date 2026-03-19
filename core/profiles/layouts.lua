@@ -616,34 +616,53 @@ function Profiles:PerformDeleteLayout(layoutName)
         self:SwitchToProfile(fallback, { reason = "DeleteFallback", force = true })
     end
 
-    -- Delete using direct C_EditMode APIs (no EditModeManagerFrame interaction to avoid taint).
-    -- Pattern follows LibEditModeOverride:DeleteLayout().
-    if not (C_EditMode and C_EditMode.GetLayouts and C_EditMode.SaveLayouts and C_EditMode.OnLayoutDeleted) then
-        return false, "C_EditMode API unavailable."
-    end
-    local li = C_EditMode.GetLayouts()
-    if not li or not li.layouts then return false, "Unable to read layouts." end
-    local deleteIndex
-    for i, info in ipairs(li.layouts) do
-        if info.layoutName == layoutName then
-            if info.layoutType == Enum.EditModeLayoutType.Preset then
-                return false, "Preset layouts cannot be deleted."
-            end
-            deleteIndex = i
-            break
+    -- Delete via library (canonical: table.remove + synchronous OnLayoutDeleted, no SaveLayouts between)
+    -- This avoids the double-adjustment bug where our manual activeLayout fix + deferred
+    -- OnLayoutDeleted both decrement, causing the wrong profile to become active.
+    if LEO and LEO.DeleteLayout and LEO.DoesLayoutExist then
+        if not LEO:DoesLayoutExist(layoutName) then
+            return false, "Layout not found in Edit Mode."
         end
-    end
-    if not deleteIndex then return false, "Layout not found." end
-    table.remove(li.layouts, deleteIndex)
-    C_EditMode.SaveLayouts(li)
-    -- Defer OnLayoutDeleted to a clean execution context (adjusts activeLayout + fires event)
-    C_Timer.After(0, function()
+        local ok, err = pcall(LEO.DeleteLayout, LEO, layoutName)
+        if not ok then
+            return false, "Delete failed: " .. tostring(err)
+        end
+        -- DeleteLayout only modifies LEO's in-memory cache; persist to disk
+        if LEO.SaveOnly then pcall(LEO.SaveOnly, LEO) end
+    else
+        -- Fallback: direct C_EditMode APIs with synchronous OnLayoutDeleted
+        if not (C_EditMode and C_EditMode.GetLayouts and C_EditMode.OnLayoutDeleted) then
+            return false, "C_EditMode API unavailable."
+        end
+        local li = C_EditMode.GetLayouts()
+        if not li or not li.layouts then return false, "Unable to read layouts." end
+        local deleteIndex
+        for i, info in ipairs(li.layouts) do
+            if info.layoutName == layoutName then
+                if info.layoutType == Enum.EditModeLayoutType.Preset then
+                    return false, "Preset layouts cannot be deleted."
+                end
+                deleteIndex = i
+                break
+            end
+        end
+        if not deleteIndex then return false, "Layout not found." end
+        table.remove(li.layouts, deleteIndex)
+        -- Persist the removal before notifying the C-side
+        pcall(C_EditMode.SaveLayouts, li)
         pcall(C_EditMode.OnLayoutDeleted, deleteIndex)
-    end)
+    end
 
     -- Refresh library/cache and UI after successful delete
     if LEO and LEO.LoadLayouts then pcall(LEO.LoadLayouts, LEO) end
     postMutationSync(self, "DeleteLayout")
+    -- Safety net: prevent RefreshFromEditMode from overriding the active profile
+    -- based on potentially stale LEO data during the post-delete settle window
+    local activeProfile = self.db:GetCurrentProfile()
+    if activeProfile ~= layoutName then
+        self._reloadActivationLock = activeProfile
+        self._reloadActivationLockUntil = (GetTime and GetTime() or 0) + 1
+    end
 
     if self.db and self.db.profiles then
         self.db.profiles[layoutName] = nil

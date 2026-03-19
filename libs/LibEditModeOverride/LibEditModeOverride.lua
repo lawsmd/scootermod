@@ -423,6 +423,7 @@ function lib:DeleteLayout(layoutName)
   assert(layoutInfo.layouts[index].layoutType ~= Enum.EditModeLayoutType.Preset, "Cannot delete preset layouts")
 
   table.remove(layoutInfo.layouts, index)
+  C_EditMode.SaveLayouts(layoutInfo)
   C_EditMode.OnLayoutDeleted(index)
 end
 

@@ -54,6 +54,7 @@ function Manage.Render(panel, scrollContent)
     local function refreshProfilesManage()
         Manage.Render(panel, scrollContent)
     end
+    Manage._state.refreshCallback = refreshProfilesManage
 
     -- Helper: Get active profile key
     local function getActiveProfileKey()
