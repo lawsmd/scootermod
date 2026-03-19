@@ -19,6 +19,9 @@ local function setAlphaFromDurObj(cf, durObj, readyAlpha, cdAlpha)
     cf:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha)
 end
 
+-- Secret-safe desaturation: C++ evaluates secret bool → number, passed to SetDesaturation
+local EvalBoolToValue = C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean
+
 -- OPT-10: Scratch table for BuildGroupOpacityCtx (reused instead of allocating)
 local opacityCtxScratch = {}
 
@@ -76,17 +79,17 @@ local function RefreshSpellCooldown(icon)
                     if chargeInfo.cooldownStartTime > 0 then
                         icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
                     end
-                    icon.Icon:SetDesaturated(true)
+                    icon.Icon:SetDesaturation(1)
                     icon._chargeDesatHandled = true
                 elseif chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
                     -- Recharging — show swipe
                     icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-                    icon.Icon:SetDesaturated(false)
+                    icon.Icon:SetDesaturation(0)
                     icon._chargeDesatHandled = true
                 else
                     -- All charges full
                     icon.Cooldown:Clear()
-                    icon.Icon:SetDesaturated(false)
+                    icon.Icon:SetDesaturation(0)
                     icon._chargeDesatHandled = true
                 end
                 return cdInfo
@@ -97,7 +100,7 @@ local function RefreshSpellCooldown(icon)
             icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
-            icon.Icon:SetDesaturated(false)
+            icon.Icon:SetDesaturation(0)
             icon._chargeDesatHandled = true
             return cdInfo
         end
@@ -238,21 +241,19 @@ end
 local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
     local spellID = ResolveSpellID(icon.entry.id)
 
-    -- Desaturation (always applied, independent of opacity settings)
+    -- Desaturation: fully C++-evaluated chain (secret-safe in combat)
     if icon._chargeDesatHandled then
         -- Charge path already set correct desaturation state
     elseif not cdInfo or cdInfo.isOnGCD then
-        icon.Icon:SetDesaturated(false)
+        icon.Icon:SetDesaturation(0)
     else
         local durObj = C_Spell.GetSpellCooldownDuration(spellID)
-        if durObj and durObj.IsZero then
-            local ok2, desaturated = pcall(function() return not durObj:IsZero() end)
-            if ok2 then
-                icon.Icon:SetDesaturated(desaturated)
-            end
-            -- If pcall fails (secret), leave desaturation unchanged (conservative)
+        if durObj and durObj.IsZero and EvalBoolToValue then
+            -- IsZero()=true → ready → desat 0; IsZero()=false → on CD → desat 1
+            -- All three APIs are AllowedWhenTainted — entire chain stays in C++
+            icon.Icon:SetDesaturation(EvalBoolToValue(durObj:IsZero(), 0, 1))
         else
-            icon.Icon:SetDesaturated(false)
+            icon.Icon:SetDesaturation(0)
         end
     end
 
@@ -299,9 +300,9 @@ end
 local function ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
     -- Desaturation (always applied, independent of opacity settings)
     if ok then
-        icon.Icon:SetDesaturated(isOnCD and true or false)
+        icon.Icon:SetDesaturation(isOnCD and 1 or 0)
     else
-        icon.Icon:SetDesaturated(false)
+        icon.Icon:SetDesaturation(0)
     end
 
     if not ctx then
@@ -333,11 +334,6 @@ end
 -- Used by UpdateGroupCooldownOpacities for combat/target change events.
 local function ApplyCooldownOpacity(icon, groupIndex, ctx)
     ctx = ctx or BuildGroupOpacityCtx(groupIndex)
-    if not ctx then
-        icon:SetAlpha(1.0)
-        if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
-        return
-    end
 
     if not icon.entry then
         icon:SetAlpha(1.0)
@@ -349,7 +345,6 @@ local function ApplyCooldownOpacity(icon, groupIndex, ctx)
         local spellID = ResolveSpellID(icon.entry.id)
         local cdInfo = C_Spell.GetSpellCooldown(spellID)
         ApplySpellOpacityFromState(icon, cdInfo, ctx)
-
     elseif icon.entry.type == "item" then
         local startTime, duration, isEnabled = C_Container.GetItemCooldown(icon.entry.id)
         local ok, isOnCD = pcall(checkItemCD, startTime, duration, isEnabled)
@@ -364,7 +359,7 @@ end
 function CG._OnIconCooldownDone(cooldownFrame)
     local icon = cooldownFrame:GetParent()
     if icon and icon.entry and icon._groupIndex then
-        icon.Icon:SetDesaturated(false)
+        icon.Icon:SetDesaturation(0)
         icon._chargeDesatHandled = nil
         ApplyCooldownOpacity(icon, icon._groupIndex)
     end
@@ -374,12 +369,7 @@ function CG._UpdateGroupCooldownOpacities(groupIndex)
     local ctx = BuildGroupOpacityCtx(groupIndex)
     for _, icon in ipairs(activeIcons[groupIndex]) do
         if icon.entry then
-            if not ctx then
-                icon:SetAlpha(1.0)
-                if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
-            else
-                ApplyCooldownOpacity(icon, groupIndex, ctx)
-            end
+            ApplyCooldownOpacity(icon, groupIndex, ctx)
         end
     end
 end
