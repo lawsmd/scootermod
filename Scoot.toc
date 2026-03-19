@@ -112,7 +112,10 @@ core/components/tooltip.lua
 core/components/notes.lua
 core/qol.lua
 core/components/objectivetracker.lua
-core/components/damagemeters.lua
+core/components/damagemeters/core.lua
+core/components/damagemeters/overlays.lua
+core/components/damagemeters/styling.lua
+core/components/damagemeters/export.lua
 core/debug/core.lua
 core/debug/editmode.lua
 core/debug/classauras.lua
