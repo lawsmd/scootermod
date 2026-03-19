@@ -1,5 +1,5 @@
 -- CustomGroupsTab.lua - Inject a Scoot tab into Blizzard's Cooldown Manager window
--- with full custom groups management UI (3 collapsible groups, drag-and-drop, reorder)
+-- with full custom groups management UI (5 collapsible groups, drag-and-drop, reorder)
 local addonName, addon = ...
 
 local CG = addon.CustomGroups
@@ -14,6 +14,7 @@ local DROP_TARGET_ICON = "Interface\\PaperDollInfoFrame\\Character-Plus"
 
 local injected = false
 local isScootTabActive = false
+local scootTab = nil
 
 --------------------------------------------------------------------------------
 -- Utility: Resolve icon texture for a spell or item
@@ -303,7 +304,7 @@ local function FindNearestTarget(cursorX, cursorY)
     local bestDist = math.huge
     local bestGroup, bestDataIndex, bestAnchorFrame, bestAnchorSide = nil, nil, nil, nil
 
-    for gi = 1, 3 do
+    for gi = 1, 5 do
         local pool = itemPools[gi]
         if pool then
             for _, itemFrame in ipairs(pool) do
@@ -509,15 +510,10 @@ local function CreateCategoryFrame(parent, groupIndex)
     header:SetHeaderText(CG.GetGroupDisplayName(groupIndex))
     header:UpdateCollapsedState(false)  -- start expanded
 
-    -- Subtitle: "Custom Group X" (only visible when a custom name is set)
+    -- Subtitle: always shows "(Custom Group X)" as a group identifier
     local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     subtitle:SetTextColor(0.5, 0.5, 0.5)
     subtitle:SetText("(Custom Group " .. groupIndex .. ")")
-    if CG.GetGroupName(groupIndex) then
-        subtitle:Show()
-    else
-        subtitle:Hide()
-    end
     cat._subtitle = subtitle
 
     -- Rename button — pencil icon, parented to cat (above the header Button's click region)
@@ -598,11 +594,7 @@ local function CreateCategoryFrame(parent, groupIndex)
         header.Name:Show()
         renameBtn:Show()
         UpdateRenamePosition()
-        if CG.GetGroupName(groupIndex) then
-            subtitle:Show()
-        else
-            subtitle:Hide()
-        end
+        subtitle:Show()
     end
 
     local function CancelRename()
@@ -610,9 +602,7 @@ local function CreateCategoryFrame(parent, groupIndex)
         editBox:Hide()
         header.Name:Show()
         renameBtn:Show()
-        if CG.GetGroupName(groupIndex) then
-            subtitle:Show()
-        end
+        subtitle:Show()
     end
 
     renameBtn:SetScript("OnClick", function()
@@ -756,7 +746,7 @@ RefreshCategory = function(groupIndex)
     -- Re-stack categories and update scroll height
     if contentFrame then
         local totalHeight = 0
-        for i = 1, 3 do
+        for i = 1, 5 do
             local cat = categoryFrames[i]
             if cat then
                 cat:ClearAllPoints()
@@ -770,13 +760,13 @@ RefreshCategory = function(groupIndex)
 end
 
 RefreshAllCategories = function()
-    for i = 1, 3 do
+    for i = 1, 5 do
         LayoutGrid(i)
     end
     -- Re-stack categories
     if contentFrame then
         local totalHeight = 0
-        for i = 1, 3 do
+        for i = 1, 5 do
             local cat = categoryFrames[i]
             if cat then
                 cat:ClearAllPoints()
@@ -825,24 +815,17 @@ local function CreateContentFrame(cdmFrame)
     end)
 
     -- Create the 3 category frames
-    for i = 1, 3 do
+    for i = 1, 5 do
         categoryFrames[i] = CreateCategoryFrame(scrollChild, i)
     end
 
     -- Register for data change callbacks
     CG.RegisterCallback(function()
-        -- Update header texts, subtitles, and rename button positions for all 3 categories
-        for i = 1, 3 do
+        -- Update header texts and rename button positions for all categories
+        for i = 1, 5 do
             local cat = categoryFrames[i]
             if cat and cat._header then
                 cat._header:SetHeaderText(CG.GetGroupDisplayName(i))
-                if cat._subtitle then
-                    if CG.GetGroupName(i) then
-                        cat._subtitle:Show()
-                    else
-                        cat._subtitle:Hide()
-                    end
-                end
                 if cat._updateRenamePosition then
                     cat._updateRenamePosition()
                 end
@@ -883,17 +866,10 @@ local function CreateContentFrame(cdmFrame)
         -- Ensure scroll child width matches
         scrollChild:SetWidth(f:GetWidth() or 300)
         -- Refresh header texts (handles profile switches)
-        for i = 1, 3 do
+        for i = 1, 5 do
             local cat = categoryFrames[i]
             if cat and cat._header then
                 cat._header:SetHeaderText(CG.GetGroupDisplayName(i))
-                if cat._subtitle then
-                    if CG.GetGroupName(i) then
-                        cat._subtitle:Show()
-                    else
-                        cat._subtitle:Hide()
-                    end
-                end
                 if cat._updateRenamePosition then
                     cat._updateRenamePosition()
                 end
@@ -1020,6 +996,13 @@ local function InjectScootTab()
 
     -- Create tab button
     local tab = CreateTabButton(cdmFrame)
+    scootTab = tab
+
+    -- Gate initial visibility: hide tab if no groups are enabled
+    local CG_ref = addon.CustomGroups
+    if not (CG_ref and CG_ref.IsAnyGroupEnabled and CG_ref.IsAnyGroupEnabled()) then
+        tab:Hide()
+    end
 
     -- Tab click: activate our tab (NO call to cdmFrame:SetDisplayMode — avoids taint)
     tab:SetCustomOnMouseUpHandler(function(t, button, upInside)
@@ -1063,6 +1046,26 @@ local function InjectScootTab()
             end
         end
     end)
+end
+
+--------------------------------------------------------------------------------
+-- Tab visibility refresh (called when enable toggles change)
+--------------------------------------------------------------------------------
+
+function addon.RefreshCustomGroupsTabVisibility()
+    if not scootTab then return end
+    local CG_ref = addon.CustomGroups
+    if CG_ref and CG_ref.IsAnyGroupEnabled and CG_ref.IsAnyGroupEnabled() then
+        scootTab:Show()
+    else
+        if isScootTabActive then
+            local cdmFrame = CooldownViewerSettings
+            if cdmFrame and cdmFrame.SetDisplayMode then
+                cdmFrame:SetDisplayMode("spells")
+            end
+        end
+        scootTab:Hide()
+    end
 end
 
 --------------------------------------------------------------------------------

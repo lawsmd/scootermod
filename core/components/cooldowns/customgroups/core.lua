@@ -9,12 +9,13 @@ local Component = addon.ComponentPrototype
 
 addon.CustomGroups = {}
 local CG = addon.CustomGroups
+CG.NUM_GROUPS = 5
 
 --------------------------------------------------------------------------------
 -- Data Model
 --------------------------------------------------------------------------------
 
--- Ensure the DB structure exists for all 3 groups
+-- Ensure the DB structure exists for all groups
 local function EnsureGroupsDB()
     local profile = addon.db and addon.db.profile
     if not profile then return nil end
@@ -23,9 +24,11 @@ local function EnsureGroupsDB()
             [1] = { entries = {} },
             [2] = { entries = {} },
             [3] = { entries = {} },
+            [4] = { entries = {} },
+            [5] = { entries = {} },
         }
     end
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         if not profile.customCDMGroups[i] then
             profile.customCDMGroups[i] = { entries = {} }
         end
@@ -222,6 +225,14 @@ local function RebuildGroup(groupIndex)
     local container = containers[groupIndex]
     if not container then return end
 
+    local comp = addon.Components and addon.Components["customGroup" .. groupIndex]
+    if comp and not comp.db.enabled then
+        CG._ReleaseAllIcons(groupIndex)
+        container:Hide()
+        CG._ManageItemTicker(0, groupIndex)
+        return
+    end
+
     CG._ReleaseAllIcons(groupIndex)
 
     local entries = CG.GetEntries(groupIndex)
@@ -272,7 +283,7 @@ local function RebuildGroup(groupIndex)
 end
 
 local function RebuildAllGroups()
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         RebuildGroup(i)
         CG._ApplyBordersToGroup(i)
         CG._ApplyTextToGroup(i)
@@ -286,7 +297,7 @@ end
 --------------------------------------------------------------------------------
 
 local function InitializeContainers()
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         local container = CreateFrame("Frame", "ScootCustomGroup" .. i, UIParent)
         container:SetSize(1, 1)
         container:SetMovable(true)
@@ -301,6 +312,27 @@ end
 --------------------------------------------------------------------------------
 -- Event Handling
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- Backward-Compat Migration: enabled state
+--------------------------------------------------------------------------------
+
+local function MigrateGroupEnabledState()
+    local groups = EnsureGroupsDB()
+    if not groups then return end
+    for i = 1, CG.NUM_GROUPS do
+        local entries = groups[i] and groups[i].entries
+        if entries and #entries > 0 then
+            local comp = addon.Components and addon.Components["customGroup" .. i]
+            if comp then
+                local db = addon:EnsureComponentDB(comp)
+                if db and rawget(db, "enabled") == nil then
+                    db.enabled = true
+                end
+            end
+        end
+    end
+end
 
 local bagUpdatePending = false
 local spellCDDirty = false
@@ -328,6 +360,7 @@ cgEventFrame:SetScript("OnEvent", function(self, event, ...)
             cgInitialized = true
 
             C_Timer.After(0.5, function()
+                MigrateGroupEnabledState()
                 RebuildAllGroups()
                 CG._InitializeEditMode()
             end)
@@ -364,7 +397,7 @@ cgEventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "PLAYER_TARGET_CHANGED" then
         CG._UpdateAllGroupOpacities()
         -- Re-apply per-icon cooldown opacity with updated container alpha
-        for gi = 1, 3 do
+        for gi = 1, CG.NUM_GROUPS do
             CG._UpdateGroupCooldownOpacities(gi)
         end
 
@@ -386,7 +419,7 @@ cgEventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "ITEM_DATA_LOAD_RESULT" then
         -- Retry textures for items that may have been loading
         local activeIcons = CG._activeIcons
-        for gi = 1, 3 do
+        for gi = 1, CG.NUM_GROUPS do
             for _, icon in ipairs(activeIcons[gi]) do
                 if icon.entry and icon.entry.type == "item" and not icon.Icon:GetTexture() then
                     local texture = C_Item.GetItemIconByID(icon.entry.id)
@@ -413,7 +446,7 @@ end)
 if addon.SpellBindings and addon.SpellBindings.RegisterRefreshCallback then
     addon.SpellBindings.RegisterRefreshCallback(function()
         if not cgInitialized then return end
-        for i = 1, 3 do
+        for i = 1, CG.NUM_GROUPS do
             CG._ApplyKeybindTextToGroup(i)
         end
     end)
@@ -427,6 +460,16 @@ local function CustomGroupApplyStyling(component)
     local groupIndex = tonumber(component.id:match("%d+"))
     if not groupIndex then return end
     if not cgInitialized then return end
+
+    if not component.db.enabled then
+        local container = containers[groupIndex]
+        if container then
+            CG._ReleaseAllIcons(groupIndex)
+            container:Hide()
+            CG._ManageItemTicker(0, groupIndex)
+        end
+        return
+    end
 
     RebuildGroup(groupIndex)
     CG._ApplyBordersToGroup(groupIndex)
@@ -464,7 +507,7 @@ function addon.CopyCDMCustomGroupSettings(sourceComponentId, destComponentId)
 
     -- Copy all destination-defined settings from source DB
     for key, def in pairs(dst.settings or {}) do
-        if key == "supportsText" then -- skip meta flag
+        if key == "supportsText" or key == "enabled" then -- skip meta/activation flags
         elseif isEssentialOrUtility and key == "iconSize" then -- skip incompatible
         else
             local srcVal = src.db[key]
@@ -481,12 +524,29 @@ function addon.CopyCDMCustomGroupSettings(sourceComponentId, destComponentId)
 end
 
 --------------------------------------------------------------------------------
--- Component Registration (3 Custom Groups)
+-- Helper: Any Group Enabled?
+--------------------------------------------------------------------------------
+
+function CG.IsAnyGroupEnabled()
+    for i = 1, CG.NUM_GROUPS do
+        local comp = addon.Components and addon.Components["customGroup" .. i]
+        if comp and comp.db and comp.db.enabled then
+            return true
+        end
+    end
+    return false
+end
+
+--------------------------------------------------------------------------------
+-- Component Registration (Custom Groups)
 --------------------------------------------------------------------------------
 
 -- Shared settings definition factory (all type="addon", no Edit Mode backing)
 local function CreateCustomGroupSettings()
     return {
+        -- Enable
+        enabled = { type = "addon", default = false },
+
         -- Layout
         orientation = { type = "addon", default = "H" },
         direction = { type = "addon", default = "right" },
@@ -526,7 +586,7 @@ local function CreateCustomGroupSettings()
 end
 
 addon:RegisterComponentInitializer(function(self)
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         local comp = Component:New({
             id = "customGroup" .. i,
             name = "Custom Group " .. i,

@@ -1,4 +1,4 @@
--- CustomGroupsRenderer.lua - Parameterized settings renderer for Custom CDM Groups 1-3
+-- CustomGroupsRenderer.lua - Parameterized settings renderer for Custom CDM Groups 1-5
 local addonName, addon = ...
 
 addon.UI = addon.UI or {}
@@ -10,7 +10,7 @@ local CustomGroups = addon.UI.Settings.CDM.CustomGroups
 local SettingsBuilder = addon.UI.SettingsBuilder
 
 --------------------------------------------------------------------------------
--- Factory: create a Render function for a given group index (1-3)
+-- Factory: create a Render function for a given group index (1-5)
 --------------------------------------------------------------------------------
 
 local function CreateCustomGroupRenderer(groupIndex)
@@ -31,6 +31,21 @@ local function CreateCustomGroupRenderer(groupIndex)
         local h = Helpers.CreateComponentHelpers(componentId)
         local getComponent, getSetting, setSetting = h.getComponent, h.get, h.set
         local textColorValues, textColorOrder = Helpers.textColorValues, Helpers.textColorOrder
+
+        -- Enable toggle
+        builder:AddToggle({
+            label = "Enable " .. groupLabel,
+            description = "Show this group on the HUD and in Edit Mode.",
+            emphasized = true,
+            get = function() return getSetting("enabled") or false end,
+            set = function(v)
+                h.setAndApply("enabled", v)
+                if addon.RefreshCustomGroupsTabVisibility then
+                    addon.RefreshCustomGroupsTabVisibility()
+                end
+                builder:DeferredRefreshAll()
+            end,
+        })
 
         -- Preview
         builder:AddPreview({
@@ -676,10 +691,10 @@ local function CreateCustomGroupRenderer(groupIndex)
 end
 
 --------------------------------------------------------------------------------
--- Register 3 renderers
+-- Register renderers
 --------------------------------------------------------------------------------
 
-for i = 1, 3 do
+for i = 1, 5 do
     local renderFn = CreateCustomGroupRenderer(i)
     CustomGroups["RenderGroup" .. i] = renderFn
 
