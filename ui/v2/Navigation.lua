@@ -92,6 +92,8 @@ Navigation.NavModel = {
             { key = "customGroup1", label = "Custom Group 1" },
             { key = "customGroup2", label = "Custom Group 2" },
             { key = "customGroup3", label = "Custom Group 3" },
+            { key = "customGroup4", label = "Custom Group 4" },
+            { key = "customGroup5", label = "Custom Group 5" },
         },
     },
     {

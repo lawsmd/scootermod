@@ -58,7 +58,10 @@ core/components/cooldowns/trackedbars/init.lua
 core/components/cooldowns/trackedbars/suppression.lua
 core/components/cooldowns/trackedbars/default.lua
 core/components/cooldowns/trackedbars/vertical.lua
-core/components/cooldowns/customgroups.lua
+core/components/cooldowns/customgroups/core.lua
+core/components/cooldowns/customgroups/icons.lua
+core/components/cooldowns/customgroups/layout.lua
+core/components/cooldowns/customgroups/tracking.lua
 core/components/classauras/core.lua
 core/components/classauras/layout.lua
 core/components/classauras/styling.lua

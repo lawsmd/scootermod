@@ -7,8 +7,8 @@ local CG = addon.CustomGroups
 -- Shared State
 --------------------------------------------------------------------------------
 
-CG._iconPools = { {}, {}, {} }       -- released icons per group
-CG._activeIcons = { {}, {}, {} }     -- visible icons per group
+CG._iconPools = { {}, {}, {}, {}, {} }       -- released icons per group
+CG._activeIcons = { {}, {}, {}, {}, {} }     -- visible icons per group
 CG._MIN_CD_DURATION = 1.5            -- GCD threshold
 
 local iconPools = CG._iconPools

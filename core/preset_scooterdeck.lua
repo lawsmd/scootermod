@@ -2675,6 +2675,70 @@ Presets:Register({
       textStacks = {
       },
     },
+    customGroup4 = {
+      anchorPosition = "center",
+      borderEnable = false,
+      borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
+      borderStyle = "square",
+      borderThickness = 1,
+      borderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      borderTintEnable = false,
+      columns = 12,
+      direction = "right",
+      iconPadding = 2,
+      iconSize = 30,
+      opacity = 100,
+      opacityOutOfCombat = 100,
+      opacityWithTarget = 100,
+      orientation = "H",
+      supportsText = true,
+      tallWideRatio = 0,
+      textBindings = {
+      },
+      textCooldown = {
+      },
+      textStacks = {
+      },
+    },
+    customGroup5 = {
+      anchorPosition = "center",
+      borderEnable = false,
+      borderInset = 0,
+      borderInsetH = 0,
+      borderInsetV = 0,
+      borderStyle = "square",
+      borderThickness = 1,
+      borderTintColor = {
+        1,
+        1,
+        1,
+        1,
+      },
+      borderTintEnable = false,
+      columns = 12,
+      direction = "right",
+      iconPadding = 2,
+      iconSize = 30,
+      opacity = 100,
+      opacityOutOfCombat = 100,
+      opacityWithTarget = 100,
+      orientation = "H",
+      supportsText = true,
+      tallWideRatio = 0,
+      textBindings = {
+      },
+      textCooldown = {
+      },
+      textStacks = {
+      },
+    },
     damageMeter = {
       background = 80,
       barBackgroundColor = {

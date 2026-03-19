@@ -348,7 +348,7 @@ function CG._UpdateGroupCooldownOpacities(groupIndex)
 end
 
 function CG._RefreshAllSpellCooldowns()
-    for gi = 1, 3 do
+    for gi = 1, CG.NUM_GROUPS do
         local ctx = BuildGroupOpacityCtx(gi)
         for _, icon in ipairs(activeIcons[gi]) do
             if icon.entry and icon.entry.type == "spell" then
@@ -360,7 +360,7 @@ function CG._RefreshAllSpellCooldowns()
 end
 
 function CG._RefreshAllItemCooldowns()
-    for gi = 1, 3 do
+    for gi = 1, CG.NUM_GROUPS do
         local ctx = BuildGroupOpacityCtx(gi)
         for _, icon in ipairs(activeIcons[gi]) do
             if icon.entry and icon.entry.type == "item" then
@@ -394,7 +394,7 @@ end
 function CG._ManageItemTicker(currentGroupItemCount, groupIndex)
     -- Recount items across all groups for ticker management
     local totalItems = 0
-    for gi = 1, 3 do
+    for gi = 1, CG.NUM_GROUPS do
         if gi == groupIndex then
             totalItems = totalItems + currentGroupItemCount
         else

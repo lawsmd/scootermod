@@ -184,7 +184,7 @@ function CG._UpdateGroupOpacity(groupIndex)
 end
 
 function CG._UpdateAllGroupOpacities()
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         CG._UpdateGroupOpacity(i)
     end
 end
@@ -225,7 +225,7 @@ local function RestoreGroupPosition(groupIndex, layoutName)
 end
 
 local function UpdateEditModeNames()
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         local container = containers[i]
         if container then
             container.editModeName = CG.GetGroupDisplayName(i)
@@ -237,7 +237,7 @@ function CG._InitializeEditMode()
     local lib = LibStub("LibEditMode", true)
     if not lib then return end
 
-    for i = 1, 3 do
+    for i = 1, CG.NUM_GROUPS do
         local container = containers[i]
         if container then
             container.editModeName = CG.GetGroupDisplayName(i)
@@ -269,7 +269,7 @@ function CG._InitializeEditMode()
     end
 
     lib:RegisterCallback("layout", function(layoutName, layoutIndex)
-        for i = 1, 3 do
+        for i = 1, CG.NUM_GROUPS do
             RestoreGroupPosition(i, layoutName)
         end
     end)

@@ -283,6 +283,8 @@ local CUSTOM_GROUP_COPY_TARGETS = {
     customGroup1 = true,
     customGroup2 = true,
     customGroup3 = true,
+    customGroup4 = true,
+    customGroup5 = true,
 }
 
 local CUSTOM_GROUP_STATIC_NAMES = {
@@ -304,6 +306,7 @@ end
 
 local CUSTOM_GROUP_SOURCE_ORDER = {
     "customGroup1", "customGroup2", "customGroup3",
+    "customGroup4", "customGroup5",
     "essentialCooldowns", "utilityCooldowns",
 }
 
@@ -493,6 +496,8 @@ local DEFAULTS_RESET_MAP = {
     customGroup1        = { strategy = "component", id = "customGroup1" },
     customGroup2        = { strategy = "component", id = "customGroup2" },
     customGroup3        = { strategy = "component", id = "customGroup3" },
+    customGroup4        = { strategy = "component", id = "customGroup4" },
+    customGroup5        = { strategy = "component", id = "customGroup5" },
     -- Action Bars
     actionBar1          = { strategy = "component", id = "actionBar1" },
     actionBar2          = { strategy = "component", id = "actionBar2" },
