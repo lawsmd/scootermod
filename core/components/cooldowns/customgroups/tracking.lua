@@ -50,6 +50,7 @@ end
 local function RefreshSpellCooldown(icon)
     if not icon.entry or icon.entry.type ~= "spell" then return nil end
     local spellID = ResolveSpellID(icon.entry.id)
+    icon._chargeDesatHandled = nil
 
     -- Refresh texture to match current override state
     -- GetSpellTexture handles overrides internally via base ID
@@ -76,14 +77,17 @@ local function RefreshSpellCooldown(icon)
                         icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
                     end
                     icon.Icon:SetDesaturated(true)
+                    icon._chargeDesatHandled = true
                 elseif chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
                     -- Recharging — show swipe
                     icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
                     icon.Icon:SetDesaturated(false)
+                    icon._chargeDesatHandled = true
                 else
                     -- All charges full
                     icon.Cooldown:Clear()
                     icon.Icon:SetDesaturated(false)
+                    icon._chargeDesatHandled = true
                 end
                 return cdInfo
             end
@@ -94,6 +98,7 @@ local function RefreshSpellCooldown(icon)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
             icon.Icon:SetDesaturated(false)
+            icon._chargeDesatHandled = true
             return cdInfo
         end
     else
@@ -105,7 +110,6 @@ local function RefreshSpellCooldown(icon)
 
     -- isOnGCD is NeverSecret — always safe
     if cdInfo.isOnGCD then
-        icon.Icon:SetDesaturated(false)
         return cdInfo
     end
 
@@ -115,15 +119,12 @@ local function RefreshSpellCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-            icon.Icon:SetDesaturated(true)
         else
             icon.Cooldown:Clear()
-            icon.Icon:SetDesaturated(false)
         end
     else
         -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
         icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-        icon.Icon:SetDesaturated(true)
     end
 
     return cdInfo
@@ -140,15 +141,12 @@ local function RefreshItemCooldown(icon)
     if ok then
         if isOnCD then
             icon.Cooldown:SetCooldown(startTime, duration)
-            icon.Icon:SetDesaturated(true)
         else
             icon.Cooldown:Clear()
-            icon.Icon:SetDesaturated(false)
         end
     elseif startTime and duration then
         -- Secret fallback: pass directly to SetCooldown
         icon.Cooldown:SetCooldown(startTime, duration)
-        icon.Icon:SetDesaturated(true)
     end
 
     -- Stack count
@@ -238,6 +236,26 @@ end
 -- Apply spell opacity using pre-fetched cdInfo and pre-built ctx.
 -- cdInfo comes from RefreshSpellCooldown's return value.
 local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
+    local spellID = ResolveSpellID(icon.entry.id)
+
+    -- Desaturation (always applied, independent of opacity settings)
+    if icon._chargeDesatHandled then
+        -- Charge path already set correct desaturation state
+    elseif not cdInfo or cdInfo.isOnGCD then
+        icon.Icon:SetDesaturated(false)
+    else
+        local durObj = C_Spell.GetSpellCooldownDuration(spellID)
+        if durObj and durObj.IsZero then
+            local ok2, desaturated = pcall(function() return not durObj:IsZero() end)
+            if ok2 then
+                icon.Icon:SetDesaturated(desaturated)
+            end
+            -- If pcall fails (secret), leave desaturation unchanged (conservative)
+        else
+            icon.Icon:SetDesaturated(false)
+        end
+    end
+
     if not ctx then
         icon:SetAlpha(1.0)
         if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
@@ -252,7 +270,6 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
 
     local isGCD = cdInfo.isOnGCD
     -- Always fetch fresh DurationObject (returns live state each frame)
-    local spellID = ResolveSpellID(icon.entry.id)
     local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
 
     -- Icon frame opacity
@@ -280,6 +297,13 @@ end
 
 -- Apply item opacity using pre-fetched state and pre-built ctx.
 local function ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
+    -- Desaturation (always applied, independent of opacity settings)
+    if ok then
+        icon.Icon:SetDesaturated(isOnCD and true or false)
+    else
+        icon.Icon:SetDesaturated(false)
+    end
+
     if not ctx then
         icon:SetAlpha(1.0)
         if icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
@@ -341,6 +365,7 @@ function CG._OnIconCooldownDone(cooldownFrame)
     local icon = cooldownFrame:GetParent()
     if icon and icon.entry and icon._groupIndex then
         icon.Icon:SetDesaturated(false)
+        icon._chargeDesatHandled = nil
         ApplyCooldownOpacity(icon, icon._groupIndex)
     end
 end
