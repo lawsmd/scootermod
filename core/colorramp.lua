@@ -140,7 +140,7 @@ end
 -- Build a string with per-character |cffRRGGBB color codes for a two-stop gradient.
 -- r1,g1,b1 = start color (0-1), r2,g2,b2 = end color (0-1)
 function addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2)
-    if type(text) ~= "string" or text == "" then return text end
+    if type(text) ~= "string" or (issecretvalue and issecretvalue(text)) or text == "" then return text end
 
     local clean = stripEscapes(text)
     if clean == "" then return text end

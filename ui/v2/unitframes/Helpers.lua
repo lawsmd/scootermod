@@ -383,6 +383,15 @@ UF.fontColorCastBarValues = {
 }
 UF.fontColorCastBarOrder = { "default", "class", "custom", "classGradient", "specGradient", "customGradient" }
 
+-- Font color mode options (cast bar spell name — non-player frames, no class/spec gradient)
+UF.fontColorCastBarNonPlayerValues = {
+    default = "Default",
+    class = "Class Color",
+    custom = "Custom",
+    customGradient = "Custom (Gradient)",
+}
+UF.fontColorCastBarNonPlayerOrder = { "default", "class", "custom", "customGradient" }
+
 -- Font color mode options
 UF.fontColorValues = {
     default = "Default",

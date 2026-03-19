@@ -90,7 +90,7 @@ local function installGradientHook(spellFS, cfgResolver, parentFrame)
     if not spellFS or getProp(spellFS, "_rampHooked") then return end
     hooksecurefunc(spellFS, "SetText", function(self, text)
         if _rampApplying then return end
-        if type(text) ~= "string" then return end
+        if type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then return end
         -- Cache the raw (uncolored) text for re-application on settings change
         setProp(self, "_rampRawText", text)
         local styleCfg = cfgResolver()
@@ -125,7 +125,7 @@ local function applySpellNameColor(spellFS, styleCfg, parentFrame)
 
     if colorMode == "classGradient" or colorMode == "specGradient" or colorMode == "customGradient" then
         local cachedText = getProp(spellFS, "_rampRawText")
-        if cachedText and addon.BuildColorRampString then
+        if cachedText and not (issecretvalue and issecretvalue(cachedText)) and addon.BuildColorRampString then
             local r1, g1, b1, r2, g2, b2 = resolveGradientColors(colorMode, styleCfg)
             local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
             if isTextFill then

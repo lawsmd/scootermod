@@ -843,14 +843,13 @@ function UF.RenderBoss(panel, scrollContent)
                         })
                         tabInner:AddSelectorColorPicker({
                             label = "Spell Name Color",
-                            values = UF.fontColorCastBarValues, order = UF.fontColorCastBarOrder,
+                            values = UF.fontColorCastBarNonPlayerValues, order = UF.fontColorCastBarNonPlayerOrder,
                             get = function() local t = getCastBarDB() or {}; local s = t.spellNameText or {}; return s.colorMode or "default" end,
                             set = function(v) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.colorMode = v or "default"; applyCastBar() end end,
                             getColor = function() local t = getCastBarDB() or {}; local s = t.spellNameText or {}; local c = s.color or {1,1,1,1}; return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end,
                             setColor = function(r,g,b,a) local t = ensureCastBarDB(); if t then t.spellNameText = t.spellNameText or {}; t.spellNameText.color = {r,g,b,a}; applyCastBar() end end,
                             customValue = {"custom", "customGradient"},
                             hasAlpha = true,
-                            optionInfoIcons = UF.fontColorCastBarInfoIcons,
                         })
                         tabInner:Finalize()
                     end,
