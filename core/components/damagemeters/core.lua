@@ -566,6 +566,11 @@ addon:RegisterComponentInitializer(function(self)
                 dmResetPending = false
                 hideAllDMOverlays()
             end
+            local dmFrame = _G.DamageMeter
+            if not dmFrame or not dmFrame:IsShown() then
+                hideAllDMOverlays()
+                return
+            end
             if PlayerInCombat() then
                 -- Combat: data-only update (bar fill + text, no style changes)
                 DM._UpdateAllOverlayData(comp)

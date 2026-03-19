@@ -672,6 +672,11 @@ end
 -- Update all visible overlay data across all windows (combat-safe: bar fill + text only)
 local function UpdateAllOverlayData(comp)
     if not comp or not comp.db then return end
+    local dmFrame = _G.DamageMeter
+    if not dmFrame or not dmFrame:IsShown() then
+        DM._hideAllDMOverlays()
+        return
+    end
     local windows = DM._GetAllSessionWindows()
     for _, sessionWindow in ipairs(windows) do
         DM._ForEachVisibleEntry(sessionWindow, function(entryFrame)
@@ -708,6 +713,12 @@ local function ApplyDamageMeterStyling(self)
     DM._InvalidateSessionWindowCache()
     local dmFrame = _G.DamageMeter
     if not dmFrame then
+        DM._hideAllDMOverlays()
+        return
+    end
+
+    -- Frame exists but is hidden (CVar disabled, etc.) — clean up overlays
+    if not dmFrame:IsShown() then
         DM._hideAllDMOverlays()
         return
     end
