@@ -797,6 +797,9 @@ local function ApplyDamageMeterStyling(self)
             end
         end
     end
+
+    -- Apply state-based opacity (OOC fade)
+    DM._RefreshDamageMeterOpacity(self)
 end
 
 --------------------------------------------------------------------------------

@@ -341,6 +341,42 @@ DM._ForEachVisibleEntry = ForEachVisibleEntry
 DM._GetScrollSignature = GetScrollSignature
 
 --------------------------------------------------------------------------------
+-- State-Based Opacity (Out-of-Combat Fade)
+--------------------------------------------------------------------------------
+
+local function GetDamageMeterOpacityAlpha(db)
+    local inCombat = InCombatLockdown and InCombatLockdown()
+    if inCombat then
+        -- In combat: use Edit Mode opacity (50-100 range)
+        local emOpacity = tonumber(db.opacity) or 100
+        return math.max(0.50, math.min(1.0, emOpacity / 100))
+    else
+        -- Out of combat: use addon slider (0-100 range)
+        local oocOpacity = tonumber(db.opacityOutOfCombat) or 100
+        return math.max(0, math.min(1.0, oocOpacity / 100))
+    end
+end
+
+local function RefreshDamageMeterOpacity(comp)
+    if not comp or not comp.db then return end
+    local db = comp.db
+    local alpha = GetDamageMeterOpacityAlpha(db)
+    local windows = GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        SafeSetAlpha(sessionWindow, alpha)
+        -- UIParent-parented Scoot overlays don't inherit session window alpha
+        local ws = windowState[sessionWindow]
+        if ws then
+            if ws.clipFrame then SafeSetAlpha(ws.clipFrame, alpha) end
+            if ws.titleRightClickOverlay then SafeSetAlpha(ws.titleRightClickOverlay, alpha) end
+            if ws.exportButton then SafeSetAlpha(ws.exportButton, alpha) end
+        end
+    end
+end
+
+DM._RefreshDamageMeterOpacity = RefreshDamageMeterOpacity
+
+--------------------------------------------------------------------------------
 -- Component Registration
 --------------------------------------------------------------------------------
 
@@ -476,12 +512,15 @@ addon:RegisterComponentInitializer(function(self)
             exportChatLineCount = { type = "addon", default = 5, ui = { hidden = true } },
             highScoreFont = { type = "addon", default = "PRESS_START_2P", ui = { hidden = true } },
 
+            -- Out-of-combat opacity (state-based fade)
+            opacityOutOfCombat = { type = "addon", default = 100, ui = { hidden = true } },
+
             -- Quality of Life settings
             autoResetData = { type = "addon", default = "off", ui = { hidden = true } },
             autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
         },
         ApplyStyling = function(self) DM._ApplyDamageMeterStyling(self) end,
-        RefreshOpacity = function() end,  -- OPT-13: Opacity is Edit Mode-managed; no Scoot work needed
+        RefreshOpacity = function(self) RefreshDamageMeterOpacity(self) end,
     })
 
     self:RegisterComponent(damageMeter)

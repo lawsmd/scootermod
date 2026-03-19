@@ -1102,13 +1102,31 @@ function DamageMeter.Render(panel, scrollContent)
                 end,
             })
             inner:AddSlider({
+                label = "Opacity Out of Combat",
+                min = 0, max = 100, step = 5,
+                minLabel = "0%", maxLabel = "100%",
+                get = function() return getSetting("opacityOutOfCombat") or 100 end,
+                set = function(value)
+                    setSetting("opacityOutOfCombat", value)
+                    local comp = addon.Components and addon.Components["damageMeter"]
+                    if comp and addon.DamageMeters._RefreshDamageMeterOpacity then
+                        addon.DamageMeters._RefreshDamageMeterOpacity(comp)
+                    end
+                end,
+            })
+            inner:AddSlider({
                 label = "Opacity",
                 min = 50, max = 100, step = 5,
+                minLabel = "50%", maxLabel = "100%",
                 get = function() return getSetting("opacity") or 100 end,
                 set = function(value)
                     setSetting("opacity", value)
                     syncEditModeSetting("opacity")
                 end,
+                infoIcon = {
+                    tooltipTitle = "Opacity",
+                    tooltipText = "Sets the base window opacity (Edit Mode setting). When out of combat, the 'Opacity Out of Combat' slider takes precedence.",
+                },
             })
         end,
     })
