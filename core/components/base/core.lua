@@ -109,6 +109,42 @@ function addon:LinkComponentsToDB()
     -- Zero-Touch: only assign pre-existing persisted tables.
     local profile = self.db and self.db.profile
     local components = profile and rawget(profile, "components") or nil
+
+    -- Auto-prune empty component tables left by prior materialization bugs.
+    if components then
+        for id, tbl in pairs(components) do
+            if type(tbl) == "table" then
+                local hasContent = false
+                for k, v in next, tbl do
+                    if type(v) ~= "table" then
+                        hasContent = true
+                        break
+                    end
+                    for _ in next, v do
+                        hasContent = true
+                        break
+                    end
+                    if hasContent then break end
+                end
+                if not hasContent then
+                    components[id] = nil
+                end
+            end
+        end
+    end
+
+    -- Auto-prune empty profile-level settings tables.
+    if profile then
+        for _, key in ipairs({"actionBarSettings", "prdSettings", "damageMeterSettings", "cdmQoL", "qol"}) do
+            local t = rawget(profile, key)
+            if t and type(t) == "table" then
+                if next(t) == nil then
+                    rawset(profile, key, nil)
+                end
+            end
+        end
+    end
+
     for id, component in pairs(self.Components) do
         local persisted = components and rawget(components, id) or nil
         if persisted then

@@ -513,6 +513,9 @@ local function ApplyTooltipStyling(self)
     local db = self.db
     if not db then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()
 

@@ -134,6 +134,9 @@ local function ApplyActionBarStyling(self)
     local bar = _G[self.frameName]
     if not bar then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
     local baseOp = tonumber(self.db.barOpacity) or 100
     if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
     local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp

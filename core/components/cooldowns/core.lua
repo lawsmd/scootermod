@@ -1800,6 +1800,9 @@ end
 --------------------------------------------------------------------------------
 
 addon.CDMIconApplyStyling = function(component)
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if component._ScootDBProxy and component.db == component._ScootDBProxy then return end
+
     if addon.RefreshCDMOverlays then
         addon.RefreshCDMOverlays(component.id)
     end

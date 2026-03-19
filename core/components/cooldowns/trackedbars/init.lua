@@ -404,6 +404,9 @@ local function TrackedBarsApplyStyling(component)
     local frame = _G[component.frameName]
     if not frame then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if component._ScootDBProxy and component.db == component._ScootDBProxy then return end
+
     hookTrackedBars(component)
 
     local mode = TB.getTrackedBarMode()

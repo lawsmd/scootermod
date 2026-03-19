@@ -42,9 +42,13 @@ function Helpers.setSetting(componentId, key, value)
         -- Fallback to profile.components
         local profile = addon.db and addon.db.profile
         if profile then
-            profile.components = profile.components or {}
-            profile.components[componentId] = profile.components[componentId] or {}
-            profile.components[componentId][key] = value
+            local comp = addon.Components and addon.Components[componentId]
+            if comp and addon.EnsureComponentDB then
+                local db = addon:EnsureComponentDB(comp)
+                if db then
+                    db[key] = value
+                end
+            end
         end
     end
 end

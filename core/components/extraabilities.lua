@@ -202,6 +202,9 @@ local function ApplyExtraAbilitiesStyling(self)
     local container = _G.ExtraAbilityContainer
     if not container then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
     -- Apply scale to container
     local scale = tonumber(self.db.scale) or 100
     if scale < 25 then scale = 25 elseif scale > 150 then scale = 150 end

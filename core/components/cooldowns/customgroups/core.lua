@@ -461,6 +461,9 @@ local function CustomGroupApplyStyling(component)
     if not groupIndex then return end
     if not cgInitialized then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    if component._ScootDBProxy and component.db == component._ScootDBProxy then return end
+
     if not component.db.enabled then
         local container = containers[groupIndex]
         if container then
