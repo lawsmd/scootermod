@@ -102,7 +102,10 @@ core/components/unitframes/copy.lua
 core/components/unitframes/scalemult.lua
 core/components/unitframes/totscale.lua
 core/components/unitframes/offscreenunlock.lua
-core/components/minimap/minimap.lua
+core/components/minimap/core.lua
+core/components/minimap/zonetext.lua
+core/components/minimap/clock.lua
+core/components/minimap/buttons.lua
 core/components/minimap/offscreenunlock.lua
 core/components/minimap/overlay.lua
 core/components/tooltip.lua
