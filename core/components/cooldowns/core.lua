@@ -890,7 +890,10 @@ local function isFrameVisible(frame)
     end
     if frame.GetWidth and frame.GetHeight then
         local ok, w, h = pcall(function() return frame:GetWidth(), frame:GetHeight() end)
-        if ok and ((w or 0) < 5 or (h or 0) < 5) then
+        if ok and type(w) == "number" and type(h) == "number"
+           and not (issecretvalue and issecretvalue(w))
+           and not (issecretvalue and issecretvalue(h))
+           and (w < 5 or h < 5) then
             return false
         end
     end
@@ -1706,7 +1709,7 @@ end
 -- renderer resets the FontString's alpha every frame, overriding our values.
 --------------------------------------------------------------------------------
 
-local function applyTextCooldownAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD)
+local function applyTextCooldownAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD, isOffCooldownMode)
     if not cooldownFrame then return end
     pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
@@ -1715,7 +1718,12 @@ local function applyTextCooldownAlpha(cooldownFrame, durObj, containerAlpha, tex
     else
         local readyAlpha = containerAlpha
         local cdAlpha = math.min(containerAlpha, textDimAlpha)
-        local isZero = durObj:IsZero()
+        if isOffCooldownMode then readyAlpha, cdAlpha = cdAlpha, readyAlpha end
+        local zeroOk, isZero = pcall(durObj.IsZero, durObj)
+        if not zeroOk then
+            pcall(cooldownFrame.SetAlpha, cooldownFrame, containerAlpha)
+            return
+        end
         pcall(cooldownFrame.SetAlphaFromBoolean, cooldownFrame, isZero, readyAlpha, cdAlpha)
     end
 end
@@ -1725,6 +1733,55 @@ local function resetTextAlpha(cooldownFrame)
         pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, false)
         pcall(cooldownFrame.SetAlpha, cooldownFrame, 1.0)
         textAlphaDecoupled[cooldownFrame] = nil
+    end
+end
+
+local function processOneIconOpacity(child, iconSetting, readyAlpha, cdAlpha, needsTextOverride, containerAlpha, textDimAlpha, isOffCooldownMode)
+    if not isValidCDMItemFrame(child) or not isFrameVisible(child) then return end
+
+    local idOk, spellId = pcall(child.GetBaseSpellID, child)
+    if not idOk or not spellId then return end
+
+    if C_Spell.GetOverrideSpell then
+        local overrideOk, overrideId = pcall(C_Spell.GetOverrideSpell, spellId)
+        if overrideOk and type(overrideId) == "number"
+           and not (issecretvalue and issecretvalue(overrideId))
+           and overrideId ~= 0 then
+            spellId = overrideId
+        end
+    end
+
+    local cdInfo = C_Spell.GetSpellCooldown(spellId)
+    local isGCD = cdInfo and cdInfo.isOnGCD
+    local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellId) or nil
+
+    -- Icon frame opacity
+    if iconSetting >= 100 then
+        pcall(child.SetAlpha, child, 1.0)
+    elseif isGCD then
+        pcall(child.SetAlpha, child, readyAlpha)
+    elseif durObj and durObj.IsZero then
+        local zeroOk, isZero = pcall(durObj.IsZero, durObj)
+        if zeroOk then
+            pcall(child.SetAlphaFromBoolean, child, isZero, readyAlpha, cdAlpha)
+        else
+            pcall(child.SetAlpha, child, 1.0)
+        end
+    else
+        pcall(child.SetAlpha, child, 1.0)
+    end
+
+    -- Text opacity (independent when text != icon setting)
+    if needsTextOverride and child.Cooldown then
+        if isGCD then
+            applyTextCooldownAlpha(child.Cooldown, nil, containerAlpha, textDimAlpha, true, isOffCooldownMode)
+        elseif durObj and durObj.IsZero then
+            applyTextCooldownAlpha(child.Cooldown, durObj, containerAlpha, textDimAlpha, false, isOffCooldownMode)
+        else
+            resetTextAlpha(child.Cooldown)
+        end
+    elseif not needsTextOverride and child.Cooldown then
+        resetTextAlpha(child.Cooldown)
     end
 end
 
@@ -1740,8 +1797,11 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
     -- Nothing to do if both are at 100%
     if iconSetting >= 100 and textSetting >= 100 then return end
 
+    local mode = component.db.cooldownOpacityMode
+    local isOffCooldownMode = (mode == "offCooldown")
+
     local containerAlpha = getViewerOpacityForState(componentId)
-    local needsTextOverride = (textSetting ~= iconSetting)
+    local needsTextOverride = not isOffCooldownMode and (textSetting ~= iconSetting)
 
     -- Compute icon dim alpha (compensated for container opacity)
     local iconDimAlpha = iconSetting / 100
@@ -1749,48 +1809,16 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
         iconDimAlpha = math.min(1.0, iconDimAlpha / containerAlpha)
     end
 
+    -- Pre-compute ready/cd alphas based on mode
+    local readyAlpha, cdAlpha = 1.0, iconDimAlpha
+    if isOffCooldownMode then readyAlpha, cdAlpha = cdAlpha, readyAlpha end
+
     -- Compute text dim alpha (absolute, used with SetIgnoreParentAlpha)
     local textDimAlpha = textSetting / 100
 
     for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
-        if isValidCDMItemFrame(child) and isFrameVisible(child) then
-            local idOk, spellId = pcall(child.GetBaseSpellID, child)
-            if idOk and spellId then
-                -- Resolve override (e.g., Blink → Shimmer) for cooldown lookups
-                if C_Spell.GetOverrideSpell then
-                    local overrideId = C_Spell.GetOverrideSpell(spellId)
-                    if overrideId and overrideId ~= 0 then
-                        spellId = overrideId
-                    end
-                end
-                local cdInfo = C_Spell.GetSpellCooldown(spellId)
-                local isGCD = cdInfo and cdInfo.isOnGCD
-                local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellId) or nil
-
-                -- Icon frame opacity
-                if isGCD or iconSetting >= 100 then
-                    pcall(child.SetAlpha, child, 1.0)
-                elseif durObj and durObj.IsZero then
-                    local isZero = durObj:IsZero()
-                    pcall(child.SetAlphaFromBoolean, child, isZero, 1.0, iconDimAlpha)
-                else
-                    pcall(child.SetAlpha, child, 1.0)
-                end
-
-                -- Text opacity (independent when text != icon setting)
-                if needsTextOverride and child.Cooldown then
-                    if isGCD then
-                        applyTextCooldownAlpha(child.Cooldown, nil, containerAlpha, textDimAlpha, true)
-                    elseif durObj and durObj.IsZero then
-                        applyTextCooldownAlpha(child.Cooldown, durObj, containerAlpha, textDimAlpha, false)
-                    else
-                        resetTextAlpha(child.Cooldown)
-                    end
-                elseif not needsTextOverride and child.Cooldown then
-                    resetTextAlpha(child.Cooldown)
-                end
-            end
-        end
+        pcall(processOneIconOpacity, child, iconSetting, readyAlpha, cdAlpha,
+              needsTextOverride, containerAlpha, textDimAlpha, isOffCooldownMode)
     end
 end
 

@@ -84,6 +84,7 @@ addon:RegisterComponentInitializer(function(self)
             }},
             opacityOnCooldown = { type = "addon", default = 100 },
             opacityOnCooldownText = { type = "addon", default = 100 },
+            cooldownOpacityMode = { type = "addon", default = nil },
             hideWhenInactive = { type = "editmode", default = false, ui = {
                 label = "Hide when inactive", widget = "checkbox", section = "Misc", order = 6
             }},

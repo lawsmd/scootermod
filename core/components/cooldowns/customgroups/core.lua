@@ -586,6 +586,7 @@ local function CreateCustomGroupSettings()
         opacityWithTarget = { type = "addon", default = 100 },
         opacityOnCooldown = { type = "addon", default = 100 },
         opacityOnCooldownText = { type = "addon", default = 100 },
+        cooldownOpacityMode = { type = "addon", default = nil },
     }
 end
 

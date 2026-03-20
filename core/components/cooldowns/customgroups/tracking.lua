@@ -37,8 +37,10 @@ local textAlphaDecoupled = setmetatable({}, { __mode = "k" })
 
 local function ResolveSpellID(baseID)
     if C_Spell.GetOverrideSpell then
-        local overrideID = C_Spell.GetOverrideSpell(baseID)
-        if overrideID and overrideID ~= 0 then
+        local ok, overrideID = pcall(C_Spell.GetOverrideSpell, baseID)
+        if ok and type(overrideID) == "number"
+           and not (issecretvalue and issecretvalue(overrideID))
+           and overrideID ~= 0 then
             return overrideID
         end
     end
@@ -180,7 +182,7 @@ end
 -- renderer resets the FontString's alpha every frame, overriding our values.
 --------------------------------------------------------------------------------
 
-local function applyCGTextAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD)
+local function applyCGTextAlpha(cooldownFrame, durObj, containerAlpha, textDimAlpha, isGCD, isOffCooldownMode)
     if not cooldownFrame then return end
     pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
@@ -189,16 +191,18 @@ local function applyCGTextAlpha(cooldownFrame, durObj, containerAlpha, textDimAl
     else
         local readyAlpha = containerAlpha
         local cdAlpha = math.min(containerAlpha, textDimAlpha)
+        if isOffCooldownMode then readyAlpha, cdAlpha = cdAlpha, readyAlpha end
         pcall(setAlphaFromDurObj, cooldownFrame, durObj, readyAlpha, cdAlpha)
     end
 end
 
-local function applyCGTextAlphaItem(cooldownFrame, isOnCD, containerAlpha, textDimAlpha)
+local function applyCGTextAlphaItem(cooldownFrame, isOnCD, containerAlpha, textDimAlpha, isOffCooldownMode)
     if not cooldownFrame then return end
     pcall(cooldownFrame.SetIgnoreParentAlpha, cooldownFrame, true)
     textAlphaDecoupled[cooldownFrame] = true
     local readyAlpha = containerAlpha
     local cdAlpha = math.min(containerAlpha, textDimAlpha)
+    if isOffCooldownMode then readyAlpha, cdAlpha = cdAlpha, readyAlpha end
     pcall(cooldownFrame.SetAlpha, cooldownFrame, isOnCD and cdAlpha or readyAlpha)
 end
 
@@ -227,12 +231,16 @@ local function BuildGroupOpacityCtx(groupIndex)
         iconDimAlpha = math.min(1.0, iconDimAlpha / containerAlpha)
     end
 
+    local mode = component.db.cooldownOpacityMode
+    local isOffCooldownMode = (mode == "offCooldown")
+
     opacityCtxScratch.iconSetting = iconSetting
     opacityCtxScratch.textSetting = textSetting
     opacityCtxScratch.containerAlpha = containerAlpha
-    opacityCtxScratch.needsTextOverride = (textSetting ~= iconSetting)
+    opacityCtxScratch.needsTextOverride = not isOffCooldownMode and (textSetting ~= iconSetting)
     opacityCtxScratch.iconDimAlpha = iconDimAlpha
     opacityCtxScratch.textDimAlpha = textSetting / 100
+    opacityCtxScratch.isOffCooldownMode = isOffCooldownMode
     return opacityCtxScratch
 end
 
@@ -273,11 +281,17 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
     -- Always fetch fresh DurationObject (returns live state each frame)
     local durObj = not isGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
 
+    -- Pre-compute ready/cd alphas based on mode
+    local readyAlpha, cdAlpha = 1.0, ctx.iconDimAlpha
+    if ctx.isOffCooldownMode then readyAlpha, cdAlpha = cdAlpha, readyAlpha end
+
     -- Icon frame opacity
-    if isGCD or ctx.iconSetting >= 100 then
+    if ctx.iconSetting >= 100 then
         icon:SetAlpha(1.0)
+    elseif isGCD then
+        icon:SetAlpha(readyAlpha)
     elseif durObj and durObj.IsZero then
-        icon:SetAlphaFromBoolean(durObj:IsZero(), 1.0, ctx.iconDimAlpha)
+        icon:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha)
     else
         icon:SetAlpha(1.0)
     end
@@ -285,9 +299,9 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
     -- Text opacity (independent when text != icon setting)
     if ctx.needsTextOverride and icon.Cooldown then
         if isGCD then
-            applyCGTextAlpha(icon.Cooldown, nil, ctx.containerAlpha, ctx.textDimAlpha, true)
+            applyCGTextAlpha(icon.Cooldown, nil, ctx.containerAlpha, ctx.textDimAlpha, true, ctx.isOffCooldownMode)
         elseif durObj and durObj.IsZero then
-            applyCGTextAlpha(icon.Cooldown, durObj, ctx.containerAlpha, ctx.textDimAlpha, false)
+            applyCGTextAlpha(icon.Cooldown, durObj, ctx.containerAlpha, ctx.textDimAlpha, false, ctx.isOffCooldownMode)
         else
             resetCGTextAlpha(icon.Cooldown)
         end
@@ -311,9 +325,10 @@ local function ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
         return
     end
 
-    -- Icon frame opacity
+    -- Icon frame opacity (swap dim direction in off-cooldown mode)
     if ok then
-        icon:SetAlpha(isOnCD and ctx.iconDimAlpha or 1.0)
+        local dimmed = ctx.isOffCooldownMode and (not isOnCD) or (not ctx.isOffCooldownMode and isOnCD)
+        icon:SetAlpha(dimmed and ctx.iconDimAlpha or 1.0)
     else
         icon:SetAlpha(1.0)
     end
@@ -321,7 +336,8 @@ local function ApplyItemOpacityFromState(icon, ok, isOnCD, ctx)
     -- Text opacity (independent when text != icon setting)
     if ctx.needsTextOverride and icon.Cooldown then
         if ok then
-            applyCGTextAlphaItem(icon.Cooldown, isOnCD, ctx.containerAlpha, ctx.textDimAlpha)
+            local effectiveOnCD = ctx.isOffCooldownMode and (not isOnCD) or (not ctx.isOffCooldownMode and isOnCD)
+            applyCGTextAlphaItem(icon.Cooldown, effectiveOnCD, ctx.containerAlpha, ctx.textDimAlpha)
         else
             resetCGTextAlpha(icon.Cooldown)
         end

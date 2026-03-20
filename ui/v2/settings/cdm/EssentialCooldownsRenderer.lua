@@ -797,16 +797,35 @@ function EssentialCooldowns.Render(panel, scrollContent)
         sectionKey = "misc",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            -- Priority system header + explainer
-            inner:AddDescription("Priority System", { color = {1, 0.82, 0}, fontSize = 14, topPadding = 4 })
-            inner:AddDescription("With Target > In Combat > Out of Combat. Only the highest active condition applies. On Cooldown competes with the result \226\128\148 whichever is the stronger dim takes effect.", { color = {1, 0.82, 0}, topPadding = -8, bottomPadding = -4 })
+            -- Priority system header + explainer (dynamic based on mode)
+            local cdMode = getSetting("cooldownOpacityMode") or "onCooldown"
+            local isOffCD = (cdMode == "offCooldown")
+            local modeWord = isOffCD and "Off Cooldown" or "On Cooldown"
 
-            -- Opacity While on Cooldown dual slider (icon + text)
-            inner:AddDualSlider({
-                label = "Opacity While on Cooldown",
-                description = "Dim icons when on cooldown. Text slider keeps the countdown timer readable.",
-                sliderA = {
-                    axisLabel = "Icon",
+            inner:AddDescription("Priority System", { color = {1, 0.82, 0}, fontSize = 14, topPadding = 4 })
+            inner:AddDescription("With Target > In Combat > Out of Combat. Only the highest active condition applies. "
+                .. modeWord .. " competes with the result \226\128\148 whichever is the stronger dim takes effect.", { color = {1, 0.82, 0}, topPadding = -8, bottomPadding = -4 })
+
+            -- Mode selector: On Cooldown vs Off Cooldown
+            inner:AddSelector({
+                label = "Reduce Opacity While...",
+                values = { onCooldown = "On Cooldown", offCooldown = "Off Cooldown" },
+                order = { "onCooldown", "offCooldown" },
+                get = function() return getSetting("cooldownOpacityMode") or "onCooldown" end,
+                set = function(v)
+                    setSetting("cooldownOpacityMode", v == "onCooldown" and nil or v)
+                    if addon and addon.RefreshCDMCooldownOpacity then
+                        addon.RefreshCDMCooldownOpacity("EssentialCooldownViewer", "essentialCooldowns")
+                    end
+                    builder:DeferredRefreshAll()
+                end,
+            })
+
+            -- Opacity slider(s): DualSlider (icon+text) for on-CD mode, single Slider for off-CD mode
+            if isOffCD then
+                inner:AddSlider({
+                    label = "Opacity While off Cooldown",
+                    description = "Dim icons when ready (off cooldown).",
                     min = 0, max = 100, step = 1,
                     get = function() return getSetting("opacityOnCooldown") or 100 end,
                     set = function(v)
@@ -816,20 +835,37 @@ function EssentialCooldowns.Render(panel, scrollContent)
                         end
                     end,
                     minLabel = "Hidden", maxLabel = "100%",
-                },
-                sliderB = {
-                    axisLabel = "Text",
-                    min = 0, max = 100, step = 1,
-                    get = function() return getSetting("opacityOnCooldownText") or 100 end,
-                    set = function(v)
-                        setSetting("opacityOnCooldownText", v)
-                        if addon and addon.RefreshCDMCooldownOpacity then
-                            addon.RefreshCDMCooldownOpacity("EssentialCooldownViewer", "essentialCooldowns")
-                        end
-                    end,
-                    minLabel = "Hidden", maxLabel = "100%",
-                },
-            })
+                })
+            else
+                inner:AddDualSlider({
+                    label = "Opacity While on Cooldown",
+                    description = "Dim icons when on cooldown. Text slider keeps the countdown timer readable.",
+                    sliderA = {
+                        axisLabel = "Icon",
+                        min = 0, max = 100, step = 1,
+                        get = function() return getSetting("opacityOnCooldown") or 100 end,
+                        set = function(v)
+                            setSetting("opacityOnCooldown", v)
+                            if addon and addon.RefreshCDMCooldownOpacity then
+                                addon.RefreshCDMCooldownOpacity("EssentialCooldownViewer", "essentialCooldowns")
+                            end
+                        end,
+                        minLabel = "Hidden", maxLabel = "100%",
+                    },
+                    sliderB = {
+                        axisLabel = "Text",
+                        min = 0, max = 100, step = 1,
+                        get = function() return getSetting("opacityOnCooldownText") or 100 end,
+                        set = function(v)
+                            setSetting("opacityOnCooldownText", v)
+                            if addon and addon.RefreshCDMCooldownOpacity then
+                                addon.RefreshCDMCooldownOpacity("EssentialCooldownViewer", "essentialCooldowns")
+                            end
+                        end,
+                        minLabel = "Hidden", maxLabel = "100%",
+                    },
+                })
+            end
 
             -- Opacity With Target slider (addon-only) — highest priority
             inner:AddSlider({
