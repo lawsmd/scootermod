@@ -140,7 +140,10 @@ function addon:GetDefaults()
         for settingId, setting in pairs(settings) do
             -- Some entries in component.settings are boolean flags or helper values rather than
             -- full setting descriptors. Only copy those that are tables with an explicit default.
-            if type(setting) == "table" and setting.default ~= nil then
+            -- Skip table-type defaults: AceDB's copyDefaults materializes them into the raw
+            -- profile table, defeating rawget-based zero-touch detection. Scalar defaults
+            -- (numbers, booleans, strings) are safe — they represent "no visual change" values.
+            if type(setting) == "table" and setting.default ~= nil and type(setting.default) ~= "table" then
                 defaults.profile.components[id][settingId] = setting.default
             end
         end

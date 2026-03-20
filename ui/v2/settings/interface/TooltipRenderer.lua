@@ -35,17 +35,16 @@ function Tooltip.Render(panel, scrollContent)
         end
     end
 
-    local function ensureTextConfig(key, defaults)
+    local function ensureTextConfig(key)
         local comp = getComponent()
         if not comp then return nil end
         local db = comp.db
         if not db then return nil end
-
-        db[key] = db[key] or {}
-        local t = db[key]
-        if t.fontFace == nil then t.fontFace = defaults.fontFace end
-        if t.size == nil then t.size = defaults.size end
-        if t.style == nil then t.style = defaults.style end
+        local t = rawget(db, key)
+        if not t then
+            t = {}
+            rawset(db, key, t)
+        end
         return t
     end
 
@@ -53,19 +52,19 @@ function Tooltip.Render(panel, scrollContent)
     local fontStyleOrder = Helpers.fontStyleOrder
 
     -- Helper to build text tab content (used by all three tabs)
-    local function buildTextTabContent(tabBuilder, dbKey, defaults)
+    local function buildTextTabContent(tabBuilder, dbKey)
         -- Font selector
         tabBuilder:AddFontSelector({
             label = "Font",
             description = "The font used for this text element.",
             get = function()
                 local t = getTextConfig(dbKey)
-                return (t and t.fontFace) or defaults.fontFace
+                return (t and t.fontFace) or "FRIZQT__"
             end,
             set = function(fontKey)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
-                    t.fontFace = fontKey or defaults.fontFace
+                    t.fontFace = fontKey or "FRIZQT__"
                     if addon and addon.ApplyStyles then
                         addon:ApplyStyles()
                     end
@@ -82,12 +81,12 @@ function Tooltip.Render(panel, scrollContent)
             step = 1,
             get = function()
                 local t = getTextConfig(dbKey)
-                return (t and t.size) or defaults.size
+                return (t and t.size) or 12
             end,
             set = function(v)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
-                    t.size = v or defaults.size
+                    t.size = v or 12
                     if addon and addon.ApplyStyles then
                         addon:ApplyStyles()
                     end
@@ -105,12 +104,12 @@ function Tooltip.Render(panel, scrollContent)
             order = fontStyleOrder,
             get = function()
                 local t = getTextConfig(dbKey)
-                return (t and t.style) or defaults.style
+                return (t and t.style) or "NONE"
             end,
             set = function(v)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
-                    t.style = v or defaults.style
+                    t.style = v or "NONE"
                     if addon and addon.ApplyStyles then
                         addon:ApplyStyles()
                     end
@@ -209,7 +208,7 @@ function Tooltip.Render(panel, scrollContent)
                                 return (t and t.fontFace) or "FRIZQT__"
                             end,
                             set = function(fontKey)
-                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                local t = ensureTextConfig("textTitle")
                                 if t then
                                     t.fontFace = fontKey or "FRIZQT__"
                                     if addon and addon.ApplyStyles then
@@ -231,7 +230,7 @@ function Tooltip.Render(panel, scrollContent)
                                 return (t and t.size) or 12
                             end,
                             set = function(v)
-                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                local t = ensureTextConfig("textTitle")
                                 if t then
                                     t.size = v or 12
                                     if addon and addon.ApplyStyles then
@@ -254,7 +253,7 @@ function Tooltip.Render(panel, scrollContent)
                                 return (t and t.style) or "NONE"
                             end,
                             set = function(v)
-                                local t = ensureTextConfig("textTitle", { fontFace = "FRIZQT__", size = 12, style = "NONE" })
+                                local t = ensureTextConfig("textTitle")
                                 if t then
                                     t.style = v or "NONE"
                                     if addon and addon.ApplyStyles then
@@ -279,18 +278,10 @@ function Tooltip.Render(panel, scrollContent)
                         tabBuilder:Finalize()
                     end,
                     everythingElse = function(tabContent, tabBuilder)
-                        buildTextTabContent(tabBuilder, "textEverythingElse", {
-                            fontFace = "FRIZQT__",
-                            size = 12,
-                            style = "NONE",
-                        })
+                        buildTextTabContent(tabBuilder, "textEverythingElse")
                     end,
                     comparison = function(tabContent, tabBuilder)
-                        buildTextTabContent(tabBuilder, "textComparison", {
-                            fontFace = "FRIZQT__",
-                            size = 12,
-                            style = "NONE",
-                        })
+                        buildTextTabContent(tabBuilder, "textComparison")
                     end,
                 },
             })

@@ -36,19 +36,15 @@ function ObjectiveTracker.Render(panel, scrollContent)
         end
     end
 
-    local function ensureTextConfig(key, defaults)
+    local function ensureTextConfig(key)
         local comp = getComponent()
         if not comp then return nil end
         local db = comp.db
         if not db then return nil end
-
-        db[key] = db[key] or {}
-        local t = db[key]
-        if t.fontFace == nil then t.fontFace = defaults.fontFace end
-        if t.style == nil then t.style = defaults.style end
-        if t.colorMode == nil then t.colorMode = defaults.colorMode end
-        if type(t.color) ~= "table" then
-            t.color = { defaults.color[1], defaults.color[2], defaults.color[3], defaults.color[4] }
+        local t = rawget(db, key)
+        if not t then
+            t = {}
+            rawset(db, key, t)
         end
         return t
     end
@@ -178,7 +174,7 @@ function ObjectiveTracker.Render(panel, scrollContent)
                 return (t and t.fontFace) or defaults.fontFace
             end,
             set = function(fontKey)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
                     t.fontFace = fontKey or defaults.fontFace
                     if addon and addon.ApplyStyles then
@@ -199,7 +195,7 @@ function ObjectiveTracker.Render(panel, scrollContent)
                 return (t and t.style) or defaults.style
             end,
             set = function(v)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
                     t.style = v or defaults.style
                     if addon and addon.ApplyStyles then
@@ -220,7 +216,7 @@ function ObjectiveTracker.Render(panel, scrollContent)
                 return (t and t.colorMode) or defaults.colorMode
             end,
             set = function(v)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
                     t.colorMode = v or defaults.colorMode
                     if addon and addon.ApplyStyles then
@@ -234,7 +230,7 @@ function ObjectiveTracker.Render(panel, scrollContent)
                 return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end,
             setColor = function(r, g, b, a)
-                local t = ensureTextConfig(dbKey, defaults)
+                local t = ensureTextConfig(dbKey)
                 if t then
                     t.color = { r or 1, g or 1, b or 1, a or 1 }
                     if addon and addon.ApplyStyles then

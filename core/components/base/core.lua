@@ -427,7 +427,11 @@ function addon:ResetComponentToDefaults(componentOrId)
         if type(setting) == "table" then
             seen[settingId] = true
             if setting.default ~= nil then
-                component.db[settingId] = CopyDefaultValue(setting.default)
+                if type(setting.default) == "table" then
+                    component.db[settingId] = nil  -- Clear to nil; metatable provides default for reads
+                else
+                    component.db[settingId] = CopyDefaultValue(setting.default)
+                end
             else
                 component.db[settingId] = nil
             end
