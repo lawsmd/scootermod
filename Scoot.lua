@@ -136,6 +136,7 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|quests|<FrameName>>")
             addon:Print("  /scoot debug profiles export [\"Profile Name\"]  |  reload")
             addon:Print("  /scoot debug consoleport export")
+            addon:Print("  /scoot debug cdmlayers")
             addon:Print("  /scoot debug dm export [overall|current|expired]")
             addon:Print("  /scoot debug dm frames")
             addon:Print("  /scoot debug dm trace <on|off>")
@@ -306,6 +307,16 @@ function SlashCmdList.SCOOT(msg, editBox)
                 addon:Print("  log       - Show trace buffer in copyable window")
                 addon:Print("  clear     - Clear the trace buffer")
                 addon:Print("  dump      - Snapshot current state of all bar items")
+            end
+            return
+        end
+
+        -- /scoot debug cdmlayers
+        if sub1 == "cdmlayers" then
+            if addon.DebugCDMLayers then
+                addon.DebugCDMLayers()
+            else
+                addon:Print("CDM layers debug not available.")
             end
             return
         end

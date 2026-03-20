@@ -358,20 +358,30 @@ local function createOverlayFrame(parent)
     local overlay = CreateFrame("Frame", nil, parent or UIParent)
     overlay:EnableMouse(false)
 
-    -- Create border edges using BORDER layer (renders below OVERLAY where proc glow lives)
+    -- Separate border frame (sibling of overlay, NOT child) at a lower frame level
+    -- so borders render below the pixel glow while text on overlay renders above it.
+    -- Must be a sibling because WoW propagates SetFrameLevel from parent to children.
+    local borderFrame = CreateFrame("Frame", nil, parent or UIParent)
+    borderFrame:EnableMouse(false)
+    overlay.borderFrame = borderFrame
+
+    -- Border textures live on borderFrame (low level, below glow)
     overlay.borderEdges = {
-        Top = overlay:CreateTexture(nil, "BORDER", nil, 1),
-        Bottom = overlay:CreateTexture(nil, "BORDER", nil, 1),
-        Left = overlay:CreateTexture(nil, "BORDER", nil, 1),
-        Right = overlay:CreateTexture(nil, "BORDER", nil, 1),
+        Top = borderFrame:CreateTexture(nil, "BORDER", nil, 1),
+        Bottom = borderFrame:CreateTexture(nil, "BORDER", nil, 1),
+        Left = borderFrame:CreateTexture(nil, "BORDER", nil, 1),
+        Right = borderFrame:CreateTexture(nil, "BORDER", nil, 1),
     }
 
     -- Create atlas border texture for non-square styles
-    overlay.atlasBorder = overlay:CreateTexture(nil, "BORDER", nil, 1)
+    overlay.atlasBorder = borderFrame:CreateTexture(nil, "BORDER", nil, 1)
     overlay.atlasBorder:Hide()
 
-    -- Create text overlays for cooldown and charge/stack count
-    -- These FontStrings are ours - styling them doesn't cause taint
+    -- Propagate overlay visibility to borderFrame automatically
+    overlay:HookScript("OnShow", function() borderFrame:Show() end)
+    overlay:HookScript("OnHide", function() borderFrame:Hide() end)
+
+    -- Text FontStrings on overlay (high level, above glow)
     overlay.cooldownText = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     overlay.cooldownText:SetDrawLayer("OVERLAY", 7)
     overlay.cooldownText:SetPoint("CENTER", overlay, "CENTER", 0, 0)
@@ -395,18 +405,25 @@ local function getOverlay(parent)
     if not overlay then
         overlay = createOverlayFrame(parent)
     elseif parent then
-        -- Re-parent pooled overlay to new parent
+        -- Re-parent pooled overlay and its sibling borderFrame to new parent
         overlay:SetParent(parent)
+        if overlay.borderFrame then
+            overlay.borderFrame:SetParent(parent)
+        end
     end
     return overlay
 end
 
 local function releaseOverlay(overlay)
     if not overlay then return end
-    overlay:Hide()
+    overlay:Hide()  -- OnHide hook propagates to borderFrame
     overlay:ClearAllPoints()
     overlay:SetParent(UIParent)  -- Prevents holding CDM icon reference
     overlay:SetAlpha(1.0)  -- Reset alpha when returning to pool
+    if overlay.borderFrame then
+        overlay.borderFrame:ClearAllPoints()
+        overlay.borderFrame:SetParent(UIParent)
+    end
     if overlay.cooldownText then
         overlay.cooldownText:SetText("")
         overlay.cooldownText:Hide()
@@ -822,27 +839,58 @@ local function hookProcGlowResizing()
 
     hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
         local sizeInfo = sizedIcons[actionButton]
-        if not sizeInfo then return end
-        -- Alert was just created by GetAlertFrame (hooksecurefunc runs after original).
-        -- SetScale on ProcStartFlipbook is immediate — no need to restart the animation.
-        resizeProcGlow(actionButton, sizeInfo.width, sizeInfo.height)
-        -- Hide ProcStart animation if setting enabled and ABE isn't managing it
+        if sizeInfo then
+            resizeProcGlow(actionButton, sizeInfo.width, sizeInfo.height)
+        end
+        -- Hide ProcStart / start pixel glow — must run regardless of custom sizing
         if not abeLoaded then
             pcall(function()
                 local alert = actionButton.SpellActivationAlert
-                if not alert or not alert.ProcStartFlipbook then return end
+                if not alert then return end
+
                 local viewerFrame = actionButton:GetParent()
                 if not viewerFrame or not viewerFrame.GetName then return end
                 local componentId = CDM_VIEWER_NAMES[viewerFrame:GetName()]
                 if not componentId then return end
                 local component = addon.Components and addon.Components[componentId]
                 if not component or not component.db then return end
-                if component.db.hideProcStart then
+
+                local style = component.db.procLoopStyle
+                if style and style ~= "default" and addon.PixelGlow then
+                    -- Suppress ALL Blizzard glow (hide the frame, not textures)
+                    alert.ProcStartAnim:Stop()
+                    alert:Hide()
+                    -- Start pixel glow
+                    local config = {
+                        style = (style == "pixelDots") and "dots" or "dashes",
+                        colorMode = component.db.procLoopColor or "custom",
+                        customColor = component.db.procLoopCustomColor or {1, 0.84, 0, 1},
+                        speed = component.db.procLoopSpeed or 25,
+                        iconW = sizeInfo and sizeInfo.width,
+                        iconH = sizeInfo and sizeInfo.height,
+                        insetH = component.db.procLoopInsetH or 0,
+                        insetV = component.db.procLoopInsetV or 0,
+                    }
+                    local existingGlow = addon.PixelGlow.GetForIcon(actionButton)
+                    if not existingGlow or not existingGlow:IsPlaying() then
+                        addon.PixelGlow.StartForIcon(actionButton, config)
+                    end
+                elseif component.db.hideProcStart then
                     local flipAnim = alert.ProcStartAnim and GetFlipBook(alert.ProcStartAnim)
                     if flipAnim then flipAnim:SetDuration(0) end
-                    alert.ProcStartFlipbook:Hide()
+                    if alert.ProcStartFlipbook then
+                        alert.ProcStartFlipbook:Hide()
+                    end
                 end
             end)
+        end
+    end)
+
+    -- Hook HideAlert to clean up pixel glows
+    hooksecurefunc(ActionButtonSpellAlertManager, "HideAlert", function(_, actionButton)
+        if addon.PixelGlow then
+            addon.PixelGlow.RemovePending(actionButton)
+            addon.PixelGlow.ReleaseForIcon(actionButton)
         end
     end)
 
@@ -904,6 +952,17 @@ end
 -- Public Overlay API
 --------------------------------------------------------------------------------
 
+-- Raise Blizzard's text-bearing child frames (ChargeCount, Applications)
+-- above all Scoot layers so charges/stacks text renders on top of borders.
+local function raiseBlizzardTextFrames(cdmIcon, targetLevel)
+    if cdmIcon.ChargeCount and cdmIcon.ChargeCount.SetFrameLevel then
+        pcall(cdmIcon.ChargeCount.SetFrameLevel, cdmIcon.ChargeCount, targetLevel)
+    end
+    if cdmIcon.Applications and cdmIcon.Applications.SetFrameLevel then
+        pcall(cdmIcon.Applications.SetFrameLevel, cdmIcon.Applications, targetLevel)
+    end
+end
+
 function Overlays.GetOrCreateForIcon(cdmIcon)
     if not cdmIcon then return nil end
     if not isValidCDMItemFrame(cdmIcon) then
@@ -924,12 +983,22 @@ function Overlays.GetOrCreateForIcon(cdmIcon)
     overlay:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", 0, 0)
     overlay:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", 0, 0)
 
-    -- Set frame level just above the icon but below SpellActivationAlert
-    -- SpellActivationAlert is typically at iconLevel + 5 or higher
+    -- Split frame levels across sibling frames:
+    --   borderFrame (N+2): borders above icon, below glow (N+10)
+    --   overlay (N+12): text above glow
     local iconLevel = cdmIcon:GetFrameLevel()
-    overlay:SetFrameLevel(iconLevel + 1)
+    overlay:SetFrameLevel(iconLevel + 12)
 
-    overlay:Show()
+    if overlay.borderFrame then
+        overlay.borderFrame:ClearAllPoints()
+        overlay.borderFrame:SetAllPoints(overlay)
+        overlay.borderFrame:SetFrameLevel(iconLevel + 2)
+    end
+
+    -- Raise Blizzard's text-bearing child frames above all our layers
+    raiseBlizzardTextFrames(cdmIcon, iconLevel + 14)
+
+    overlay:Show()  -- OnShow hook propagates to borderFrame
     return overlay
 end
 
@@ -1056,6 +1125,11 @@ resizeProcGlow = function(cdmIcon, iconWidth, iconHeight)
             alert.ProcLoopFlipbook:SetPoint("CENTER", alert, "CENTER")
         end
     end)
+    -- Update pixel glow dimensions if active
+    if addon.PixelGlow then
+        local glow = addon.PixelGlow.GetForIcon(cdmIcon)
+        if glow then glow:SetTargetSize(iconWidth, iconHeight) end
+    end
 end
 
 function Overlays.ApplyIconSize(cdmIcon, opts)
@@ -1584,6 +1658,9 @@ function Overlays.Initialize()
         addon.SpellBindings.SetActiveOverlays(activeOverlays)
         addon.SpellBindings.Initialize()
     end
+
+    -- Expose for diagnostic commands (read-only intent)
+    Overlays._activeOverlays = activeOverlays
 end
 
 function Overlays.ScheduleRetry()

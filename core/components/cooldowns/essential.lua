@@ -40,6 +40,12 @@ addon:RegisterComponentInitializer(function(self)
             hideProcStart = { type = "addon", default = false, ui = {
                 label = "Hide Proc Start Animation", widget = "checkbox", section = "Animations", order = 1
             }},
+            procLoopStyle = { type = "addon", default = "default" },
+            procLoopColor = { type = "addon", default = "custom" },
+            procLoopCustomColor = { type = "addon", default = {1, 0.84, 0, 1} },
+            procLoopSpeed = { type = "addon", default = 25 },
+            procLoopInsetH = { type = "addon", default = 0 },
+            procLoopInsetV = { type = "addon", default = 0 },
             borderEnable = { type = "addon", default = false, ui = {
                 label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1, tooltip = ""
             }},

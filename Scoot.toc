@@ -53,6 +53,7 @@ core/components/cooldowns/core.lua
 core/components/cooldowns/keybinds.lua
 core/components/cooldowns/essential.lua
 core/components/cooldowns/utility.lua
+core/components/cooldowns/pixelglow.lua
 core/components/cooldowns/trackedbuffs.lua
 core/components/cooldowns/trackedbars/init.lua
 core/components/cooldowns/trackedbars/suppression.lua
@@ -137,6 +138,7 @@ core/debug/offscreen.lua
 core/debug/export.lua
 core/debug/inspector.lua
 core/debug/misc.lua
+core/debug/cdmlayers.lua
 core/taintdebug.lua
 core/dialogs.lua
 core/importexport.lua

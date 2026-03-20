@@ -249,22 +249,111 @@ function UtilityCooldowns.Render(panel, scrollContent)
         sectionKey = "animations",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddToggle({
-                key = "hideProcStart",
-                label = "Hide Proc Start Animation",
-                get = function() return getSetting("hideProcStart") or false end,
-                set = function(v)
-                    setSetting("hideProcStart", v)
-                    if addon and addon.ApplyStyles then
-                        C_Timer.After(0, function() addon:ApplyStyles() end)
-                    end
-                end,
-                infoIcon = {
-                    tooltipTitle = "Proc Start Animation",
-                    tooltipText = "The proc start 'splash' is a brief burst that plays when a spell procs. On non-square icons it may appear as a mismatched square. Hiding it still shows the proc loop border glow that follows.",
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "procStart", label = "Proc Start" },
+                    { key = "procLoop", label = "Proc Loop" },
+                    { key = "cooldownEnds", label = "Cooldown Ends" },
+                },
+                componentId = "utilityCooldowns",
+                sectionKey = "animationTabs",
+                buildContent = {
+                    procStart = function(tabContent, tabBuilder)
+                        tabBuilder:AddToggle({
+                            key = "hideProcStart",
+                            label = "Hide Proc Start Animation",
+                            get = function() return getSetting("hideProcStart") or false end,
+                            set = function(v)
+                                setSetting("hideProcStart", v)
+                                if addon and addon.ApplyStyles then
+                                    C_Timer.After(0, function() addon:ApplyStyles() end)
+                                end
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Proc Start Animation",
+                                tooltipText = "The proc start 'splash' is a brief burst that plays when a spell procs. On non-square icons it may appear as a mismatched square. Hiding it still shows the proc loop border glow that follows.",
+                            },
+                        })
+                        tabBuilder:Finalize()
+                    end,
+                    procLoop = function(tabContent, tabBuilder)
+                        tabBuilder:AddSelector({
+                            label = "Proc Loop Style",
+                            values = {
+                                default = "Default (Blizzard)",
+                                pixelDots = "Pixel Dots",
+                                pixelDashes = "Pixel Dashes",
+                            },
+                            order = { "default", "pixelDots", "pixelDashes" },
+                            get = function() return getSetting("procLoopStyle") or "default" end,
+                            set = function(v)
+                                setSetting("procLoopStyle", v)
+                            end,
+                            infoIcon = {
+                                tooltipTitle = "Proc Loop Style",
+                                tooltipText = "Replaces Blizzard's flipbook proc glow with a code-generated pixel animation. Pixel Dots uses 16 small squares, Pixel Dashes uses 8 longer segments. Both rotate around the icon perimeter.",
+                            },
+                        })
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Glow Color",
+                            values = {
+                                custom = "Custom",
+                                class = "Class Color",
+                                rainbow = "Rainbow",
+                            },
+                            order = { "custom", "class", "rainbow" },
+                            get = function() return getSetting("procLoopColor") or "custom" end,
+                            set = function(v)
+                                setSetting("procLoopColor", v)
+                            end,
+                            getColor = function()
+                                local c = getSetting("procLoopCustomColor") or {1, 0.84, 0, 1}
+                                return c[1] or 1, c[2] or 0.84, c[3] or 0, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setSetting("procLoopCustomColor", {r, g, b, a})
+                            end,
+                            customValue = "custom",
+                            hasAlpha = false,
+                            disabled = function() return (getSetting("procLoopStyle") or "default") == "default" end,
+                        })
+                        tabBuilder:AddSlider({
+                            label = "Animation Speed",
+                            min = -20,
+                            max = 70,
+                            step = 5,
+                            get = function() return getSetting("procLoopSpeed") or 25 end,
+                            set = function(v)
+                                setSetting("procLoopSpeed", v)
+                            end,
+                            minLabel = "Slow",
+                            maxLabel = "Fast",
+                            disabled = function() return (getSetting("procLoopStyle") or "default") == "default" end,
+                        })
+                        tabBuilder:AddDualSlider({
+                            label = "Glow Inset",
+                            sliderA = {
+                                axisLabel = "H",
+                                min = -5, max = 10, step = 1,
+                                get = function() return getSetting("procLoopInsetH") or 0 end,
+                                set = function(v) setSetting("procLoopInsetH", v) end,
+                            },
+                            sliderB = {
+                                axisLabel = "V",
+                                min = -5, max = 10, step = 1,
+                                get = function() return getSetting("procLoopInsetV") or 0 end,
+                                set = function(v) setSetting("procLoopInsetV", v) end,
+                            },
+                            disabled = function() return (getSetting("procLoopStyle") or "default") == "default" end,
+                        })
+                        tabBuilder:Finalize()
+                    end,
+                    cooldownEnds = function(tabContent, tabBuilder)
+                        tabBuilder:AddDescription("Future animations for cooldown completion events will appear here.")
+                        tabBuilder:Finalize()
+                    end,
                 },
             })
-
             inner:Finalize()
         end,
     })
