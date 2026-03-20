@@ -301,20 +301,14 @@ local function CreateOverlayButton(db)
     if overlayButtonFrame then return overlayButtonFrame end
 
     local btn = CreateFrame("Button", "ScootMinimapOverlayButton", UIParent)
-    btn:SetSize(24, 24)
+    btn:SetSize(36, 36)
     btn:SetFrameStrata("HIGH")
     btn:SetFrameLevel(200)
 
-    -- Background circle
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
-    bg:SetVertexColor(0, 0, 0, 0.5)
-    bg:SetAllPoints()
-
-    -- Icon (magnifying glass / map icon)
+    -- Icon (map pin)
     local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetAtlas("ui-hud-minimap-zoom-in")
-    icon:SetSize(16, 16)
+    icon:SetAtlas("waypoint-mappin-minimap-tracked")
+    icon:SetSize(36, 36)
     icon:SetPoint("CENTER")
     icon:SetDesaturated(true)
     btn._icon = icon
