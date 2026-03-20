@@ -92,8 +92,11 @@ local function CreateClipFrame(sessionWindow)
     local clipFrame = CreateFrame("Frame", nil, UIParent)
     clipFrame:SetClipsChildren(true)
     clipFrame:SetAllPoints(scrollBox)
-    -- Use HIGH strata so overlays (clipFrame children) render above Blizzard's system frame subtree
-    clipFrame:SetFrameStrata("HIGH")
+    -- Match strata to session window (typically MEDIUM); frame levels handle z-ordering above entries
+    local ok1, strata = pcall(sessionWindow.GetFrameStrata, sessionWindow)
+    if ok1 and type(strata) == "string" then
+        clipFrame:SetFrameStrata(strata)
+    end
     local ok2, sbLevel = pcall(scrollBox.GetFrameLevel, scrollBox)
     if ok2 and type(sbLevel) == "number" then clipFrame:SetFrameLevel(sbLevel) end
 
@@ -451,8 +454,11 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     overlay:ClearAllPoints()
     overlay:SetAllPoints(entry)
 
-    -- HIGH strata ensures overlays render above Blizzard's MEDIUM-strata system frame subtree
-    overlay:SetFrameStrata("HIGH")
+    -- Match strata to entry's native strata; frame level +3 handles z-ordering within same strata
+    local ok1, strata = pcall(entry.GetFrameStrata, entry)
+    if ok1 and type(strata) == "string" then
+        overlay:SetFrameStrata(strata)
+    end
     local ok2, entryLevel = pcall(entry.GetFrameLevel, entry)
     if ok2 and type(entryLevel) == "number" then
         overlay:SetFrameLevel(entryLevel + 3)
