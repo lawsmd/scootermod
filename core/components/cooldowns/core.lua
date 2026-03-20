@@ -1490,6 +1490,7 @@ end
 --------------------------------------------------------------------------------
 
 local cleanupTicker = nil
+local offCDRefreshTicker = nil
 
 local function runOverlayCleanup()
     -- Part 1: hide overlays for invisible icons
@@ -1538,6 +1539,9 @@ local function startCleanupTicker()
         cleanupTicker = C_Timer.NewTicker(0.5, runOverlayCleanup)
     end
 end
+
+-- Forward declaration; body defined after applyPerIconCooldownOpacity exists
+local startOffCDRefreshTicker
 
 --------------------------------------------------------------------------------
 -- Overlay Initialization
@@ -1765,10 +1769,10 @@ local function processOneIconOpacity(child, iconSetting, readyAlpha, cdAlpha, ne
         if zeroOk then
             pcall(child.SetAlphaFromBoolean, child, isZero, readyAlpha, cdAlpha)
         else
-            pcall(child.SetAlpha, child, 1.0)
+            pcall(child.SetAlpha, child, readyAlpha)
         end
     else
-        pcall(child.SetAlpha, child, 1.0)
+        pcall(child.SetAlpha, child, readyAlpha)
     end
 
     -- Text opacity (independent when text != icon setting)
@@ -1820,9 +1824,36 @@ applyPerIconCooldownOpacity = function(viewerFrameName, componentId)
         pcall(processOneIconOpacity, child, iconSetting, readyAlpha, cdAlpha,
               needsTextOverride, containerAlpha, textDimAlpha, isOffCooldownMode)
     end
+
+    -- Keep ticker alive while off-cooldown mode needs refresh
+    if isOffCooldownMode and iconSetting < 100 then
+        startOffCDRefreshTicker()
+    end
 end
 
 addon.RefreshCDMCooldownOpacity = applyPerIconCooldownOpacity
+
+-- 1s safety ticker: catches long-cooldown-end while idle (no event fires).
+-- Self-terminates when no viewer needs off-cooldown refresh.
+startOffCDRefreshTicker = function()
+    if offCDRefreshTicker then return end
+    offCDRefreshTicker = C_Timer.NewTicker(1.0, function()
+        local anyActive = false
+        for viewerName, componentId in pairs(CDM_VIEWERS) do
+            local component = addon.Components and addon.Components[componentId]
+            if component and component.db
+               and component.db.cooldownOpacityMode == "offCooldown"
+               and (tonumber(component.db.opacityOnCooldown) or 100) < 100 then
+                applyPerIconCooldownOpacity(viewerName, componentId)
+                anyActive = true
+            end
+        end
+        if not anyActive then
+            offCDRefreshTicker:Cancel()
+            offCDRefreshTicker = nil
+        end
+    end)
+end
 
 --------------------------------------------------------------------------------
 -- Event Handling

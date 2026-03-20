@@ -272,7 +272,8 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
     end
 
     if not cdInfo then
-        icon:SetAlpha(1.0)
+        local ra = ctx.isOffCooldownMode and ctx.iconDimAlpha or 1.0
+        icon:SetAlpha(ra)
         if ctx.needsTextOverride and icon.Cooldown then resetCGTextAlpha(icon.Cooldown) end
         return
     end
@@ -293,7 +294,7 @@ local function ApplySpellOpacityFromState(icon, cdInfo, ctx)
     elseif durObj and durObj.IsZero then
         icon:SetAlphaFromBoolean(durObj:IsZero(), readyAlpha, cdAlpha)
     else
-        icon:SetAlpha(1.0)
+        icon:SetAlpha(readyAlpha)
     end
 
     -- Text opacity (independent when text != icon setting)
