@@ -23,6 +23,11 @@ function UIPanel:HandleEditModeBackSync(componentId, settingId)
 
     local categoryKey = componentId
 
+    -- Map individual action bar IDs to consolidated nav key
+    if componentId:match("^actionBar[1-8]$") then
+        categoryKey = "actionBars18"
+    end
+
     if self._currentCategoryKey == categoryKey then
         C_Timer.After(0, function()
             if self.frame and self.frame:IsShown() then
@@ -174,7 +179,11 @@ function UIPanel:CollapseAllSections()
     local key = self._currentCategoryKey
     if not key then return end
 
+    -- Resolve consolidated action bar key to selected bar's componentId
     local componentId = key
+    if key == "actionBars18" then
+        componentId = self._actionBarSelectedBar or "actionBar1"
+    end
 
     local sectionStates = addon.UI._sectionStates
     if sectionStates and sectionStates[componentId] then
@@ -321,12 +330,18 @@ function UIPanel:UpdateCopyFromDropdown()
 
     local key = self._currentCategoryKey
 
+    -- Resolve consolidated action bar key to selected bar
+    local effectiveKey = key
+    if key == "actionBars18" then
+        effectiveKey = self._actionBarSelectedBar or "actionBar1"
+    end
+
     -- Check if this is an Action Bar category
-    if key and ACTION_BAR_COPY_TARGETS[key] then
+    if effectiveKey and ACTION_BAR_COPY_TARGETS[effectiveKey] then
         local values = {}
         local order = {}
         for _, barKey in ipairs(ACTION_BAR_ORDER) do
-            if barKey ~= key then
+            if barKey ~= effectiveKey then
                 values[barKey] = ACTION_BAR_NAMES[barKey]
                 table.insert(order, barKey)
             end
@@ -385,6 +400,11 @@ end
 function UIPanel:HandleCopyFrom(sourceKey)
     local destKey = self._currentCategoryKey
     if not sourceKey or not destKey then return end
+
+    -- Resolve consolidated action bar key to selected bar
+    if destKey == "actionBars18" then
+        destKey = self._actionBarSelectedBar or "actionBar1"
+    end
 
     local isActionBar = ACTION_BAR_COPY_TARGETS[destKey]
     local isUnitFrame = UNIT_FRAME_COPY_TARGETS[destKey]
@@ -474,8 +494,12 @@ function UIPanel:ExecuteCopyFrom(sourceKey, destKey, isUnitFrame, isCustomGroup)
 
             C_Timer.After(0.1, function()
                 local panel = addon.UI and addon.UI.SettingsPanel
-                if panel and panel._currentCategoryKey == destKey then
-                    panel:OnNavigationSelect(destKey, destKey)
+                if panel then
+                    -- Re-render consolidated page or individual bar page
+                    local navKey = panel._currentCategoryKey
+                    if navKey == "actionBars18" or navKey == destKey then
+                        panel:OnNavigationSelect(navKey, navKey)
+                    end
                 end
             end)
 
@@ -498,15 +522,8 @@ local DEFAULTS_RESET_MAP = {
     customGroup3        = { strategy = "component", id = "customGroup3" },
     customGroup4        = { strategy = "component", id = "customGroup4" },
     customGroup5        = { strategy = "component", id = "customGroup5" },
-    -- Action Bars
-    actionBar1          = { strategy = "component", id = "actionBar1" },
-    actionBar2          = { strategy = "component", id = "actionBar2" },
-    actionBar3          = { strategy = "component", id = "actionBar3" },
-    actionBar4          = { strategy = "component", id = "actionBar4" },
-    actionBar5          = { strategy = "component", id = "actionBar5" },
-    actionBar6          = { strategy = "component", id = "actionBar6" },
-    actionBar7          = { strategy = "component", id = "actionBar7" },
-    actionBar8          = { strategy = "component", id = "actionBar8" },
+    -- Action Bars (consolidated)
+    actionBars18        = { strategy = "actionBarSelected" },
     petBar              = { strategy = "component", id = "petBar" },
     stanceBar           = { strategy = "component", id = "stanceBar" },
     microBar            = { strategy = "component", id = "microBar" },
@@ -602,14 +619,24 @@ function UIPanel:HandleDefaultsClick()
     local resetInfo = DEFAULTS_RESET_MAP[key]
     if not resetInfo then return end
 
-    local categoryTitle = self:GetCategoryTitle(key)
+    -- Resolve consolidated action bar to selected bar
+    local resolvedResetInfo = resetInfo
+    local categoryTitle
+    if resetInfo.strategy == "actionBarSelected" then
+        local selectedBar = self._actionBarSelectedBar or "actionBar1"
+        resolvedResetInfo = { strategy = "component", id = selectedBar }
+        categoryTitle = ACTION_BAR_NAMES[selectedBar] or selectedBar
+    else
+        categoryTitle = self:GetCategoryTitle(key)
+    end
+
     local panel = self
 
     if addon.Dialogs and addon.Dialogs.Show then
         addon.Dialogs:Show("SCOOT_RESET_DEFAULTS", {
             formatArgs = { categoryTitle },
             onAccept = function()
-                panel:ExecuteDefaultsReset(key, resetInfo)
+                panel:ExecuteDefaultsReset(key, resolvedResetInfo)
             end,
         })
     end

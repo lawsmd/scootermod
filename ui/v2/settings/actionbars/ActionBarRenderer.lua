@@ -9,19 +9,27 @@ local ActionBar = addon.UI.Settings.ActionBar
 local SettingsBuilder = addon.UI.SettingsBuilder
 local Helpers = addon.UI.Settings.Helpers
 
+-- Runtime state: which bar is selected in the consolidated page
+ActionBar._selectedBar = "actionBar1"
+
 --------------------------------------------------------------------------------
 -- Render Function
 --------------------------------------------------------------------------------
 
-function ActionBar.Render(panel, scrollContent, componentId)
-    panel:ClearContent()
+function ActionBar.Render(panel, scrollContent, componentId, opts)
+    opts = opts or {}
 
-    local builder = SettingsBuilder:CreateFor(scrollContent)
+    if not opts.skipClear then
+        panel:ClearContent()
+    end
+
+    local builder = opts.builder or SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
-    builder:SetOnRefresh(function()
+    local refreshFn = opts.onRefresh or function()
         ActionBar.Render(panel, scrollContent, componentId)
-    end)
+    end
+    builder:SetOnRefresh(refreshFn)
 
     local h = Helpers.CreateComponentHelpers(componentId)
     local getComponent, getSetting = h.getComponent, h.get
@@ -882,8 +890,87 @@ function ActionBar.Render(panel, scrollContent, componentId)
 end
 
 --------------------------------------------------------------------------------
--- Self-register with settings panel (all bar variants)
-for _, barKey in ipairs({"actionBar1", "actionBar2", "actionBar3", "actionBar4", "actionBar5", "actionBar6", "actionBar7", "actionBar8", "petBar", "stanceBar"}) do
+-- Consolidated Render (Action Bars 1-8 with bar selector)
+--------------------------------------------------------------------------------
+
+function ActionBar.RenderConsolidated(panel, scrollContent)
+    panel:ClearContent()
+
+    local builder = SettingsBuilder:CreateFor(scrollContent)
+    panel._currentBuilder = builder
+
+    -- Build selector options
+    local selectorValues = {}
+    local selectorOrder = {}
+    for i = 1, 8 do
+        local key = "actionBar" .. i
+        selectorValues[key] = "Action Bar " .. i
+        table.insert(selectorOrder, key)
+    end
+
+    -- Add bar selector via builder (emphasized, wider, empty label)
+    builder:AddSelector({
+        key = "barSelector",
+        label = "",
+        emphasized = true,
+        values = selectorValues,
+        order = selectorOrder,
+        width = 400,
+        get = function() return ActionBar._selectedBar end,
+        set = function(v)
+            ActionBar._selectedBar = v
+            addon.UI.SettingsPanel._actionBarSelectedBar = v
+            ActionBar.RenderConsolidated(panel, scrollContent)
+        end,
+    })
+
+    -- Center the selector widget (post-creation re-anchor)
+    local selectorRow = builder._controls[#builder._controls]
+    if selectorRow then
+        -- Find the internal selector frame (the child with _border)
+        local children = { selectorRow:GetChildren() }
+        for _, child in ipairs(children) do
+            if child._border then
+                child:ClearAllPoints()
+                child:SetPoint("CENTER", selectorRow, "CENTER", 0, 0)
+                break
+            end
+        end
+        -- Hide the empty label
+        if selectorRow._label then
+            selectorRow._label:Hide()
+        end
+        -- Hide emphasized accent border and background (centered control doesn't need them)
+        if selectorRow._rowBorder and selectorRow._rowBorder.LEFT then
+            selectorRow._rowBorder.LEFT:Hide()
+        end
+        if selectorRow._emphBg then
+            selectorRow._emphBg:Hide()
+        end
+    end
+
+    -- Store selected bar for navigation.lua (Copy From, Defaults)
+    addon.UI.SettingsPanel._actionBarSelectedBar = ActionBar._selectedBar
+
+    -- Render the selected bar's settings using the same builder
+    ActionBar.Render(panel, scrollContent, ActionBar._selectedBar, {
+        skipClear = true,
+        builder = builder,
+        onRefresh = function()
+            ActionBar.RenderConsolidated(panel, scrollContent)
+        end,
+    })
+end
+
+--------------------------------------------------------------------------------
+-- Self-register with settings panel
+-- Consolidated entry for Action Bars 1-8
+addon.UI.SettingsPanel:RegisterRenderer("actionBars18", function(panel, scrollContent)
+    ActionBar.RenderConsolidated(panel, scrollContent)
+end)
+
+-- Pet and Stance bars keep individual registrations
+for _, barKey in ipairs({"petBar", "stanceBar"}) do
     addon.UI.SettingsPanel:RegisterRenderer(barKey, function(panel, scrollContent)
         ActionBar.Render(panel, scrollContent, barKey)
     end)
