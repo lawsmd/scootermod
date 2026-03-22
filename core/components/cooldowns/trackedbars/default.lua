@@ -72,6 +72,8 @@ TB.hideBarOverlay = hideBarOverlay
 function addon.ApplyTrackedBarVisualsForChild(component, child)
     if not component or not child then return end
     if component.id ~= "trackedBars" then return end
+    -- Zero-Touch: skip styling for unconfigured components
+    if component._ScootDBProxy and component.db == component._ScootDBProxy then return end
     local barFrame = (child.GetBarFrame and child:GetBarFrame()) or child.Bar
     local iconFrame = (child.GetIconFrame and child:GetIconFrame()) or child.Icon
     if not barFrame or not iconFrame then return end
@@ -226,6 +228,13 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         else
             -- No custom textures: hide overlay, restore Blizzard defaults
             hideBarOverlay(child)
+            -- Restore child alpha: bar items are decoupled from parent alpha
+            -- (SetIgnoreParentAlpha) to remain compatible with third-party addons
+            -- that may modify viewer alpha. Without explicit alpha restore here,
+            -- items stay at alpha 0 since they no longer inherit from the viewer.
+            if not (TB.isItemSuppressed and TB.isItemSuppressed(child)) then
+                pcall(function() child:SetAlpha(1) end)
+            end
             local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
             if blizzFill then
                 if blizzFill.SetAlpha then pcall(blizzFill.SetAlpha, blizzFill, 1.0) end
@@ -368,143 +377,148 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if iconState then iconState.lastIconBorder = nil end
     end
 
-    -- Text styling
-    local defaultFace = (select(1, GameFontNormal:GetFont()))
+    -- Text styling — only when user has explicitly configured text settings.
+    -- Without rawget guards, TB.applyTextStyling overwrites Blizzard's native
+    -- tracked bar fonts with hardcoded fallback values, violating zero-touch.
+    local hasAnyTextConfig = rawget(db, "textName") or rawget(db, "textDuration") or rawget(db, "textStacks")
+    if hasAnyTextConfig then
+        local defaultFace = (select(1, GameFontNormal:GetFont()))
 
-    local function promoteFontLayer(font)
-        if font and font.SetDrawLayer then
-            font:SetDrawLayer("OVERLAY", 5)
+        local function promoteFontLayer(font)
+            if font and font.SetDrawLayer then
+                font:SetDrawLayer("OVERLAY", 5)
+            end
         end
-    end
-    promoteFontLayer((child.GetNameLabel and child:GetNameLabel()) or child.Name or child.Text or child.Label)
-    promoteFontLayer((child.GetDurationLabel and child:GetDurationLabel()) or child.Duration or child.DurationText or child.Timer or child.TimerText)
+        promoteFontLayer((child.GetNameLabel and child:GetNameLabel()) or child.Name or child.Text or child.Label)
+        promoteFontLayer((child.GetDurationLabel and child:GetDurationLabel()) or child.Duration or child.DurationText or child.Timer or child.TimerText)
 
-    local function findFontStringByNameHint(root, hint)
-        if not root then return nil end
-        -- OPT-25: check file-scope cache
-        local rootCache = _tbFSCache[root]
-        if rootCache then
-            local cached = rootCache[hint]
-            if cached then return cached end
-        end
-        local target = nil
-        local function scan(obj)
-            if not obj or target then return end
-            if obj.GetObjectType and obj:GetObjectType() == "FontString" then
-                local nm = obj.GetName and obj:GetName() or ""
-                if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
-                    target = obj; return
+        local function findFontStringByNameHint(root, hint)
+            if not root then return nil end
+            -- OPT-25: check file-scope cache
+            local rootCache = _tbFSCache[root]
+            if rootCache then
+                local cached = rootCache[hint]
+                if cached then return cached end
+            end
+            local target = nil
+            local function scan(obj)
+                if not obj or target then return end
+                if obj.GetObjectType and obj:GetObjectType() == "FontString" then
+                    local nm = obj.GetName and obj:GetName() or ""
+                    if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                        target = obj; return
+                    end
+                end
+                if obj.GetRegions then
+                    local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
+                    for i = 1, n do
+                        local r = select(i, obj:GetRegions())
+                        if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+                            local nm = r.GetName and r:GetName() or ""
+                            if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
+                                target = r; return
+                            end
+                        end
+                    end
+                end
+                if obj.GetChildren then
+                    local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
+                    for i = 1, m do
+                        local c = select(i, obj:GetChildren())
+                        scan(c)
+                        if target then return end
+                    end
                 end
             end
+            scan(root)
+            -- OPT-25: cache non-nil results
+            if target then
+                if not _tbFSCache[root] then
+                    _tbFSCache[root] = {}
+                end
+                _tbFSCache[root][hint] = target
+            end
+            return target
+        end
+
+        local function findFontStringOn(obj)
+            if not obj then return nil end
+            if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
             if obj.GetRegions then
                 local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
                 for i = 1, n do
                     local r = select(i, obj:GetRegions())
-                    if r and r.GetObjectType and r:GetObjectType() == "FontString" then
-                        local nm = r.GetName and r:GetName() or ""
-                        if type(nm) == "string" and string.find(string.lower(nm), string.lower(hint), 1, true) then
-                            target = r; return
-                        end
-                    end
+                    if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
                 end
             end
             if obj.GetChildren then
                 local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
                 for i = 1, m do
                     local c = select(i, obj:GetChildren())
-                    scan(c)
-                    if target then return end
+                    local found = findFontStringOn(c)
+                    if found then return found end
                 end
             end
         end
-        scan(root)
-        -- OPT-25: cache non-nil results
-        if target then
-            if not _tbFSCache[root] then
-                _tbFSCache[root] = {}
-            end
-            _tbFSCache[root][hint] = target
-        end
-        return target
-    end
 
-    local function findFontStringOn(obj)
-        if not obj then return nil end
-        if obj.GetObjectType and obj:GetObjectType() == "FontString" then return obj end
-        if obj.GetRegions then
-            local n = (obj.GetNumRegions and obj:GetNumRegions(obj)) or 0
-            for i = 1, n do
-                local r = select(i, obj:GetRegions())
-                if r and r.GetObjectType and r:GetObjectType() == "FontString" then return r end
+        local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")
+        local durFS  = (barFrame and barFrame.Duration) or findFontStringByNameHint(barFrame or child, "Bar.Duration") or findFontStringByNameHint(child, "Duration")
+
+        if rawget(db, "textName") and nameFS and nameFS.SetFont then
+            local cfg = rawget(db, "textName")
+            pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
+            TB.applyTextStyling(nameFS, cfg, defaultFace)
+            if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
+            local ox = (cfg.offset and cfg.offset.x) or 0
+            local oy = (cfg.offset and cfg.offset.y) or 0
+            if (ox ~= 0 or oy ~= 0) and nameFS.ClearAllPoints and nameFS.SetPoint then
+                nameFS:ClearAllPoints()
+                local anchorTo = barFrame or child
+                nameFS:SetPoint("LEFT", anchorTo, "LEFT", ox, oy)
             end
         end
-        if obj.GetChildren then
-            local m = (obj.GetNumChildren and obj:GetNumChildren()) or 0
-            for i = 1, m do
-                local c = select(i, obj:GetChildren())
-                local found = findFontStringOn(c)
-                if found then return found end
+
+        if rawget(db, "textDuration") and durFS and durFS.SetFont then
+            local cfg = rawget(db, "textDuration")
+            pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
+            TB.applyTextStyling(durFS, cfg, defaultFace)
+            if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
+            local ox = (cfg.offset and cfg.offset.x) or 0
+            local oy = (cfg.offset and cfg.offset.y) or 0
+            if (ox ~= 0 or oy ~= 0) and durFS.ClearAllPoints and durFS.SetPoint then
+                durFS:ClearAllPoints()
+                local anchorTo = barFrame or child
+                durFS:SetPoint("RIGHT", anchorTo, "RIGHT", ox, oy)
             end
         end
-    end
 
-    local nameFS = (barFrame and barFrame.Name) or findFontStringByNameHint(barFrame or child, "Bar.Name") or findFontStringByNameHint(child, "Name")
-    local durFS  = (barFrame and barFrame.Duration) or findFontStringByNameHint(barFrame or child, "Bar.Duration") or findFontStringByNameHint(child, "Duration")
-
-    if nameFS and nameFS.SetFont then
-        local cfg = db.textName or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-        pcall(nameFS.SetDrawLayer, nameFS, "OVERLAY", 10)
-        TB.applyTextStyling(nameFS, cfg, defaultFace)
-        if nameFS.SetJustifyH then pcall(nameFS.SetJustifyH, nameFS, "LEFT") end
-        local ox = (cfg.offset and cfg.offset.x) or 0
-        local oy = (cfg.offset and cfg.offset.y) or 0
-        if (ox ~= 0 or oy ~= 0) and nameFS.ClearAllPoints and nameFS.SetPoint then
-            nameFS:ClearAllPoints()
-            local anchorTo = barFrame or child
-            nameFS:SetPoint("LEFT", anchorTo, "LEFT", ox, oy)
+        local stacksFS
+        if iconFrame and iconFrame.Applications then
+            if iconFrame.Applications.GetObjectType and iconFrame.Applications:GetObjectType() == "FontString" then
+                stacksFS = iconFrame.Applications
+            else
+                stacksFS = findFontStringOn(iconFrame.Applications)
+            end
         end
-    end
-
-    if durFS and durFS.SetFont then
-        local cfg = db.textDuration or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-        pcall(durFS.SetDrawLayer, durFS, "OVERLAY", 10)
-        TB.applyTextStyling(durFS, cfg, defaultFace)
-        if durFS.SetJustifyH then pcall(durFS.SetJustifyH, durFS, "RIGHT") end
-        local ox = (cfg.offset and cfg.offset.x) or 0
-        local oy = (cfg.offset and cfg.offset.y) or 0
-        if (ox ~= 0 or oy ~= 0) and durFS.ClearAllPoints and durFS.SetPoint then
-            durFS:ClearAllPoints()
-            local anchorTo = barFrame or child
-            durFS:SetPoint("RIGHT", anchorTo, "RIGHT", ox, oy)
+        if not stacksFS and iconFrame then
+            stacksFS = findFontStringByNameHint(iconFrame, "Applications")
         end
-    end
-
-    local stacksFS
-    if iconFrame and iconFrame.Applications then
-        if iconFrame.Applications.GetObjectType and iconFrame.Applications:GetObjectType() == "FontString" then
-            stacksFS = iconFrame.Applications
-        else
-            stacksFS = findFontStringOn(iconFrame.Applications)
+        if not stacksFS then
+            stacksFS = findFontStringByNameHint(child, "Applications")
         end
-    end
-    if not stacksFS and iconFrame then
-        stacksFS = findFontStringByNameHint(iconFrame, "Applications")
-    end
-    if not stacksFS then
-        stacksFS = findFontStringByNameHint(child, "Applications")
-    end
 
-    if stacksFS and stacksFS.SetFont then
-        local cfg = db.textStacks or { size = 14, offset = { x = 0, y = 0 }, style = "OUTLINE", color = {1,1,1,1} }
-        pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
-        TB.applyTextStyling(stacksFS, cfg, defaultFace)
-        if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
-        local ox = (cfg.offset and cfg.offset.x) or 0
-        local oy = (cfg.offset and cfg.offset.y) or 0
-        if stacksFS.ClearAllPoints and stacksFS.SetPoint then
-            stacksFS:ClearAllPoints()
-            local anchorTo = iconFrame or child
-            stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
+        if rawget(db, "textStacks") and stacksFS and stacksFS.SetFont then
+            local cfg = rawget(db, "textStacks")
+            pcall(stacksFS.SetDrawLayer, stacksFS, "OVERLAY", 10)
+            TB.applyTextStyling(stacksFS, cfg, defaultFace)
+            if stacksFS.SetJustifyH then pcall(stacksFS.SetJustifyH, stacksFS, "CENTER") end
+            local ox = (cfg.offset and cfg.offset.x) or 0
+            local oy = (cfg.offset and cfg.offset.y) or 0
+            if stacksFS.ClearAllPoints and stacksFS.SetPoint then
+                stacksFS:ClearAllPoints()
+                local anchorTo = iconFrame or child
+                stacksFS:SetPoint("CENTER", anchorTo, "CENTER", ox, oy)
+            end
         end
     end
 

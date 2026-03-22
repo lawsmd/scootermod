@@ -634,10 +634,16 @@ local function styleVerticalStack(stack, component)
         if iconState then iconState.lastIconBorder = nil end
     end
 
-    -- Text styling (using shared helper)
-    TB.applyTextStyling(stack.spellNameFS, db.textName, defaultFace)
-    TB.applyTextStyling(stack.timerFS, db.textDuration, defaultFace)
-    TB.applyTextStyling(stack.applicationsFS, db.textStacks, defaultFace)
+    -- Text styling — only when user has explicitly configured text settings
+    if rawget(db, "textName") then
+        TB.applyTextStyling(stack.spellNameFS, db.textName, defaultFace)
+    end
+    if rawget(db, "textDuration") then
+        TB.applyTextStyling(stack.timerFS, db.textDuration, defaultFace)
+    end
+    if rawget(db, "textStacks") then
+        TB.applyTextStyling(stack.applicationsFS, db.textStacks, defaultFace)
+    end
 end
 
 --------------------------------------------------------------------------------

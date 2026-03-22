@@ -134,7 +134,10 @@ local function onPRDEvent(self, event, ...)
         C_Timer.After(0, function()
             for component, _ in pairs(prdRegisteredComponents) do
                 if component and component.ApplyStyling then
-                    component:ApplyStyling()
+                    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+                    if not (component._ScootDBProxy and component.db == component._ScootDBProxy) then
+                        component:ApplyStyling()
+                    end
                 end
             end
             -- Always update opacity after styling (handles initial load and state changes)

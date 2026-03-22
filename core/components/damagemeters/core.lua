@@ -720,4 +720,100 @@ addon:RegisterComponentInitializer(function(self)
             addon:Print("DM debug " .. (enabled and "enabled" or "disabled"))
         end
     end
+
+    -- Debug: /scoot debug dm state — zero-touch diagnostic dump (copyable window)
+    addon.DebugDMState = function()
+        local lines = {}
+        local function push(s) lines[#lines + 1] = s end
+
+        local profile = addon.db and addon.db.profile
+        if not profile then
+            push("[DM State] No profile loaded")
+            if addon.DebugShowWindow then addon.DebugShowWindow("DM Zero-Touch State", lines) end
+            return
+        end
+
+        push("=== Component DB State ===")
+
+        -- Check rawget for components table
+        local components = rawget(profile, "components")
+        push("rawget(profile, 'components') = " .. (components and "TABLE" or "nil"))
+
+        -- Check rawget for damageMeter within components
+        local dmTbl = components and rawget(components, "damageMeter") or nil
+        push("rawget(components, 'damageMeter') = " .. (dmTbl and "TABLE" or "nil"))
+
+        -- Dump DM table contents
+        if dmTbl and type(dmTbl) == "table" then
+            local count = 0
+            for key, value in pairs(dmTbl) do
+                count = count + 1
+                local vStr
+                if type(value) == "table" then
+                    local n = 0
+                    for _ in pairs(value) do n = n + 1 end
+                    vStr = "table(" .. n .. " keys)"
+                else
+                    vStr = tostring(value)
+                end
+                push("  " .. tostring(key) .. " = " .. vStr .. " [" .. type(value) .. "]")
+            end
+            push("  Total keys: " .. count)
+        end
+
+        push("")
+        push("=== Proxy State ===")
+
+        -- Check component proxy state
+        local comp = addon.Components and addon.Components["damageMeter"]
+        if not comp then
+            push("Component not registered!")
+            if addon.DebugShowWindow then addon.DebugShowWindow("DM Zero-Touch State", lines) end
+            return
+        end
+        push("comp._ScootDBProxy = " .. (comp._ScootDBProxy and "exists" or "nil"))
+        push("comp.db == proxy? " .. tostring(comp.db == comp._ScootDBProxy))
+        push("comp.db type = " .. type(comp.db))
+        local mt = getmetatable(comp.db)
+        push("comp.db has metatable? " .. (mt and "yes" or "no"))
+
+        push("")
+        push("=== Overlay Count ===")
+
+        -- Count overlays
+        local totalOverlays = 0
+        local shownOverlays = 0
+        for _, overlays in pairs(windowOverlays) do
+            for _, ov in ipairs(overlays) do
+                totalOverlays = totalOverlays + 1
+                if ov:IsShown() then shownOverlays = shownOverlays + 1 end
+            end
+        end
+        push("Overlays: " .. shownOverlays .. " shown / " .. totalOverlays .. " total")
+
+        push("")
+        push("=== Captured Stacks ===")
+
+        -- EnsureComponentDB materialization stack (buffered by base/core.lua)
+        if DM._dmMaterializeStack then
+            push("EnsureComponentDB materialized damageMeter:")
+            push(DM._dmMaterializeStack)
+        else
+            push("EnsureComponentDB: NOT called for damageMeter this session")
+        end
+
+        push("")
+
+        -- ApplyDamageMeterStyling first-call stack (buffered by styling.lua)
+        if DM._dmApplyTraced and DM._dmApplyStack then
+            push("ApplyDamageMeterStyling first call:")
+            push(DM._dmApplyStack)
+        else
+            push("ApplyDamageMeterStyling: NOT called this session")
+        end
+
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("DM Zero-Touch State", lines)
+        end
+    end
 end)

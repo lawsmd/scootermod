@@ -180,6 +180,9 @@ end
 function CG._UpdateGroupOpacity(groupIndex)
     local container = containers[groupIndex]
     if not container then return end
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    local component = addon.Components and addon.Components["customGroup" .. groupIndex]
+    if component and component._ScootDBProxy and component.db == component._ScootDBProxy then return end
     container:SetAlpha(CG._getGroupOpacityForState(groupIndex))
 end
 

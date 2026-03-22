@@ -134,20 +134,12 @@ function addon:GetDefaults()
         }
     }
 
-    for id, component in pairs(self.Components) do
-        defaults.profile.components[id] = {}
-        local settings = component.settings or {}
-        for settingId, setting in pairs(settings) do
-            -- Some entries in component.settings are boolean flags or helper values rather than
-            -- full setting descriptors. Only copy those that are tables with an explicit default.
-            -- Skip table-type defaults: AceDB's copyDefaults materializes them into the raw
-            -- profile table, defeating rawget-based zero-touch detection. Scalar defaults
-            -- (numbers, booleans, strings) are safe — they represent "no visual change" values.
-            if type(setting) == "table" and setting.default ~= nil and type(setting.default) ~= "table" then
-                defaults.profile.components[id][settingId] = setting.default
-            end
-        end
-    end
+    -- NOTE: Per-component defaults are NOT registered here. AceDB's copyDefaults
+    -- writes registered scalar defaults into the raw profile table via rawset,
+    -- which defeats rawget-based zero-touch detection. Instead, per-component
+    -- defaults are provided at runtime by attachSettingsDefaults() in
+    -- core/components/base/core.lua, which uses a metatable __index fallback
+    -- that returns defaults WITHOUT writing them to the profile table.
 
     return defaults
 end

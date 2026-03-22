@@ -286,8 +286,12 @@ local function RebuildAll()
     if not auras then return end
 
     for _, aura in ipairs(auras) do
-        -- Late-bound: styling.lua sets CA._ApplyStyling before runtime calls
-        CA._ApplyStyling(aura)
+        -- Zero-Touch: skip unconfigured components (still on proxy DB)
+        local comp = addon.Components and addon.Components[GetComponentId(aura)]
+        if not (comp and comp._ScootDBProxy and comp.db == comp._ScootDBProxy) then
+            -- Late-bound: styling.lua sets CA._ApplyStyling before runtime calls
+            CA._ApplyStyling(aura)
+        end
     end
 end
 

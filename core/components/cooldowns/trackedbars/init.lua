@@ -564,6 +564,102 @@ addon:RegisterComponentInitializer(function(self)
     })
     self:RegisterComponent(trackedBars)
 
+    -- Debug: /scoot debug tb state — zero-touch diagnostic dump (copyable window)
+    addon.DebugTBState = function()
+        local lines = {}
+        local function push(s) lines[#lines + 1] = s end
+
+        local profile = addon.db and addon.db.profile
+        if not profile then
+            push("[TB State] No profile loaded")
+            if addon.DebugShowWindow then addon.DebugShowWindow("TB Zero-Touch State", lines) end
+            return
+        end
+
+        push("=== Component DB State ===")
+        local components = rawget(profile, "components")
+        push("rawget(profile, 'components') = " .. (components and "TABLE" or "nil"))
+        local tbTbl = components and rawget(components, "trackedBars") or nil
+        push("rawget(components, 'trackedBars') = " .. (tbTbl and "TABLE" or "nil"))
+        if tbTbl and type(tbTbl) == "table" then
+            local count = 0
+            for key, value in pairs(tbTbl) do
+                count = count + 1
+                local vStr = type(value) == "table" and ("table(" .. select(2, pcall(function() local n=0 for _ in pairs(value) do n=n+1 end return n end)) .. " keys)") or tostring(value)
+                push("  " .. tostring(key) .. " = " .. vStr .. " [" .. type(value) .. "]")
+            end
+            push("  Total keys: " .. count)
+        end
+
+        push("")
+        push("=== Proxy State ===")
+        local comp = addon.Components and addon.Components["trackedBars"]
+        if not comp then
+            push("Component not registered!")
+            if addon.DebugShowWindow then addon.DebugShowWindow("TB Zero-Touch State", lines) end
+            return
+        end
+        push("comp._ScootDBProxy = " .. (comp._ScootDBProxy and "exists" or "nil"))
+        push("comp.db == proxy? " .. tostring(comp.db == comp._ScootDBProxy))
+        push("trackedBarsHooked = " .. tostring(trackedBarsHooked))
+
+        push("")
+        push("=== Viewer State ===")
+        local frame = _G[comp.frameName]
+        if not frame then
+            push("Viewer frame not found: " .. tostring(comp.frameName))
+        else
+            local okS, isShown = pcall(frame.IsShown, frame)
+            local okA, alpha = pcall(frame.GetAlpha, frame)
+            push("Viewer exists: yes")
+            push("Viewer:IsShown() = " .. (okS and tostring(isShown) or "ERR"))
+            push("Viewer:GetAlpha() = " .. (okA and tostring(alpha) or "ERR"))
+            push("TB._viewerAlphaHooked = " .. tostring(TB._viewerAlphaHooked))
+            push("TB._viewerAlpha = " .. tostring(TB._viewerAlpha))
+            push("TB.verticalModeActive = " .. tostring(TB.verticalModeActive))
+
+            push("")
+            push("=== Children ===")
+            local children = { frame:GetChildren() }
+            local childCount = 0
+            for _, child in ipairs(children) do
+                if child.GetBarFrame or child.Bar then
+                    childCount = childCount + 1
+                    local cOkS, cShown = pcall(child.IsShown, child)
+                    local cOkV, cVis = pcall(child.IsVisible, child)
+                    local cOkA, cAlpha = pcall(child.GetAlpha, child)
+                    local ignoreParent = "?"
+                    if child.IsIgnoringParentAlpha then
+                        local ipOk, ipVal = pcall(child.IsIgnoringParentAlpha, child)
+                        ignoreParent = ipOk and tostring(ipVal) or "ERR"
+                    end
+                    local overlay = TB.trackedBarOverlays[child]
+                    local suppressed = TB.isItemSuppressed and TB.isItemSuppressed(child) or false
+                    push(string.format("[%d] shown=%s visible=%s alpha=%s ignoreParentAlpha=%s",
+                        childCount,
+                        cOkS and tostring(cShown) or "ERR",
+                        cOkV and tostring(cVis) or "ERR",
+                        cOkA and tostring(cAlpha) or "ERR",
+                        ignoreParent))
+                    push(string.format("     overlay=%s suppressed=%s",
+                        overlay and tostring(overlay:IsShown()) or "none",
+                        tostring(suppressed)))
+                end
+            end
+            push("Total bar items: " .. childCount)
+
+            push("")
+            push("=== Overlay Count ===")
+            local totalOverlays = 0
+            for _ in pairs(TB.trackedBarOverlays) do totalOverlays = totalOverlays + 1 end
+            push("TB.trackedBarOverlays entries: " .. totalOverlays)
+        end
+
+        if addon.DebugShowWindow then
+            addon.DebugShowWindow("TB Zero-Touch State", lines)
+        end
+    end
+
     -- On-demand state dump: /scoot debug trackedbars dump
     function addon.DumpTBState()
         local comp = addon.Components and addon.Components.trackedBars

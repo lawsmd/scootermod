@@ -70,6 +70,11 @@ function Component:SyncEditModeSettings()
     local frame = _G[self.frameName]
     if not frame then return end
 
+    -- Zero-Touch: don't back-sync settings for unconfigured components.
+    -- Writing to a proxy DB materializes the real table, which would cause
+    -- ApplyStyling to run for a component the user never configured.
+    if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
     local changed = false
     for settingId, setting in pairs(self.settings) do
         if type(setting) == "table" and setting.type == "editmode" then
@@ -142,6 +147,42 @@ function addon:LinkComponentsToDB()
                     rawset(profile, key, nil)
                 end
             end
+        end
+    end
+
+    -- Strip AceDB-materialized default values from component tables.
+    -- GetDefaults() previously registered scalar defaults for all component
+    -- settings, causing AceDB's copyDefaults to write them into profile tables
+    -- via rawset. This defeated rawget-based zero-touch detection, causing
+    -- ApplyStyling to run for components the user never configured.
+    -- Strip values that exactly match registered scalar defaults so the
+    -- zero-touch rawget guard works correctly.
+    if components then
+        for id, tbl in pairs(components) do
+            if type(tbl) == "table" then
+                local comp = self.Components[id]
+                if comp and comp.settings then
+                    for key, value in pairs(tbl) do
+                        local def = comp.settings[key]
+                        if type(def) == "table" and def.default ~= nil
+                           and type(def.default) ~= "table" and value == def.default then
+                            tbl[key] = nil
+                        end
+                    end
+                    -- Strip position values — ephemeral mirrors of the frame's
+                    -- Edit Mode position, re-derived every EDIT_MODE_LAYOUTS_UPDATED
+                    -- via SyncComponentPositionFromEditMode. They must not keep a
+                    -- component table alive and defeat zero-touch detection.
+                    if rawget(tbl, "positionX") ~= nil then tbl.positionX = nil end
+                    if rawget(tbl, "positionY") ~= nil then tbl.positionY = nil end
+                    if next(tbl) == nil then
+                        components[id] = nil
+                    end
+                end
+            end
+        end
+        if next(components) == nil then
+            rawset(profile, "components", nil)
         end
     end
 

@@ -280,6 +280,14 @@ function SlashCmdList.SCOOT(msg, editBox)
 
         -- /scoot debug trackedbars <trace|log|clear|dump>
         if sub1 == "trackedbars" or sub1 == "tb" then
+            if sub2 == "state" then
+                if addon.DebugTBState then
+                    addon.DebugTBState()
+                else
+                    addon:Print("TB state debug not available (trackedbars module missing).")
+                end
+                return
+            end
             if sub2 == "trace" then
                 local toggle = args[4]
                 if toggle == "on" then
@@ -301,7 +309,8 @@ function SlashCmdList.SCOOT(msg, editBox)
                 if addon.DumpTBState then addon.DumpTBState()
                 else addon:Print("TB dump not available.") end
             else
-                addon:Print("Usage: /scoot debug trackedbars <trace|log|clear|dump>")
+                addon:Print("Usage: /scoot debug trackedbars <state|trace|log|clear|dump>")
+                addon:Print("  state     - Zero-touch diagnostic (DB, proxy, viewer, children)")
                 addon:Print("  trace on  - Start tracing bar lifecycle events")
                 addon:Print("  trace off - Stop tracing")
                 addon:Print("  log       - Show trace buffer in copyable window")
@@ -344,6 +353,14 @@ function SlashCmdList.SCOOT(msg, editBox)
                 end
                 return
             end
+            if sub2 == "state" then
+                if addon.DebugDMState then
+                    addon.DebugDMState()
+                else
+                    addon:Print("DM state debug not available (damagemeters module missing).")
+                end
+                return
+            end
             if sub2 == "frames" then
                 if addon.DebugDMFrames then
                     addon.DebugDMFrames()
@@ -365,7 +382,8 @@ function SlashCmdList.SCOOT(msg, editBox)
                 end
                 return
             end
-            addon:Print("Usage: /scoot debug dm export [overall|current|expired]")
+            addon:Print("Usage: /scoot debug dm state")
+            addon:Print("       /scoot debug dm export [overall|current|expired]")
             addon:Print("       /scoot debug dm frames")
             addon:Print("       /scoot debug dm trace <on|off>")
             return

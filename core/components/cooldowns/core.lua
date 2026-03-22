@@ -1743,6 +1743,10 @@ applyViewerOpacity = function(viewerName, componentId)
 
     if viewer.IsForbidden and viewer:IsForbidden() then return end
 
+    -- Zero-Touch: skip unconfigured components (still on proxy DB)
+    local component = addon.Components and addon.Components[componentId]
+    if component and component._ScootDBProxy and component.db == component._ScootDBProxy then return end
+
     local alpha = getViewerOpacityForState(componentId)
 
     -- Apply to viewer frame
