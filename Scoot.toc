@@ -167,6 +167,7 @@ ui/v2/controls/Preview.lua
 ui/v2/controls/ThreeColumnChecklist.lua
 ui/v2/controls/MultiLineEditBox.lua
 ui/v2/controls/SingleLineEditBox.lua
+ui/v2/controls/Flyout.lua
 ui/v2/HighScoreWindow.lua
 ui/v2/Window.lua
 ui/v2/Navigation.lua

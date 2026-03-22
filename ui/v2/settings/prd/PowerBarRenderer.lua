@@ -9,6 +9,7 @@ addon.UI.Settings.PRD.PowerBar = {}
 local PowerBar = addon.UI.Settings.PRD.PowerBar
 local SettingsBuilder = addon.UI.SettingsBuilder
 
+local Controls = addon.UI.Controls
 local Helpers = addon.UI.Settings.Helpers
 local textColorPowerValues = Helpers.textColorPowerValues
 local textColorPowerOrder = Helpers.textColorPowerOrder
@@ -222,9 +223,84 @@ function PowerBar.Render(panel, scrollContent)
                     valueText = function(cf, tabInner)
                         tabInner:AddToggle({
                             label = "Show Value Text",
+                            key = "valueTextShowToggle",
                             get = function() return getSetting("valueTextShow") or false end,
                             set = function(v) setSetting("valueTextShow", v) end,
                         })
+
+                        -- Druid per-form visibility: button + flyout
+                        local _, playerClass = UnitClass("player")
+                        if playerClass == "DRUID" then
+                            local showToggle = tabInner:GetControl("valueTextShowToggle")
+                            if showToggle and showToggle._label then
+                                local druidBtn = Controls:CreateButton({
+                                    parent = showToggle,
+                                    text = "Druid Forms",
+                                    height = 20,
+                                    fontSize = 10,
+                                    borderWidth = 1,
+                                    borderAlpha = 0.35,
+                                })
+                                druidBtn._label:SetTextColor(0.6, 0.6, 0.6, 1)
+                                druidBtn:SetWidth(druidBtn._label:GetStringWidth() + 16)
+                                druidBtn:SetPoint("LEFT", showToggle._label, "RIGHT", 8, 0)
+                                druidBtn:SetFrameLevel(showToggle:GetFrameLevel() + 5)
+
+                                local flyout = Controls:CreateFlyout({
+                                    anchor = druidBtn,
+                                    direction = "DOWN",
+                                    width = 220,
+                                    height = 160,
+                                    padding = 10,
+                                    gap = 4,
+                                })
+
+                                local content = flyout:GetContent()
+                                local forms = {
+                                    { id = 0,  label = "Base Form" },
+                                    { id = 1,  label = "Cat Form" },
+                                    { id = 5,  label = "Bear Form" },
+                                    { id = 31, label = "Moonkin Form" },
+                                }
+
+                                local yOff = 0
+                                for _, form in ipairs(forms) do
+                                    local formToggle = Controls:CreateToggle({
+                                        parent = content,
+                                        label = form.label,
+                                        get = function()
+                                            local tbl = getSetting("valueTextDruidForms") or {}
+                                            local specIndex = GetSpecialization and GetSpecialization() or 1
+                                            local specTbl = tbl[specIndex] or {}
+                                            return specTbl[form.id] ~= false
+                                        end,
+                                        set = function(v)
+                                            local tbl = getSetting("valueTextDruidForms") or {}
+                                            local specIndex = GetSpecialization and GetSpecialization() or 1
+                                            if not tbl[specIndex] then tbl[specIndex] = {} end
+                                            if v then
+                                                tbl[specIndex][form.id] = nil
+                                            else
+                                                tbl[specIndex][form.id] = false
+                                            end
+                                            setSetting("valueTextDruidForms", tbl)
+                                        end,
+                                    })
+                                    if formToggle then
+                                        formToggle:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOff)
+                                        formToggle:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, yOff)
+                                        yOff = yOff - formToggle:GetHeight()
+                                    end
+                                end
+
+                                druidBtn:SetScript("OnClick", function()
+                                    flyout:Toggle()
+                                end)
+
+                                table.insert(tabInner._controls, druidBtn)
+                                table.insert(tabInner._controls, flyout)
+                            end
+                        end
 
                         tabInner:AddFontSelector({
                             label = "Font",

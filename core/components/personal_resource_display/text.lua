@@ -125,12 +125,17 @@ end
 
 -- Check if text should be visible for the current Druid shapeshift form.
 -- Returns true for non-Druids or when no per-form restrictions are set.
+-- Storage is per-spec: valueTextDruidForms[specIndex][formID] = false to hide.
 local function isDruidTextVisible(db, textType)
     local _, playerClass = UnitClass("player")
     if playerClass ~= "DRUID" then return true end
 
-    local forms = (textType == "value") and db.valueTextDruidForms or db.percentTextDruidForms
-    if not forms or not next(forms) then return true end  -- empty = all visible
+    local allSpecs = (textType == "value") and db.valueTextDruidForms or db.percentTextDruidForms
+    if not allSpecs or not next(allSpecs) then return true end
+
+    local specIndex = GetSpecialization and GetSpecialization() or 1
+    local forms = allSpecs[specIndex]
+    if not forms or not next(forms) then return true end
 
     local formID = GetShapeshiftFormID and GetShapeshiftFormID() or 0
     -- Normalize moonkin talent variant to base moonkin ID
