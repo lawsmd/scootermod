@@ -123,6 +123,22 @@ local function applyTextAlignment(fs, overlay, alignment)
     end
 end
 
+-- Check if text should be visible for the current Druid shapeshift form.
+-- Returns true for non-Druids or when no per-form restrictions are set.
+local function isDruidTextVisible(db, textType)
+    local _, playerClass = UnitClass("player")
+    if playerClass ~= "DRUID" then return true end
+
+    local forms = (textType == "value") and db.valueTextDruidForms or db.percentTextDruidForms
+    if not forms or not next(forms) then return true end  -- empty = all visible
+
+    local formID = GetShapeshiftFormID and GetShapeshiftFormID() or 0
+    -- Normalize moonkin talent variant to base moonkin ID
+    if formID == 35 then formID = 31 end
+
+    return forms[formID] ~= false
+end
+
 -- Apply text styling from component settings (per-text independent settings)
 local function resolveColorMode(colorMode, rawColor, overlayType)
     -- Backward compat: existing custom color without mode = treat as custom
@@ -254,11 +270,11 @@ local function onSourceTextChanged(overlayType, side, text)
 
     -- text may be a secret value; SetText(secret) is allowed and renders it
     if side == "left" then
-        if comp.db.percentTextShow then
+        if comp.db.percentTextShow and isDruidTextVisible(comp.db, "percent") then
             pcall(fs.SetText, fs, text)
         end
     else
-        if comp.db.valueTextShow then
+        if comp.db.valueTextShow and isDruidTextVisible(comp.db, "value") then
             pcall(fs.SetText, fs, text)
         end
     end
@@ -378,6 +394,10 @@ local function applyPowerTextOverlay(comp)
     local db = comp.db
     local showValue = db.valueTextShow
     local showPercent = db.percentTextShow
+
+    -- Druid per-form override: hide text in specific shapeshift forms
+    if showValue then showValue = isDruidTextVisible(db, "value") end
+    if showPercent then showPercent = isDruidTextVisible(db, "percent") end
 
     if (not showValue and not showPercent) or db.hideBar then
         hideTextOverlay("power")

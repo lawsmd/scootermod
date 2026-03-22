@@ -164,6 +164,8 @@ local function ensureEventFrame()
     prdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     prdEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     prdEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    prdEventFrame:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
+    prdEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 
     return prdEventFrame
 end
@@ -185,6 +187,17 @@ end
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
+
+-- Druid form ID → display name lookup (for future UI consumption)
+PRD.DRUID_FORM_NAMES = {
+    [0]  = "Caster",
+    [1]  = "Cat",
+    [2]  = "Tree of Life",
+    [3]  = "Travel",
+    [5]  = "Bear",
+    [31] = "Moonkin",
+    [35] = "Moonkin",  -- talent variant, same display name
+}
 
 local MIN_HEALTH_BAR_WIDTH = 60
 local MAX_HEALTH_BAR_WIDTH = 600
@@ -539,6 +552,9 @@ addon:RegisterComponentInitializer(function(self)
             percentTextColorMode = { type = "addon", default = "default", ui = { hidden = true }},
             percentTextColorModeDK = { type = "addon", default = nil, ui = { hidden = true }},
             percentTextAlignment = { type = "addon", default = "LEFT", ui = { hidden = true }},
+            -- Druid per-form text visibility: table of formID → false to hide. Empty = all visible.
+            valueTextDruidForms = { type = "addon", default = {}, ui = { hidden = true }},
+            percentTextDruidForms = { type = "addon", default = {}, ui = { hidden = true }},
         },
     })
     power.ApplyStyling = function(comp)
