@@ -371,6 +371,14 @@ local function RefreshDamageMeterOpacity(comp)
             if ws.titleRightClickOverlay then SafeSetAlpha(ws.titleRightClickOverlay, alpha) end
             if ws.exportButton then SafeSetAlpha(ws.exportButton, alpha) end
         end
+        -- LocalPlayerEntry overlay (UIParent-parented, doesn't inherit session window alpha)
+        local lpe = sessionWindow.LocalPlayerEntry
+        if lpe then
+            local lpeElSt = elementState[lpe]
+            if lpeElSt and lpeElSt.entryOverlay then
+                SafeSetAlpha(lpeElSt.entryOverlay, alpha)
+            end
+        end
     end
 end
 
@@ -583,14 +591,15 @@ addon:RegisterComponentInitializer(function(self)
         end)
     end)
 
-    -- Scroll detection ticker: detects ScrollBox content changes during scrolling
-    -- Also tracks DamageMeter visibility to hide/show overlays on transitions
-    local scrollSignature = ""
+    -- Overlay sync ticker: keeps overlays current with ScrollBox state.
+    -- Runs every 0.1s using RefreshVisibleOverlays (lightweight, OPT-18 cached)
+    -- instead of the previous signature-based change detection which missed intermediate
+    -- scroll states and left overlays stale for up to 300ms.
     local dmWasShown = false
     local scrollTicker = CreateFrame("Frame")
     scrollTicker:SetScript("OnUpdate", function(self, elapsed)
         self._elapsed = (self._elapsed or 0) + elapsed
-        if self._elapsed < 0.3 then return end
+        if self._elapsed < 0.1 then return end
         self._elapsed = 0
         local dmFrame = _G.DamageMeter
         local isShown = dmFrame and dmFrame:IsShown()
@@ -615,15 +624,10 @@ addon:RegisterComponentInitializer(function(self)
         local comp = addon.Components and addon.Components["damageMeter"]
         if not comp or not comp.db then return end
         if comp._ScootDBProxy and comp.db == comp._ScootDBProxy then return end
-        local newSig = GetScrollSignature()
-        if issecretvalue(newSig) then return end
-        if newSig ~= scrollSignature then
-            scrollSignature = newSig
-            if PlayerInCombat() then
-                DM._UpdateAllOverlayData(comp)
-            else
-                comp:ApplyStyling()
-            end
+        if PlayerInCombat() then
+            DM._UpdateAllOverlayData(comp)
+        else
+            DM._RefreshVisibleOverlays(comp)
         end
     end)
 

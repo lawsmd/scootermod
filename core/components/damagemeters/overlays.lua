@@ -533,19 +533,26 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
     end
 
     -- Name text + styling
+    -- entry.nameText includes rank prefix ("1. Wyrm"); entry.sourceName does not ("Wyrm")
+    -- When nameText is secret (combat context), forward directly — SetText(secret) is AllowedWhenTainted
     local nameText = entry.nameText
-    if issecretvalue(nameText) then nameText = nil end
-    if not nameText then
-        nameText = entry.sourceName
-        if issecretvalue(nameText) then nameText = nil end
-    end
-    if nameText then
+    local nameIsSecret = issecretvalue(nameText)
+    if nameIsSecret then
+        pcall(overlay.nameFS.SetText, overlay.nameFS, nameText)
+    elseif nameText then
         overlay.nameFS:SetText(nameText)
-    elseif entry.StatusBar and entry.StatusBar.Name then
-        local ok, text = pcall(entry.StatusBar.Name.GetText, entry.StatusBar.Name)
-        if ok and text then overlay.nameFS:SetText(text) else overlay.nameFS:SetText("") end
     else
-        overlay.nameFS:SetText("")
+        local srcName = entry.sourceName
+        if issecretvalue(srcName) then
+            pcall(overlay.nameFS.SetText, overlay.nameFS, srcName)
+        elseif srcName then
+            overlay.nameFS:SetText(srcName)
+        elseif entry.StatusBar and entry.StatusBar.Name then
+            local ok, text = pcall(entry.StatusBar.Name.GetText, entry.StatusBar.Name)
+            if ok then pcall(overlay.nameFS.SetText, overlay.nameFS, text) else overlay.nameFS:SetText("") end
+        else
+            overlay.nameFS:SetText("")
+        end
     end
     if rawget(db, "textNames") then
         local cfg = rawget(db, "textNames")
@@ -569,7 +576,7 @@ local function PopulateEntryOverlay(overlay, entry, db, sessionWindow)
         overlay.valueFS:SetText(fmtText)
     elseif entry.StatusBar and entry.StatusBar.Value then
         local ok, text = pcall(entry.StatusBar.Value.GetText, entry.StatusBar.Value)
-        if ok and text then overlay.valueFS:SetText(text) else overlay.valueFS:SetText("") end
+        if ok then pcall(overlay.valueFS.SetText, overlay.valueFS, text) else overlay.valueFS:SetText("") end
     else
         overlay.valueFS:SetText("")
     end
@@ -650,19 +657,20 @@ local function UpdateEntryOverlayData(overlay, entry, db)
     pcall(overlay.barOverlay.SetMinMaxValues, overlay.barOverlay, 0, entry.maxValue)
     pcall(overlay.barOverlay.SetValue, overlay.barOverlay, entry.value)
 
-    -- Name: forward from Blizzard's FontString (SetText(secret) is allowed and renders correctly)
+    -- Name: forward from Blizzard's FontString (SetText(secret) is AllowedWhenTainted)
+    -- Don't boolean-test `text` — it may be a secret value (12.0); forward it directly
     if entry.StatusBar and entry.StatusBar.Name then
         local ok, text = pcall(entry.StatusBar.Name.GetText, entry.StatusBar.Name)
-        if ok and text then
-            overlay.nameFS:SetText(text)
+        if ok then
+            pcall(overlay.nameFS.SetText, overlay.nameFS, text)
         end
     end
 
-    -- Value: forward from Blizzard's FontString (SetText(secret) is allowed and renders correctly)
+    -- Value: forward from Blizzard's FontString (SetText(secret) is AllowedWhenTainted)
     if entry.StatusBar and entry.StatusBar.Value then
         local ok, text = pcall(entry.StatusBar.Value.GetText, entry.StatusBar.Value)
-        if ok and text then
-            overlay.valueFS:SetText(text)
+        if ok then
+            pcall(overlay.valueFS.SetText, overlay.valueFS, text)
         end
     end
 

@@ -40,6 +40,29 @@ local SESSION_TYPE_NAMES = {
     [Enum.DamageMeterSessionType.Current] = "Current",
 }
 
+-- Category structure for the meter type context menu (mirrors Blizzard's DAMAGE_METER_CATEGORIES)
+local DAMAGE_METER_CATEGORIES = {
+    { name = DAMAGE_METER_CATEGORY_DAMAGE or "Damage",
+      types = {
+          Enum.DamageMeterType.DamageDone,
+          Enum.DamageMeterType.Dps,
+          Enum.DamageMeterType.DamageTaken,
+          Enum.DamageMeterType.AvoidableDamageTaken,
+          Enum.DamageMeterType.EnemyDamageTaken,
+      }},
+    { name = DAMAGE_METER_CATEGORY_HEALING or "Healing",
+      types = {
+          Enum.DamageMeterType.HealingDone,
+          Enum.DamageMeterType.Hps,
+      }},
+    { name = DAMAGE_METER_CATEGORY_ACTIONS or "Actions",
+      types = {
+          Enum.DamageMeterType.Interrupts,
+          Enum.DamageMeterType.Dispels,
+          Enum.DamageMeterType.Deaths,
+      }},
+}
+
 -- Build enhanced title string combining meter type and session info
 local function GetEnhancedTitle(sessionWindow)
     if not sessionWindow then return nil end
@@ -159,9 +182,32 @@ local function HookSessionWindowTitleRightClick(sessionWindow)
     state.titleRightClickOverlay = overlay
 
     overlay:SetScript("OnClick", function(self, button)
-        if button == "RightButton" and dropdown.OpenMenu and not InCombatLockdown() then
-            securecallfunction(dropdown.OpenMenu, dropdown)
-        end
+        if button ~= "RightButton" or InCombatLockdown() then return end
+
+        -- Build a Scoot-owned context menu replicating the type-switcher dropdown.
+        -- Using MenuUtil.CreateContextMenu with our overlay (UIParent-parented) as
+        -- owner avoids taint: the Blizzard dropdown is an Edit Mode system frame
+        -- child whose geometry returns secret values when read from addon context.
+        MenuUtil.CreateContextMenu(self, function(owner, rootDescription)
+            rootDescription:SetTag("MENU_DAMAGE_METER_WINDOW_TRACKED_TYPE")
+
+            for _, categoryData in ipairs(DAMAGE_METER_CATEGORIES) do
+                local categorySubmenu = rootDescription:CreateButton(categoryData.name)
+
+                for _, meterType in ipairs(categoryData.types) do
+                    local typeName = METER_TYPE_NAMES[meterType] or tostring(meterType)
+                    categorySubmenu:CreateRadio(typeName,
+                        function() return sessionWindow.damageMeterType == meterType end,
+                        function()
+                            local dmOwner = sessionWindow.GetDamageMeterOwner and sessionWindow:GetDamageMeterOwner()
+                            if dmOwner and dmOwner.SetSessionWindowDamageMeterType then
+                                dmOwner:SetSessionWindowDamageMeterType(sessionWindow, meterType)
+                            end
+                        end,
+                        meterType)
+                end
+            end
+        end)
     end)
 
     return true
@@ -690,7 +736,7 @@ local function UpdateAllOverlayData(comp)
                 ApplySingleEntryStyle(entryFrame, comp.db, sessionWindow)
             end
         end)
-        -- Also update LocalPlayerEntry overlay (only if entry is visible)
+        -- Also update LocalPlayerEntry overlay
         local lpe = sessionWindow.LocalPlayerEntry
         if lpe then
             local ok, shown = pcall(lpe.IsShown, lpe)
@@ -700,6 +746,47 @@ local function UpdateAllOverlayData(comp)
                     DM._UpdateEntryOverlayData(elSt.entryOverlay, lpe, comp.db)
                 else
                     ApplySingleEntryStyle(lpe, comp.db, sessionWindow)
+                end
+            else
+                -- LocalPlayerEntry hidden: hide overlay and restore Blizzard content
+                local elSt = elementState[lpe]
+                if elSt and elSt.entryOverlay then
+                    elSt.entryOverlay:Hide()
+                    DM._RestoreBlizzardEntryContent(lpe)
+                end
+            end
+        end
+    end
+end
+
+-- Lightweight per-tick refresh: sync entry overlays + LPE without full window restyle.
+-- OPT-18 cache prevents redundant full populates — cache hits do data-only updates.
+-- Does NOT bump dmStyleGeneration (full restyle via ApplyStyling handles that on events).
+local function RefreshVisibleOverlays(comp)
+    if not comp or not comp.db then return end
+    if comp._ScootDBProxy and comp.db == comp._ScootDBProxy then return end
+    local dmFrame = _G.DamageMeter
+    if not dmFrame or not dmFrame:IsShown() then return end
+
+    local db = comp.db
+    local windows = DM._GetAllSessionWindows()
+    for _, sessionWindow in ipairs(windows) do
+        -- Refresh all visible scroll entries
+        DM._ForEachVisibleEntry(sessionWindow, function(entryFrame)
+            ApplySingleEntryStyle(entryFrame, db, sessionWindow)
+        end)
+
+        -- Refresh LocalPlayerEntry
+        local lpe = sessionWindow.LocalPlayerEntry
+        if lpe then
+            local ok, shown = pcall(lpe.IsShown, lpe)
+            if ok and shown then
+                ApplySingleEntryStyle(lpe, db, sessionWindow)
+            else
+                local elSt = elementState[lpe]
+                if elSt and elSt.entryOverlay then
+                    elSt.entryOverlay:Hide()
+                    DM._RestoreBlizzardEntryContent(lpe)
                 end
             end
         end
@@ -821,4 +908,5 @@ end
 
 DM._ApplyDamageMeterStyling = ApplyDamageMeterStyling
 DM._UpdateAllOverlayData = UpdateAllOverlayData
+DM._RefreshVisibleOverlays = RefreshVisibleOverlays
 DM._RefreshAllWindowTitles = RefreshAllWindowTitles
