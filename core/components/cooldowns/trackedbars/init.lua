@@ -476,17 +476,15 @@ addon:RegisterComponentInitializer(function(self)
             styleBackgroundOpacity = { type = "addon", default = 50, ui = {
                 label = "Background Opacity", widget = "slider", min = 0, max = 100, step = 1, section = "Style", order = 5
             }},
-            borderEnable = { type = "addon", default = false, ui = {
-                label = "Use Custom Border", widget = "checkbox", section = "Border", order = 1
-            }},
+            borderEnable = { type = "addon", default = false },  -- Legacy, no UI (replaced by borderStyle)
             borderTintEnable = { type = "addon", default = false, ui = {
                 label = "Border Tint", widget = "checkbox", section = "Border", order = 2
             }},
             borderTintColor = { type = "addon", default = {1,1,1,1}, ui = {
                 label = "Tint Color", widget = "color", section = "Border", order = 3
             }},
-            borderStyle = { type = "addon", default = "square", ui = {
-                label = "Border Style", widget = "dropdown", section = "Border", order = 4,
+            borderStyle = { type = "addon", default = "blizzardDefault", ui = {
+                label = "Border Style", widget = "dropdown", section = "Border", order = 1,
                 optionsProvider = function()
                     if addon.BuildBarBorderOptionsContainer then
                         return addon.BuildBarBorderOptionsContainer()

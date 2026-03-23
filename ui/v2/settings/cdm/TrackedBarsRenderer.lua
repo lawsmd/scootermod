@@ -187,10 +187,31 @@ function TrackedBars.Render(panel, scrollContent)
         sectionKey = "border",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
-            inner:AddToggle({
-                label = "Use Custom Border",
-                get = function() return getSetting("borderEnable") or false end,
-                set = function(v) setSetting("borderEnable", v) end,
+            inner:AddBarBorderSelector({
+                label = "Border Style",
+                includeNone = false,
+                includeBlizzardDefault = true,
+                get = function()
+                    local style = getSetting("borderStyle") or "blizzardDefault"
+                    -- Backward compat: translate legacy borderEnable state
+                    local comp = getComponent()
+                    if comp and comp.db then
+                        if rawget(comp.db, "borderEnable") == true and not rawget(comp.db, "borderStyle") then
+                            return "square"
+                        end
+                    end
+                    return style
+                end,
+                set = function(v)
+                    setSetting("borderStyle", v)
+                    -- Clear legacy toggle to prevent confusion
+                    local comp = getComponent()
+                    if comp and comp.db and rawget(comp.db, "borderEnable") ~= nil then
+                        comp.db.borderEnable = nil
+                    end
+                end,
+                getHiddenEdges = function() return getSetting("borderHiddenEdges") end,
+                setHiddenEdges = function(v) setSetting("borderHiddenEdges", v) end,
             })
 
             inner:AddToggleColorPicker({
@@ -202,15 +223,6 @@ function TrackedBars.Render(panel, scrollContent)
                     return c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
                 end,
                 setColor = function(r, g, b, a) setSetting("borderTintColor", {r, g, b, a}) end,
-            })
-
-            inner:AddBarBorderSelector({
-                label = "Border Style",
-                includeNone = false,
-                get = function() return getSetting("borderStyle") or "square" end,
-                set = function(v) setSetting("borderStyle", v) end,
-                getHiddenEdges = function() return getSetting("borderHiddenEdges") end,
-                setHiddenEdges = function(v) setSetting("borderHiddenEdges", v) end,
             })
 
             inner:AddSlider({

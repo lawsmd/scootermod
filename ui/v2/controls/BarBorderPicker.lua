@@ -42,6 +42,7 @@ local BRAND_R, BRAND_G, BRAND_B = 0.20, 0.90, 0.30
 --------------------------------------------------------------------------------
 
 local TRADITIONAL_BORDERS = {
+    "blizzardDefault", -- Show Blizzard's native bar border
     "none",     -- No border at all
     "square",   -- Simple solid-color square border
     "mmtBorder1", "mmtBorder2",
@@ -68,6 +69,7 @@ local pickerSetting = nil
 local pickerCallback = nil
 local pickerAnchor = nil
 local pickerIncludeNone = true
+local pickerIncludeBlizzardDefault = false
 local pickerHiddenEdgesSetting = nil
 local selectedTab = "standard"
 
@@ -76,6 +78,7 @@ local selectedTab = "standard"
 --------------------------------------------------------------------------------
 
 local function GetBorderDisplayName(key)
+    if key == "blizzardDefault" then return "Blizzard Default" end
     if key == "default" then return "Default" end
     if key == "none" then return "No Border" end
     if key == "square" then return "Square" end
@@ -92,7 +95,7 @@ local function GetBorderDisplayName(key)
 end
 
 local function GetBorderTexturePath(key)
-    if key == "default" or key == "none" or key == "square" then return nil end
+    if key == "default" or key == "blizzardDefault" or key == "none" or key == "square" then return nil end
 
     if addon.BarBorders and addon.BarBorders.GetStyle then
         local style = addon.BarBorders.GetStyle(key)
@@ -506,11 +509,13 @@ local function CreateBarBorderPicker()
         local content = self.Content
         local valueFont = (theme and theme.GetFont and theme:GetFont("VALUE")) or "Fonts\\FRIZQT__.TTF"
 
-        -- Filter out "none" if not included
+        -- Filter out options that are not included
         local filteredBorders = {}
         for _, key in ipairs(borderList) do
             if key == "none" and not pickerIncludeNone then
                 -- Skip "none" when not included
+            elseif key == "blizzardDefault" and not pickerIncludeBlizzardDefault then
+                -- Skip "blizzardDefault" when not included
             else
                 table.insert(filteredBorders, key)
             end
@@ -715,13 +720,14 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
-function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback, hiddenEdgesSetting)
+function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback, hiddenEdgesSetting, includeBlizzardDefault)
     local frame = CreateBarBorderPicker()
 
     pickerSetting = setting
     pickerCallback = callback
     pickerAnchor = anchor
     pickerIncludeNone = (includeNone ~= false) -- Default true
+    pickerIncludeBlizzardDefault = (includeBlizzardDefault == true) -- Default false
     pickerHiddenEdgesSetting = hiddenEdgesSetting
 
     -- Get current value and determine which tab to show
@@ -795,6 +801,7 @@ function Controls:CreateBarBorderSelector(options)
     local selectorHeight = options.selectorHeight or BAR_BORDER_SELECTOR_HEIGHT
     local labelFontSize = options.labelFontSize or 13
     local includeNone = (options.includeNone ~= false) -- Default true
+    local includeBlizzardDefault = (options.includeBlizzardDefault == true) -- Default false
     local name = options.name
 
     local hasDesc = description and description ~= ""
@@ -927,6 +934,7 @@ function Controls:CreateBarBorderSelector(options)
     row._getValue = getValue
     row._setValue = setValue
     row._includeNone = includeNone
+    row._includeBlizzardDefault = includeBlizzardDefault
     row._getHiddenEdges = options.getHiddenEdges
     row._setHiddenEdges = options.setHiddenEdges
 
@@ -990,7 +998,7 @@ function Controls:CreateBarBorderSelector(options)
             row._currentValue = selectedValue
             row._setValue(selectedValue)
             UpdateDisplay()
-        end, hiddenEdgesPseudo)
+        end, hiddenEdgesPseudo, row._includeBlizzardDefault)
     end)
 
     -- Row hover effects

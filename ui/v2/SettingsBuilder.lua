@@ -864,6 +864,7 @@ function Builder:AddBarBorderSelector(options)
         set = options.set,
         width = options.width,
         includeNone = options.includeNone,
+        includeBlizzardDefault = options.includeBlizzardDefault,
         useLightDim = self._useLightDim,
         getHiddenEdges = options.getHiddenEdges,
         setHiddenEdges = options.setHiddenEdges,

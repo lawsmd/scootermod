@@ -480,7 +480,7 @@ local function styleVerticalStack(stack, component)
     local defaultFace = select(1, GameFontNormal:GetFont())
 
     -- Bar textures
-    local useCustom = rawget(db, "styleEnableCustom") == true
+    local useCustom = db.styleEnableCustom ~= false
     if useCustom then
         local fgKey = db.styleForegroundTexture or "bevelled"
         local bgKey = db.styleBackgroundTexture or "bevelled"
@@ -527,9 +527,14 @@ local function styleVerticalStack(stack, component)
     end
 
     -- Border on bar
-    local wantBorder = db.borderEnable
+    local borderStyle = db.borderStyle or "blizzardDefault"
+    -- Backward compat: honor legacy borderEnable for users who had it on
+    -- before UI restructure but never set a borderStyle explicitly
+    if rawget(db, "borderEnable") == true and not rawget(db, "borderStyle") then
+        borderStyle = "square"
+    end
+    local wantBorder = borderStyle ~= "blizzardDefault"
     if wantBorder then
-        local styleKey = db.borderStyle or "square"
         local thickness = tonumber(db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
         local tintEnabled = db.borderTintEnable and type(rawget(db, "borderTintColor")) == "table"
@@ -544,7 +549,7 @@ local function styleVerticalStack(stack, component)
         local insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or 0
         local handled = false
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
-            handled = addon.BarBorders.ApplyToBarFrame(stack.barRegion, styleKey, {
+            handled = addon.BarBorders.ApplyToBarFrame(stack.barRegion, borderStyle, {
                 color = color,
                 thickness = thickness,
                 insetH = insetH,

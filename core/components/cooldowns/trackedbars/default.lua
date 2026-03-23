@@ -169,8 +169,8 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     end
 
     -- Overlay-based bar texture styling
+    local useCustom = db.styleEnableCustom ~= false
     do
-        local useCustom = rawget(db, "styleEnableCustom") == true
         if useCustom then
             local overlay = getOrCreateBarOverlay(child)
             if overlay then
@@ -249,12 +249,17 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
     end
 
     -- Bar border
-    local wantBorder = db and db.borderEnable
-    local styleKey = db and db.borderStyle or "square"
+    local borderStyle = db.borderStyle or "blizzardDefault"
+    -- Backward compat: honor legacy borderEnable for users who had it on
+    -- before UI restructure but never set a borderStyle explicitly
+    if rawget(db, "borderEnable") == true and not rawget(db, "borderStyle") then
+        borderStyle = "square"
+    end
+    local wantBorder = borderStyle ~= "blizzardDefault"
     if wantBorder then
         local thickness = tonumber(db.borderThickness) or 1
         if thickness < 1 then thickness = 1 elseif thickness > 16 then thickness = 16 end
-        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(styleKey)
+        local styleDef = addon.BarBorders and addon.BarBorders.GetStyle and addon.BarBorders.GetStyle(borderStyle)
         local tintEnabled = db.borderTintEnable and type(rawget(db, "borderTintColor")) == "table"
         local color
         if tintEnabled then
@@ -272,7 +277,7 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
         if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
             local insetH = tonumber(db.borderInsetH) or tonumber(db.borderInset) or 0
             local insetV = tonumber(db.borderInsetV) or tonumber(db.borderInset) or 0
-            handled = addon.BarBorders.ApplyToBarFrame(barFrame, styleKey, {
+            handled = addon.BarBorders.ApplyToBarFrame(barFrame, borderStyle, {
                 color = color,
                 thickness = thickness,
                 insetH = insetH,
@@ -300,10 +305,21 @@ function addon.ApplyTrackedBarVisualsForChild(component, child)
             end
             Util.HideDefaultBarTextures(barFrame, true)
         end
+        -- Hide Blizzard bar background when custom border is active
+        if barFrame.BarBG then pcall(barFrame.BarBG.SetAlpha, barFrame.BarBG, 0) end
     else
         if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(barFrame) end
         if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(barFrame) end
         Util.HideDefaultBarTextures(barFrame, true)
+        -- Restore Blizzard bar background for default border
+        if barFrame.BarBG then pcall(barFrame.BarBG.SetAlpha, barFrame.BarBG, 1.0) end
+    end
+
+    -- Fill re-assertion: when not using custom textures, ensure Blizzard fill
+    -- survives HideDefaultBarTextures (its atlas matches the CDM pattern)
+    if not useCustom then
+        local blizzFill = barFrame.GetStatusBarTexture and barFrame:GetStatusBarTexture()
+        if blizzFill then pcall(blizzFill.SetAlpha, blizzFill, 1.0) end
     end
 
     -- Icon border
