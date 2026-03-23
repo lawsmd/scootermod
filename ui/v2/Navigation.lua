@@ -38,7 +38,10 @@ Navigation.NavModel = {
     {
         key = "startHere",
         label = "Start Here",
-        fontSize = 15,
+    },
+    {
+        key = "search",
+        label = "Search",
     },
     {
         key = "profiles",

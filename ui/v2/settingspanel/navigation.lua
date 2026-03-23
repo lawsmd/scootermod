@@ -176,6 +176,11 @@ function UIPanel:ClearContent()
         end
         self._debugMenuControls = {}
     end
+
+    -- Search page cleanup
+    if self._searchCleanup then
+        self._searchCleanup()
+    end
 end
 
 -- Collapse All Sections
@@ -873,7 +878,7 @@ local _titleCache
 
 local function buildTitleCache()
     if _titleCache then return _titleCache end
-    _titleCache = { home = "Home", startHere = "Start Here" }
+    _titleCache = { home = "Home", startHere = "Start Here", search = "Search" }
     for _, section in ipairs(Navigation.NavModel) do
         local prefix = TITLE_PREFIX[section.key]
         if section.children then

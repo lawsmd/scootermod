@@ -7,6 +7,12 @@ local Builder = addon.UI.SettingsBuilder
 local Theme = addon.UI.Theme
 local Controls = addon.UI.Controls
 
+-- Scan mode state (module-level, shared across all builder instances during index scan)
+Builder._scanMode = false
+Builder._scanEntries = {}
+Builder._scanRendererKey = nil
+Builder._scanSectionStack = {}
+
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
@@ -178,6 +184,17 @@ function Builder:AddToggle(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "toggle",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing (more for emphasized toggles)
     if #self._controls > 0 then
         local spacing = options.emphasized and (ITEM_SPACING + 4) or ITEM_SPACING
@@ -205,6 +222,8 @@ function Builder:AddToggle(options)
 
         -- Track for cleanup
         table.insert(self._controls, toggle)
+        toggle._searchLabel = options.label
+        toggle._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -436,6 +455,19 @@ function Builder:AddCollapsibleSection(options)
         return self
     end
 
+    if Builder._scanMode then
+        table.insert(Builder._scanSectionStack, {
+            title = options.title,
+            componentId = options.componentId,
+            sectionKey = options.sectionKey,
+        })
+        if options.buildContent then
+            options.buildContent(self._scrollContent, self)
+        end
+        table.remove(Builder._scanSectionStack)
+        return self
+    end
+
     -- Add spacing before section
     if #self._controls > 0 or #self._sections > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -484,6 +516,7 @@ function Builder:AddCollapsibleSection(options)
         -- Create inner builder for the content area
         local innerBuilder = Builder:CreateFor(contentFrame)
         innerBuilder._useLightDim = true  -- Use lighter description text on gray background
+        innerBuilder._parentSectionTitle = options.title  -- For search navigate-to-result
         innerBuilder._parentCollapsible = section  -- Reference for dynamic height updates
 
         -- Call the build function
@@ -559,6 +592,17 @@ function Builder:AddSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "selector",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing (more for emphasized selectors)
     if #self._controls > 0 then
         local spacing = options.emphasized and (ITEM_SPACING + 4) or ITEM_SPACING
@@ -589,6 +633,8 @@ function Builder:AddSelector(options)
 
         -- Track for cleanup
         table.insert(self._controls, selector)
+        selector._searchLabel = options.label
+        selector._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -653,6 +699,17 @@ function Builder:AddSlider(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "slider",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -692,6 +749,8 @@ function Builder:AddSlider(options)
 
         -- Track for cleanup
         table.insert(self._controls, slider)
+        slider._searchLabel = options.label
+        slider._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -747,6 +806,17 @@ function Builder:AddFontSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "font",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -770,6 +840,8 @@ function Builder:AddFontSelector(options)
 
         -- Track for cleanup
         table.insert(self._controls, fontSelector)
+        fontSelector._searchLabel = options.label
+        fontSelector._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -850,6 +922,17 @@ function Builder:AddBarBorderSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "border",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -877,6 +960,8 @@ function Builder:AddBarBorderSelector(options)
 
         -- Track for cleanup
         table.insert(self._controls, barBorderSelector)
+        barBorderSelector._searchLabel = options.label
+        barBorderSelector._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -911,6 +996,26 @@ function Builder:AddTabbedSection(options)
     if not scrollContent then return self end
 
     if not options.tabs or #options.tabs == 0 or not options.componentId or not options.sectionKey then
+        return self
+    end
+
+    if Builder._scanMode then
+        if options.buildContent then
+            for _, tabData in ipairs(options.tabs) do
+                local buildFunc = options.buildContent[tabData.key]
+                if buildFunc then
+                    table.insert(Builder._scanSectionStack, {
+                        title = tabData.label,
+                        tab = tabData.key,
+                        tabLabel = tabData.label,
+                        componentId = options.componentId,
+                        sectionKey = options.sectionKey,
+                    })
+                    buildFunc(self._scrollContent, self)
+                    table.remove(Builder._scanSectionStack)
+                end
+            end
+        end
         return self
     end
 
@@ -967,6 +1072,7 @@ function Builder:AddTabbedSection(options)
                     -- Create inner builder for this tab's content
                     local innerBuilder = Builder:CreateFor(contentFrame)
                     innerBuilder._useLightDim = self._useLightDim  -- Inherit parent's light dim setting
+                    innerBuilder._parentSectionTitle = tabData.label  -- For search navigate-to-result
 
                     -- Call the build function
                     buildFunc(contentFrame, innerBuilder)
@@ -1035,6 +1141,17 @@ function Builder:AddColorPicker(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "color",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -1062,6 +1179,8 @@ function Builder:AddColorPicker(options)
 
         -- Track for cleanup
         table.insert(self._controls, colorPicker)
+        colorPicker._searchLabel = options.label
+        colorPicker._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -1102,6 +1221,17 @@ function Builder:AddToggleColorPicker(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "toggle + color",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -1131,6 +1261,8 @@ function Builder:AddToggleColorPicker(options)
 
         -- Track for cleanup
         table.insert(self._controls, toggleColor)
+        toggleColor._searchLabel = options.label
+        toggleColor._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -1173,6 +1305,17 @@ function Builder:AddSelectorColorPicker(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "selector + color",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -1205,6 +1348,8 @@ function Builder:AddSelectorColorPicker(options)
 
         -- Track for cleanup
         table.insert(self._controls, selectorColor)
+        selectorColor._searchLabel = options.label
+        selectorColor._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then
@@ -1379,6 +1524,17 @@ function Builder:AddDualBarStyleRow(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "bar style",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
     -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
@@ -1413,6 +1569,8 @@ function Builder:AddDualBarStyleRow(options)
 
         -- Track for cleanup
         table.insert(self._controls, dualBarStyle)
+        dualBarStyle._searchLabel = options.label
+        dualBarStyle._searchSection = self._parentSectionTitle
 
         -- Register by key for dynamic updates
         if options.key then

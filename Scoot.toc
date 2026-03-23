@@ -223,6 +223,7 @@ ui/v2/unitframes/BossRenderer.lua
 ui/v2/groupframes/Helpers.lua
 ui/v2/groupframes/PartyRenderer.lua
 ui/v2/groupframes/RaidRenderer.lua
+ui/v2/settingspanel/search.lua
 ui/v2/settingspanel/ascii.lua
 ui/v2/settingspanel/core.lua
 ui/v2/settingspanel/navigation.lua
