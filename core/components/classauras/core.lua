@@ -316,7 +316,7 @@ addon:RegisterComponentInitializer(function(self)
         })
         self:RegisterComponent(comp)
     end
-end)
+end, "classAuras")
 
 --------------------------------------------------------------------------------
 -- Namespace Promotions

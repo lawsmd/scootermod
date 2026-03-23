@@ -89,6 +89,7 @@ end
 
 -- Apply scale multiplier for a single unit
 local function applyScaleMultFor(unit)
+    if not addon:IsModuleEnabled("unitFrames", unit) then return end
     -- PetFrame is an Edit Mode managed/protected frame; do not scale it from addon code.
     if unit == "Pet" then
         return

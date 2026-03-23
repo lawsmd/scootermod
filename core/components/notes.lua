@@ -477,4 +477,4 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(notesComponent)
-end)
+end, "notes")

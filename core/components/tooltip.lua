@@ -624,4 +624,4 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(tooltipComponent)
-end)
+end, "tooltip")

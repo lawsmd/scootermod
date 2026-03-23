@@ -54,6 +54,11 @@ end
 -- New sections with custom state tracking must add their cleanup logic here.
 
 function UIPanel:ClearContent()
+    -- Start Here cleanup (restore scroll frame, hide reload area, destroy rows)
+    if self._startHereCleanup then
+        self._startHereCleanup()
+    end
+
     -- Builder-based content
     if self._currentBuilder then
         self._currentBuilder:Cleanup()
@@ -689,6 +694,15 @@ end
 -- Navigation Selection Handler
 
 function UIPanel:OnNavigationSelect(key, previousKey)
+    -- Navigation guard: Start Here page may require reload confirmation
+    if self._navigationGuard then
+        local guard = self._navigationGuard
+        guard(key, function()
+            self:OnNavigationSelect(key, previousKey)
+        end)
+        return
+    end
+
     local frame = self.frame
     if not frame or not frame._contentPane then return end
 
@@ -859,7 +873,7 @@ local _titleCache
 
 local function buildTitleCache()
     if _titleCache then return _titleCache end
-    _titleCache = { home = "Home" }
+    _titleCache = { home = "Home", startHere = "Start Here" }
     for _, section in ipairs(Navigation.NavModel) do
         local prefix = TITLE_PREFIX[section.key]
         if section.children then

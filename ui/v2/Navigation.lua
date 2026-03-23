@@ -36,6 +36,11 @@ local TREE_LINE_COLOR_ALPHA = 0.4
 
 Navigation.NavModel = {
     {
+        key = "startHere",
+        label = "Start Here",
+        fontSize = 15,
+    },
+    {
         key = "profiles",
         label = "Profiles",
         collapsible = true,
@@ -60,12 +65,12 @@ Navigation.NavModel = {
         label = "Interface",
         collapsible = true,
         children = {
-            { key = "damageMeter", label = "Damage Meters" },
-            { key = "tooltip", label = "Tooltip" },
-            { key = "objectiveTracker", label = "Objective Tracker" },
-            { key = "minimap", label = "Minimap" },
+            { key = "damageMeter", label = "Damage Meters", module = "damageMeter" },
+            { key = "tooltip", label = "Tooltip", module = "tooltip" },
+            { key = "objectiveTracker", label = "Objective Tracker", module = "objectiveTracker" },
+            { key = "minimap", label = "Minimap", module = "minimap" },
             { key = "chat", label = "Chat" },
-            { key = "notes", label = "Notes" },
+            { key = "notes", label = "Notes", module = "notes" },
             { key = "misc", label = "Misc." },
         },
     },
@@ -84,16 +89,16 @@ Navigation.NavModel = {
         label = "Cooldown Manager",
         collapsible = true,
         children = {
-            { key = "cdmQoL", label = "Quality of Life" },
-            { key = "essentialCooldowns", label = "Essential Cooldowns" },
-            { key = "utilityCooldowns", label = "Utility Cooldowns" },
-            { key = "trackedBuffs", label = "Tracked Buffs" },
-            { key = "trackedBars", label = "Tracked Bars" },
-            { key = "customGroup1", label = "Custom Group 1" },
-            { key = "customGroup2", label = "Custom Group 2" },
-            { key = "customGroup3", label = "Custom Group 3" },
-            { key = "customGroup4", label = "Custom Group 4" },
-            { key = "customGroup5", label = "Custom Group 5" },
+            { key = "cdmQoL", label = "Quality of Life", module = "cooldownManager" },
+            { key = "essentialCooldowns", label = "Essential Cooldowns", module = "cooldownManager" },
+            { key = "utilityCooldowns", label = "Utility Cooldowns", module = "cooldownManager" },
+            { key = "trackedBuffs", label = "Tracked Buffs", module = "cooldownManager" },
+            { key = "trackedBars", label = "Tracked Bars", module = "cooldownManager" },
+            { key = "customGroup1", label = "Custom Group 1", module = "cooldownManager" },
+            { key = "customGroup2", label = "Custom Group 2", module = "cooldownManager" },
+            { key = "customGroup3", label = "Custom Group 3", module = "cooldownManager" },
+            { key = "customGroup4", label = "Custom Group 4", module = "cooldownManager" },
+            { key = "customGroup5", label = "Custom Group 5", module = "cooldownManager" },
         },
     },
     {
@@ -101,19 +106,19 @@ Navigation.NavModel = {
         label = "Class Auras",
         collapsible = true,
         children = {
-            { key = "classAurasDeathKnight", label = "Death Knight" },
-            { key = "classAurasDemonHunter", label = "Demon Hunter" },
-            { key = "classAurasDruid",       label = "Druid" },
-            { key = "classAurasEvoker",      label = "Evoker" },
-            { key = "classAurasHunter",      label = "Hunter" },
-            { key = "classAurasMage",        label = "Mage" },
-            { key = "classAurasMonk",        label = "Monk" },
-            { key = "classAurasPaladin",     label = "Paladin" },
-            { key = "classAurasPriest",      label = "Priest" },
-            { key = "classAurasRogue",       label = "Rogue" },
-            { key = "classAurasShaman",      label = "Shaman" },
-            { key = "classAurasWarlock",     label = "Warlock" },
-            { key = "classAurasWarrior",     label = "Warrior" },
+            { key = "classAurasDeathKnight", label = "Death Knight", module = "classAuras" },
+            { key = "classAurasDemonHunter", label = "Demon Hunter", module = "classAuras" },
+            { key = "classAurasDruid",       label = "Druid", module = "classAuras" },
+            { key = "classAurasEvoker",      label = "Evoker", module = "classAuras" },
+            { key = "classAurasHunter",      label = "Hunter", module = "classAuras" },
+            { key = "classAurasMage",        label = "Mage", module = "classAuras" },
+            { key = "classAurasMonk",        label = "Monk", module = "classAuras" },
+            { key = "classAurasPaladin",     label = "Paladin", module = "classAuras" },
+            { key = "classAurasPriest",      label = "Priest", module = "classAuras" },
+            { key = "classAurasRogue",       label = "Rogue", module = "classAuras" },
+            { key = "classAurasShaman",      label = "Shaman", module = "classAuras" },
+            { key = "classAurasWarlock",     label = "Warlock", module = "classAuras" },
+            { key = "classAurasWarrior",     label = "Warrior", module = "classAuras" },
         },
     },
     {
@@ -121,10 +126,10 @@ Navigation.NavModel = {
         label = "Personal Resource",
         collapsible = true,
         children = {
-            { key = "prdGeneral", label = "General" },
-            { key = "prdHealthBar", label = "Health Bar" },
-            { key = "prdPowerBar", label = "Power Bar" },
-            { key = "prdClassResource", label = "Class Resource" },
+            { key = "prdGeneral", label = "General", module = "prd" },
+            { key = "prdHealthBar", label = "Health Bar", module = "prd" },
+            { key = "prdPowerBar", label = "Power Bar", module = "prd" },
+            { key = "prdClassResource", label = "Class Resource", module = "prd" },
         },
     },
     {
@@ -132,13 +137,13 @@ Navigation.NavModel = {
         label = "Unit Frames",
         collapsible = true,
         children = {
-            { key = "ufPlayer", label = "Player" },
-            { key = "ufTarget", label = "Target" },
-            { key = "ufFocus", label = "Focus" },
-            { key = "ufPet", label = "Pet" },
-            { key = "ufToT", label = "Target of Target" },
-            { key = "ufFocusTarget", label = "Target of Focus" },
-            { key = "ufBoss", label = "Boss" },
+            { key = "ufPlayer", label = "Player", module = "unitFrames" },
+            { key = "ufTarget", label = "Target", module = "unitFrames" },
+            { key = "ufFocus", label = "Focus", module = "unitFrames" },
+            { key = "ufPet", label = "Pet", module = "unitFrames" },
+            { key = "ufToT", label = "Target of Target", module = "unitFrames" },
+            { key = "ufFocusTarget", label = "Target of Focus", module = "unitFrames" },
+            { key = "ufBoss", label = "Boss", module = "unitFrames" },
         },
     },
     {
@@ -146,8 +151,8 @@ Navigation.NavModel = {
         label = "Group Frames",
         collapsible = true,
         children = {
-            { key = "gfParty", label = "Party Frames" },
-            { key = "gfRaid", label = "Raid Frames" },
+            { key = "gfParty", label = "Party Frames", module = "groupFrames" },
+            { key = "gfRaid", label = "Raid Frames", module = "groupFrames" },
         },
     },
     {
@@ -155,11 +160,11 @@ Navigation.NavModel = {
         label = "Action Bars",
         collapsible = true,
         children = {
-            { key = "actionBars18", label = "Action Bars 1-8" },
-            { key = "petBar", label = "Pet Bar" },
-            { key = "stanceBar", label = "Stance Bar" },
-            { key = "microBar", label = "Micro Bar" },
-            { key = "extraAbilities", label = "Extra Abilities" },
+            { key = "actionBars18", label = "Action Bars 1-8", module = "actionBars" },
+            { key = "petBar", label = "Pet Bar", module = "actionBars" },
+            { key = "stanceBar", label = "Stance Bar", module = "actionBars" },
+            { key = "microBar", label = "Micro Bar", module = "actionBars" },
+            { key = "extraAbilities", label = "Extra Abilities", module = "extraAbilities" },
         },
     },
     {
@@ -167,8 +172,8 @@ Navigation.NavModel = {
         label = "Buffs/Debuffs",
         collapsible = true,
         children = {
-            { key = "buffs", label = "Buffs" },
-            { key = "debuffs", label = "Debuffs" },
+            { key = "buffs", label = "Buffs", module = "buffsDebuffs" },
+            { key = "debuffs", label = "Debuffs", module = "buffsDebuffs" },
         },
     },
     {
@@ -176,7 +181,7 @@ Navigation.NavModel = {
         label = "Scrolling Combat Text",
         collapsible = true,
         children = {
-            { key = "sctDamage", label = "Damage Numbers" },
+            { key = "sctDamage", label = "Damage Numbers", module = "sct" },
         },
     },
     {
@@ -197,6 +202,12 @@ Navigation.NavModel = {
 Navigation._expandedSections = {}  -- Track which parent sections are expanded
 Navigation._selectedKey = nil      -- Currently selected navigation item (nil = Home via logo)
 Navigation._rows = {}              -- References to created row frames
+
+--- Check if a module category was active at session start (for nav filtering).
+function Navigation:IsNavModuleActive(moduleCategory)
+    if not addon._activeModules then return true end
+    return addon._activeModules[moduleCategory] ~= false
+end
 
 --------------------------------------------------------------------------------
 -- Custom Scrollbar
@@ -514,37 +525,40 @@ function Navigation:BuildRows(contentFrame)
         local debugEnabled = addon.db and addon.db.profile and addon.db.profile.debugMenuEnabled
         if parent.hidden and not debugEnabled then
             -- Skip this parent and its children entirely
+
         else
-        rowIndex = rowIndex + 1
+            rowIndex = rowIndex + 1
 
-        -- Create parent row
-        local parentRow = self:CreateParentRow(contentFrame, parent, yOffset)
-        self._rows[rowIndex] = parentRow
-        yOffset = yOffset - PARENT_ROW_HEIGHT
+            -- Create parent row
+            local parentRow = self:CreateParentRow(contentFrame, parent, yOffset)
+            self._rows[rowIndex] = parentRow
+            yOffset = yOffset - PARENT_ROW_HEIGHT
 
-        -- Create child rows if parent is collapsible and expanded
-        if parent.collapsible and parent.children then
-            local isExpanded = self._expandedSections[parent.key]
+            -- Create child rows if parent is collapsible and has children
+            if parent.collapsible and parent.children then
+                local isExpanded = self._expandedSections[parent.key]
 
-            for childIdx, child in ipairs(parent.children) do
-                rowIndex = rowIndex + 1
-                local isLastChild = (childIdx == #parent.children)
-                local childRow = self:CreateChildRow(
-                    contentFrame,
-                    child,
-                    yOffset,
-                    isLastChild,
-                    isExpanded,
-                    #parent.children,
-                    childIdx
-                )
-                self._rows[rowIndex] = childRow
+                for childIdx, child in ipairs(parent.children) do
+                    rowIndex = rowIndex + 1
+                    local isLastChild = (childIdx == #parent.children)
+                    local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module)
+                    local childRow = self:CreateChildRow(
+                        contentFrame,
+                        child,
+                        yOffset,
+                        isLastChild,
+                        isExpanded,
+                        #parent.children,
+                        childIdx,
+                        isModuleDisabled
+                    )
+                    self._rows[rowIndex] = childRow
 
-                if isExpanded then
-                    yOffset = yOffset - ROW_HEIGHT
+                    if isExpanded then
+                        yOffset = yOffset - ROW_HEIGHT
+                    end
                 end
             end
-        end
         end  -- end else (skip hidden sections)
     end
 
@@ -609,7 +623,8 @@ function Navigation:CreateParentRow(parent, navItem, yOffset)
 
     -- Label text
     local label = row:CreateFontString(nil, "OVERLAY")
-    Theme:ApplyLabelFont(label, 12)
+    local labelSize = navItem.fontSize or 12
+    Theme:ApplyLabelFont(label, labelSize)
     if navItem.collapsible then
         label:SetPoint("LEFT", indicator, "RIGHT", 6, 0)
     else
@@ -653,7 +668,7 @@ end
 -- Create Child Row (with texture-based tree lines)
 --------------------------------------------------------------------------------
 
-function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisible, totalChildren, childIndex)
+function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisible, totalChildren, childIndex, isModuleDisabled)
     local row = CreateFrame("Button", nil, parent)
     row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
@@ -666,6 +681,7 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
     row._isParent = false
     row._navItem = navItem
     row._isLastChild = isLastChild
+    row._isModuleDisabled = isModuleDisabled
 
     local ar, ag, ab = Theme:GetAccentColor()
 
@@ -718,28 +734,41 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
     label:SetText(navItem.label)
     row._label = label
 
-    -- Hover effect
-    row:SetScript("OnEnter", function(self)
-        local r, g, b = Theme:GetAccentColor()
-        self._hoverBg:SetColorTexture(r, g, b, 0.15)
-        self._hoverBg:Show()
-        self._label:SetTextColor(r, g, b, 1)
-    end)
-
-    row:SetScript("OnLeave", function(self)
-        self._hoverBg:Hide()
-        if Navigation._selectedKey == self._key then
-            local r, g, b = Theme:GetAccentColor()
-            self._label:SetTextColor(r, g, b, 1)
-        else
-            self._label:SetTextColor(1, 1, 1, 1)
+    if isModuleDisabled then
+        -- Disabled module: gray out label and tree lines, no interaction
+        local dimR, dimG, dimB = Theme:GetDimTextColor()
+        label:SetTextColor(dimR, dimG, dimB, 0.35)
+        for _, line in pairs(treeLines) do
+            line:SetColorTexture(ar, ag, ab, TREE_LINE_COLOR_ALPHA * 0.3)
         end
-    end)
+        row:SetScript("OnEnter", nil)
+        row:SetScript("OnLeave", nil)
+        row:SetScript("OnClick", nil)
+        row:EnableMouse(false)
+    else
+        -- Hover effect
+        row:SetScript("OnEnter", function(self)
+            local r, g, b = Theme:GetAccentColor()
+            self._hoverBg:SetColorTexture(r, g, b, 0.15)
+            self._hoverBg:Show()
+            self._label:SetTextColor(r, g, b, 1)
+        end)
 
-    -- Click handler
-    row:SetScript("OnClick", function(self, button)
-        Navigation:SelectItem(self._key)
-    end)
+        row:SetScript("OnLeave", function(self)
+            self._hoverBg:Hide()
+            if Navigation._selectedKey == self._key then
+                local r, g, b = Theme:GetAccentColor()
+                self._label:SetTextColor(r, g, b, 1)
+            else
+                self._label:SetTextColor(1, 1, 1, 1)
+            end
+        end)
+
+        -- Click handler
+        row:SetScript("OnClick", function(self, button)
+            Navigation:SelectItem(self._key)
+        end)
+    end
 
     -- Set visibility
     if isVisible then
@@ -793,6 +822,7 @@ end
 
 function Navigation:UpdateRowSelectionState(row)
     if not row or not row._key then return end
+    if row._isModuleDisabled then return end
 
     local isSelected = (self._selectedKey == row._key)
     local ar, ag, ab = Theme:GetAccentColor()
@@ -837,8 +867,9 @@ function Navigation:UpdateRowColors()
 
             -- Update tree line colors for child rows
             if row._treeLines then
+                local alpha = row._isModuleDisabled and (TREE_LINE_COLOR_ALPHA * 0.3) or TREE_LINE_COLOR_ALPHA
                 for _, line in pairs(row._treeLines) do
-                    line:SetColorTexture(ar, ag, ab, TREE_LINE_COLOR_ALPHA)
+                    line:SetColorTexture(ar, ag, ab, alpha)
                 end
             end
 

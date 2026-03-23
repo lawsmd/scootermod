@@ -321,6 +321,7 @@ local function applyClassResourceForUnit(unit)
 	if unit ~= "Player" then
 		return
 	end
+	if not addon:IsModuleEnabled("unitFrames", "Player") then return end
 
 	local cfg = getClassResourceConfig()
 	if not cfg then

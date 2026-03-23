@@ -674,7 +674,7 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(minimapComponent)
-end)
+end, "minimap")
 
 -- Export anchor/position options for UI
 addon.MinimapAnchorOptions = ANCHOR_OPTIONS

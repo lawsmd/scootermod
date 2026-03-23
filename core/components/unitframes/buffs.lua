@@ -42,6 +42,7 @@ do
 	-- Internal implementation that accepts a visualOnly flag for combat-safe styling
 	local function applyBuffsDebuffsForUnitInternal(unit, visualOnly)
 		if unit ~= "Target" and unit ~= "Focus" then return end
+		if not addon:IsModuleEnabled("unitFrames", unit) then return end
 
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end

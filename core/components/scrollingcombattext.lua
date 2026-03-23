@@ -155,6 +155,6 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(sctDamage)
-end)
+end, "sct")
 
 

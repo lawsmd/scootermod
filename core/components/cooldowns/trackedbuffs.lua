@@ -83,4 +83,4 @@ addon:RegisterComponentInitializer(function(self)
         RefreshOpacity = addon.CDMIconRefreshOpacity,
     })
     self:RegisterComponent(trackedBuffs)
-end)
+end, "cooldownManager")

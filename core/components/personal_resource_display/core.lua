@@ -604,7 +604,7 @@ addon:RegisterComponentInitializer(function(self)
     end
     ensureHooks(classRes)
     self:RegisterComponent(classRes)
-end)
+end, "prd")
 
 --------------------------------------------------------------------------------
 -- Namespace Promotions

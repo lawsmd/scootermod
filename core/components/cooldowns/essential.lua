@@ -97,4 +97,4 @@ addon:RegisterComponentInitializer(function(self)
         RefreshOpacity = addon.CDMIconRefreshOpacity,
     })
     self:RegisterComponent(essentialCooldowns)
-end)
+end, "cooldownManager")

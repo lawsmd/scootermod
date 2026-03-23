@@ -46,6 +46,7 @@ core/profiles/spec.lua
 core/rules.lua
 core/apply_all.lua
 core/iconratio.lua
+core/modules.lua
 core/components/base/core.lua
 core/components/base/utilities.lua
 core/components/base/iconborders.lua
@@ -174,6 +175,7 @@ ui/v2/Navigation.lua
 ui/v2/SettingsBuilder.lua
 ui/v2/settings/Helpers.lua
 ui/v2/settingspanel/renderers.lua
+ui/v2/settings/StartHereRenderer.lua
 ui/v2/settings/cdm/QoLRenderer.lua
 ui/v2/settings/cdm/EssentialCooldownsRenderer.lua
 ui/v2/settings/cdm/UtilityCooldownsRenderer.lua

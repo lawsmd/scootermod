@@ -882,5 +882,5 @@ addon:RegisterComponentInitializer(function(self)
         RefreshOpacity = RefreshAuraOpacity,
     })
     self:RegisterComponent(debuffs)
-end)
+end, "buffsDebuffs")
 

@@ -873,7 +873,7 @@ addon:RegisterComponentInitializer(function(self)
     })
 
     self:RegisterComponent(objectiveTracker)
-end)
+end, "objectiveTracker")
 
 
 

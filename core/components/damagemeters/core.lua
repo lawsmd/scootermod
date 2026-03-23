@@ -816,4 +816,4 @@ addon:RegisterComponentInitializer(function(self)
             addon.DebugShowWindow("DM Zero-Touch State", lines)
         end
     end
-end)
+end, "damageMeter")

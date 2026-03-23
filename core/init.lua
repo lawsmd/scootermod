@@ -11,14 +11,9 @@ function addon:OnInitialize()
     end
     -- Warm up bundled fonts early to avoid first-open rendering differences
     if addon.PreloadFonts then addon.PreloadFonts() end
-    -- 1. Define components and populate self.Components
-    self:InitializeComponents()
-    
-    -- Explicitly require the new ScrollingCombatText component file (if loaded via TOC, this is handled)
-    -- but we ensure its initializer runs if it used the RegisterComponent pattern
 
-
-    -- 2. Create the database, using the component list to build defaults
+    -- 1. Create the database first so moduleEnabled is available for component gating.
+    --    GetDefaults() does not reference self.Components — safe to call before init.
     self.db = LibStub("AceDB-3.0"):New("ScootDB", self:GetDefaults(), true)
 
     if self.Profiles and self.Profiles.Initialize then
@@ -52,6 +47,22 @@ function addon:OnInitialize()
 
     -- NOTE: pendingProfileActivation is consumed in Profiles:Initialize() so the new
     -- profile/layout is activated as early as possible (before ApplyStyles runs).
+
+    -- 2. Define components — disabled modules are skipped via moduleEnabled checks.
+    self:InitializeComponents()
+
+    -- Snapshot which modules are active this session (for nav filtering).
+    self._activeModules = {}
+    local me = self.db and self.db.profile and self.db.profile.moduleEnabled
+    if me then
+        for k, v in pairs(me) do
+            if type(v) == "table" then
+                self._activeModules[k] = v._enabled ~= false
+            else
+                self._activeModules[k] = v ~= false
+            end
+        end
+    end
 
     -- 3. Now that DB exists, link components to their DB tables
     self:LinkComponentsToDB()
@@ -113,6 +124,22 @@ function addon:GetDefaults()
             rulesState = {
                 baselines = {},
                 nextId = 1,
+            },
+            moduleEnabled = {
+                actionBars = true,
+                buffsDebuffs = true,
+                classAuras = true,
+                cooldownManager = true,
+                damageMeter = true,
+                extraAbilities = true,
+                groupFrames = true,
+                minimap = true,
+                notes = true,
+                objectiveTracker = true,
+                prd = true,
+                sct = true,
+                tooltip = true,
+                unitFrames = true,
             },
             groupFrames = {
                 raid = {

@@ -87,6 +87,7 @@ end
 -- This is character-scoped in Blizzard, so we enforce per-profile by setting it
 -- when the active Scoot profile changes.
 local function ApplyCooldownViewerEnabledForActiveProfile(reason)
+    if not addon:IsModuleEnabled("cooldownManager") then return end
     local profile = addon and addon.db and addon.db.profile
     local q = profile and profile.cdmQoL
     local desired = q and q.enableCDM
@@ -160,6 +161,7 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
 end
 
 local function ApplyPRDEnabledForActiveProfile(reason)
+    if not addon:IsModuleEnabled("prd") then return end
     local profile = addon and addon.db and addon.db.profile
     local s = profile and profile.prdSettings
     local desired = s and s.enablePRD
@@ -202,6 +204,7 @@ local function ApplyPRDEnabledForActiveProfile(reason)
 end
 
 local function ApplyDamageMeterEnabledForActiveProfile(reason)
+    if not addon:IsModuleEnabled("damageMeter") then return end
     local profile = addon and addon.db and addon.db.profile
     local s = profile and profile.damageMeterSettings
     local desired = s and s.enableDamageMeter
@@ -296,6 +299,7 @@ local function applyBarSettingsAPI(barNum, desired)
 end
 
 local function ApplyActionBarsEnabledForActiveProfile(reason)
+    if not addon:IsModuleEnabled("actionBars") then return end
     local profile = addon and addon.db and addon.db.profile
     local s = profile and profile.actionBarSettings
     if not s then

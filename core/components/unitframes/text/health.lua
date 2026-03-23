@@ -506,6 +506,7 @@ do
     end
 
     local function applyForUnit(unit)
+        if not addon:IsModuleEnabled("unitFrames", unit) then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         -- Zero‑Touch: do not create config tables. If this unit has no config, do nothing.
@@ -779,6 +780,7 @@ do
     -- Lightweight visibility-only function used by UpdateTextString hooks.
     -- Uses SetAlpha instead of SetShown to avoid taint during combat.
     function addon.ApplyUnitFrameHealthTextVisibilityFor(unit)
+        if not addon:IsModuleEnabled("unitFrames", unit) then return end
         local db = addon and addon.db and addon.db.profile
         if not db then return end
         local unitFrames = rawget(db, "unitFrames")

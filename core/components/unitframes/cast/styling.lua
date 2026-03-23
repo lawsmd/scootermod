@@ -148,6 +148,7 @@ do
 
 	local function applyCastBarForUnit(unit)
 		if unit ~= "Player" and unit ~= "Target" and unit ~= "Focus" then return end
+		if not addon:IsModuleEnabled("unitFrames", unit) then return end
 
 		local db = addon and addon.db and addon.db.profile
 		if not db then return end

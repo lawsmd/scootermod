@@ -2106,5 +2106,5 @@ addon:RegisterComponentInitializer(function(self)
     C_Timer.After(0.5, function()
         Overlays.Initialize()
     end)
-end)
+end, "cooldownManager")
 

@@ -48,6 +48,7 @@ do
     end
 
     local function applyVisibilityForUnit(unit)
+        if not addon:IsModuleEnabled("unitFrames", unit) then return end
         local frame = getUnitFrameFor(unit)
         if not frame or not frame.SetAlpha then return end
 
@@ -119,6 +120,7 @@ do
     end
 
     local function applyThreatMeterVisibility(unit)
+        if not addon:IsModuleEnabled("unitFrames", unit) then return end
         local threatFrame = getThreatMeterFrame(unit)
         if not threatFrame then return end
 
@@ -246,6 +248,7 @@ do
     end
 
     local function applyBossThreatCounterVisibilityFor(index)
+        if not addon:IsModuleEnabled("unitFrames", "Boss") then return end
         local threatFrame = getBossThreatCounterFrame(index)
         if not threatFrame then return end
 
@@ -356,6 +359,7 @@ do
     end
 
     local function applyBossHighLevelIconVisibilityFor(index)
+        if not addon:IsModuleEnabled("unitFrames", "Boss") then return end
         local iconFrame = getBossHighLevelIconFrame(index)
         if not iconFrame then return end
 
@@ -454,6 +458,7 @@ do
     end
 
     local function applyBossIconVisibility()
+        if not addon:IsModuleEnabled("unitFrames", "Target") then return end
         local bossIconFrame = getBossIconFrame()
         if not bossIconFrame then return end
 
@@ -556,6 +561,7 @@ do
     end
 
     local function applyRoleIconVisibility()
+        if not addon:IsModuleEnabled("unitFrames", "Player") then return end
         local roleIconFrame = getRoleIconFrame()
         if not roleIconFrame then return end
 
@@ -669,6 +675,7 @@ do
     end
 
     local function applyGroupNumberVisibility()
+        if not addon:IsModuleEnabled("unitFrames", "Player") then return end
         local groupIndicatorFrame = getGroupIndicatorFrame()
         local groupIndicatorText = getGroupIndicatorTextFrame()
 
@@ -846,6 +853,7 @@ do
     end
 
     local function applyPvPIconVisibility()
+        if not addon:IsModuleEnabled("unitFrames", "Player") then return end
         local prestigeBadge = getPrestigeBadge()
         local prestigePortrait = getPrestigePortrait()
 
@@ -1021,6 +1029,7 @@ do
     end
 
     local function applyPetFrameHiddenState()
+        if not addon:IsModuleEnabled("unitFrames", "Pet") then return end
         local petFrame = getPetFrame()
         if not petFrame then return end
 

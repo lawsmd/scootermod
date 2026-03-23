@@ -128,6 +128,7 @@ end
 --------------------------------------------------------------------------------
 
 local function applyToTScale()
+    if not addon:IsModuleEnabled("unitFrames", "TargetOfTarget") then return end
     local cfg = getToTDB()
     if not cfg then return end
 
@@ -169,6 +170,7 @@ local function applyToTScale()
 end
 
 local function applyToTPosition()
+    if not addon:IsModuleEnabled("unitFrames", "TargetOfTarget") then return end
     local cfg = getToTDB()
     if not cfg then return end
 
@@ -240,6 +242,7 @@ end
 local focusToTHookInstalled = false
 
 local function applyFocusTargetScale()
+    if not addon:IsModuleEnabled("unitFrames", "FocusTarget") then return end
     local cfg = getFocusTargetDB()
     if not cfg then return end
 
@@ -281,6 +284,7 @@ local function applyFocusTargetScale()
 end
 
 local function applyFocusTargetPosition()
+    if not addon:IsModuleEnabled("unitFrames", "FocusTarget") then return end
     local cfg = getFocusTargetDB()
     if not cfg then return end
 

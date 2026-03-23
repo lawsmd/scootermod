@@ -703,4 +703,4 @@ addon:RegisterComponentInitializer(function(self)
             addon.DebugShowWindow("Tracked Bars State", table.concat(lines, "\n"))
         end
     end
-end)
+end, "cooldownManager")

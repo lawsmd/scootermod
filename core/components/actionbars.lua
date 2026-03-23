@@ -1082,7 +1082,7 @@ addon:RegisterComponentInitializer(function(self)
         ApplyStyling = ApplyActionBarStyling,
     })
     self:RegisterComponent(petBar)
-end)
+end, "actionBars")
 
 function addon.CopyActionBarSettings(sourceComponentId, destComponentId)
     if type(sourceComponentId) ~= "string" or type(destComponentId) ~= "string" then return end

@@ -270,6 +270,7 @@ end
 
 -- Apply unclamp/clamp state for a single unit.
 local function applyFor(unit)
+	if not addon:IsModuleEnabled("unitFrames", unit) then return false end
 	local candidates = _CollectCandidateFrames(unit)
 	if not candidates or #candidates == 0 then
 		return false
