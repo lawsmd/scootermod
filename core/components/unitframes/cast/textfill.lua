@@ -8,6 +8,24 @@ local getState = CB._getState
 -- Text-Fill Cast Bar mode helpers
 -- =========================================================================
 
+-- Empowered cast tier colors (shared with styling.lua via CB namespace).
+-- Brightened to compensate for vertex color multiplication on custom textures.
+CB._TIER_COLORS_NORMAL = {
+	{ 0.45, 0.95, 0.55 },  -- Tier 1: bright green
+	{ 1.00, 0.90, 0.30 },  -- Tier 2: bright yellow
+	{ 1.00, 0.55, 0.25 },  -- Tier 3: bright orange
+	{ 1.00, 0.30, 0.20 },  -- Tier 4: bright red
+}
+CB._TIER_COLORS_DISABLED = {
+	{ 0.18, 0.40, 0.22 },  -- ~40% of normal
+	{ 0.40, 0.36, 0.12 },
+	{ 0.40, 0.22, 0.10 },
+	{ 0.40, 0.12, 0.08 },
+}
+local TIER_COLORS_NORMAL = CB._TIER_COLORS_NORMAL
+local TIER_COLORS_DISABLED = CB._TIER_COLORS_DISABLED
+local MAX_EMPOWERED_TIERS = 5
+
 -- Resolve the fill color from cast bar color settings (mirrors bars/textures.lua logic)
 local function resolveBarFillColor(cfg, unit)
 	local colorMode = cfg.castBarColorMode or "default"
@@ -96,6 +114,43 @@ local function ensureTextFillElements(frame)
 	return elements
 end
 
+-- Lazily create empowered text-fill elements (tier-colored line segments + pip dividers).
+-- Reuses the existing clipFrame from the base text-fill elements. Created once per frame,
+-- reused across empowered casts. Elements are hidden initially.
+local function ensureEmpoweredTextFillElements(frame, elements)
+	if elements.empowered then return elements.empowered end
+
+	local clipFrame = elements.clipFrame
+	local emp = {
+		filledSegs = {},
+		unfilledSegs = {},
+		pipDividers = {},
+		numActive = 0,
+		active = false,
+	}
+
+	for i = 1, MAX_EMPOWERED_TIERS do
+		-- Unfilled segments: on bar frame, same sublayer as unfilledLine (BACKGROUND:1)
+		emp.unfilledSegs[i] = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+		emp.unfilledSegs[i]:Hide()
+
+		-- Filled segments: in clipFrame, same sublayer as filledLine (BACKGROUND:2)
+		emp.filledSegs[i] = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 2)
+		emp.filledSegs[i]:Hide()
+	end
+
+	-- Pip dividers: on bar frame, above caps (ARTWORK:3) so they're visible on both portions
+	for i = 1, MAX_EMPOWERED_TIERS - 1 do
+		local pip = frame:CreateTexture(nil, "ARTWORK", nil, 3)
+		pip:SetColorTexture(0, 0, 0, 1)
+		pip:Hide()
+		emp.pipDividers[i] = pip
+	end
+
+	elements.empowered = emp
+	return emp
+end
+
 -- One-time install of Show() hooks on decorative textures that Blizzard actively
 -- re-shows during casts (ShowSpark, FinishSpell, StandardFinish OnPlay, etc.).
 -- Instead of fighting the animation state machine with Stop(), we let animations
@@ -127,8 +182,214 @@ local function installTextFillShowGuards(frame)
 	end
 end
 
--- Apply text-fill mode visuals to a cast bar frame
-local function applyTextFillMode(frame, cfg, unit)
+-- Activate empowered text-fill: replace single-color line with tier-colored segments
+-- anchored between Blizzard's StagePip frames. Deferred because AddStages creates
+-- StagePips after the cast starts. Uses anchor-based positioning (secret-safe).
+local function activateEmpoweredTextFill(frame, elements, cfg, unit)
+	local emp = ensureEmpoweredTextFillElements(frame, elements)
+
+	-- Hide single-color line elements (keep outlines visible — they frame the full bar)
+	elements.unfilledLine:Hide()
+	elements.filledLine:Hide()
+
+	-- Mark empowered mode on frame for the stage updater in styling.lua
+	setProp(frame, "textFillEmpowered", true)
+
+	-- Read text-fill settings
+	local lineHeight = math.max(1, math.min(10, tonumber(cfg.textFillLineHeight) or 2))
+	local capSize = math.max(2, math.min(20, tonumber(cfg.textFillEndCapSize) or 6))
+
+	-- Resolve foreground texture
+	local texKey = cfg.castBarTexture or "default"
+	local texturePath = addon.Media and addon.Media.ResolveBarTexturePath
+		and addon.Media.ResolveBarTexturePath(texKey)
+
+	-- Defer to ensure Blizzard's AddStages has created StagePips
+	C_Timer.After(0, function()
+		-- Guard: empowered text-fill may have been deactivated before this fires
+		if not getProp(frame, "textFillActive") then return end
+		if not getProp(frame, "textFillEmpowered") then return end
+
+		-- Read StagePips with secret guard
+		local pips = frame.StagePips
+		if not pips or (issecretvalue and issecretvalue(pips)) then
+			-- Fallback: re-show single-color lines
+			elements.unfilledLine:Show()
+			elements.filledLine:Show()
+			setProp(frame, "textFillEmpowered", nil)
+			return
+		end
+		local numPips = #pips
+		if numPips == 0 then
+			elements.unfilledLine:Show()
+			elements.filledLine:Show()
+			setProp(frame, "textFillEmpowered", nil)
+			return
+		end
+
+		local numSegments = numPips + 1  -- one more segment than pips
+		if numSegments > MAX_EMPOWERED_TIERS then numSegments = MAX_EMPOWERED_TIERS end
+		emp.numActive = numSegments
+
+		-- Configure and show segments
+		for i = 1, numSegments do
+			local nColor = TIER_COLORS_NORMAL[i] or TIER_COLORS_NORMAL[#TIER_COLORS_NORMAL]
+			local dColor = TIER_COLORS_DISABLED[i] or TIER_COLORS_DISABLED[#TIER_COLORS_DISABLED]
+
+			-- Unfilled segment (on bar frame)
+			local uSeg = emp.unfilledSegs[i]
+			uSeg:ClearAllPoints()
+			uSeg:SetHeight(lineHeight)
+			if i == 1 then
+				uSeg:SetPoint("LEFT", frame, "LEFT", 0, 0)
+			else
+				uSeg:SetPoint("LEFT", pips[i - 1], "CENTER", 0, 0)
+			end
+			if i <= numPips then
+				uSeg:SetPoint("RIGHT", pips[i], "CENTER", 0, 0)
+			else
+				uSeg:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+			end
+			uSeg:SetColorTexture(dColor[1], dColor[2], dColor[3], 1)
+			uSeg:Show()
+
+			-- Filled segment (in clipFrame, anchored to bar frame — clipped by clip bounds)
+			local fSeg = emp.filledSegs[i]
+			fSeg:ClearAllPoints()
+			fSeg:SetHeight(lineHeight)
+			if i == 1 then
+				fSeg:SetPoint("LEFT", frame, "LEFT", 0, 0)
+			else
+				fSeg:SetPoint("LEFT", pips[i - 1], "CENTER", 0, 0)
+			end
+			if i <= numPips then
+				fSeg:SetPoint("RIGHT", pips[i], "CENTER", 0, 0)
+			else
+				fSeg:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+			end
+			if texturePath then
+				fSeg:SetTexture(texturePath)
+				fSeg:SetVertexColor(nColor[1], nColor[2], nColor[3], 1)
+			else
+				fSeg:SetColorTexture(nColor[1], nColor[2], nColor[3], 1)
+			end
+			fSeg:Show()
+		end
+
+		-- Hide unused segments
+		for i = numSegments + 1, MAX_EMPOWERED_TIERS do
+			emp.unfilledSegs[i]:Hide()
+			emp.filledSegs[i]:Hide()
+		end
+
+		-- Configure and show pip dividers at stage boundaries
+		for i = 1, math.min(numPips, MAX_EMPOWERED_TIERS - 1) do
+			local div = emp.pipDividers[i]
+			div:ClearAllPoints()
+			div:SetSize(1, capSize)
+			div:SetPoint("CENTER", pips[i], "CENTER", 0, 0)
+			div:Show()
+		end
+		for i = numPips + 1, MAX_EMPOWERED_TIERS - 1 do
+			emp.pipDividers[i]:Hide()
+		end
+
+		-- Color end caps to match tier colors
+		local firstD = TIER_COLORS_DISABLED[1]
+		local firstN = TIER_COLORS_NORMAL[1]
+		local lastD = TIER_COLORS_DISABLED[numSegments] or TIER_COLORS_DISABLED[#TIER_COLORS_DISABLED]
+		local lastN = TIER_COLORS_NORMAL[numSegments] or TIER_COLORS_NORMAL[#TIER_COLORS_NORMAL]
+
+		-- Unfilled caps: disabled tier colors
+		elements.unfilledLeftCap:SetColorTexture(firstD[1], firstD[2], firstD[3], 1)
+		elements.unfilledRightCap:SetColorTexture(lastD[1], lastD[2], lastD[3], 1)
+
+		-- Filled caps: bright tier colors (with texture support)
+		if texturePath then
+			elements.filledLeftCap:SetTexture(texturePath)
+			elements.filledLeftCap:SetVertexColor(firstN[1], firstN[2], firstN[3], 1)
+			elements.filledRightCap:SetTexture(texturePath)
+			elements.filledRightCap:SetVertexColor(lastN[1], lastN[2], lastN[3], 1)
+		else
+			elements.filledLeftCap:SetColorTexture(firstN[1], firstN[2], firstN[3], 1)
+			elements.filledRightCap:SetColorTexture(lastN[1], lastN[2], lastN[3], 1)
+		end
+
+		-- Set filled text color to tier 1 (green) — stage updater will advance this
+		elements.filledText:SetTextColor(firstN[1], firstN[2], firstN[3], 1)
+
+		-- Hide Blizzard StageTier visuals (keep frames for potential reference)
+		local tiers = frame.StageTiers
+		if tiers and not (issecretvalue and issecretvalue(tiers)) then
+			for _, tier in ipairs(tiers) do
+				if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+					if tier.Normal then pcall(tier.Normal.SetAlpha, tier.Normal, 0) end
+					if tier.Disabled then pcall(tier.Disabled.SetAlpha, tier.Disabled, 0) end
+					if tier.Glow then pcall(tier.Glow.SetAlpha, tier.Glow, 0) end
+				end
+			end
+		end
+
+		-- Hide Blizzard StagePip visuals (keep frames positioned for anchoring)
+		for _, pip in ipairs(pips) do
+			if pip and not (pip.IsForbidden and pip:IsForbidden()) then
+				if pip.BasePip then pcall(pip.BasePip.SetAlpha, pip.BasePip, 0) end
+				if pip.PipFlare then pcall(pip.PipFlare.SetAlpha, pip.PipFlare, 0) end
+			end
+		end
+
+		emp.active = true
+	end)
+end
+
+-- Deactivate empowered text-fill: hide tier segments, restore Blizzard alphas.
+-- The single-color line elements will be re-shown by the next applyTextFillMode call.
+local function deactivateEmpoweredTextFill(frame, elements)
+	local emp = elements and elements.empowered
+	if not emp then return end
+
+	-- Hide all empowered segments and pip dividers
+	for i = 1, MAX_EMPOWERED_TIERS do
+		if emp.unfilledSegs[i] then emp.unfilledSegs[i]:Hide() end
+		if emp.filledSegs[i] then emp.filledSegs[i]:Hide() end
+	end
+	for i = 1, MAX_EMPOWERED_TIERS - 1 do
+		if emp.pipDividers[i] then emp.pipDividers[i]:Hide() end
+	end
+
+	emp.numActive = 0
+	emp.active = false
+
+	-- Clear empowered flag
+	setProp(frame, "textFillEmpowered", nil)
+
+	-- Restore Blizzard StageTier alphas
+	local tiers = frame.StageTiers
+	if tiers and not (issecretvalue and issecretvalue(tiers)) then
+		for _, tier in ipairs(tiers) do
+			if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+				if tier.Normal then pcall(tier.Normal.SetAlpha, tier.Normal, 1) end
+				if tier.Disabled then pcall(tier.Disabled.SetAlpha, tier.Disabled, 1) end
+				if tier.Glow then pcall(tier.Glow.SetAlpha, tier.Glow, 1) end
+			end
+		end
+	end
+
+	-- Restore Blizzard StagePip alphas
+	local pips = frame.StagePips
+	if pips and not (issecretvalue and issecretvalue(pips)) then
+		for _, pip in ipairs(pips) do
+			if pip and not (pip.IsForbidden and pip:IsForbidden()) then
+				if pip.BasePip then pcall(pip.BasePip.SetAlpha, pip.BasePip, 1) end
+				if pip.PipFlare then pcall(pip.PipFlare.SetAlpha, pip.PipFlare, 1) end
+			end
+		end
+	end
+end
+
+-- Apply text-fill mode visuals to a cast bar frame.
+-- empowered: boolean — when true, replaces single-color line with tier-colored segments.
+local function applyTextFillMode(frame, cfg, unit, empowered)
 	local elements = ensureTextFillElements(frame)
 
 	-- Resolve fill color from cast bar color settings
@@ -393,7 +654,8 @@ local function applyTextFillMode(frame, cfg, unit)
 
 	-- Filled text color: use spell name font color (not bar fill color).
 	-- Bar fill color (r, g, b, a) continues to drive line and cap textures only.
-	do
+	-- During empowered casts, skip — activateEmpoweredTextFill sets tier colors instead.
+	if not empowered then
 		local sc = (cfg.spellNameText or {}).color or {1, 1, 1, 1}
 		elements.filledText:SetTextColor(sc[1] or 1, sc[2] or 1, sc[3] or 1, sc[4] or 1)
 	end
@@ -492,12 +754,29 @@ local function applyTextFillMode(frame, cfg, unit)
 			end)
 		end)
 	end
+
+	-- Empowered cast: replace single-color line with tier-colored segments
+	if empowered then
+		activateEmpoweredTextFill(frame, elements, cfg, unit)
+	elseif elements.empowered and elements.empowered.active then
+		-- Was empowered, now not — deactivate empowered elements
+		deactivateEmpoweredTextFill(frame, elements)
+		-- Re-show single-color lines (hidden by activateEmpoweredTextFill)
+		elements.unfilledLine:Show()
+		elements.filledLine:Show()
+	end
 end
 
 -- Hide text-fill elements (when switching back to default mode)
 local function hideTextFillElements(frame)
 	local elements = getProp(frame, "textFillElements")
 	if not elements then return end
+
+	-- Deactivate empowered text-fill if active
+	if elements.empowered and elements.empowered.active then
+		deactivateEmpoweredTextFill(frame, elements)
+	end
+
 	elements.unfilledLineOL:Hide()
 	elements.unfilledLeftCapOL:Hide()
 	elements.unfilledRightCapOL:Hide()
@@ -575,9 +854,12 @@ local function syncTextFillText(frame, cfg)
 		end
 	end
 	rawText = rawText or ""
+	-- During empowered text-fill, skip gradient coloring — stage updater manages filled text color.
+	-- Use plain text so SetTextColor from the stage updater is the sole color source.
+	local isEmpoweredTF = elements.empowered and elements.empowered.active
 	local styleCfg_tf = cfg.spellNameText or {}
 	local colorMode_tf = styleCfg_tf.colorMode or "default"
-	if (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
+	if not isEmpoweredTF and (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 	else
@@ -651,3 +933,4 @@ end
 CB._applyTextFillMode = applyTextFillMode
 CB._hideTextFillElements = hideTextFillElements
 CB._syncTextFillText = syncTextFillText
+CB._deactivateEmpoweredTextFill = deactivateEmpoweredTextFill

@@ -680,11 +680,9 @@ do
 
 			-- Text-Fill Cast Bar mode
 			local castBarMode = cfg.castBarMode or "default"
-			-- Empowered casts fall back to default (stage tiers incompatible with text-fill)
-			if isEmpoweredCast(unit) then castBarMode = "default" end
 
 			if castBarMode == "textFill" then
-				pcall(applyTextFillMode, frame, cfg, unit)
+				pcall(applyTextFillMode, frame, cfg, unit, isEmpoweredCast(unit))
 			else
 				hideTextFillElements(frame)
 			end
@@ -1284,20 +1282,81 @@ do
 		local tierOverlays = setmetatable({}, { __mode = "k" })
 		local empoweredStageUpdater
 
-		-- Brightened tier colors to compensate for vertex color multiplication on custom textures.
-		-- Dominant channel pushed near 1.0 so the custom texture's own coloring doesn't dim them.
-		local TIER_COLORS_NORMAL = {
-			{ 0.45, 0.95, 0.55 },  -- Tier 1: bright green
-			{ 1.00, 0.90, 0.30 },  -- Tier 2: bright yellow
-			{ 1.00, 0.55, 0.25 },  -- Tier 3: bright orange
-			{ 1.00, 0.30, 0.20 },  -- Tier 4: bright red
-		}
-		local TIER_COLORS_DISABLED = {
-			{ 0.18, 0.40, 0.22 },  -- ~40% of normal
-			{ 0.40, 0.36, 0.12 },
-			{ 0.40, 0.22, 0.10 },
-			{ 0.40, 0.12, 0.08 },
-		}
+		-- Tier colors: shared from textfill.lua via CB namespace
+		local TIER_COLORS_NORMAL = CB._TIER_COLORS_NORMAL
+		local TIER_COLORS_DISABLED = CB._TIER_COLORS_DISABLED
+
+		-- Lazily create the shared empowered stage updater (handles both default and text-fill modes).
+		-- OnUpdate reads CurrSpellStage and transitions colors on tier overlays or text-fill segments.
+		local function ensureEmpoweredStageUpdater()
+			if empoweredStageUpdater then return end
+			empoweredStageUpdater = CreateFrame("Frame")
+			empoweredStageUpdater:SetScript("OnUpdate", function(self)
+				local f = self._castFrame
+				if not f then
+					self:Hide()
+					return
+				end
+				local stage = f.CurrSpellStage
+				if not stage or stage == self._lastStage or type(stage) ~= "number" then return end
+				if issecretvalue and issecretvalue(stage) then return end
+				self._lastStage = stage
+
+				-- Text-fill empowered mode: update segment + cap + text colors
+				if getProp(f, "textFillEmpowered") then
+					local els = getProp(f, "textFillElements")
+					local emp = els and els.empowered
+					if emp and emp.active then
+						local CN = CB._TIER_COLORS_NORMAL
+						local CD = CB._TIER_COLORS_DISABLED
+						-- Unfilled segments: completed stages go bright
+						for i = 1, emp.numActive do
+							local completed = (i <= stage)
+							local c = completed and CN[i] or CD[i]
+							c = c or CD[#CD]
+							if emp.unfilledSegs[i] then
+								emp.unfilledSegs[i]:SetColorTexture(c[1], c[2], c[3], 1)
+							end
+						end
+						-- Unfilled left cap: always bright (stage 1 reached first)
+						local firstN = CN[1]
+						if els.unfilledLeftCap and firstN then
+							els.unfilledLeftCap:SetColorTexture(firstN[1], firstN[2], firstN[3], 1)
+						end
+						-- Unfilled right cap: bright when last stage reached
+						local lastIdx = emp.numActive
+						local lastCompleted = (lastIdx <= stage)
+						local lastC = lastCompleted and CN[lastIdx] or CD[lastIdx]
+						lastC = lastC or CD[#CD]
+						if els.unfilledRightCap then
+							els.unfilledRightCap:SetColorTexture(lastC[1], lastC[2], lastC[3], 1)
+						end
+						-- Filled text: current stage color
+						local stageColor = CN[stage] or CN[#CN]
+						if els.filledText and stageColor then
+							els.filledText:SetTextColor(stageColor[1], stageColor[2], stageColor[3], 1)
+						end
+					end
+					return
+				end
+
+				-- Default mode: update tier overlay vertex colors
+				if not f.StageTiers then
+					self:Hide()
+					return
+				end
+				for _, tier in ipairs(f.StageTiers) do
+					local ov = tierOverlays[tier]
+					if ov and ov._tierIndex then
+						local active = (ov._tierIndex <= stage)
+						local c = active and ov._nColor or ov._dColor
+						if c then
+							ov:SetVertexColor(c[1], c[2], c[3], 1)
+						end
+					end
+				end
+			end)
+		end
 
 		-- Replace stage tier atlas textures with Scoot-owned overlay textures + vertex colors
 		-- that preserve the stage color progression (green→yellow→orange→red).
@@ -1360,31 +1419,8 @@ do
 					end
 				end
 
-				-- Start stage progression tracker (transitions overlay colors disabled → normal)
-				if not empoweredStageUpdater then
-					empoweredStageUpdater = CreateFrame("Frame")
-					empoweredStageUpdater:SetScript("OnUpdate", function(self)
-						local f = self._castFrame
-						if not f or not f.StageTiers then
-							self:Hide()
-							return
-						end
-						local stage = f.CurrSpellStage
-						if stage and stage ~= self._lastStage and type(stage) == "number" then
-							self._lastStage = stage
-							for _, tier in ipairs(f.StageTiers) do
-								local ov = tierOverlays[tier]
-								if ov and ov._tierIndex then
-									local active = (ov._tierIndex <= stage)
-									local c = active and ov._nColor or ov._dColor
-									if c then
-										ov:SetVertexColor(c[1], c[2], c[3], 1)
-									end
-								end
-							end
-						end
-					end)
-				end
+				-- Start stage progression tracker
+				ensureEmpoweredStageUpdater()
 				empoweredStageUpdater._castFrame = frame
 				empoweredStageUpdater._lastStage = nil
 				empoweredStageUpdater:Show()
@@ -1425,21 +1461,94 @@ do
 			end
 		end
 
+		-- Check if a unit is configured for text-fill mode
+		local function isTextFillMode(unitToken)
+			local titleUnit = tokenToUnit[unitToken]
+			if not titleUnit then return false end
+			local db = addon and addon.db and addon.db.profile
+			if not db then return false end
+			local uf = db.unitFrames and db.unitFrames[titleUnit]
+			local cfg = uf and uf.castBar
+			return cfg and cfg.castBarMode == "textFill"
+		end
+
 		ef:SetScript("OnEvent", function(self, event, unit, ...)
 			if event == "UNIT_SPELLCAST_EMPOWER_START" then
 				empoweredCastActive[unit] = true
-				hideScootBGForEmpowered(unit)
-				applyScootTextureToTiers(unit)
+				local textFill = isTextFillMode(unit)
+				if not textFill then
+					-- Default mode: swap BG and apply Scoot textures to tiers
+					hideScootBGForEmpowered(unit)
+					applyScootTextureToTiers(unit)
+				end
+				-- Text-fill mode: applyTextFillMode handles everything via the next apply cycle.
+				-- Trigger a refresh so the empowered flag is picked up immediately.
+				-- Must set castVisualOnly so the combat guard allows immediate execution
+				-- (same pattern as SetStatusBarTexture/SetStatusBarColor hooks).
+				if textFill then
+					local titleUnit = tokenToUnit[unit]
+					if titleUnit and addon.ApplyUnitFrameCastBarFor then
+						local f = resolveCastBarFrame(titleUnit)
+						if f then
+							setProp(f, "castVisualOnly", true)
+							addon.ApplyUnitFrameCastBarFor(titleUnit)
+							setProp(f, "castVisualOnly", nil)
+						end
+					end
+					-- Start the stage updater (deferred: AddStages + text-fill setup must complete)
+					C_Timer.After(0, function()
+						if not empoweredCastActive[unit] then return end
+						local f = titleUnit and resolveCastBarFrame(titleUnit)
+						if not f then return end
+						-- Reuse existing updater or create via ensureEmpoweredStageUpdater.
+						-- OnUpdate already handles both text-fill and default mode paths.
+						ensureEmpoweredStageUpdater()
+						empoweredStageUpdater._castFrame = f
+						empoweredStageUpdater._lastStage = nil
+						empoweredStageUpdater:Show()
+					end)
+				end
 			elseif event == "UNIT_SPELLCAST_EMPOWER_STOP" then
 				empoweredCastActive[unit] = nil
-				cleanupTierOverlays(unit)
-				restoreScootBGAfterEmpowered(unit)
+				local textFill = isTextFillMode(unit)
+				if not textFill then
+					cleanupTierOverlays(unit)
+					restoreScootBGAfterEmpowered(unit)
+				else
+					-- Text-fill empowered cleanup: stop stage updater + deactivate tier segments
+					if empoweredStageUpdater then empoweredStageUpdater:Hide() end
+					local titleUnit = tokenToUnit[unit]
+					if titleUnit then
+						local f = resolveCastBarFrame(titleUnit)
+						if f then
+							local els = getProp(f, "textFillElements")
+							if els then
+								CB._deactivateEmpoweredTextFill(f, els)
+							end
+						end
+					end
+				end
 			else
 				-- Clear on any other cast event (failed, interrupted, new channel, etc.)
 				if empoweredCastActive[unit] then
 					empoweredCastActive[unit] = nil
-					cleanupTierOverlays(unit)
-					restoreScootBGAfterEmpowered(unit)
+					local textFill = isTextFillMode(unit)
+					if not textFill then
+						cleanupTierOverlays(unit)
+						restoreScootBGAfterEmpowered(unit)
+					else
+						if empoweredStageUpdater then empoweredStageUpdater:Hide() end
+						local titleUnit = tokenToUnit[unit]
+						if titleUnit then
+							local f = resolveCastBarFrame(titleUnit)
+							if f then
+								local els = getProp(f, "textFillElements")
+								if els then
+									CB._deactivateEmpoweredTextFill(f, els)
+								end
+							end
+						end
+					end
 				end
 			end
 		end)
