@@ -763,10 +763,10 @@ function ActionBar.Render(panel, scrollContent, componentId, opts)
                 })
 
                 inner:AddSlider({
-                    label = "Backdrop Opacity", min = 1, max = 100, step = 1,
+                    label = "Backdrop Opacity", min = 0, max = 100, step = 1,
                     get = function() return getSetting("backdropOpacity") or 100 end,
                     set = function(v) setSetting("backdropOpacity", v) end,
-                    minLabel = "1%", maxLabel = "100%",
+                    minLabel = "Hidden", maxLabel = "100%",
                 })
 
                 inner:AddToggleColorPicker({
@@ -852,10 +852,10 @@ function ActionBar.Render(panel, scrollContent, componentId, opts)
             end
 
             inner:AddSlider({
-                label = "Opacity in Combat", min = 1, max = 100, step = 1,
+                label = "Opacity in Combat", min = 0, max = 100, step = 1,
                 get = function() return getSetting("barOpacity") or 100 end,
                 set = function(v) setSetting("barOpacity", v) end,
-                minLabel = "1%", maxLabel = "100%",
+                minLabel = "Hidden", maxLabel = "100%",
                 infoIcon = {
                     tooltipTitle = "Opacity Priority",
                     tooltipText = "With Target takes precedence, then In Combat, then Out of Combat. The highest priority condition that applies determines the opacity.",
@@ -863,17 +863,17 @@ function ActionBar.Render(panel, scrollContent, componentId, opts)
             })
 
             inner:AddSlider({
-                label = "Opacity Out of Combat", min = 1, max = 100, step = 1,
+                label = "Opacity Out of Combat", min = 0, max = 100, step = 1,
                 get = function() return getSetting("barOpacityOutOfCombat") or 100 end,
                 set = function(v) setSetting("barOpacityOutOfCombat", v) end,
-                minLabel = "1%", maxLabel = "100%",
+                minLabel = "Hidden", maxLabel = "100%",
             })
 
             inner:AddSlider({
-                label = "Opacity With Target", min = 1, max = 100, step = 1,
+                label = "Opacity With Target", min = 0, max = 100, step = 1,
                 get = function() return getSetting("barOpacityWithTarget") or 100 end,
                 set = function(v) setSetting("barOpacityWithTarget", v) end,
-                minLabel = "1%", maxLabel = "100%",
+                minLabel = "Hidden", maxLabel = "100%",
             })
 
             inner:AddToggle({

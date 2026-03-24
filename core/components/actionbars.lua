@@ -138,11 +138,11 @@ local function ApplyActionBarStyling(self)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
 
     local baseOp = tonumber(self.db.barOpacity) or 100
-    if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
+    if baseOp < 0 then baseOp = 0 elseif baseOp > 100 then baseOp = 100 end
     local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
-    if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
+    if oocOp < 0 then oocOp = 0 elseif oocOp > 100 then oocOp = 100 end
     local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
-    if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
+    if tgtOp < 0 then tgtOp = 0 elseif tgtOp > 100 then tgtOp = 100 end
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
 
@@ -632,13 +632,13 @@ local function ApplyMicroBarStyling(self)
     hookBarAlpha(bar)
 
     local baseOp = tonumber(self.db.barOpacity) or 100
-    if baseOp < 1 then baseOp = 1 elseif baseOp > 100 then baseOp = 100 end
+    if baseOp < 0 then baseOp = 0 elseif baseOp > 100 then baseOp = 100 end
 
     local oocOp = tonumber(self.db.barOpacityOutOfCombat) or baseOp
-    if oocOp < 1 then oocOp = 1 elseif oocOp > 100 then oocOp = 100 end
+    if oocOp < 0 then oocOp = 0 elseif oocOp > 100 then oocOp = 100 end
 
     local tgtOp = tonumber(self.db.barOpacityWithTarget) or baseOp
-    if tgtOp < 1 then tgtOp = 1 elseif tgtOp > 100 then tgtOp = 100 end
+    if tgtOp < 0 then tgtOp = 0 elseif tgtOp > 100 then tgtOp = 100 end
 
     local hasTarget = (UnitExists and UnitExists("target")) and true or false
     local appliedOp = hasTarget and tgtOp or (Util.PlayerInCombat() and baseOp or oocOp)
@@ -760,13 +760,13 @@ addon:RegisterComponentInitializer(function(self)
             }},
             -- Visibility / Opacity settings (section "Misc" renders as "Visibility" header)
             barOpacity = { type = "addon", default = 100, ui = {
-                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 1
+                label = "Opacity in Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 1
             }},
             barOpacityWithTarget = { type = "addon", default = 100, ui = {
-                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 2
+                label = "Opacity With Target", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 2
             }},
             barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 3
+                label = "Opacity Out of Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 3
             }},
             mouseoverMode = { type = "addon", default = false, ui = {
                 label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 4
@@ -825,13 +825,13 @@ addon:RegisterComponentInitializer(function(self)
             borderInsetH = { type = "addon", default = 0 },
             borderInsetV = { type = "addon", default = 0 },
             barOpacity = { type = "addon", default = 100, ui = {
-                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+                label = "Opacity in Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 99
             }},
             barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+                label = "Opacity Out of Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 100
             }},
             barOpacityWithTarget = { type = "addon", default = 100, ui = {
-                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+                label = "Opacity With Target", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 101
             }},
             mouseoverMode = { type = "addon", default = false, ui = {
                 label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
@@ -899,7 +899,7 @@ addon:RegisterComponentInitializer(function(self)
                     end
                 }},
                 backdropOpacity = { type = "addon", default = 100, ui = {
-                    label = "Backdrop Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Backdrop", order = 3
+                    label = "Backdrop Opacity", widget = "slider", min = 0, max = 100, step = 1, section = "Backdrop", order = 3
                 }},
                 backdropTintEnable = { type = "addon", default = false, ui = {
                     label = "Backdrop Tint", widget = "checkbox", section = "Backdrop", order = 4
@@ -921,13 +921,13 @@ addon:RegisterComponentInitializer(function(self)
                 }},
                 textMacro = { type = "addon", default = { size = 14, style = "OUTLINE", color = {1,1,1,1}, offset = { x = 0, y = 0 }, fontFace = "FRIZQT__" }, ui = { hidden = true }},
                 barOpacity = { type = "addon", default = 100, ui = {
-                    label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+                    label = "Opacity in Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 99
                 }},
                 barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
-                    label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+                    label = "Opacity Out of Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 100
                 }},
                 barOpacityWithTarget = { type = "addon", default = 100, ui = {
-                    label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+                    label = "Opacity With Target", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 101
                 }},
                 mouseoverMode = { type = "addon", default = false, ui = {
                     label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
@@ -1041,7 +1041,7 @@ addon:RegisterComponentInitializer(function(self)
                 end
             }},
             backdropOpacity = { type = "addon", default = 100, ui = {
-                label = "Backdrop Opacity", widget = "slider", min = 1, max = 100, step = 1, section = "Backdrop", order = 3
+                label = "Backdrop Opacity", widget = "slider", min = 0, max = 100, step = 1, section = "Backdrop", order = 3
             }},
             backdropTintEnable = { type = "addon", default = false, ui = {
                 label = "Backdrop Tint", widget = "checkbox", section = "Backdrop", order = 4
@@ -1066,13 +1066,13 @@ addon:RegisterComponentInitializer(function(self)
                 label = "Always Show Buttons", widget = "checkbox", section = "Misc", order = 1
             }},
             barOpacity = { type = "addon", default = 100, ui = {
-                label = "Opacity in Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 99
+                label = "Opacity in Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 99
             }},
             barOpacityOutOfCombat = { type = "addon", default = 100, ui = {
-                label = "Opacity Out of Combat", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 100
+                label = "Opacity Out of Combat", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 100
             }},
             barOpacityWithTarget = { type = "addon", default = 100, ui = {
-                label = "Opacity With Target", widget = "slider", min = 1, max = 100, step = 1, section = "Misc", order = 101
+                label = "Opacity With Target", widget = "slider", min = 0, max = 100, step = 1, section = "Misc", order = 101
             }},
             mouseoverMode = { type = "addon", default = false, ui = {
                 label = "Mouseover Mode", widget = "checkbox", section = "Misc", order = 102
