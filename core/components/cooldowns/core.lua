@@ -897,6 +897,78 @@ local function hookProcGlowResizing()
     procGlowHooked = true
 end
 
+-- Retroactive scan: find CDM icons where a Blizzard proc glow is active but
+-- should be replaced by a pixel glow (or vice-versa after profile switch).
+-- Covers the reload timing race (ShowAlert fires before our hook is installed)
+-- and profile switches where active procs need glow-type changes.
+local function scanAndReplaceActiveBlizzardGlows()
+    if abeLoaded then return end
+    if not addon.PixelGlow then return end
+
+    for viewerName, componentId in pairs(CDM_VIEWER_NAMES) do
+        if componentId ~= "trackedBuffs" then
+            local viewer = _G[viewerName]
+            if viewer and viewer.IsShown and viewer:IsShown() then
+                local component = addon.Components and addon.Components[componentId]
+                if component and component.db then
+                    local style = component.db.procLoopStyle
+                    local children = { viewer:GetChildren() }
+
+                    for _, child in ipairs(children) do
+                        pcall(function()
+                            if not child then return end
+
+                            -- Detect active proc via visual state
+                            local alert = child.SpellActivationAlert
+                            local blizzardGlowActive = alert and alert.IsShown and alert:IsShown()
+                            local existingGlow = addon.PixelGlow.GetForIcon(child)
+                            local scootGlowActive = existingGlow and existingGlow:IsPlaying()
+
+                            if not blizzardGlowActive and not scootGlowActive then return end
+
+                            if style and style ~= "default" then
+                                -- Custom style: suppress Blizzard glow, ensure pixel glow
+                                if blizzardGlowActive and alert then
+                                    alert.ProcStartAnim:Stop()
+                                    alert:Hide()
+                                end
+                                if not scootGlowActive then
+                                    local sizeInfo = sizedIcons[child]
+                                    local config = {
+                                        style = (style == "pixelDots") and "dots" or "dashes",
+                                        colorMode = component.db.procLoopColor or "custom",
+                                        customColor = component.db.procLoopCustomColor or {1, 0.84, 0, 1},
+                                        speed = component.db.procLoopSpeed or 25,
+                                        iconW = sizeInfo and sizeInfo.width,
+                                        iconH = sizeInfo and sizeInfo.height,
+                                        insetH = component.db.procLoopInsetH or 0,
+                                        insetV = component.db.procLoopInsetV or 0,
+                                    }
+                                    addon.PixelGlow.StartForIcon(child, config)
+                                end
+                            else
+                                -- Default style: release pixel glow, restore Blizzard glow
+                                if scootGlowActive then
+                                    addon.PixelGlow.ReleaseForIcon(child)
+                                    if alert then
+                                        alert:Show()
+                                        if alert.ProcLoop and not alert.ProcLoop:IsPlaying() then
+                                            alert.ProcLoop:Play()
+                                        end
+                                        if alert.ProcLoopFlipbook then
+                                            alert.ProcLoopFlipbook:Show()
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Exposed function to refresh text styling (called when settings change)
 function addon.RefreshCDMTextStyling()
     -- Apply to all existing cooldowns in CDM viewers
@@ -1653,6 +1725,9 @@ function Overlays.Initialize()
     hookCooldownTextStyling()
     hookProcGlowResizing()
 
+    -- Catch Blizzard proc glows that fired before our hook was installed
+    C_Timer.After(0.15, scanAndReplaceActiveBlizzardGlows)
+
     -- Initialize keybind system and share the activeOverlays table
     if addon.SpellBindings then
         addon.SpellBindings.SetActiveOverlays(activeOverlays)
@@ -1985,6 +2060,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
             hookCooldownTextStyling()
             hookProcGlowResizing()
 
+            -- Safety net: catch stale Blizzard proc glows from reload race
+            C_Timer.After(0.15, scanAndReplaceActiveBlizzardGlows)
+
             -- Apply initial viewer opacity based on current state
             updateAllViewerOpacities()
         end)
@@ -2055,6 +2133,9 @@ addon.RefreshCDMOverlays = function(componentId)
             addon.RefreshCDMTextStyling()
         end)
     end
+
+    -- Sync proc glows with current profile settings
+    C_Timer.After(0.15, scanAndReplaceActiveBlizzardGlows)
 
     -- Refresh viewer opacity when settings change
     if addon.RefreshCDMViewerOpacity then
