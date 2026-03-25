@@ -125,6 +125,7 @@ addon.MODULE_CATEGORIES = {
         subToggles = {
             { id = "party", label = "Party" },
             { id = "raid", label = "Raid" },
+            { id = "auraTracking", label = "Aura Tracking" },
         },
     },
     minimap = {

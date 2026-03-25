@@ -1,13 +1,13 @@
 --------------------------------------------------------------------------------
 -- groupauras/icons.lua
--- Icon frame pool, styling, sizing, and positioning for healer aura icons
+-- Icon frame pool, styling, sizing, and positioning for aura tracking icons
 --
 -- Depends on groupauras/core.lua (HA namespace, rainbow engine, state tables)
 --------------------------------------------------------------------------------
 
 local addonName, addon = ...
 
-local HA = addon.HealerAuras
+local HA = addon.AuraTracking
 if not HA then return end
 
 --------------------------------------------------------------------------------
@@ -64,8 +64,8 @@ local iconPool = {}
 local function CreateIconFrame()
     local icon = CreateFrame("Frame", nil, UIParent)
     icon:SetSize(16, 16)
-    icon:SetFrameStrata("MEDIUM")
-    icon:SetFrameLevel(10)
+    icon:SetFrameStrata("HIGH")
+    icon:SetFrameLevel(20)
 
     -- Icon texture
     local tex = icon:CreateTexture(nil, "ARTWORK")
@@ -160,7 +160,7 @@ local function GetSpellConfig(spellId)
 
     local db = addon.db and addon.db.profile
     local gf = db and db.groupFrames
-    local ha = gf and gf.healerAuras
+    local ha = gf and gf.auraTracking
     local spells = ha and ha.spells
     if not spells or not spells[configId] then
         return HA.SPELL_DEFAULTS
@@ -168,7 +168,7 @@ local function GetSpellConfig(spellId)
     return setmetatable(spells[configId], { __index = HA.SPELL_DEFAULTS })
 end
 
-function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
+function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
     if not iconFrame or not spellId then return end
 
     local config = GetSpellConfig(spellId)
@@ -177,7 +177,7 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
     -- Set icon texture
     local tex = iconFrame.Icon
     if config.iconStyle == "spell" then
-        -- Use the spell's actual icon
+        -- Try runtime API first (most accurate), static textureId as fallback
         local spellTex
         local ok = pcall(function()
             spellTex = C_Spell.GetSpellTexture(spellId)
@@ -185,7 +185,14 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
         if ok and spellTex then
             tex:SetTexture(spellTex)
         else
-            tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            -- Fallback to static textureId (works when API fails, e.g. secrets)
+            local registryEntry = HA.SPELL_REGISTRY_BY_ID and HA.SPELL_REGISTRY_BY_ID[spellId]
+            local staticTex = registryEntry and registryEntry.textureId
+            if staticTex then
+                tex:SetTexture(staticTex)
+            else
+                tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
         end
     elseif config.iconStyle:sub(1, 5) == "file:" then
         -- File-based custom texture
@@ -224,7 +231,19 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
     end
 
     -- Size based on group frame height + user scale
-    local frameHeight = groupFrame and groupFrame:GetHeight() or 36
+    -- Use OOC-cached height to avoid tainted GetHeight() reads in combat
+    local frameHeight = 36
+    if groupFrame then
+        local state = HA._getState and HA._getState(groupFrame)
+        if state and state.cachedHeight and state.cachedHeight > 0 then
+            frameHeight = state.cachedHeight
+        elseif not InCombatLockdown() then
+            local ok, h = pcall(groupFrame.GetHeight, groupFrame)
+            if ok and type(h) == "number" and h > 0 then
+                frameHeight = h
+            end
+        end
+    end
     local baseSize = math.max(MIN_ICON_SIZE, frameHeight * BASE_SIZE_RATIO)
     local userScale = (config.iconScale or 100) / 100
     local finalSize = math.min(MAX_ICON_SIZE, math.max(MIN_ICON_SIZE, baseSize * userScale))
@@ -233,14 +252,27 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
     -- Position the icon
     HA.PositionIcon(iconFrame, config, groupFrame)
 
-    -- Cooldown sweep
-    if auraData and auraData.expirationTime and auraData.expirationTime > 0
-       and auraData.duration and auraData.duration > 0 then
-        local startTime = auraData.expirationTime - auraData.duration
-        iconFrame.Cooldown:SetCooldown(startTime, auraData.duration)
-        iconFrame.Cooldown:Show()
-    else
-        iconFrame.Cooldown:Clear()
+    -- Cooldown sweep (DurationObject pattern — matches ClassAuras, secret-safe)
+    local cdSet = false
+    if auraData and auraData.auraInstanceID and unit
+       and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+        local dOk, dObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraData.auraInstanceID)
+        if dOk and dObj then
+            pcall(iconFrame.Cooldown.SetCooldownFromDurationObject, iconFrame.Cooldown, dObj)
+            iconFrame.Cooldown:Show()
+            cdSet = true
+        end
+    end
+    if not cdSet then
+        -- Fallback to legacy arithmetic (non-secret values only)
+        if auraData and auraData.expirationTime and auraData.expirationTime > 0
+           and auraData.duration and auraData.duration > 0 then
+            local startTime = auraData.expirationTime - auraData.duration
+            iconFrame.Cooldown:SetCooldown(startTime, auraData.duration)
+            iconFrame.Cooldown:Show()
+        else
+            iconFrame.Cooldown:Clear()
+        end
     end
 
     -- Stack count

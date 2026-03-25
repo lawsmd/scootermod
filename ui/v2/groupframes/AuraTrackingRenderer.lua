@@ -1,11 +1,11 @@
--- HealerAurasRenderer.lua - Settings page for healer aura tracking on group frames
+-- AuraTrackingRenderer.lua - Settings page for aura tracking on group frames
 local addonName, addon = ...
 
 addon.UI = addon.UI or {}
 addon.UI.Settings = addon.UI.Settings or {}
-addon.UI.Settings.HealerAuras = {}
+addon.UI.Settings.AuraTracking = {}
 
-local HealerAurasUI = addon.UI.Settings.HealerAuras
+local AuraTrackingUI = addon.UI.Settings.AuraTracking
 local SettingsBuilder = addon.UI.SettingsBuilder
 local GF = addon.UI.GroupFrames
 
@@ -13,8 +13,8 @@ local GF = addon.UI.GroupFrames
 -- Runtime State
 --------------------------------------------------------------------------------
 
-HealerAurasUI._selectedClass = nil
-HealerAurasUI._selectedSpellId = nil
+AuraTrackingUI._selectedClass = nil
+AuraTrackingUI._selectedSpellId = nil
 
 --------------------------------------------------------------------------------
 -- Anchor Option Tables (for Position DualSelector)
@@ -39,18 +39,18 @@ local OUTSIDE_ORDER = { "TOPLEFT", "TOP", "TOPRIGHT", "RIGHT", "BOTTOMRIGHT", "B
 --------------------------------------------------------------------------------
 
 local function ensureDB()
-    if not GF or not GF.ensureHealerAurasDB then
+    if not GF or not GF.ensureAuraTrackingDB then
         local db = addon.db and addon.db.profile
         if not db then return nil end
         db.groupFrames = db.groupFrames or {}
-        db.groupFrames.healerAuras = db.groupFrames.healerAuras or {}
-        db.groupFrames.healerAuras.spells = db.groupFrames.healerAuras.spells or {}
-        return db.groupFrames.healerAuras
+        db.groupFrames.auraTracking = db.groupFrames.auraTracking or {}
+        db.groupFrames.auraTracking.spells = db.groupFrames.auraTracking.spells or {}
+        return db.groupFrames.auraTracking
     end
-    return GF.ensureHealerAurasDB()
+    return GF.ensureAuraTrackingDB()
 end
 
-local SPELL_DEFAULTS = addon.HealerAuras and addon.HealerAuras.SPELL_DEFAULTS or {
+local SPELL_DEFAULTS = addon.AuraTracking and addon.AuraTracking.SPELL_DEFAULTS or {
     enabled = false,
     iconStyle = "spell",
     iconColor = "original",
@@ -80,8 +80,8 @@ local function setSetting(spellId, key, value)
     local config = ensureSpellConfig(spellId)
     config[key] = value
     -- Notify core to refresh
-    if addon.HealerAuras and addon.HealerAuras.OnConfigChanged then
-        addon.HealerAuras.OnConfigChanged()
+    if addon.AuraTracking and addon.AuraTracking.OnConfigChanged then
+        addon.AuraTracking.OnConfigChanged()
     end
 end
 
@@ -252,7 +252,7 @@ local GRID_MAX_PER_ROW = 8
 local GRID_BORDER_WIDTH = 2
 
 local function CreateSpellGrid(parent, classToken, scrollContent, panel, builder)
-    local HA = addon.HealerAuras
+    local HA = addon.AuraTracking
     if not HA or not HA.SPELL_REGISTRY then return nil, 0 end
 
     local spells = HA.SPELL_REGISTRY[classToken]
@@ -324,7 +324,7 @@ local function CreateSpellGrid(parent, classToken, scrollContent, panel, builder
         end
 
         -- Highlight if selected
-        local isSelected = (HealerAurasUI._selectedSpellId == entry.id)
+        local isSelected = (AuraTrackingUI._selectedSpellId == entry.id)
         if isSelected then
             borderBg:SetColorTexture(accentR, accentG, accentB, 0.6)
         end
@@ -334,7 +334,7 @@ local function CreateSpellGrid(parent, classToken, scrollContent, panel, builder
 
         -- Tooltip
         btn:SetScript("OnEnter", function(self)
-            if HealerAurasUI._selectedSpellId ~= self._spellId then
+            if AuraTrackingUI._selectedSpellId ~= self._spellId then
                 self._borderBg:SetColorTexture(accentR, accentG, accentB, 0.3)
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -342,7 +342,7 @@ local function CreateSpellGrid(parent, classToken, scrollContent, panel, builder
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function(self)
-            if HealerAurasUI._selectedSpellId ~= self._spellId then
+            if AuraTrackingUI._selectedSpellId ~= self._spellId then
                 self._borderBg:SetColorTexture(0, 0, 0, 0)
             end
             GameTooltip:Hide()
@@ -350,8 +350,8 @@ local function CreateSpellGrid(parent, classToken, scrollContent, panel, builder
 
         -- Click to select
         btn:SetScript("OnClick", function(self)
-            HealerAurasUI._selectedSpellId = self._spellId
-            HealerAurasUI.Render(panel, scrollContent)
+            AuraTrackingUI._selectedSpellId = self._spellId
+            AuraTrackingUI.Render(panel, scrollContent)
         end)
 
         iconButtons[i] = btn
@@ -365,20 +365,20 @@ end
 -- Main Render Function
 --------------------------------------------------------------------------------
 
-function HealerAurasUI.Render(panel, scrollContent)
+function AuraTrackingUI.Render(panel, scrollContent)
     panel:ClearContent()
 
-    local HA = addon.HealerAuras
+    local HA = addon.AuraTracking
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
 
     builder:SetOnRefresh(function()
-        HealerAurasUI.Render(panel, scrollContent)
+        AuraTrackingUI.Render(panel, scrollContent)
     end)
 
     -- Feature availability check
     if HA and HA.IsFeatureAvailable and not HA.IsFeatureAvailable() then
-        builder:AddDescription("Healer Auras is currently unavailable. Blizzard has re-protected these aura spells.", {
+        builder:AddDescription("Aura Tracking is currently unavailable. Blizzard has re-protected these aura spells.", {
             color = { 1, 0.4, 0.4 },
         })
         builder:Finalize()
@@ -386,14 +386,63 @@ function HealerAurasUI.Render(panel, scrollContent)
     end
 
     -- Default to player's class on fresh session
-    if not HealerAurasUI._selectedClass then
-        local _, classToken = UnitClassBase("player")
+    if not AuraTrackingUI._selectedClass then
+        local _, classToken = UnitClass("player")
         -- Only use player class if it's in our registry
         if HA and HA.SPELL_REGISTRY and HA.SPELL_REGISTRY[classToken] then
-            HealerAurasUI._selectedClass = classToken
+            AuraTrackingUI._selectedClass = classToken
         else
-            HealerAurasUI._selectedClass = HA.CLASS_ORDER and HA.CLASS_ORDER[1] or "DRUID"
+            AuraTrackingUI._selectedClass = HA.CLASS_ORDER and HA.CLASS_ORDER[1] or "DRUID"
         end
+    end
+
+    --------------------------------------------------------------------------
+    -- Aura Scale Slider (with explainer description)
+    --------------------------------------------------------------------------
+
+    builder:AddSlider({
+        key = "auraScale",
+        label = "Blizzard Aura Scale",
+        description = "Add custom icons for tracking non-secret Auras like popular Healing Spells. "
+            .. "Scoot cannot hide the icons, but it can shrink them so much they disappear "
+            .. "- this will apply to ALL Blizzard Party/Raid Frame Buff Icons.",
+        min = 1,
+        max = 100,
+        step = 1,
+        minLabel = "Hidden",
+        maxLabel = "100%",
+        displaySuffix = "%",
+        get = function()
+            local at = ensureDB()
+            return (at and at.auraScale) or 100
+        end,
+        set = function(v)
+            local at = ensureDB()
+            if at then at.auraScale = v end
+            if addon.AuraTracking and addon.AuraTracking.RefreshBuffStripScaling then
+                addon.AuraTracking.RefreshBuffStripScaling()
+            end
+        end,
+    })
+
+    -- Plain 1px divider line (no section header/chevron)
+    do
+        local theme = addon.UI.Theme
+        local ar, ag, ab = 0.20, 0.90, 0.30
+        if theme and theme.GetAccentColor then
+            ar, ag, ab = theme:GetAccentColor()
+        end
+        local dividerSpacing = 8
+        builder._currentY = builder._currentY - dividerSpacing
+        local divider = CreateFrame("Frame", nil, scrollContent)
+        divider:SetHeight(1)
+        divider:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 12, builder._currentY)
+        divider:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, builder._currentY)
+        local divTex = divider:CreateTexture(nil, "BORDER")
+        divTex:SetAllPoints()
+        divTex:SetColorTexture(ar, ag, ab, 0.3)
+        table.insert(builder._controls, divider)
+        builder._currentY = builder._currentY - 1 - dividerSpacing
     end
 
     --------------------------------------------------------------------------
@@ -416,11 +465,11 @@ function HealerAurasUI.Render(panel, scrollContent)
         values = selectorValues,
         order = selectorOrder,
         width = 400,
-        get = function() return HealerAurasUI._selectedClass end,
+        get = function() return AuraTrackingUI._selectedClass end,
         set = function(v)
-            HealerAurasUI._selectedClass = v
-            HealerAurasUI._selectedSpellId = nil
-            HealerAurasUI.Render(panel, scrollContent)
+            AuraTrackingUI._selectedClass = v
+            AuraTrackingUI._selectedSpellId = nil
+            AuraTrackingUI.Render(panel, scrollContent)
         end,
     })
 
@@ -438,8 +487,13 @@ function HealerAurasUI.Render(panel, scrollContent)
         if selectorRow._label then
             selectorRow._label:Hide()
         end
-        if selectorRow._rowBorder and selectorRow._rowBorder.LEFT then
-            selectorRow._rowBorder.LEFT:Hide()
+        if selectorRow._rowBorder then
+            if selectorRow._rowBorder.LEFT then
+                selectorRow._rowBorder.LEFT:Hide()
+            end
+            if selectorRow._rowBorder.BOTTOM then
+                selectorRow._rowBorder.BOTTOM:Hide()
+            end
         end
         if selectorRow._emphBg then
             selectorRow._emphBg:Hide()
@@ -447,13 +501,11 @@ function HealerAurasUI.Render(panel, scrollContent)
     end
 
     --------------------------------------------------------------------------
-    -- Spell Icon Grid
+    -- Spell Icon Grid (directly below class selector, no divider)
     --------------------------------------------------------------------------
 
-    builder:AddSpacer(8)
-
     local gridContainer, gridHeight = CreateSpellGrid(
-        scrollContent, HealerAurasUI._selectedClass, scrollContent, panel, builder
+        scrollContent, AuraTrackingUI._selectedClass, scrollContent, panel, builder
     )
     if gridContainer then
         -- Position the grid manually in the builder flow
@@ -467,7 +519,7 @@ function HealerAurasUI.Render(panel, scrollContent)
     -- Per-Spell Config (shown when a spell is selected)
     --------------------------------------------------------------------------
 
-    local selectedId = HealerAurasUI._selectedSpellId
+    local selectedId = AuraTrackingUI._selectedSpellId
     if selectedId then
         local spellName = (HA and HA.SPELL_NAMES and HA.SPELL_NAMES[selectedId]) or ("Spell " .. selectedId)
 
@@ -485,7 +537,7 @@ function HealerAurasUI.Render(panel, scrollContent)
             get = function() return getSetting(selectedId, "enabled") end,
             set = function(v)
                 setSetting(selectedId, "enabled", v)
-                HealerAurasUI.Render(panel, scrollContent)
+                AuraTrackingUI.Render(panel, scrollContent)
             end,
         })
 
@@ -620,8 +672,11 @@ end
 -- Register Renderer
 --------------------------------------------------------------------------------
 
-addon.UI.SettingsPanel:RegisterRenderer("gfHealerAuras", function(panel, scrollContent)
-    HealerAurasUI.Render(panel, scrollContent)
+addon.UI.SettingsPanel:RegisterRenderer("gfAuraTracking", function(panel, scrollContent)
+    -- Reset to player's class each time the page is navigated to
+    AuraTrackingUI._selectedClass = nil
+    AuraTrackingUI._selectedSpellId = nil
+    AuraTrackingUI.Render(panel, scrollContent)
 end)
 
-return HealerAurasUI
+return AuraTrackingUI

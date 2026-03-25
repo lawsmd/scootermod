@@ -170,14 +170,11 @@ local function StartAuraDisplay(auraId)
                 cdFrame:SetDrawEdge(false)
                 cdFrame:SetHideCountdownNumbers(false)
                 elem._cdFrame = cdFrame
+                elem._cdFrame:Hide()  -- Hidden only on first creation; OnUpdate controls visibility
             end
-            -- Set the cooldown (accepts secrets via AllowedWhenTainted)
-            local startTime = durObj:GetStartTime()
-            local totalDur = durObj:GetTotalDuration()
-            pcall(elem._cdFrame.SetCooldown, elem._cdFrame, startTime, totalDur)
-            -- Style countdown font to match user settings
+            -- DurationObject stays in C++ land (same pattern as customgroups/tracking.lua:123)
+            pcall(elem._cdFrame.SetCooldownFromDurationObject, elem._cdFrame, durObj)
             StyleCooldownText(elem, auraId)
-            elem._cdFrame:Hide()  -- Start hidden; OnUpdate toggles visibility
         end
     end
 

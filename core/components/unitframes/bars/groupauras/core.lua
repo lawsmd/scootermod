@@ -1,16 +1,17 @@
 --------------------------------------------------------------------------------
 -- groupauras/core.lua
--- Healer Aura tracking on group frames (party + raid)
+-- Aura Tracking on group frames (party + raid)
 --
--- Hides Blizzard's default buff icons for tracked healer auras and replaces
--- them with custom Scoot-styled icons. Spell registry, event handling,
--- active-set management, rainbow color engine, graceful degradation.
+-- Renders custom Scoot-styled icons for tracked auras. Buff strip
+-- overlay (buffstrip.lua) handles scaling Blizzard's default buff icons.
+-- Spell registry, event handling, active-set management, rainbow color
+-- engine, graceful degradation.
 --------------------------------------------------------------------------------
 
 local addonName, addon = ...
 
-addon.HealerAuras = addon.HealerAuras or {}
-local HA = addon.HealerAuras
+addon.AuraTracking = addon.AuraTracking or {}
+local HA = addon.AuraTracking
 
 --------------------------------------------------------------------------------
 -- Spell Registry
@@ -22,89 +23,68 @@ local HA = addon.HealerAuras
 HA.SPELL_REGISTRY = {
     EVOKER = {
         -- Preservation
-        { id = 355941, name = "Dream Breath" },
-        { id = 363502, name = "Dream Flight" },
-        { id = 364343, name = "Echo" },
-        { id = 366155, name = "Reversion" },
-        { id = 367364, name = "Echo (Reversion)" },
-        { id = 373267, name = "Lifebind" },
-        { id = 376788, name = "Echo (Dream Breath)" },
+        { id = 355941, name = "Dream Breath",        textureId = 5765862 },
+        { id = 363502, name = "Dream Flight",        textureId = 5765860 },
+        { id = 364343, name = "Echo",                 textureId = 5765863 },
+        { id = 366155, name = "Reversion",            textureId = 5765865 },
+        { id = 367364, name = "Echo (Reversion)",     textureId = 5765863 },
+        { id = 373267, name = "Lifebind",             textureId = 5765864 },
+        { id = 376788, name = "Echo (Dream Breath)",  textureId = 5765863 },
         -- Augmentation
-        { id = 360827, name = "Blistering Scales" },
-        { id = 395152, name = "Ebon Might" },
-        { id = 410089, name = "Prescience" },
-        { id = 410263, name = "Inferno's Blessing" },
-        { id = 410686, name = "Symbiotic Bloom" },
-        { id = 413984, name = "Shifting Sands" },
-        -- Raid buffs
-        { id = 369459, name = "Source of Magic" },
-        -- Blessing of the Bronze (one UI entry, all 13 class variants tracked together)
-        { id = 381748, name = "Blessing of the Bronze", linkedIds = {
-            381732, 381741, 381746, 381748, 381749, 381750, 381751,
-            381752, 381753, 381754, 381756, 381757, 381758,
-        }},
+        { id = 360827, name = "Blistering Scales",    textureId = 5199623 },
+        { id = 395152, name = "Ebon Might",           textureId = 5199630 },
+        { id = 410089, name = "Prescience",           textureId = 5199640 },
+        { id = 410263, name = "Inferno's Blessing",   textureId = 5199634 },
+        { id = 410686, name = "Symbiotic Bloom",      textureId = 5199645 },
+        { id = 413984, name = "Shifting Sands",       textureId = 5199644 },
     },
     DRUID = {
-        { id = 774,    name = "Rejuvenation" },
-        { id = 8936,   name = "Regrowth" },
-        { id = 33763,  name = "Lifebloom" },
-        { id = 48438,  name = "Wild Growth" },
-        { id = 155777, name = "Germination" },
-        -- Raid buff
-        { id = 1126,   name = "Mark of the Wild" },
+        { id = 774,    name = "Rejuvenation",   textureId = 136081 },
+        { id = 8936,   name = "Regrowth",        textureId = 136085 },
+        { id = 33763,  name = "Lifebloom",        textureId = 134206 },
+        { id = 48438,  name = "Wild Growth",      textureId = 236153 },
+        { id = 155777, name = "Germination",      textureId = 136081 },
     },
     PRIEST = {
         -- Discipline
-        { id = 17,      name = "Power Word: Shield" },
-        { id = 194384,  name = "Atonement" },
-        { id = 1253593, name = "Void Shield" },
+        { id = 17,      name = "Power Word: Shield",    textureId = 135940 },
+        { id = 194384,  name = "Atonement",              textureId = 458722 },
+        { id = 1253593, name = "Void Shield",            textureId = 135940 },
         -- Holy
-        { id = 139,     name = "Renew" },
-        { id = 41635,   name = "Prayer of Mending" },
-        { id = 77489,   name = "Echo of Light" },
-        -- Raid buff
-        { id = 21562,   name = "Power Word: Fortitude" },
+        { id = 139,     name = "Renew",                  textureId = 135953 },
+        { id = 41635,   name = "Prayer of Mending",      textureId = 135944 },
+        { id = 77489,   name = "Echo of Light",           textureId = 237541 },
     },
     MONK = {
-        { id = 115175, name = "Soothing Mist" },
-        { id = 119611, name = "Renewing Mist" },
-        { id = 124682, name = "Enveloping Mist" },
-        { id = 450769, name = "Aspect of Harmony" },
+        { id = 115175, name = "Soothing Mist",    textureId = 606550 },
+        { id = 119611, name = "Renewing Mist",    textureId = 627487 },
+        { id = 124682, name = "Enveloping Mist",  textureId = 775461 },
+        { id = 450769, name = "Aspect of Harmony", textureId = 5765856 },
     },
     SHAMAN = {
-        { id = 974,    name = "Earth Shield" },
-        { id = 383648, name = "Earth Shield (Talent)" },
-        { id = 61295,  name = "Riptide" },
-        -- Raid buff
-        { id = 462854, name = "Skyfury" },
+        { id = 974,    name = "Earth Shield",          textureId = 136089 },
+        { id = 383648, name = "Earth Shield (Talent)",  textureId = 136089 },
+        { id = 61295,  name = "Riptide",               textureId = 252995 },
     },
     PALADIN = {
-        { id = 53563,   name = "Beacon of Light" },
-        { id = 156322,  name = "Eternal Flame" },
-        { id = 156910,  name = "Beacon of Faith" },
-        { id = 1244893, name = "Beacon of the Savior" },
-    },
-    MAGE = {
-        { id = 1459, name = "Arcane Intellect" },
-    },
-    WARRIOR = {
-        { id = 6673, name = "Battle Shout" },
+        { id = 53563,   name = "Beacon of Light",      textureId = 236247 },
+        { id = 156322,  name = "Eternal Flame",        textureId = 135972 },
+        { id = 156910,  name = "Beacon of Faith",       textureId = 236247 },
+        { id = 1244893, name = "Beacon of the Savior",  textureId = 236247 },
     },
 }
 
 -- Alphabetical class order for selector
-HA.CLASS_ORDER = { "DRUID", "EVOKER", "MAGE", "MONK", "PALADIN", "PRIEST", "SHAMAN", "WARRIOR" }
+HA.CLASS_ORDER = { "DRUID", "EVOKER", "MONK", "PALADIN", "PRIEST", "SHAMAN" }
 
 -- Display names for the class selector
 HA.CLASS_LABELS = {
     DRUID   = "Druid",
     EVOKER  = "Evoker",
-    MAGE    = "Mage",
     MONK    = "Monk",
     PALADIN = "Paladin",
     PRIEST  = "Priest",
     SHAMAN  = "Shaman",
-    WARRIOR = "Warrior",
 }
 
 -- Reverse lookup: spellId → classToken (includes linkedIds)
@@ -145,6 +125,19 @@ for _, spells in pairs(HA.SPELL_REGISTRY) do
     end
 end
 
+-- spellId → registry entry (for textureId lookup; includes linkedIds → parent entry)
+HA.SPELL_REGISTRY_BY_ID = {}
+for _, spells in pairs(HA.SPELL_REGISTRY) do
+    for _, entry in ipairs(spells) do
+        HA.SPELL_REGISTRY_BY_ID[entry.id] = entry
+        if entry.linkedIds then
+            for _, linkedId in ipairs(entry.linkedIds) do
+                HA.SPELL_REGISTRY_BY_ID[linkedId] = entry
+            end
+        end
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Per-Spell Default Settings
 --------------------------------------------------------------------------------
@@ -173,11 +166,12 @@ function HA.RebuildActiveTrackedSet()
     wipe(HA.ACTIVE_TRACKED_IDS)
     local db = addon.db and addon.db.profile
     local gf = db and db.groupFrames
-    local ha = gf and gf.healerAuras
+    local ha = gf and gf.auraTracking
     local spells = ha and ha.spells
     if not spells then return end
     for spellId, config in pairs(spells) do
-        if config.enabled then
+        -- Only track spells that exist in the registry (ignore stale DB entries)
+        if config.enabled and HA.SPELL_REGISTRY_BY_ID[spellId] then
             HA.ACTIVE_TRACKED_IDS[spellId] = true
             -- Also add all linked variants (e.g., Blessing of the Bronze per-class IDs)
             for _, classSpells in pairs(HA.SPELL_REGISTRY) do
@@ -200,34 +194,35 @@ end
 -- Never write properties directly to Blizzard frames.
 --------------------------------------------------------------------------------
 
-local HealerAuraState = setmetatable({}, { __mode = "k" })
+local AuraTrackingState = setmetatable({}, { __mode = "k" })
 
 local function getState(frame)
     if not frame then return nil end
-    return HealerAuraState[frame]
+    return AuraTrackingState[frame]
 end
 
 local function ensureState(frame)
     if not frame then return nil end
-    if not HealerAuraState[frame] then
-        HealerAuraState[frame] = {
+    if not AuraTrackingState[frame] then
+        AuraTrackingState[frame] = {
             unit = nil,
             iconFrames = {},
         }
     end
-    return HealerAuraState[frame]
+    return AuraTrackingState[frame]
 end
 
--- Export for icons.lua
+-- Export for icons.lua and buffstrip.lua
 HA._getState = getState
 HA._ensureState = ensureState
-HA._HealerAuraState = HealerAuraState
+HA._AuraTrackingState = AuraTrackingState
 
 --------------------------------------------------------------------------------
 -- Group Unit Token Set
 --------------------------------------------------------------------------------
 
 local GROUP_UNITS = {}
+HA._GROUP_UNITS = GROUP_UNITS  -- Export for buffstrip.lua
 
 local function RebuildGroupUnits()
     wipe(GROUP_UNITS)
@@ -332,32 +327,6 @@ function HA.IsFeatureAvailable()
 end
 
 --------------------------------------------------------------------------------
--- Hide Hook — Suppress Blizzard buff icons for tracked spells
---------------------------------------------------------------------------------
--- Post-hook on CompactUnitFrame_UtilSetBuff. Fires after Blizzard's Show(),
--- so our Hide() wins. pcall wraps spellId access for secret-safety.
---------------------------------------------------------------------------------
-
-local hideHookInstalled = false
-
-local function InstallHideHook()
-    if hideHookInstalled then return end
-    if not CompactUnitFrame_UtilSetBuff then return end
-
-    hooksecurefunc("CompactUnitFrame_UtilSetBuff", function(buffFrame, aura)
-        if not aura then return end
-        local ok, isTracked = pcall(function()
-            return aura.spellId and HA.ACTIVE_TRACKED_IDS[aura.spellId]
-        end)
-        if ok and isTracked then
-            buffFrame:Hide()
-        end
-    end)
-
-    hideHookInstalled = true
-end
-
---------------------------------------------------------------------------------
 -- Frame-to-Unit Mapping
 --------------------------------------------------------------------------------
 -- Hooks CompactUnitFrame_SetUnit to cache which unit token each frame has.
@@ -372,8 +341,20 @@ local function InstallFrameToUnitHook()
 
     hooksecurefunc("CompactUnitFrame_SetUnit", function(frame, unit)
         if not frame then return end
+        -- Skip during Edit Mode to avoid taint propagation
+        if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+           and addon.EditMode.IsEditModeActiveOrOpening() then
+            return
+        end
         local state = ensureState(frame)
         state.unit = unit
+        -- Cache frame height while we have a safe reference (OOC context)
+        if not InCombatLockdown() then
+            local ok, h = pcall(frame.GetHeight, frame)
+            if ok and type(h) == "number" and h > 0 then
+                state.cachedHeight = h
+            end
+        end
         if unit and GROUP_UNITS[unit] then
             HA.UpdateAurasForFrame(frame, unit)
         else
@@ -394,9 +375,14 @@ local function ScanAurasForUnit(unit)
 
     local ok = pcall(function()
         AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(aura)
-            if aura and aura.spellId and HA.ACTIVE_TRACKED_IDS[aura.spellId] then
-                found[aura.spellId] = {
-                    spellId = aura.spellId,
+            if not aura then return end
+            local spellId = aura.spellId
+            if not spellId then return end
+            -- Skip secret spellIds individually (don't abort the whole scan)
+            if issecretvalue and issecretvalue(spellId) then return end
+            if HA.ACTIVE_TRACKED_IDS[spellId] then
+                found[spellId] = {
+                    spellId = spellId,
                     icon = aura.icon,
                     duration = aura.duration or 0,
                     expirationTime = aura.expirationTime or 0,
@@ -444,7 +430,7 @@ function HA.UpdateAurasForFrame(frame, unit)
             state.iconFrames[spellId] = iconFrame
         end
         if iconFrame and HA.StyleIcon then
-            HA.StyleIcon(iconFrame, spellId, auraData, frame)
+            HA.StyleIcon(iconFrame, spellId, auraData, frame, unit)
         end
     end
 end
@@ -488,7 +474,7 @@ end
 
 function HA.RefreshAllAuraDisplays()
     DiscoverGroupFrames()
-    for frame, state in pairs(HealerAuraState) do
+    for frame, state in pairs(AuraTrackingState) do
         if state.unit and GROUP_UNITS[state.unit] then
             HA.UpdateAurasForFrame(frame, state.unit)
         else
@@ -500,8 +486,8 @@ end
 --------------------------------------------------------------------------------
 -- Config Change Refresh
 --------------------------------------------------------------------------------
--- When user enables/disables a spell, force Blizzard to re-evaluate buff
--- display and refresh our custom icons.
+-- When user enables/disables a spell, rebuild tracked set and refresh all
+-- custom icons + buff strip overlays.
 --------------------------------------------------------------------------------
 
 local pendingRefresh = false
@@ -509,23 +495,15 @@ local pendingRefresh = false
 function HA.OnConfigChanged()
     HA.RebuildActiveTrackedSet()
 
-    -- Force Blizzard to re-evaluate buff display on all active group frames
     if InCombatLockdown() then
         pendingRefresh = true
         return
     end
 
-    HA.ForceBlizzardAuraRefresh()
     HA.RefreshAllAuraDisplays()
-end
-
-function HA.ForceBlizzardAuraRefresh()
-    if not CompactUnitFrame_UpdateAuras then return end
-
-    for frame, state in pairs(HealerAuraState) do
-        if state.unit then
-            pcall(CompactUnitFrame_UpdateAuras, frame)
-        end
+    -- Refresh buff icon scaling (installed by buffstrip.lua)
+    if HA.RefreshBuffStripScaling then
+        HA.RefreshBuffStripScaling()
     end
 end
 
@@ -543,23 +521,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 HA._secretWarningShown = true
                 -- Only warn if user has any spells configured
                 local db = addon.db and addon.db.profile
-                local ha = db and db.groupFrames and db.groupFrames.healerAuras
+                local ha = db and db.groupFrames and db.groupFrames.auraTracking
                 if ha and ha.spells and next(ha.spells) then
-                    print("|cff00ff66Scoot:|r Healer Auras feature unavailable — aura data is protected.")
+                    print("|cff00ff66Scoot:|r Aura Tracking feature unavailable — aura data is protected.")
                 end
             end
             return
         end
 
         RebuildGroupUnits()
-        InstallHideHook()
         InstallFrameToUnitHook()
         HA.RebuildActiveTrackedSet()
 
         -- Delayed initial scan (frames need time to initialize)
         C_Timer.After(1.0, function()
             HA.RefreshAllAuraDisplays()
-            HA.ForceBlizzardAuraRefresh()
         end)
 
     elseif event == "UNIT_AURA" then
@@ -567,19 +543,18 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if not GROUP_UNITS[unit] then return end
         if not next(HA.ACTIVE_TRACKED_IDS) then return end
 
-        -- Find the frame for this unit and update
+        -- Find the frame for this unit and update custom icons
         local found = false
-        for frame, state in pairs(HealerAuraState) do
+        for frame, state in pairs(AuraTrackingState) do
             if state.unit == unit then
                 HA.UpdateAurasForFrame(frame, unit)
                 found = true
             end
         end
-
-        -- Fallback: discover frames if no match found
+        -- Fallback: discover frames if no match (handles late-spawning companions, etc.)
         if not found then
             DiscoverGroupFrames()
-            for frame, state in pairs(HealerAuraState) do
+            for frame, state in pairs(AuraTrackingState) do
                 if state.unit == unit then
                     HA.UpdateAurasForFrame(frame, unit)
                 end
@@ -595,7 +570,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         if pendingRefresh then
             pendingRefresh = false
-            HA.ForceBlizzardAuraRefresh()
             HA.RefreshAllAuraDisplays()
         end
     end

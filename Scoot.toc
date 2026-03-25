@@ -101,6 +101,7 @@ core/components/unitframes/bars/partyframes/text.lua
 core/components/unitframes/bars/partyframes/extras.lua
 core/components/unitframes/bars/groupauras/core.lua
 core/components/unitframes/bars/groupauras/icons.lua
+core/components/unitframes/bars/groupauras/buffstrip.lua
 core/components/unitframes/bars/valuecolor.lua
 core/components/unitframes/bars/vehicles.lua
 core/components/unitframes/bars/smallframes.lua
@@ -226,7 +227,7 @@ ui/v2/unitframes/BossRenderer.lua
 ui/v2/groupframes/Helpers.lua
 ui/v2/groupframes/PartyRenderer.lua
 ui/v2/groupframes/RaidRenderer.lua
-ui/v2/groupframes/HealerAurasRenderer.lua
+ui/v2/groupframes/AuraTrackingRenderer.lua
 ui/v2/settingspanel/search.lua
 ui/v2/settingspanel/ascii.lua
 ui/v2/settingspanel/core.lua

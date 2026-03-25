@@ -156,7 +156,7 @@ Navigation.NavModel = {
         children = {
             { key = "gfParty", label = "Party Frames", module = "groupFrames" },
             { key = "gfRaid", label = "Raid Frames", module = "groupFrames" },
-            { key = "gfHealerAuras", label = "Healer Auras", module = "groupFrames" },
+            { key = "gfAuraTracking", label = "Aura Tracking", module = "groupFrames" },
         },
     },
     {

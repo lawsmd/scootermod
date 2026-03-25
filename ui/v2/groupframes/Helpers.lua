@@ -45,13 +45,13 @@ function GF.ensureRaidDB()
     return db.groupFrames.raid
 end
 
-function GF.ensureHealerAurasDB()
+function GF.ensureAuraTrackingDB()
     local db = addon and addon.db and addon.db.profile
     if not db then return nil end
     db.groupFrames = db.groupFrames or {}
-    db.groupFrames.healerAuras = db.groupFrames.healerAuras or {}
-    db.groupFrames.healerAuras.spells = db.groupFrames.healerAuras.spells or {}
-    return db.groupFrames.healerAuras
+    db.groupFrames.auraTracking = db.groupFrames.auraTracking or {}
+    db.groupFrames.auraTracking.spells = db.groupFrames.auraTracking.spells or {}
+    return db.groupFrames.auraTracking
 end
 
 function GF.ensurePartyTextDB(textKey)
