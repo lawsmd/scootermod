@@ -9,8 +9,6 @@ local MIN_CD_DURATION = CG._MIN_CD_DURATION
 -- Comparator Functions (OPT-10: module-level, eliminate per-call closures)
 --------------------------------------------------------------------------------
 
-local function checkMultiCharge(ci) return ci.maxCharges > 1 end
-local function checkSpellCD(ci) return ci.duration and ci.duration > 0 and ci.isEnabled end
 local function checkItemCD(st, dur, en) return st and dur and dur > MIN_CD_DURATION and en and en ~= 0 end
 local function checkCountGt1(c) return c and c > 1 end
 
@@ -67,45 +65,45 @@ local function RefreshSpellCooldown(icon)
     -- Fetch cdInfo once (used by charge fallthrough and regular path, returned to caller)
     local cdInfo = C_Spell.GetSpellCooldown(spellID)
 
-    -- Charges (all SpellChargeInfo fields can be secret in restricted contexts)
+    -- Charges: maxCharges is non-secret (12.0.1b), currentCharges remains secret
     local chargeInfo = C_Spell.GetSpellCharges(spellID)
     if chargeInfo then
-        local ok, hasMultiCharges = pcall(checkMultiCharge, chargeInfo)
-        if ok then
-            if hasMultiCharges then
-                icon.CountText:SetText(chargeInfo.currentCharges)
-                icon.CountText:Show()
-
-                if chargeInfo.currentCharges == 0 then
-                    -- All charges spent — show cooldown swipe
-                    if chargeInfo.cooldownStartTime > 0 then
-                        icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-                    end
-                    icon.Icon:SetDesaturation(1)
-                    icon._chargeDesatHandled = true
-                elseif chargeInfo.currentCharges < chargeInfo.maxCharges and chargeInfo.cooldownStartTime > 0 then
-                    -- Recharging — show swipe
-                    icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
-                    icon.Icon:SetDesaturation(0)
-                    icon._chargeDesatHandled = true
-                else
-                    -- All charges full
-                    icon.Cooldown:Clear()
-                    icon.Icon:SetDesaturation(0)
-                    icon._chargeDesatHandled = true
-                end
-                return cdInfo
-            end
-            icon.CountText:Hide()
-        else
-            -- Secret: SetCooldown + SetText both accept secret values natively
-            icon.Cooldown:SetCooldown(chargeInfo.cooldownStartTime, chargeInfo.cooldownDuration, chargeInfo.chargeModRate)
+        if chargeInfo.maxCharges and chargeInfo.maxCharges > 1 then
+            -- Show charge count (SetText accepts secret values natively)
             icon.CountText:SetText(chargeInfo.currentCharges)
             icon.CountText:Show()
-            icon.Icon:SetDesaturation(0)
+
+            if chargeInfo.isActive then
+                -- Charges recharging — show cooldown swipe via DurationObject (taint-free)
+                local chargeDurObj = C_Spell.GetSpellChargeDuration(spellID)
+                if chargeDurObj then
+                    icon.Cooldown:SetCooldownFromDurationObject(chargeDurObj)
+                end
+                -- Desaturation: all charges spent → 1, otherwise → 0
+                -- currentCharges is secret; try direct comparison, fall back to
+                -- regular spell CD duration (non-zero when spell is fully unavailable)
+                local chargeOk, isZeroCharges = pcall(function() return chargeInfo.currentCharges == 0 end)
+                if chargeOk then
+                    icon.Icon:SetDesaturation(isZeroCharges and 1 or 0)
+                elseif cdInfo and not cdInfo.isOnGCD then
+                    local regDurObj = C_Spell.GetSpellCooldownDuration(spellID)
+                    if regDurObj and EvalBoolToValue then
+                        icon.Icon:SetDesaturation(EvalBoolToValue(regDurObj:IsZero(), 0, 1))
+                    else
+                        icon.Icon:SetDesaturation(0)
+                    end
+                else
+                    icon.Icon:SetDesaturation(0)
+                end
+            else
+                -- All charges full
+                icon.Cooldown:Clear()
+                icon.Icon:SetDesaturation(0)
+            end
             icon._chargeDesatHandled = true
             return cdInfo
         end
+        icon.CountText:Hide()
     else
         icon.CountText:Hide()
     end
@@ -118,18 +116,13 @@ local function RefreshSpellCooldown(icon)
         return cdInfo
     end
 
-    -- Try comparisons (work outside restricted contexts)
-    local ok, isOnCD = pcall(checkSpellCD, cdInfo)
-
-    if ok then
-        if isOnCD then
-            icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-        else
-            icon.Cooldown:Clear()
-        end
+    -- Use DurationObject for taint-free cooldown display (12.0.1b+)
+    -- Returns zero-span when inactive; SetCooldownFromDurationObject clears automatically
+    local durObj = C_Spell.GetSpellCooldownDuration(spellID)
+    if durObj then
+        icon.Cooldown:SetCooldownFromDurationObject(durObj)
     else
-        -- Secret: pass directly to SetCooldown (C++ handles secrets natively)
-        icon.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
+        icon.Cooldown:Clear()
     end
 
     return cdInfo

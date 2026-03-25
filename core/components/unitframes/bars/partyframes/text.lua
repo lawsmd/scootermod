@@ -412,8 +412,15 @@ local function ensurePartyNameOverlay(frame, cfg)
     local fpColorMode = cfg.colorMode or "default"
     local classKey = ""
     if fpColorMode == "class" and frame.unit then
-        local ok, _, token = pcall(function() return UnitClass(frame.unit) end)
-        if ok and type(token) == "string" then
+        -- UnitClassBase (12.0): returns nothing from tainted context (not secrets)
+        local token = UnitClassBase and UnitClassBase(frame.unit) or nil
+        if not token then
+            local ok, _, rawToken = pcall(function() return UnitClass(frame.unit) end)
+            if ok and rawToken and not issecretvalue(rawToken) then
+                token = rawToken
+            end
+        end
+        if token and type(token) == "string" and not issecretvalue(token) then
             classKey = token
         end
     end
@@ -431,11 +438,14 @@ local function ensurePartyNameOverlay(frame, cfg)
         classKey
     )
 
-    -- Skip re-styling if config hasn't changed and overlay is visible
-    if state.lastNameFingerprint == fingerprint and state.overlayText:IsShown() then
+    -- Don't cache fingerprint when class data is unresolved (taint/timing) —
+    -- allows re-styling on every call until the class resolves.
+    local classKeyUnresolved = (fpColorMode == "class" and classKey == "" and frame.unit ~= nil)
+
+    if not classKeyUnresolved and state.lastNameFingerprint == fingerprint and state.overlayText:IsShown() then
         return
     end
-    state.lastNameFingerprint = fingerprint
+    state.lastNameFingerprint = classKeyUnresolved and nil or fingerprint
 
     -- Style the overlay and hide Blizzard's text
     stylePartyNameOverlay(frame, cfg)
@@ -664,6 +674,14 @@ local function installPartyNameOverlayHooks()
                     if InCombatLockdown and InCombatLockdown() then
                         Combat.queuePartyFrameReapply()
                         return
+                    end
+                    -- Clear fingerprints to force full re-style after roster change
+                    for i = 1, 5 do
+                        local f = _G["CompactPartyFrameMember" .. i]
+                        if f then
+                            local s = getState(f)
+                            if s then s.lastNameFingerprint = nil end
+                        end
                     end
                     if addon.ApplyPartyFrameNameOverlays then
                         addon.ApplyPartyFrameNameOverlays()

@@ -1087,7 +1087,7 @@ function Overlays.ApplyBorder(cdmIcon, opts)
     if not cdmIcon then return end
 
     if not isFrameVisible(cdmIcon) then
-        Overlays.HideOverlay(cdmIcon)
+        Overlays.ReleaseForIcon(cdmIcon)
         return
     end
 
@@ -1357,7 +1357,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
 
     if viewer.IsVisible and not viewer:IsVisible() then
         for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
-            Overlays.HideOverlay(child)
+            Overlays.ReleaseForIcon(child)
         end
         return
     end
@@ -1385,7 +1385,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
     for _, child in ipairs(getViewerChildren(viewer, viewerFrameName)) do
         if isValidCDMItemFrame(child) then
             if not isFrameVisible(child) then
-                Overlays.HideOverlay(child)
+                Overlays.ReleaseForIcon(child)
             else
                 -- Apply icon sizing (with zoom) if configured
                 if hasCustomSize and iconWidth and iconHeight then
@@ -1590,16 +1590,23 @@ function Overlays.HookViewer(viewerFrameName, componentId)
             if addon.SpellBindings and addon.SpellBindings.ClearIconCache then
                 addon.SpellBindings.ClearIconCache(itemFrame)
             end
-            -- Defer cleanup to break Blizzard's call stack and avoid taint propagation
+            -- Remove from tracking immediately to prevent catch-up ticker resurrection.
+            -- The overlay and activeOverlays table are Scoot-owned, so this is taint-safe.
+            local overlay = activeOverlays[itemFrame]
+            if overlay then
+                activeOverlays[itemFrame] = nil
+                overlay:Hide()
+            end
+            -- Defer heavy cleanup (reparent, pool return) to break Blizzard's call stack
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
-                    Overlays.HideOverlay(itemFrame)
+                    if overlay then releaseOverlay(overlay) end
                     Overlays.ResetIconSize(itemFrame)
                     Overlays.ResetSwipe(itemFrame)
                     Overlays.RestoreIconRing(itemFrame)
                 end)
             else
-                Overlays.HideOverlay(itemFrame)
+                if overlay then releaseOverlay(overlay) end
                 Overlays.ResetIconSize(itemFrame)
                 Overlays.ResetSwipe(itemFrame)
                 Overlays.RestoreIconRing(itemFrame)
@@ -1639,11 +1646,15 @@ local cleanupTicker = nil
 local offCDRefreshTicker = nil
 
 local function runOverlayCleanup()
-    -- Part 1: hide overlays for invisible icons
-    for cdmIcon, overlay in pairs(activeOverlays) do
+    -- Part 1: release overlays for invisible icons (collect first to avoid mutation during iteration)
+    local toRelease = {}
+    for cdmIcon, _overlay in pairs(activeOverlays) do
         if not isFrameVisible(cdmIcon) then
-            overlay:Hide()
+            toRelease[#toRelease + 1] = cdmIcon
         end
+    end
+    for _, cdmIcon in ipairs(toRelease) do
+        Overlays.ReleaseForIcon(cdmIcon)
     end
 
     -- Part 2: catch-up — detect visible icons that were never styled

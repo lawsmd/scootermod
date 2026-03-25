@@ -140,19 +140,41 @@ function addon.GetPowerColorRGB(unitOrPower)
 	return 1, 1, 1
 end
 
+-- Player class never changes during a session; cache at load time (untainted context).
+-- From tainted addon context UnitExists() can return nil, causing GetClassColorRGB
+-- to misinterpret "player" as a class token (which doesn't exist in the color tables).
+local _playerClassTokenCache = select(2, UnitClass("player"))
+
 function addon.GetClassColorRGB(unitOrClassToken)
 	local classToken = nil
 	if type(unitOrClassToken) == "string" then
-		-- Try to get class from any valid unit token (player, target, party1, raid5, etc.)
-		if UnitClass and UnitExists and UnitExists(unitOrClassToken) then
-			local _, token = UnitClass(unitOrClassToken)
-			classToken = token
+		-- Fast path: "player" uses load-time cache (immune to taint/secrets)
+		if unitOrClassToken == "player" and _playerClassTokenCache then
+			classToken = _playerClassTokenCache
 		else
-			-- Not a valid unit - treat as class token directly (e.g., "WARRIOR")
-			classToken = unitOrClassToken
+			-- UnitClassBase (12.0): returns nothing from tainted context (not secrets)
+			if UnitClassBase then
+				local token = UnitClassBase(unitOrClassToken)
+				if token and type(token) == "string" and not issecretvalue(token) then
+					classToken = token
+				end
+			end
+			-- Fallback: UnitClass with secret guard
+			if not classToken and UnitClass then
+				local ok, _, token = pcall(function() return UnitClass(unitOrClassToken) end)
+				if ok and token and type(token) == "string" and not issecretvalue(token) then
+					classToken = token
+				end
+			end
+			-- Last resort: input might be a class token directly (e.g., "WARRIOR")
+			if not classToken and not issecretvalue(unitOrClassToken) then
+				if addon.ClassColors[unitOrClassToken] or (_G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[unitOrClassToken]) then
+					classToken = unitOrClassToken
+				end
+			end
 		end
 	end
-	if type(classToken) ~= "string" then
+	if type(classToken) ~= "string" or issecretvalue(classToken) then
 		return 1, 1, 1 -- fallback white
 	end
 	-- Use our static table first; fall back to RAID_CLASS_COLORS when available
