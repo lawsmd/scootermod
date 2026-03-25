@@ -53,7 +53,7 @@ end
 local SPELL_DEFAULTS = addon.HealerAuras and addon.HealerAuras.SPELL_DEFAULTS or {
     enabled = false,
     iconStyle = "spell",
-    iconColor = "custom",
+    iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
     position = "inside",
@@ -515,11 +515,11 @@ function HealerAurasUI.Render(panel, scrollContent)
         builder:AddSelectorColorPicker({
             key = "iconColor",
             label = "Icon Color",
-            values = { custom = "Custom", rainbow = "Rainbow" },
-            order = { "custom", "rainbow" },
+            values = { original = "Texture Original", custom = "Custom", rainbow = "Rainbow" },
+            order = { "original", "custom", "rainbow" },
             customValue = "custom",
             hasAlpha = true,
-            get = function() return getSetting(selectedId, "iconColor") or "custom" end,
+            get = function() return getSetting(selectedId, "iconColor") or "original" end,
             set = function(v)
                 setSetting(selectedId, "iconColor", v)
             end,

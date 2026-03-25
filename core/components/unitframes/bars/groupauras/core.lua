@@ -152,7 +152,7 @@ end
 HA.SPELL_DEFAULTS = {
     enabled = false,
     iconStyle = "spell",
-    iconColor = "custom",
+    iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
     position = "inside",
@@ -283,7 +283,7 @@ rainbowFrame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
     rainbowHue = (rainbowHue + elapsed / RAINBOW_CYCLE_PERIOD) % 1
-    local r, g, b = HA.HSVtoRGB(rainbowHue, 1, 1)
+    local r, g, b = HA.HSVtoRGB(rainbowHue, 0.75, 1)
     for tex in pairs(rainbowIcons) do
         if tex:IsVisible() then
             tex:SetVertexColor(r, g, b, 1)
@@ -461,7 +461,33 @@ function HA.HideAllAurasForFrame(frame)
     wipe(state.iconFrames)
 end
 
+local function DiscoverGroupFrames()
+    -- Party frames: CompactPartyFrameMember1..5
+    for i = 1, 5 do
+        local frame = _G["CompactPartyFrameMember" .. i]
+        if frame then
+            local ok, unit = pcall(function() return frame.unit end)
+            if ok and unit and GROUP_UNITS[unit] then
+                local state = ensureState(frame)
+                state.unit = unit
+            end
+        end
+    end
+    -- Raid frames: CompactRaidFrame1..40
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame then
+            local ok, unit = pcall(function() return frame.unit end)
+            if ok and unit and GROUP_UNITS[unit] then
+                local state = ensureState(frame)
+                state.unit = unit
+            end
+        end
+    end
+end
+
 function HA.RefreshAllAuraDisplays()
+    DiscoverGroupFrames()
     for frame, state in pairs(HealerAuraState) do
         if state.unit and GROUP_UNITS[state.unit] then
             HA.UpdateAurasForFrame(frame, state.unit)
@@ -533,6 +559,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Delayed initial scan (frames need time to initialize)
         C_Timer.After(1.0, function()
             HA.RefreshAllAuraDisplays()
+            HA.ForceBlizzardAuraRefresh()
         end)
 
     elseif event == "UNIT_AURA" then
@@ -541,9 +568,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if not next(HA.ACTIVE_TRACKED_IDS) then return end
 
         -- Find the frame for this unit and update
+        local found = false
         for frame, state in pairs(HealerAuraState) do
             if state.unit == unit then
                 HA.UpdateAurasForFrame(frame, unit)
+                found = true
+            end
+        end
+
+        -- Fallback: discover frames if no match found
+        if not found then
+            DiscoverGroupFrames()
+            for frame, state in pairs(HealerAuraState) do
+                if state.unit == unit then
+                    HA.UpdateAurasForFrame(frame, unit)
+                end
             end
         end
 

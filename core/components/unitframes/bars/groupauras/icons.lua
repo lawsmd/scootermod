@@ -76,6 +76,7 @@ local function CreateIconFrame()
     local cd = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
     cd:SetAllPoints(icon)
     cd:SetDrawEdge(false)
+    cd:SetDrawSwipe(false)
     cd:SetHideCountdownNumbers(true)
     icon.Cooldown = cd
 
@@ -199,22 +200,26 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame)
     end
 
     -- Apply desaturation and color
-    local colorMode = config.iconColor or "custom"
+    local colorMode = config.iconColor or "original"
     -- Remove from rainbow if switching away
     if iconFrame._isRainbow then
         HA.UnregisterRainbowIcon(tex)
         iconFrame._isRainbow = false
     end
 
-    tex:SetDesaturated(true)
-
-    if colorMode == "rainbow" then
+    if colorMode == "original" then
+        tex:SetDesaturated(false)
+        tex:SetVertexColor(1, 1, 1, 1)
+    elseif colorMode == "rainbow" then
+        tex:SetDesaturated(true)
         HA.RegisterRainbowIcon(tex)
         iconFrame._isRainbow = true
     elseif colorMode == "custom" then
+        tex:SetDesaturated(true)
         local c = config.iconCustomColor or { 1, 1, 1, 1 }
         tex:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
     else
+        tex:SetDesaturated(true)
         tex:SetVertexColor(1, 1, 1, 1)
     end
 

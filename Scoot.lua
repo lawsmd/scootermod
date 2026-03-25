@@ -340,6 +340,16 @@ function SlashCmdList.SCOOT(msg, editBox)
             return
         end
 
+        -- /scoot debug altertime
+        if sub1 == "altertime" or sub1 == "at" then
+            if addon.DebugAlterTimeHealth then
+                addon.DebugAlterTimeHealth()
+            else
+                addon:Print("Alter Time debug not available (debug module missing).")
+            end
+            return
+        end
+
         -- /scoot debug dm export [overall|current|expired]
         -- /scoot debug dm frames
         -- /scoot debug dm trace <on|off>
