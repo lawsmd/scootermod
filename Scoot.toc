@@ -99,6 +99,8 @@ core/components/unitframes/bars/raidframes/extras.lua
 core/components/unitframes/bars/partyframes/core.lua
 core/components/unitframes/bars/partyframes/text.lua
 core/components/unitframes/bars/partyframes/extras.lua
+core/components/unitframes/bars/groupauras/core.lua
+core/components/unitframes/bars/groupauras/icons.lua
 core/components/unitframes/bars/valuecolor.lua
 core/components/unitframes/bars/vehicles.lua
 core/components/unitframes/bars/smallframes.lua
@@ -162,6 +164,7 @@ ui/v2/controls/SelectorColorPicker.lua
 ui/v2/controls/Dropdown.lua
 ui/v2/controls/BarTexturePicker.lua
 ui/v2/controls/BarBorderPicker.lua
+ui/v2/controls/AuraIconPicker.lua
 ui/v2/controls/DualBarStyleRow.lua
 ui/v2/controls/Dialog.lua
 ui/v2/controls/Preview.lua
@@ -223,6 +226,7 @@ ui/v2/unitframes/BossRenderer.lua
 ui/v2/groupframes/Helpers.lua
 ui/v2/groupframes/PartyRenderer.lua
 ui/v2/groupframes/RaidRenderer.lua
+ui/v2/groupframes/HealerAurasRenderer.lua
 ui/v2/settingspanel/search.lua
 ui/v2/settingspanel/ascii.lua
 ui/v2/settingspanel/core.lua
