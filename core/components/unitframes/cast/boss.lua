@@ -107,8 +107,12 @@ do
 		if not getProp(frame, "bossCastHooksInstalled") and _G.hooksecurefunc then
 			setProp(frame, "bossCastHooksInstalled", true)
 			local hookIndex = index
-			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
+			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, texArg, ...)
 				if getProp(self, "ufInternalTextureWrite") then return end
+				-- Track interruptibility from Blizzard's atlas change
+				if type(texArg) == "string" then
+					setProp(self, "castNotInterruptible", texArg == "ui-castingbar-uninterruptable")
+				end
 				if addon and addon.ApplyBossCastBarFor then
 					setProp(self, "castVisualOnly", true)
 					addon.ApplyBossCastBarFor()

@@ -27,7 +27,8 @@ local TIER_COLORS_DISABLED = CB._TIER_COLORS_DISABLED
 local MAX_EMPOWERED_TIERS = 5
 
 -- Resolve the fill color from cast bar color settings (mirrors bars/textures.lua logic)
-local function resolveBarFillColor(cfg, unit)
+-- frame: the cast bar frame (used to read interruptibility state for default color mode)
+local function resolveBarFillColor(cfg, unit, frame)
 	local colorMode = cfg.castBarColorMode or "default"
 	local tint = cfg.castBarTint
 	if colorMode == "custom" and type(tint) == "table" then
@@ -38,7 +39,12 @@ local function resolveBarFillColor(cfg, unit)
 			return r or 1, g or 1, b or 1, 1
 		end
 	end
-	-- "default" / "textureOriginal": Blizzard's default gold cast bar color
+	-- "default": white for non-kickable casts, yellow/gold for kickable
+	-- (castNotInterruptible is set by the SetStatusBarTexture hook when Blizzard
+	-- switches to the "ui-castingbar-uninterruptable" atlas)
+	if frame and getProp(frame, "castNotInterruptible") then
+		return 1, 1, 1, 1
+	end
 	return 1, 0.7, 0, 1
 end
 
@@ -393,7 +399,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	local elements = ensureTextFillElements(frame)
 
 	-- Resolve fill color from cast bar color settings
-	local r, g, b, a = resolveBarFillColor(cfg, unit)
+	local r, g, b, a = resolveBarFillColor(cfg, unit, frame)
 
 	-- Resolve foreground texture (user's selected bar texture)
 	local texKey = cfg.castBarTexture or "default"
@@ -484,6 +490,8 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	end
 
 	-- Hide our custom spark overlay when Blizzard calls HideSpark (cast complete / interrupt)
+	-- Also lock clipFrame to full width so filledText stays visible above unfilled elements
+	-- during the FadeOutAnim (prevents collapse when fill texture atlas changes in FinishSpell)
 	if not getProp(frame, "textFillHideSparkHooked") then
 		setProp(frame, "textFillHideSparkHooked", true)
 		hooksecurefunc(frame, "HideSpark", function(self)
@@ -492,6 +500,13 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 				if els then
 					if els.sparkTex then els.sparkTex:Hide() end
 					if els.sparkFrame then els.sparkFrame:Hide() end
+					-- Lock clipFrame to full width for clean fade-out
+					if els.clipFrame and els.clipFrame:IsShown() then
+						els.clipFrame:ClearAllPoints()
+						local textOverflow = 20
+						els.clipFrame:SetPoint("TOPLEFT", self, "TOPLEFT", 0, textOverflow)
+						els.clipFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, -textOverflow)
+					end
 				end
 			end
 		end)

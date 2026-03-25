@@ -192,9 +192,14 @@ do
 		if not getProp(frame, "castHooksInstalled") and _G.hooksecurefunc then
 			setProp(frame, "castHooksInstalled", true)
 			local hookUnit = unit
-			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
+			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, texArg, ...)
 				-- Ignore Scoot's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
+				-- Track interruptibility from Blizzard's atlas change (text-fill uses this
+				-- to show white for non-kickable casts vs yellow/gold for kickable)
+				if type(texArg) == "string" then
+					setProp(self, "castNotInterruptible", texArg == "ui-castingbar-uninterruptable")
+				end
 				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
 				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
 				if token and empoweredCastActive[token] then return end
@@ -1576,9 +1581,13 @@ do
 		if not getProp(frame, "castHooksInstalled") and _G.hooksecurefunc then
 			setProp(frame, "castHooksInstalled", true)
 			local hookUnit = unit
-			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, ...)
+			_G.hooksecurefunc(frame, "SetStatusBarTexture", function(self, texArg, ...)
 				-- Ignore Scoot's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
+				-- Track interruptibility from Blizzard's atlas change
+				if type(texArg) == "string" then
+					setProp(self, "castNotInterruptible", texArg == "ui-castingbar-uninterruptable")
+				end
 				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
 				local token = (hookUnit == "Player" and "player") or (hookUnit == "Target" and "target") or (hookUnit == "Focus" and "focus")
 				if token and empoweredCastActive[token] then return end
