@@ -103,15 +103,15 @@ addon.MODULE_CATEGORIES = {
     cooldownManager = {
         label = "Cooldown Manager",
         subToggles = {
+            { id = "essentialCooldowns", label = "Essential Cooldowns" },
+            { id = "utilityCooldowns", label = "Utility Cooldowns" },
+            { id = "trackedBuffs", label = "Tracked Buffs" },
+            { id = "trackedBars", label = "Tracked Bars" },
             { id = "customGroup1", label = "Custom Group 1" },
             { id = "customGroup2", label = "Custom Group 2" },
             { id = "customGroup3", label = "Custom Group 3" },
             { id = "customGroup4", label = "Custom Group 4" },
             { id = "customGroup5", label = "Custom Group 5" },
-            { id = "essentialCooldowns", label = "Essential Cooldowns" },
-            { id = "trackedBars", label = "Tracked Bars" },
-            { id = "trackedBuffs", label = "Tracked Buffs" },
-            { id = "utilityCooldowns", label = "Utility Cooldowns" },
         },
     },
     damageMeter = {
@@ -148,13 +148,13 @@ addon.MODULE_CATEGORIES = {
     unitFrames = {
         label = "Unit Frames",
         subToggles = {
-            { id = "Boss", label = "Boss" },
-            { id = "Focus", label = "Focus" },
-            { id = "FocusTarget", label = "Target of Focus" },
-            { id = "Pet", label = "Pet" },
             { id = "Player", label = "Player" },
             { id = "Target", label = "Target" },
             { id = "TargetOfTarget", label = "Target of Target" },
+            { id = "Focus", label = "Focus" },
+            { id = "FocusTarget", label = "Target of Focus" },
+            { id = "Pet", label = "Pet" },
+            { id = "Boss", label = "Boss" },
         },
     },
 }

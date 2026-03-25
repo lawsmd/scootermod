@@ -657,6 +657,11 @@ local function RenderClassAuras(panel, scrollContent, classToken)
                     tabBuilder:Finalize()
                 end
 
+                -- Additional tabs hook (aura-specific custom tabs)
+                if aura.additionalTabs then
+                    aura.additionalTabs(tabs, buildContent, h, getSetting, componentId, builder)
+                end
+
                 inner:AddTabbedSection({
                     tabs = tabs,
                     componentId = componentId,
