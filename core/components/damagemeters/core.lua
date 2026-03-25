@@ -596,6 +596,7 @@ addon:RegisterComponentInitializer(function(self)
     -- instead of the previous signature-based change detection which missed intermediate
     -- scroll states and left overlays stale for up to 300ms.
     local dmWasShown = false
+    local lastKnownWindowCount = 0  -- track session window count for new-window detection
     local scrollTicker = CreateFrame("Frame")
     scrollTicker:SetScript("OnUpdate", function(self, elapsed)
         self._elapsed = (self._elapsed or 0) + elapsed
@@ -612,7 +613,24 @@ addon:RegisterComponentInitializer(function(self)
         end
         if not dmWasShown then
             dmWasShown = true
+            -- Sync window count to avoid double-trigger on initial show
+            local sw = dmFrame.sessionWindows
+            lastKnownWindowCount = sw and #sw or 0
             -- Frame just became visible — trigger full restyle
+            local comp = addon.Components and addon.Components["damageMeter"]
+            if comp and comp.ApplyStyling and not PlayerInCombat() then
+                if not (comp._ScootDBProxy and comp.db == comp._ScootDBProxy) then
+                    comp:ApplyStyling()
+                end
+            end
+            return
+        end
+        -- Detect new session windows created by user (not covered by any Blizzard event)
+        local sw = dmFrame.sessionWindows
+        local currentWindowCount = sw and #sw or 0
+        if currentWindowCount ~= lastKnownWindowCount then
+            lastKnownWindowCount = currentWindowCount
+            InvalidateSessionWindowCache()
             local comp = addon.Components and addon.Components["damageMeter"]
             if comp and comp.ApplyStyling and not PlayerInCombat() then
                 if not (comp._ScootDBProxy and comp.db == comp._ScootDBProxy) then
