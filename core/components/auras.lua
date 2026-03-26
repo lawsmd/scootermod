@@ -70,6 +70,9 @@ local function updateDebuffBorderOverlay(aura, state, iconWidth, iconHeight)
     local bw = iconWidth * (40 / 30)
     local bh = iconHeight * (40 / 30)
     overlay:SetSize(bw, bh)
+    -- Cache overlay dimensions for hook-based border resizing (defense in depth)
+    state._overlayBorderW = bw
+    state._overlayBorderH = bh
     overlay:ClearAllPoints()
     local icon = aura.Icon or aura.icon or aura.IconTexture
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
@@ -96,6 +99,9 @@ local function updateTempEnchantBorderOverlay(aura, state, iconWidth, iconHeight
     local bw = iconWidth * (32 / 30)
     local bh = iconHeight * (32 / 30)
     overlay:SetSize(bw, bh)
+    -- Cache overlay dimensions for hook-based border resizing (defense in depth)
+    state._overlayBorderW = bw
+    state._overlayBorderH = bh
     overlay:ClearAllPoints()
     local icon = aura.Icon or aura.icon or aura.IconTexture
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
@@ -441,6 +447,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         for _, aura in ipairs(collection) do
             if aura and not processed[aura] then
                 processed[aura] = true
+                pcall(function()
                 local icon = aura.Icon or aura.icon or aura.IconTexture
 
                 -- OPT-01: Skip auras already styled for the current config version
@@ -554,6 +561,14 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             -- Hide BOTH Blizzard borders — we're replacing with a properly-sized overlay
                             setRegionVisible(aura.DebuffBorder, false)
                             setRegionVisible(aura.TempEnchantBorder, false)
+                            -- Also resize Blizzard borders to match non-square icon shape (defense in depth):
+                            -- even if a C-level callback re-shows them, they'll render at the correct shape
+                            if aura.DebuffBorder and aura.DebuffBorder.SetSize then
+                                pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, width * (40 / 30), height * (40 / 30))
+                            end
+                            if aura.TempEnchantBorder and aura.TempEnchantBorder.SetSize then
+                                pcall(aura.TempEnchantBorder.SetSize, aura.TempEnchantBorder, width * (32 / 30), height * (32 / 30))
+                            end
 
                             -- Detect which border type via aura.auraType (set by Blizzard's UpdateAuraType)
                             local isTempEnchant = false
@@ -575,6 +590,13 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             end
                         else
                             -- Square icons or custom border active: restore Blizzard borders, hide overlays
+                            -- Restore Blizzard border sizes to XML defaults (undo non-square resize)
+                            if aura.DebuffBorder and aura.DebuffBorder.SetSize then
+                                pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, 40, 40)
+                            end
+                            if aura.TempEnchantBorder and aura.TempEnchantBorder.SetSize then
+                                pcall(aura.TempEnchantBorder.SetSize, aura.TempEnchantBorder, 32, 32)
+                            end
                             if not borderEnabled then
                                 -- Restore type-specific borders based on aura type (not blanket force-show)
                                 local okType2, aType2 = pcall(function() return aura.auraType end)
@@ -611,6 +633,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     end
 
                 end -- version check
+                end) -- pcall per-aura
             end
         end
     end
@@ -699,6 +722,10 @@ local function ApplyAuraFrameStyling(self)
                         -- Per-button safety: hide Blizzard's border immediately when overlay is active
                         pcall(borderRegion.Hide, borderRegion)
                         pcall(borderRegion.SetAlpha, borderRegion, 0)
+                        -- Resize Blizzard border to match overlay dimensions (defense in depth)
+                        if auraSt._overlayBorderW and auraSt._overlayBorderH then
+                            pcall(borderRegion.SetSize, borderRegion, auraSt._overlayBorderW, auraSt._overlayBorderH)
+                        end
                     end
                 end)
             end)
