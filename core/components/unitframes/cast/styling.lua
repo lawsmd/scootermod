@@ -197,7 +197,7 @@ do
 				if getProp(self, "ufInternalTextureWrite") then return end
 				-- Track interruptibility from Blizzard's atlas change (text-fill uses this
 				-- to show white for non-kickable casts vs yellow/gold for kickable)
-				if type(texArg) == "string" then
+				if type(texArg) == "string" and not issecretvalue(texArg) then
 					setProp(self, "castNotInterruptible", texArg == "ui-castingbar-uninterruptable")
 				end
 				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
@@ -1585,7 +1585,7 @@ do
 				-- Ignore Scoot's own internal texture writes
 				if getProp(self, "ufInternalTextureWrite") then return end
 				-- Track interruptibility from Blizzard's atlas change
-				if type(texArg) == "string" then
+				if type(texArg) == "string" and not issecretvalue(texArg) then
 					setProp(self, "castNotInterruptible", texArg == "ui-castingbar-uninterruptable")
 				end
 				-- Don't re-apply foreground during empowered casts (tiers provide visuals)
