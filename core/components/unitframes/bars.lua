@@ -519,53 +519,51 @@ do
                                 end
                             end
 
-                            local colorModeHB = cfg.healthBarColorMode or "default"
-                            local texKeyHB = cfg.healthBarTexture or "default"
-                            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
+                            -- Skip texture/color application when bar is hidden — no point
+                            -- applying textures (which creates new texture objects and stale
+                            -- hooks) or colors to an invisible bar.
+                            if not healthBarHideTextureOnly then
+                                local colorModeHB = cfg.healthBarColorMode or "default"
+                                local texKeyHB = cfg.healthBarTexture or "default"
+                                applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
 
-                            -- Background overlay (only when explicitly customized)
-                            do
-                                local function hasBackgroundCustomization()
-                                    local texKey = cfg.healthBarBackgroundTexture
-                                    if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
-                                        return true
+                                -- Background overlay (only when explicitly customized)
+                                do
+                                    local function hasBackgroundCustomization()
+                                        local texKey = cfg.healthBarBackgroundTexture
+                                        if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
+                                            return true
+                                        end
+                                        local mode = cfg.healthBarBackgroundColorMode
+                                        if type(mode) == "string" and mode ~= "" and mode ~= "default" then
+                                            return true
+                                        end
+                                        local op = cfg.healthBarBackgroundOpacity
+                                        local opNum = tonumber(op)
+                                        if op ~= nil and opNum ~= nil and opNum ~= 50 then
+                                            return true
+                                        end
+                                        if mode == "custom" and type(cfg.healthBarBackgroundTint) == "table" then
+                                            return true
+                                        end
+                                        return false
                                     end
-                                    local mode = cfg.healthBarBackgroundColorMode
-                                    if type(mode) == "string" and mode ~= "" and mode ~= "default" then
-                                        return true
+                                    if hasBackgroundCustomization() then
+                                        local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
+                                        local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
+                                        local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
+                                        applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
                                     end
-                                    local op = cfg.healthBarBackgroundOpacity
-                                    local opNum = tonumber(op)
-                                    if op ~= nil and opNum ~= nil and opNum ~= 50 then
-                                        return true
-                                    end
-                                    if mode == "custom" and type(cfg.healthBarBackgroundTint) == "table" then
-                                        return true
-                                    end
-                                    return false
                                 end
-                                if hasBackgroundCustomization() then
-                                    local bgTexKeyHB = cfg.healthBarBackgroundTexture or "default"
-                                    local bgColorModeHB = cfg.healthBarBackgroundColorMode or "default"
-                                    local bgOpacityHB = cfg.healthBarBackgroundOpacity or 50
-                                    applyBackgroundToBar(hb, bgTexKeyHB, bgColorModeHB, cfg.healthBarBackgroundTint, bgOpacityHB, unit, "health")
-                                end
+
+                                ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
                             end
-
-                            ensureMaskOnBarTexture(hb, resolveBossHealthMask(bossFrame))
 
                             -- Clip HealthBarsContainer children to prevent dark background
                             -- below health bar when boss has no power bar
                             local hbClipContainer = resolveBossHealthBarsContainer(bossFrame)
                             if hbClipContainer and hbClipContainer.SetClipsChildren then
                                 hbClipContainer:SetClipsChildren(true)
-                            end
-
-                            -- Re-apply texture-only hide after styling (ensures ScootBG is also hidden)
-                            if healthBarHideTextureOnly then
-                                if Util and Util.SetHealthBarTextureOnlyHidden then
-                                    Util.SetHealthBarTextureOnlyHidden(hb, true)
-                                end
                             end
 
                             -- Rectangular overlay to fill top-left chip when using custom borders
@@ -706,12 +704,13 @@ do
                             end -- if not healthBarHideTextureOnly
 
                             -- Boss frames can get refreshed by Blizzard (HealthUpdate, Update) which resets textures.
-                            -- Install a hook to re-assert our styling after Blizzard updates.
+                            -- Install hooks to re-assert our styling after Blizzard updates.
                             local bossState = getState(bossFrame)
-                            if _G.hooksecurefunc and bossState and not bossState.bossHealthUpdateHooked then
-                                local function installBossHealthHook(hookTarget, hookName)
+                            if _G.hooksecurefunc and bossState then
+                                local function installBossHealthHook(hookTarget, hookName, flagName)
+                                    if bossState[flagName] then return true end
                                     if hookTarget and type(hookTarget[hookName]) == "function" then
-                                        bossState.bossHealthUpdateHooked = true
+                                        bossState[flagName] = true
                                         _G.hooksecurefunc(hookTarget, hookName, function()
                                             if isEditModeActive() then return end
                                             local db2 = addon and addon.db and addon.db.profile
@@ -779,10 +778,14 @@ do
                                     end
                                     return false
                                 end
-                                -- Try HealthUpdate first (more targeted), fall back to Update
-                                if not installBossHealthHook(bossFrame, "HealthUpdate") then
-                                    installBossHealthHook(bossFrame, "Update")
-                                end
+                                -- Hook HealthUpdate (targeted, fires for low-health player units)
+                                installBossHealthHook(bossFrame, "HealthUpdate", "bossHealthUpdateHooked")
+                                -- ALSO hook Update — HealthUpdate only fires for player-controlled
+                                -- units at <20% health (OnUpdate handler), which bosses never are.
+                                -- Update fires on INSTANCE_ENCOUNTER_ENGAGE_UNIT,
+                                -- UNIT_TARGETABLE_CHANGED, etc. where Blizzard calls
+                                -- UnitFrameHealthBar_Update → SetStatusBarColor(0, 1, 0).
+                                installBossHealthHook(bossFrame, "Update", "bossUpdateHooked")
                             end
                         end
 
