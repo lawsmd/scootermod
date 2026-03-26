@@ -121,6 +121,9 @@ function HA.ReleaseIcon(icon)
     icon:ClearAllPoints()
     icon.spellId = nil
 
+    -- Detach animation controller
+    HA.DetachAnimation(icon)
+
     -- Remove from rainbow tracking
     if icon._isRainbow and icon.Icon then
         HA.UnregisterRainbowIcon(icon.Icon)
@@ -176,8 +179,14 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
 
     -- Set icon texture
     local tex = iconFrame.Icon
-    if config.iconStyle == "spell" then
+    local isAnimated = config.iconStyle:sub(1, 5) == "anim:"
+    if isAnimated then
+        -- Animated icon: hide standard texture, use animation controller
+        tex:Hide()
+    elseif config.iconStyle == "spell" then
         -- Try runtime API first (most accurate), static textureId as fallback
+        tex:Show()
+        HA.DetachAnimation(iconFrame)
         local spellTex
         local ok = pcall(function()
             spellTex = C_Spell.GetSpellTexture(spellId)
@@ -196,10 +205,14 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
         end
     elseif config.iconStyle:sub(1, 5) == "file:" then
         -- File-based custom texture
+        tex:Show()
+        HA.DetachAnimation(iconFrame)
         local path = config.iconStyle:sub(6)
         tex:SetTexture(path)
     else
         -- Atlas-based icon
+        tex:Show()
+        HA.DetachAnimation(iconFrame)
         local atlasOk = pcall(tex.SetAtlas, tex, config.iconStyle)
         if not atlasOk then
             tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
@@ -251,6 +264,12 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
 
     -- Position the icon
     HA.PositionIcon(iconFrame, config, groupFrame)
+
+    -- Attach animated icon controller (after sizing is finalized)
+    if isAnimated then
+        local animId = config.iconStyle:sub(6)
+        HA.AttachAnimation(iconFrame, animId, config, finalSize)
+    end
 
     -- Cooldown sweep (DurationObject pattern — matches ClassAuras, secret-safe)
     local cdSet = false
@@ -311,6 +330,50 @@ function HA.PositionIcon(iconFrame, config, groupFrame)
     else
         -- Inside: anchor directly to the matching point
         iconFrame:SetPoint(anchor, groupFrame, anchor, offsetX, offsetY)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Animation Helpers
+--------------------------------------------------------------------------------
+
+function HA.AttachAnimation(iconFrame, animId, config, size)
+    local AE = HA.AnimEngine
+    if not AE then return end
+
+    -- If same animation is already attached, just update size/color
+    local existing = AE.GetActive(iconFrame)
+    if existing and existing.animId == animId then
+        existing:SetSize(size)
+        HA.ApplyAnimColor(existing, config)
+        return
+    end
+
+    -- Release old, acquire new
+    AE.Release(iconFrame)
+    local ctrl = AE.Acquire(iconFrame, iconFrame)
+    if not ctrl then return end
+    ctrl:Configure(animId, size)
+    HA.ApplyAnimColor(ctrl, config)
+    ctrl:Play()
+end
+
+function HA.DetachAnimation(iconFrame)
+    local AE = HA.AnimEngine
+    if AE then AE.Release(iconFrame) end
+end
+
+function HA.ApplyAnimColor(ctrl, config)
+    local mode = config.iconColor or "original"
+    if mode == "custom" then
+        local c = config.iconCustomColor or { 1, 1, 1, 1 }
+        ctrl:SetColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        ctrl.rainbowMode = false
+    elseif mode == "rainbow" then
+        ctrl.rainbowMode = true
+    else
+        ctrl:SetColor(1, 1, 1, 1)
+        ctrl.rainbowMode = false
     end
 end
 

@@ -101,6 +101,8 @@ core/components/unitframes/bars/partyframes/text.lua
 core/components/unitframes/bars/partyframes/extras.lua
 core/components/unitframes/bars/groupauras/core.lua
 core/components/unitframes/bars/groupauras/icons.lua
+core/components/unitframes/bars/groupauras/animengine.lua
+core/components/unitframes/bars/groupauras/animdefs.lua
 core/components/unitframes/bars/groupauras/buffstrip.lua
 core/components/unitframes/bars/valuecolor.lua
 core/components/unitframes/bars/vehicles.lua

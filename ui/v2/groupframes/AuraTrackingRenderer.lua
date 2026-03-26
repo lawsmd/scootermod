@@ -192,6 +192,15 @@ local function CreateIconStyleRow(parent, spellId, builder)
             iconPreview:SetDesaturated(false)
             iconPreview:SetVertexColor(1, 1, 1, 1)
             selText:SetText("Spell Icon")
+        elseif style:sub(1, 5) == "anim:" then
+            -- Animated icon: show placeholder + label
+            local animId = style:sub(6)
+            local AE = addon.AuraTracking and addon.AuraTracking.AnimEngine
+            local def = AE and AE.GetDef(animId)
+            iconPreview:SetTexture("Interface\\BUTTONS\\WHITE8X8")
+            iconPreview:SetDesaturated(false)
+            iconPreview:SetVertexColor(0.8, 0.8, 0.8, 1)
+            selText:SetText(def and def.label or animId)
         elseif style:sub(1, 5) == "file:" then
             -- File-based custom texture
             local path = style:sub(6)

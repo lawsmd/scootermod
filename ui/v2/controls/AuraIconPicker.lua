@@ -30,6 +30,12 @@ local ICON_BUTTON_SIZE = 36
 local ICON_BUTTON_SPACING = 6
 local ICON_PREVIEW_SIZE = 28  -- Atlas rendered inside button
 
+-- Animated tab layout (wider buttons for animation previews + labels)
+local ANIM_ICONS_PER_ROW = 3
+local ANIM_ICON_BUTTON_SIZE = 90
+local ANIM_ICON_BUTTON_SPACING = 8
+local ANIM_ICON_PREVIEW_SIZE = 28
+
 -- Fallback accent colors
 local BRAND_R, BRAND_G, BRAND_B = 0.20, 0.90, 0.30
 
@@ -77,9 +83,20 @@ local SIMPLE_ICONS = {
     { key = "levelup-dot-gold" },
 }
 
+-- Animated icons (built lazily from AnimEngine registry)
+local ANIMATED_ICONS = {}
+local function BuildAnimatedIconList()
+    if #ANIMATED_ICONS > 0 then return end
+    local AE = addon.AuraTracking and addon.AuraTracking.AnimEngine
+    if not AE then return end
+    for _, def in ipairs(AE.GetAllDefs()) do
+        table.insert(ANIMATED_ICONS, { key = "anim:" .. def.id, label = def.label })
+    end
+end
+
 local TABS = {
     { key = "simple", label = "Simple", icons = SIMPLE_ICONS },
-    -- Phase 2: { key = "animated", label = "Animated", icons = {} },
+    { key = "animated", label = "Animated", icons = ANIMATED_ICONS },
 }
 
 --------------------------------------------------------------------------------
@@ -92,11 +109,25 @@ local pickerAnchor = nil
 local selectedTab = "simple"
 local currentSelection = nil
 
+-- Stop all running animation previews in the picker
+local function StopAllAnimatedPreviews()
+    if not pickerFrame then return end
+    local AE = addon.AuraTracking and addon.AuraTracking.AnimEngine
+    if not AE then return end
+    for _, btn in ipairs(pickerFrame.IconButtons) do
+        if btn._animCtrl then
+            AE.Release(btn)
+            btn._animCtrl = nil
+        end
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Close Function
 --------------------------------------------------------------------------------
 
 local function CloseAuraIconPicker()
+    StopAllAnimatedPreviews()
     if pickerFrame then
         pickerFrame:Hide()
     end
@@ -345,6 +376,9 @@ local function CreateAuraIconPicker()
 
     -- Populate icon grid
     function frame:PopulateContent()
+        -- Stop any running animated previews before repopulating
+        StopAllAnimatedPreviews()
+
         local currentTab = nil
         for _, tabData in ipairs(TABS) do
             if tabData.key == selectedTab then
@@ -354,13 +388,25 @@ local function CreateAuraIconPicker()
         end
         if not currentTab then return end
 
+        -- Build animated icon list on first visit
+        if selectedTab == "animated" then
+            BuildAnimatedIconList()
+        end
+
         local icons = currentTab.icons
         local contentFrame = self.Content
         local ar, ag, ab = self._accentR, self._accentG, self._accentB
 
+        -- Tab-dependent layout values
+        local isAnimTab = (selectedTab == "animated")
+        local colCount = isAnimTab and ANIM_ICONS_PER_ROW or ICONS_PER_ROW
+        local btnW = isAnimTab and ANIM_ICON_BUTTON_SIZE or ICON_BUTTON_SIZE
+        local btnH = isAnimTab and ANIM_ICON_BUTTON_SIZE or ICON_BUTTON_SIZE
+        local btnSpacing = isAnimTab and ANIM_ICON_BUTTON_SPACING or ICON_BUTTON_SPACING
+
         -- Calculate content height
-        local numRows = math.ceil(#icons / ICONS_PER_ROW)
-        local contentHeight = (numRows * ICON_BUTTON_SIZE) + ((numRows - 1) * ICON_BUTTON_SPACING) + PADDING
+        local numRows = math.ceil(#icons / colCount)
+        local contentHeight = (numRows * btnH) + ((numRows - 1) * btnSpacing) + PADDING
         contentFrame:SetHeight(contentHeight)
 
         -- Show/hide scrollbar
@@ -382,12 +428,13 @@ local function CreateAuraIconPicker()
             btn:Hide()
         end
 
+        local labelFont = (GetTheme() and GetTheme().GetFont and GetTheme():GetFont("LABEL")) or "Fonts\\FRIZQT__.TTF"
+
         -- Create/reuse buttons
         for i, iconData in ipairs(icons) do
             local btn = self.IconButtons[i]
             if not btn then
                 btn = CreateFrame("Button", nil, contentFrame)
-                btn:SetSize(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
                 btn:EnableMouse(true)
                 btn:RegisterForClicks("AnyUp")
 
@@ -397,7 +444,7 @@ local function CreateAuraIconPicker()
                 btnBg:SetColorTexture(0, 0, 0, 0)
                 btn._bg = btnBg
 
-                -- Icon preview texture
+                -- Icon preview texture (used by Simple tab, hidden for Animated)
                 local preview = btn:CreateTexture(nil, "ARTWORK")
                 preview:SetSize(ICON_PREVIEW_SIZE, ICON_PREVIEW_SIZE)
                 preview:SetPoint("CENTER")
@@ -406,38 +453,86 @@ local function CreateAuraIconPicker()
                 self.IconButtons[i] = btn
             end
 
+            -- Resize button for current tab
+            btn:SetSize(btnW, btnH)
+
             -- Position in grid
-            local col = (i - 1) % ICONS_PER_ROW
-            local row = math.floor((i - 1) / ICONS_PER_ROW)
-            local xOff = col * (ICON_BUTTON_SIZE + ICON_BUTTON_SPACING)
-            local yOff = -(row * (ICON_BUTTON_SIZE + ICON_BUTTON_SPACING))
+            local col = (i - 1) % colCount
+            local row = math.floor((i - 1) / colCount)
+            local xOff = col * (btnW + btnSpacing)
+            local yOff = -(row * (btnH + btnSpacing))
             btn:ClearAllPoints()
             btn:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", xOff, yOff)
 
-            -- Set icon texture
             local iconKey = iconData.key
-            local preview = btn._preview
 
-            if iconKey == "spell" then
-                preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                preview:SetDesaturated(true)
-                preview:SetVertexColor(0.8, 0.8, 0.8, 1)
-            elseif iconKey:sub(1, 5) == "file:" then
-                -- File-based custom texture
-                local path = iconKey:sub(6)
-                preview:SetTexture(path)
-                preview:SetDesaturated(true)
-                preview:SetVertexColor(0.8, 0.8, 0.8, 1)
+            if isAnimTab then
+                -- Animated tab: live preview + label
+                btn._preview:Hide()
+
+                -- Ensure preview frame exists
+                if not btn._previewFrame then
+                    local pf = CreateFrame("Frame", nil, btn)
+                    pf:SetSize(ANIM_ICON_PREVIEW_SIZE, ANIM_ICON_PREVIEW_SIZE)
+                    pf:SetPoint("CENTER", btn, "CENTER", 0, 8)
+                    pf:EnableMouse(false)
+                    btn._previewFrame = pf
+                end
+                btn._previewFrame:Show()
+
+                -- Ensure label exists
+                if not btn._label then
+                    local lbl = btn:CreateFontString(nil, "OVERLAY")
+                    lbl:SetFont(labelFont, 9, "")
+                    lbl:SetPoint("BOTTOM", btn, "BOTTOM", 0, 6)
+                    lbl:SetTextColor(0.65, 0.65, 0.65, 1)
+                    btn._label = lbl
+                end
+                btn._label:SetText(iconData.label or iconKey)
+                btn._label:Show()
+
+                -- Start live animation preview
+                local AE = addon.AuraTracking and addon.AuraTracking.AnimEngine
+                if AE then
+                    local animId = iconKey:sub(6)  -- strip "anim:" prefix
+                    local ctrl = AE.Acquire(btn, btn._previewFrame)
+                    if ctrl then
+                        ctrl:Configure(animId, ANIM_ICON_PREVIEW_SIZE)
+                        ctrl:SetColor(0.8, 0.8, 0.8, 1)
+                        ctrl:Play()
+                        btn._animCtrl = ctrl
+                    end
+                end
             else
-                -- Atlas-based icon
-                local atlasOk = pcall(preview.SetAtlas, preview, iconKey)
-                if atlasOk then
+                -- Simple tab: static icon preview
+                if btn._previewFrame then btn._previewFrame:Hide() end
+                if btn._label then btn._label:Hide() end
+
+                local preview = btn._preview
+                preview:SetSize(ICON_PREVIEW_SIZE, ICON_PREVIEW_SIZE)
+                preview:ClearAllPoints()
+                preview:SetPoint("CENTER")
+                preview:Show()
+
+                if iconKey == "spell" then
+                    preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                    preview:SetDesaturated(true)
+                    preview:SetVertexColor(0.8, 0.8, 0.8, 1)
+                elseif iconKey:sub(1, 5) == "file:" then
+                    local path = iconKey:sub(6)
+                    preview:SetTexture(path)
                     preview:SetDesaturated(true)
                     preview:SetVertexColor(0.8, 0.8, 0.8, 1)
                 else
-                    preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                    preview:SetDesaturated(true)
-                    preview:SetVertexColor(0.5, 0.5, 0.5, 1)
+                    local atlasOk = pcall(preview.SetAtlas, preview, iconKey)
+                    if atlasOk then
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.8, 0.8, 0.8, 1)
+                    else
+                        preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.5, 0.5, 0.5, 1)
+                    end
                 end
             end
 
@@ -445,7 +540,9 @@ local function CreateAuraIconPicker()
             local isSelected = (currentSelection == iconKey)
             if isSelected then
                 btn._bg:SetColorTexture(ar, ag, ab, 0.25)
-                preview:SetVertexColor(1, 1, 1, 1)
+                if not isAnimTab then
+                    btn._preview:SetVertexColor(1, 1, 1, 1)
+                end
             else
                 btn._bg:SetColorTexture(0, 0, 0, 0)
             end
@@ -505,6 +602,7 @@ local function CreateAuraIconPicker()
     end)
     frame:SetScript("OnHide", function(self)
         self:SetScript("OnUpdate", nil)
+        StopAllAnimatedPreviews()
     end)
 
     -- Theme subscription
