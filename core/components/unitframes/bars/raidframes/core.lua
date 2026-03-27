@@ -269,12 +269,19 @@ local function hideBlizzardFill(bar)
         fillState.alphaHooked = true
         _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
             local st = getState(self)
-            if alpha > 0 and st and st.hidden then
+            if alpha > 0 and st and st.hidden and not st.enforcing then
+                -- Synchronous: re-hide immediately to prevent 1-frame flash
+                st.enforcing = true
+                pcall(self.SetAlpha, self, 0)
+                st.enforcing = nil
+                -- Deferred safety net
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         local st2 = getState(self)
                         if st2 and st2.hidden then
-                            self:SetAlpha(0)
+                            st2.enforcing = true
+                            pcall(self.SetAlpha, self, 0)
+                            st2.enforcing = nil
                         end
                     end)
                 end
@@ -382,9 +389,9 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "raid") or nil
                 local colorMode = cfg and cfg.healthBarColorMode
+                local overlay = st.healthOverlay
                 if colorMode == "value" or colorMode == "valueDark" then
                     local useDark = (colorMode == "valueDark")
-                    local overlay = st.healthOverlay
                     local parentFrame = self.GetParent and self:GetParent()
                     local unit
                     if parentFrame then
@@ -394,6 +401,39 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         addon.BarsTextures.applyValueBasedColor(self, unit, overlay, useDark)
                     end
+                elseif overlay then
+                    -- Re-enforce overlay color for non-value modes so Blizzard's
+                    -- SetStatusBarColor (from UpdateHealthColor) can't bleed through
+                    -- if the fill briefly becomes visible (texture swap gap).
+                    local cr, cg, cb, ca = 1, 1, 1, 1
+                    if colorMode == "class" then
+                        local parentFrame = self.GetParent and self:GetParent()
+                        local unit
+                        if parentFrame then
+                            local okU, u = pcall(function() return parentFrame.unit end)
+                            if okU and u then unit = u end
+                        end
+                        if addon.GetClassColorRGB and unit then
+                            local ccr, ccg, ccb = addon.GetClassColorRGB(unit)
+                            cr, cg, cb = ccr or 1, ccg or 1, ccb or 1
+                        end
+                    elseif colorMode == "custom" then
+                        local tint = cfg and cfg.healthBarTint
+                        if type(tint) == "table" then
+                            cr, cg, cb, ca = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+                        end
+                    elseif colorMode == "texture" then
+                        cr, cg, cb, ca = 1, 1, 1, 1
+                    else
+                        -- "default" mode
+                        if addon.GetDefaultHealthColorRGB then
+                            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+                            cr, cg, cb = hr or 0, hg or 1, hb or 0
+                        else
+                            cr, cg, cb = 0, 1, 0
+                        end
+                    end
+                    pcall(overlay.SetVertexColor, overlay, cr, cg, cb, ca)
                 end
             end)
         end
@@ -404,6 +444,9 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
             local st = getState(self)
             if st and st.overlayActive then
+                -- Synchronous: hide immediately to prevent 1-frame flash
+                hideBlizzardFill(self)
+                -- Deferred safety net: catch edge cases where texture isn't ready
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)

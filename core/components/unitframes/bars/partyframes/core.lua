@@ -264,12 +264,19 @@ local function hideBlizzardFill(bar)
         barState.alphaHooked = true
         _G.hooksecurefunc(blizzFill, "SetAlpha", function(self, alpha)
             local st = getState(self)
-            if alpha > 0 and st and st.hidden then
+            if alpha > 0 and st and st.hidden and not st.enforcing then
+                -- Synchronous: re-hide immediately to prevent 1-frame flash
+                st.enforcing = true
+                pcall(self.SetAlpha, self, 0)
+                st.enforcing = nil
+                -- Deferred safety net
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         local st2 = getState(self)
                         if st2 and st2.hidden then
-                            self:SetAlpha(0)
+                            st2.enforcing = true
+                            pcall(self.SetAlpha, self, 0)
+                            st2.enforcing = nil
                         end
                     end)
                 end
@@ -388,9 +395,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "party") or nil
                 local colorMode = cfg and cfg.healthBarColorMode
+                local overlay = st.healthOverlay
                 if colorMode == "value" or colorMode == "valueDark" then
                     local useDark = (colorMode == "valueDark")
-                    local overlay = st.healthOverlay
                     local parentFrame = self.GetParent and self:GetParent()
                     local unit
                     if parentFrame then
@@ -400,6 +407,39 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                     if unit and overlay and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
                         addon.BarsTextures.applyValueBasedColor(self, unit, overlay, useDark)
                     end
+                elseif overlay then
+                    -- Re-enforce overlay color for non-value modes so Blizzard's
+                    -- SetStatusBarColor (from UpdateHealthColor) can't bleed through
+                    -- if the fill briefly becomes visible (texture swap gap).
+                    local cr, cg, cb, ca = 1, 1, 1, 1
+                    if colorMode == "class" then
+                        local parentFrame = self.GetParent and self:GetParent()
+                        local unit
+                        if parentFrame then
+                            local okU, u = pcall(function() return parentFrame.unit end)
+                            if okU and u then unit = u end
+                        end
+                        if addon.GetClassColorRGB and unit then
+                            local ccr, ccg, ccb = addon.GetClassColorRGB(unit)
+                            cr, cg, cb = ccr or 1, ccg or 1, ccb or 1
+                        end
+                    elseif colorMode == "custom" then
+                        local tint = cfg and cfg.healthBarTint
+                        if type(tint) == "table" then
+                            cr, cg, cb, ca = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
+                        end
+                    elseif colorMode == "texture" then
+                        cr, cg, cb, ca = 1, 1, 1, 1
+                    else
+                        -- "default" mode
+                        if addon.GetDefaultHealthColorRGB then
+                            local hr, hg, hb = addon.GetDefaultHealthColorRGB()
+                            cr, cg, cb = hr or 0, hg or 1, hb or 0
+                        else
+                            cr, cg, cb = 0, 1, 0
+                        end
+                    end
+                    pcall(overlay.SetVertexColor, overlay, cr, cg, cb, ca)
                 end
             end)
         end
@@ -411,6 +451,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
             local st = getState(self)
             if st and st.overlayActive then
+                -- Synchronous: hide immediately to prevent 1-frame flash
+                hideBlizzardFill(self)
+                -- Deferred safety net: catch edge cases where texture isn't ready
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)
@@ -971,6 +1014,14 @@ function PartyFrames.installHooks()
                         end
                     end
                 end
+                -- Re-apply role icons after UpdateAll (handles follower dungeon idle resets)
+                if frame.roleIcon and addon._applyCustomRoleIcon then
+                    if _G.C_Timer and _G.C_Timer.After then
+                        C_Timer.After(0, function()
+                            pcall(addon._applyCustomRoleIcon, frame)
+                        end)
+                    end
+                end
             end
         end)
     end
@@ -1192,9 +1243,9 @@ function PartyFrames.installHooks()
         if not iconSet or iconSet == "default" then
             skipSwap = true
         end
-        if not skipSwap and (not roleIcon.IsShown or not roleIcon:IsShown()) then
-            skipSwap = true
-        end
+        -- NOTE: Do NOT skip swap when roleIcon:IsShown() is false.
+        -- Blizzard may momentarily hide the icon during UpdateRoleIcon; setting
+        -- the texture while hidden ensures the custom icon shows when re-shown.
 
         if not skipSwap then
             local unit
@@ -1261,8 +1312,14 @@ function PartyFrames.installHooks()
         local roleIconEventFrame = CreateFrame("Frame")
         roleIconEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
         roleIconEventFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
-        roleIconEventFrame:SetScript("OnEvent", function()
+        roleIconEventFrame:RegisterEvent("UNIT_PET")
+        roleIconEventFrame:RegisterEvent("UNIT_NAME_UPDATE")
+        roleIconEventFrame:SetScript("OnEvent", function(self, event, unit)
             if isEditModeActive() then return end
+            -- Filter unit-specific events to party units only
+            if unit and event ~= "GROUP_ROSTER_UPDATE" and event ~= "PLAYER_ROLES_ASSIGNED" then
+                if unit ~= "player" and not unit:match("^party%d$") then return end
+            end
             local db = addon and addon.db and addon.db.profile
             local gf = db and rawget(db, "groupFrames") or nil
             if not gf then return end
@@ -1471,6 +1528,74 @@ function PartyFrames.installHooks()
                 end)
             end)
         end
+    end
+
+    --------------------------------------------------------------------------
+    -- Periodic Integrity Check (defense-in-depth for follower dungeon idle)
+    --------------------------------------------------------------------------
+    -- Verifies overlay visibility, fill alpha, and role icons every 5 seconds
+    -- while in a group. Catches any state drift that individual hooks miss.
+    --------------------------------------------------------------------------
+
+    if not addon._PartyFrameIntegrityCheckInstalled then
+        addon._PartyFrameIntegrityCheckInstalled = true
+        local integrityTicker = nil
+
+        local function runIntegrityCheck()
+            if isEditModeActive() then return end
+            if InCombatLockdown and InCombatLockdown() then return end
+
+            local db = addon and addon.db and addon.db.profile
+            local groupFrames = db and rawget(db, "groupFrames") or nil
+            local cfg = groupFrames and rawget(groupFrames, "party") or nil
+            if not cfg then return end
+
+            local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
+                           or (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+
+            for i = 1, 5 do
+                local frame = _G["CompactPartyFrameMember" .. i]
+                if frame then
+                    local bar = frame.healthBar
+                    if bar and hasCustom then
+                        local state = getState(bar)
+                        if state and state.overlayActive then
+                            -- Check 1: Blizzard fill must be hidden
+                            local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+                            if fill then
+                                local okA, alpha = pcall(fill.GetAlpha, fill)
+                                if okA and type(alpha) == "number" and alpha > 0 then
+                                    hideBlizzardFill(bar)
+                                end
+                            end
+                            -- Check 2: Overlay must be visible and anchored
+                            local overlay = state.healthOverlay
+                            if overlay and not overlay:IsShown() then
+                                updateHealthOverlay(bar)
+                            end
+                        end
+                    end
+                    -- Check 3: Role icons
+                    if addon._applyCustomRoleIcon then
+                        pcall(addon._applyCustomRoleIcon, frame)
+                    end
+                end
+            end
+        end
+
+        local integrityEventFrame = CreateFrame("Frame")
+        integrityEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+        integrityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        integrityEventFrame:SetScript("OnEvent", function()
+            if isEditModeActive() then return end
+            local inGroup = IsInGroup and IsInGroup()
+            if inGroup and not integrityTicker then
+                integrityTicker = C_Timer.NewTicker(5, runIntegrityCheck)
+            elseif not inGroup and integrityTicker then
+                integrityTicker:Cancel()
+                integrityTicker = nil
+            end
+        end)
     end
 end
 
