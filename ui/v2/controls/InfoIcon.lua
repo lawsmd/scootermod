@@ -226,7 +226,8 @@ function Controls:CreateInfoIcon(options)
     local fontSize = math.max(size - 4, 8)  -- Scale font with icon size
     pcall(iconText.SetFont, iconText, fontPath, fontSize, "")
     iconText:SetPoint("CENTER", 0, 0)
-    iconText:SetText(iconType == "help" and "?" or "i")
+    local displayText = options.customText or (iconType == "help" and "?" or "i")
+    iconText:SetText(displayText)
     iconText:SetTextColor(ar, ag, ab, 1)
     icon._iconText = iconText
 
