@@ -20,15 +20,15 @@ if not HA then return end
 --------------------------------------------------------------------------------
 
 local NORMAL_SCALE = 1.0
-local HIDDEN_SCALE = 0.01  -- 1% — sub-pixel, effectively invisible
+local HIDDEN_SCALE = 0.001  -- Sub-pixel, truly invisible
 
--- Read user-configured aura scale from DB (slider: 1 = Hidden, 100 = Normal)
+-- Read user-configured aura scale from DB (slider: 0 = Hidden, 100 = Normal)
 local function GetConfiguredScale()
     local db = addon.db and addon.db.profile
     local at = db and db.groupFrames and db.groupFrames.auraTracking
     local val = at and at.auraScale
     if val == nil then return NORMAL_SCALE end  -- default 100% (no change)
-    if val <= 1 then return HIDDEN_SCALE end     -- "Hidden" slider position
+    if val <= 0 then return HIDDEN_SCALE end     -- "Hidden" slider position
     return val / 100
 end
 

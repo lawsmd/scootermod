@@ -141,10 +141,17 @@ function HA.ReleaseIcon(icon)
         icon.CountText:SetText("")
     end
 
-    -- Reset icon texture
+    -- Reset icon texture and anchoring
     if icon.Icon then
         icon.Icon:SetDesaturated(false)
         icon.Icon:SetVertexColor(1, 1, 1, 1)
+        icon.Icon:ClearAllPoints()
+        icon.Icon:SetAllPoints()
+    end
+
+    -- Reset border backing
+    if icon.BorderTex then
+        icon.BorderTex:Hide()
     end
 
     table.insert(iconPool, icon)
@@ -177,13 +184,24 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
     local config = GetSpellConfig(spellId)
     iconFrame.spellId = spellId
 
+    -- Parse prefix variants (border:, wide:)
+    local style = config.iconStyle
+    local isBordered = style:sub(1, 7) == "border:"
+    local isWide = style:sub(1, 5) == "wide:"
+    local effectiveStyle = style
+    if isBordered then
+        effectiveStyle = style:sub(8)
+    elseif isWide then
+        effectiveStyle = style:sub(6)
+    end
+
     -- Set icon texture
     local tex = iconFrame.Icon
-    local isAnimated = config.iconStyle:sub(1, 5) == "anim:"
+    local isAnimated = effectiveStyle:sub(1, 5) == "anim:"
     if isAnimated then
         -- Animated icon: hide standard texture, use animation controller
         tex:Hide()
-    elseif config.iconStyle == "spell" then
+    elseif effectiveStyle == "spell" then
         -- Try runtime API first (most accurate), static textureId as fallback
         tex:Show()
         HA.DetachAnimation(iconFrame)
@@ -203,20 +221,46 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
                 tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
             end
         end
-    elseif config.iconStyle:sub(1, 5) == "file:" then
+    elseif effectiveStyle:sub(1, 5) == "file:" then
         -- File-based custom texture
         tex:Show()
         HA.DetachAnimation(iconFrame)
-        local path = config.iconStyle:sub(6)
+        local path = effectiveStyle:sub(6)
         tex:SetTexture(path)
     else
         -- Atlas-based icon
         tex:Show()
         HA.DetachAnimation(iconFrame)
-        local atlasOk = pcall(tex.SetAtlas, tex, config.iconStyle)
+        local atlasOk = pcall(tex.SetAtlas, tex, effectiveStyle)
         if not atlasOk then
             tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         end
+    end
+
+    -- Border variant: same-shape black backing with 1px inset
+    if isBordered then
+        if not iconFrame.BorderTex then
+            local bt = iconFrame:CreateTexture(nil, "BACKGROUND", nil, 0)
+            bt:SetAllPoints()
+            iconFrame.BorderTex = bt
+        end
+        -- Use the same atlas shape colored black for a matching silhouette border
+        local borderAtlasOk = pcall(iconFrame.BorderTex.SetAtlas, iconFrame.BorderTex, effectiveStyle)
+        if not borderAtlasOk then
+            iconFrame.BorderTex:SetColorTexture(0, 0, 0, 1)
+        end
+        iconFrame.BorderTex:SetDesaturated(true)
+        iconFrame.BorderTex:SetVertexColor(0, 0, 0, 1)
+        iconFrame.BorderTex:Show()
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 1, -1)
+        tex:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -1, 1)
+    else
+        if iconFrame.BorderTex then
+            iconFrame.BorderTex:Hide()
+        end
+        tex:ClearAllPoints()
+        tex:SetAllPoints()
     end
 
     -- Apply desaturation and color
@@ -260,14 +304,19 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
     local baseSize = math.max(MIN_ICON_SIZE, frameHeight * BASE_SIZE_RATIO)
     local userScale = (config.iconScale or 100) / 100
     local finalSize = math.min(MAX_ICON_SIZE, math.max(MIN_ICON_SIZE, baseSize * userScale))
-    iconFrame:SetSize(finalSize, finalSize)
+    -- Wide variant: 3x width
+    if isWide then
+        iconFrame:SetSize(finalSize * 3, finalSize)
+    else
+        iconFrame:SetSize(finalSize, finalSize)
+    end
 
     -- Position the icon
     HA.PositionIcon(iconFrame, config, groupFrame)
 
     -- Attach animated icon controller (after sizing is finalized)
     if isAnimated then
-        local animId = config.iconStyle:sub(6)
+        local animId = effectiveStyle:sub(6)
         HA.AttachAnimation(iconFrame, animId, config, finalSize)
     end
 

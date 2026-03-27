@@ -48,12 +48,14 @@ local SIMPLE_ICONS = {
     { key = "spell" },
     -- Circles
     { key = "CircleMask" },
-    { key = "WhiteCircle-RaidBlips" },
+    { key = "border:CircleMask" },
     { key = "common-radiobutton-circle" },
     { key = "common-radiobutton-dot" },
     -- Squares
     { key = "SquareMask" },
+    { key = "border:SquareMask" },
     { key = "talents-node-square-gray" },
+    { key = "wide:talents-node-square-gray" },
     { key = "UI-Frame-IconMask" },
     -- Diamonds
     { key = "activities-complete-diamond" },
@@ -78,6 +80,7 @@ local SIMPLE_ICONS = {
     { key = "Professions-ChatIcon-Quality-Tier5" },
     -- Misc Atlas
     { key = "bags-glow-white" },
+    { key = "wide:bags-glow-white" },
     { key = "checkmark-minimal" },
     { key = "waypoint-mappin-minimap-tracked" },
     { key = "levelup-dot-gold" },
@@ -514,7 +517,59 @@ local function CreateAuraIconPicker()
                 preview:SetPoint("CENTER")
                 preview:Show()
 
-                if iconKey == "spell" then
+                -- Reset border backing texture from previous use (pooled buttons)
+                if btn._borderTex then btn._borderTex:Hide() end
+
+                -- Parse prefix variants
+                local isBordered = iconKey:sub(1, 7) == "border:"
+                local isWide = iconKey:sub(1, 5) == "wide:"
+                local baseKey = iconKey
+                if isBordered then
+                    baseKey = iconKey:sub(8)
+                elseif isWide then
+                    baseKey = iconKey:sub(6)
+                end
+
+                if isBordered then
+                    -- Same-shape black backing for 1px border effect
+                    if not btn._borderTex then
+                        local bt = btn:CreateTexture(nil, "BACKGROUND", nil, -5)
+                        bt:SetPoint("CENTER")
+                        btn._borderTex = bt
+                    end
+                    -- Use the same atlas colored black for matching silhouette
+                    local borderOk = pcall(btn._borderTex.SetAtlas, btn._borderTex, baseKey)
+                    if not borderOk then
+                        btn._borderTex:SetColorTexture(0, 0, 0, 1)
+                    end
+                    btn._borderTex:SetDesaturated(true)
+                    btn._borderTex:SetVertexColor(0, 0, 0, 1)
+                    btn._borderTex:SetSize(ICON_PREVIEW_SIZE, ICON_PREVIEW_SIZE)
+                    btn._borderTex:Show()
+                    preview:SetSize(ICON_PREVIEW_SIZE - 2, ICON_PREVIEW_SIZE - 2)
+                    local atlasOk = pcall(preview.SetAtlas, preview, baseKey)
+                    if atlasOk then
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.8, 0.8, 0.8, 1)
+                    else
+                        preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.5, 0.5, 0.5, 1)
+                    end
+                elseif isWide then
+                    -- 3:1 aspect ratio preview
+                    local wideH = math.ceil(ICON_PREVIEW_SIZE / 3)
+                    preview:SetSize(ICON_PREVIEW_SIZE, wideH)
+                    local atlasOk = pcall(preview.SetAtlas, preview, baseKey)
+                    if atlasOk then
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.8, 0.8, 0.8, 1)
+                    else
+                        preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                        preview:SetDesaturated(true)
+                        preview:SetVertexColor(0.5, 0.5, 0.5, 1)
+                    end
+                elseif iconKey == "spell" then
                     preview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                     preview:SetDesaturated(true)
                     preview:SetVertexColor(0.8, 0.8, 0.8, 1)

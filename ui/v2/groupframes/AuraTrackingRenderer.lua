@@ -182,7 +182,57 @@ local function CreateIconStyleRow(parent, spellId, builder)
     -- Update display
     local function UpdateDisplay()
         local style = getSetting(spellId, "iconStyle") or "spell"
-        if style == "spell" then
+
+        -- Reset preview size and border backing
+        iconPreview:SetSize(ICON_SIZE, ICON_SIZE)
+        if selectorBtn._borderTex then selectorBtn._borderTex:Hide() end
+
+        -- Parse prefix variants
+        local isBordered = style:sub(1, 7) == "border:"
+        local isWide = style:sub(1, 5) == "wide:"
+        local baseStyle = style
+        if isBordered then
+            baseStyle = style:sub(8)
+        elseif isWide then
+            baseStyle = style:sub(6)
+        end
+
+        if isBordered then
+            -- Same-shape black backing for 1px border effect
+            if not selectorBtn._borderTex then
+                local bt = selectorBtn:CreateTexture(nil, "ARTWORK", nil, -1)
+                bt:SetPoint("CENTER", iconPreview, "CENTER")
+                selectorBtn._borderTex = bt
+            end
+            -- Use the same atlas colored black for matching silhouette
+            local borderOk = pcall(selectorBtn._borderTex.SetAtlas, selectorBtn._borderTex, baseStyle)
+            if not borderOk then
+                selectorBtn._borderTex:SetColorTexture(0, 0, 0, 1)
+            end
+            selectorBtn._borderTex:SetDesaturated(true)
+            selectorBtn._borderTex:SetVertexColor(0, 0, 0, 1)
+            selectorBtn._borderTex:SetSize(ICON_SIZE, ICON_SIZE)
+            selectorBtn._borderTex:Show()
+            iconPreview:SetSize(ICON_SIZE - 2, ICON_SIZE - 2)
+            local ok = pcall(iconPreview.SetAtlas, iconPreview, baseStyle)
+            if not ok then
+                iconPreview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
+            iconPreview:SetDesaturated(true)
+            iconPreview:SetVertexColor(0.8, 0.8, 0.8, 1)
+            selText:SetText("Bordered " .. baseStyle)
+        elseif isWide then
+            -- 3:1 aspect ratio preview
+            local wideH = math.ceil(ICON_SIZE / 3)
+            iconPreview:SetSize(ICON_SIZE, wideH)
+            local ok = pcall(iconPreview.SetAtlas, iconPreview, baseStyle)
+            if not ok then
+                iconPreview:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
+            iconPreview:SetDesaturated(true)
+            iconPreview:SetVertexColor(0.8, 0.8, 0.8, 1)
+            selText:SetText("Wide " .. baseStyle)
+        elseif style == "spell" then
             -- Show the actual spell icon
             local tex
             pcall(function()
@@ -415,7 +465,7 @@ function AuraTrackingUI.Render(panel, scrollContent)
         description = "Add custom icons for tracking non-secret Auras like popular Healing Spells. "
             .. "Scoot cannot hide the icons, but it can shrink them so much they disappear "
             .. "- this will apply to ALL Blizzard Party/Raid Frame Buff Icons.",
-        min = 1,
+        min = 0,
         max = 100,
         step = 1,
         minLabel = "Hidden",
@@ -533,9 +583,6 @@ function AuraTrackingUI.Render(panel, scrollContent)
         local spellName = (HA and HA.SPELL_NAMES and HA.SPELL_NAMES[selectedId]) or ("Spell " .. selectedId)
 
         builder:AddSpacer(12)
-
-        -- Separator
-        builder:AddSection("Configuration: " .. spellName)
 
         -- Enable toggle (always visible)
         builder:AddToggle({
