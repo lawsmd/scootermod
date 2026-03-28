@@ -148,6 +148,7 @@ HA.SPELL_DEFAULTS = {
     iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
+    showDuration = true,
     position = "inside",
     anchor = "TOPRIGHT",
     offsetX = 0,

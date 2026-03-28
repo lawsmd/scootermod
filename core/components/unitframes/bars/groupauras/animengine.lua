@@ -19,9 +19,23 @@ local AE = HA.AnimEngine
 --------------------------------------------------------------------------------
 
 local MAX_TEXTURES = 12          -- Fading Ring uses the most (10-12 dots)
-local POOL_PREALLOC = 6
+local POOL_PREALLOC = 12
 local RAINBOW_CYCLE_PERIOD = 3.0 -- Match existing rainbow engine
 local WHITE8X8 = "Interface\\BUTTONS\\WHITE8X8"
+
+-- Shrink: icon scales from 100% → 25% as duration depletes
+local SHRINK_MIN_SCALE = 0.25
+
+--------------------------------------------------------------------------------
+-- Duration Mode Helper
+--------------------------------------------------------------------------------
+
+local function GetAnimDurationMode()
+    local db = addon.db and addon.db.profile
+    local gf = db and db.groupFrames
+    local ha = gf and gf.auraTracking
+    return (ha and ha.animDurationMode) or "shrink"
+end
 
 --------------------------------------------------------------------------------
 -- Animation Definition Registry
@@ -81,10 +95,11 @@ function controllerMT:Configure(animId, size)
         end
     end
 
-    -- Size the container frame
+    -- Size the container frame; center-anchor for easy offset adjustments
+    self.frame:SetScale(1)
     self.frame:SetSize(size, size)
     self.frame:ClearAllPoints()
-    self.frame:SetAllPoints(self.frame:GetParent())
+    self.frame:SetPoint("CENTER", self.frame:GetParent(), "CENTER", 0, 0)
 
     -- Let the definition position its textures
     if def.setup then
@@ -126,14 +141,35 @@ function controllerMT:Stop()
     self.frame:Hide()
 end
 
+--- Wire aura duration data into the controller for animated duration display.
+-- @param dObj DurationObject from C_UnitAuras.GetAuraDuration (unused, kept for API compat)
+-- @param startTime number fallback start time (expirationTime - duration)
+-- @param totalDuration number fallback total duration in seconds
+-- @param frameHeight number height of the group frame (cached, for descend/ascend travel distance)
+function controllerMT:SetDuration(dObj, startTime, totalDuration, frameHeight)
+    self.durationStart = startTime or 0
+    self.durationTotal = totalDuration or 0
+    self.durationActive = (totalDuration and totalDuration > 0) and true or false
+    self.durationFrameHeight = frameHeight or 36
+end
+
 function controllerMT:Recycle()
     self.playing = false
     self.animId = nil
     self.progress = 0
     self.rainbowMode = false
     self.colorR, self.colorG, self.colorB, self.colorA = 1, 1, 1, 1
+
+    -- Reset duration visual state
+    self.frame:SetScale(1)
     self.frame:Hide()
     self.frame:ClearAllPoints()
+    self.durationStart = 0
+    self.durationTotal = 0
+    self.durationActive = false
+    self.durationFrameHeight = 36
+    self._durationDirty = false
+
     for i = 1, MAX_TEXTURES do
         local tex = self.textures[i]
         tex:Hide()
@@ -174,6 +210,13 @@ local function CreateController()
     ctrl.rainbowMode = false
     ctrl.rainbowHue = 0
 
+    -- Duration tracking fields
+    ctrl.durationStart = 0
+    ctrl.durationTotal = 0
+    ctrl.durationActive = false
+    ctrl.durationFrameHeight = 36
+    ctrl._durationDirty = false
+
     return ctrl
 end
 
@@ -199,6 +242,13 @@ engineFrame:Hide()
 
 engineFrame:SetScript("OnUpdate", function(self, elapsed)
     local hasActive = false
+    local durationMode = GetAnimDurationMode()
+    local useShrink = (durationMode == "shrink")
+    local useDescend = (durationMode == "descend")
+    local useAscend = (durationMode == "ascend")
+    local needsTime = useShrink or useDescend or useAscend
+    local now = needsTime and GetTime() or nil
+
     for owner, ctrl in pairs(activeControllers) do
         if not ctrl.playing then
             activeControllers[owner] = nil
@@ -218,6 +268,42 @@ engineFrame:SetScript("OnUpdate", function(self, elapsed)
                 if def and def.applyColor then
                     def.applyColor(ctrl, r, g, b, 1)
                 end
+            end
+
+            -- Duration-based effects
+            if ctrl.durationActive and ctrl.durationTotal > 0 and needsTime then
+                now = now or GetTime()
+                local remaining = (ctrl.durationStart + ctrl.durationTotal) - now
+                local ratio = remaining / ctrl.durationTotal
+                ratio = math.max(0, math.min(1, ratio))
+
+                if useShrink then
+                    -- Scale from 1.0 (full) → SHRINK_MIN_SCALE (expired)
+                    local scale = SHRINK_MIN_SCALE + (1 - SHRINK_MIN_SCALE) * ratio
+                    ctrl.frame:SetScale(scale)
+                    ctrl._durationDirty = true
+
+                elseif useDescend then
+                    -- Move downward: 0 offset at full → -frameHeight at expired
+                    local yOffset = -(1 - ratio) * ctrl.durationFrameHeight
+                    ctrl.frame:ClearAllPoints()
+                    ctrl.frame:SetPoint("CENTER", ctrl.frame:GetParent(), "CENTER", 0, yOffset)
+                    ctrl._durationDirty = true
+
+                elseif useAscend then
+                    -- Move upward: 0 offset at full → +frameHeight at expired
+                    local yOffset = (1 - ratio) * ctrl.durationFrameHeight
+                    ctrl.frame:ClearAllPoints()
+                    ctrl.frame:SetPoint("CENTER", ctrl.frame:GetParent(), "CENTER", 0, yOffset)
+                    ctrl._durationDirty = true
+                end
+
+            elseif ctrl._durationDirty then
+                -- Reset visual state when duration mode changes or no active duration
+                ctrl.frame:SetScale(1)
+                ctrl.frame:ClearAllPoints()
+                ctrl.frame:SetPoint("CENTER", ctrl.frame:GetParent(), "CENTER", 0, 0)
+                ctrl._durationDirty = false
             end
         end
     end

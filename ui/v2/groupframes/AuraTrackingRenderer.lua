@@ -56,6 +56,7 @@ local SPELL_DEFAULTS = addon.AuraTracking and addon.AuraTracking.SPELL_DEFAULTS 
     iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
+    showDuration = true,
     position = "inside",
     anchor = "TOPRIGHT",
     offsetX = 0,
@@ -88,7 +89,7 @@ end
 --------------------------------------------------------------------------------
 -- Icon Style Row (Custom Control)
 --------------------------------------------------------------------------------
--- A row that shows the current icon preview and opens the AuraIconPicker.
+-- A row that shows the current icon preview and opens the IconPicker.
 --------------------------------------------------------------------------------
 
 local function CreateIconStyleRow(parent, spellId, builder)
@@ -287,7 +288,7 @@ local function CreateIconStyleRow(parent, spellId, builder)
     -- Click opens picker
     selectorBtn:SetScript("OnClick", function(self)
         local currentStyle = getSetting(spellId, "iconStyle") or "spell"
-        addon.ShowAuraIconPicker(self, currentStyle, function(selectedKey)
+        addon.ShowIconPicker(self, currentStyle, function(selectedKey)
             setSetting(spellId, "iconStyle", selectedKey)
             UpdateDisplay()
         end)
@@ -653,6 +654,22 @@ function AuraTrackingUI.Render(panel, scrollContent)
                 setSetting(selectedId, "iconScale", v)
             end,
             displaySuffix = "%",
+            disabled = function() return not isEnabled end,
+        })
+
+        -- Show Duration (drain effect for static icons)
+        builder:AddToggle({
+            key = "showDuration",
+            label = "Show Duration",
+            description = "Display a drain effect on the icon that reveals a dark backdrop as the aura's remaining duration decreases.",
+            get = function()
+                local v = getSetting(selectedId, "showDuration")
+                if v == nil then return true end
+                return v
+            end,
+            set = function(v)
+                setSetting(selectedId, "showDuration", v)
+            end,
             disabled = function() return not isEnabled end,
         })
 

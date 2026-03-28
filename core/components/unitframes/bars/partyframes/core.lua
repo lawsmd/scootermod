@@ -1564,7 +1564,8 @@ function PartyFrames.installHooks()
                             local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
                             if fill then
                                 local okA, alpha = pcall(fill.GetAlpha, fill)
-                                if okA and type(alpha) == "number" and alpha > 0 then
+                                if okA and not (issecretvalue and issecretvalue(alpha))
+                                   and type(alpha) == "number" and alpha > 0 then
                                     hideBlizzardFill(bar)
                                 end
                             end
