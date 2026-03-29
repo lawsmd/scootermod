@@ -227,7 +227,7 @@ local function styleHealthOverlay(bar, cfg)
         local unit
         local parentFrame = bar.GetParent and bar:GetParent()
         if parentFrame then
-            local okU, u = pcall(function() return parentFrame.unit end)
+            local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
             if okU and u then unit = u end
         end
         if addon.GetClassColorRGB and unit then
@@ -416,7 +416,7 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                         local parentFrame = self.GetParent and self:GetParent()
                         local unit
                         if parentFrame then
-                            local okU, u = pcall(function() return parentFrame.unit end)
+                            local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
                             if okU and u then unit = u end
                         end
                         if addon.GetClassColorRGB and unit then
@@ -1081,15 +1081,39 @@ function PartyFrames.installHooks()
             local db = addon and addon.db and addon.db.profile
             local cfg = db and db.groupFrames and db.groupFrames.party or nil
             local colorMode = cfg and cfg.healthBarColorMode
-            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark") then return end
-
-            local useDark = (colorMode == "valueDark")
+            if not colorMode or (colorMode ~= "value" and colorMode ~= "valueDark" and colorMode ~= "class") then return end
 
             -- Get unit token from the frame
             local unit
             local okU, u = pcall(function() return frame.displayedUnit or frame.unit end)
             if okU and u then unit = u end
             if not unit then return end
+
+            -- Class color mode: apply class color to overlay
+            if colorMode == "class" then
+                local healthBar = frame.healthBar
+                local state = getState(healthBar)
+                local overlay = state and state.healthOverlay or nil
+                if addon.GetClassColorRGB then
+                    local cr, cg, cb = addon.GetClassColorRGB(unit)
+                    if cr then
+                        if overlay and overlay:IsShown() then
+                            overlay:SetVertexColor(cr, cg, cb, 1)
+                        else
+                            C_Timer.After(0, function()
+                                local st = getState(healthBar)
+                                local ov = st and st.healthOverlay or nil
+                                if ov then
+                                    ov:SetVertexColor(cr, cg, cb, 1)
+                                end
+                            end)
+                        end
+                    end
+                end
+                return
+            end
+
+            local useDark = (colorMode == "valueDark")
 
             -- FIX 1: Conditional deferral to prevent blinking during health regen.
             -- The blink occurs because:
