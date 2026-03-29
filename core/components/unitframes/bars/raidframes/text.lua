@@ -403,6 +403,7 @@ local function ensureRaidNameOverlay(frame, cfg)
                         -- WoW names cannot contain hyphens; hyphen always delimits realm.
                         if ownerState.hideRealmEnabled and displayText ~= "" then
                             displayText = displayText:match("^([^%-]+)") or displayText
+                            displayText = displayText:match("^(%S+)") or displayText
                         end
                         ownerState.nameOverlayText:SetText(displayText)
                     else
@@ -472,6 +473,7 @@ local function ensureRaidNameOverlay(frame, cfg)
             -- Strip realm suffix: "Name-Realm" -> "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = displayText:match("^([^%-]+)") or displayText
+                displayText = displayText:match("^(%S+)") or displayText
             end
             frameState.nameOverlayText:SetText(displayText)
             textCopied = true
@@ -486,6 +488,7 @@ local function ensureRaidNameOverlay(frame, cfg)
             -- Strip realm suffix: "Name-Realm" -> "Name"
             if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = displayText:match("^([^%-]+)") or displayText
+                displayText = displayText:match("^(%S+)") or displayText
             end
             frameState.nameOverlayText:SetText(displayText)
             textCopied = true

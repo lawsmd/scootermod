@@ -389,6 +389,7 @@ local function ensurePartyNameOverlay(frame, cfg)
                         -- Ambiguate("none") only strips same/connected realms, not cross-realm.
                         if frameState.hideRealmEnabled and displayText ~= "" then
                             displayText = displayText:match("^([^%-]+)") or displayText
+                            displayText = displayText:match("^(%S+)") or displayText
                         end
                         frameState.overlayText:SetText(displayText)
                     else
@@ -461,6 +462,7 @@ local function ensurePartyNameOverlay(frame, cfg)
             -- Apply realm stripping if enabled
             if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = displayText:match("^([^%-]+)") or displayText
+                displayText = displayText:match("^(%S+)") or displayText
             end
             state.overlayText:SetText(displayText)
             textCopied = true
@@ -474,6 +476,7 @@ local function ensurePartyNameOverlay(frame, cfg)
             local displayText = unitName
             if cfg and cfg.hideRealm and displayText ~= "" then
                 displayText = displayText:match("^([^%-]+)") or displayText
+                displayText = displayText:match("^(%S+)") or displayText
             end
             state.overlayText:SetText(displayText)
             textCopied = true
