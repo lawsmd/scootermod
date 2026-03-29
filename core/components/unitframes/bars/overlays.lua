@@ -374,7 +374,7 @@ local function updateBossRectOverlay(bar, overlayKey)
     overlay:Show()
 end
 
-local function ensureBossRectOverlay(bossFrame, bar, cfg, barType)
+local function ensureBossRectOverlay(bossFrame, bar, cfg, barType, unitId)
     if not bar or not bossFrame then return end
 
     local db = addon and addon.db and addon.db.profile
@@ -537,7 +537,10 @@ local function ensureBossRectOverlay(bossFrame, bar, cfg, barType)
     if colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" and addon.GetClassColorRGB then
-        local cr, cg, cb = addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB(unitId or "player")
+        if cr == nil and barType == "health" and addon.GetDefaultHealthColorRGB then
+            cr, cg, cb = addon.GetDefaultHealthColorRGB()
+        end
         r, g, b = cr or 1, cg or 1, cb or 1
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1
@@ -1151,7 +1154,10 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
             overlay:SetVertexColor(r, g, b, a)
         end
     elseif colorMode == "class" and addon.GetClassColorRGB then
-        local cr, cg, cb = addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB(unitToken)
+        if cr == nil and addon.GetDefaultHealthColorRGB then
+            cr, cg, cb = addon.GetDefaultHealthColorRGB()
+        end
         r, g, b, a = cr or 1, cg or 1, cb or 1, 1
         if overlay and overlay.SetVertexColor then
             overlay:SetVertexColor(r, g, b, a)
@@ -1394,7 +1400,7 @@ local function ensureRectPowerOverlay(unit, bar, cfg)
     if colorMode == "custom" and type(tint) == "table" then
         r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
     elseif colorMode == "class" and addon.GetClassColorRGB then
-        local cr, cg, cb = addon.GetClassColorRGB("player")
+        local cr, cg, cb = addon.GetClassColorRGB(unitId)
         r, g, b, a = cr or 1, cg or 1, cb or 1, 1
     elseif colorMode == "texture" then
         r, g, b, a = 1, 1, 1, 1

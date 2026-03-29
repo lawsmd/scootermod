@@ -137,7 +137,10 @@ function SF.applyForSmallUnit(unit, frame, cfg)
         elseif colorMode == "custom" and type(tint) == "table" then
             overlay:SetVertexColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1)
         elseif colorMode == "class" and addon.GetClassColorRGB then
-            local cr, cg, cb = addon.GetClassColorRGB("player")
+            local cr, cg, cb = addon.GetClassColorRGB(unitCfg.unitToken)
+            if cr == nil and addon.GetDefaultHealthColorRGB then
+                cr, cg, cb = addon.GetDefaultHealthColorRGB()
+            end
             overlay:SetVertexColor(cr or 1, cg or 1, cb or 1, 1)
         elseif colorMode == "texture" then
             overlay:SetVertexColor(1, 1, 1, 1)

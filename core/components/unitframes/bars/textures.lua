@@ -506,6 +506,9 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         elseif colorMode == "class" then
             if addon.GetClassColorRGB then
                 local cr, cg, cb = addon.GetClassColorRGB(unitForClass or "player")
+                if cr == nil and barKind == "health" and addon.GetDefaultHealthColorRGB then
+                    cr, cg, cb = addon.GetDefaultHealthColorRGB()
+                end
                 r, g, b, a = cr or 1, cg or 1, cb or 1, 1
             end
         elseif colorMode == "texture" then
@@ -541,6 +544,9 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                 r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
             elseif colorMode == "class" and addon.GetClassColorRGB then
                 local cr, cg, cb = addon.GetClassColorRGB(unitForClass or "player")
+                if cr == nil and barKind == "health" and addon.GetDefaultHealthColorRGB then
+                    cr, cg, cb = addon.GetDefaultHealthColorRGB()
+                end
                 r, g, b, a = cr or 1, cg or 1, cb or 1, 1
             end
             if tex and tex.SetColorTexture then pcall(tex.SetColorTexture, tex, 1, 1, 1, 1) end

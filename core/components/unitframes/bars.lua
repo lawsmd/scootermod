@@ -525,7 +525,7 @@ do
                             if not healthBarHideTextureOnly then
                                 local colorModeHB = cfg.healthBarColorMode or "default"
                                 local texKeyHB = cfg.healthBarTexture or "default"
-                                applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId)
+                                applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, unitId, "health", unitId)
 
                                 -- Background overlay (only when explicitly customized)
                                 do
@@ -567,7 +567,7 @@ do
                             end
 
                             -- Rectangular overlay to fill top-left chip when using custom borders
-                            ensureBossRectOverlay(bossFrame, hb, cfg, "health")
+                            ensureBossRectOverlay(bossFrame, hb, cfg, "health", unitId)
 
                             -- Health Bar custom border (same settings as other unit frames)
                             -- BOSS FRAME FIX: The HealthBar StatusBar has oversized dimensions spanning both
@@ -760,8 +760,11 @@ do
                                                             if colorMode == "custom" and type(tint) == "table" then
                                                                 r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
                                                             elseif colorMode == "class" and addon.GetClassColorRGB then
-                                                                local cr, cg, cb = addon.GetClassColorRGB("player")
-                                                                r, g, b = cr or 1, cg or 1, cb or 1
+                                                                local cr, cg, cb = addon.GetClassColorRGB(unitId)
+                                                                if cr == nil and addon.GetDefaultHealthColorRGB then
+                                                                    cr, cg, cb = addon.GetDefaultHealthColorRGB()
+                                                                end
+                                                                r, g, b = cr or 0, cg or 1, cb or 0
                                                             elseif colorMode == "texture" then
                                                                 r, g, b, a = 1, 1, 1, 1
                                                             elseif colorMode == "default" and addon.GetDefaultHealthColorRGB then
@@ -880,7 +883,7 @@ do
                             ensureMaskOnBarTexture(pb, resolveBossPowerMask(bossFrame))
 
                             -- Rectangular overlay to fill bottom-right chip when using custom borders
-                            ensureBossRectOverlay(bossFrame, pb, cfg, "power")
+                            ensureBossRectOverlay(bossFrame, pb, cfg, "power", unitId)
 
                             -- Power Bar custom border (mirrors Health Bar border settings; supports power-specific overrides)
                             -- BOSS FRAME FIX: Use the same anchor frame pattern as Health Bar for consistency.
@@ -1056,7 +1059,7 @@ do
                                                         if colorMode == "custom" and type(tint) == "table" then
                                                             r, g, b, a = tint[1] or 1, tint[2] or 1, tint[3] or 1, tint[4] or 1
                                                         elseif colorMode == "class" and addon.GetClassColorRGB then
-                                                            local cr, cg, cb = addon.GetClassColorRGB("player")
+                                                            local cr, cg, cb = addon.GetClassColorRGB(unitId)
                                                             r, g, b = cr or 1, cg or 1, cb or 1
                                                         elseif colorMode == "texture" then
                                                             r, g, b, a = 1, 1, 1, 1
@@ -1134,7 +1137,7 @@ do
 					Util.SetHealthBarTextureOnlyHidden(hb, false)
 				end
 			end
-            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, "player", "health", unitId, combatSafe)
+            applyToBar(hb, texKeyHB, colorModeHB, cfg.healthBarTint, unitId, "health", unitId, combatSafe)
 
             -- Apply background texture and color for Health Bar
             do
@@ -1703,7 +1706,7 @@ do
             local pbSt = getState(pb)
             if not (pbSt and pbSt.powerOverlayActive) then
                 -- Overlay not active (default+default): use legacy passthrough
-                applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, "player", "power", unitId, combatSafe)
+                applyToBar(pb, texKeyPB, colorModePB, cfg.powerBarTint, unitId, "power", unitId, combatSafe)
             end
 
             -- Apply background texture and color for Power Bar
