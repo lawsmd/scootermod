@@ -68,7 +68,10 @@ Navigation.NavModel = {
         label = "Interface",
         collapsible = true,
         children = {
-            { key = "damageMeter", label = "Damage Meters", module = "damageMeter" },
+            { key = "damageMeter", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeter",
+                versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. May produce taint errors in raids." } },
+            { key = "damageMeterV2", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeterV2",
+                versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
             { key = "tooltip", label = "Tooltip", module = "tooltip" },
             { key = "objectiveTracker", label = "Objective Tracker", module = "objectiveTracker" },
             { key = "minimap", label = "Minimap", module = "minimap" },
@@ -207,10 +210,16 @@ Navigation._expandedSections = {}  -- Track which parent sections are expanded
 Navigation._selectedKey = nil      -- Currently selected navigation item (nil = Home via logo)
 Navigation._rows = {}              -- References to created row frames
 
---- Check if a module category was active at session start (for nav filtering).
-function Navigation:IsNavModuleActive(moduleCategory)
+--- Check if a module category (and optionally sub-toggle) was active at session start.
+function Navigation:IsNavModuleActive(moduleCategory, moduleSubId)
     if not addon._activeModules then return true end
-    return addon._activeModules[moduleCategory] ~= false
+    if addon._activeModules[moduleCategory] == false then return false end
+    -- Sub-toggle check (e.g., damageMeter + damageMeterV2)
+    if moduleSubId and addon._activeModuleSubs and addon._activeModuleSubs[moduleCategory] then
+        local sub = addon._activeModuleSubs[moduleCategory][moduleSubId]
+        if sub == false then return false end
+    end
+    return true
 end
 
 --------------------------------------------------------------------------------
@@ -545,7 +554,7 @@ function Navigation:BuildRows(contentFrame)
                 for childIdx, child in ipairs(parent.children) do
                     rowIndex = rowIndex + 1
                     local isLastChild = (childIdx == #parent.children)
-                    local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module)
+                    local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module, child.moduleSubId)
                     local childRow = self:CreateChildRow(
                         contentFrame,
                         child,
@@ -737,6 +746,26 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
     label:SetPoint("LEFT", row, "LEFT", CHILD_INDENT + 6, 0)
     label:SetText(navItem.label)
     row._label = label
+
+    -- Version badge info icon (e.g., "v1" / "v2")
+    if navItem.versionBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        local badge = addon.UI.Controls:CreateInfoIcon({
+            parent = row,
+            tooltipTitle = navItem.versionBadge.title or "",
+            tooltipText = navItem.versionBadge.text or "",
+            size = 18,
+            iconType = "info",
+        })
+        -- Override the icon text to show the badge label instead of "i"
+        if badge._iconText then
+            badge._iconText:SetText(navItem.versionBadge.label or "")
+            local fontPath = badge._iconText:GetFont()
+            if fontPath then
+                pcall(badge._iconText.SetFont, badge._iconText, fontPath, 8, "OUTLINE")
+            end
+        end
+        badge:SetPoint("LEFT", label, "RIGHT", 4, 0)
+    end
 
     if isModuleDisabled then
         -- Disabled module: gray out label and tree lines, no interaction

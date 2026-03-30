@@ -140,6 +140,8 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dm export [overall|current|expired]")
             addon:Print("  /scoot debug dm frames")
             addon:Print("  /scoot debug dm trace <on|off>")
+            addon:Print("  /scoot debug dmv2 cvar")
+            addon:Print("  /scoot debug dmv2 api")
             return
         end
 
@@ -396,6 +398,30 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("       /scoot debug dm export [overall|current|expired]")
             addon:Print("       /scoot debug dm frames")
             addon:Print("       /scoot debug dm trace <on|off>")
+            return
+        end
+
+        -- /scoot debug dmv2 cvar
+        -- /scoot debug dmv2 api
+        if sub1 == "dmv2" then
+            if sub2 == "cvar" then
+                if addon.DebugDMV2CVar then addon.DebugDMV2CVar()
+                else addon:Print("DMV2 debug not available.") end
+                return
+            end
+            if sub2 == "api" then
+                if addon.DebugDMV2API then addon.DebugDMV2API()
+                else addon:Print("DMV2 debug not available.") end
+                return
+            end
+            if sub2 == "trace" then
+                if addon.DebugDMV2Trace then addon.DebugDMV2Trace()
+                else addon:Print("DMV2 trace not available.") end
+                return
+            end
+            addon:Print("Usage: /scoot debug dmv2 cvar")
+            addon:Print("       /scoot debug dmv2 api")
+            addon:Print("       /scoot debug dmv2 trace")
             return
         end
 

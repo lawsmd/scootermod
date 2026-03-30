@@ -178,7 +178,7 @@ local function hideAllDMOverlays()
             overlay:Hide()
         end
     end
-    -- Clip frames, button overlays, title right-click overlays from windowState
+    -- Clip frames, button overlays, title right-click overlays, export buttons from windowState
     for sessionWindow in pairs(knownSessionWindows) do
         local ws = windowState[sessionWindow]
         if ws then
@@ -188,6 +188,8 @@ local function hideAllDMOverlays()
                 if ws.buttonOverlays.settingsIcon then ws.buttonOverlays.settingsIcon:Hide() end
             end
             if ws.titleRightClickOverlay then ws.titleRightClickOverlay:Hide() end
+            if ws.exportButton then ws.exportButton:Hide() end
+            if ws.exportMenu then ws.exportMenu:Hide() end
         end
     end
 end

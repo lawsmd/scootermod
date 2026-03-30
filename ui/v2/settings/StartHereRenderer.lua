@@ -266,7 +266,16 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
                     theme = theme,
                     onToggle = function()
                         if not addon:IsModuleEnabled(catId) then return end
-                        addon:SetModuleEnabled(catId, sub.id, not addon:IsModuleEnabled(catId, sub.id))
+                        local newValue = not addon:IsModuleEnabled(catId, sub.id)
+                        -- Mutually exclusive: turning one ON turns all others OFF
+                        if catDef.mutuallyExclusive and newValue then
+                            for _, other in ipairs(catDef.subToggles) do
+                                if other.id ~= sub.id then
+                                    addon:SetModuleEnabled(catId, other.id, false)
+                                end
+                            end
+                        end
+                        addon:SetModuleEnabled(catId, sub.id, newValue)
                         state.dirty = true
                         if state.registerGuard then state.registerGuard() end
                         rebuild()

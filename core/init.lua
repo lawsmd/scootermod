@@ -52,12 +52,21 @@ function addon:OnInitialize()
     self:InitializeComponents()
 
     -- Snapshot which modules are active this session (for nav filtering).
+    -- Category-level: _activeModules[category] = bool
+    -- Sub-toggle-level: _activeModuleSubs[category][subId] = bool
     self._activeModules = {}
+    self._activeModuleSubs = {}
     local me = self.db and self.db.profile and self.db.profile.moduleEnabled
     if me then
         for k, v in pairs(me) do
             if type(v) == "table" then
                 self._activeModules[k] = v._enabled ~= false
+                self._activeModuleSubs[k] = {}
+                for subKey, subVal in pairs(v) do
+                    if subKey ~= "_enabled" then
+                        self._activeModuleSubs[k][subKey] = subVal ~= false
+                    end
+                end
             else
                 self._activeModules[k] = v ~= false
             end

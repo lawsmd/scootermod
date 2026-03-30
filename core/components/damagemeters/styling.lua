@@ -800,6 +800,15 @@ end
 -- Main styling function
 local function ApplyDamageMeterStyling(self)
     DM._InvalidateSessionWindowCache()
+
+    -- If V2 is active, V1 becomes a no-op
+    if addon.IsModuleEnabled and addon:IsModuleEnabled("damageMeter", "damageMeterV2") then
+        if addon.DamageMetersV2 and addon.DamageMetersV2._initialized then
+            DM._hideAllDMOverlays()
+            return
+        end
+    end
+
     local dmFrame = _G.DamageMeter
     if not dmFrame then
         DM._hideAllDMOverlays()

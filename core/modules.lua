@@ -23,6 +23,7 @@ local COMPONENT_TO_CATEGORY = {
     customGroup5 = "cooldownManager",
     -- Damage Meter
     damageMeter = "damageMeter",
+    damageMeterV2 = "damageMeter",
     -- Extra Abilities
     extraAbilities = "extraAbilities",
     -- Minimap
@@ -116,6 +117,11 @@ addon.MODULE_CATEGORIES = {
     },
     damageMeter = {
         label = "Damage Meter",
+        mutuallyExclusive = true, -- only one sub-toggle can be ON at a time
+        subToggles = {
+            { id = "damageMeter", label = "Blizzard Overlay" },
+            { id = "damageMeterV2", label = "Custom Frames" },
+        },
     },
     extraAbilities = {
         label = "Extra Abilities",
