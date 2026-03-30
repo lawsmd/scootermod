@@ -308,6 +308,9 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
             local ok, h = pcall(groupFrame.GetHeight, groupFrame)
             if ok and type(h) == "number" and h > 0 then
                 frameHeight = h
+                if state then
+                    state.cachedHeight = h
+                end
             end
         end
     end

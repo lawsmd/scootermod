@@ -457,6 +457,12 @@ local function DiscoverGroupFrames()
             if ok and unit and GROUP_UNITS[unit] then
                 local state = ensureState(frame)
                 state.unit = unit
+                if not InCombatLockdown() then
+                    local hOk, h = pcall(frame.GetHeight, frame)
+                    if hOk and type(h) == "number" and h > 0 then
+                        state.cachedHeight = h
+                    end
+                end
             end
         end
     end
@@ -468,6 +474,12 @@ local function DiscoverGroupFrames()
             if ok and unit and GROUP_UNITS[unit] then
                 local state = ensureState(frame)
                 state.unit = unit
+                if not InCombatLockdown() then
+                    local hOk, h = pcall(frame.GetHeight, frame)
+                    if hOk and type(h) == "number" and h > 0 then
+                        state.cachedHeight = h
+                    end
+                end
             end
         end
     end
