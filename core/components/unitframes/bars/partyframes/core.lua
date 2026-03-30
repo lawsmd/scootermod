@@ -349,6 +349,11 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
             barState.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
+                -- Skip color updates during Edit Mode to prevent incorrect colors
+                -- from being applied during frame rebuilds (Blizzard reassigns units,
+                -- UnitHealthPercent may be unreliable during transitions).
+                if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+                   and addon.EditMode.IsEditModeActiveOrOpening() then return end
                 -- Also update color for "value"/"valueDark" mode to eliminate flicker.
                 -- By updating color in the same hook as width, both changes happen
                 -- atomically in the same frame (no timing gap = no flicker).
@@ -391,6 +396,9 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
                 -- to prevent infinite loops when SetStatusBarColor is called from applyValueBasedColor.
                 local fs = addon.FrameState and addon.FrameState.Get(self)
                 if fs and fs.applyingValueBasedColor then return end
+                -- Skip during Edit Mode to prevent incorrect colors from frame rebuilds
+                if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+                   and addon.EditMode.IsEditModeActiveOrOpening() then return end
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "party") or nil
@@ -926,7 +934,10 @@ function PartyFrames.installHooks()
         if _G.hooksecurefunc and _G.CompactUnitFrame_SetDispelOverlayAura then
             _G.hooksecurefunc("CompactUnitFrame_SetDispelOverlayAura", function(frame, aura)
                 pcall(function()
-                    if isEditModeActive() then return end
+                    -- NOTE: No blanket isEditModeActive() guard here. We must always
+                    -- process HIDE requests so dispel clones are cleaned up when Edit
+                    -- Mode closes (Blizzard shows preview debuffs during Edit Mode,
+                    -- then clears them on exit). The guard is on the SHOW path only.
                     if not frame or not frame.healthBar then return end
 
                     local bar = frame.healthBar
@@ -964,6 +975,9 @@ function PartyFrames.installHooks()
                     if not state.dispelFill then return end
 
                     if shown then
+                        -- Skip showing during Edit Mode — Blizzard shows preview
+                        -- debuffs that shouldn't appear on our clones
+                        if isEditModeActive() then return end
                         color = color or dispelColorCache[frame] or DISPEL_COLORS["Magic"]
                         state.dispelFill:SetColorTexture(color.r, color.g, color.b, 0.3)
                         state.dispelHighlight:SetVertexColor(color.r, color.g, color.b, 1)
@@ -1598,9 +1612,25 @@ function PartyFrames.installHooks()
                             if overlay and not overlay:IsShown() then
                                 updateHealthOverlay(bar)
                             end
+                            -- Check 3: Revalidate overlay color for value-based modes
+                            local colorMode = cfg and cfg.healthBarColorMode
+                            if colorMode == "value" or colorMode == "valueDark" then
+                                if overlay and overlay:IsShown() then
+                                    local parentFrame = bar.GetParent and bar:GetParent()
+                                    local unit
+                                    if parentFrame then
+                                        local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                                        if okU and u then unit = u end
+                                    end
+                                    if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                        local useDark = (colorMode == "valueDark")
+                                        addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
+                                    end
+                                end
+                            end
                         end
                     end
-                    -- Check 3: Role icons
+                    -- Check 4: Role icons
                     if addon._applyCustomRoleIcon then
                         pcall(addon._applyCustomRoleIcon, frame)
                     end

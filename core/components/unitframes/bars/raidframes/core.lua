@@ -348,6 +348,11 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
             state.overlayHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)
                 updateHealthOverlay(self)
+                -- Skip color updates during Edit Mode to prevent incorrect colors
+                -- from being applied during frame rebuilds (Blizzard reassigns units,
+                -- UnitHealthPercent may be unreliable during transitions).
+                if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+                   and addon.EditMode.IsEditModeActiveOrOpening() then return end
                 -- Also update color for "value"/"valueDark" mode to eliminate flicker.
                 -- By updating color in the same hook as width, both changes happen
                 -- atomically in the same frame (no timing gap = no flicker).
@@ -385,6 +390,9 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
                 -- to prevent infinite loops when SetStatusBarColor is called from applyValueBasedColor.
                 local fs = addon.FrameState and addon.FrameState.Get(self)
                 if fs and fs.applyingValueBasedColor then return end
+                -- Skip during Edit Mode to prevent incorrect colors from frame rebuilds
+                if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+                   and addon.EditMode.IsEditModeActiveOrOpening() then return end
                 local db = addon and addon.db and addon.db.profile
                 local groupFrames = db and rawget(db, "groupFrames") or nil
                 local cfg = groupFrames and rawget(groupFrames, "raid") or nil
