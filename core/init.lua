@@ -69,6 +69,17 @@ function addon:OnInitialize()
                 end
             else
                 self._activeModules[k] = v ~= false
+                -- For mutuallyExclusive categories with boolean storage,
+                -- snapshot first sub-toggle as active, others as inactive
+                if v ~= false then
+                    local catDef = self.MODULE_CATEGORIES and self.MODULE_CATEGORIES[k]
+                    if catDef and catDef.mutuallyExclusive and catDef.subToggles then
+                        self._activeModuleSubs[k] = {}
+                        for _, sub in ipairs(catDef.subToggles) do
+                            self._activeModuleSubs[k][sub.id] = (sub == catDef.subToggles[1])
+                        end
+                    end
+                end
             end
         end
     end

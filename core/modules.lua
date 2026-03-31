@@ -181,7 +181,16 @@ function addon:IsModuleEnabled(category, subId)
     local val = me[category]
     if val == nil then return true end     -- absent key = enabled
     if val == false then return false end  -- master off
-    if val == true then return true end    -- master on, no sub-toggles
+    if val == true then
+        -- For mutuallyExclusive categories, only the first sub-toggle defaults to enabled
+        if subId then
+            local catDef = self.MODULE_CATEGORIES[category]
+            if catDef and catDef.mutuallyExclusive and catDef.subToggles then
+                return catDef.subToggles[1] and catDef.subToggles[1].id == subId
+            end
+        end
+        return true
+    end
 
     -- Table form: master + sub-toggles
     if type(val) == "table" then
@@ -218,11 +227,12 @@ function addon:SetModuleEnabled(category, subId, value)
             local wasEnabled = current ~= false
             me[category] = { _enabled = wasEnabled }
             current = me[category]
-            -- Initialize all sub-toggles to true (preserve current state)
+            -- Initialize sub-toggles: for mutuallyExclusive categories only the
+            -- first sub-toggle defaults to true; others default to all true.
             local catDef = self.MODULE_CATEGORIES[category]
             if catDef and catDef.subToggles then
-                for _, sub in ipairs(catDef.subToggles) do
-                    current[sub.id] = true
+                for i, sub in ipairs(catDef.subToggles) do
+                    current[sub.id] = not catDef.mutuallyExclusive or (i == 1)
                 end
             end
         end

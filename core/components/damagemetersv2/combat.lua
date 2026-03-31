@@ -15,6 +15,13 @@ function DM2._EnterCombatMode()
             win._preCombatDuration = win.mergedData.durationSeconds or 0
             win.cachedSecondary = win.mergedData
         end
+        -- Dim secondary column headers to signal stale data
+        if win then
+            for c = 2, DM2.MAX_COLUMNS do
+                local ch = win.columnHeaders[c]
+                if ch then ch:SetTextColor(0.5, 0.5, 0.5, 0.7) end
+            end
+        end
     end
 end
 
@@ -90,6 +97,29 @@ end
 
 function DM2._FullRefreshAllWindows()
     if not DM2._initialized then return end
+
+    -- Restore secondary column header colors (dimmed during combat)
+    local db = DM2._comp and DM2._comp.db
+    if db then
+        local headerStyle = db.textHeaders or {}
+        local useCustom = headerStyle.colorMode == "custom" and headerStyle.color
+        for i = 1, DM2.MAX_WINDOWS do
+            local win = DM2._windows[i]
+            if win then
+                for c = 1, DM2.MAX_COLUMNS do
+                    local ch = win.columnHeaders[c]
+                    if ch then
+                        if useCustom then
+                            local hc = headerStyle.color
+                            ch:SetTextColor(hc[1] or 0.8, hc[2] or 0.8, hc[3] or 0.8, hc[4] or 1)
+                        else
+                            ch:SetTextColor(0.8, 0.8, 0.8, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
 
     for i = 1, DM2.MAX_WINDOWS do
         local cfg = DM2._GetWindowConfig(i)

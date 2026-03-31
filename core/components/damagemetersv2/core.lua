@@ -132,8 +132,8 @@ addon:RegisterComponentInitializer(function(self)
             barCustomColor          = { type = "addon", default = { 0.8, 0.7, 0.2, 1 } },
             barBackgroundColor      = { type = "addon", default = { 0.1, 0.1, 0.1, 0.8 } },
             barBorderStyle          = { type = "addon", default = "none" },
-            barBorderTintEnable     = { type = "addon", default = false },
-            barBorderTintColor      = { type = "addon", default = { 0, 0, 0, 1 } },
+            barBorderColorMode      = { type = "addon", default = "default" },
+            barBorderColor          = { type = "addon", default = { 0, 0, 0, 1 } },
             barBorderThickness      = { type = "addon", default = 1 },
             barBorderInsetH         = { type = "addon", default = 0 },
             barBorderInsetV         = { type = "addon", default = 0 },
@@ -195,6 +195,7 @@ addon:RegisterComponentInitializer(function(self)
             updateThrottle  = { type = "addon", default = 1.0 },
             autoResetData   = { type = "addon", default = "off" },
             autoResetPrompt = { type = "addon", default = true },
+            enableSlashDM   = { type = "addon", default = false },
 
             -- Export
             exportEnabled       = { type = "addon", default = false },
@@ -237,6 +238,19 @@ end, "damageMeter")
 --------------------------------------------------------------------------------
 
 function DM2._ApplyStyling(comp)
+    -- Guard: bail if V2 is not enabled on the current profile (handles profile switches)
+    if not addon:IsModuleEnabled("damageMeter", "damageMeterV2") then
+        if DM2._initialized then
+            for i = 1, DM2.MAX_WINDOWS do
+                local win = DM2._windows[i]
+                if win and win.frame then
+                    win.frame:Hide()
+                end
+            end
+        end
+        return
+    end
+
     -- Initialize frames on first styling pass
     if not DM2._initialized then
         DM2._Initialize(comp)
@@ -323,4 +337,34 @@ local SESSION_LABELS = {
 
 function DM2._GetSessionLabel(sessionType)
     return SESSION_LABELS[sessionType] or "Unknown"
+end
+
+--------------------------------------------------------------------------------
+-- Copy Window Settings
+--------------------------------------------------------------------------------
+
+function DM2.CopyWindowSettings(sourceIdx, destIdx)
+    if type(sourceIdx) ~= "number" or type(destIdx) ~= "number" then return end
+    if sourceIdx == destIdx then return end
+    if sourceIdx < 1 or sourceIdx > DM2.MAX_WINDOWS then return end
+    if destIdx < 1 or destIdx > DM2.MAX_WINDOWS then return end
+
+    local wins = DM2._EnsureWindowsDB()
+    if not wins then return end
+    local src, dst = wins[sourceIdx], wins[destIdx]
+    if not src or not dst then return end
+
+    local function deepcopy(v)
+        if type(v) ~= "table" then return v end
+        local out = {}
+        for k, vv in pairs(v) do out[k] = deepcopy(vv) end
+        return out
+    end
+
+    dst.columns     = deepcopy(src.columns)
+    dst.frameWidth  = src.frameWidth
+    dst.frameHeight = src.frameHeight
+    dst.windowScale = src.windowScale
+
+    if DM2._comp then DM2._ApplyStyling(DM2._comp) end
 end

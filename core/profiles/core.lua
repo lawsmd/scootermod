@@ -205,6 +205,39 @@ end
 
 local function ApplyDamageMeterEnabledForActiveProfile(reason)
     if not addon:IsModuleEnabled("damageMeter") then return end
+
+    -- V2 active → always disable Blizzard's meter regardless of V1 settings
+    if addon:IsModuleEnabled("damageMeter", "damageMeterV2") then
+        local function applyV2CVar()
+            if C_CVar and C_CVar.SetCVar then
+                pcall(C_CVar.SetCVar, "damageMeterEnabled", "0")
+            elseif SetCVar then
+                pcall(SetCVar, "damageMeterEnabled", "0")
+            end
+        end
+        if InCombatLockdown and InCombatLockdown() then
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self)
+                self:UnregisterAllEvents()
+                applyV2CVar()
+            end)
+        else
+            applyV2CVar()
+        end
+        -- Hide Blizzard meter frame
+        if not (InCombatLockdown and InCombatLockdown()) then
+            local frame = _G and _G["DamageMeter"]
+            if frame then
+                if frame.SetShown then pcall(frame.SetShown, frame, false)
+                elseif frame.Hide then pcall(frame.Hide, frame)
+                end
+            end
+        end
+        Debug("Applied damageMeterEnabled=0 for V2", reason and ("reason=" .. tostring(reason)) or "")
+        return
+    end
+
     local profile = addon and addon.db and addon.db.profile
     local s = profile and profile.damageMeterSettings
     local desired = s and s.enableDamageMeter

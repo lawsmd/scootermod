@@ -138,6 +138,13 @@ function DamageMeter.Render(panel, scrollContent)
                 end,
             })
 
+            inner:AddToggle({
+                label = "Enable /dmshow and /dmreset commands",
+                description = "Type /dmshow to toggle the Damage Meter on or off. Type /dmreset to reset all session data.",
+                get = function() return getSetting("enableSlashDM") or false end,
+                set = function(value) setSetting("enableSlashDM", value) end,
+            })
+
             inner:Finalize()
         end,
     })

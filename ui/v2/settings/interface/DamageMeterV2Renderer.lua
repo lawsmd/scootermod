@@ -102,6 +102,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
     local cfg = DM2 and DM2._GetWindowConfig and DM2._GetWindowConfig(windowIndex)
     local columns = cfg and cfg.columns or { { format = "dps" } }
     local numColumns = math.min(#columns, 5)
+    if cfg and cfg.sessionType ~= 0 then numColumns = 1 end  -- Current/Expired: show only primary
     local Controls = GetControls()
     local Theme = GetTheme()
     local ar, ag, ab = 0.2, 0.9, 0.3
@@ -434,12 +435,49 @@ local function CreateWindowSelector(parentFrame, builder)
     end)
     indicator:SetPoint("LEFT", row, "LEFT", 5 * 32 + 12, 0)
 
-    -- [+ Column] button
+    -- Copy From dropdown
+    if Controls and Controls.CreateDropdown then
+        local copyValues, copyOrder = {}, {}
+        for i = 1, (DM2 and DM2.MAX_WINDOWS or 5) do
+            if i ~= selectedWindow then
+                copyValues[i] = "Window " .. i
+                table.insert(copyOrder, i)
+            end
+        end
+
+        local copyDropdown = Controls:CreateDropdown({
+            parent = row,
+            values = copyValues,
+            order = copyOrder,
+            placeholder = "Copy from...",
+            width = 120,
+            height = 22,
+            fontSize = 10,
+            set = function(sourceIdx)
+                if addon.Dialogs and addon.Dialogs.Show then
+                    addon.Dialogs:Show("SCOOT_COPY_DMV2_CONFIRM", {
+                        formatArgs = { tostring(sourceIdx), tostring(selectedWindow) },
+                        onAccept = function()
+                            if DM2 and DM2.CopyWindowSettings then
+                                DM2.CopyWindowSettings(sourceIdx, selectedWindow)
+                            end
+                            if builder then builder:DeferredRefreshAll() end
+                        end,
+                    })
+                end
+            end,
+        })
+        copyDropdown:SetPoint("LEFT", indicator, "RIGHT", 8, 0)
+    end
+
+    -- [+ Column] button (only enabled for Overall windows)
     local columns = cfg and cfg.columns or {}
+    local isOverall = cfg and cfg.sessionType == 0
     if #columns < 5 and Controls and Controls.CreateButton then
         local addColBtn = Controls:CreateButton({
             parent = row, text = "+ Column", fontSize = 10, height = 22,
             onClick = function()
+                if not isOverall then return end
                 if cfg and cfg.columns then
                     table.insert(cfg.columns, { format = "damage" })
                     if builder then builder:DeferredRefreshAll() end
@@ -448,6 +486,9 @@ local function CreateWindowSelector(parentFrame, builder)
             end,
         })
         addColBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        if not isOverall then
+            addColBtn:SetAlpha(0.4)
+        end
     end
 
     return row
@@ -476,6 +517,22 @@ function DMV2Settings.Render(panel, scrollContent)
     ws:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, -8)
     table.insert(builder._controls, ws)
     builder._currentY = -8 - 28 - 8
+
+    -- Multi-column disclaimer
+    local disclaimerFrame = CreateFrame("Frame", nil, scrollContent)
+    disclaimerFrame:SetHeight(28)
+    disclaimerFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 12, builder._currentY)
+    disclaimerFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, builder._currentY)
+    local disclaimerText = disclaimerFrame:CreateFontString(nil, "OVERLAY")
+    disclaimerText:SetFont(ResolveFont(), 10, "")
+    disclaimerText:SetPoint("TOPLEFT", disclaimerFrame, "TOPLEFT", 4, -4)
+    disclaimerText:SetPoint("TOPRIGHT", disclaimerFrame, "TOPRIGHT", -4, -4)
+    disclaimerText:SetJustifyH("LEFT")
+    disclaimerText:SetTextColor(1.0, 0.82, 0, 1)
+    disclaimerText:SetText("Overall windows can display multiple metrics, but only the first (left-most) column will update proactively. Other metrics will update once combat ends.")
+    disclaimerText:SetWordWrap(true)
+    table.insert(builder._controls, disclaimerFrame)
+    builder._currentY = builder._currentY - 28
 
     -- Preview Pane
     if comp then
@@ -527,6 +584,9 @@ function DMV2Settings.Render(panel, scrollContent)
                 get = function() return getSetting("updateThrottle") or 1.0 end, set = function(v) setSetting("updateThrottle", v) end })
             inner:AddToggle({ label = "Show Local Player Row", description = "Pin your character at the bottom of the meter when scrolled out of view.",
                 get = function() return getSetting("showLocalPlayer") ~= false end, set = function(v) setSetting("showLocalPlayer", v) end })
+            inner:AddToggle({ label = "Enable /dmshow and /dmreset commands",
+                description = "Type /dmshow to toggle the Damage Meter on or off. Type /dmreset to reset all session data.",
+                get = function() return getSetting("enableSlashDM") or false end, set = function(v) setSetting("enableSlashDM", v) end })
             inner:Finalize()
         end })
 
@@ -592,15 +652,18 @@ function DMV2Settings.Render(panel, scrollContent)
                             set = function(v) setAndRefresh("barBorderStyle", v) end,
                             includeNone = true,
                         })
-                        tabInner:AddToggleColorPicker({
-                            label = "Border Tint",
-                            getToggle = function() return getSetting("barBorderTintEnable") or false end,
-                            setToggle = function(v) setAndRefresh("barBorderTintEnable", v) end,
+                        tabInner:AddSelectorColorPicker({
+                            label = "Border Color",
+                            values = { default = "Default (Black)", class = "Class Color", custom = "Custom" },
+                            order = { "default", "class", "custom" },
+                            get = function() return getSetting("barBorderColorMode") or "default" end,
+                            set = function(v) setAndRefresh("barBorderColorMode", v or "default") end,
                             getColor = function()
-                                local c = getSetting("barBorderTintColor") or {0,0,0,1}
+                                local c = getSetting("barBorderColor") or {0,0,0,1}
                                 return c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1
                             end,
-                            setColor = function(r,g,b,a) setAndRefresh("barBorderTintColor", {r,g,b,a}) end,
+                            setColor = function(r,g,b,a) setAndRefresh("barBorderColor", {r,g,b,a}) end,
+                            customValue = "custom",
                             hasAlpha = true,
                         })
                         tabInner:AddSlider({ label = "Border Thickness", min = 1, max = 8, step = 0.5, precision = 1,

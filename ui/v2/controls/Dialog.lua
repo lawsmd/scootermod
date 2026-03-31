@@ -1165,6 +1165,12 @@ Controls:RegisterDialog("SCOOT_COPY_CUSTOMGROUP_CONFIRM", {
     cancelText = CANCEL or "Cancel",
 })
 
+Controls:RegisterDialog("SCOOT_COPY_DMV2_CONFIRM", {
+    text = "Copy columns and sizing from Window %s to Window %s?\nThis will overwrite columns, width, height, and scale.",
+    acceptText = "Copy",
+    cancelText = CANCEL or "Cancel",
+})
+
 Controls:RegisterDialog("SCOOT_COMBAT_FONT_RESTART", {
     text = "In order for Combat Font changes to take effect, you'll need to fully exit and re-open World of Warcraft.",
     infoOnly = true,

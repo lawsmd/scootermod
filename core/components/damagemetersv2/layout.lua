@@ -20,6 +20,7 @@ function DM2._CalculateColumnWidths(windowIndex, comp)
     local fw = tonumber(cfg.frameWidth or db.frameWidth) or 350
     local numColumns = math.min(#cfg.columns, DM2.MAX_COLUMNS)
     if numColumns == 0 then numColumns = 1 end
+    if cfg.sessionType ~= 0 then numColumns = 1 end  -- Current/Expired: single column only
 
     -- Available width after icon + name
     local availableWidth = fw - DM2.ICON_SIZE - 6 - DM2.NAME_WIDTH
@@ -359,9 +360,24 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
                         end
                     end
                 end
+
+                -- Gray out secondary columns during combat (data is stale/uncorrelated)
+                if c > 1 then
+                    vt:SetTextColor(0.5, 0.5, 0.5, 0.7)
+                end
             else
                 -- OOC: formatted text
                 vt:SetText(DM2._FormatColumnValue(player, colDef.format))
+
+                -- Restore value text color from DB settings (undo combat gray-out)
+                local valSettings = db and db.textValues or {}
+                local valColorMode = valSettings.colorMode or "default"
+                if valColorMode == "custom" and valSettings.color then
+                    local vc = valSettings.color
+                    vt:SetTextColor(vc[1] or 1, vc[2] or 1, vc[3] or 1, vc[4] or 1)
+                else
+                    vt:SetTextColor(1, 1, 1, 1)
+                end
             end
         end
     end

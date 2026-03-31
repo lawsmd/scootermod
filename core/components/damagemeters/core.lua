@@ -199,6 +199,70 @@ DM._hideWindowOverlays = hideWindowOverlays
 DM._hideAllDMOverlays = hideAllDMOverlays
 
 --------------------------------------------------------------------------------
+-- Slash command handlers (/dmshow, /dmreset)
+--------------------------------------------------------------------------------
+
+function DM._SlashToggleShow()
+    local profile = addon.db and addon.db.profile
+    if not profile then return end
+
+    -- Read current state from profile setting (or fall back to CVar)
+    local s = profile.damageMeterSettings
+    local currentlyEnabled
+    if s and s.enableDamageMeter ~= nil then
+        currentlyEnabled = s.enableDamageMeter
+    else
+        local v = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("damageMeterEnabled")
+        currentlyEnabled = (v == "1")
+    end
+
+    local newState = not currentlyEnabled
+
+    -- Store in profile (consistent with the UI toggle)
+    if not profile.damageMeterSettings then profile.damageMeterSettings = {} end
+    profile.damageMeterSettings.enableDamageMeter = newState
+
+    -- Set CVar (defer if in combat)
+    local value = newState and "1" or "0"
+    local function applyCVar()
+        if C_CVar and C_CVar.SetCVar then
+            pcall(C_CVar.SetCVar, "damageMeterEnabled", value)
+        end
+    end
+
+    if InCombatLockdown() then
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+        f:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            applyCVar()
+            if newState and addon.ApplyStyles then
+                C_Timer.After(0, function() addon:ApplyStyles() end)
+            end
+        end)
+        addon:Print(newState and "Damage Meter will show after combat." or "Damage Meter will hide after combat.")
+    else
+        applyCVar()
+        if newState then
+            C_Timer.After(0, function()
+                if addon.ApplyStyles then addon:ApplyStyles() end
+            end)
+            addon:Print("Damage Meter shown.")
+        else
+            hideAllDMOverlays()
+            addon:Print("Damage Meter hidden.")
+        end
+    end
+end
+
+function DM._SlashReset()
+    if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+        C_DamageMeter.ResetAllCombatSessions()
+        addon:Print("Damage Meter data reset.")
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Zone Snapshot (for export data)
 --------------------------------------------------------------------------------
 
@@ -528,6 +592,7 @@ addon:RegisterComponentInitializer(function(self)
             -- Quality of Life settings
             autoResetData = { type = "addon", default = "off", ui = { hidden = true } },
             autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
+            enableSlashDM = { type = "addon", default = false, ui = { hidden = true } },
         },
         ApplyStyling = function(self) DM._ApplyDamageMeterStyling(self) end,
         RefreshOpacity = function(self) RefreshDamageMeterOpacity(self) end,

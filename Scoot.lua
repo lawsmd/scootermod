@@ -142,6 +142,7 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dm trace <on|off>")
             addon:Print("  /scoot debug dmv2 cvar")
             addon:Print("  /scoot debug dmv2 api")
+            addon:Print("  /scoot debug dmv2 fields")
             return
         end
 
@@ -419,9 +420,15 @@ function SlashCmdList.SCOOT(msg, editBox)
                 else addon:Print("DMV2 trace not available.") end
                 return
             end
+            if sub2 == "fields" then
+                if addon.DebugDMV2Fields then addon.DebugDMV2Fields()
+                else addon:Print("DMV2 debug not available.") end
+                return
+            end
             addon:Print("Usage: /scoot debug dmv2 cvar")
             addon:Print("       /scoot debug dmv2 api")
             addon:Print("       /scoot debug dmv2 trace")
+            addon:Print("       /scoot debug dmv2 fields")
             return
         end
 
@@ -501,6 +508,66 @@ function SlashCmdList.SCOOTCDM(msg, editBox)
         return
     end
     addon:OpenCooldownManagerSettings()
+end
+
+-- /dmshow (toggle damage meter visibility, gated by per-version QoL setting)
+SLASH_SCOOTDMSHOW1 = "/dmshow"
+function SlashCmdList.SCOOTDMSHOW(msg, editBox)
+    if not (addon and addon.IsModuleEnabled) then return end
+
+    if not addon:IsModuleEnabled("damageMeter") then
+        addon:Print("Damage Meter module is disabled.")
+        return
+    end
+
+    local isV2 = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
+    local compId = isV2 and "damageMeterV2" or "damageMeter"
+    local comp = addon.Components and addon.Components[compId]
+    local enabled = comp and comp.db and comp.db.enableSlashDM
+    if not enabled then
+        addon:Print("Enable /dm commands in Scoot \226\134\146 Damage Meter \226\134\146 Quality of Life.")
+        return
+    end
+
+    if isV2 then
+        if addon.DamageMetersV2 and addon.DamageMetersV2._SlashToggleShow then
+            addon.DamageMetersV2._SlashToggleShow()
+        end
+    else
+        if addon.DamageMeters and addon.DamageMeters._SlashToggleShow then
+            addon.DamageMeters._SlashToggleShow()
+        end
+    end
+end
+
+-- /dmreset (reset all damage meter data, gated by per-version QoL setting)
+SLASH_SCOOTDMRESET1 = "/dmreset"
+function SlashCmdList.SCOOTDMRESET(msg, editBox)
+    if not (addon and addon.IsModuleEnabled) then return end
+
+    if not addon:IsModuleEnabled("damageMeter") then
+        addon:Print("Damage Meter module is disabled.")
+        return
+    end
+
+    local isV2 = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
+    local compId = isV2 and "damageMeterV2" or "damageMeter"
+    local comp = addon.Components and addon.Components[compId]
+    local enabled = comp and comp.db and comp.db.enableSlashDM
+    if not enabled then
+        addon:Print("Enable /dm commands in Scoot \226\134\146 Damage Meter \226\134\146 Quality of Life.")
+        return
+    end
+
+    if isV2 then
+        if addon.DamageMetersV2 and addon.DamageMetersV2._SlashReset then
+            addon.DamageMetersV2._SlashReset()
+        end
+    else
+        if addon.DamageMeters and addon.DamageMeters._SlashReset then
+            addon.DamageMeters._SlashReset()
+        end
+    end
 end
 
 

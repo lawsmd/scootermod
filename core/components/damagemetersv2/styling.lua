@@ -1,6 +1,9 @@
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 
+-- Slash command visibility override (non-persistent, resets on reload)
+DM2._slashHidden = false
+
 --------------------------------------------------------------------------------
 -- JiberishIcons helpers (reuse V1's addon-level exports)
 --------------------------------------------------------------------------------
@@ -83,6 +86,110 @@ local function ApplyTextStyle(fs, textSettings)
     if textSettings.colorMode == "custom" and textSettings.color then
         local c = textSettings.color
         fs:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar border helpers
+--------------------------------------------------------------------------------
+
+local BarBorders = addon.BarBorders
+
+local function ResolveBorderColor(player, db)
+    local mode = db.barBorderColorMode or "default"
+    if mode == "class" and player and player.classFilename then
+        local classColor = addon.ClassColors and addon.ClassColors[player.classFilename]
+        if classColor then
+            return { classColor.r or 0, classColor.g or 0, classColor.b or 0, 1 }
+        end
+    elseif mode == "custom" then
+        local c = db.barBorderColor or { 0, 0, 0, 1 }
+        return { c[1] or 0, c[2] or 0, c[3] or 0, c[4] or 1 }
+    end
+    return { 0, 0, 0, 1 }
+end
+
+local function EnsureSquareBorder(row)
+    if row._sqBorder then return row._sqBorder end
+    local f = CreateFrame("Frame", nil, row)
+    f:SetFrameLevel(row:GetFrameLevel() + 3)
+    f:SetAllPoints(row)
+    local edges = { frame = f }
+    edges.top = f:CreateTexture(nil, "OVERLAY")
+    edges.bottom = f:CreateTexture(nil, "OVERLAY")
+    edges.left = f:CreateTexture(nil, "OVERLAY")
+    edges.right = f:CreateTexture(nil, "OVERLAY")
+    row._sqBorder = edges
+    return edges
+end
+
+local function ApplySquareBorder(row, color, thickness)
+    local edges = EnsureSquareBorder(row)
+    local t = math.max(1, math.floor((tonumber(thickness) or 1) + 0.5))
+    local r, g, b, a = color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1
+    local bar = row.bar
+
+    edges.top:ClearAllPoints()
+    edges.top:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    edges.top:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+    edges.top:SetHeight(t)
+    edges.top:SetColorTexture(r, g, b, a)
+    edges.top:Show()
+
+    edges.bottom:ClearAllPoints()
+    edges.bottom:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    edges.bottom:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    edges.bottom:SetHeight(t)
+    edges.bottom:SetColorTexture(r, g, b, a)
+    edges.bottom:Show()
+
+    edges.left:ClearAllPoints()
+    edges.left:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    edges.left:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+    edges.left:SetWidth(t)
+    edges.left:SetColorTexture(r, g, b, a)
+    edges.left:Show()
+
+    edges.right:ClearAllPoints()
+    edges.right:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+    edges.right:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    edges.right:SetWidth(t)
+    edges.right:SetColorTexture(r, g, b, a)
+    edges.right:Show()
+
+    edges.frame:Show()
+end
+
+local function HideSquareBorder(row)
+    if not row._sqBorder then return end
+    row._sqBorder.frame:Hide()
+end
+
+function DM2._ApplyBarBorder(row, player, db)
+    if not row or not row.bar then return end
+    local styleKey = db.barBorderStyle or "none"
+
+    if styleKey == "none" then
+        HideSquareBorder(row)
+        BarBorders.ClearBarFrame(row.bar)
+        return
+    end
+
+    local color = ResolveBorderColor(player, db)
+    local thickness = tonumber(db.barBorderThickness) or 1
+
+    if styleKey == "square" then
+        BarBorders.ClearBarFrame(row.bar)
+        ApplySquareBorder(row, color, thickness)
+    else
+        HideSquareBorder(row)
+        BarBorders.ApplyToBarFrame(row.bar, styleKey, {
+            color = color,
+            thickness = thickness,
+            containerParent = row,
+            insetH = tonumber(db.barBorderInsetH) or 0,
+            insetV = tonumber(db.barBorderInsetV) or 0,
+        })
     end
 end
 
@@ -212,9 +319,10 @@ function DM2._ApplyFullStyling(windowIndex, comp)
         if vt then ApplyTextStyle(vt, db.textValues) end
     end
 
-    -- Recalculate layout
+    -- Recalculate layout and refresh rows (applies borders + bar visibility)
     DM2._CalculateColumnWidths(windowIndex, comp)
     DM2._LayoutBarRows(windowIndex, comp)
+    DM2._RefreshBarRows(windowIndex, comp)
 end
 
 --------------------------------------------------------------------------------
@@ -223,6 +331,7 @@ end
 
 function DM2._StyleBarRow(row, player, db)
     ApplyIcon(row, player, db)
+    DM2._ApplyBarBorder(row, player, db)
 end
 
 --------------------------------------------------------------------------------
@@ -232,6 +341,13 @@ end
 function DM2._UpdateVisibility(windowIndex, comp)
     local win = DM2._windows[windowIndex]
     if not win then return end
+
+    -- Slash command override: hide all windows
+    if DM2._slashHidden then
+        win.frame:Hide()
+        return
+    end
+
     local cfg = DM2._GetWindowConfig(windowIndex)
     if not cfg or not cfg.enabled then
         win.frame:Hide()
@@ -252,6 +368,35 @@ function DM2._UpdateVisibility(windowIndex, comp)
     else -- "always"
         win.frame:Show()
     end
+end
+
+--------------------------------------------------------------------------------
+-- Slash command handlers (/dmshow, /dmreset)
+--------------------------------------------------------------------------------
+
+function DM2._SlashToggleShow()
+    DM2._slashHidden = not DM2._slashHidden
+    local comp = DM2._comp or (addon.Components and addon.Components["damageMeterV2"])
+    if comp then
+        for i = 1, DM2.MAX_WINDOWS do
+            DM2._UpdateVisibility(i, comp)
+        end
+        if not DM2._slashHidden then
+            DM2._RefreshOpacity(comp)
+            if not DM2._inCombat then
+                DM2._FullRefreshAllWindows()
+            end
+        end
+    end
+    addon:Print(DM2._slashHidden and "Damage Meter hidden." or "Damage Meter shown.")
+end
+
+function DM2._SlashReset()
+    if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+        C_DamageMeter.ResetAllCombatSessions()
+    end
+    DM2._HandleReset()
+    addon:Print("Damage Meter data reset.")
 end
 
 --------------------------------------------------------------------------------

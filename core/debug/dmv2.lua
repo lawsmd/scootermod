@@ -342,3 +342,399 @@ function addon.DebugDMV2API()
         addon.DebugShowWindow("DMV2 API Secrecy Test", output)
     end
 end
+
+--------------------------------------------------------------------------------
+-- /scoot debug dmv2 fields — Exhaustive mid-combat field dump
+-- Purpose: find any non-secret identifier that could correlate players across
+-- meter types during combat (solving the rank-drift problem).
+--------------------------------------------------------------------------------
+
+local ALL_METER_TYPES = {
+    { key = "DamageDone",           enum = Enum.DamageMeterType.DamageDone },
+    { key = "Dps",                  enum = Enum.DamageMeterType.Dps },
+    { key = "HealingDone",          enum = Enum.DamageMeterType.HealingDone },
+    { key = "Hps",                  enum = Enum.DamageMeterType.Hps },
+    { key = "Absorbs",              enum = Enum.DamageMeterType.Absorbs },
+    { key = "Interrupts",           enum = Enum.DamageMeterType.Interrupts },
+    { key = "Dispels",              enum = Enum.DamageMeterType.Dispels },
+    { key = "DamageTaken",          enum = Enum.DamageMeterType.DamageTaken },
+    { key = "AvoidableDamageTaken", enum = Enum.DamageMeterType.AvoidableDamageTaken },
+    { key = "Deaths",               enum = Enum.DamageMeterType.Deaths },
+    { key = "EnemyDamageTaken",     enum = Enum.DamageMeterType.EnemyDamageTaken },
+}
+
+local KNOWN_FIELDS = {
+    "sourceGUID", "sourceCreatureID", "name", "classFilename", "specIconID",
+    "totalAmount", "amountPerSecond", "isLocalPlayer", "deathRecapID",
+    "deathTimeSeconds", "classification",
+}
+
+local function FieldSecrecy(value)
+    if issecretvalue then
+        local ok, result = pcall(issecretvalue, value)
+        if ok then return result end
+    end
+    return nil
+end
+
+local function SafeDisplay(value, isSecret)
+    if isSecret == true then return "(secret)" end
+    if value == nil then return "nil" end
+    return tostring(value)
+end
+
+local function RunFieldsDump()
+    local lines = { "== DMV2 Exhaustive Field Dump ==" }
+    local inCombat = InCombatLockdown()
+
+    if inCombat then
+        table.insert(lines, "Context: IN COMBAT — secrecy results are meaningful")
+    else
+        table.insert(lines, "Context: OUT OF COMBAT — all values non-secret")
+        table.insert(lines, "  Re-run DURING COMBAT for real results.")
+    end
+    table.insert(lines, "")
+
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) then
+        table.insert(lines, "ERROR: C_DamageMeter API not available.")
+        return lines
+    end
+
+    --------------------------------------------------------------------------
+    -- Section 1: All fields on every source, every meter type
+    --------------------------------------------------------------------------
+    table.insert(lines, "========================================")
+    table.insert(lines, "SECTION 1: Per-Source Field Dump (Overall)")
+    table.insert(lines, "========================================")
+    table.insert(lines, "")
+
+    -- Collect sessions and track non-secret fields for later analysis
+    local sessionsByType = {}
+    local nonSecretFields = {}  -- { fieldName = { count, exampleValue } }
+
+    for _, mt in ipairs(ALL_METER_TYPES) do
+        local ok, session = pcall(C_DamageMeter.GetCombatSessionFromType,
+            Enum.DamageMeterSessionType.Overall, mt.enum)
+        if ok and session and session.combatSources and #session.combatSources > 0 then
+            sessionsByType[mt.key] = session
+            table.insert(lines, string.format("--- %s (%d sources) ---", mt.key, #session.combatSources))
+
+            for srcIdx, src in ipairs(session.combatSources) do
+                table.insert(lines, string.format("  Source #%d:", srcIdx))
+                for _, fieldName in ipairs(KNOWN_FIELDS) do
+                    local val = src[fieldName]
+                    local isSecret = FieldSecrecy(val)
+                    local marker = ""
+                    if val ~= nil and isSecret == false then
+                        marker = "  *** NON-SECRET ***"
+                        if not nonSecretFields[fieldName] then
+                            nonSecretFields[fieldName] = { count = 0, values = {} }
+                        end
+                        nonSecretFields[fieldName].count = nonSecretFields[fieldName].count + 1
+                        table.insert(nonSecretFields[fieldName].values, { meterType = mt.key, srcIdx = srcIdx, value = val })
+                    end
+                    table.insert(lines, string.format("    %-20s type=%-8s secret=%-6s value=%s%s",
+                        fieldName, type(val), tostring(isSecret), SafeDisplay(val, isSecret), marker))
+                end
+            end
+            table.insert(lines, "")
+        end
+    end
+
+    if not next(sessionsByType) then
+        table.insert(lines, "ERROR: No session data for any meter type. Fight something first.")
+        return lines
+    end
+
+    --------------------------------------------------------------------------
+    -- Section 2: sourceCreatureID correlation test
+    --------------------------------------------------------------------------
+    table.insert(lines, "========================================")
+    table.insert(lines, "SECTION 2: sourceCreatureID Correlation")
+    table.insert(lines, "========================================")
+    table.insert(lines, "")
+
+    local cidInfo = nonSecretFields["sourceCreatureID"]
+    if not cidInfo or cidInfo.count == 0 then
+        table.insert(lines, "sourceCreatureID: NOT non-secret (or nil on all sources)")
+        table.insert(lines, "  Cannot use as combat correlator.")
+    else
+        table.insert(lines, string.format("sourceCreatureID: non-secret on %d source(s)", cidInfo.count))
+        table.insert(lines, "")
+
+        -- Table key test
+        local testVal = cidInfo.values[1].value
+        local okKey, errKey = pcall(function()
+            local t = {}
+            t[testVal] = true
+            return t[testVal]
+        end)
+        table.insert(lines, string.format("  Table key test: %s",
+            okKey and "OK — can use as table key" or ("FAILED — " .. tostring(errKey))))
+
+        -- Uniqueness within DamageDone
+        local dmgSession = sessionsByType["DamageDone"]
+        if dmgSession then
+            local cidSet = {}
+            local dupes = 0
+            local nilCount = 0
+            for _, src in ipairs(dmgSession.combatSources) do
+                local cid = src.sourceCreatureID
+                local cidSecret = FieldSecrecy(cid)
+                if cid == nil then
+                    nilCount = nilCount + 1
+                elseif cidSecret == false then
+                    local okStr, cidStr = pcall(tostring, cid)
+                    if okStr then
+                        if cidSet[cidStr] then dupes = dupes + 1
+                        else cidSet[cidStr] = true end
+                    end
+                end
+            end
+            table.insert(lines, string.format("  Uniqueness in DamageDone: %d unique, %d duplicates, %d nil",
+                (function() local n = 0; for _ in pairs(cidSet) do n = n + 1 end; return n end)(),
+                dupes, nilCount))
+        end
+
+        -- Cross-metric stability: same player → same creatureID across types?
+        table.insert(lines, "")
+        table.insert(lines, "  Cross-metric creatureID stability:")
+        local dmgLookup = {}
+        if dmgSession then
+            for i, src in ipairs(dmgSession.combatSources) do
+                local cid = src.sourceCreatureID
+                local cidSecret = FieldSecrecy(cid)
+                if cid ~= nil and cidSecret == false then
+                    local okConv, cidKey = pcall(tostring, cid)
+                    if okConv then
+                        dmgLookup[cidKey] = { index = i, classFilename = src.classFilename }
+                    end
+                end
+            end
+        end
+
+        local healSession = sessionsByType["HealingDone"]
+        if healSession and next(dmgLookup) then
+            local matches = 0
+            local misses = 0
+            for _, src in ipairs(healSession.combatSources) do
+                local cid = src.sourceCreatureID
+                local cidSecret = FieldSecrecy(cid)
+                if cid ~= nil and cidSecret == false then
+                    local okConv, cidKey = pcall(tostring, cid)
+                    if okConv then
+                        local dmgEntry = dmgLookup[cidKey]
+                        if dmgEntry then
+                            matches = matches + 1
+                            table.insert(lines, string.format("    MATCH: creatureID=%s  dmg_class=%s  heal_class=%s",
+                                cidKey, tostring(dmgEntry.classFilename), tostring(src.classFilename)))
+                        else
+                            misses = misses + 1
+                        end
+                    end
+                end
+            end
+            table.insert(lines, string.format("    Total: %d matches, %d unmatched heal sources", matches, misses))
+        else
+            table.insert(lines, "    SKIPPED — need both DamageDone and HealingDone data")
+        end
+    end
+    table.insert(lines, "")
+
+    --------------------------------------------------------------------------
+    -- Section 3: Composite key feasibility
+    --------------------------------------------------------------------------
+    table.insert(lines, "========================================")
+    table.insert(lines, "SECTION 3: Composite Key Feasibility")
+    table.insert(lines, "========================================")
+    table.insert(lines, "")
+
+    local dmgSession = sessionsByType["DamageDone"]
+    if dmgSession then
+        local classSet = {}
+        local classSpecSet = {}
+        local totalSources = #dmgSession.combatSources
+        for _, src in ipairs(dmgSession.combatSources) do
+            local cls = src.classFilename
+            local spec = src.specIconID
+            local clsSecret = FieldSecrecy(cls)
+            local specSecret = FieldSecrecy(spec)
+            if clsSecret == false then
+                classSet[tostring(cls)] = true
+                if specSecret == false and spec ~= nil then
+                    classSpecSet[tostring(cls) .. ":" .. tostring(spec)] = true
+                end
+            end
+        end
+        local uniqueClass = 0
+        for _ in pairs(classSet) do uniqueClass = uniqueClass + 1 end
+        local uniqueClassSpec = 0
+        for _ in pairs(classSpecSet) do uniqueClassSpec = uniqueClassSpec + 1 end
+
+        table.insert(lines, string.format("  Total sources: %d", totalSources))
+        table.insert(lines, string.format("  Unique classFilename values: %d", uniqueClass))
+        table.insert(lines, string.format("  Unique classFilename+specIconID combos: %d", uniqueClassSpec))
+        if uniqueClassSpec == totalSources then
+            table.insert(lines, "  RESULT: classFilename+specIconID IS unique — viable composite key for this group")
+        elseif uniqueClass == totalSources then
+            table.insert(lines, "  RESULT: classFilename alone IS unique — viable for this group (but fragile in raids)")
+        else
+            table.insert(lines, "  RESULT: NOT unique — composite key insufficient for this group")
+        end
+
+        -- classification values
+        table.insert(lines, "")
+        table.insert(lines, "  classification values seen:")
+        for _, src in ipairs(dmgSession.combatSources) do
+            local c = src.classification
+            local cSecret = FieldSecrecy(c)
+            table.insert(lines, string.format("    class=%s  classification=%s  secret=%s",
+                tostring(src.classFilename), SafeDisplay(c, cSecret), tostring(cSecret)))
+        end
+    else
+        table.insert(lines, "  SKIPPED — no DamageDone data")
+    end
+    table.insert(lines, "")
+
+    --------------------------------------------------------------------------
+    -- Section 4: Raw pairs() dump — discover undocumented fields
+    --------------------------------------------------------------------------
+    table.insert(lines, "========================================")
+    table.insert(lines, "SECTION 4: Raw Table Keys (pairs() dump)")
+    table.insert(lines, "========================================")
+    table.insert(lines, "")
+
+    if dmgSession and dmgSession.combatSources and #dmgSession.combatSources > 0 then
+        local src = dmgSession.combatSources[1]
+        table.insert(lines, "DamageDone source #1 — all keys via pairs():")
+        local okPairs, errPairs = pcall(function()
+            local keys = {}
+            for k, v in pairs(src) do
+                local kSecret = FieldSecrecy(k)
+                local vSecret = FieldSecrecy(v)
+                table.insert(keys, {
+                    key = SafeDisplay(k, kSecret),
+                    keyType = type(k),
+                    keySecret = tostring(kSecret),
+                    valType = type(v),
+                    valSecret = tostring(vSecret),
+                    valDisplay = SafeDisplay(v, vSecret),
+                })
+            end
+            return keys
+        end)
+        if okPairs then
+            for _, entry in ipairs(errPairs) do
+                local marker = (entry.valSecret == "false") and "  *** NON-SECRET ***" or ""
+                table.insert(lines, string.format("  key=%-22s ktype=%-8s vtype=%-8s vsecret=%-6s val=%s%s",
+                    entry.key, entry.keyType, entry.valType, entry.valSecret, entry.valDisplay, marker))
+            end
+        else
+            table.insert(lines, "  pairs() FAILED — " .. tostring(errPairs))
+            table.insert(lines, "  (table may be secret-protected)")
+        end
+
+        -- Also try the session-level table
+        table.insert(lines, "")
+        table.insert(lines, "DamageDone session — all keys via pairs():")
+        local okSPairs, errSPairs = pcall(function()
+            local keys = {}
+            for k, v in pairs(dmgSession) do
+                local kSecret = FieldSecrecy(k)
+                local vSecret = FieldSecrecy(v)
+                if k ~= "combatSources" then -- skip the big array
+                    table.insert(keys, {
+                        key = SafeDisplay(k, kSecret),
+                        keyType = type(k),
+                        valType = type(v),
+                        valSecret = tostring(vSecret),
+                        valDisplay = SafeDisplay(v, vSecret),
+                    })
+                else
+                    table.insert(keys, {
+                        key = "combatSources",
+                        keyType = "string",
+                        valType = "table",
+                        valSecret = "n/a",
+                        valDisplay = string.format("(table, %d entries)", #v),
+                    })
+                end
+            end
+            return keys
+        end)
+        if okSPairs then
+            for _, entry in ipairs(errSPairs) do
+                table.insert(lines, string.format("  key=%-22s ktype=%-8s vtype=%-8s vsecret=%-6s val=%s",
+                    entry.key, entry.keyType, entry.valType, entry.valSecret, entry.valDisplay))
+            end
+        else
+            table.insert(lines, "  pairs() FAILED — " .. tostring(errSPairs))
+        end
+    else
+        table.insert(lines, "  SKIPPED — no DamageDone data")
+    end
+    table.insert(lines, "")
+
+    --------------------------------------------------------------------------
+    -- Summary verdict
+    --------------------------------------------------------------------------
+    table.insert(lines, "========================================")
+    table.insert(lines, "SUMMARY")
+    table.insert(lines, "========================================")
+    table.insert(lines, "")
+
+    local potentialCorrelators = {}
+    for fieldName, info in pairs(nonSecretFields) do
+        -- Only interesting if it's not one of the already-known NeverSecret display fields
+        if fieldName ~= "classFilename" and fieldName ~= "specIconID"
+            and fieldName ~= "isLocalPlayer" and fieldName ~= "deathRecapID"
+            and fieldName ~= "classification" then
+            table.insert(potentialCorrelators, string.format("%s (non-secret on %d sources)", fieldName, info.count))
+        end
+    end
+
+    if #potentialCorrelators > 0 then
+        table.insert(lines, "POTENTIAL NEW CORRELATORS FOUND:")
+        for _, desc in ipairs(potentialCorrelators) do
+            table.insert(lines, "  -> " .. desc)
+        end
+        table.insert(lines, "")
+        table.insert(lines, "Next step: verify uniqueness and cross-metric stability above.")
+    else
+        if inCombat then
+            table.insert(lines, "NO new non-secret identifiers found during combat.")
+            table.insert(lines, "Gray-out mitigation remains the production approach.")
+        else
+            table.insert(lines, "Run this command DURING COMBAT for meaningful results.")
+        end
+    end
+
+    -- Always list which known NeverSecret fields were confirmed
+    table.insert(lines, "")
+    table.insert(lines, "Confirmed NeverSecret fields (already known):")
+    for _, fieldName in ipairs({"classFilename", "specIconID", "isLocalPlayer", "deathRecapID", "classification"}) do
+        local info = nonSecretFields[fieldName]
+        if info then
+            table.insert(lines, string.format("  %s — non-secret on %d sources", fieldName, info.count))
+        end
+    end
+
+    return lines
+end
+
+function addon.DebugDMV2Fields()
+    local lines = RunFieldsDump()
+    local output = table.concat(lines, "\n")
+
+    if InCombatLockdown() then
+        addon:Print("DMV2 field dump collected. Results will show after combat ends.")
+        local waitFrame = CreateFrame("Frame")
+        waitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        waitFrame:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            addon.DebugShowWindow("DMV2 Field Dump", output)
+        end)
+    else
+        addon.DebugShowWindow("DMV2 Field Dump", output)
+    end
+end
