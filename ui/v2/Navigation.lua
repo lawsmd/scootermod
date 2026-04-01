@@ -71,7 +71,8 @@ Navigation.NavModel = {
             { key = "damageMeter", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeter",
                 versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. May produce taint errors in raids." } },
             { key = "damageMeterV2", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeterV2",
-                versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
+                versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." },
+                betaBadge = true },
             { key = "tooltip", label = "Tooltip", module = "tooltip" },
             { key = "objectiveTracker", label = "Objective Tracker", module = "objectiveTracker" },
             { key = "minimap", label = "Minimap", module = "minimap" },
@@ -159,7 +160,7 @@ Navigation.NavModel = {
         children = {
             { key = "gfParty", label = "Party Frames", module = "groupFrames" },
             { key = "gfRaid", label = "Raid Frames", module = "groupFrames" },
-            { key = "gfAuraTracking", label = "Aura Tracking", module = "groupFrames" },
+            { key = "gfAuraTracking", label = "Aura Tracking", module = "groupFrames", betaBadge = true },
         },
     },
     {
@@ -749,7 +750,7 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
 
     -- Version badge info icon (e.g., "v1" / "v2")
     if navItem.versionBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
-        local badge = addon.UI.Controls:CreateInfoIcon({
+        row._versionBadge = addon.UI.Controls:CreateInfoIcon({
             parent = row,
             tooltipTitle = navItem.versionBadge.title or "",
             tooltipText = navItem.versionBadge.text or "",
@@ -757,14 +758,38 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
             iconType = "info",
         })
         -- Override the icon text to show the badge label instead of "i"
-        if badge._iconText then
-            badge._iconText:SetText(navItem.versionBadge.label or "")
-            local fontPath = badge._iconText:GetFont()
+        if row._versionBadge._iconText then
+            row._versionBadge._iconText:SetText(navItem.versionBadge.label or "")
+            local fontPath = row._versionBadge._iconText:GetFont()
             if fontPath then
-                pcall(badge._iconText.SetFont, badge._iconText, fontPath, 8, "OUTLINE")
+                pcall(row._versionBadge._iconText.SetFont, row._versionBadge._iconText, fontPath, 8, "OUTLINE")
             end
         end
-        badge:SetPoint("LEFT", label, "RIGHT", 4, 0)
+        row._versionBadge:SetPoint("LEFT", label, "RIGHT", 4, 0)
+    end
+
+    -- Beta badge (red "beta" label)
+    if navItem.betaBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        local BETA_COLOR = { 0.9, 0.2, 0.2 }
+        local betaBadge = addon.UI.Controls:CreateInfoIcon({
+            parent = row,
+            tooltipTitle = "Beta Feature",
+            tooltipText = "This feature is new and may need additional testing. Please report any issues you encounter.",
+            size = 18,
+            width = 32,
+            iconType = "info",
+            customText = "beta",
+            colorOverride = BETA_COLOR,
+        })
+        if betaBadge._iconText then
+            local fontPath = betaBadge._iconText:GetFont()
+            if fontPath then
+                pcall(betaBadge._iconText.SetFont, betaBadge._iconText, fontPath, 8, "OUTLINE")
+            end
+        end
+        local anchorFrame = row._versionBadge or label
+        betaBadge:SetPoint("LEFT", anchorFrame, "RIGHT", 4, 0)
+        row._betaBadge = betaBadge
     end
 
     if isModuleDisabled then
@@ -773,6 +798,14 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
         label:SetTextColor(dimR, dimG, dimB, 0.35)
         for _, line in pairs(treeLines) do
             line:SetColorTexture(ar, ag, ab, TREE_LINE_COLOR_ALPHA * 0.3)
+        end
+        if row._versionBadge and row._versionBadge._iconText then
+            row._versionBadge._iconText:SetTextColor(dimR, dimG, dimB, 0.35)
+            for _, tex in pairs(row._versionBadge._border) do tex:SetColorTexture(dimR, dimG, dimB, 0.15) end
+        end
+        if row._betaBadge and row._betaBadge._iconText then
+            row._betaBadge._iconText:SetTextColor(dimR, dimG, dimB, 0.35)
+            for _, tex in pairs(row._betaBadge._border) do tex:SetColorTexture(dimR, dimG, dimB, 0.15) end
         end
         row:SetScript("OnEnter", nil)
         row:SetScript("OnLeave", nil)

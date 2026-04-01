@@ -165,13 +165,21 @@ function Controls:CreateInfoIcon(options)
     local size = options.size or DEFAULT_ICON_SIZE
     local iconType = options.iconType or "info"
     local name = options.name
+    local colorOverride = options.colorOverride
+    local width = options.width or size
 
-    local ar, ag, ab = theme:GetAccentColor()
+    local ar, ag, ab
+    if colorOverride then
+        ar, ag, ab = colorOverride[1], colorOverride[2], colorOverride[3]
+    else
+        ar, ag, ab = theme:GetAccentColor()
+    end
     local bgR, bgG, bgB, bgA = theme:GetBackgroundSolidColor()
 
     local icon = CreateFrame("Button", name, parent)
-    icon:SetSize(size, size)
+    icon:SetSize(width, size)
     icon:EnableMouse(true)
+    icon._colorOverride = colorOverride
 
     local parentLevel = parent:GetFrameLevel() or 1
     icon:SetFrameLevel(parentLevel + 10)
@@ -235,7 +243,12 @@ function Controls:CreateInfoIcon(options)
     icon._tooltipTitle = tooltipTitle
 
     icon:SetScript("OnEnter", function(self)
-        local r, g, b = theme:GetAccentColor()
+        local r, g, b
+        if self._colorOverride then
+            r, g, b = self._colorOverride[1], self._colorOverride[2], self._colorOverride[3]
+        else
+            r, g, b = theme:GetAccentColor()
+        end
         self._hoverBg:SetColorTexture(r, g, b, HOVER_ALPHA)
         self._hoverBg:Show()
 
@@ -251,7 +264,12 @@ function Controls:CreateInfoIcon(options)
 
     icon:SetScript("OnLeave", function(self)
         self._hoverBg:Hide()
-        local r, g, b = theme:GetAccentColor()
+        local r, g, b
+        if self._colorOverride then
+            r, g, b = self._colorOverride[1], self._colorOverride[2], self._colorOverride[3]
+        else
+            r, g, b = theme:GetAccentColor()
+        end
         for _, tex in pairs(self._border) do
             tex:SetColorTexture(r, g, b, 0.6)
         end
@@ -263,20 +281,22 @@ function Controls:CreateInfoIcon(options)
     local subscribeKey = "InfoIcon_" .. (name or tostring(icon))
     icon._subscribeKey = subscribeKey
 
-    theme:Subscribe(subscribeKey, function(r, g, b)
-        if icon._border then
-            local alpha = icon:IsMouseOver() and 1 or 0.6
-            for _, tex in pairs(icon._border) do
-                tex:SetColorTexture(r, g, b, alpha)
+    if not colorOverride then
+        theme:Subscribe(subscribeKey, function(r, g, b)
+            if icon._border then
+                local alpha = icon:IsMouseOver() and 1 or 0.6
+                for _, tex in pairs(icon._border) do
+                    tex:SetColorTexture(r, g, b, alpha)
+                end
             end
-        end
-        if icon._hoverBg then
-            icon._hoverBg:SetColorTexture(r, g, b, HOVER_ALPHA)
-        end
-        if icon._iconText then
-            icon._iconText:SetTextColor(r, g, b, 1)
-        end
-    end)
+            if icon._hoverBg then
+                icon._hoverBg:SetColorTexture(r, g, b, HOVER_ALPHA)
+            end
+            if icon._iconText then
+                icon._iconText:SetTextColor(r, g, b, 1)
+            end
+        end)
+    end
 
     function icon:SetTooltipText(text)
         self._tooltipText = text
