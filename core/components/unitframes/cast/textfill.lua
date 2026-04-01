@@ -69,16 +69,20 @@ local function ensureTextFillElements(frame)
 	-- Frame level auto-inherited from parent (frame) at C++ level,
 	-- bypasses Lua secret value restrictions on tainted boss frames
 
-	-- Filled outline elements (children of clipFrame, behind filled content)
-	local filledLineOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+	-- Filled line + outline on the PARENT frame (not clipFrame) so that the line
+	-- renders below frame.Text (OVERLAY) within the same frame's layer stack.
+	-- Progress tracking uses anchor-based sizing (RIGHT → fill texture) instead of clipping.
+	local filledLineOL = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+	local filledLine = frame:CreateTexture(nil, "BACKGROUND", nil, 3)
+
+	-- Filled cap outlines + caps remain in clipFrame for progressive reveal via clipping
 	local filledLeftCapOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
 	local filledRightCapOL = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
-
-	-- Filled elements (children of clip frame, anchored to cast bar for positioning)
-	local filledLine = clipFrame:CreateTexture(nil, "BACKGROUND", nil, 2)
 	local filledLeftCap = clipFrame:CreateTexture(nil, "ARTWORK", nil, 2)
 	local filledRightCap = clipFrame:CreateTexture(nil, "ARTWORK", nil, 2)
 	local filledText = clipFrame:CreateFontString(nil, "OVERLAY")
+	-- Default font so filledText can render even if GetFont returns secrets
+	filledText:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
 
 	-- Spark overlay frame (above clipFrame so spark renders in front of text)
 	local sparkFrame = CreateFrame("Frame", nil, frame)
@@ -95,6 +99,8 @@ local function ensureTextFillElements(frame)
 	unfilledLine:Hide()
 	unfilledLeftCap:Hide()
 	unfilledRightCap:Hide()
+	filledLine:Hide()
+	filledLineOL:Hide()
 	clipFrame:Hide()
 
 	local elements = {
@@ -507,6 +513,13 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 						els.clipFrame:SetPoint("TOPLEFT", self, "TOPLEFT", 0, textOverflow)
 						els.clipFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, -textOverflow)
 					end
+					-- Lock filledLine to full bar width (no longer clipped by clipFrame)
+					if els.filledLine then
+						els.filledLine:ClearAllPoints()
+						els.filledLine:SetPoint("LEFT", self, "LEFT", 0, 0)
+						els.filledLine:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+						els.filledLine:SetHeight(els.lineHeight or 2)
+					end
 				end
 			end
 		end)
@@ -603,11 +616,15 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	end
 	clipFrame:Show()
 
-	-- Filled line (anchored to cast bar, clipped by clip frame)
+	-- Filled line (on parent frame, RIGHT anchored to fill texture for progress tracking)
 	el = elements.filledLine
 	el:ClearAllPoints()
 	el:SetPoint("LEFT", frame, "LEFT", 0, 0)
-	el:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+	if fillTex then
+		el:SetPoint("RIGHT", fillTex, "RIGHT", 0, 0)
+	else
+		el:SetPoint("RIGHT", frame, "LEFT", 0, 0)  -- zero width fallback
+	end
 	el:SetHeight(lineHeight)
 	if texturePath then
 		el:SetTexture(texturePath)
@@ -617,7 +634,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	end
 	el:Show()
 
-	-- Filled line outline
+	-- Filled line outline (auto-follows filledLine via anchors)
 	el = elements.filledLineOL
 	el:ClearAllPoints()
 	el:SetPoint("TOPLEFT", elements.filledLine, "TOPLEFT", -1, 1)
@@ -762,6 +779,11 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 		setProp(frame, "textFillSetTextHooked", true)
 		hooksecurefunc(spellFS, "SetText", function(self, text)
 			pcall(function()
+				-- Always store captured text for syncTextFillText fallback
+				-- (GetText may return secrets on tainted target/boss frames)
+				if type(text) == "string" then
+					setProp(frame, "textFillCapturedText", text)
+				end
 				local els = getProp(frame, "textFillElements")
 				if els and els.filledText and els.clipFrame:IsShown() then
 					els.filledText:SetText(text or "")
@@ -798,6 +820,9 @@ local function hideTextFillElements(frame)
 	elements.unfilledLine:Hide()
 	elements.unfilledLeftCap:Hide()
 	elements.unfilledRightCap:Hide()
+	-- filledLine/filledLineOL are on the parent frame (not clipFrame), hide explicitly
+	elements.filledLine:Hide()
+	elements.filledLineOL:Hide()
 	elements.clipFrame:Hide()
 	if elements.sparkFrame then elements.sparkFrame:Hide() end
 	if elements.sparkTex then elements.sparkTex:Hide() end
@@ -845,18 +870,21 @@ local function syncTextFillText(frame, cfg)
 	local spellFS = frame.Text
 	if not spellFS then return end
 
-	-- Copy font properties from styled original text
+	-- Copy font properties from styled original text (guard against secrets on tainted frames)
 	local ok_gf, face, size, flags = pcall(spellFS.GetFont, spellFS)
 	if not ok_gf then face = nil end
-	if face then pcall(elements.filledText.SetFont, elements.filledText, face, size, flags) end
+	if face and (issecretvalue and issecretvalue(face)) then face = nil end
+	if size and (issecretvalue and issecretvalue(size)) then size = nil end
+	if flags and (issecretvalue and issecretvalue(flags)) then flags = nil end
+	if face then pcall(elements.filledText.SetFont, elements.filledText, face, size or 12, flags) end
 	-- Copy shadow properties so filled text has identical visual bounds
 	do
 		local ok_sc, sr, sg, sb, sa = pcall(spellFS.GetShadowColor, spellFS)
-		if ok_sc and sr then
+		if ok_sc and type(sr) == "number" and not (issecretvalue and issecretvalue(sr)) then
 			pcall(elements.filledText.SetShadowColor, elements.filledText, sr, sg, sb, sa or 1)
 		end
 		local ok_so, sx, sy = pcall(spellFS.GetShadowOffset, spellFS)
-		if ok_so and sx then
+		if ok_so and type(sx) == "number" and not (issecretvalue and issecretvalue(sx)) then
 			pcall(elements.filledText.SetShadowOffset, elements.filledText, sx, sy)
 		end
 	end
@@ -868,7 +896,10 @@ local function syncTextFillText(frame, cfg)
 			rawText = rt
 		end
 	end
-	rawText = rawText or ""
+	-- Fallback to hook-captured text when GetText returns secrets (tainted target/boss frames)
+	if not rawText or rawText == "" then
+		rawText = getProp(frame, "textFillCapturedText") or ""
+	end
 	-- During empowered text-fill, skip gradient coloring — stage updater manages filled text color.
 	-- Use plain text so SetTextColor from the stage updater is the sole color source.
 	local isEmpoweredTF = elements.empowered and elements.empowered.active

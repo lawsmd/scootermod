@@ -561,6 +561,51 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             -- Hide BOTH Blizzard borders — we're replacing with a properly-sized overlay
                             setRegionVisible(aura.DebuffBorder, false)
                             setRegionVisible(aura.TempEnchantBorder, false)
+
+                            -- Install Show hooks on Blizzard border textures (once per button).
+                            -- Catches ALL code paths that re-show borders (e.g. UpdateAuraType
+                            -- calls DebuffBorder:Show() AFTER SetAuraBorderAtlas hook hides it).
+                            if not auraSt._dbShowHooked and aura.DebuffBorder then
+                                pcall(function()
+                                    hooksecurefunc(aura.DebuffBorder, "Show", function(self)
+                                        local parent = self:GetParent()
+                                        if not parent then return end
+                                        local st = auraState[parent]
+                                        if st and st.debuffBorderOverlay then
+                                            local ok, shown = pcall(st.debuffBorderOverlay.IsShown, st.debuffBorderOverlay)
+                                            if ok and shown then
+                                                pcall(self.Hide, self)
+                                                pcall(self.SetAlpha, self, 0)
+                                                if st._overlayBorderW and st._overlayBorderH then
+                                                    pcall(self.SetSize, self, st._overlayBorderW, st._overlayBorderH)
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end)
+                                auraSt._dbShowHooked = true
+                            end
+                            if not auraSt._tebShowHooked and aura.TempEnchantBorder then
+                                pcall(function()
+                                    hooksecurefunc(aura.TempEnchantBorder, "Show", function(self)
+                                        local parent = self:GetParent()
+                                        if not parent then return end
+                                        local st = auraState[parent]
+                                        if st and st.tempEnchantBorderOverlay then
+                                            local ok, shown = pcall(st.tempEnchantBorderOverlay.IsShown, st.tempEnchantBorderOverlay)
+                                            if ok and shown then
+                                                pcall(self.Hide, self)
+                                                pcall(self.SetAlpha, self, 0)
+                                                if st._overlayBorderW and st._overlayBorderH then
+                                                    pcall(self.SetSize, self, st._overlayBorderW, st._overlayBorderH)
+                                                end
+                                            end
+                                        end
+                                    end)
+                                end)
+                                auraSt._tebShowHooked = true
+                            end
+
                             -- Also resize Blizzard borders to match non-square icon shape (defense in depth):
                             -- even if a C-level callback re-shows them, they'll render at the correct shape
                             if aura.DebuffBorder and aura.DebuffBorder.SetSize then
@@ -680,6 +725,22 @@ local function ApplyAuraFrameStyling(self)
         addon._DebuffBorderAtlasHookInstalled = true
         if hooksecurefunc and AuraUtil and AuraUtil.SetAuraBorderAtlas then
             hooksecurefunc(AuraUtil, "SetAuraBorderAtlas", function(borderRegion, dispelType, showDispelType)
+                -- CRITICAL path: hide Blizzard border when our overlay is active.
+                -- Separate pcall ensures this always executes even if cache tracking fails.
+                pcall(function()
+                    if not borderRegion or not borderRegion.GetParent then return end
+                    local aura = borderRegion:GetParent()
+                    if not aura then return end
+                    local auraSt = auraState[aura]
+                    if auraSt and auraSt.debuffBorderOverlay then
+                        borderRegion:Hide()
+                        borderRegion:SetAlpha(0)
+                        if auraSt._overlayBorderW and auraSt._overlayBorderH then
+                            borderRegion:SetSize(auraSt._overlayBorderW, auraSt._overlayBorderH)
+                        end
+                    end
+                end)
+                -- NON-CRITICAL path: track debuff type and update overlay atlas
                 pcall(function()
                     if not borderRegion or not borderRegion.GetParent then return end
                     local aura = borderRegion:GetParent()
@@ -705,7 +766,7 @@ local function ApplyAuraFrameStyling(self)
 
                     debuffTypeCache[aura] = cacheEntry
 
-                    -- Immediately update overlay atlas if it exists and is shown
+                    -- Update overlay atlas if it exists and is shown
                     local auraSt = auraState[aura]
                     if auraSt and auraSt.debuffBorderOverlay then
                         local okShown, shown = pcall(auraSt.debuffBorderOverlay.IsShown, auraSt.debuffBorderOverlay)
@@ -718,13 +779,6 @@ local function ApplyAuraFrameStyling(self)
                             if hookAtlas then
                                 pcall(auraSt.debuffBorderOverlay.SetAtlas, auraSt.debuffBorderOverlay, hookAtlas, false)
                             end
-                        end
-                        -- Per-button safety: hide Blizzard's border immediately when overlay is active
-                        pcall(borderRegion.Hide, borderRegion)
-                        pcall(borderRegion.SetAlpha, borderRegion, 0)
-                        -- Resize Blizzard border to match overlay dimensions (defense in depth)
-                        if auraSt._overlayBorderW and auraSt._overlayBorderH then
-                            pcall(borderRegion.SetSize, borderRegion, auraSt._overlayBorderW, auraSt._overlayBorderH)
                         end
                     end
                 end)
