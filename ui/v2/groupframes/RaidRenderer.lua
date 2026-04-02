@@ -705,21 +705,37 @@ function GF.RenderRaid(panel, scrollContent)
                 sectionKey = "icons_tabs",
                 buildContent = {
                     roleIcons = function(cf, tabInner)
-                        tabInner:AddSelector({
+                        tabInner:AddSelectorToggleRow({
                             label = "Icon Set",
-                            values = GF.roleIconSetValues,
-                            order = GF.roleIconSetOrder,
-                            get = function()
-                                local db = GF.ensureRaidDB()
-                                return db and db.roleIconSet or "default"
-                            end,
-                            set = function(v)
-                                local db = GF.ensureRaidDB()
-                                if db then
-                                    db.roleIconSet = v
-                                    GF.applyRaidRoleIcons()
-                                end
-                            end,
+                            selector = {
+                                values = GF.roleIconSetValues,
+                                order = GF.roleIconSetOrder,
+                                get = function()
+                                    local db = GF.ensureRaidDB()
+                                    return db and db.roleIconSet or "default"
+                                end,
+                                set = function(v)
+                                    local db = GF.ensureRaidDB()
+                                    if db then
+                                        db.roleIconSet = v
+                                        GF.applyRaidRoleIcons()
+                                    end
+                                end,
+                            },
+                            toggle = {
+                                label = "Desaturate",
+                                get = function()
+                                    local db = GF.ensureRaidDB()
+                                    return db and db.roleIconDesaturate or false
+                                end,
+                                set = function(v)
+                                    local db = GF.ensureRaidDB()
+                                    if db then
+                                        db.roleIconDesaturate = v
+                                        GF.applyRaidRoleIcons()
+                                    end
+                                end,
+                            },
                         })
                         -- Visibility filter
                         tabInner:AddSelector({

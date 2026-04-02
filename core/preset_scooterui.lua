@@ -2547,7 +2547,6 @@ Presets:Register({
       exportButtonXOffset = 0,
       exportChatChannel = "PARTY",
       exportChatLineCount = 5,
-      exportEnabled = true,
       frameHeight = 200,
       frameWidth = 350,
       headerBackdropShow = false,
@@ -3519,8 +3518,9 @@ Presets:Register({
       roleIconAnchor = "TOPRIGHT",
       roleIconOffsetX = -15,
       roleIconOffsetY = -3,
+      roleIconDesaturate = true,
       roleIconScale = 110,
-      roleIconSet = "pixel_white",
+      roleIconSet = "gm",
       roleIconVisibility = "hideDPS",
       textPartyTitle = {
         color = {
@@ -3592,7 +3592,8 @@ Presets:Register({
       },
       hideOverAbsorbGlow = true,
       roleIconAnchor = "TOPRIGHT",
-      roleIconSet = "pixel_white",
+      roleIconDesaturate = true,
+      roleIconSet = "gm",
       roleIconVisibility = "hideDPS",
       textGroupNumbers = {
         color = {

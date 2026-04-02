@@ -742,21 +742,37 @@ function GF.RenderParty(panel, scrollContent)
                 sectionKey = "icons_tabs",
                 buildContent = {
                     roleIcons = function(cf, tabInner)
-                        tabInner:AddSelector({
+                        tabInner:AddSelectorToggleRow({
                             label = "Icon Set",
-                            values = GF.roleIconSetValues,
-                            order = GF.roleIconSetOrder,
-                            get = function()
-                                local db = GF.ensurePartyDB()
-                                return db and db.roleIconSet or "default"
-                            end,
-                            set = function(v)
-                                local db = GF.ensurePartyDB()
-                                if db then
-                                    db.roleIconSet = v
-                                    GF.applyPartyRoleIcons()
-                                end
-                            end,
+                            selector = {
+                                values = GF.roleIconSetValues,
+                                order = GF.roleIconSetOrder,
+                                get = function()
+                                    local db = GF.ensurePartyDB()
+                                    return db and db.roleIconSet or "default"
+                                end,
+                                set = function(v)
+                                    local db = GF.ensurePartyDB()
+                                    if db then
+                                        db.roleIconSet = v
+                                        GF.applyPartyRoleIcons()
+                                    end
+                                end,
+                            },
+                            toggle = {
+                                label = "Desaturate",
+                                get = function()
+                                    local db = GF.ensurePartyDB()
+                                    return db and db.roleIconDesaturate or false
+                                end,
+                                set = function(v)
+                                    local db = GF.ensurePartyDB()
+                                    if db then
+                                        db.roleIconDesaturate = v
+                                        GF.applyPartyRoleIcons()
+                                    end
+                                end,
+                            },
                         })
                         -- Visibility filter
                         tabInner:AddSelector({

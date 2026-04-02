@@ -45,8 +45,8 @@ function DM2._UpdateWindowCombat(windowIndex)
     local comp = DM2._comp
     if not comp then return end
 
-    -- Query merged data in combat mode (primary column only)
-    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.columns, true)
+    -- Query merged data in combat mode (primary column only for type-based sessions)
+    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, true)
     if not merged then return end
 
     -- Store combat merged data (primary column only)
@@ -74,7 +74,7 @@ function DM2._UpdateWindowOOC(windowIndex)
     if not comp then return end
 
     -- Query merged data OOC (all columns, GUID correlated)
-    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.columns, false)
+    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, false)
     if not merged then
         -- No data — clear display
         win.mergedData = nil
@@ -160,10 +160,17 @@ function DM2._UpdateTimerText(windowIndex)
     local cfg = DM2._GetWindowConfig(windowIndex)
     if not cfg then return end
 
-    local label = DM2._GetSessionLabel(cfg.sessionType)
+    local label = DM2._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
     local duration
 
-    if DM2._inCombat then
+    if cfg.sessionID then
+        -- Specific segment: fixed duration (use cached pre-combat value during combat)
+        if DM2._inCombat then
+            duration = win._preCombatDuration or 0
+        else
+            duration = win.mergedData and win.mergedData.durationSeconds
+        end
+    elseif DM2._inCombat then
         -- Use stopwatch during combat
         local elapsed = GetTime() - DM2._combatStartTime
         local preCombat = win._preCombatDuration or 0

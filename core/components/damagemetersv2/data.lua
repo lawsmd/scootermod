@@ -50,8 +50,10 @@ end
 -- Out of combat, all columns are GUID-correlated.
 --------------------------------------------------------------------------------
 
-function DM2._QueryMergedData(sessionType, columns, inCombat)
-    if not C_DamageMeter or not C_DamageMeter.GetCombatSessionFromType then
+function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
+    if not C_DamageMeter then return nil end
+    -- Need at least one query API
+    if not C_DamageMeter.GetCombatSessionFromType and not C_DamageMeter.GetCombatSessionFromID then
         return nil
     end
     if not columns or #columns == 0 then return nil end
@@ -61,7 +63,7 @@ function DM2._QueryMergedData(sessionType, columns, inCombat)
     -- Determine which meter types we need
     local neededTypes
     if inCombat then
-        -- Combat: only primary column
+        -- Combat: only primary column (all APIs return secret values during combat)
         local def = FORMATS[columns[1].format]
         if not def then return nil end
         neededTypes = {}
@@ -70,10 +72,15 @@ function DM2._QueryMergedData(sessionType, columns, inCombat)
         neededTypes = DM2._GetNeededMeterTypes(columns)
     end
 
-    -- Query each meter type
+    -- Query each meter type (ID-based for specific segments, type-based for Overall/Current)
     local sessions = {}
     for meterType in pairs(neededTypes) do
-        local ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, meterType)
+        local ok, result
+        if sessionID then
+            ok, result = pcall(C_DamageMeter.GetCombatSessionFromID, sessionID, meterType)
+        else
+            ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, meterType)
+        end
         if ok and result then
             sessions[meterType] = result
         end
@@ -192,6 +199,14 @@ end
 --------------------------------------------------------------------------------
 -- Unified number abbreviation (same function used OOC and in combat)
 -- Uses AbbreviateNumbers with custom 1K breakpoints for consistency.
+--
+-- Known limitation: sub-1K amountPerSecond floats (e.g. 423.519) display with
+-- raw decimal precision. The C++ AbbreviateNumbers implementation does not
+-- round floating-point inputs at the base breakpoint (breakpoint=1,
+-- fractionDivisor=1). During combat these values are secrets, so Lua-side
+-- rounding (math.floor, string.format) is impossible. Fixing OOC only would
+-- create a visible format change on combat transition. Accepted as a
+-- limitation of the 12.0 secret value system.
 --------------------------------------------------------------------------------
 
 local _abbrevOpts = nil
@@ -201,6 +216,7 @@ local function UnifiedAbbreviate(value)
             { breakpoint = 1000000000, abbreviation = "B", fractionDivisor = 100000000 },
             { breakpoint = 1000000, abbreviation = "M", fractionDivisor = 100000 },
             { breakpoint = 1000, abbreviation = "K", fractionDivisor = 100 },
+            { breakpoint = 1, abbreviation = "", fractionDivisor = 1, abbreviationIsGlobal = false },
         })
         if ok and config then _abbrevOpts = { config = config } end
     end

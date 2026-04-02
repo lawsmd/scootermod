@@ -37,6 +37,7 @@ local PREVIEW_BAR_SPACING = 2
 local PREVIEW_ICON_SIZE = 18
 local PREVIEW_NAME_WIDTH = 80
 local PREVIEW_PADDING = 6
+local PREVIEW_THIN_BAR_HEIGHT = 4
 
 --------------------------------------------------------------------------------
 -- Metric dropdown values
@@ -226,6 +227,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
     if maxPrimaryVal <= 0 then maxPrimaryVal = 1 end
 
     local showBars = db.showBars ~= false
+    local barMode = db.barMode or "default"
 
     -- Bar rows
     for rowIdx, player in ipairs(PREVIEW_PLAYERS) do
@@ -275,23 +277,77 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
 
         -- Bar background (full width of bar area)
         local barBg = container:CreateTexture(nil, "BACKGROUND", nil, -4)
-        barBg:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop)
-        barBg:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop)
-        barBg:SetHeight(PREVIEW_BAR_HEIGHT)
+        if barMode == "thin" then
+            barBg:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop - PREVIEW_BAR_HEIGHT + PREVIEW_THIN_BAR_HEIGHT)
+            barBg:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop - PREVIEW_BAR_HEIGHT + PREVIEW_THIN_BAR_HEIGHT)
+            barBg:SetHeight(PREVIEW_THIN_BAR_HEIGHT)
+        else
+            barBg:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop)
+            barBg:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop)
+            barBg:SetHeight(PREVIEW_BAR_HEIGHT)
+        end
         barBg:SetColorTexture(barBgColor[1] or 0.1, barBgColor[2] or 0.1, barBgColor[3] or 0.1, barBgColor[4] or 0.8)
 
         -- Single full-width StatusBar (primary column data)
         local bar = CreateFrame("StatusBar", nil, container)
-        bar:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop)
-        bar:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop)
-        bar:SetHeight(PREVIEW_BAR_HEIGHT)
+        if barMode == "thin" then
+            bar:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop - PREVIEW_BAR_HEIGHT + PREVIEW_THIN_BAR_HEIGHT)
+            bar:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop - PREVIEW_BAR_HEIGHT + PREVIEW_THIN_BAR_HEIGHT)
+            bar:SetHeight(PREVIEW_THIN_BAR_HEIGHT)
+        else
+            bar:SetPoint("TOPLEFT", container, "TOPLEFT", barAreaLeft, yTop)
+            bar:SetPoint("TOPRIGHT", container, "TOPRIGHT", -PREVIEW_PADDING, yTop)
+            bar:SetHeight(PREVIEW_BAR_HEIGHT)
+        end
         bar:SetStatusBarTexture(barTexPath or "Interface\\Buttons\\WHITE8x8")
         bar:SetStatusBarColor(cr, cg, cb)
         local primaryVal = GetPlayerValue(player, primaryFormatKey)
         bar:SetMinMaxValues(0, maxPrimaryVal)
         bar:SetValue(primaryVal)
-        bar:SetShown(showBars)
-        barBg:SetShown(showBars)
+
+        -- Mode-aware visibility
+        if barMode == "hollow" then
+            bar:SetShown(showBars)
+            barBg:SetShown(false)
+            local barTex = bar:GetStatusBarTexture()
+            if barTex then barTex:SetAlpha(0) end
+        else
+            bar:SetShown(showBars)
+            barBg:SetShown(showBars)
+        end
+
+        -- Hollow outline (4 edge textures tracking the fill region)
+        if barMode == "hollow" and showBars then
+            local barTex = bar:GetStatusBarTexture()
+            local outlineFrame = CreateFrame("Frame", nil, container)
+            outlineFrame:SetFrameLevel(container:GetFrameLevel())
+            outlineFrame:SetAllPoints(bar)
+
+            local t = 1
+            local edgeTop = outlineFrame:CreateTexture(nil, "ARTWORK")
+            edgeTop:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            edgeTop:SetPoint("TOPRIGHT", barTex, "TOPRIGHT", 0, 0)
+            edgeTop:SetHeight(t)
+            edgeTop:SetColorTexture(cr, cg, cb, 1)
+
+            local edgeBottom = outlineFrame:CreateTexture(nil, "ARTWORK")
+            edgeBottom:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+            edgeBottom:SetPoint("BOTTOMRIGHT", barTex, "BOTTOMRIGHT", 0, 0)
+            edgeBottom:SetHeight(t)
+            edgeBottom:SetColorTexture(cr, cg, cb, 1)
+
+            local edgeLeft = outlineFrame:CreateTexture(nil, "ARTWORK")
+            edgeLeft:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            edgeLeft:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+            edgeLeft:SetWidth(t)
+            edgeLeft:SetColorTexture(cr, cg, cb, 1)
+
+            local edgeRight = outlineFrame:CreateTexture(nil, "ARTWORK")
+            edgeRight:SetPoint("TOPRIGHT", barTex, "TOPRIGHT", 0, 0)
+            edgeRight:SetPoint("BOTTOMRIGHT", barTex, "BOTTOMRIGHT", 0, 0)
+            edgeRight:SetWidth(t)
+            edgeRight:SetColorTexture(cr, cg, cb, 1)
+        end
 
         -- Column value texts overlaid on the bar
         for c = 1, numColumns do
@@ -299,7 +355,8 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
             if colDef then
                 local rightEdge = containerWidth - PREVIEW_PADDING - (numColumns - c) * colWidth
 
-                local valText = (showBars and bar or container):CreateFontString(nil, "OVERLAY")
+                local textParent = showBars and bar or container
+                local valText = textParent:CreateFontString(nil, "OVERLAY")
                 valText:SetFont(valueFontPath, fontValues.fontSize or 9, fontValues.fontStyle or "OUTLINE")
                 valText:SetWidth(colWidth - 8)
                 valText:SetTextColor(1, 1, 1, 1)
@@ -592,6 +649,15 @@ function DMV2Settings.Render(panel, scrollContent)
 
     builder:AddCollapsibleSection({ title = "Bars", componentId = "damageMeterV2", sectionKey = "bars", defaultExpanded = false,
         buildContent = function(_, inner)
+            inner:AddSelector({
+                label = "Bar Mode",
+                description = "Controls how the damage meter bars are displayed.",
+                values = { default = "Default", thin = "Thin", hollow = "Hollow" },
+                order = { "default", "thin", "hollow" },
+                emphasized = true,
+                get = function() return getSetting("barMode") or "default" end,
+                set = function(v) setAndRefresh("barMode", v) end,
+            })
             inner:AddTabbedSection({
                 componentId = "damageMeterV2", sectionKey = "barTabs",
                 tabs = {
@@ -847,12 +913,9 @@ function DMV2Settings.Render(panel, scrollContent)
             inner:Finalize()
         end })
 
-    builder:AddCollapsibleSection({ title = "Exports", componentId = "damageMeterV2", sectionKey = "exports", defaultExpanded = false,
+    builder:AddCollapsibleSection({ title = "Export Window", componentId = "damageMeterV2", sectionKey = "exportWindow", defaultExpanded = false,
         buildContent = function(_, inner)
-            inner:AddToggle({ label = "Enable Exports",
-                description = "Show export options in the gear menu on each meter window.",
-                get = function() return getSetting("exportEnabled") or false end,
-                set = function(v) setSetting("exportEnabled", v) end })
+            inner:AddDescription("Settings for the High Score export window will appear here in a future update.")
             inner:Finalize()
         end })
 

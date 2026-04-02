@@ -170,6 +170,7 @@ ui/v2/controls/Selector.lua
 ui/v2/controls/Slider.lua
 ui/v2/controls/DualSlider.lua
 ui/v2/controls/DualSelector.lua
+ui/v2/controls/SelectorToggleRow.lua
 ui/v2/controls/Tabbed.lua
 ui/v2/controls/FontSelector.lua
 ui/v2/controls/InfoIcon.lua

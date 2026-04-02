@@ -3722,8 +3722,9 @@ Presets:Register({
       hideHealPrediction = true,
       hideOverAbsorbGlow = true,
       roleIconAnchor = "TOPRIGHT",
+      roleIconDesaturate = true,
       roleIconScale = 105,
-      roleIconSet = "pixel_white",
+      roleIconSet = "gm",
       roleIconVisibility = "hideDPS",
       textPartyTitle = {
         color = {

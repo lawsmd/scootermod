@@ -165,6 +165,64 @@ local function HideSquareBorder(row)
     row._sqBorder.frame:Hide()
 end
 
+--------------------------------------------------------------------------------
+-- Hollow outline helpers (tracks fill region of the StatusBar)
+--------------------------------------------------------------------------------
+
+local function EnsureHollowOutline(row)
+    if row._hollowOutline then return row._hollowOutline end
+    local f = CreateFrame("Frame", nil, row)
+    f:SetFrameLevel(row:GetFrameLevel())
+    local edges = { frame = f }
+    edges.top = f:CreateTexture(nil, "ARTWORK")
+    edges.bottom = f:CreateTexture(nil, "ARTWORK")
+    edges.left = f:CreateTexture(nil, "ARTWORK")
+    edges.right = f:CreateTexture(nil, "ARTWORK")
+    row._hollowOutline = edges
+    return edges
+end
+
+local function ShowHollowOutline(row, cr, cg, cb)
+    local edges = EnsureHollowOutline(row)
+    local barTex = row.bar:GetStatusBarTexture()
+    local t = 1
+
+    edges.top:ClearAllPoints()
+    edges.top:SetPoint("TOPLEFT", row.bar, "TOPLEFT", 0, 0)
+    edges.top:SetPoint("TOPRIGHT", barTex, "TOPRIGHT", 0, 0)
+    edges.top:SetHeight(t)
+    edges.top:SetColorTexture(cr, cg, cb, 1)
+    edges.top:Show()
+
+    edges.bottom:ClearAllPoints()
+    edges.bottom:SetPoint("BOTTOMLEFT", row.bar, "BOTTOMLEFT", 0, 0)
+    edges.bottom:SetPoint("BOTTOMRIGHT", barTex, "BOTTOMRIGHT", 0, 0)
+    edges.bottom:SetHeight(t)
+    edges.bottom:SetColorTexture(cr, cg, cb, 1)
+    edges.bottom:Show()
+
+    edges.left:ClearAllPoints()
+    edges.left:SetPoint("TOPLEFT", row.bar, "TOPLEFT", 0, 0)
+    edges.left:SetPoint("BOTTOMLEFT", row.bar, "BOTTOMLEFT", 0, 0)
+    edges.left:SetWidth(t)
+    edges.left:SetColorTexture(cr, cg, cb, 1)
+    edges.left:Show()
+
+    edges.right:ClearAllPoints()
+    edges.right:SetPoint("TOPRIGHT", barTex, "TOPRIGHT", 0, 0)
+    edges.right:SetPoint("BOTTOMRIGHT", barTex, "BOTTOMRIGHT", 0, 0)
+    edges.right:SetWidth(t)
+    edges.right:SetColorTexture(cr, cg, cb, 1)
+    edges.right:Show()
+
+    edges.frame:Show()
+end
+
+local function HideHollowOutline(row)
+    if not row._hollowOutline then return end
+    row._hollowOutline.frame:Hide()
+end
+
 function DM2._ApplyBarBorder(row, player, db)
     if not row or not row.bar then return end
     local styleKey = db.barBorderStyle or "none"
@@ -294,6 +352,8 @@ function DM2._ApplyFullStyling(windowIndex, comp)
 
     -- Apply text styling to all bar rows in the pool
     local barTexPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(db.barTexture or "default") or nil
+    local barMode = db.barMode or "default"
+    local fillAlpha = (barMode == "hollow") and 0 or 1
     for r = 1, DM2.MAX_POOL do
         local row = win.barRows[r]
         ApplyTextStyle(row.nameText, db.textNames)
@@ -301,6 +361,9 @@ function DM2._ApplyFullStyling(windowIndex, comp)
         if row.bar and barTexPath then
             pcall(row.bar.SetStatusBarTexture, row.bar, barTexPath)
         end
+        -- Reset fill alpha for mode switching
+        local barTex = row.bar and row.bar:GetStatusBarTexture()
+        if barTex then barTex:SetAlpha(fillAlpha) end
         -- Value texts
         for c = 1, DM2.MAX_COLUMNS do
             local vt = row.valueTexts and row.valueTexts[c]
@@ -314,6 +377,8 @@ function DM2._ApplyFullStyling(windowIndex, comp)
     if pinnedRow.bar and barTexPath then
         pcall(pinnedRow.bar.SetStatusBarTexture, pinnedRow.bar, barTexPath)
     end
+    local pinnedBarTex = pinnedRow.bar and pinnedRow.bar:GetStatusBarTexture()
+    if pinnedBarTex then pinnedBarTex:SetAlpha(fillAlpha) end
     for c = 1, DM2.MAX_COLUMNS do
         local vt = pinnedRow.valueTexts and pinnedRow.valueTexts[c]
         if vt then ApplyTextStyle(vt, db.textValues) end
@@ -332,6 +397,15 @@ end
 function DM2._StyleBarRow(row, player, db)
     ApplyIcon(row, player, db)
     DM2._ApplyBarBorder(row, player, db)
+
+    -- Hollow outline: show when hollow mode active and bars visible
+    local barMode = db.barMode or "default"
+    if barMode == "hollow" and db.showBars ~= false then
+        local cr, cg, cb = DM2._GetBarColor(player, db)
+        ShowHollowOutline(row, cr, cg, cb)
+    else
+        HideHollowOutline(row)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -414,7 +488,7 @@ function DM2._UpdateSessionHeader(windowIndex, comp)
     if db.titleMode == "custom" and db.customTitle and db.customTitle ~= "" then
         label = db.customTitle
     else
-        label = DM2._GetSessionLabel(cfg.sessionType)
+        label = DM2._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
     end
 
     -- Timer is handled separately by _UpdateTimerText

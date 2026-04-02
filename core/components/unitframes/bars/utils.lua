@@ -236,29 +236,11 @@ Utils.ROLE_ICON_SETS = {
     { key = "tiny",        label = "Compact" },
     { key = "groupfinder", label = "Group Finder" },
     { key = "gm",          label = "Raid Manager" },
-    { key = "pixel",       label = "Pixel Icons" },
-    { key = "pixel_white", label = "Pixel Icons (White)" },
-}
-
--- Texture file mappings for custom TGA-based sets
-local ROLE_ICON_PATH = "Interface\\AddOns\\Scoot\\media\\textures\\role-icons\\"
-
-Utils.ROLE_ICON_TEXTURES = {
-    pixel = {
-        TANK    = ROLE_ICON_PATH .. "TankRoleIcon",
-        HEALER  = ROLE_ICON_PATH .. "HealerRoleIcon",
-        DAMAGER = ROLE_ICON_PATH .. "DPSRoleIcon",
-    },
-    pixel_white = {
-        TANK    = ROLE_ICON_PATH .. "TankRoleIcon",
-        HEALER  = ROLE_ICON_PATH .. "HealerRoleIcon",
-        DAMAGER = ROLE_ICON_PATH .. "DPSRoleIcon",
-        desaturated = true,
-    },
 }
 
 -- Atlas mappings per set (keyed by role: TANK, HEALER, DAMAGER)
 -- "default" is omitted — means "don't swap, use Blizzard's choice"
+-- Desaturation is controlled separately via the roleIconDesaturate DB key
 Utils.ROLE_ICON_ATLASES = {
     tiny = {
         TANK    = "roleicon-tiny-tank",

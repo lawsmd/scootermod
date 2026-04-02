@@ -517,6 +517,9 @@ local function CreateMiniSelector(opts, parentContainer, theme, useLightDim)
     return selector
 end
 
+-- Export for reuse by SelectorToggleRow
+Controls._CreateMiniSelector = CreateMiniSelector
+
 --------------------------------------------------------------------------------
 -- DualSelector: Two compact selectors side-by-side
 --------------------------------------------------------------------------------

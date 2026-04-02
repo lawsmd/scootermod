@@ -33,6 +33,7 @@ function DM2._CalculateColumnWidths(windowIndex, comp)
     local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 2
     for c = 1, DM2.MAX_COLUMNS do
         local ch = win.columnHeaders[c]
+        local cr = win.columnClickRegions and win.columnClickRegions[c]
         if c <= numColumns then
             ch:ClearAllPoints()
             local rightEdge = fw - (numColumns - c) * colWidth
@@ -54,9 +55,48 @@ function DM2._CalculateColumnWidths(windowIndex, comp)
                 ch:SetPoint("CENTER", win.header, "LEFT", colCenter, 0)
             end
             ch:Show()
+            if cr then cr:Show() end
         else
             ch:Hide()
+            if cr then cr:Hide() end
         end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Bar Mode — repositions bar/barBg based on mode
+--------------------------------------------------------------------------------
+
+local THIN_BAR_HEIGHT = 4
+
+function DM2._ApplyBarMode(row, barMode, barAreaLeft)
+    local bar = row.bar
+    local barBg = row.barBg
+    if not bar or not barBg then return end
+
+    if barMode == "thin" then
+        bar:ClearAllPoints()
+        bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", barAreaLeft, 0)
+        bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+        bar:SetHeight(THIN_BAR_HEIGHT)
+
+        barBg:ClearAllPoints()
+        barBg:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", barAreaLeft, 0)
+        barBg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+        barBg:SetHeight(THIN_BAR_HEIGHT)
+    else
+        -- Default and Hollow: full-height bar
+        bar:ClearAllPoints()
+        bar:SetPoint("LEFT", row, "LEFT", barAreaLeft, 0)
+        bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        bar:SetPoint("TOP", row, "TOP", 0, 0)
+        bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
+
+        barBg:ClearAllPoints()
+        barBg:SetPoint("LEFT", row, "LEFT", barAreaLeft, 0)
+        barBg:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        barBg:SetPoint("TOP", row, "TOP", 0, 0)
+        barBg:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
     end
 end
 
@@ -108,6 +148,8 @@ function DM2._LayoutBarRows(windowIndex, comp)
         end
     end
 
+    local barMode = db.barMode or "default"
+
     for r = 1, DM2.MAX_POOL do
         local row = win.barRows[r]
         row:SetHeight(barHeight)
@@ -117,7 +159,10 @@ function DM2._LayoutBarRows(windowIndex, comp)
         -- Icon size matches bar height
         local iconSz = math.min(barHeight, DM2.ICON_SIZE)
         row.icon:SetSize(iconSz, iconSz)
-        
+
+        -- Reposition bar/barBg based on bar mode
+        DM2._ApplyBarMode(row, barMode, barLeftOffset)
+
         -- Position value texts at column offsets
         LayoutRowValueTexts(row)
     end
@@ -128,6 +173,7 @@ function DM2._LayoutBarRows(windowIndex, comp)
     local iconSz = math.min(barHeight, DM2.ICON_SIZE)
     pinnedRow.icon:SetSize(iconSz, iconSz)
     if pinnedRow.nameContainer then pinnedRow.nameContainer:SetHeight(barHeight) end
+    DM2._ApplyBarMode(pinnedRow, barMode, barLeftOffset)
     LayoutRowValueTexts(pinnedRow)
 
     -- Adjust scroll area bottom to leave room for pinned row
@@ -267,20 +313,47 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         cr, cg, cb = DM2._GetBarColor(player, db)
     end
 
-    -- Show/hide bar fill and background only (value texts remain visible)
+    -- Show/hide bar fill and background; mode-aware text parenting
     local showBars = not db or db.showBars ~= false
-    row.bar:SetShown(showBars)
-    row.barBg:SetShown(showBars)
-    -- Re-parent value texts to the row when bars hidden so they stay visible
-    for vc = 1, DM2.MAX_COLUMNS do
-        local vt = row.valueTexts[vc]
-        if vt then
-            vt:SetParent(showBars and row.bar or row)
+    local barMode = db and db.barMode or "default"
+    local barTex = row.bar:GetStatusBarTexture()
+
+    if not showBars then
+        row.bar:Hide()
+        row.barBg:Hide()
+        if barTex then barTex:SetAlpha(1) end
+        for vc = 1, DM2.MAX_COLUMNS do
+            local vt = row.valueTexts[vc]
+            if vt then vt:SetParent(row) end
+        end
+    elseif barMode == "hollow" then
+        row.bar:Show()
+        row.barBg:Hide()
+        if barTex then barTex:SetAlpha(0) end
+        for vc = 1, DM2.MAX_COLUMNS do
+            local vt = row.valueTexts[vc]
+            if vt then vt:SetParent(row.bar) end
+        end
+    elseif barMode == "thin" then
+        row.bar:Show()
+        row.barBg:Show()
+        if barTex then barTex:SetAlpha(1) end
+        for vc = 1, DM2.MAX_COLUMNS do
+            local vt = row.valueTexts[vc]
+            if vt then vt:SetParent(row) end
+        end
+    else
+        -- Default mode
+        row.bar:Show()
+        row.barBg:Show()
+        if barTex then barTex:SetAlpha(1) end
+        for vc = 1, DM2.MAX_COLUMNS do
+            local vt = row.valueTexts[vc]
+            if vt then vt:SetParent(row.bar) end
         end
     end
 
-    -- Rank number — sits to the LEFT of the bar area, in the name text space.
-    -- Right-aligned so it ends just before the column data begins.
+    -- Rank number — sits to the LEFT of the name, just after the icon.
     if row.rankText then
         if db and db.hideRankNumbers then
             row.rankText:SetText("")
@@ -288,8 +361,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         else
             row.rankText:SetText(player.rank and (player.rank .. ".") or "")
             row.rankText:ClearAllPoints()
-            local barStart = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 2
-            row.rankText:SetPoint("RIGHT", row, "LEFT", barStart - 2, 0)
+            row.rankText:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
             row.rankText:Show()
         end
     end

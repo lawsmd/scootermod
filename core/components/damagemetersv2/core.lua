@@ -138,6 +138,7 @@ addon:RegisterComponentInitializer(function(self)
             barBorderInsetH         = { type = "addon", default = 0 },
             barBorderInsetV         = { type = "addon", default = 0 },
             showBars                = { type = "addon", default = true },
+            barMode                 = { type = "addon", default = "default" },
             hideRankNumbers         = { type = "addon", default = false },
             barBgTexture            = { type = "addon", default = "default" },
             barBgColorMode          = { type = "addon", default = "default" },
@@ -332,10 +333,12 @@ end
 local SESSION_LABELS = {
     [0] = "Overall",
     [1] = "Current",
-    [2] = "Expired",
 }
 
-function DM2._GetSessionLabel(sessionType)
+function DM2._GetSessionLabel(sessionType, sessionID, sessionName)
+    if sessionID then
+        return sessionName or ("Combat #" .. sessionID)
+    end
     return SESSION_LABELS[sessionType] or "Unknown"
 end
 

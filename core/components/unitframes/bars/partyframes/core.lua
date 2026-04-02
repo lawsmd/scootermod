@@ -1213,8 +1213,8 @@ function PartyFrames.installHooks()
         local okR, roleIcon = pcall(function() return frame.roleIcon end)
         if not okR or not roleIcon then return end
 
-        -- Track whether we need desaturation (applied at the very end)
-        local shouldDesaturate = false
+        -- Desaturation from DB toggle (applied at the very end)
+        local shouldDesaturate = rawget(cfg, "roleIconDesaturate") and true or false
 
         -- A) Draw layer elevation (only when Scoot overlays active)
         local hasOverlay = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
@@ -1302,20 +1302,9 @@ function PartyFrames.installHooks()
                 if not isVehicle then
                     local okRole, role = pcall(UnitGroupRolesAssigned, unit)
                     if okRole and type(role) == "string" and role ~= "NONE" then
-                        -- Check texture-based sets first (custom TGA files)
-                        local textures = Utils.ROLE_ICON_TEXTURES and Utils.ROLE_ICON_TEXTURES[iconSet]
-                        if textures and textures[role] then
-                            pcall(roleIcon.SetTexture, roleIcon, textures[role])
-                            pcall(roleIcon.SetTexCoord, roleIcon, 0, 1, 0, 1)
-                            if textures.desaturated then
-                                shouldDesaturate = true
-                            end
-                        else
-                            -- Then check atlas-based sets (built-in Blizzard atlases)
-                            local atlases = Utils.ROLE_ICON_ATLASES and Utils.ROLE_ICON_ATLASES[iconSet]
-                            if atlases and atlases[role] then
-                                pcall(roleIcon.SetAtlas, roleIcon, atlases[role])
-                            end
+                        local atlases = Utils.ROLE_ICON_ATLASES and Utils.ROLE_ICON_ATLASES[iconSet]
+                        if atlases and atlases[role] then
+                            pcall(roleIcon.SetAtlas, roleIcon, atlases[role])
                         end
                     end
                 end

@@ -1505,6 +1505,66 @@ function Builder:AddDualSelector(options)
 end
 
 --------------------------------------------------------------------------------
+-- AddSelectorToggleRow: Selector + Toggle compact row
+--------------------------------------------------------------------------------
+-- Options:
+--   label       : Setting label text (left side, optional)
+--   description : Optional description below label
+--   selector    : Table with selector options (values, order, get, set)
+--   toggle      : Table with toggle options (get, set, label)
+--   key         : Optional unique key for dynamic updates
+--   disabled    : Function returning disabled state (optional)
+--------------------------------------------------------------------------------
+
+function Builder:AddSelectorToggleRow(options)
+    local scrollContent = self._scrollContent
+    if not scrollContent then return self end
+
+    if Builder._scanMode and options.label then
+        table.insert(Builder._scanEntries, {
+            type = "selector toggle",
+            label = options.label,
+            description = options.description or "",
+            rendererKey = Builder._scanRendererKey,
+            section = Builder._scanSectionStack[#Builder._scanSectionStack],
+        })
+        return self
+    end
+
+    -- Add item spacing
+    if #self._controls > 0 then
+        self._currentY = self._currentY - ITEM_SPACING
+    end
+
+    local selectorToggle = Controls:CreateSelectorToggleRow({
+        parent = scrollContent,
+        label = options.label,
+        description = options.description,
+        selector = options.selector,
+        toggle = options.toggle,
+        useLightDim = self._useLightDim,
+        disabled = options.disabled,
+        isDisabled = options.isDisabled,
+        name = options.name,
+    })
+
+    if selectorToggle then
+        selectorToggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
+        selectorToggle:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
+
+        table.insert(self._controls, selectorToggle)
+
+        if options.key then
+            self._controlsByKey[options.key] = selectorToggle
+        end
+
+        self._currentY = self._currentY - selectorToggle:GetHeight()
+    end
+
+    return self
+end
+
+--------------------------------------------------------------------------------
 -- AddDualBarStyleRow: Texture + Color compact row
 --------------------------------------------------------------------------------
 -- Options:

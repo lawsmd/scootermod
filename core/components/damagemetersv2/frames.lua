@@ -5,9 +5,11 @@ local DM2 = addon.DamageMetersV2
 -- Constants
 --------------------------------------------------------------------------------
 
+local activeDM2Menu = nil -- tracks any open DM2 flyout (gear, segment, column)
+
 local HEADER_HEIGHT = 24
 local ICON_SIZE = 22
-local NAME_WIDTH = 100
+local NAME_WIDTH = 113
 local PINNED_SEPARATOR_HEIGHT = 1
 
 local function GetDefaultFont()
@@ -16,6 +18,177 @@ local function GetDefaultFont()
     end
     return "Fonts\\FRIZQT__.TTF"
 end
+
+--------------------------------------------------------------------------------
+-- Shared Flyout Menu Factory
+--
+-- Creates a reusable flyout menu with the same visual treatment as the gear
+-- menu. Supports Clear/AddRow/AddDivider/ShowAtAnchor for dynamic population.
+--------------------------------------------------------------------------------
+
+function DM2._CreateFlyoutMenu(menuWidth)
+    menuWidth = menuWidth or 160
+
+    -- Backdrop click-catcher
+    local backdrop = CreateFrame("Button", nil, UIParent)
+    backdrop:SetAllPoints(UIParent)
+    backdrop:SetFrameStrata("FULLSCREEN_DIALOG")
+    backdrop:SetFrameLevel(199)
+    backdrop:RegisterForClicks("AnyUp")
+    backdrop:Hide()
+
+    -- Menu frame
+    local menu = CreateFrame("Frame", nil, UIParent)
+    menu:SetSize(menuWidth, 10)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(200)
+    menu:EnableMouse(true)
+    menu:SetClampedToScreen(true)
+    menu:Hide()
+
+    backdrop:SetScript("OnClick", function() menu:Hide() end)
+    menu:SetScript("OnHide", function()
+        backdrop:Hide()
+        if activeDM2Menu == menu then activeDM2Menu = nil end
+    end)
+    menu:SetScript("OnShow", function() backdrop:Show() end)
+
+    -- Background
+    local menuBg = menu:CreateTexture(nil, "BACKGROUND", nil, -8)
+    menuBg:SetAllPoints()
+    menuBg:SetColorTexture(0.06, 0.06, 0.08, 0.95)
+
+    -- Border edges
+    local menuBorder = { 0.3, 0.3, 0.35, 0.8 }
+    for _, info in ipairs({
+        { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+        { "TOPLEFT", "BOTTOMLEFT", false }, { "TOPRIGHT", "BOTTOMRIGHT", false },
+    }) do
+        local t = menu:CreateTexture(nil, "BORDER")
+        t:SetPoint(info[1]); t:SetPoint(info[2])
+        if info[3] then t:SetHeight(1) else t:SetWidth(1) end
+        t:SetColorTexture(menuBorder[1], menuBorder[2], menuBorder[3], menuBorder[4])
+    end
+
+    -- Row pool and divider pool
+    menu._rows = {}
+    menu._dividers = {}
+    menu._rowCount = 0
+    menu._dividerCount = 0
+    menu._yOff = -6
+
+    function menu:Clear()
+        for i = 1, self._rowCount do
+            self._rows[i]:Hide()
+        end
+        for i = 1, self._dividerCount do
+            self._dividers[i]:Hide()
+        end
+        self._rowCount = 0
+        self._dividerCount = 0
+        self._yOff = -6
+    end
+
+    function menu:AddRow(label, textColor, onClick, isSelected)
+        self._rowCount = self._rowCount + 1
+        local idx = self._rowCount
+        local btn = self._rows[idx]
+
+        if not btn then
+            btn = CreateFrame("Button", nil, self)
+            btn:SetSize(menuWidth - 8, 24)
+            local bg = btn:CreateTexture(nil, "BACKGROUND", nil, -6)
+            bg:SetAllPoints()
+            bg:SetColorTexture(1, 1, 1, 0)
+            btn._bg = bg
+            -- Left accent bar for selection indicator
+            local accent = btn:CreateTexture(nil, "ARTWORK")
+            accent:SetSize(2, 16)
+            accent:SetPoint("LEFT", btn, "LEFT", 2, 0)
+            accent:SetColorTexture(1.0, 0.82, 0, 1)
+            btn._accent = accent
+            local txt = btn:CreateFontString(nil, "OVERLAY")
+            txt:SetFont(GetDefaultFont(), 10, "OUTLINE")
+            txt:SetPoint("LEFT", 10, 0)
+            txt:SetJustifyH("LEFT")
+            btn._text = txt
+            btn:SetScript("OnEnter", function() bg:SetColorTexture(1, 1, 1, 0.08) end)
+            btn:SetScript("OnLeave", function() bg:SetColorTexture(1, 1, 1, 0) end)
+            self._rows[idx] = btn
+        end
+
+        btn:ClearAllPoints()
+        btn:SetPoint("TOP", self, "TOP", 0, self._yOff)
+        btn._bg:SetColorTexture(1, 1, 1, 0)
+
+        btn._text:SetText(label)
+        if isSelected then
+            btn._accent:Show()
+            btn._text:SetTextColor(1.0, 0.82, 0, 1)
+        else
+            btn._accent:Hide()
+            btn._text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+        end
+
+        btn:SetScript("OnClick", function()
+            self:Hide()
+            onClick()
+        end)
+        btn:Show()
+        self._yOff = self._yOff - 24
+    end
+
+    function menu:AddDivider()
+        self._dividerCount = self._dividerCount + 1
+        local idx = self._dividerCount
+        local div = self._dividers[idx]
+        if not div then
+            div = self:CreateTexture(nil, "ARTWORK")
+            div:SetSize(menuWidth - 12, 1)
+            self._dividers[idx] = div
+        end
+        div:ClearAllPoints()
+        div:SetPoint("TOP", self, "TOP", 0, self._yOff - 3)
+        div:SetColorTexture(0.3, 0.3, 0.35, 0.5)
+        div:Show()
+        self._yOff = self._yOff - 7
+    end
+
+    function menu:ShowAtAnchor(anchor)
+        -- Dismiss any other open menu
+        if activeDM2Menu and activeDM2Menu ~= self and activeDM2Menu:IsShown() then
+            activeDM2Menu:Hide()
+        end
+
+        -- Finalize height
+        self:SetHeight(math.abs(self._yOff) + 6)
+
+        -- Smart positioning: flip above when near screen bottom
+        self:ClearAllPoints()
+        local anchorBottom = select(2, anchor:GetCenter()) - (anchor:GetHeight() / 2)
+        local scale = UIParent:GetEffectiveScale()
+        local spaceBelow = anchorBottom * scale
+        if spaceBelow > self:GetHeight() + 10 then
+            self:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+        else
+            self:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 2)
+        end
+        self:Show()
+        activeDM2Menu = self
+    end
+
+    return menu
+end
+
+--------------------------------------------------------------------------------
+-- Column Format Groups (for column right-click menu)
+--------------------------------------------------------------------------------
+
+local COLUMN_FORMAT_GROUPS = {
+    { keys = { "damage", "dps", "dmg_dps", "dps_dmg" } },
+    { keys = { "healing", "hps", "heal_hps", "hps_heal" } },
+    { keys = { "absorbs", "interrupts", "dispels", "dmgTaken", "avoidable", "deaths", "enemyDmg" } },
+}
 
 --------------------------------------------------------------------------------
 -- Bar Row Creation
@@ -38,11 +211,11 @@ function DM2._CreateBarRow(scrollContent, rowIndex)
     -- Bar area starts at a fixed offset (icon + gap + name width + gap)
     local barAreaLeft = ICON_SIZE + 6 + NAME_WIDTH + 4
 
-    -- Name clip region — clips long names so they don't overflow into rank area
-    -- Leave 22px gap at the right for rank numbers
-    local nameClipWidth = NAME_WIDTH - 22
+    -- Name clip region — rank sits to the left, name fills the rest
+    -- Reserve 15px on the left for rank numbers
+    local nameClipWidth = NAME_WIDTH - 15
     local nameClip = CreateFrame("Frame", nil, row)
-    nameClip:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+    nameClip:SetPoint("LEFT", icon, "RIGHT", 19, 0)
     nameClip:SetPoint("TOP", row, "TOP")
     nameClip:SetPoint("BOTTOM", row, "BOTTOM")
     nameClip:SetWidth(nameClipWidth)
@@ -85,7 +258,7 @@ function DM2._CreateBarRow(scrollContent, rowIndex)
     -- Use a higher sublevel so it renders on top of the name clip area
     local rankText = row:CreateFontString(nil, "OVERLAY", nil, 7)
     rankText:SetFont(GetDefaultFont(), 11, "OUTLINE")
-    rankText:SetJustifyH("RIGHT")
+    rankText:SetJustifyH("LEFT")
     rankText:SetWordWrap(false)
     rankText:SetTextColor(0.6, 0.6, 0.6, 0.7)
     row.rankText = rankText
@@ -186,6 +359,7 @@ function DM2._CreateWindow(windowIndex, comp)
 
     -- Column headers (right side, created dynamically)
     local columnHeaders = {}
+    local columnClickRegions = {}
     for c = 1, DM2.MAX_COLUMNS do
         local ch = header:CreateFontString(nil, "OVERLAY")
         ch:SetFont(GetDefaultFont(), 10, "OUTLINE")
@@ -193,6 +367,144 @@ function DM2._CreateWindow(windowIndex, comp)
         ch:SetJustifyH("RIGHT")
         ch:Hide()
         columnHeaders[c] = ch
+
+        -- Invisible overlay for right-click on column header
+        local chClickRegion = CreateFrame("Button", nil, header)
+        chClickRegion:SetAllPoints(ch)
+        chClickRegion:SetFrameLevel(header:GetFrameLevel() + 2)
+        chClickRegion:RegisterForClicks("RightButtonUp")
+        chClickRegion:Hide()
+        chClickRegion._colIndex = c
+        columnClickRegions[c] = chClickRegion
+    end
+
+    -- Title right-click overlay (segment selector)
+    local titleClickRegion = CreateFrame("Button", nil, header)
+    titleClickRegion:SetAllPoints(titleText)
+    titleClickRegion:SetFrameLevel(header:GetFrameLevel() + 2)
+    titleClickRegion:RegisterForClicks("RightButtonUp")
+
+    -- Segment selector menu (lazy, one per window)
+    local segmentMenu = nil
+    local winIdx = windowIndex -- capture for closures
+
+    local function ApplySegmentChange(cfg)
+        local c = DM2._comp
+        if not c then return end
+        DM2._UpdateSessionHeader(winIdx, c)
+        DM2._CalculateColumnWidths(winIdx, c)
+        DM2._LayoutBarRows(winIdx, c)
+        if DM2._inCombat then
+            DM2._UpdateWindowCombat(winIdx)
+        else
+            DM2._UpdateWindowOOC(winIdx)
+        end
+        DM2._UpdateTimerText(winIdx)
+    end
+
+    titleClickRegion:SetScript("OnClick", function(self, button)
+        if button ~= "RightButton" then return end
+        if not segmentMenu then
+            segmentMenu = DM2._CreateFlyoutMenu(200)
+        end
+        segmentMenu:Clear()
+
+        local cfg = DM2._GetWindowConfig(winIdx)
+        if not cfg then return end
+
+        -- Overall
+        local isOverall = cfg.sessionType == 0 and not cfg.sessionID
+        segmentMenu:AddRow("Overall", { 1, 1, 1, 0.9 }, function()
+            cfg.sessionType = 0
+            cfg.sessionID = nil
+            cfg._sessionName = nil
+            ApplySegmentChange(cfg)
+        end, isOverall)
+
+        -- Current
+        local isCurrent = cfg.sessionType == 1 and not cfg.sessionID
+        segmentMenu:AddRow("Current", { 1, 1, 1, 0.9 }, function()
+            cfg.sessionType = 1
+            cfg.sessionID = nil
+            cfg._sessionName = nil
+            ApplySegmentChange(cfg)
+        end, isCurrent)
+
+        -- Available expired segments from the API (sorted newest first)
+        if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
+            local ok, available = pcall(C_DamageMeter.GetAvailableCombatSessions)
+            if ok and available and #available > 0 then
+                -- Sort by sessionID descending (most recent first)
+                table.sort(available, function(a, b) return a.sessionID > b.sessionID end)
+                segmentMenu:AddDivider()
+                for _, session in ipairs(available) do
+                    local name = session.name
+                    if not name or name == "" then
+                        name = "Combat #" .. session.sessionID
+                    end
+                    if session.durationSeconds then
+                        name = name .. " [" .. DM2._FormatDuration(session.durationSeconds) .. "]"
+                    end
+                    local isThis = cfg.sessionID == session.sessionID
+                    local sid = session.sessionID
+                    local sname = session.name
+                    segmentMenu:AddRow(name, { 0.8, 0.8, 0.8, 1 }, function()
+                        cfg.sessionType = nil
+                        cfg.sessionID = sid
+                        cfg._sessionName = (sname and sname ~= "") and sname or nil
+                        ApplySegmentChange(cfg)
+                    end, isThis)
+                end
+            end
+        end
+
+        segmentMenu:ShowAtAnchor(self)
+    end)
+
+    -- Column format menu (lazy, one shared per window)
+    local columnMenu = nil
+
+    local function ShowColumnMenu(clickRegion)
+        local colIdx = clickRegion._colIndex
+        local cfg = DM2._GetWindowConfig(winIdx)
+        if not cfg or not cfg.columns[colIdx] then return end
+        local currentFormat = cfg.columns[colIdx].format
+
+        if not columnMenu then
+            columnMenu = DM2._CreateFlyoutMenu(160)
+        end
+        columnMenu:Clear()
+
+        for gi, group in ipairs(COLUMN_FORMAT_GROUPS) do
+            if gi > 1 then columnMenu:AddDivider() end
+            for _, key in ipairs(group.keys) do
+                local def = DM2.COLUMN_FORMATS[key]
+                if def then
+                    columnMenu:AddRow(def.headerText, { 1, 1, 1, 0.9 }, function()
+                        cfg.columns[colIdx].format = key
+                        local c = DM2._comp
+                        if c then
+                            DM2._CalculateColumnWidths(winIdx, c)
+                            DM2._LayoutBarRows(winIdx, c)
+                            if DM2._inCombat then
+                                DM2._UpdateWindowCombat(winIdx)
+                            else
+                                DM2._UpdateWindowOOC(winIdx)
+                            end
+                        end
+                    end, currentFormat == key)
+                end
+            end
+        end
+
+        columnMenu:ShowAtAnchor(clickRegion)
+    end
+
+    for c = 1, DM2.MAX_COLUMNS do
+        columnClickRegions[c]:SetScript("OnClick", function(self, button)
+            if button ~= "RightButton" then return end
+            ShowColumnMenu(self)
+        end)
     end
 
     -- Header divider
@@ -247,19 +559,41 @@ function DM2._CreateWindow(windowIndex, comp)
 
     -- Gear button click handler: flyout menu with export + reset
     local gearMenu = nil
-    local winIdx = windowIndex -- capture for closures
     gearBtn:SetScript("OnClick", function()
+        -- Close any other window's gear menu first
+        if activeDM2Menu and activeDM2Menu ~= gearMenu and activeDM2Menu:IsShown() then
+            activeDM2Menu:Hide()
+        end
         if gearMenu and gearMenu:IsShown() then
             gearMenu:Hide()
             return
         end
         if not gearMenu then
-            local menuHeight = 230 -- export window + 5 chat channels + header + divider + reset + padding
+            -- Full-screen click-catcher to dismiss menu on outside click
+            local backdrop = CreateFrame("Button", nil, UIParent)
+            backdrop:SetAllPoints(UIParent)
+            backdrop:SetFrameStrata("FULLSCREEN_DIALOG")
+            backdrop:SetFrameLevel(199)
+            backdrop:RegisterForClicks("AnyUp")
+            backdrop:SetScript("OnClick", function()
+                gearMenu:Hide()
+            end)
+            backdrop:Hide()
+
             gearMenu = CreateFrame("Frame", nil, UIParent)
-            gearMenu:SetSize(160, menuHeight)
+            gearMenu:SetSize(160, 10) -- height computed dynamically below
             gearMenu:SetFrameStrata("FULLSCREEN_DIALOG")
             gearMenu:SetFrameLevel(200)
             gearMenu:EnableMouse(true)
+            gearMenu:SetClampedToScreen(true)
+
+            gearMenu:SetScript("OnHide", function()
+                backdrop:Hide()
+                activeDM2Menu = nil
+            end)
+            gearMenu:SetScript("OnShow", function()
+                backdrop:Show()
+            end)
 
             local menuBg = gearMenu:CreateTexture(nil, "BACKGROUND", nil, -8)
             menuBg:SetAllPoints()
@@ -276,7 +610,7 @@ function DM2._CreateWindow(windowIndex, comp)
                 t:SetColorTexture(menuBorder[1], menuBorder[2], menuBorder[3], menuBorder[4])
             end
 
-            local yOff = -4
+            local yOff = -6
             local function AddMenuRow(label, textColor, onClick)
                 local btn = CreateFrame("Button", nil, gearMenu)
                 btn:SetSize(152, 24)
@@ -299,26 +633,76 @@ function DM2._CreateWindow(windowIndex, comp)
                 return btn
             end
 
+            -- Reset All Data (red) — top of menu
+            AddMenuRow("Reset All Data", { 1, 0.3, 0.3, 1 }, function()
+                if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+                    C_DamageMeter.ResetAllCombatSessions()
+                end
+                DM2._HandleReset()
+            end)
+
+            -- Divider
+            local divider = gearMenu:CreateTexture(nil, "ARTWORK")
+            divider:SetSize(148, 1)
+            divider:SetPoint("TOP", gearMenu, "TOP", 0, yOff - 3)
+            divider:SetColorTexture(0.3, 0.3, 0.35, 0.5)
+            yOff = yOff - 7
+
             -- Export to Window
             AddMenuRow("Export to Window", { 1, 1, 1, 0.9 }, function()
                 if DM2._ExportToWindow then DM2._ExportToWindow(winIdx) end
             end)
 
-            -- Export to Chat (with inline channel selector)
+            yOff = yOff - 4
+
+            -- Export to Chat section
             local chatChannels = { "SAY", "PARTY", "RAID", "INSTANCE_CHAT", "GUILD" }
             local chatLabels = { SAY = "Say", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance", GUILD = "Guild" }
-            local currentChannel = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatChannel) or "PARTY"
             local currentLines = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
 
-            -- Channel label row (header)
             local chatHeader = gearMenu:CreateFontString(nil, "OVERLAY")
             chatHeader:SetFont(GetDefaultFont(), 9, "OUTLINE")
             chatHeader:SetPoint("TOPLEFT", gearMenu, "TOPLEFT", 8, yOff)
             chatHeader:SetText("Export to Chat")
-            chatHeader:SetTextColor(0.7, 0.7, 0.7, 1)
+            chatHeader:SetTextColor(0.5, 0.5, 0.55, 1)
+            yOff = yOff - 14
+
+            -- Lines slider
+            local sliderLabel = gearMenu:CreateFontString(nil, "OVERLAY")
+            sliderLabel:SetFont(GetDefaultFont(), 9, "OUTLINE")
+            sliderLabel:SetPoint("TOPLEFT", gearMenu, "TOPLEFT", 16, yOff)
+            sliderLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+            local function UpdateSliderLabel()
+                local count = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
+                sliderLabel:SetText("Lines: " .. count)
+            end
+            UpdateSliderLabel()
+            yOff = yOff - 14
+
+            local slider = CreateFrame("Slider", nil, gearMenu, "OptionsSliderTemplate")
+            slider:SetSize(136, 14)
+            slider:SetPoint("TOP", gearMenu, "TOP", 0, yOff)
+            slider:SetMinMaxValues(1, 20)
+            slider:SetValueStep(1)
+            slider:SetObeyStepOnDrag(true)
+            if slider.Text then slider.Text:SetText("") end
+            if slider.Low then slider.Low:SetText("") end
+            if slider.High then slider.High:SetText("") end
+
+            slider:SetValue(currentLines)
+            slider:SetScript("OnValueChanged", function(_, value)
+                value = math.floor(value)
+                if DM2._comp and DM2._comp.db then
+                    DM2._comp.db.exportChatLineCount = value
+                end
+                currentLines = value
+                UpdateSliderLabel()
+            end)
+            gearMenu._slider = slider
             yOff = yOff - 16
 
-            -- Channel buttons (compact row)
+            -- Channel buttons
             for _, ch in ipairs(chatChannels) do
                 local chBtn = CreateFrame("Button", nil, gearMenu)
                 chBtn:SetSize(152, 20)
@@ -331,7 +715,6 @@ function DM2._CreateWindow(windowIndex, comp)
                 chText:SetPoint("LEFT", 16, 0)
                 chText:SetText(chatLabels[ch] or ch)
                 chText:SetTextColor(1, 1, 1, 0.8)
-                -- Send indicator
                 local sendText = chBtn:CreateFontString(nil, "OVERLAY")
                 sendText:SetFont(GetDefaultFont(), 9, "OUTLINE")
                 sendText:SetPoint("RIGHT", -8, 0)
@@ -354,24 +737,28 @@ function DM2._CreateWindow(windowIndex, comp)
                 yOff = yOff - 20
             end
 
-            -- Divider
-            local divider = gearMenu:CreateTexture(nil, "ARTWORK")
-            divider:SetSize(148, 1)
-            divider:SetPoint("TOP", gearMenu, "TOP", 0, yOff - 4)
-            divider:SetColorTexture(0.3, 0.3, 0.35, 0.5)
-            yOff = yOff - 9
-
-            -- Reset All Data (red)
-            AddMenuRow("Reset All Data", { 1, 0.3, 0.3, 1 }, function()
-                if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
-                    C_DamageMeter.ResetAllCombatSessions()
-                end
-                DM2._HandleReset()
-            end)
+            gearMenu:SetHeight(math.abs(yOff) + 6)
         end
+
+        -- Sync slider value on every show
+        if gearMenu._slider then
+            local count = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
+            gearMenu._slider:SetValue(count)
+        end
+
+        -- Smart positioning: flip above gear button when near screen bottom
         gearMenu:ClearAllPoints()
-        gearMenu:SetPoint("TOPLEFT", gearBtn, "BOTTOMLEFT", 0, -2)
+        local btnBottom = select(2, gearBtn:GetCenter()) - (gearBtn:GetHeight() / 2)
+        local scale = UIParent:GetEffectiveScale()
+        local spaceBelow = btnBottom * scale
+
+        if spaceBelow > gearMenu:GetHeight() + 10 then
+            gearMenu:SetPoint("TOPLEFT", gearBtn, "BOTTOMLEFT", 0, -2)
+        else
+            gearMenu:SetPoint("BOTTOMLEFT", gearBtn, "TOPLEFT", 0, 2)
+        end
         gearMenu:Show()
+        activeDM2Menu = gearMenu
     end)
 
     -- Store window state
@@ -384,6 +771,8 @@ function DM2._CreateWindow(windowIndex, comp)
         timerText = timerText,
         verticalTitle = verticalTitle,
         columnHeaders = columnHeaders,
+        columnClickRegions = columnClickRegions,
+        titleClickRegion = titleClickRegion,
         scrollArea = scrollArea,
         scrollContent = scrollContent,
         barRows = barRows,
