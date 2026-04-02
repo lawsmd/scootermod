@@ -357,7 +357,12 @@ local function InstallFrameToUnitHook()
             end
         end
         if unit and GROUP_UNITS[unit] then
-            HA.UpdateAurasForFrame(frame, unit)
+            local visOk, vis = pcall(frame.IsVisible, frame)
+            if visOk and vis then
+                HA.UpdateAurasForFrame(frame, unit)
+            else
+                HA.HideAllAurasForFrame(frame)
+            end
         else
             HA.HideAllAurasForFrame(frame)
         end
@@ -399,6 +404,12 @@ end
 
 function HA.UpdateAurasForFrame(frame, unit)
     if not frame or not unit then return end
+    -- Don't show icons on hidden frames — they're UIParent-parented and would float visibly
+    local okVis, visible = pcall(frame.IsVisible, frame)
+    if not okVis or not visible then
+        HA.HideAllAurasForFrame(frame)
+        return
+    end
     if not next(HA.ACTIVE_TRACKED_IDS) then
         HA.HideAllAurasForFrame(frame)
         return
@@ -455,12 +466,16 @@ local function DiscoverGroupFrames()
         if frame then
             local ok, unit = pcall(function() return frame.unit end)
             if ok and unit and GROUP_UNITS[unit] then
-                local state = ensureState(frame)
-                state.unit = unit
-                if not InCombatLockdown() then
-                    local hOk, h = pcall(frame.GetHeight, frame)
-                    if hOk and type(h) == "number" and h > 0 then
-                        state.cachedHeight = h
+                -- Skip hidden frames: icons are UIParent-parented, so they'd float visibly
+                local visOk, vis = pcall(frame.IsVisible, frame)
+                if visOk and vis then
+                    local state = ensureState(frame)
+                    state.unit = unit
+                    if not InCombatLockdown() then
+                        local hOk, h = pcall(frame.GetHeight, frame)
+                        if hOk and type(h) == "number" and h > 0 then
+                            state.cachedHeight = h
+                        end
                     end
                 end
             end
@@ -472,12 +487,16 @@ local function DiscoverGroupFrames()
         if frame then
             local ok, unit = pcall(function() return frame.unit end)
             if ok and unit and GROUP_UNITS[unit] then
-                local state = ensureState(frame)
-                state.unit = unit
-                if not InCombatLockdown() then
-                    local hOk, h = pcall(frame.GetHeight, frame)
-                    if hOk and type(h) == "number" and h > 0 then
-                        state.cachedHeight = h
+                -- Skip hidden frames: icons are UIParent-parented, so they'd float visibly
+                local visOk, vis = pcall(frame.IsVisible, frame)
+                if visOk and vis then
+                    local state = ensureState(frame)
+                    state.unit = unit
+                    if not InCombatLockdown() then
+                        local hOk, h = pcall(frame.GetHeight, frame)
+                        if hOk and type(h) == "number" and h > 0 then
+                            state.cachedHeight = h
+                        end
                     end
                 end
             end
