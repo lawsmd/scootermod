@@ -340,6 +340,50 @@ local function activateEmpoweredTextFill(frame, elements, cfg, unit)
 					if tier.Glow then pcall(tier.Glow.SetAlpha, tier.Glow, 0) end
 				end
 			end
+
+			-- One-time Play() hooks on StageTier animation groups.
+			-- FinishAnim plays on cast completion (PlayFinishAnim), forces Glow alpha
+			-- to 1 via C++ animation, bypassing our SetAlpha(0). No OnFinished — safe to Stop().
+			-- FlashAnim has setToFinalAlpha="true", no OnFinished — safe to Stop().
+			if not getProp(frame, "textFillStageTierAnimsHooked") then
+				setProp(frame, "textFillStageTierAnimsHooked", true)
+				for _, tier in ipairs(tiers) do
+					if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+						local animGroups = { tier.FinishAnim, tier.FlashAnim }
+						for _, ag in ipairs(animGroups) do
+							if ag and ag.Play and ag.Stop then
+								local agRef, stopFn = ag, ag.Stop
+								hooksecurefunc(ag, "Play", function()
+									if getProp(frame, "textFillActive") then
+										pcall(stopFn, agRef)
+									end
+								end)
+							end
+						end
+					end
+				end
+			end
+
+			-- One-time Show() guards on StageTier textures (Normal, Disabled, Glow).
+			-- UpdateStage() calls Normal:SetShown(true) on completed tiers — guard
+			-- re-hides them immediately when text-fill mode is active.
+			if not getProp(frame, "textFillStageTierShowGuarded") then
+				setProp(frame, "textFillStageTierShowGuarded", true)
+				for _, tier in ipairs(tiers) do
+					if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+						local tierTextures = { tier.Normal, tier.Disabled, tier.Glow }
+						for _, tex in ipairs(tierTextures) do
+							if tex and tex.Show then
+								hooksecurefunc(tex, "Show", function(self)
+									if getProp(frame, "textFillActive") then
+										pcall(self.Hide, self)
+									end
+								end)
+							end
+						end
+					end
+				end
+			end
 		end
 
 		-- Hide Blizzard StagePip visuals (keep frames positioned for anchoring)
@@ -354,9 +398,12 @@ local function activateEmpoweredTextFill(frame, elements, cfg, unit)
 	end)
 end
 
--- Deactivate empowered text-fill: hide tier segments, restore Blizzard alphas.
--- The single-color line elements will be re-shown by the next applyTextFillMode call.
-local function deactivateEmpoweredTextFill(frame, elements)
+-- Deactivate empowered text-fill: hide tier segments, optionally restore Blizzard alphas.
+-- restoreBlizzardAlphas: when true (full teardown via hideTextFillElements), restores
+-- StageTier/StagePip alphas to 1 for non-text-fill use. When false/nil (empowered cast
+-- ending via EMPOWER_STOP), alphas stay at 0 to prevent a visual flash during the cast
+-- bar's fade-out animation. Blizzard's AddStages resets everything for the next cast.
+local function deactivateEmpoweredTextFill(frame, elements, restoreBlizzardAlphas)
 	local emp = elements and elements.empowered
 	if not emp then return end
 
@@ -375,25 +422,27 @@ local function deactivateEmpoweredTextFill(frame, elements)
 	-- Clear empowered flag
 	setProp(frame, "textFillEmpowered", nil)
 
-	-- Restore Blizzard StageTier alphas
-	local tiers = frame.StageTiers
-	if tiers and not (issecretvalue and issecretvalue(tiers)) then
-		for _, tier in ipairs(tiers) do
-			if tier and not (tier.IsForbidden and tier:IsForbidden()) then
-				if tier.Normal then pcall(tier.Normal.SetAlpha, tier.Normal, 1) end
-				if tier.Disabled then pcall(tier.Disabled.SetAlpha, tier.Disabled, 1) end
-				if tier.Glow then pcall(tier.Glow.SetAlpha, tier.Glow, 1) end
+	if restoreBlizzardAlphas then
+		-- Restore Blizzard StageTier alphas (full teardown only)
+		local tiers = frame.StageTiers
+		if tiers and not (issecretvalue and issecretvalue(tiers)) then
+			for _, tier in ipairs(tiers) do
+				if tier and not (tier.IsForbidden and tier:IsForbidden()) then
+					if tier.Normal then pcall(tier.Normal.SetAlpha, tier.Normal, 1) end
+					if tier.Disabled then pcall(tier.Disabled.SetAlpha, tier.Disabled, 1) end
+					if tier.Glow then pcall(tier.Glow.SetAlpha, tier.Glow, 1) end
+				end
 			end
 		end
-	end
 
-	-- Restore Blizzard StagePip alphas
-	local pips = frame.StagePips
-	if pips and not (issecretvalue and issecretvalue(pips)) then
-		for _, pip in ipairs(pips) do
-			if pip and not (pip.IsForbidden and pip:IsForbidden()) then
-				if pip.BasePip then pcall(pip.BasePip.SetAlpha, pip.BasePip, 1) end
-				if pip.PipFlare then pcall(pip.PipFlare.SetAlpha, pip.PipFlare, 1) end
+		-- Restore Blizzard StagePip alphas
+		local pips = frame.StagePips
+		if pips and not (issecretvalue and issecretvalue(pips)) then
+			for _, pip in ipairs(pips) do
+				if pip and not (pip.IsForbidden and pip:IsForbidden()) then
+					if pip.BasePip then pcall(pip.BasePip.SetAlpha, pip.BasePip, 1) end
+					if pip.PipFlare then pcall(pip.PipFlare.SetAlpha, pip.PipFlare, 1) end
+				end
 			end
 		end
 	end
@@ -520,6 +569,14 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 						els.filledLine:SetPoint("RIGHT", self, "RIGHT", 0, 0)
 						els.filledLine:SetHeight(els.lineHeight or 2)
 					end
+				end
+				-- Re-hide fill texture: FinishSpell calls SetStatusBarTexture(full)
+				-- before HideSpark, replacing it with a new texture at alpha 1.
+				-- The SetStatusBarTexture hook early-returns during empowered casts,
+				-- so the new fill texture is never re-hidden by the normal pipeline.
+				local ft = self:GetStatusBarTexture()
+				if ft and ft.SetAlpha then
+					pcall(ft.SetAlpha, ft, 0)
 				end
 			end
 		end)
@@ -809,9 +866,9 @@ local function hideTextFillElements(frame)
 	local elements = getProp(frame, "textFillElements")
 	if not elements then return end
 
-	-- Deactivate empowered text-fill if active
+	-- Deactivate empowered text-fill if active (full teardown: restore Blizzard alphas)
 	if elements.empowered and elements.empowered.active then
-		deactivateEmpoweredTextFill(frame, elements)
+		deactivateEmpoweredTextFill(frame, elements, true)
 	end
 
 	elements.unfilledLineOL:Hide()
