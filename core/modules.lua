@@ -253,3 +253,17 @@ function addon:SetModuleEnabled(category, subId, value)
         current[subId] = value
     end
 end
+
+--- Check if every module category is disabled (all toggles off).
+function addon:AreAllModulesDisabled()
+    local profile = self.db and self.db.profile
+    if not profile then return true end
+    local me = profile.moduleEnabled
+    if not me then return true end
+    for _, category in ipairs(self.MODULE_CATEGORY_ORDER) do
+        if self:IsModuleEnabled(category) then
+            return false
+        end
+    end
+    return true
+end
