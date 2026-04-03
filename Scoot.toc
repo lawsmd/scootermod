@@ -2,7 +2,7 @@
 ## Title: Scoot
 ## Notes: A modern, cosmetic-only UI addon.
 ## Author: Scooter
-## Version: 1.1.1
+## Version: 1.2.0
 ## IconTexture: Interface\AddOns\Scoot\ScootIcon
 ## OptionalDeps: Blizzard_Settings, Blizzard_Settings_Shared
 ## SavedVariables: ScootDB
@@ -23,6 +23,7 @@ libs/LibDeflate/LibDeflate.lua
 core/framestate.lua
 core/secretsafe.lua
 core/media.lua
+core/specabbreviations.lua
 core/animations.lua
 core/petbattle.lua
 core/colors.lua
@@ -191,6 +192,7 @@ ui/v2/controls/Flyout.lua
 ui/v2/HighScoreWindow.lua
 ui/v2/Window.lua
 ui/v2/Navigation.lua
+ui/v2/JumpingLetters.lua
 ui/v2/SettingsBuilder.lua
 ui/v2/settings/Helpers.lua
 ui/v2/settingspanel/renderers.lua

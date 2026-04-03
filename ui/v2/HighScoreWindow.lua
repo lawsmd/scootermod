@@ -1,7 +1,7 @@
 -- HighScoreWindow.lua - Arcade-styled "High Score" damage meter export display
 local addonName, addon = ...
 
-local FRAME_WIDTH = 820
+local FRAME_WIDTH = 920
 local FRAME_HEIGHT = 780
 local BANNER_HEIGHT = 200
 local TITLE_HEIGHT = 30
@@ -13,7 +13,7 @@ local ROW_GAP = 2
 
 -- Column layout
 local RANK_COL = 36
-local NAME_COL = 180
+local NAME_COL = 280
 local DATA_COL = 120
 local COL_GAP = 8
 local NUM_DATA_COLS = 4
@@ -61,12 +61,17 @@ local function CreateRow(parent, index)
     row.rank:SetWidth(RANK_COL)
     row.rank:SetJustifyH("LEFT")
 
-    -- Name
+    -- Name (auto-width, no truncation)
     row.name = row:CreateFontString(nil, "OVERLAY")
     row.name:SetPoint("LEFT", row, "LEFT", xStart + RANK_COL + COL_GAP, 0)
-    row.name:SetWidth(NAME_COL)
     row.name:SetJustifyH("LEFT")
     row.name:SetWordWrap(false)
+
+    -- Spec/ilvl info (smaller, grey, appended directly after name text)
+    row.specInfo = row:CreateFontString(nil, "OVERLAY")
+    row.specInfo:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
+    row.specInfo:SetJustifyH("LEFT")
+    row.specInfo:SetWordWrap(false)
 
     -- Data columns
     row.cols = {}
@@ -91,6 +96,9 @@ end
 local function SetRowFont(row, font, size)
     pcall(row.rank.SetFont, row.rank, font, size, "")
     pcall(row.name.SetFont, row.name, font, size, "")
+    if row.specInfo then
+        pcall(row.specInfo.SetFont, row.specInfo, font, math.max(6, size - 6), "")
+    end
     for _, col in ipairs(row.cols) do
         pcall(col.SetFont, col, font, size, "")
     end
@@ -352,6 +360,17 @@ local function CreateHighScoreFrame()
             row.name:SetText(string.upper(name))
             local cr, cg, cb = GetClassColor(p.classFilename)
             row.name:SetTextColor(cr, cg, cb, 1)
+
+            -- Spec/ilvl annotation
+            if row.specInfo then
+                local info = addon.FormatPlayerSpecInfo(p)
+                if info then
+                    row.specInfo:SetText(string.upper(info))
+                    row.specInfo:SetTextColor(0.5, 0.5, 0.5, 0.8)
+                else
+                    row.specInfo:SetText("")
+                end
+            end
 
             -- Data columns
             for i = 1, NUM_DATA_COLS do

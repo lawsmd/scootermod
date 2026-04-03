@@ -600,6 +600,11 @@ addon:RegisterComponentInitializer(function(self)
 
     self:RegisterComponent(damageMeter)
 
+    -- Initialize background inspect cache for export spec/ilvl data
+    if DM._InitInspectCache then
+        DM._InitInspectCache()
+    end
+
     -- Zone snapshot: track where data started
     if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
         hooksecurefunc(C_DamageMeter, "ResetAllCombatSessions", SnapshotResetZone)

@@ -86,7 +86,9 @@ function DM2._ExportToChat(windowIndex)
         local p = data.players[guid]
         local mt = data.columns[1]
         local val = data.GetDisplayValue(guid, mt)
-        table.insert(messages, string.format("#%d. %s - %s", i, p.name, val))
+        local info = addon.FormatPlayerSpecInfo(p)
+        local nameStr = info and (p.name .. " " .. info) or p.name
+        table.insert(messages, string.format("#%d. %s - %s", i, nameStr, val))
     end
 
     for _, msg in ipairs(messages) do
@@ -124,7 +126,9 @@ function DM2._ExportToChatChannel(windowIndex, channel, lineCount)
         local p = data.players[guid]
         local mt = data.columns[1]
         local val = data.GetDisplayValue(guid, mt)
-        table.insert(messages, string.format("#%d. %s - %s", i, p.name, val))
+        local info = addon.FormatPlayerSpecInfo(p)
+        local nameStr = info and (p.name .. " " .. info) or p.name
+        table.insert(messages, string.format("#%d. %s - %s", i, nameStr, val))
     end
 
     for _, msg in ipairs(messages) do

@@ -11,6 +11,197 @@ local SafeSetShown = DM._SafeSetShown
 local getWindowState = DM._getWindowState
 
 --------------------------------------------------------------------------------
+-- Spec Icon → Name Resolver
+--------------------------------------------------------------------------------
+
+local specIconToName = nil
+
+local function GetSpecNameFromIconID(iconID)
+    if not iconID or iconID == 0 then return nil end
+    if not specIconToName then
+        specIconToName = {}
+        if type(GetNumClasses) == "function" and type(GetClassInfo) == "function" then
+            for classIndex = 1, GetNumClasses() do
+                local _, _, classID = GetClassInfo(classIndex)
+                if classID then
+                    for specIndex = 1, (GetNumSpecializationsForClassID(classID) or 0) do
+                        local _, specName, _, specIcon = GetSpecializationInfoForClassID(classID, specIndex)
+                        if specIcon and specName then
+                            specIconToName[specIcon] = specName
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return specIconToName[iconID]
+end
+
+--------------------------------------------------------------------------------
+-- Background Inspect Cache (conservative, OOC-only)
+--------------------------------------------------------------------------------
+
+local inspectCache = {}           -- GUID → { specName, itemLevel, time }
+local INSPECT_CACHE_TTL = 300     -- 5 minutes
+local inspectQueue = {}           -- array of { guid, unit }
+local inspectBusy = false
+local inspectTicker = nil
+local inspectEventFrame = nil
+local pendingInspectEntry = nil   -- the { guid, unit } we're currently inspecting
+
+local function RebuildInspectQueue()
+    wipe(inspectQueue)
+    local now = GetTime()
+
+    local prefix, count
+    if IsInRaid() then
+        prefix, count = "raid", GetNumGroupMembers()
+    elseif IsInGroup() then
+        prefix, count = "party", GetNumGroupMembers() - 1
+    else
+        return
+    end
+
+    for i = 1, count do
+        local unit = prefix .. i
+        local guidOk, guid = pcall(UnitGUID, unit)
+        if guidOk and guid then
+            local isSelfOk, isSelf = pcall(UnitIsUnit, unit, "player")
+            if not (isSelfOk and isSelf) then
+                local cached = inspectCache[guid]
+                if not cached or (now - cached.time) > INSPECT_CACHE_TTL then
+                    local canOk, canInspect = pcall(CanInspect, unit, false)
+                    if canOk and canInspect then
+                        table.insert(inspectQueue, { guid = guid, unit = unit })
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ProcessNextInspect()
+    if InCombatLockdown() or inspectBusy or #inspectQueue == 0 then return end
+
+    local entry = table.remove(inspectQueue, 1)
+    local canOk, canInspect = pcall(CanInspect, entry.unit, false)
+    if not canOk or not canInspect then return end
+
+    inspectBusy = true
+    pendingInspectEntry = entry
+    pcall(NotifyInspect, entry.unit)
+end
+
+local function OnExportInspectReady(self, event, inspecteeGUID)
+    if not inspecteeGUID then return end
+
+    -- Only process if this matches our pending request
+    if not pendingInspectEntry or pendingInspectEntry.guid ~= inspecteeGUID then return end
+
+    local unit = pendingInspectEntry.unit
+    inspectBusy = false
+    pendingInspectEntry = nil
+
+    local entry = inspectCache[inspecteeGUID] or {}
+    entry.time = GetTime()
+
+    local ilvlOk, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
+    if ilvlOk and ilvl and type(ilvl) == "number" and ilvl > 0 then
+        entry.itemLevel = math.floor(ilvl)
+    end
+
+    local specOk, specID = pcall(GetInspectSpecialization, unit)
+    if specOk and specID and specID > 0 then
+        local nameOk, specName = pcall(GetSpecializationNameForSpecID, specID)
+        if nameOk and specName then
+            entry.specName = specName
+        end
+    end
+
+    inspectCache[inspecteeGUID] = entry
+    pcall(ClearInspectPlayer)
+end
+
+local function StartInspectTicker()
+    if inspectTicker then return end
+    inspectTicker = C_Timer.NewTicker(2.5, function()
+        if InCombatLockdown() then return end
+        if #inspectQueue == 0 then
+            RebuildInspectQueue()
+        end
+        ProcessNextInspect()
+    end)
+end
+
+local function StopInspectTicker()
+    if inspectTicker then
+        inspectTicker:Cancel()
+        inspectTicker = nil
+    end
+    inspectBusy = false
+    pendingInspectEntry = nil
+end
+
+local function InitInspectCache()
+    if inspectEventFrame then return end
+    inspectEventFrame = CreateFrame("Frame")
+    inspectEventFrame:RegisterEvent("INSPECT_READY")
+    inspectEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    inspectEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    inspectEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    inspectEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    inspectEventFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "INSPECT_READY" then
+            OnExportInspectReady(self, event, ...)
+        elseif event == "GROUP_ROSTER_UPDATE" then
+            RebuildInspectQueue()
+            if IsInGroup() and not InCombatLockdown() then
+                StartInspectTicker()
+            elseif not IsInGroup() then
+                StopInspectTicker()
+            end
+        elseif event == "PLAYER_REGEN_DISABLED" then
+            StopInspectTicker()
+            wipe(inspectQueue)
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            C_Timer.After(2, function()
+                if not InCombatLockdown() and IsInGroup() then
+                    RebuildInspectQueue()
+                    StartInspectTicker()
+                end
+            end)
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            C_Timer.After(5, function()
+                if not InCombatLockdown() and IsInGroup() then
+                    RebuildInspectQueue()
+                    StartInspectTicker()
+                end
+            end)
+        end
+    end)
+
+    if IsInGroup() and not InCombatLockdown() then
+        RebuildInspectQueue()
+        StartInspectTicker()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Shared Export Helpers
+--------------------------------------------------------------------------------
+
+function addon.FormatPlayerSpecInfo(player)
+    local parts = {}
+    if player.specName then
+        local abbr = addon.SPEC_ABBREVIATIONS and addon.SPEC_ABBREVIATIONS[player.specName]
+        table.insert(parts, abbr or player.specName)
+    end
+    if player.itemLevel then table.insert(parts, "ilvl " .. player.itemLevel) end
+    if #parts > 0 then return "(" .. table.concat(parts, " - ") .. ")" end
+    return nil
+end
+
+--------------------------------------------------------------------------------
 -- Export Data Gathering
 --------------------------------------------------------------------------------
 
@@ -91,6 +282,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
             players[guid] = {
                 name = (source.name and source.name:match("^([^%-]+)")) or "Unknown",
                 classFilename = source.classFilename or "",
+                specIconID = source.specIconID,
                 isLocalPlayer = source.isLocalPlayer,
                 values = {},
             }
@@ -174,6 +366,23 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
     local columnNames = {}
     for _, mt in ipairs(columns) do
         table.insert(columnNames, meterNames[mt] or "?")
+    end
+
+    -- Resolve spec names and item levels
+    for guid, p in pairs(players) do
+        p.specName = GetSpecNameFromIconID(p.specIconID)
+        if p.isLocalPlayer then
+            local ok, avg, equipped = pcall(GetAverageItemLevel)
+            if ok and equipped and type(equipped) == "number" and equipped > 0 then
+                p.itemLevel = math.floor(equipped)
+            end
+        else
+            local cached = inspectCache[guid]
+            if cached then
+                p.itemLevel = cached.itemLevel
+                if cached.specName then p.specName = cached.specName end
+            end
+        end
     end
 
     -- Instance info
@@ -300,7 +509,9 @@ local function SendExportToChat(sessionWindow)
         local p = data.players[guid]
         local mt = data.columns[1]
         local val = data.GetDisplayValue(guid, mt)
-        table.insert(messages, string.format("#%d. %s - %s", i, p.name, val))
+        local info = addon.FormatPlayerSpecInfo(p)
+        local nameStr = info and (p.name .. " " .. info) or p.name
+        table.insert(messages, string.format("#%d. %s - %s", i, nameStr, val))
     end
 
     -- Send all messages synchronously to preserve secure execution context
@@ -827,3 +1038,4 @@ end
 --------------------------------------------------------------------------------
 
 DM._ApplyExportButtonStyling = ApplyExportButtonStyling
+DM._InitInspectCache = InitInspectCache
