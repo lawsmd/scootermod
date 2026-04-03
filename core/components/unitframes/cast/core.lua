@@ -110,13 +110,18 @@ function CB._installGradientHook(spellFS, cfgResolver, parentFrame)
 		if mode ~= "classGradient" and mode ~= "specGradient" and mode ~= "customGradient" then return end
 		if not addon.BuildColorRampString then return end
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(mode, styleCfg)
-		-- Text-fill mode: apply gradient to filledText only, leave frame.Text as raw text
+		-- Text-fill mode: apply gradient to filledText, uniform codes to frame.Text (pitfall #25)
 		if parentFrame and CB._getProp(parentFrame, "textFillActive") then
 			local els = CB._getProp(parentFrame, "textFillElements")
 			if els and els.filledText then
 				pcall(els.filledText.SetText, els.filledText, addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2))
 			end
-			return  -- Do NOT modify frame.Text with gradient codes
+			-- Apply matching per-character codes to frame.Text for truncation parity
+			local uc = CB._getProp(parentFrame, "textFillUnfilledColor") or {0.5, 0.5, 0.5}
+			CB._rampApplying = true
+			pcall(self.SetText, self, addon.BuildColorRampString(text, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
+			CB._rampApplying = false
+			return
 		end
 		-- Normal mode: apply gradient to frame.Text
 		CB._rampApplying = true
@@ -140,14 +145,15 @@ function CB._applySpellNameColor(spellFS, styleCfg, parentFrame)
 			local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode, styleCfg)
 			local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
 			if isTextFill then
-				-- Text-fill: gradient goes to filledText; frame.Text stays raw
+				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text (pitfall #25)
 				local els = CB._getProp(parentFrame, "textFillElements")
 				if els and els.filledText then
 					pcall(els.filledText.SetText, els.filledText, rampText)
 				end
-				-- Ensure frame.Text has raw text (no |cff codes)
+				-- Apply matching per-character codes to frame.Text for truncation parity
+				local uc = CB._getProp(parentFrame, "textFillUnfilledColor") or {0.5, 0.5, 0.5}
 				CB._rampApplying = true
-				pcall(spellFS.SetText, spellFS, cachedText)
+				pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(cachedText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
 				CB._rampApplying = false
 				-- SetTextColor on frame.Text will be handled by syncTextFillText's
 				-- unfilled text color override — don't set it here

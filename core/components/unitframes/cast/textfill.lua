@@ -835,6 +835,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	if spellFS and not getProp(frame, "textFillSetTextHooked") then
 		setProp(frame, "textFillSetTextHooked", true)
 		hooksecurefunc(spellFS, "SetText", function(self, text)
+			if CB._rampApplying then return end  -- Skip during gradient re-application
 			pcall(function()
 				-- Always store captured text for syncTextFillText fallback
 				-- (GetText may return secrets on tainted target/boss frames)
@@ -957,6 +958,8 @@ local function syncTextFillText(frame, cfg)
 	if not rawText or rawText == "" then
 		rawText = getProp(frame, "textFillCapturedText") or ""
 	end
+	-- Store unfilled text color on frame state for gradient hook access
+	setProp(frame, "textFillUnfilledColor", cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5})
 	-- During empowered text-fill, skip gradient coloring — stage updater manages filled text color.
 	-- Use plain text so SetTextColor from the stage updater is the sole color source.
 	local isEmpoweredTF = elements.empowered and elements.empowered.active
@@ -965,16 +968,22 @@ local function syncTextFillText(frame, cfg)
 	if not isEmpoweredTF and (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
+		-- Apply matching per-character codes to frame.Text so both strings have identical
+		-- |cff escape code structure, ensuring consistent truncation rendering (pitfall #25)
+		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
+		CB._rampApplying = true
+		pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(rawText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
+		CB._rampApplying = false
 	else
 		elements.filledText:SetText(rawText)
-	end
-	-- Ensure frame.Text has raw text (no inline |cff codes) so unfilled color works
-	if rawText and getProp(spellFS, "_rampRawText") then
-		local ok_gt, currentText = pcall(spellFS.GetText, spellFS)
-		if ok_gt and type(currentText) == "string" and not issecretvalue(currentText) and currentText:find("|cff") then
-			CB._rampApplying = true
-			pcall(spellFS.SetText, spellFS, rawText)
-			CB._rampApplying = false
+		-- Ensure frame.Text has raw text (no inline |cff codes) so unfilled color works
+		if rawText and getProp(spellFS, "_rampRawText") then
+			local ok_gt, currentText = pcall(spellFS.GetText, spellFS)
+			if ok_gt and type(currentText) == "string" and not issecretvalue(currentText) and currentText:find("|cff") then
+				CB._rampApplying = true
+				pcall(spellFS.SetText, spellFS, rawText)
+				CB._rampApplying = false
+			end
 		end
 	end
 	-- Match alignment
