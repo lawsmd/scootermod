@@ -69,7 +69,7 @@ Navigation.NavModel = {
         collapsible = true,
         children = {
             { key = "damageMeter", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeter",
-                versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. May produce taint errors in raids." } },
+                versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
             { key = "damageMeterV2", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeterV2",
                 versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." },
                 betaBadge = true },

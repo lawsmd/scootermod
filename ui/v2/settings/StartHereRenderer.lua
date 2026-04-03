@@ -163,7 +163,11 @@ local function CreateModuleRow(parent, options)
     local labelBtn = CreateFrame("Button", nil, row)
     labelBtn:SetPoint("TOPLEFT", row, "TOPLEFT", indent, 0)
     labelBtn:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", indent, 0)
-    labelBtn:SetPoint("RIGHT", row, "RIGHT", -(INDICATOR_WIDTH + ROW_PADDING * 2), 0)
+    if options.hideIndicator then
+        labelBtn:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
+    else
+        labelBtn:SetPoint("RIGHT", row, "RIGHT", -(INDICATOR_WIDTH + ROW_PADDING * 2), 0)
+    end
     labelBtn:RegisterForClicks("AnyUp")
 
     -- Label text (with optional chevron for expandable categories)
@@ -183,15 +187,29 @@ local function CreateModuleRow(parent, options)
         labelFS:SetTextColor(ar, ag, ab, 1)
     end
 
-    -- ON/OFF indicator (right side)
-    local indicator = CreateIndicator(row, theme)
-    indicator:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
-    indicator:UpdateState(options.isOn, options.isDisabled)
+    -- Info icon (optional, anchored right of label text)
+    if options.infoIcon and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        local icon = addon.UI.Controls:CreateInfoIcon({
+            parent = row,
+            tooltipText = options.infoIcon.tooltipText,
+            tooltipTitle = options.infoIcon.tooltipTitle,
+            size = 14,
+        })
+        icon:SetPoint("LEFT", labelFS, "RIGHT", 4, 0)
+    end
 
-    -- Click: indicator always toggles on/off
-    indicator:SetScript("OnClick", function()
-        if not options.isDisabled and options.onToggle then options.onToggle() end
-    end)
+    -- ON/OFF indicator (right side) — hidden for header-only rows
+    local indicator
+    if not options.hideIndicator then
+        indicator = CreateIndicator(row, theme)
+        indicator:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
+        indicator:UpdateState(options.isOn, options.isDisabled)
+
+        -- Click: indicator always toggles on/off
+        indicator:SetScript("OnClick", function()
+            if not options.isDisabled and options.onToggle then options.onToggle() end
+        end)
+    end
 
     -- Click: label expands (if expandable) or toggles (if not)
     labelBtn:SetScript("OnClick", function()
@@ -206,8 +224,10 @@ local function CreateModuleRow(parent, options)
     -- Hover handlers (shared across label and indicator)
     labelBtn:SetScript("OnEnter", function() hoverBg:Show() end)
     labelBtn:SetScript("OnLeave", function() hoverBg:Hide() end)
-    indicator:SetScript("OnEnter", function() hoverBg:Show() end)
-    indicator:SetScript("OnLeave", function() hoverBg:Hide() end)
+    if indicator then
+        indicator:SetScript("OnEnter", function() hoverBg:Show() end)
+        indicator:SetScript("OnLeave", function() hoverBg:Hide() end)
+    end
 
     return row
 end
@@ -228,18 +248,13 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
         local isExpanded = state.expandedCategory == catId
 
         -- Master category row
-        local masterRow = CreateModuleRow(column, {
+        local isNoMaster = catDef.noMasterToggle
+        local masterOpts = {
             label = catDef.label,
             isOn = isOn,
             isExpandable = hasSubToggles,
             isExpanded = isExpanded,
             theme = theme,
-            onToggle = function()
-                addon:SetModuleEnabled(catId, nil, not addon:IsModuleEnabled(catId))
-                state.dirty = true
-                if state.registerGuard then state.registerGuard() end
-                rebuild()
-            end,
             onExpand = function()
                 if state.expandedCategory == catId then
                     state.expandedCategory = nil
@@ -248,7 +263,18 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
                 end
                 rebuild()
             end,
-        })
+        }
+        if isNoMaster then
+            masterOpts.hideIndicator = true
+        else
+            masterOpts.onToggle = function()
+                addon:SetModuleEnabled(catId, nil, not addon:IsModuleEnabled(catId))
+                state.dirty = true
+                if state.registerGuard then state.registerGuard() end
+                rebuild()
+            end
+        end
+        local masterRow = CreateModuleRow(column, masterOpts)
         masterRow:SetPoint("TOPLEFT", column, "TOPLEFT", 0, -yOffset)
         masterRow:SetPoint("TOPRIGHT", column, "TOPRIGHT", 0, -yOffset)
         table.insert(state.rows, masterRow)
@@ -262,10 +288,11 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
                     label = sub.label,
                     isOn = subIsOn,
                     indent = SUB_INDENT,
-                    isDisabled = not isOn,
+                    isDisabled = not isNoMaster and not isOn,
+                    infoIcon = sub.infoIcon,
                     theme = theme,
                     onToggle = function()
-                        if not addon:IsModuleEnabled(catId) then return end
+                        if not isNoMaster and not addon:IsModuleEnabled(catId) then return end
                         local newValue = not addon:IsModuleEnabled(catId, sub.id)
                         -- Mutually exclusive: turning one ON turns all others OFF
                         if catDef.mutuallyExclusive and newValue then

@@ -60,7 +60,19 @@ function addon:OnInitialize()
     if me then
         for k, v in pairs(me) do
             if type(v) == "table" then
-                self._activeModules[k] = v._enabled ~= false
+                local catDef = self.MODULE_CATEGORIES and self.MODULE_CATEGORIES[k]
+                if catDef and catDef.noMasterToggle then
+                    -- Derive master state from sub-toggles
+                    local anyOn = false
+                    if catDef.subToggles then
+                        for _, sub in ipairs(catDef.subToggles) do
+                            if v[sub.id] ~= false then anyOn = true; break end
+                        end
+                    end
+                    self._activeModules[k] = anyOn
+                else
+                    self._activeModules[k] = v._enabled ~= false
+                end
                 self._activeModuleSubs[k] = {}
                 for subKey, subVal in pairs(v) do
                     if subKey ~= "_enabled" then

@@ -116,11 +116,14 @@ addon.MODULE_CATEGORIES = {
         },
     },
     damageMeter = {
-        label = "Damage Meter",
+        label = "Damage Meters",
         mutuallyExclusive = true, -- only one sub-toggle can be ON at a time
+        noMasterToggle = true, -- no parent ON/OFF; master state derived from sub-toggles
         subToggles = {
-            { id = "damageMeter", label = "Blizzard Overlay" },
-            { id = "damageMeterV2", label = "Custom Frames" },
+            { id = "damageMeter", label = "Damage Meters v1",
+              infoIcon = { tooltipTitle = "Blizzard Overlay", tooltipText = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
+            { id = "damageMeterV2", label = "Damage Meters v2",
+              infoIcon = { tooltipTitle = "Custom Frames", tooltipText = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
         },
     },
     extraAbilities = {
@@ -194,6 +197,17 @@ function addon:IsModuleEnabled(category, subId)
 
     -- Table form: master + sub-toggles
     if type(val) == "table" then
+        local catDef = self.MODULE_CATEGORIES[category]
+        if catDef and catDef.noMasterToggle and not subId then
+            -- Derive master state: enabled if any sub-toggle is on
+            if catDef.subToggles then
+                for _, sub in ipairs(catDef.subToggles) do
+                    local subVal = val[sub.id]
+                    if subVal == nil or subVal == true then return true end
+                end
+            end
+            return false
+        end
         if val._enabled == false then return false end  -- master off
         if subId then
             local sub = val[subId]
