@@ -13,6 +13,8 @@ local addonName, addon = ...
 addon.AuraTracking = addon.AuraTracking or {}
 local HA = addon.AuraTracking
 
+local IsAuraFilteredOutByInstanceID = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+
 --------------------------------------------------------------------------------
 -- Spell Registry
 --------------------------------------------------------------------------------
@@ -144,6 +146,7 @@ end
 
 HA.SPELL_DEFAULTS = {
     enabled = false,
+    trackAllSources = false,
     iconStyle = "spell",
     iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
@@ -173,13 +176,14 @@ function HA.RebuildActiveTrackedSet()
     for spellId, config in pairs(spells) do
         -- Only track spells that exist in the registry (ignore stale DB entries)
         if config.enabled and HA.SPELL_REGISTRY_BY_ID[spellId] then
-            HA.ACTIVE_TRACKED_IDS[spellId] = true
+            local trackMode = config.trackAllSources and "all" or "player"
+            HA.ACTIVE_TRACKED_IDS[spellId] = trackMode
             -- Also add all linked variants (e.g., Blessing of the Bronze per-class IDs)
             for _, classSpells in pairs(HA.SPELL_REGISTRY) do
                 for _, entry in ipairs(classSpells) do
                     if entry.id == spellId and entry.linkedIds then
                         for _, linkedId in ipairs(entry.linkedIds) do
-                            HA.ACTIVE_TRACKED_IDS[linkedId] = true
+                            HA.ACTIVE_TRACKED_IDS[linkedId] = trackMode
                         end
                     end
                 end
@@ -386,7 +390,26 @@ local function ScanAurasForUnit(unit)
             if not spellId then return end
             -- Skip secret spellIds individually (don't abort the whole scan)
             if issecretvalue and issecretvalue(spellId) then return end
-            if HA.ACTIVE_TRACKED_IDS[spellId] then
+            local trackMode = HA.ACTIVE_TRACKED_IDS[spellId]
+            if trackMode then
+                -- Source filtering: only show auras cast by the local player unless
+                -- the spell is configured for "all sources" mode.
+                if trackMode == "player" then
+                    local src = aura.sourceUnit
+                    local isMine = nil
+                    if src and not (issecretvalue and issecretvalue(src)) then
+                        isMine = (src == "player" or src == "pet")
+                    end
+                    if isMine == nil and IsAuraFilteredOutByInstanceID then
+                        local iid = aura.auraInstanceID
+                        if iid and not (issecretvalue and issecretvalue(iid)) then
+                            local ok2, filtered = pcall(IsAuraFilteredOutByInstanceID, unit, iid, "HELPFUL|PLAYER")
+                            if ok2 then isMine = not filtered end
+                        end
+                    end
+                    if isMine == false then return end
+                end
+
                 found[spellId] = {
                     spellId = spellId,
                     icon = aura.icon,
