@@ -366,3 +366,7 @@ function Controls:QuickInfoIcon(parent, tooltipText, size)
         size = size or 14,
     })
 end
+
+function Controls:GetOrCreateTooltip()
+    return GetOrCreateTooltip()
+end

@@ -144,13 +144,13 @@ Navigation.NavModel = {
         label = "Unit Frames",
         collapsible = true,
         children = {
-            { key = "ufPlayer", label = "Player", module = "unitFrames" },
-            { key = "ufTarget", label = "Target", module = "unitFrames" },
-            { key = "ufFocus", label = "Focus", module = "unitFrames" },
-            { key = "ufPet", label = "Pet", module = "unitFrames" },
-            { key = "ufToT", label = "Target of Target", module = "unitFrames" },
-            { key = "ufFocusTarget", label = "Target of Focus", module = "unitFrames" },
-            { key = "ufBoss", label = "Boss", module = "unitFrames" },
+            { key = "ufPlayer", label = "Player", module = "unitFrames", moduleSubId = "Player" },
+            { key = "ufTarget", label = "Target", module = "unitFrames", moduleSubId = "Target" },
+            { key = "ufFocus", label = "Focus", module = "unitFrames", moduleSubId = "Focus" },
+            { key = "ufPet", label = "Pet", module = "unitFrames", moduleSubId = "Pet" },
+            { key = "ufToT", label = "Target of Target", module = "unitFrames", moduleSubId = "TargetOfTarget" },
+            { key = "ufFocusTarget", label = "Target of Focus", module = "unitFrames", moduleSubId = "FocusTarget" },
+            { key = "ufBoss", label = "Boss", module = "unitFrames", moduleSubId = "Boss" },
         },
     },
     {
@@ -158,9 +158,9 @@ Navigation.NavModel = {
         label = "Group Frames",
         collapsible = true,
         children = {
-            { key = "gfParty", label = "Party Frames", module = "groupFrames" },
-            { key = "gfRaid", label = "Raid Frames", module = "groupFrames" },
-            { key = "gfAuraTracking", label = "Aura Tracking", module = "groupFrames", betaBadge = true },
+            { key = "gfParty", label = "Party Frames", module = "groupFrames", moduleSubId = "party" },
+            { key = "gfRaid", label = "Raid Frames", module = "groupFrames", moduleSubId = "raid" },
+            { key = "gfAuraTracking", label = "Aura Tracking", module = "groupFrames", moduleSubId = "auraTracking", betaBadge = true },
         },
     },
     {
@@ -180,8 +180,8 @@ Navigation.NavModel = {
         label = "Buffs/Debuffs",
         collapsible = true,
         children = {
-            { key = "buffs", label = "Buffs", module = "buffsDebuffs" },
-            { key = "debuffs", label = "Debuffs", module = "buffsDebuffs" },
+            { key = "buffs", label = "Buffs", module = "buffsDebuffs", moduleSubId = "buffs" },
+            { key = "debuffs", label = "Debuffs", module = "buffsDebuffs", moduleSubId = "debuffs" },
         },
     },
     {
@@ -219,6 +219,20 @@ function Navigation:IsNavModuleActive(moduleCategory, moduleSubId)
     if moduleSubId and addon._activeModuleSubs and addon._activeModuleSubs[moduleCategory] then
         local sub = addon._activeModuleSubs[moduleCategory][moduleSubId]
         if sub == false then return false end
+    end
+    return true
+end
+
+--- Check if every child of a collapsible parent has a module field and all are disabled.
+function Navigation:AreAllChildrenModuleDisabled(navItem)
+    if not navItem.collapsible or not navItem.children then return false end
+    for _, child in ipairs(navItem.children) do
+        if not child.module then
+            return false  -- Non-module child is always active
+        end
+        if self:IsNavModuleActive(child.module, child.moduleSubId) then
+            return false  -- At least one module-child is active
+        end
     end
     return true
 end
@@ -543,8 +557,14 @@ function Navigation:BuildRows(contentFrame)
         else
             rowIndex = rowIndex + 1
 
+            -- Check if all children's modules are disabled (grays out the parent)
+            local isParentModuleDisabled = self:AreAllChildrenModuleDisabled(parent)
+            if isParentModuleDisabled then
+                self._expandedSections[parent.key] = false
+            end
+
             -- Create parent row
-            local parentRow = self:CreateParentRow(contentFrame, parent, yOffset)
+            local parentRow = self:CreateParentRow(contentFrame, parent, yOffset, isParentModuleDisabled)
             self._rows[rowIndex] = parentRow
             yOffset = yOffset - PARENT_ROW_HEIGHT
 
@@ -590,7 +610,7 @@ end
 -- Create Parent Row (Section header - no tree lines)
 --------------------------------------------------------------------------------
 
-function Navigation:CreateParentRow(parent, navItem, yOffset)
+function Navigation:CreateParentRow(parent, navItem, yOffset, isModuleDisabled)
     local row = CreateFrame("Button", nil, parent)
     row:SetHeight(PARENT_ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
@@ -602,6 +622,7 @@ function Navigation:CreateParentRow(parent, navItem, yOffset)
     row._key = navItem.key
     row._isParent = true
     row._isCollapsible = navItem.collapsible
+    row._isModuleDisabled = isModuleDisabled
     row._navItem = navItem
 
     local ar, ag, ab = Theme:GetAccentColor()
@@ -647,32 +668,57 @@ function Navigation:CreateParentRow(parent, navItem, yOffset)
     label:SetText(navItem.label)
     row._label = label
 
-    -- Hover effect
-    row:SetScript("OnEnter", function(self)
-        local r, g, b = Theme:GetAccentColor()
-        self._hoverBg:SetColorTexture(r, g, b, 0.15)
-        self._hoverBg:Show()
-        self._label:SetTextColor(1, 1, 1, 1)
-    end)
+    if isModuleDisabled then
+        -- Disabled: gray out label + indicator, show tooltip on hover
+        local dimR, dimG, dimB = Theme:GetDimTextColor()
+        label:SetTextColor(dimR, dimG, dimB, 0.35)
+        if navItem.collapsible then
+            indicator:SetTextColor(dimR, dimG, dimB, 0.35)
+        end
 
-    row:SetScript("OnLeave", function(self)
-        self._hoverBg:Hide()
-        local r, g, b = Theme:GetAccentColor()
-        if Navigation._selectedKey == self._key then
+        row:SetScript("OnEnter", function(self)
+            local C = addon.UI and addon.UI.Controls
+            if C and C.GetOrCreateTooltip then
+                local tip = C:GetOrCreateTooltip()
+                tip:SetContent("Module Disabled", "Enable this module on the Start Here page to access its settings.")
+                tip:ShowAtAnchor(self, "TOPLEFT", "TOPRIGHT", 8, 0)
+            end
+        end)
+        row:SetScript("OnLeave", function(self)
+            local C = addon.UI and addon.UI.Controls
+            if C and C.GetOrCreateTooltip then
+                C:GetOrCreateTooltip():Hide()
+            end
+        end)
+        row:SetScript("OnClick", nil)
+    else
+        -- Hover effect
+        row:SetScript("OnEnter", function(self)
+            local r, g, b = Theme:GetAccentColor()
+            self._hoverBg:SetColorTexture(r, g, b, 0.15)
+            self._hoverBg:Show()
             self._label:SetTextColor(1, 1, 1, 1)
-        else
-            self._label:SetTextColor(r, g, b, 1)
-        end
-    end)
+        end)
 
-    -- Click handler
-    row:SetScript("OnClick", function(self, button)
-        if self._isCollapsible then
-            Navigation:ToggleSection(self._key)
-        else
-            Navigation:SelectItem(self._key)
-        end
-    end)
+        row:SetScript("OnLeave", function(self)
+            self._hoverBg:Hide()
+            local r, g, b = Theme:GetAccentColor()
+            if Navigation._selectedKey == self._key then
+                self._label:SetTextColor(1, 1, 1, 1)
+            else
+                self._label:SetTextColor(r, g, b, 1)
+            end
+        end)
+
+        -- Click handler
+        row:SetScript("OnClick", function(self, button)
+            if self._isCollapsible then
+                Navigation:ToggleSection(self._key)
+            else
+                Navigation:SelectItem(self._key)
+            end
+        end)
+    end
 
     self:UpdateRowSelectionState(row)
     return row
@@ -807,10 +853,21 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
             row._betaBadge._iconText:SetTextColor(dimR, dimG, dimB, 0.35)
             for _, tex in pairs(row._betaBadge._border) do tex:SetColorTexture(dimR, dimG, dimB, 0.15) end
         end
-        row:SetScript("OnEnter", nil)
-        row:SetScript("OnLeave", nil)
+        row:SetScript("OnEnter", function(self)
+            local C = addon.UI and addon.UI.Controls
+            if C and C.GetOrCreateTooltip then
+                local tip = C:GetOrCreateTooltip()
+                tip:SetContent("Module Disabled", "Enable this module on the Start Here page to access its settings.")
+                tip:ShowAtAnchor(self, "TOPLEFT", "TOPRIGHT", 8, 0)
+            end
+        end)
+        row:SetScript("OnLeave", function(self)
+            local C = addon.UI and addon.UI.Controls
+            if C and C.GetOrCreateTooltip then
+                C:GetOrCreateTooltip():Hide()
+            end
+        end)
         row:SetScript("OnClick", nil)
-        row:EnableMouse(false)
     else
         -- Hover effect
         row:SetScript("OnEnter", function(self)
@@ -909,6 +966,10 @@ function Navigation:UpdateRowSelectionState(row)
             row._label:SetTextColor(1, 1, 1, 1)
         end
     end
+
+    if self.UpdateJumpingLettersColor then
+        self:UpdateJumpingLettersColor(row)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -936,6 +997,17 @@ function Navigation:UpdateRowColors()
                 local alpha = row._isModuleDisabled and (TREE_LINE_COLOR_ALPHA * 0.3) or TREE_LINE_COLOR_ALPHA
                 for _, line in pairs(row._treeLines) do
                     line:SetColorTexture(ar, ag, ab, alpha)
+                end
+            end
+
+            -- Re-apply dim colors for disabled rows (parent or child)
+            if row._isModuleDisabled then
+                local dimR, dimG, dimB = Theme:GetDimTextColor()
+                if row._label then
+                    row._label:SetTextColor(dimR, dimG, dimB, 0.35)
+                end
+                if row._indicator then
+                    row._indicator:SetTextColor(dimR, dimG, dimB, 0.35)
                 end
             end
 
@@ -1013,6 +1085,10 @@ end
 --------------------------------------------------------------------------------
 
 function Navigation:Cleanup()
+    if self.CleanupJumpingLetters then
+        self:CleanupJumpingLetters()
+    end
+
     Theme:Unsubscribe("Navigation_Frame")
 
     for _, row in ipairs(self._rows) do
