@@ -52,6 +52,7 @@ end
 
 local SPELL_DEFAULTS = addon.AuraTracking and addon.AuraTracking.SPELL_DEFAULTS or {
     enabled = false,
+    trackAllSources = false,
     iconStyle = "spell",
     iconColor = "original",
     iconCustomColor = { 1, 1, 1, 1 },
@@ -127,7 +128,7 @@ local function CreateIconStyleRow(parent, spellId, builder)
     label:SetFont(labelFont, 13, "")
     label:SetPoint("LEFT", row, "LEFT", 12, 0)
     label:SetText("Icon Style")
-    label:SetTextColor(1, 1, 1, 0.9)
+    label:SetTextColor(accentR, accentG, accentB, 1)
     row._label = label
 
     -- Selector button (right side)
@@ -598,23 +599,42 @@ function AuraTrackingUI.Render(panel, scrollContent)
             end,
         })
 
+        -- Track from All Players toggle
+        builder:AddToggle({
+            key = "trackAllSources",
+            label = "Track from All Players",
+            description = "Show this icon when the aura is applied by any player, not just you.",
+            get = function() return getSetting(selectedId, "trackAllSources") end,
+            set = function(v)
+                setSetting(selectedId, "trackAllSources", v)
+            end,
+            disabled = function() return not getSetting(selectedId, "enabled") end,
+        })
+
         -- Icon Style row (custom control)
         local iconStyleRow = CreateIconStyleRow(scrollContent, selectedId, builder)
         if iconStyleRow then
             -- Add spacing
             if #builder._controls > 0 then
-                builder._currentY = builder._currentY - 4
+                builder._currentY = builder._currentY - 12
             end
-            iconStyleRow:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 12, builder._currentY)
-            iconStyleRow:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, builder._currentY)
+            iconStyleRow:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 8, builder._currentY)
+            iconStyleRow:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -8, builder._currentY)
             table.insert(builder._controls, iconStyleRow)
             builder._currentY = builder._currentY - iconStyleRow:GetHeight()
 
             -- Disabled state
             local isEnabled = getSetting(selectedId, "enabled")
             if not isEnabled then
-                iconStyleRow:SetAlpha(0.4)
+                local theme = addon.UI.Theme
+                local dimR, dimG, dimB = 0.5, 0.5, 0.5
+                if theme and theme.GetDimTextColor then
+                    dimR, dimG, dimB = theme:GetDimTextColor()
+                end
+                iconStyleRow._label:SetTextColor(dimR, dimG, dimB, 0.35)
+                iconStyleRow._selectorBtn:SetAlpha(0.35)
                 iconStyleRow._selectorBtn:EnableMouse(false)
+                iconStyleRow._rowBorder:SetColorTexture(dimR, dimG, dimB, 0.1)
             end
         end
 
