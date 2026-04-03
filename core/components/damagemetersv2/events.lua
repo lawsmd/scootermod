@@ -39,12 +39,40 @@ local function OnEvent(self, event, ...)
 
     -- Auto-reset on instance entry
     if event == "PLAYER_ENTERING_WORLD" then
-        -- Defer to avoid conflicts during loading
+        local isInitialLogin, isReloadingUi = ...
+        -- Defer styling re-apply (existing behavior)
         C_Timer.After(1.0, function()
             if DM2._comp then
                 DM2._ApplyStyling(DM2._comp)
             end
         end)
+
+        -- Auto-reset on instance entry
+        if isInitialLogin or isReloadingUi then return end
+
+        local comp = DM2._comp
+        if not comp or not comp.db then return end
+
+        local mode = comp.db.autoResetData
+        if mode ~= "instance" then return end
+
+        local inInstance, instanceType = IsInInstance()
+        if not inInstance then return end
+        if instanceType ~= "party" and instanceType ~= "raid" and instanceType ~= "scenario" then return end
+
+        if not C_DamageMeter or not C_DamageMeter.ResetAllCombatSessions then return end
+
+        if comp.db.autoResetPrompt then
+            if addon.Dialogs and addon.Dialogs.Show then
+                addon.Dialogs:Show("SCOOT_DM_RESET_CONFIRM", {
+                    onAccept = function()
+                        C_DamageMeter.ResetAllCombatSessions()
+                    end,
+                })
+            end
+        else
+            C_DamageMeter.ResetAllCombatSessions()
+        end
         return
     end
 
