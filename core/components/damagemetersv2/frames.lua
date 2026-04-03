@@ -209,7 +209,7 @@ function DM2._CreateBarRow(scrollContent, rowIndex)
     row.icon = icon
 
     -- Bar area starts at a fixed offset (icon + gap + name width + gap)
-    local barAreaLeft = ICON_SIZE + 6 + NAME_WIDTH + 4
+    local barAreaLeft = ICON_SIZE + 6 + NAME_WIDTH + 8
 
     -- Name clip region — rank sits to the left, name fills the rest
     -- Reserve 15px on the left for rank numbers

@@ -23,14 +23,14 @@ function DM2._CalculateColumnWidths(windowIndex, comp)
     if cfg.sessionType ~= 0 then numColumns = 1 end  -- Current/Expired: single column only
 
     -- Available width after icon + name
-    local availableWidth = fw - DM2.ICON_SIZE - 6 - DM2.NAME_WIDTH
+    local availableWidth = fw - DM2.ICON_SIZE - 6 - DM2.NAME_WIDTH - 8
     local colWidth = math.floor(availableWidth / numColumns)
 
     win._colWidth = colWidth
     win._numColumns = numColumns
 
     -- Position column headers (matching value text alignment)
-    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 2
+    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 8
     for c = 1, DM2.MAX_COLUMNS do
         local ch = win.columnHeaders[c]
         local cr = win.columnClickRegions and win.columnClickRegions[c]
@@ -119,7 +119,7 @@ function DM2._LayoutBarRows(windowIndex, comp)
     local colWidth = win._colWidth or 100
 
     -- Alignment: 1 col = right; 2+ = first left, last right, middle centered in column
-    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 2
+    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 8
     local function LayoutRowValueTexts(row)
         for c = 1, DM2.MAX_COLUMNS do
             local vt = row.valueTexts[c]
