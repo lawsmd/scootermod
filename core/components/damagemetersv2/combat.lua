@@ -19,7 +19,7 @@ function DM2._EnterCombatMode()
         if win then
             for c = 2, DM2.MAX_COLUMNS do
                 local ch = win.columnHeaders[c]
-                if ch then ch:SetTextColor(0.5, 0.5, 0.5, 0.7) end
+                if ch then ch:SetTextColor(0.5, 0.5, 0.5, 0.7); ch:SetAlpha(0.5) end
             end
         end
     end
@@ -109,6 +109,7 @@ function DM2._FullRefreshAllWindows()
                 for c = 1, DM2.MAX_COLUMNS do
                     local ch = win.columnHeaders[c]
                     if ch then
+                        ch:SetAlpha(1)
                         if useCustom then
                             local hc = headerStyle.color
                             ch:SetTextColor(hc[1] or 0.8, hc[2] or 0.8, hc[3] or 0.8, hc[4] or 1)

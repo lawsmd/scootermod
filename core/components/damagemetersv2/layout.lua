@@ -436,12 +436,14 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
                 -- Gray out secondary columns during combat (data is stale/uncorrelated)
                 if c > 1 then
                     vt:SetTextColor(0.5, 0.5, 0.5, 0.7)
+                    vt:SetAlpha(0.5)
                 end
             else
                 -- OOC: formatted text
                 vt:SetText(DM2._FormatColumnValue(player, colDef.format))
 
-                -- Restore value text color from DB settings (undo combat gray-out)
+                -- Restore value text color and opacity from DB settings (undo combat gray-out)
+                vt:SetAlpha(1)
                 local valSettings = db and db.textValues or {}
                 local valColorMode = valSettings.colorMode or "default"
                 if valColorMode == "custom" and valSettings.color then
