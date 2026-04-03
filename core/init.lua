@@ -12,6 +12,35 @@ function addon:OnInitialize()
     -- Warm up bundled fonts early to avoid first-open rendering differences
     if addon.PreloadFonts then addon.PreloadFonts() end
 
+    -- Migration: cement explicit moduleEnabled = true for all existing profiles.
+    -- Defaults changed from true → false (zero-touch policy). Without this,
+    -- existing profiles that relied on the old defaults would lose their modules.
+    -- Runs on raw SavedVariables BEFORE AceDB:New so copyDefaults won't overwrite.
+    do
+        local sv = _G["ScootDB"]
+        if sv and sv.profiles and not (sv.global and sv.global._moduleEnabledDefaultsV2) then
+            local KEYS = {
+                "actionBars", "buffsDebuffs", "classAuras", "cooldownManager",
+                "damageMeter", "extraAbilities", "groupFrames", "minimap",
+                "notes", "objectiveTracker", "prd", "sct", "tooltip", "unitFrames",
+            }
+            for _, profileData in pairs(sv.profiles) do
+                if type(profileData) == "table" then
+                    if not profileData.moduleEnabled then
+                        profileData.moduleEnabled = {}
+                    end
+                    for _, key in ipairs(KEYS) do
+                        if profileData.moduleEnabled[key] == nil then
+                            profileData.moduleEnabled[key] = true
+                        end
+                    end
+                end
+            end
+            if not sv.global then sv.global = {} end
+            sv.global._moduleEnabledDefaultsV2 = true
+        end
+    end
+
     -- 1. Create the database first so moduleEnabled is available for component gating.
     --    GetDefaults() does not reference self.Components — safe to call before init.
     self.db = LibStub("AceDB-3.0"):New("ScootDB", self:GetDefaults(), true)
@@ -158,20 +187,20 @@ function addon:GetDefaults()
                 nextId = 1,
             },
             moduleEnabled = {
-                actionBars = true,
-                buffsDebuffs = true,
-                classAuras = true,
-                cooldownManager = true,
-                damageMeter = true,
-                extraAbilities = true,
-                groupFrames = true,
-                minimap = true,
-                notes = true,
-                objectiveTracker = true,
-                prd = true,
-                sct = true,
-                tooltip = true,
-                unitFrames = true,
+                actionBars = false,
+                buffsDebuffs = false,
+                classAuras = false,
+                cooldownManager = false,
+                damageMeter = false,
+                extraAbilities = false,
+                groupFrames = false,
+                minimap = false,
+                notes = false,
+                objectiveTracker = false,
+                prd = false,
+                sct = false,
+                tooltip = false,
+                unitFrames = false,
             },
             groupFrames = {
                 raid = {

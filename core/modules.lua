@@ -174,15 +174,15 @@ addon.MODULE_CATEGORIES = {
 --------------------------------------------------------------------------------
 
 --- Check if a module category (and optionally a sub-toggle) is enabled.
---- Returns true for absent keys (upgrade compatibility / fresh installs).
+--- Returns false for absent keys (zero-touch policy: new modules default to off).
 function addon:IsModuleEnabled(category, subId)
     local profile = self.db and self.db.profile
-    if not profile then return true end
+    if not profile then return false end
     local me = profile.moduleEnabled
-    if not me then return true end
+    if not me then return false end
 
     local val = me[category]
-    if val == nil then return true end     -- absent key = enabled
+    if val == nil then return false end    -- absent key = disabled
     if val == false then return false end  -- master off
     if val == true then
         -- For mutuallyExclusive categories, only the first sub-toggle defaults to enabled
@@ -203,7 +203,7 @@ function addon:IsModuleEnabled(category, subId)
             if catDef.subToggles then
                 for _, sub in ipairs(catDef.subToggles) do
                     local subVal = val[sub.id]
-                    if subVal == nil or subVal == true then return true end
+                    if subVal == true then return true end
                 end
             end
             return false
@@ -211,7 +211,7 @@ function addon:IsModuleEnabled(category, subId)
         if val._enabled == false then return false end  -- master off
         if subId then
             local sub = val[subId]
-            return sub == nil or sub == true        -- absent sub = enabled
+            return sub == true                      -- absent sub = disabled
         end
         return true
     end

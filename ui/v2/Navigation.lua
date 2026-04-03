@@ -214,7 +214,7 @@ Navigation._rows = {}              -- References to created row frames
 --- Check if a module category (and optionally sub-toggle) was active at session start.
 function Navigation:IsNavModuleActive(moduleCategory, moduleSubId)
     if not addon._activeModules then return true end
-    if addon._activeModules[moduleCategory] == false then return false end
+    if not addon._activeModules[moduleCategory] then return false end
     -- Sub-toggle check (e.g., damageMeter + damageMeterV2)
     if moduleSubId and addon._activeModuleSubs and addon._activeModuleSubs[moduleCategory] then
         local sub = addon._activeModuleSubs[moduleCategory][moduleSubId]
